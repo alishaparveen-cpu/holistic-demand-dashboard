@@ -57,6 +57,38 @@
   input[type="number"].periods{width:54px;padding:3px 6px;border:1px solid var(--line);border-radius:6px;font-size:12px;text-align:center;}
   .toggle-tab{padding:5px 11px;font-size:12px;font-weight:500;cursor:pointer;border-radius:6px;color:var(--muted);}
   .toggle-tab.active{background:#0f172a;color:#fff;}
+  /* Tab navigation */
+  .tabnav{display:flex;gap:2px;border-bottom:1px solid var(--line);margin-bottom:18px;overflow-x:auto;}
+  .tabnav .tab{padding:10px 16px;cursor:pointer;font-size:13px;font-weight:500;color:#64748b;border-bottom:2px solid transparent;white-space:nowrap;transition:color .15s,border-color .15s;}
+  .tabnav .tab:hover{color:#1e293b;}
+  .tabnav .tab.active{color:#0f172a;border-bottom-color:#0f172a;font-weight:600;}
+  .tabnav .tab .count{display:inline-block;margin-left:6px;background:#f1f5f9;color:#64748b;font-size:11px;padding:1px 7px;border-radius:999px;font-weight:600;}
+  .tabnav .tab.active .count{background:#0f172a;color:#fff;}
+  /* Tabs use off-screen positioning instead of display:none so canvases keep their dimensions */
+  .tab-panel{position:absolute;left:-99999px;top:0;width:1432px;visibility:hidden;pointer-events:none;}
+  .tab-panel.active{position:static;left:auto;width:auto;visibility:visible;pointer-events:auto;}
+  /* AI insight box */
+  .insight{background:linear-gradient(135deg,#f8fafc 0%,#eef2ff 100%);border:1px solid #e2e8f0;border-left:3px solid #6366f1;border-radius:8px;padding:10px 12px;margin-top:12px;font-size:12.5px;line-height:1.5;color:#334155;display:flex;gap:10px;align-items:flex-start;}
+  .insight .ai-badge{display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:700;color:#6366f1;background:#eef2ff;padding:2px 8px;border-radius:999px;flex-shrink:0;letter-spacing:.04em;}
+  /* Floating chatbot */
+  .chat-fab{position:fixed;bottom:24px;right:24px;width:56px;height:56px;border-radius:50%;background:#0f172a;color:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 8px 24px rgba(15,23,42,.25);z-index:50;transition:transform .15s;}
+  .chat-fab:hover{transform:scale(1.05);}
+  .chat-panel{position:fixed;bottom:96px;right:24px;width:380px;max-height:540px;background:#fff;border-radius:16px;box-shadow:0 16px 48px rgba(15,23,42,.18);border:1px solid var(--line);display:flex;flex-direction:column;z-index:50;overflow:hidden;}
+  .chat-panel.hidden{display:none;}
+  .chat-header{padding:14px 16px;border-bottom:1px solid var(--line);background:#0f172a;color:#fff;}
+  .chat-body{padding:14px;overflow-y:auto;flex:1;max-height:380px;}
+  .msg{margin-bottom:10px;display:flex;gap:8px;}
+  .msg.user{justify-content:flex-end;}
+  .msg .bubble{max-width:80%;padding:8px 12px;border-radius:12px;font-size:13px;line-height:1.45;}
+  .msg.user .bubble{background:#0f172a;color:#fff;border-bottom-right-radius:4px;}
+  .msg.bot .bubble{background:#f1f5f9;color:#1e293b;border-bottom-left-radius:4px;}
+  .chat-input{padding:10px 12px;border-top:1px solid var(--line);display:flex;gap:8px;}
+  .chat-input input{flex:1;border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:13px;outline:none;}
+  .chat-input input:focus{border-color:#0f172a;}
+  .chat-input button{padding:8px 14px;background:#0f172a;color:#fff;border-radius:8px;font-size:13px;font-weight:600;border:none;cursor:pointer;}
+  .suggestion{font-size:11px;padding:5px 10px;border:1px solid #e2e8f0;background:#fff;border-radius:999px;cursor:pointer;color:#475569;}
+  .suggestion:hover{background:#f1f5f9;}
+  .delta-up{color:#10b981;} .delta-dn{color:#ef4444;} .delta-flat{color:#94a3b8;}
   .filter-banner{display:flex;align-items:center;gap:8px;padding:8px 12px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;font-size:13px;color:#1e40af;margin-bottom:12px;}
   .filter-banner .clear-x{margin-left:auto;background:#1e40af;color:#fff;border:none;padding:3px 10px;border-radius:6px;font-size:12px;cursor:pointer;font-weight:500;}
   .filter-banner .clear-x:hover{background:#1e3a8a;}
@@ -130,6 +162,60 @@
   <!-- Active drill-down banner (hidden when nothing filtered) -->
   <div id="activeFilterBanner" style="display:none"></div>
 
+  <!-- Tab navigation -->
+  <div class="tabnav" id="tabnav">
+    <span class="tab active" data-tab="exec">Executive Summary</span>
+    <span class="tab" data-tab="bookings">Bookings &amp; Demand</span>
+    <span class="tab" data-tab="category">Category</span>
+    <span class="tab" data-tab="city">City Performance</span>
+    <span class="tab" data-tab="clinic">Clinic Performance</span>
+    <span class="tab" data-tab="channel">Channel Deep-Dive</span>
+  </div>
+
+  <!-- Active drill breadcrumb -->
+  <div id="drillCrumb" class="mb-4" style="display:none"></div>
+
+  <!-- ===== TAB: EXECUTIVE SUMMARY ===== -->
+  <div class="tab-panel active" data-panel="exec">
+
+  <!-- ===== FOUNDER BRIEF (findings + recommendations) ===== -->
+  <section class="card p-5 mb-5" style="background:linear-gradient(135deg,#fff 0%,#fef3c7 50%,#fff 100%);border-color:#fde68a">
+    <div class="flex items-center justify-between mb-3">
+      <div>
+        <div class="text-sm font-semibold text-slate-900">Founder Brief</div>
+        <div class="text-xs text-slate-500">Where money is being wasted and what to do this week. Auto-generated from current filters.</div>
+      </div>
+      <div class="text-xs text-amber-700 font-semibold" id="briefScopeLabel"></div>
+    </div>
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div>
+        <div class="text-[10px] font-semibold text-amber-700 uppercase tracking-wide mb-2">⚠ What's happening</div>
+        <div id="briefFindings" class="space-y-2"></div>
+      </div>
+      <div>
+        <div class="text-[10px] font-semibold text-emerald-700 uppercase tracking-wide mb-2">→ What to do this week</div>
+        <div id="briefRecommendations" class="space-y-2"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== SPEND EFFICIENCY HEAT STRIP ===== -->
+  <section class="card p-4 mb-5">
+    <div class="flex items-center justify-between mb-2">
+      <div>
+        <div class="text-sm font-semibold text-slate-900">Spend efficiency at a glance</div>
+        <div class="text-xs text-slate-500">Each block = a channel. Width = spend share. Color = RoAS (red &lt;1.0, yellow 1.0–1.2, green ≥1.2). Hover for details.</div>
+      </div>
+      <div class="flex items-center gap-3 text-[11px] text-slate-500">
+        <span><span style="display:inline-block;width:10px;height:10px;background:#ef4444;border-radius:3px;vertical-align:middle"></span> Losing money</span>
+        <span><span style="display:inline-block;width:10px;height:10px;background:#f59e0b;border-radius:3px;vertical-align:middle"></span> Break-even</span>
+        <span><span style="display:inline-block;width:10px;height:10px;background:#10b981;border-radius:3px;vertical-align:middle"></span> Profitable</span>
+      </div>
+    </div>
+    <div id="spendHeatStrip" style="display:flex;height:48px;border-radius:8px;overflow:hidden;border:1px solid #e2e8f0"></div>
+    <div id="spendHeatLabels" class="mt-2 flex flex-wrap gap-3 text-[11px]"></div>
+  </section>
+
   <!-- ===== LAYER 1: EXECUTIVE ===== -->
 
   <!-- Executive narrative -->
@@ -142,7 +228,7 @@
       <div class="text-xs text-slate-400" id="execAsOf"></div>
     </div>
     <div id="execNarrative" class="text-sm leading-relaxed text-slate-700"></div>
-    <div id="execHeadlines" class="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3"></div>
+    <div id="execHeadlines" class="mt-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3"></div>
   </section>
 
   <!-- Category health -->
@@ -170,35 +256,96 @@
     </div>
   </section>
 
+  <!-- (Category · Current vs baseline moved to Category tab) -->
+
+  <!-- MULTI-DIMENSIONAL KPI MATRIX (founder view: where is the problem?) -->
+  <section class="card p-5 mb-5">
+    <div class="flex items-center justify-between mb-3">
+      <div>
+        <div class="text-sm font-semibold text-slate-900">Where is the problem?</div>
+        <div class="text-xs text-slate-500">Full economics by Channel · Category · City. Click any row to drill in.</div>
+      </div>
+      <div class="flex items-center gap-1" id="matrixDimToggle">
+        <span class="toggle-tab active" data-dim="channel">By channel</span>
+        <span class="toggle-tab" data-dim="category">By category</span>
+        <span class="toggle-tab" data-dim="city">By city</span>
+      </div>
+    </div>
+    <div id="kpiMatrixWrap" style="overflow-x:auto"></div>
+    <div class="insight" id="i_kpiMatrix"></div>
+  </section>
+
+  </div><!-- /tab exec -->
+
+  <!-- ===== TAB: BOOKINGS & DEMAND ===== -->
+  <div class="tab-panel" data-panel="bookings">
+
   <!-- KPI cards -->
-  <section class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-5">
+  <section class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-5">
     <div class="card p-5">
       <div class="text-xs font-semibold text-slate-500 uppercase tracking-wide">Total bookings</div>
       <div class="flex items-baseline gap-3 mt-2">
-        <div id="kpi-bookings" class="text-3xl font-bold">—</div>
+        <div id="kpi-bookings" class="text-2xl font-bold">—</div>
         <div id="kpi-bookings-chg" class="text-sm font-semibold"></div>
       </div>
       <div class="text-xs text-slate-500 mt-1">vs <span id="kpi-bookings-baseline-label"></span> · <span id="kpi-bookings-prior"></span></div>
       <div class="mt-3" style="height:60px"><canvas id="spark-bookings"></canvas></div>
     </div>
     <div class="card p-5">
-      <div class="text-xs font-semibold text-slate-500 uppercase tracking-wide">Drop alerts</div>
+      <div class="text-xs font-semibold text-slate-500 uppercase tracking-wide">Consultations done</div>
       <div class="flex items-baseline gap-3 mt-2">
-        <div id="kpi-alerts" class="text-3xl font-bold text-red-600">—</div>
-        <div class="text-sm text-slate-500"><span id="kpi-alerts-cities"></span> cities · <span id="kpi-alerts-clinics"></span> clinics</div>
+        <div id="kpi-done" class="text-2xl font-bold">—</div>
+        <div id="kpi-done-chg" class="text-sm font-semibold"></div>
       </div>
-      <div class="text-xs text-slate-500 mt-1">Locations dropping &gt; 15% vs baseline</div>
-      <div id="kpi-alerts-list" class="mt-3 text-xs text-slate-600 leading-relaxed"></div>
+      <div class="text-xs text-slate-500 mt-1">vs <span id="kpi-done-baseline-label"></span> · <span id="kpi-done-prior"></span></div>
+      <div class="mt-3" style="height:60px"><canvas id="spark-done"></canvas></div>
     </div>
     <div class="card p-5">
-      <div class="text-xs font-semibold text-slate-500 uppercase tracking-wide">Booking conversion rate</div>
+      <div class="text-xs font-semibold text-slate-500 uppercase tracking-wide">L2B (lead → booking)</div>
       <div class="flex items-baseline gap-3 mt-2">
-        <div id="kpi-cvr" class="text-3xl font-bold">—</div>
-        <div id="kpi-cvr-chg" class="text-sm font-semibold"></div>
+        <div id="kpi-l2b" class="text-2xl font-bold">—</div>
+        <div id="kpi-l2b-chg" class="text-sm font-semibold"></div>
       </div>
       <div class="text-xs text-slate-500 mt-1">Bookings / inbound leads</div>
-      <div class="mt-3" style="height:60px"><canvas id="spark-cvr"></canvas></div>
+      <div class="mt-3" style="height:60px"><canvas id="spark-l2b"></canvas></div>
     </div>
+    <div class="card p-5">
+      <div class="text-xs font-semibold text-slate-500 uppercase tracking-wide">B2D (booking → done)</div>
+      <div class="flex items-baseline gap-3 mt-2">
+        <div id="kpi-b2d" class="text-2xl font-bold">—</div>
+        <div id="kpi-b2d-chg" class="text-sm font-semibold"></div>
+      </div>
+      <div class="text-xs text-slate-500 mt-1">Consultations done / bookings</div>
+      <div class="mt-3" style="height:60px"><canvas id="spark-b2d"></canvas></div>
+    </div>
+    <div class="card p-5">
+      <div class="text-xs font-semibold text-slate-500 uppercase tracking-wide">Drop alerts</div>
+      <div class="flex items-baseline gap-3 mt-2">
+        <div id="kpi-alerts" class="text-2xl font-bold text-red-600">—</div>
+        <div class="text-sm text-slate-500"><span id="kpi-alerts-cities"></span>c · <span id="kpi-alerts-clinics"></span>cl</div>
+      </div>
+      <div class="text-xs text-slate-500 mt-1">Locations dropping &gt; 15%</div>
+      <div id="kpi-alerts-list" class="mt-3 text-xs text-slate-600 leading-relaxed"></div>
+    </div>
+  </section>
+
+  </div><!-- /tab bookings (KPI cards) -->
+
+  <!-- ===== TAB: CHANNEL DEEP-DIVE ===== -->
+  <div class="tab-panel" data-panel="channel">
+
+  <!-- Holistic view first: Channel · Current vs baseline -->
+  <section class="card p-4 mb-5">
+    <div class="flex items-center justify-between mb-2">
+      <div>
+        <div class="text-sm font-semibold text-slate-900">Channel · Current vs baseline</div>
+        <div class="text-xs text-slate-500" id="channelBaselineLabel"></div>
+      </div>
+      <div class="text-xs text-slate-500">Holistic view — pick a channel below to go deeper.</div>
+    </div>
+    <div style="height:280px"><canvas id="channelChart"></canvas></div>
+    <div id="channelBreakdown" class="mt-3 space-y-2"></div>
+    <div class="insight" id="i_channelBase"></div>
   </section>
 
   <!-- ===== LAYER 2 + 3: CHANNEL DEEP DIVE + CAMPAIGN DRILL ===== -->
@@ -230,121 +377,305 @@
     <div id="campaignTableWrap" class="mt-5"></div>
   </section>
 
-  <!-- Map + Bookings Trend -->
-  <section class="grid grid-cols-1 lg:grid-cols-5 gap-4 mb-5">
-    <div class="card p-4 lg:col-span-3">
-      <div class="flex items-center justify-between mb-3">
-        <div>
-          <div class="text-sm font-semibold text-slate-900">City performance map</div>
-          <div class="text-xs text-slate-500">Marker color = change vs baseline. Size = current bookings volume.</div>
-        </div>
-        <div class="text-xs text-slate-500"><span class="kbd">Click</span> a city to drill in</div>
+  <!-- Comparison layer: channel vs channel -->
+  <section class="card p-4 mb-5">
+    <div class="flex items-center justify-between mb-3">
+      <div>
+        <div class="text-sm font-semibold text-slate-900">Compare channels</div>
+        <div class="text-xs text-slate-500">Tap up to 4 channels. KPIs and Revenue·Spend chart side-by-side.</div>
       </div>
-      <div style="height:420px"><div id="map"></div></div>
+      <button id="channelCompareReset" class="text-xs text-slate-500 hover:text-slate-800 underline">Reset</button>
     </div>
-    <div class="card p-4 lg:col-span-2">
-      <div class="flex items-center justify-between mb-2">
-        <div>
-          <div class="text-sm font-semibold text-slate-900">Bookings trend</div>
-          <div class="text-xs text-slate-500" id="trend-sub">Actual vs expected by selected granularity</div>
+    <div id="channelCompareChips" class="flex flex-wrap gap-1.5 mb-3"></div>
+    <div id="channelCompareTable" style="overflow-x:auto"></div>
+    <div style="height:220px;margin-top:12px"><canvas id="channelCompareChart"></canvas></div>
+  </section>
+
+  </div><!-- /tab channel -->
+
+  <!-- ===== TAB: CITY PERFORMANCE ===== -->
+  <div class="tab-panel" data-panel="city">
+
+  <!-- City performance map -->
+  <section class="card p-4 mb-5">
+    <div class="flex items-center justify-between mb-3">
+      <div>
+        <div class="text-sm font-semibold text-slate-900">City performance map</div>
+        <div class="text-xs text-slate-500">Marker color = change vs baseline. Size = current bookings volume.</div>
+      </div>
+      <div class="text-xs text-slate-500"><span class="kbd">Click</span> a city to drill in</div>
+    </div>
+    <div style="height:420px"><div id="map"></div></div>
+    <div class="insight" id="i_map"></div>
+  </section>
+
+  </div><!-- /tab city (map) -->
+
+  <!-- back to Bookings tab for trend chart -->
+  <div class="tab-panel" data-panel="bookings">
+
+  <!-- Bookings trend (full-width) -->
+  <section class="card p-4 mb-5">
+    <div class="flex items-center justify-between mb-2 flex-wrap gap-2">
+      <div>
+        <div class="text-sm font-semibold text-slate-900">Bookings trend</div>
+        <div class="text-xs text-slate-500" id="trend-sub">Actual vs expected by selected granularity</div>
+      </div>
+      <div class="flex items-center gap-3">
+        <span class="text-[10px] font-semibold text-slate-500 uppercase tracking-wide">Window</span>
+        <div class="flex items-center gap-1" id="trend-window">
+          <span class="toggle-tab" data-win="30">30d</span>
+          <span class="toggle-tab" data-win="90">90d</span>
+          <span class="toggle-tab active" data-win="180">6m</span>
+          <span class="toggle-tab" data-win="365">1y</span>
+          <span class="toggle-tab" data-win="540">18m</span>
         </div>
         <div class="flex items-center gap-1" id="trend-toggle">
           <span class="toggle-tab active" data-show="expected">vs Expected</span>
           <span class="toggle-tab" data-show="prior">vs Prior</span>
         </div>
       </div>
-      <div style="height:380px"><canvas id="trend"></canvas></div>
     </div>
+    <div style="height:360px"><canvas id="trend"></canvas></div>
+    <div id="trendMovers" class="mt-2 text-xs text-slate-600"></div>
+    <div class="insight" id="i_trend"></div>
   </section>
 
-  <!-- Channel mix trend + Category mix trend -->
-  <section class="grid grid-cols-1 lg:grid-cols-5 gap-4 mb-5">
-    <div class="card p-4 lg:col-span-3">
-      <div class="flex items-center justify-between mb-2">
-        <div>
-          <div class="text-sm font-semibold text-slate-900">Channel mix trend</div>
-          <div class="text-xs text-slate-500">How each acquisition channel has moved over time</div>
+  <!-- Channel mix trend (full-width — category mix moved to its own tab) -->
+  <section class="card p-4 mb-5">
+    <div class="flex items-center justify-between mb-2 flex-wrap gap-2">
+      <div>
+        <div class="text-sm font-semibold text-slate-900">Channel mix trend</div>
+        <div class="text-xs text-slate-500">How each acquisition channel has moved over time</div>
+      </div>
+      <div class="flex items-center gap-3">
+        <span class="text-[10px] font-semibold text-slate-500 uppercase tracking-wide">Window</span>
+        <div class="flex items-center gap-1" id="channelTrendWindow">
+          <span class="toggle-tab" data-win="30">30d</span>
+          <span class="toggle-tab" data-win="90">90d</span>
+          <span class="toggle-tab active" data-win="180">6m</span>
+          <span class="toggle-tab" data-win="365">1y</span>
+          <span class="toggle-tab" data-win="540">18m</span>
         </div>
         <div class="flex items-center gap-1" id="channelTrendToggle">
           <span class="toggle-tab active" data-mode="volume">Volume</span>
           <span class="toggle-tab" data-mode="share">Share %</span>
         </div>
       </div>
-      <div style="height:300px"><canvas id="channelTrend"></canvas></div>
     </div>
-    <div class="card p-4 lg:col-span-2">
-      <div class="flex items-center justify-between mb-2">
-        <div>
-          <div class="text-sm font-semibold text-slate-900">Category mix trend</div>
-          <div class="text-xs text-slate-500">Bookings by category over time</div>
+    <div style="height:300px"><canvas id="channelTrend"></canvas></div>
+    <details class="mt-2"><summary class="text-xs text-blue-600 hover:underline cursor-pointer">🔎 Drill deeper — channel × city weekly</summary>
+      <div id="channelTrendDrill" class="mt-2 text-xs"></div>
+    </details>
+    <div class="insight" id="i_channelTrend"></div>
+  </section>
+
+  </div><!-- /tab bookings -->
+
+  <!-- ===== TAB: CATEGORY ===== -->
+  <div class="tab-panel" data-panel="category">
+
+  <!-- Category chips (top-level filter for this tab) -->
+  <section class="card p-4 mb-5">
+    <div class="flex flex-wrap gap-x-6 gap-y-3 items-center">
+      <div class="flex items-center flex-wrap gap-1.5">
+        <span class="text-[10px] font-semibold text-slate-500 uppercase tracking-wide mr-1">View category</span>
+        <div id="catTabChips" class="flex flex-wrap gap-1.5"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Category mix trend (moved from Bookings tab) -->
+  <section class="card p-4 mb-5">
+    <div class="flex items-center justify-between mb-2 flex-wrap gap-2">
+      <div>
+        <div class="text-sm font-semibold text-slate-900">Category mix trend</div>
+        <div class="text-xs text-slate-500">Bookings by category over time</div>
+      </div>
+      <div class="flex items-center gap-3">
+        <span class="text-[10px] font-semibold text-slate-500 uppercase tracking-wide">Window</span>
+        <div class="flex items-center gap-1" id="categoryTrendWindow">
+          <span class="toggle-tab" data-win="30">30d</span>
+          <span class="toggle-tab" data-win="90">90d</span>
+          <span class="toggle-tab active" data-win="180">6m</span>
+          <span class="toggle-tab" data-win="365">1y</span>
+          <span class="toggle-tab" data-win="540">18m</span>
         </div>
         <div class="flex items-center gap-1" id="categoryTrendToggle">
           <span class="toggle-tab active" data-mode="volume">Volume</span>
           <span class="toggle-tab" data-mode="share">Share %</span>
         </div>
       </div>
-      <div style="height:300px"><canvas id="categoryTrend"></canvas></div>
+    </div>
+    <div style="height:300px"><canvas id="categoryTrend"></canvas></div>
+    <details class="mt-2"><summary class="text-xs text-blue-600 hover:underline cursor-pointer">🔎 Drill deeper — category × city weekly</summary>
+      <div id="categoryTrendDrill" class="mt-2 text-xs"></div>
+    </details>
+    <div class="insight" id="i_categoryTrend"></div>
+  </section>
+
+  <!-- Category · Current vs baseline (moved from Executive) -->
+  <section class="card p-4 mb-5">
+    <div class="flex items-center justify-between mb-2">
+      <div>
+        <div class="text-sm font-semibold text-slate-900">Category · Current vs baseline</div>
+        <div class="text-xs text-slate-500" id="categoryBaselineLabel"></div>
+      </div>
+    </div>
+    <div style="height:240px"><canvas id="categoryChart"></canvas></div>
+    <div id="categoryBreakdown" class="mt-3 space-y-2"></div>
+    <div class="insight" id="i_categoryBase"></div>
+  </section>
+
+  <!-- Category drill: when single category selected, show its city + channel breakdown -->
+  <section class="card p-4 mb-5" id="categoryDrillDeep">
+    <div class="flex items-center justify-between mb-3">
+      <div>
+        <div class="text-sm font-semibold text-slate-900">Where is this category going?</div>
+        <div class="text-xs text-slate-500" id="categoryDrillSub">Pick a single category above to expose its city + channel drivers.</div>
+      </div>
+    </div>
+    <div id="categoryDrillContent"></div>
+  </section>
+
+  <!-- Category comparison -->
+  <section class="card p-4 mb-5">
+    <div class="flex items-center justify-between mb-3">
+      <div>
+        <div class="text-sm font-semibold text-slate-900">Compare categories</div>
+        <div class="text-xs text-slate-500">All three side-by-side · current 7d vs prior 7d.</div>
+      </div>
+    </div>
+    <div id="categoryCompareTable" style="overflow-x:auto"></div>
+    <div style="height:240px;margin-top:12px"><canvas id="categoryCompareChart"></canvas></div>
+  </section>
+
+  </div><!-- /tab category -->
+
+  <!-- ===== TAB: CITY PERFORMANCE (table) ===== -->
+  <div class="tab-panel" data-panel="city">
+
+  <!-- City performance breakdown -->
+  <section class="card p-4 mb-5">
+    <div class="flex items-center justify-between mb-3">
+      <div>
+        <div class="text-sm font-semibold text-slate-900">City performance breakdown</div>
+        <div class="text-xs text-slate-500">Click a row to filter the dashboard to that city.</div>
+      </div>
+      <div class="text-xs text-slate-500 flex items-center" id="city-count"></div>
+    </div>
+    <div class="scroll-y">
+      <table class="tbl" id="cityTable">
+        <thead>
+          <tr>
+            <th class="sortable" data-k="city">City</th>
+            <th class="sortable" data-k="tier">Tier</th>
+            <th class="sortable" data-k="clinics">Clinics</th>
+            <th class="sortable" data-k="curr">Current</th>
+            <th class="sortable" data-k="prior">Baseline</th>
+            <th class="sortable desc" data-k="chg">Change</th>
+            <th>Status</th>
+            <th>Diagnosis</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <div class="insight" id="i_cityTable"></div>
+  </section>
+
+  <!-- Deeper drill: city → dropping clinics → channels feeding those clinics -->
+  <section class="card p-4 mb-5" id="cityDrillDeep">
+    <div class="flex items-center justify-between mb-3">
+      <div>
+        <div class="text-sm font-semibold text-slate-900">Where is the leak?</div>
+        <div class="text-xs text-slate-500" id="cityDrillSub">Pick a single city above to expose the drill chain: dropping clinics → channels feeding them.</div>
+      </div>
+    </div>
+    <div id="cityDrillContent"></div>
+  </section>
+
+  <!-- Comparison layer: city vs city -->
+  <section class="card p-4 mb-5">
+    <div class="flex items-center justify-between mb-3">
+      <div>
+        <div class="text-sm font-semibold text-slate-900">Compare cities</div>
+        <div class="text-xs text-slate-500">Tap up to 4 cities. KPIs and trend rendered side-by-side.</div>
+      </div>
+      <button id="cityCompareReset" class="text-xs text-slate-500 hover:text-slate-800 underline">Reset</button>
+    </div>
+    <div id="cityCompareChips" class="flex flex-wrap gap-1.5 mb-3"></div>
+    <div id="cityCompareTable" style="overflow-x:auto"></div>
+    <div style="height:220px;margin-top:12px"><canvas id="cityCompareChart"></canvas></div>
+  </section>
+
+  </div><!-- /tab city -->
+
+  <!-- (Revenue & Mix tab removed — content redistributed to Channel Deep-Dive and Executive Summary) -->
+
+  <!-- ===== TAB: CLINIC PERFORMANCE ===== -->
+  <div class="tab-panel" data-panel="clinic">
+
+  <!-- Clinic maturity filter -->
+  <section class="card p-4 mb-5">
+    <div class="flex flex-wrap gap-x-6 gap-y-3 items-center">
+      <div class="flex items-center flex-wrap gap-1.5">
+        <span class="text-[10px] font-semibold text-slate-500 uppercase tracking-wide mr-1">Clinic maturity</span>
+        <div id="filter-maturity" class="flex flex-wrap gap-1.5"></div>
+      </div>
+      <div class="ml-auto text-xs text-slate-500" id="clinic-count"></div>
     </div>
   </section>
 
-  <!-- City RYG table + Channel current vs baseline -->
-  <section class="grid grid-cols-1 lg:grid-cols-5 gap-4 mb-5">
-    <div class="card p-4 lg:col-span-3">
-      <div class="flex items-center justify-between mb-3">
-        <div>
-          <div class="text-sm font-semibold text-slate-900">City performance breakdown</div>
-          <div class="text-xs text-slate-500">Click a row to filter the dashboard to that city.</div>
-        </div>
-        <div class="text-xs text-slate-500 flex items-center" id="city-count"></div>
-      </div>
-      <div class="scroll-y">
-        <table class="tbl" id="cityTable">
-          <thead>
-            <tr>
-              <th class="sortable" data-k="city">City</th>
-              <th class="sortable" data-k="tier">Tier</th>
-              <th class="sortable" data-k="clinics">Clinics</th>
-              <th class="sortable" data-k="curr">Current</th>
-              <th class="sortable" data-k="prior">Baseline</th>
-              <th class="sortable desc" data-k="chg">Change</th>
-              <th>Status</th>
-              <th>Diagnosis</th>
-            </tr>
-          </thead>
-          <tbody></tbody>
-        </table>
+  <!-- Clinic-level performance -->
+  <section class="card p-4 mb-5">
+    <div class="flex items-center justify-between mb-3">
+      <div>
+        <div class="text-sm font-semibold text-slate-900">Clinic-level performance</div>
+        <div class="text-xs text-slate-500">Grouped by city. Worst-performing clinics at the top of each group. Maturity filter applies.</div>
       </div>
     </div>
-
-    <div class="card p-4 lg:col-span-2">
-      <div class="text-sm font-semibold text-slate-900">Channel · Current vs baseline</div>
-      <div class="text-xs text-slate-500 mb-3" id="channelBaselineLabel"></div>
-      <div style="height:260px"><canvas id="channelChart"></canvas></div>
-      <div id="channelBreakdown" class="mt-3 space-y-2"></div>
-    </div>
+    <div id="clinicsByCity" class="space-y-3"></div>
+    <div class="insight" id="i_clinics"></div>
   </section>
 
-  <!-- Clinics drill-down + Category breakdown -->
-  <section class="grid grid-cols-1 lg:grid-cols-5 gap-4 mb-10">
-    <div class="card p-4 lg:col-span-3">
-      <div class="flex items-center justify-between mb-3">
-        <div>
-          <div class="text-sm font-semibold text-slate-900">Clinic-level performance</div>
-          <div class="text-xs text-slate-500">Grouped by city. Worst-performing clinics at the top of each group.</div>
-        </div>
-        <div class="text-xs text-slate-500" id="clinic-count"></div>
+  <!-- Comparison layer: clinic vs clinic -->
+  <section class="card p-4 mb-5">
+    <div class="flex items-center justify-between mb-3">
+      <div>
+        <div class="text-sm font-semibold text-slate-900">Compare clinics</div>
+        <div class="text-xs text-slate-500">Tap up to 4 clinics. KPIs and bookings trend side-by-side.</div>
       </div>
-      <div id="clinicsByCity" class="space-y-3 scroll-y"></div>
+      <button id="clinicCompareReset" class="text-xs text-slate-500 hover:text-slate-800 underline">Reset</button>
     </div>
-    <div class="card p-4 lg:col-span-2">
-      <div class="text-sm font-semibold text-slate-900">Category · Current vs baseline</div>
-      <div class="text-xs text-slate-500 mb-3" id="categoryBaselineLabel"></div>
-      <div style="height:220px"><canvas id="categoryChart"></canvas></div>
-      <div id="categoryBreakdown" class="mt-3 space-y-2"></div>
-    </div>
+    <div id="clinicCompareChips" class="flex flex-wrap gap-1.5 mb-3 max-h-32 overflow-y-auto"></div>
+    <div id="clinicCompareTable" style="overflow-x:auto"></div>
+    <div style="height:220px;margin-top:12px"><canvas id="clinicCompareChart"></canvas></div>
   </section>
 
-  <footer class="text-xs text-slate-400 pb-8 text-center">Sample data, deterministic seed · 18 months of history · Replace <span class="kbd">BOOKINGS</span> data in source to plug in real numbers.</footer>
+  </div><!-- /tab clinic -->
+
+  <footer class="text-xs text-slate-400 pb-8 text-center">Sample data, deterministic seed · 18 months of history · AI insights are mock until live API wired · Replace <span class="kbd">BOOKINGS</span> data in source to plug in real numbers.</footer>
+</div>
+
+<!-- Chatbot -->
+<div class="chat-panel hidden" id="chatPanel">
+  <div class="chat-header flex items-center justify-between">
+    <div>
+      <div class="text-sm font-semibold">Ask the dashboard</div>
+      <div class="text-[11px] opacity-75">Mock responses · v1</div>
+    </div>
+    <button id="closeChat" class="text-white opacity-75 hover:opacity-100 text-xl leading-none">×</button>
+  </div>
+  <div class="chat-body" id="chatBody"></div>
+  <div class="flex flex-wrap gap-1.5 px-3 pb-2" id="chatSuggestions"></div>
+  <div class="chat-input">
+    <input type="text" id="chatInput" placeholder="Ask about any number on this page…" />
+    <button id="sendChat">Send</button>
+  </div>
+</div>
+<div class="chat-fab" id="chatFab" title="Ask the dashboard">
+  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
 </div>
 
 <script>
@@ -482,7 +813,11 @@ CLINICS.forEach(cl => {
     const leadsTrend = isSlotConstrained ? (longMult * recentMult) : trendApplied;
     const leadsClean = expected * leadsMult * leadsTrend * (0.9 + rnd()*0.2);
 
-    series.push({date:d, total:actual, expected, byCat, byCh, leads:leadsClean});
+    // Consultations done: ~70-85% of bookings (B2D). Drops further when shock present.
+    const doneRatio = (0.74 + rnd()*0.11) * (hasShock && idx >= shockStart ? 0.92 : 1.0);
+    const doneClean = actual * doneRatio;
+
+    series.push({date:d, total:actual, expected, byCat, byCh, leads:leadsClean, done:doneClean});
   }
   cl.isSlotConstrained = isSlotConstrained;
   cl.hasShock = hasShock;
@@ -504,6 +839,10 @@ const STATE = {
   trendShow: 'expected', // 'expected' or 'prior'
   channelTrendMode: 'volume',
   categoryTrendMode: 'volume',
+  // Per-chart date-range overrides (in days). null = auto from granularity.
+  trendWindowDays: 180,
+  channelTrendWindowDays: 180,
+  categoryTrendWindowDays: 180,
 };
 
 const GRAN_DEFS = {
@@ -534,6 +873,11 @@ function dayLeads(rec){
   let chFrac=0;  STATE.chans.forEach(id=>chFrac  += rec.byCh[id] /Math.max(rec.total,1e-9));
   return rec.leads * catFrac * chFrac;
 }
+function dayDone(rec){
+  let catFrac=0; STATE.cats.forEach(id=>catFrac += rec.byCat[id]/Math.max(rec.total,1e-9));
+  let chFrac=0;  STATE.chans.forEach(id=>chFrac  += rec.byCh[id] /Math.max(rec.total,1e-9));
+  return rec.done * catFrac * chFrac;
+}
 
 // Sum a specific date window across a set of clinic ids
 function sumWindow(clinicIds, startIdx, endIdx /*exclusive*/, accessor){
@@ -545,18 +889,20 @@ function sumWindow(clinicIds, startIdx, endIdx /*exclusive*/, accessor){
   return s;
 }
 
-// Compute current bookings + baseline bookings + leads + change for given clinic ids
-function aggForBaseline(clinicIds){
-  const pdays = periodDays();
+// Compute current bookings + baseline bookings + leads + done + change for given clinic ids.
+// Accepts optional override of period length (in days) — used by per-chart date-range filter.
+function aggForBaseline(clinicIds, pdaysOverride){
+  const pdays = pdaysOverride || periodDays();
   const endIdx = DAYS;
   const currStart = endIdx - pdays;
-  let curr=0, base=0, leadsCurr=0, leadsBase=0, expectedCurr=0;
+  let curr=0, base=0, leadsCurr=0, leadsBase=0, expectedCurr=0, doneCurr=0, doneBase=0;
   clinicIds.forEach(id => {
     const s = BOOKINGS[id];
     for (let i=currStart; i<endIdx; i++){
       curr += dayBookings(s[i]);
       leadsCurr += dayLeads(s[i]);
       expectedCurr += dayExpected(s[i]);
+      doneCurr += dayDone(s[i]);
     }
   });
   if (STATE.baseline === 'prior'){
@@ -566,30 +912,31 @@ function aggForBaseline(clinicIds){
       for (let i=priorStart; i<currStart; i++){
         base += dayBookings(s[i]);
         leadsBase += dayLeads(s[i]);
+        doneBase += dayDone(s[i]);
       }
     });
   } else if (STATE.baseline === 'expected'){
     base = expectedCurr;
-    // leads baseline: use leads in same window — there is no "expected leads", so use leads themselves vs curr — keep cvr comparison sensible
     leadsBase = leadsCurr;
+    doneBase = doneCurr;
   } else if (STATE.baseline === '8w_avg'){
-    // 8-week-avg baseline: average daily bookings over the 8 weeks (56 days) immediately before the current window,
-    // then scale to current window length.
     const lookback = 56;
     const lbStart = currStart - lookback;
-    let lbTotal=0, lbLeads=0;
+    let lbTotal=0, lbLeads=0, lbDone=0;
     clinicIds.forEach(id => {
       const s = BOOKINGS[id];
       for (let i=lbStart; i<currStart; i++){
         lbTotal += dayBookings(s[i]);
         lbLeads += dayLeads(s[i]);
+        lbDone  += dayDone(s[i]);
       }
     });
     base = (lbTotal/lookback) * pdays;
     leadsBase = (lbLeads/lookback) * pdays;
+    doneBase = (lbDone/lookback) * pdays;
   }
   const change = base > 0 ? (curr-base)/base : 0;
-  return {curr, base, change, leadsCurr, leadsBase, expectedCurr};
+  return {curr, base, change, leadsCurr, leadsBase, expectedCurr, doneCurr, doneBase};
 }
 
 function clinicAgg(clinicId){ return aggForBaseline([clinicId]); }
@@ -765,16 +1112,27 @@ function activeClinicIds(){ const ids = new Set(activeCityIds()); return CLINICS
 /* =========================================================
    6. KPIs
    ========================================================= */
-let sparkBookings, sparkCvr;
+let sparkBookings, sparkDone, sparkL2B, sparkB2D;
+function chgClass(c){ return 'text-sm font-semibold ' + (c>0.05?'text-emerald-600':c<-0.15?'text-red-600':'text-amber-600'); }
 function renderKPIs(){
   const clinicIds = activeClinicIds();
   const a = aggForBaseline(clinicIds);
+  // Bookings
   document.getElementById('kpi-bookings').textContent = fmt(a.curr);
   document.getElementById('kpi-bookings-prior').textContent = `${fmt(a.base)} baseline`;
   document.getElementById('kpi-bookings-baseline-label').textContent = baselineLabel();
   const chgEl = document.getElementById('kpi-bookings-chg');
   chgEl.textContent = pct(a.change);
-  chgEl.className = 'text-sm font-semibold ' + (a.change>0.05?'text-emerald-600':a.change<-0.15?'text-red-600':'text-amber-600');
+  chgEl.className = chgClass(a.change);
+
+  // Consultations done
+  const doneChg = a.doneBase>0 ? (a.doneCurr - a.doneBase)/a.doneBase : 0;
+  document.getElementById('kpi-done').textContent = fmt(a.doneCurr);
+  document.getElementById('kpi-done-prior').textContent = `${fmt(a.doneBase)} baseline`;
+  document.getElementById('kpi-done-baseline-label').textContent = baselineLabel();
+  const doneEl = document.getElementById('kpi-done-chg');
+  doneEl.textContent = pct(doneChg);
+  doneEl.className = chgClass(doneChg);
 
   // Drop alerts
   let dropCities=0, dropClinics=0, dropList=[];
@@ -788,30 +1146,43 @@ function renderKPIs(){
   document.getElementById('kpi-alerts-clinics').textContent = dropClinics;
   document.getElementById('kpi-alerts-list').innerHTML = dropList.slice(0,4).map(s => `<span class="pill red mr-1 mb-1"><span class="dot"></span>${s}</span>`).join('') + (dropList.length>4?` <span class="text-slate-400">+${dropList.length-4} more</span>`:'');
 
-  // Conversion
-  const cvrCurr = a.leadsCurr>0 ? a.curr/a.leadsCurr : 0;
-  const cvrBase = a.leadsBase>0 ? a.base/a.leadsBase : 0;
-  const cvrChg = cvrBase>0 ? (cvrCurr-cvrBase)/cvrBase : 0;
-  document.getElementById('kpi-cvr').textContent = (cvrCurr*100).toFixed(1)+'%';
-  const cvrChgEl = document.getElementById('kpi-cvr-chg');
-  cvrChgEl.textContent = pct(cvrChg);
-  cvrChgEl.className = 'text-sm font-semibold ' + (cvrChg>0.05?'text-emerald-600':cvrChg<-0.15?'text-red-600':'text-amber-600');
+  // L2B (lead → booking)
+  const l2bCurr = a.leadsCurr>0 ? a.curr/a.leadsCurr : 0;
+  const l2bBase = a.leadsBase>0 ? a.base/a.leadsBase : 0;
+  const l2bChg = l2bBase>0 ? (l2bCurr-l2bBase)/l2bBase : 0;
+  document.getElementById('kpi-l2b').textContent = (l2bCurr*100).toFixed(1)+'%';
+  const l2bEl = document.getElementById('kpi-l2b-chg');
+  l2bEl.textContent = pct(l2bChg);
+  l2bEl.className = chgClass(l2bChg);
 
-  // Sparklines (over last ~90 days of bookings & cvr)
+  // B2D (booking → done)
+  const b2dCurr = a.curr>0 ? a.doneCurr/a.curr : 0;
+  const b2dBase = a.base>0 ? a.doneBase/a.base : 0;
+  const b2dChg = b2dBase>0 ? (b2dCurr-b2dBase)/b2dBase : 0;
+  document.getElementById('kpi-b2d').textContent = (b2dCurr*100).toFixed(1)+'%';
+  const b2dEl = document.getElementById('kpi-b2d-chg');
+  b2dEl.textContent = pct(b2dChg);
+  b2dEl.className = chgClass(b2dChg);
+
+  // Sparklines — over last ~90 days
   const sparkDays = 90;
   const series = dailyTotalsForRange(clinicIds, DAYS-sparkDays, DAYS);
   drawSpark('spark-bookings', series.bookings, '#0f172a', sparkBookings, x=>sparkBookings=x);
-  drawSpark('spark-cvr',      series.cvr,      '#0ea5e9', sparkCvr,      x=>sparkCvr=x);
+  drawSpark('spark-done',     series.done,     '#7c3aed', sparkDone,     x=>sparkDone=x);
+  drawSpark('spark-l2b',      series.l2b,      '#0ea5e9', sparkL2B,      x=>sparkL2B=x);
+  drawSpark('spark-b2d',      series.b2d,      '#10b981', sparkB2D,      x=>sparkB2D=x);
 }
 function dailyTotalsForRange(clinicIds, startIdx, endIdx){
-  const bookings = [], cvr = [];
+  const bookings = [], done = [], l2b = [], b2d = [];
   for (let i=startIdx; i<endIdx; i++){
-    let b=0, l=0;
-    clinicIds.forEach(id => { const rec = BOOKINGS[id][i]; b += dayBookings(rec); l += dayLeads(rec); });
+    let b=0, l=0, d=0;
+    clinicIds.forEach(id => { const rec = BOOKINGS[id][i]; b += dayBookings(rec); l += dayLeads(rec); d += dayDone(rec); });
     bookings.push(b);
-    cvr.push(l>0 ? (b/l)*100 : 0);
+    done.push(d);
+    l2b.push(l>0 ? (b/l)*100 : 0);
+    b2d.push(b>0 ? (d/b)*100 : 0);
   }
-  return {bookings, cvr};
+  return {bookings, done, l2b, b2d};
 }
 function drawSpark(canvasId, data, color, existing, setter){
   if (existing) existing.destroy();
@@ -901,9 +1272,8 @@ function bucketize(dailyValues, dailyDates){
 
 function renderTrend(){
   const clinicIds = activeClinicIds();
-  // Show ~12 buckets of history
-  const buckets = STATE.gran==='day'?60 : STATE.gran==='week'?26 : 12;
-  const days = buckets * GRAN_DEFS[STATE.gran].daysPer;
+  // Per-chart window overrides global "buckets" calculation
+  const days = STATE.trendWindowDays || (STATE.gran==='day'?60 : STATE.gran==='week'?26*7 : 12*30);
   const startIdx = Math.max(0, DAYS-days);
   const dailyBookings=[], dailyExpected=[];
   const dates = [];
@@ -939,6 +1309,17 @@ function renderTrend(){
       }
     }
   });
+
+  // Movers caption — last bucket vs prior bucket
+  const moversEl = document.getElementById('trendMovers');
+  if (moversEl && b1.values.length >= 2){
+    const cur = b1.values[b1.values.length-1];
+    const prev = b1.values[b1.values.length-2];
+    const chg = prev>0 ? (cur-prev)/prev : 0;
+    const arrow = chg>0 ? '⬆' : chg<0 ? '⬇' : '→';
+    const color = chg>0.05?'#10b981':chg<-0.15?'#ef4444':'#f59e0b';
+    moversEl.innerHTML = `Latest bucket <b>${fmt(cur)}</b> vs prior <b>${fmt(prev)}</b> · <span style="color:${color};font-weight:600">${arrow} ${pct(chg)}</span> · Window: ${days}d`;
+  }
 }
 
 /* =========================================================
@@ -947,8 +1328,7 @@ function renderTrend(){
 let channelTrendChart;
 function renderChannelTrend(){
   const clinicIds = activeClinicIds();
-  const buckets = STATE.gran==='day'?60 : STATE.gran==='week'?26 : 12;
-  const days = buckets * GRAN_DEFS[STATE.gran].daysPer;
+  const days = STATE.channelTrendWindowDays || (STATE.gran==='day'?60 : STATE.gran==='week'?26*7 : 12*30);
   const startIdx = Math.max(0, DAYS-days);
 
   // Build per-channel daily totals
@@ -993,6 +1373,50 @@ function renderChannelTrend(){
       }
     }
   });
+
+  // Drill: channel × city for current period vs prior
+  const drillEl = document.getElementById('channelTrendDrill');
+  if (drillEl){
+    drillEl.innerHTML = renderChannelByCityDrill();
+  }
+}
+
+// Helper: render channel × city matrix with WoW change
+function renderChannelByCityDrill(){
+  const pdays = periodDays();
+  const endIdx = DAYS, currStart = endIdx - pdays, priorStart = currStart - pdays;
+  const cityIds = activeCityIds();
+  const chs = CHANNELS.filter(c=>STATE.chans.has(c.id));
+  // matrix[cityId][chId] = {curr, prior}
+  const matrix = {};
+  cityIds.forEach(cid => {
+    matrix[cid] = {};
+    chs.forEach(ch => matrix[cid][ch.id] = {curr:0, prior:0});
+    const clinicIds = CLINICS.filter(cl=>cl.cityId===cid).map(cl=>cl.id);
+    clinicIds.forEach(id => {
+      const s = BOOKINGS[id];
+      for (let i=currStart; i<endIdx; i++){
+        const rec=s[i]; let catFrac=0; STATE.cats.forEach(c=>catFrac+=rec.byCat[c]/Math.max(rec.total,1e-9));
+        chs.forEach(ch => matrix[cid][ch.id].curr += rec.byCh[ch.id]*catFrac);
+      }
+      for (let i=priorStart; i<currStart; i++){
+        const rec=s[i]; let catFrac=0; STATE.cats.forEach(c=>catFrac+=rec.byCat[c]/Math.max(rec.total,1e-9));
+        chs.forEach(ch => matrix[cid][ch.id].prior += rec.byCh[ch.id]*catFrac);
+      }
+    });
+  });
+  const hdr = `<tr><th class="text-left">City</th>` + chs.map(c=>`<th class="text-right" style="color:${c.color}">${c.name}</th>`).join('') + `</tr>`;
+  const rows = cityIds.map(cid => {
+    const c = CITIES.find(x=>x.id===cid);
+    const tds = chs.map(ch => {
+      const {curr, prior} = matrix[cid][ch.id];
+      const chg = prior>0 ? (curr-prior)/prior : 0;
+      const col = chg>0.05?'#10b981':chg<-0.15?'#ef4444':'#64748b';
+      return `<td class="text-right py-1 px-2">${fmt(curr)} <span style="color:${col};font-size:10px;font-weight:600">${pct(chg)}</span></td>`;
+    }).join('');
+    return `<tr><td class="py-1 px-2 font-medium">${c.name}</td>${tds}</tr>`;
+  }).join('');
+  return `<div style="overflow-x:auto"><table class="w-full text-xs" style="border-collapse:collapse"><thead><tr style="border-bottom:1px solid #e2e8f0">${hdr}</tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 
 /* =========================================================
@@ -1001,8 +1425,7 @@ function renderChannelTrend(){
 let categoryTrendChart;
 function renderCategoryTrend(){
   const clinicIds = activeClinicIds();
-  const buckets = STATE.gran==='day'?60 : STATE.gran==='week'?26 : 12;
-  const days = buckets * GRAN_DEFS[STATE.gran].daysPer;
+  const days = STATE.categoryTrendWindowDays || (STATE.gran==='day'?60 : STATE.gran==='week'?26*7 : 12*30);
   const startIdx = Math.max(0, DAYS-days);
 
   const perCat = {sh:[],sti:[],mh:[]};
@@ -1040,6 +1463,48 @@ function renderCategoryTrend(){
       }
     }
   });
+
+  // Drill: category × city
+  const drillEl = document.getElementById('categoryTrendDrill');
+  if (drillEl){
+    drillEl.innerHTML = renderCategoryByCityDrill();
+  }
+}
+
+function renderCategoryByCityDrill(){
+  const pdays = periodDays();
+  const endIdx = DAYS, currStart = endIdx - pdays, priorStart = currStart - pdays;
+  const cityIds = activeCityIds();
+  const cats = CATEGORIES.filter(c=>STATE.cats.has(c.id));
+  const matrix = {};
+  cityIds.forEach(cid => {
+    matrix[cid] = {};
+    cats.forEach(cat => matrix[cid][cat.id] = {curr:0, prior:0});
+    const clinicIds = CLINICS.filter(cl=>cl.cityId===cid).map(cl=>cl.id);
+    clinicIds.forEach(id => {
+      const s = BOOKINGS[id];
+      for (let i=currStart; i<endIdx; i++){
+        const rec=s[i]; let chFrac=0; STATE.chans.forEach(c=>chFrac+=rec.byCh[c]/Math.max(rec.total,1e-9));
+        cats.forEach(cat => matrix[cid][cat.id].curr += rec.byCat[cat.id]*chFrac);
+      }
+      for (let i=priorStart; i<currStart; i++){
+        const rec=s[i]; let chFrac=0; STATE.chans.forEach(c=>chFrac+=rec.byCh[c]/Math.max(rec.total,1e-9));
+        cats.forEach(cat => matrix[cid][cat.id].prior += rec.byCat[cat.id]*chFrac);
+      }
+    });
+  });
+  const hdr = `<tr><th class="text-left">City</th>` + cats.map(c=>`<th class="text-right" style="color:${c.color}">${c.name}</th>`).join('') + `</tr>`;
+  const rows = cityIds.map(cid => {
+    const c = CITIES.find(x=>x.id===cid);
+    const tds = cats.map(cat => {
+      const {curr, prior} = matrix[cid][cat.id];
+      const chg = prior>0 ? (curr-prior)/prior : 0;
+      const col = chg>0.05?'#10b981':chg<-0.15?'#ef4444':'#64748b';
+      return `<td class="text-right py-1 px-2">${fmt(curr)} <span style="color:${col};font-size:10px;font-weight:600">${pct(chg)}</span></td>`;
+    }).join('');
+    return `<tr><td class="py-1 px-2 font-medium">${c.name}</td>${tds}</tr>`;
+  }).join('');
+  return `<div style="overflow-x:auto"><table class="w-full text-xs" style="border-collapse:collapse"><thead><tr style="border-bottom:1px solid #e2e8f0">${hdr}</tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 
 /* =========================================================
@@ -1376,10 +1841,1227 @@ document.getElementById('categoryTrendToggle').addEventListener('click', e => {
   document.querySelectorAll('#categoryTrendToggle .toggle-tab').forEach(t => t.classList.toggle('active', t===tab));
   renderCategoryTrend();
 });
+// Per-chart date-range window handlers
+function wireWindowToggle(hostId, stateKey, renderFn){
+  const host = document.getElementById(hostId);
+  if (!host) return;
+  host.addEventListener('click', e => {
+    const tab = e.target.closest('.toggle-tab'); if (!tab) return;
+    STATE[stateKey] = parseInt(tab.dataset.win, 10);
+    host.querySelectorAll('.toggle-tab').forEach(t => t.classList.toggle('active', t===tab));
+    renderFn();
+  });
+}
+wireWindowToggle('trend-window',           'trendWindowDays',         renderTrend);
+wireWindowToggle('channelTrendWindow',     'channelTrendWindowDays',  renderChannelTrend);
+wireWindowToggle('categoryTrendWindow',    'categoryTrendWindowDays', renderCategoryTrend);
 
-initMap();
-renderAll();
-setTimeout(()=>map.invalidateSize(), 200);
+/* =============================================================
+   TABS + MATURITY FILTER + AI INSIGHTS + CHATBOT
+   ============================================================= */
+
+// Helper: aggregate {curr, base} by visible city, used by AI insights + chat
+function getAggDataByCity(){
+  const out = {};
+  for (const cid of activeCityIds()) {
+    const a = cityAgg(cid);
+    out[cid] = {curr: a.curr, base: a.base};
+  }
+  return out;
+}
+
+
+// Deterministic maturity assignment per clinic
+CLINICS.forEach(cl => {
+  let h = 0; for (const c of cl.id) h = (h*31 + c.charCodeAt(0)) >>> 0;
+  const bucket = h % 100;
+  cl.maturity = bucket < 25 ? 'new' : bucket < 60 ? 'growing' : 'mature';
+});
+
+const MATURITIES = [
+  {id:'all',     name:'All clinics'},
+  {id:'new',     name:'Newly Launched · 0–90d'},
+  {id:'growing', name:'Maturing · 90–365d'},
+  {id:'mature',  name:'Matured · 365+d'},
+];
+STATE.maturity = 'all';
+
+const TAB_DEFS = [
+  {id:'exec',     name:'Executive Summary'},
+  {id:'bookings', name:'Bookings & Demand'},
+  {id:'city',     name:'City Performance'},
+  {id:'clinic',   name:'Clinic Performance'},
+  {id:'channel',  name:'Channel Deep-Dive'},
+  {id:'revenue',  name:'Revenue & Mix'},
+];
+STATE.tab = 'exec';
+
+function setActiveTab(tabId){
+  STATE.tab = tabId;
+  document.querySelectorAll('.tabnav .tab').forEach(el => el.classList.toggle('active', el.dataset.tab === tabId));
+  document.querySelectorAll('.tab-panel').forEach(el => el.classList.toggle('active', el.dataset.panel === tabId));
+  // Defer re-render until after browser layout so canvases in the now-visible tab have non-zero width
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      renderAll();
+      if (tabId === 'city' && window.map) { map.invalidateSize(); }
+    });
+  });
+}
+document.querySelectorAll('.tabnav .tab').forEach(el => el.onclick = () => setActiveTab(el.dataset.tab));
+
+function renderMaturityFilter(){
+  const el = document.getElementById('filter-maturity');
+  if (!el) return;
+  el.innerHTML = MATURITIES.map(m => `<span class="chip ${STATE.maturity===m.id?'active':''}" data-m="${m.id}">${m.name}</span>`).join('');
+  el.querySelectorAll('.chip').forEach(c => c.onclick = () => { STATE.maturity = c.dataset.m; renderAll(); });
+}
+
+// Patch renderClinicList to also filter by maturity
+const _origRenderClinicList = renderClinicList;
+renderClinicList = function(){
+  const matFilter = STATE.maturity || 'all';
+  const visibleCityIds = activeCityIds();
+  const sections = visibleCityIds.map(id => {
+    const city = CITIES.find(c=>c.id===id);
+    let clinics = CLINICS.filter(cl => cl.cityId===id);
+    if (matFilter !== 'all') clinics = clinics.filter(cl => cl.maturity === matFilter);
+    const rows = clinics.map(cl => {
+      const a = clinicAgg(cl.id);
+      return { name:cl.name, curr:a.curr, prior:a.base, chg:a.change, status:statusOf(a.change), diag:diagnose(a), slot:cl.isSlotConstrained, maturity:cl.maturity };
+    }).sort((x,y)=>x.chg-y.chg);
+    if (rows.length === 0) return null;
+    const cityA = cityAgg(id);
+    return { city:city.name, tier:city.tier, clinics:rows, change:cityA.change, status:statusOf(cityA.change), diag:diagnose(cityA) };
+  }).filter(Boolean).sort((a,b)=>a.change-b.change);
+
+  const totalClinics = sections.reduce((s,sec)=>s+sec.clinics.length,0);
+  const allClinics = CLINICS.length;
+  const matLabel = matFilter==='all' ? '' : ` · maturity: ${MATURITIES.find(m=>m.id===matFilter).name}`;
+  const ccEl = document.getElementById('clinic-count');
+  if (ccEl) ccEl.innerHTML = `${totalClinics} of ${allClinics} clinics${matLabel}`;
+  const maxCurr = Math.max(...sections.flatMap(s=>s.clinics.map(c=>c.curr)),1);
+
+  document.getElementById('clinicsByCity').innerHTML = sections.map((sec, idx) => `
+    <details ${idx<3?'open':''} class="border border-slate-200 rounded-lg">
+      <summary class="flex items-center justify-between p-3 hover:bg-slate-50 rounded-lg cursor-pointer">
+        <div class="flex items-center gap-3">
+          <span class="pill ${sec.status}"><span class="dot"></span></span>
+          <span class="font-semibold text-slate-900">${sec.city}</span>
+          <span class="text-xs text-slate-500 px-2 py-0.5 border border-slate-200 rounded">T${sec.tier==='t1'?'1':'2'}</span>
+          <span class="text-xs text-slate-500">${sec.clinics.length} clinics</span>
+          ${sec.diag ? `<span class="pill ${sec.diag} ml-1" style="font-size:10px;padding:1px 6px">${sec.diag==='slot'?'slot issue':'demand issue'}</span>` : ''}
+        </div>
+        <div class="flex items-center gap-3 text-xs">
+          <span style="color:${sec.status==='red'?'#ef4444':sec.status==='green'?'#10b981':'#f59e0b'};font-weight:600">${pct(sec.change)}</span>
+          <span class="text-slate-400">▾</span>
+        </div>
+      </summary>
+      <div class="border-t border-slate-100">
+        ${sec.clinics.map(cl => {
+          const color = cl.status==='red'?'#ef4444':cl.status==='green'?'#10b981':'#f59e0b';
+          const w = (cl.curr/maxCurr)*100;
+          const diagPill = cl.diag ? `<span class="pill ${cl.diag} ml-1" style="font-size:10px;padding:1px 6px">${cl.diag==='slot'?'slot':'demand'}</span>` : '';
+          const matBadge = `<span class="text-[10px] text-slate-500 px-1.5 py-0.5 border border-slate-200 rounded ml-2">${cl.maturity==='new'?'New':cl.maturity==='growing'?'Maturing':'Matured'}</span>`;
+          return `<div class="px-3 py-2 flex items-center gap-3 text-sm border-b border-slate-50 last:border-0">
+            <span class="pill ${cl.status}" style="min-width:auto"><span class="dot"></span></span>
+            <span class="flex-1 font-medium text-slate-800">${cl.name}${diagPill}${matBadge}</span>
+            <div class="bar-row" style="width:120px"><span style="width:${w}%;background:${color}"></span></div>
+            <span class="text-slate-500" style="width:60px;text-align:right">${fmt(cl.curr)}</span>
+            <span style="color:${color};font-weight:600;width:60px;text-align:right">${pct(cl.chg)}</span>
+          </div>`;
+        }).join('')}
+      </div>
+    </details>
+  `).join('') || '<div class="text-sm text-slate-400 p-6 text-center italic">No clinics match current filters.</div>';
+};
+
+/* ---------- AI INSIGHTS ---------- */
+
+const AI_BADGE = `<span class="ai-badge">✦ AI</span>`;
+
+function renderAIInsights(){
+  // Trend chart
+  const elT = document.getElementById('i_trend');
+  if (elT) {
+    const cur = Object.values(getAggDataByCity()).reduce((s,c)=>s+c.curr,0);
+    const base = Object.values(getAggDataByCity()).reduce((s,c)=>s+c.base,0);
+    const d = (cur-base)/Math.max(1,base);
+    const verb = Math.abs(d)<0.02 ? 'flat' : d>0 ? `up ${(d*100).toFixed(1)}%` : `down ${(Math.abs(d)*100).toFixed(1)}%`;
+    elT.innerHTML = `${AI_BADGE} <span>Total bookings are <strong>${verb}</strong> vs ${STATE.baseline==='prior'?'prior period':STATE.baseline==='expected'?'target':'last 8-week average'}. ${d < -0.10 ? 'Slope shows a recent break — check the city table for localized drags.' : d > 0.05 ? 'Momentum building; verify the trend is across cities, not driven by one outlier.' : 'No alarm; watch the next 3 days for direction.'}</span>`;
+  }
+  // Map
+  const elM = document.getElementById('i_map');
+  if (elM) {
+    const agg = getAggDataByCity();
+    const rows = Object.entries(agg).map(([cid,a])=>({cid,delta:(a.curr-a.base)/Math.max(1,a.base),curr:a.curr})).sort((a,b)=>a.delta-b.delta);
+    const worst = rows[0], best = rows[rows.length-1];
+    const wn = (CITIES.find(c=>c.id===worst.cid)||{name:worst.cid}).name;
+    const bn = (CITIES.find(c=>c.id===best.cid)||{name:best.cid}).name;
+    elM.innerHTML = `${AI_BADGE} <span><strong>${wn}</strong> is the largest red dot (${pct(worst.delta)}) — it deserves first attention. <strong>${bn}</strong> is the positive standout (${pct(best.delta)}). Click any dot to scope the page to that city.</span>`;
+  }
+  // Channel mix trend
+  const elCMT = document.getElementById('i_channelTrend');
+  if (elCMT) {
+    elCMT.innerHTML = `${AI_BADGE} <span>Switch the toggle from <strong>Volume</strong> to <strong>Share %</strong> to detect whether a channel's growth is driven by overall volume or by gaining share. A rising share with flat volume = competitor shift; a rising share with rising volume = channel is winning real demand.</span>`;
+  }
+  // Category mix trend
+  const elCAT = document.getElementById('i_categoryTrend');
+  if (elCAT) {
+    elCAT.innerHTML = `${AI_BADGE} <span>If STI share is rising while volume is flat, that's category cannibalization, not growth. Cross-check with the category breakdown card on the Revenue tab.</span>`;
+  }
+  // City table
+  const elCT = document.getElementById('i_cityTable');
+  if (elCT) {
+    const agg = getAggDataByCity();
+    const rows = Object.entries(agg).map(([cid,a])=>({cid,delta:(a.curr-a.base)/Math.max(1,a.base)})).sort((a,b)=>a.delta-b.delta);
+    const red = rows.filter(r=>r.delta<-0.15).length;
+    const green = rows.filter(r=>r.delta>0.05).length;
+    elCT.innerHTML = `${AI_BADGE} <span><strong>${red}</strong> cities dropping &gt;15%, <strong>${green}</strong> growing &gt;5%. Diagnosis column shows whether a drop is a supply (slot) or demand issue — follow up with the relevant ops or channel owner accordingly.</span>`;
+  }
+  // Channel · baseline
+  const elCB = document.getElementById('i_channelBase');
+  if (elCB) {
+    elCB.innerHTML = `${AI_BADGE} <span>Channels above the diagonal are growing share; channels below are losing. A small green delta on a big channel (e.g. Google) moves the needle more than a large green delta on a small channel.</span>`;
+  }
+  // Category · baseline
+  const elCatB = document.getElementById('i_categoryBase');
+  if (elCatB) {
+    elCatB.innerHTML = `${AI_BADGE} <span>Compare category mix to last 8-week average via the baseline filter — a >2pp swing in share is meaningful for a mature business.</span>`;
+  }
+  // Clinics
+  const elCl = document.getElementById('i_clinics');
+  if (elCl) {
+    elCl.innerHTML = `${AI_BADGE} <span>Use the maturity filter to separate growing pains from real issues. <strong>Newly Launched</strong> clinics (&lt;90d) often look red — that's expected ramp. <strong>Matured</strong> clinics dropping &gt;15% is the real signal worth investigating.</span>`;
+  }
+}
+
+/* ---------- CHATBOT ---------- */
+
+const CHAT_SUGGESTIONS = [
+  'Why are bookings down?', 'Which city to fix?', 'Which channel is best?',
+  'How is STI doing?', 'What does the maturity filter do?',
+];
+
+function chatBotReply(input){
+  const q = input.toLowerCase();
+  const agg = getAggDataByCity();
+  const cities = Object.entries(agg).map(([cid,a])=>({cid,curr:a.curr,base:a.base,delta:(a.curr-a.base)/Math.max(1,a.base)}));
+  const cur = cities.reduce((s,c)=>s+c.curr,0), base = cities.reduce((s,c)=>s+c.base,0);
+  const d = (cur-base)/Math.max(1,base);
+
+  if (/why.*book|book.*down|book.*drop|demand/.test(q)) {
+    if (d < -0.03) {
+      const worst = cities.slice().sort((a,b)=>a.delta-b.delta)[0];
+      const wn = (CITIES.find(c=>c.id===worst.cid)||{name:worst.cid}).name;
+      return `Bookings are <span class="delta-dn">${pct(d)}</span> vs baseline. Largest drag: <strong>${wn}</strong> at ${pct(worst.delta)}. Open the <strong>City Performance</strong> tab and look at the Diagnosis column to see if it's slot (supply) or demand.`;
+    }
+    return `Bookings are <span class="delta-up">${pct(d)}</span> vs baseline — not declining at the aggregate. Use the city table on the City tab to check for localized issues hidden under the total.`;
+  }
+  if (/which city|fix.*city|city.*fix|worst city/.test(q)) {
+    const worst = cities.slice().sort((a,b)=>a.delta-b.delta)[0];
+    const wn = (CITIES.find(c=>c.id===worst.cid)||{name:worst.cid}).name;
+    return `Worst city: <strong>${wn}</strong> at <span class="delta-dn">${pct(worst.delta)}</span>. Click it on the map (City tab) or in the city chip row to scope all charts to it.`;
+  }
+  if (/which channel|best channel|top channel/.test(q)) {
+    return `Switch to the <strong>Channel Deep-Dive</strong> tab. The channel chip ribbon at top shows all 10 channels; the KPI strip ranks them by spend efficiency. Practo and Organic are currently the strongest in mock data.`;
+  }
+  if (/sti|category|sh|mental/.test(q)) {
+    return `Open the <strong>Executive Summary</strong> tab — the three category cards (SH/STI/MH) show WoW + MoM at a glance. The <strong>Revenue & Mix</strong> tab has the category baseline comparison.`;
+  }
+  if (/maturity|new|matured|launch/.test(q)) {
+    const counts = {new:0,growing:0,mature:0};
+    CLINICS.forEach(cl => counts[cl.maturity]++);
+    return `Maturity buckets: <strong>${counts.new}</strong> Newly Launched (&lt;90d), <strong>${counts.growing}</strong> Maturing (90-365d), <strong>${counts.mature}</strong> Matured (365d+). Use the filter on the <strong>Clinic Performance</strong> tab to isolate ramp-stage clinics from established ones.`;
+  }
+  if (/spend|cpl|cpb|roas|revenue/.test(q)) {
+    return `The <strong>Channel Deep-Dive</strong> tab has the full spend → revenue stack for each channel. Pick a channel chip to see CPL, CPB, CPD, RoAS broken out, plus the campaign table at the bottom for paid channels.`;
+  }
+  if (/slot|supply|availability/.test(q)) {
+    return `Slot issues show up in the city table (City tab) as "Slot issue" in the Diagnosis column. The classifier looks at whether bookings dropped while leads stayed up — that's the supply signature. Demand issues = both leads and bookings dropped together.`;
+  }
+  if (/help|what can|how/.test(q)) {
+    return `Try: "Why are bookings down?", "Which city to fix?", "How is STI doing?", "What does the maturity filter do?". I read whatever filters are currently active — change tabs and filters then re-ask.`;
+  }
+  return `I don't have a canned answer for that. The mock chatbot knows: bookings/demand drops, city ranking, channels, categories, maturity, spend/RoAS, slot vs demand classification. Live Claude API hookup would handle anything — say the word.`;
+}
+
+function addChatMsg(role, html){
+  const body = document.getElementById('chatBody');
+  const div = document.createElement('div');
+  div.className = `msg ${role}`;
+  div.innerHTML = `<div class="bubble">${html}</div>`;
+  body.appendChild(div);
+  body.scrollTop = body.scrollHeight;
+}
+function sendChatMessage(text){
+  if (!text || !text.trim()) return;
+  addChatMsg('user', text);
+  setTimeout(() => addChatMsg('bot', chatBotReply(text)), 220);
+  document.getElementById('chatInput').value = '';
+}
+function initChat(){
+  const fab = document.getElementById('chatFab');
+  const panel = document.getElementById('chatPanel');
+  const closeBtn = document.getElementById('closeChat');
+  const input = document.getElementById('chatInput');
+  const send = document.getElementById('sendChat');
+  const suggestions = document.getElementById('chatSuggestions');
+  fab.onclick = () => {
+    panel.classList.remove('hidden'); fab.style.display = 'none';
+    if (document.getElementById('chatBody').children.length === 0) {
+      addChatMsg('bot', `Hi — I'm a mock assistant. Ask me about any number you see, or pick a suggestion below.`);
+    }
+    input.focus();
+  };
+  closeBtn.onclick = () => { panel.classList.add('hidden'); fab.style.display = 'flex'; };
+  send.onclick = () => sendChatMessage(input.value);
+  input.addEventListener('keydown', e => { if (e.key === 'Enter') sendChatMessage(input.value); });
+  suggestions.innerHTML = CHAT_SUGGESTIONS.map(s => `<span class="suggestion">${s}</span>`).join('');
+  suggestions.querySelectorAll('.suggestion').forEach(el => el.onclick = () => sendChatMessage(el.textContent));
+}
+
+/* ---------- MULTI-DIM KPI MATRIX (founder view) ---------- */
+
+STATE.matrixDim = 'channel';
+
+// Map DEEP_CHANNELS keys → existing cl.chShare keys (which only had 7 channels).
+// For brand-new channels (blog, gmb-standalone), we synthesize a portion from existing buckets.
+const DEEP_CH_TO_SHARE = {
+  organic:       'organic',
+  blog:          'organic',       // synthesize from organic (small slice)
+  gmb_google:    'google_gmb',
+  gmb:           'google_gmb',    // synthesize from google_gmb (split with gmb_google)
+  google_search: 'google',
+  practo:        'practo',
+  fb:            'fb',
+  justdial:      'justdial',
+  others:        'others',
+};
+const DEEP_CH_FACTOR = {
+  organic:       0.85,  // organic loses some to blog
+  blog:          0.15,  // ~15% of organic-bucket = blog
+  gmb_google:    0.60,  // gmb_google overall combined → 60% counts as the combined channel
+  gmb:           0.40,  // 40% as GMB-standalone
+  google_search: 1.00,
+  practo:        1.00,
+  fb:            1.00,
+  justdial:      1.00,
+  others:        1.00,
+};
+
+// Generic helper: aggregate bookings + leads for a slice over the trailing 7-day window
+// (windowOffset=0 = last 7d, windowOffset=7 = the 7d before that, etc.)
+function sliceAggregate(catId, channelId, cityIds, windowOffset){
+  windowOffset = windowOffset || 0;
+  let bk=0, leads=0, done=0;
+  const cl_list = CLINICS.filter(cl => !cityIds || cityIds.includes(cl.cityId));
+  let shareKey = channelId, factor = 1;
+  if (channelId !== 'all') {
+    shareKey = DEEP_CH_TO_SHARE[channelId] || channelId;
+    factor = DEEP_CH_FACTOR[channelId] != null ? DEEP_CH_FACTOR[channelId] : 1;
+  }
+  for (const cl of cl_list) {
+    const s = BOOKINGS[cl.id];
+    if (!s) continue;
+    const catMult = catId === 'all' ? 1 : (cl.catShare[catId] || 0);
+    const chMult  = channelId === 'all' ? 1 : ((cl.chShare[shareKey] || 0) * factor);
+    const lastIdx = s.length - 1 - windowOffset;
+    for (let i = Math.max(0, lastIdx - 6); i <= lastIdx; i++){
+      if (i < 0) continue;
+      bk += s[i].total * catMult * chMult;
+      leads += s[i].leads * catMult * chMult;
+      done += (s[i].done || 0) * catMult * chMult;
+    }
+  }
+  return {bk, leads, done};
+}
+
+// Helper: compute one KPI row for a window offset (0=current 7d, 7=prior 7d)
+function _computeKPIWindow(dim, key, windowOffset){
+  const totalWeeklySpend = 4250000;
+  let spendShare, agg;
+  if (dim === 'channel') {
+    spendShare = CHANNEL_SPEND_SHARE[key] || 0;
+    agg = sliceAggregate('all', key, null, windowOffset);
+  } else if (dim === 'category') {
+    const catMix = {sh:0.65, sti:0.30, mh:0.05};
+    spendShare = key === 'all' ? 1.0 : (catMix[key] || 0);
+    agg = sliceAggregate(key, 'all', null, windowOffset);
+  } else { // city
+    const cl_list = CLINICS.filter(cl => cl.cityId === key);
+    const sumBk = (off) => CLINICS.reduce((s,cl)=>{
+      const ser = BOOKINGS[cl.id]; if (!ser) return s;
+      const last = ser.length - 1 - off; let t=0;
+      for (let i=Math.max(0,last-6); i<=last; i++){ if (i>=0) t += ser[i].total; }
+      return s + t;
+    }, 0);
+    const cityBookingsShare = cl_list.reduce((s,cl)=>{
+      const ser = BOOKINGS[cl.id]; if (!ser) return s;
+      const last = ser.length - 1 - windowOffset; let t=0;
+      for (let i=Math.max(0,last-6); i<=last; i++){ if (i>=0) t += ser[i].total; }
+      return s + t;
+    }, 0);
+    const allTotal = sumBk(windowOffset);
+    spendShare = allTotal > 0 ? cityBookingsShare / allTotal : 0;
+    agg = sliceAggregate('all', 'all', [key], windowOffset);
+  }
+  const spend = totalWeeklySpend * spendShare;
+  const verifiedPct = 0.62;
+  const verLeads = agg.leads * verifiedPct;
+  const cpl = verLeads > 0 ? spend / verLeads : 0;
+  const bookings = agg.bk;
+  const cpb = bookings > 0 ? spend / bookings : 0;
+  const doneRate = 0.62;
+  const done = bookings * doneRate;
+  const cpd = done > 0 ? spend / done : 0;
+  const rpc = 1850;
+  const revenue = done * rpc;
+  const roas = spend > 0 ? revenue / spend : 0;
+  const newCustomerRatio = 0.75;
+  const cac = done > 0 ? spend / (done * newCustomerRatio) : 0;
+  return {spend, verLeads, cpl, bookings, cpb, done, cpd, revenue, roas, cac};
+}
+
+// Returns current 7d + prior 7d + change deltas for every KPI
+function computeKPIsForRow(dim, key){
+  const curr = _computeKPIWindow(dim, key, 0);
+  const prior = _computeKPIWindow(dim, key, 7);
+  const dlt = (c, p) => p > 0 ? (c - p)/p : 0;
+  return {
+    ...curr,
+    prior,
+    chg: {
+      spend:    dlt(curr.spend, prior.spend),
+      verLeads: dlt(curr.verLeads, prior.verLeads),
+      cpl:      dlt(curr.cpl, prior.cpl),
+      bookings: dlt(curr.bookings, prior.bookings),
+      cpb:      dlt(curr.cpb, prior.cpb),
+      done:     dlt(curr.done, prior.done),
+      cpd:      dlt(curr.cpd, prior.cpd),
+      revenue:  dlt(curr.revenue, prior.revenue),
+      roas:     dlt(curr.roas, prior.roas),
+      cac:      dlt(curr.cac, prior.cac),
+    }
+  };
+}
+
+function renderKPIMatrix(){
+  const wrap = document.getElementById('kpiMatrixWrap');
+  if (!wrap) return;
+  // Update toggle UI
+  document.querySelectorAll('#matrixDimToggle .toggle-tab').forEach(el => el.classList.toggle('active', el.dataset.dim === STATE.matrixDim));
+  let rows = [];
+  if (STATE.matrixDim === 'channel') {
+    rows = DEEP_CHANNELS.filter(c => c.id !== 'overall').map(c => ({key:c.id, label:c.name, dim:'channel'}));
+  } else if (STATE.matrixDim === 'category') {
+    rows = [
+      {key:'sh',  label:'Sexual Health (SH)', dim:'category'},
+      {key:'sti', label:'STI',                dim:'category'},
+      {key:'mh',  label:'Mental Health (MH)', dim:'category'},
+    ];
+  } else { // city
+    rows = CITIES.map(c => ({key:c.id, label:c.name, dim:'city'}));
+  }
+  // Compute totals row for context
+  const totalsCh = STATE.matrixDim === 'channel'
+    ? computeKPIsForRow('channel','overall')
+    : STATE.matrixDim === 'category'
+      ? {...computeKPIsForRow('category','sh')} // base
+      : null;
+
+  // Compute all rows + a totals row from sum
+  const data = rows.map(r => ({...r, k: computeKPIsForRow(r.dim, r.key)}));
+  const totals = {
+    spend: data.reduce((s,r)=>s+r.k.spend,0),
+    verLeads: data.reduce((s,r)=>s+r.k.verLeads,0),
+    bookings: data.reduce((s,r)=>s+r.k.bookings,0),
+    done: data.reduce((s,r)=>s+r.k.done,0),
+    revenue: data.reduce((s,r)=>s+r.k.revenue,0),
+  };
+  totals.cpl = totals.verLeads ? totals.spend/totals.verLeads : 0;
+  totals.cpb = totals.bookings ? totals.spend/totals.bookings : 0;
+  totals.cpd = totals.done ? totals.spend/totals.done : 0;
+  totals.roas = totals.spend ? totals.revenue/totals.spend : 0;
+  totals.cac = totals.done ? totals.spend/(totals.done*0.75) : 0;
+
+  const sortedByBookings = data.slice().sort((a,b)=>b.k.bookings - a.k.bookings);
+
+  const headerLabel = STATE.matrixDim === 'channel' ? 'Channel'
+                    : STATE.matrixDim === 'category' ? 'Category' : 'City';
+
+  // Helper to render "current · prior · Δ%" in one cell.
+  // dir='up_good' means an increase is green; dir='down_good' (for cost metrics) means a decrease is green.
+  const cmp = (curr, prior, chg, fmtFn, dir) => {
+    const goodUp = dir !== 'down_good';
+    const cls = (goodUp ? chg > 0.05 : chg < -0.05) ? 'delta-up'
+              : (goodUp ? chg < -0.05 : chg > 0.05) ? 'delta-dn' : 'delta-flat';
+    const arrow = chg > 0.005 ? '↑' : chg < -0.005 ? '↓' : '→';
+    const sign = chg >= 0 ? '+' : '';
+    return `<div style="text-align:right">${fmtFn(curr)}</div>
+            <div style="text-align:right;font-size:10.5px;color:#94a3b8">vs ${fmtFn(prior)}</div>
+            <div style="text-align:right;font-size:11px;font-weight:600" class="${cls}">${arrow} ${sign}${(chg*100).toFixed(1)}%</div>`;
+  };
+
+  wrap.innerHTML = `
+    <div class="text-[11px] text-slate-500 mb-2">Each metric shows <b>current 7d</b> · <span class="text-slate-400">prior 7d</span> · <b>change %</b>. Red = bad direction. Click any row to drill in.</div>
+    <table class="tbl">
+      <thead>
+        <tr>
+          <th>${headerLabel}</th>
+          <th style="text-align:right">Spends</th>
+          <th style="text-align:right">Leads (V)</th>
+          <th style="text-align:right">CPL</th>
+          <th style="text-align:right">Bookings</th>
+          <th style="text-align:right">CPB</th>
+          <th style="text-align:right">Done</th>
+          <th style="text-align:right">CPD</th>
+          <th style="text-align:right">Revenue</th>
+          <th style="text-align:right">RoAS</th>
+          <th style="text-align:right" title="Cost to acquire a new customer (Spend / new customers; assumes ~75% of Done are first-time)">CAC</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        ${sortedByBookings.map(r => {
+          const k = r.k;
+          const tierBadge = r.dim==='city' ? `<span class="text-[10px] text-slate-500 px-1.5 py-0.5 border border-slate-200 rounded ml-2">${(CITIES.find(c=>c.id===r.key)||{}).tier === 't1' ? 'T1' : 'T2'}</span>` : '';
+          return `<tr class="cursor-pointer hover:bg-slate-50" onclick="matrixDrillDown('${r.dim}','${r.key}')">
+            <td style="vertical-align:top"><span class="font-medium text-slate-800">${r.label}</span>${tierBadge}</td>
+            <td>${cmp(k.spend,    k.prior.spend,    k.chg.spend,    fmtINR, 'up_good')}</td>
+            <td>${cmp(k.verLeads, k.prior.verLeads, k.chg.verLeads, fmtNum, 'up_good')}</td>
+            <td>${cmp(k.cpl,      k.prior.cpl,      k.chg.cpl,      fmtINR, 'down_good')}</td>
+            <td>${cmp(k.bookings, k.prior.bookings, k.chg.bookings, fmtNum, 'up_good')}</td>
+            <td>${cmp(k.cpb,      k.prior.cpb,      k.chg.cpb,      fmtINR, 'down_good')}</td>
+            <td>${cmp(k.done,     k.prior.done,     k.chg.done,     fmtNum, 'up_good')}</td>
+            <td>${cmp(k.cpd,      k.prior.cpd,      k.chg.cpd,      fmtINR, 'down_good')}</td>
+            <td>${cmp(k.revenue,  k.prior.revenue,  k.chg.revenue,  fmtINR, 'up_good')}</td>
+            <td>${cmp(k.roas,     k.prior.roas,     k.chg.roas,     (x=>x.toFixed(2)+'x'), 'up_good')}</td>
+            <td>${cmp(k.cac,      k.prior.cac,      k.chg.cac,      fmtINR, 'down_good')}</td>
+            <td style="text-align:right;vertical-align:top"><span class="text-xs text-indigo-600 hover:text-indigo-800">Drill →</span></td>
+          </tr>`;
+        }).join('')}
+        <tr style="border-top:2px solid #cbd5e1;font-weight:700;background:#f8fafc">
+          <td>Total</td>
+          <td style="text-align:right">${fmtINR(totals.spend)}</td>
+          <td style="text-align:right">${fmtNum(totals.verLeads)}</td>
+          <td style="text-align:right">${fmtINR(totals.cpl)}</td>
+          <td style="text-align:right">${fmtNum(totals.bookings)}</td>
+          <td style="text-align:right">${fmtINR(totals.cpb)}</td>
+          <td style="text-align:right">${fmtNum(totals.done)}</td>
+          <td style="text-align:right">${fmtINR(totals.cpd)}</td>
+          <td style="text-align:right">${fmtINR(totals.revenue)}</td>
+          <td style="text-align:right">${totals.roas.toFixed(2)}x</td>
+          <td style="text-align:right">${fmtINR(totals.cac)}</td>
+          <td></td>
+        </tr>
+      </tbody>
+    </table>`;
+
+  // AI insight for the matrix
+  const worst = sortedByBookings.slice().sort((a,b)=>a.k.roas - b.k.roas)[0];
+  const best  = sortedByBookings.slice().sort((a,b)=>b.k.roas - a.k.roas)[0];
+  const expensive = sortedByBookings.slice().sort((a,b)=>b.k.cpb - a.k.cpb)[0];
+  document.getElementById('i_kpiMatrix').innerHTML = `${AI_BADGE} <span>Best RoAS: <strong>${best.label}</strong> at ${best.k.roas.toFixed(2)}x. Worst: <strong>${worst.label}</strong> at ${worst.k.roas.toFixed(2)}x. Highest CPB: <strong>${expensive.label}</strong> at ${fmtINR(expensive.k.cpb)}. <em>Click any row to scope the whole dashboard to that ${STATE.matrixDim}.</em></span>`;
+}
+
+/* ---------- DRILL-DOWN ---------- */
+
+window.matrixDrillDown = function(dim, key){
+  if (dim === 'channel') {
+    // Map 10-channel deep id → 7-channel id used by global filters
+    const mappedKey = DEEP_CH_TO_SHARE[key] || key;
+    STATE.chans = new Set([mappedKey]);
+    FOUNDER_STATE.deepChannel = key;
+    setActiveTab('channel');
+  } else if (dim === 'city') {
+    const city = CITIES.find(c=>c.id===key);
+    STATE.cities = new Set([key]);
+    if (city) STATE.tiers = new Set([city.tier, ...STATE.tiers]);
+    setActiveTab('city');
+  } else if (dim === 'category') {
+    STATE.cats = new Set([key]);
+    FOUNDER_STATE.deepCat = key;
+    renderAll();
+  }
+};
+
+function renderDrillCrumb(){
+  const el = document.getElementById('drillCrumb');
+  if (!el) return;
+  const active = [];
+  if (STATE.cats.size < CATEGORIES.length) active.push({k:'cat', label:'Category', val: [...STATE.cats].map(id => (CATEGORIES.find(c=>c.id===id)||{}).name).filter(Boolean).join(', ')});
+  if (STATE.chans.size < CHANNELS.length) active.push({k:'ch', label:'Channel', val: [...STATE.chans].map(id => (CHANNELS.find(c=>c.id===id)||{}).name).filter(Boolean).join(', ')});
+  if (STATE.cities.size < CITIES.length) active.push({k:'city', label:'City', val: [...STATE.cities].map(id => (CITIES.find(c=>c.id===id)||{}).name).filter(Boolean).join(', ')});
+  if (STATE.tiers.size < TIERS.length) active.push({k:'tier', label:'Tier', val: [...STATE.tiers].map(id => (TIERS.find(t=>t.id===id)||{}).name).filter(Boolean).join(', ')});
+  if (active.length === 0) { el.style.display = 'none'; return; }
+  el.style.display = 'block';
+  el.innerHTML = `
+    <div class="card p-3 flex items-center gap-3 flex-wrap" style="background:linear-gradient(135deg,#fff 0%,#fef9c3 100%);border-color:#fde68a">
+      <span class="text-xs font-semibold text-amber-700 uppercase tracking-wide">Drill scope</span>
+      ${active.map(a => `<span class="pill" style="background:#fff;color:#1e293b;border:1px solid #e2e8f0">${a.label}: <strong>${a.val}</strong></span>`).join('')}
+      <button class="text-xs text-amber-700 hover:text-amber-900 underline ml-auto" onclick="document.getElementById('resetBtn').click()">↺ Clear drill</button>
+    </div>`;
+}
+
+/* ---------- DEEPER DRILL: city → clinics → channels ---------- */
+
+function renderCityDrillDeep(){
+  const wrap = document.getElementById('cityDrillContent');
+  const sub = document.getElementById('cityDrillSub');
+  if (!wrap) return;
+  const scopedCities = [...STATE.cities];
+  if (scopedCities.length !== 1) {
+    sub.textContent = 'Pick a single city above to expose the drill chain: dropping clinics → channels feeding them.';
+    wrap.innerHTML = '<div class="text-sm text-slate-400 italic p-4 text-center">No single city scoped. Click a city row in the table above or scope from the Executive matrix.</div>';
+    return;
+  }
+  const cityId = scopedCities[0];
+  const city = CITIES.find(c => c.id === cityId);
+  const cityClinics = CLINICS.filter(cl => cl.cityId === cityId);
+  sub.innerHTML = `Drilling <strong>${city ? city.name : cityId}</strong> · ${cityClinics.length} clinics.`;
+
+  // Step 1: rank clinics by drop
+  const rows = cityClinics.map(cl => {
+    const a = clinicAgg(cl.id);
+    return {cl, a};
+  }).sort((x,y) => x.a.change - y.a.change);
+
+  const dropping = rows.filter(r => r.a.change < -0.05);
+
+  // Step 2: for each dropping clinic, attribute its drop to channels
+  const channelDropContrib = {};
+  CHANNELS.forEach(ch => channelDropContrib[ch.id] = 0);
+
+  for (const r of dropping) {
+    const cl = r.cl;
+    const s = BOOKINGS[cl.id];
+    if (!s) continue;
+    const last = s.length - 1;
+    for (const ch of CHANNELS) {
+      let cur = 0, base = 0;
+      for (let i = Math.max(0, last - 6); i <= last; i++) cur += s[i].byCh[ch.id];
+      for (let i = Math.max(0, last - 13); i <= last - 7; i++) base += s[i].byCh[ch.id];
+      const loss = base - cur;
+      if (loss > 0) channelDropContrib[ch.id] += loss;
+    }
+  }
+
+  const totalLoss = Object.values(channelDropContrib).reduce((a,b)=>a+b,0);
+  const channelLossList = CHANNELS.map(ch => ({
+    id: ch.id, name: ch.name, color: ch.color,
+    loss: channelDropContrib[ch.id], pct: totalLoss > 0 ? channelDropContrib[ch.id]/totalLoss : 0
+  })).filter(x => x.loss > 0).sort((a,b)=>b.loss-a.loss);
+
+  // Render
+  let html = '';
+  if (dropping.length === 0) {
+    html = `<div class="text-sm text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg p-3 mb-3">✓ No clinics in ${city ? city.name : 'this city'} are dropping &gt;5%. City total: <strong>${pct(rows.reduce((s,r)=>s+r.a.change,0)/rows.length)}</strong>.</div>`;
+  } else {
+    html = `
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div>
+          <div class="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Step 1 · Top dropping clinics</div>
+          <div class="space-y-1">
+            ${dropping.slice(0,6).map(r => {
+              const a = r.a;
+              const cl = r.cl;
+              const cls = a.change < -0.15 ? 'delta-dn' : 'text-amber-600';
+              const diag = diagnose(a);
+              return `<div class="border border-slate-200 rounded px-3 py-2 text-sm flex items-center gap-3">
+                <span class="flex-1 font-medium text-slate-800">${cl.name}</span>
+                ${diag ? `<span class="pill ${diag}" style="font-size:10px;padding:1px 6px">${diag==='slot'?'slot':'demand'}</span>` : ''}
+                <span class="text-slate-500" style="width:48px;text-align:right">${fmt(a.curr)}</span>
+                <span class="font-semibold ${cls}" style="width:60px;text-align:right">${pct(a.change)}</span>
+              </div>`;
+            }).join('')}
+          </div>
+        </div>
+        <div>
+          <div class="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Step 2 · Channels feeding the drop</div>
+          ${channelLossList.length === 0 ? '<div class="text-xs text-slate-400 italic p-3">No channel-attributable loss in mock data.</div>' :
+            channelLossList.slice(0,7).map(c => `
+              <div class="flex items-center gap-3 mb-2 text-sm">
+                <span style="width:14px;height:14px;background:${c.color};border-radius:50%"></span>
+                <span class="flex-1 text-slate-800">${c.name}</span>
+                <div class="bar-row" style="width:140px"><span style="width:${c.pct*100}%;background:${c.color}"></span></div>
+                <span class="text-slate-500" style="width:46px;text-align:right">${(c.pct*100).toFixed(0)}%</span>
+              </div>`).join('')
+          }
+          <div class="text-[11px] text-slate-500 mt-3">Drop-share attribution: each channel's loss as a % of total loss across all dropping clinics in this city.</div>
+        </div>
+      </div>
+      <div class="insight mt-4">${AI_BADGE} <span>
+        ${dropping.length} clinic${dropping.length>1?'s':''} dropping in <strong>${city?city.name:cityId}</strong>.
+        ${channelLossList.length ? `Largest channel contributor to the drop: <strong>${channelLossList[0].name}</strong> (${(channelLossList[0].pct*100).toFixed(0)}% of total loss). Switch to <strong>Channel Deep-Dive</strong> to drill: filter to ${channelLossList[0].name} and check if other cities show the same pattern.` : 'No clean channel attribution available.'}
+      </span></div>`;
+  }
+  wrap.innerHTML = html;
+}
+
+/* ---------- COMPARISON LAYER ---------- */
+
+STATE.compareCities = new Set();
+STATE.compareClinics = new Set();
+STATE.compareChannels = new Set();
+
+function renderCompareChips(hostId, options, picked, onToggle){
+  const host = document.getElementById(hostId);
+  if (!host) return;
+  host.innerHTML = options.map(o => `<span class="chip ${picked.has(o.id)?'active':''}" data-v="${o.id}">${o.name}</span>`).join('');
+  host.querySelectorAll('.chip').forEach(c => c.onclick = () => {
+    const v = c.dataset.v;
+    if (picked.has(v)) picked.delete(v);
+    else if (picked.size < 4) picked.add(v);
+    onToggle();
+  });
+}
+
+// City vs city
+function renderCityCompare(){
+  renderCompareChips('cityCompareChips', CITIES, STATE.compareCities, renderCityCompare);
+  const table = document.getElementById('cityCompareTable');
+  const canvas = document.getElementById('cityCompareChart');
+  if (!table || !canvas) return;
+  if (STATE.compareCities.size === 0) {
+    table.innerHTML = '<div class="text-sm text-slate-400 italic p-4 text-center">Pick cities above to compare.</div>';
+    if (window._cityCompareChart) { window._cityCompareChart.destroy(); window._cityCompareChart = null; }
+    return;
+  }
+  const rows = [...STATE.compareCities].map(cid => {
+    const c = CITIES.find(x => x.id === cid);
+    const a = cityAgg(cid);
+    const k = computeKPIsForRow('city', cid);
+    return {c, a, k};
+  });
+  table.innerHTML = `
+    <table class="tbl">
+      <thead><tr><th>City</th><th style="text-align:right">Current</th><th style="text-align:right">Baseline</th><th style="text-align:right">Δ</th><th style="text-align:right">Spend</th><th style="text-align:right">CPB</th><th style="text-align:right">RoAS</th></tr></thead>
+      <tbody>
+        ${rows.map(r => {
+          const cls = r.a.change < -0.05 ? 'delta-dn' : r.a.change > 0.05 ? 'delta-up' : 'delta-flat';
+          return `<tr>
+            <td><span class="font-medium text-slate-800">${r.c.name}</span> <span class="text-[10px] text-slate-500 px-1.5 py-0.5 border border-slate-200 rounded ml-1">${r.c.tier==='t1'?'T1':'T2'}</span></td>
+            <td style="text-align:right">${fmt(r.a.curr)}</td>
+            <td style="text-align:right">${fmt(r.a.base)}</td>
+            <td style="text-align:right;font-weight:600" class="${cls}">${pct(r.a.change)}</td>
+            <td style="text-align:right">${fmtINR(r.k.spend)}</td>
+            <td style="text-align:right">${fmtINR(r.k.cpb)}</td>
+            <td style="text-align:right">${r.k.roas.toFixed(2)}x</td>
+          </tr>`;
+        }).join('')}
+      </tbody>
+    </table>`;
+  if (window._cityCompareChart) window._cityCompareChart.destroy();
+  window._cityCompareChart = new Chart(canvas, {
+    type:'bar',
+    data:{
+      labels:['Current','Baseline','Spend (₹L)','Revenue (₹L)'],
+      datasets:rows.map(r => ({
+        label:r.c.name,
+        data:[r.a.curr, r.a.base, r.k.spend/1e5, r.k.revenue/1e5],
+        backgroundColor:CHANNELS[rows.indexOf(r)%CHANNELS.length].color,
+      })),
+    },
+    options:{responsive:true, maintainAspectRatio:false, animation:false, plugins:{legend:{position:'top',labels:{font:{size:11}}}}}
+  });
+}
+
+// Clinic vs clinic
+function renderClinicCompare(){
+  const matFilter = STATE.maturity || 'all';
+  let visible = CLINICS;
+  if (matFilter !== 'all') visible = visible.filter(cl => cl.maturity === matFilter);
+  if (STATE.cities.size < CITIES.length) visible = visible.filter(cl => STATE.cities.has(cl.cityId));
+  const opts = visible.map(cl => ({id:cl.id, name:`${cl.name} (${(CITIES.find(c=>c.id===cl.cityId)||{}).name})`}));
+  renderCompareChips('clinicCompareChips', opts, STATE.compareClinics, renderClinicCompare);
+  const table = document.getElementById('clinicCompareTable');
+  const canvas = document.getElementById('clinicCompareChart');
+  if (!table || !canvas) return;
+  if (STATE.compareClinics.size === 0) {
+    table.innerHTML = '<div class="text-sm text-slate-400 italic p-4 text-center">Pick clinics above to compare.</div>';
+    if (window._clinicCompareChart) { window._clinicCompareChart.destroy(); window._clinicCompareChart = null; }
+    return;
+  }
+  const rows = [...STATE.compareClinics].map(clid => {
+    const cl = CLINICS.find(x => x.id === clid);
+    if (!cl) return null;
+    const a = clinicAgg(cl.id);
+    return {cl, a, city:(CITIES.find(c=>c.id===cl.cityId)||{}).name};
+  }).filter(Boolean);
+  table.innerHTML = `
+    <table class="tbl">
+      <thead><tr><th>Clinic</th><th>City</th><th>Maturity</th><th style="text-align:right">Current</th><th style="text-align:right">Baseline</th><th style="text-align:right">Δ</th><th>Status</th></tr></thead>
+      <tbody>
+        ${rows.map(r => {
+          const cls = r.a.change < -0.05 ? 'delta-dn' : r.a.change > 0.05 ? 'delta-up' : 'delta-flat';
+          const stat = statusOf(r.a.change);
+          const matName = r.cl.maturity==='new'?'New': r.cl.maturity==='growing'?'Maturing':'Matured';
+          return `<tr>
+            <td><span class="font-medium text-slate-800">${r.cl.name}</span></td>
+            <td>${r.city}</td>
+            <td><span class="text-[10px] text-slate-500 px-1.5 py-0.5 border border-slate-200 rounded">${matName}</span></td>
+            <td style="text-align:right">${fmt(r.a.curr)}</td>
+            <td style="text-align:right">${fmt(r.a.base)}</td>
+            <td style="text-align:right;font-weight:600" class="${cls}">${pct(r.a.change)}</td>
+            <td><span class="pill ${stat}"><span class="dot"></span>${statusLabel(stat)}</span></td>
+          </tr>`;
+        }).join('')}
+      </tbody>
+    </table>`;
+  // Bookings trend per clinic (last 30 days)
+  if (window._clinicCompareChart) window._clinicCompareChart.destroy();
+  const palette = ['#3b82f6','#10b981','#f97316','#a855f7','#dc2626'];
+  const labels = [];
+  const s0 = BOOKINGS[rows[0].cl.id];
+  if (s0) for (let i = s0.length-30; i < s0.length; i++) labels.push(s0[i].date.toLocaleDateString('en-US',{month:'short',day:'numeric'}));
+  window._clinicCompareChart = new Chart(canvas, {
+    type:'line',
+    data:{ labels, datasets: rows.map((r,idx) => {
+      const s = BOOKINGS[r.cl.id];
+      const vals = [];
+      if (s) for (let i = s.length-30; i < s.length; i++) vals.push(s[i].total);
+      return {label:r.cl.name, data:vals, borderColor:palette[idx%palette.length], backgroundColor:'transparent', borderWidth:2, tension:0.35, pointRadius:0};
+    })},
+    options:{responsive:true, maintainAspectRatio:false, animation:false, plugins:{legend:{position:'top',labels:{font:{size:11}}}}, scales:{x:{ticks:{maxTicksLimit:6}}, y:{beginAtZero:true}}}
+  });
+}
+
+// Channel vs channel
+function renderChannelCompare(){
+  const opts = DEEP_CHANNELS.filter(c => c.id !== 'overall').map(c => ({id:c.id, name:c.name}));
+  renderCompareChips('channelCompareChips', opts, STATE.compareChannels, renderChannelCompare);
+  const table = document.getElementById('channelCompareTable');
+  const canvas = document.getElementById('channelCompareChart');
+  if (!table || !canvas) return;
+  if (STATE.compareChannels.size === 0) {
+    table.innerHTML = '<div class="text-sm text-slate-400 italic p-4 text-center">Pick channels above to compare.</div>';
+    if (window._channelCompareChart) { window._channelCompareChart.destroy(); window._channelCompareChart = null; }
+    return;
+  }
+  const rows = [...STATE.compareChannels].map(chid => {
+    const ch = DEEP_CHANNELS.find(c => c.id === chid);
+    if (!ch) return null;
+    const k = computeKPIsForRow('channel', chid);
+    return {ch, k};
+  }).filter(Boolean);
+  table.innerHTML = `
+    <table class="tbl">
+      <thead><tr><th>Channel</th><th style="text-align:right">Spend</th><th style="text-align:right">Leads (V)</th><th style="text-align:right">CPL</th><th style="text-align:right">Bookings</th><th style="text-align:right">CPB</th><th style="text-align:right">Done</th><th style="text-align:right">CPD</th><th style="text-align:right">Revenue</th><th style="text-align:right">RoAS</th></tr></thead>
+      <tbody>
+        ${rows.map(r => {
+          const rcls = r.k.roas<1?'delta-dn': r.k.roas>2?'delta-up':'delta-flat';
+          return `<tr>
+            <td><span class="font-medium text-slate-800">${r.ch.name}</span></td>
+            <td style="text-align:right">${fmtINR(r.k.spend)}</td>
+            <td style="text-align:right">${fmtNum(r.k.verLeads)}</td>
+            <td style="text-align:right">${fmtINR(r.k.cpl)}</td>
+            <td style="text-align:right">${fmtNum(r.k.bookings)}</td>
+            <td style="text-align:right">${fmtINR(r.k.cpb)}</td>
+            <td style="text-align:right">${fmtNum(r.k.done)}</td>
+            <td style="text-align:right">${fmtINR(r.k.cpd)}</td>
+            <td style="text-align:right">${fmtINR(r.k.revenue)}</td>
+            <td style="text-align:right;font-weight:600" class="${rcls}">${r.k.roas.toFixed(2)}x</td>
+          </tr>`;
+        }).join('')}
+      </tbody>
+    </table>`;
+  if (window._channelCompareChart) window._channelCompareChart.destroy();
+  const palette = ['#3b82f6','#10b981','#f97316','#a855f7','#dc2626'];
+  window._channelCompareChart = new Chart(canvas, {
+    type:'bar',
+    data:{
+      labels:['Spend (₹L)','Revenue (₹L)','Leads (K)','Bookings (K)','RoAS x10'],
+      datasets:rows.map((r,idx)=>({
+        label:r.ch.name,
+        data:[r.k.spend/1e5, r.k.revenue/1e5, r.k.verLeads/1000, r.k.bookings/1000, r.k.roas*10],
+        backgroundColor: palette[idx%palette.length]
+      }))
+    },
+    options:{responsive:true,maintainAspectRatio:false,animation:false,plugins:{legend:{position:'top',labels:{font:{size:11}}}}}
+  });
+}
+
+// Reset buttons
+['cityCompareReset','clinicCompareReset','channelCompareReset'].forEach(id => {
+  const el = document.getElementById(id);
+  if (el) el.onclick = () => {
+    if (id==='cityCompareReset') STATE.compareCities.clear();
+    if (id==='clinicCompareReset') STATE.compareClinics.clear();
+    if (id==='channelCompareReset') STATE.compareChannels.clear();
+    renderAll();
+  };
+});
+
+/* ---------- FOUNDER BRIEF (findings + recommendations) ---------- */
+
+// Mock LTV per category (₹) — what an average customer is worth over their lifetime
+const CATEGORY_LTV = { sh: 6800, sti: 4200, mh: 9500 };
+const BLENDED_LTV = 6500;
+
+function buildFounderBrief(){
+  // Gather channel-level economics
+  const channelRows = DEEP_CHANNELS.filter(c => c.id !== 'overall').map(c => {
+    const k = computeKPIsForRow('channel', c.id);
+    return {ch:c, ...k};
+  });
+  const totalSpend = channelRows.reduce((s,r)=>s+r.spend,0);
+  const totalRev = channelRows.reduce((s,r)=>s+r.revenue,0);
+  const totalBookings = channelRows.reduce((s,r)=>s+r.bookings,0);
+  const blendedRoAS = totalSpend > 0 ? totalRev / totalSpend : 0;
+
+  // Categorise channels
+  const losing = channelRows.filter(r => r.spend > 50000 && r.roas < 1.0).sort((a,b)=>a.roas-b.roas);
+  const profitable = channelRows.filter(r => r.roas >= 1.2 && r.spend > 1000).sort((a,b)=>b.roas-a.roas);
+  const breakEven = channelRows.filter(r => r.spend > 50000 && r.roas >= 1.0 && r.roas < 1.2);
+
+  // City losses
+  const cityRows = CITIES.map(c => {
+    const a = cityAgg(c.id);
+    return {c, ...a};
+  }).sort((a,b)=>a.change - b.change);
+  const cityLosers = cityRows.filter(r => r.change < -0.15);
+  const cityWinners = cityRows.filter(r => r.change > 0.10);
+
+  // ---- FINDINGS ----
+  const findings = [];
+
+  // F1: Blended profitability
+  if (blendedRoAS < 1.0) {
+    findings.push({
+      icon:'🔴',
+      text:`<strong>Blended RoAS is ${blendedRoAS.toFixed(2)}x</strong> — every ₹1 spent returns ₹${blendedRoAS.toFixed(2)}. Net weekly loss on paid: <strong>${fmtINR(totalSpend - totalRev)}</strong>.`
+    });
+  } else if (blendedRoAS < 1.2) {
+    findings.push({
+      icon:'🟡',
+      text:`<strong>Blended RoAS is ${blendedRoAS.toFixed(2)}x</strong> — barely above break-even. Margin is wafer-thin.`
+    });
+  } else {
+    findings.push({
+      icon:'🟢',
+      text:`<strong>Blended RoAS is ${blendedRoAS.toFixed(2)}x</strong> — healthy profit margin on paid acquisition.`
+    });
+  }
+
+  // F2: Biggest loser channel
+  if (losing.length > 0) {
+    const worst = losing[0];
+    const loss = worst.spend - worst.revenue;
+    findings.push({
+      icon:'🔴',
+      text:`<strong>${worst.ch.name}</strong> is bleeding <strong>${fmtINR(loss)}/week</strong> — spending ${fmtINR(worst.spend)} to return ${fmtINR(worst.revenue)} (RoAS ${worst.roas.toFixed(2)}x, CAC ${fmtINR(worst.cac)}).`
+    });
+    if (losing.length > 1) {
+      const otherLoss = losing.slice(1).reduce((s,r)=>s+(r.spend-r.revenue),0);
+      findings.push({
+        icon:'🟡',
+        text:`Plus ${losing.length-1} more channel${losing.length>2?'s':''} losing money (combined ${fmtINR(otherLoss)}/week): ${losing.slice(1).map(r=>r.ch.name).join(', ')}.`
+      });
+    }
+  }
+
+  // F3: City drag
+  if (cityLosers.length > 0) {
+    const top = cityLosers[0];
+    findings.push({
+      icon:'🔴',
+      text:`<strong>${top.c.name}</strong> is dropping <strong>${pct(top.change)}</strong> vs baseline (${fmt(top.curr)} bookings vs ${fmt(top.base)}). ${cityLosers.length>1 ? `Plus ${cityLosers.length-1} more cities &gt;15% down: ${cityLosers.slice(1,4).map(r=>r.c.name).join(', ')}.` : ''}`
+    });
+  }
+
+  // F4: Hidden gem (best ROI)
+  if (profitable.length > 0) {
+    const best = profitable[0];
+    findings.push({
+      icon:'🟢',
+      text:`<strong>${best.ch.name}</strong> is your best-performing channel: RoAS ${best.roas.toFixed(2)}x, CAC ${fmtINR(best.cac)}, but only ${(best.spend/totalSpend*100).toFixed(1)}% of total spend. Under-invested.`
+    });
+  }
+
+  // ---- RECOMMENDATIONS ----
+  const recs = [];
+
+  // R1: Cut the worst loser
+  if (losing.length > 0) {
+    const worst = losing[0];
+    const cutPct = worst.roas < 0.4 ? 0.5 : 0.3;
+    const saved = worst.spend * cutPct;
+    const bkLost = worst.bookings * cutPct;
+    recs.push({
+      icon:'✂️',
+      text:`<strong>Cut ${worst.ch.name} by ${(cutPct*100).toFixed(0)}%</strong> → save <strong>${fmtINR(saved)}/week</strong>. Lose ~${fmt(bkLost)} bookings but they're costing ${fmtINR(worst.cpb)} each anyway.`
+    });
+  }
+
+  // R2: Scale the winner
+  if (profitable.length > 0) {
+    const best = profitable[0];
+    const scaleX = best.spend < 100000 ? 3 : 2;
+    const extraSpend = best.spend * (scaleX - 1);
+    const extraBookings = best.bookings * (scaleX - 1) * 0.85; // diminishing returns
+    const extraRev = best.revenue * (scaleX - 1) * 0.85;
+    recs.push({
+      icon:'🚀',
+      text:`<strong>Scale ${best.ch.name} ${scaleX}×</strong> → invest extra <strong>${fmtINR(extraSpend)}/week</strong>, gain ~${fmt(extraBookings)} bookings & ${fmtINR(extraRev)} revenue (assuming 15% efficiency loss at scale).`
+    });
+  }
+
+  // R3: Reallocation calc — if we moved money from worst to best
+  if (losing.length > 0 && profitable.length > 0) {
+    const fromCh = losing[0], toCh = profitable[0];
+    const moveAmount = fromCh.spend * 0.3;
+    const netDelta = moveAmount * (toCh.roas - fromCh.roas);
+    recs.push({
+      icon:'🔀',
+      text:`<strong>Reallocate ${fmtINR(moveAmount)}/week from ${fromCh.ch.name} → ${toCh.ch.name}</strong>: net revenue gain estimated <strong>${fmtINR(netDelta)}/week</strong> (${toCh.roas.toFixed(2)}x − ${fromCh.roas.toFixed(2)}x).`
+    });
+  }
+
+  // R4: Fix the worst city
+  if (cityLosers.length > 0) {
+    const worstCity = cityLosers[0];
+    const diag = diagnose(worstCity);
+    const action = diag === 'slot' ? `roster ops — increase doctor slots` : `marketing review — leads OK, conversion is the leak`;
+    recs.push({
+      icon:'📍',
+      text:`<strong>Investigate ${worstCity.c.name}</strong> (${diag === 'slot' ? 'slot issue' : 'demand issue'}): ${action}. Lost revenue if not fixed: ~${fmtINR((worstCity.base - worstCity.curr) * 1850)}/4 weeks.`
+    });
+  }
+
+  // R5: CAC vs LTV check
+  if (blendedRoAS < 1.0) {
+    const blendedCAC = channelRows.reduce((s,r)=>s+r.cac*r.bookings,0) / Math.max(1,totalBookings);
+    const payback = blendedCAC / (BLENDED_LTV/12);
+    if (payback > 6) {
+      recs.push({
+        icon:'⚠️',
+        text:`<strong>CAC payback is ${payback.toFixed(1)} months</strong> (CAC ${fmtINR(blendedCAC)} vs LTV ₹${BLENDED_LTV.toLocaleString('en-IN')}). Healthy = &lt;3 months. Customer economics need overhaul or LTV needs to step up.`
+      });
+    }
+  }
+
+  document.getElementById('briefScopeLabel').textContent =
+    `Scope: ${[
+      STATE.cats.size < CATEGORIES.length ? [...STATE.cats].map(c=>(CATEGORIES.find(x=>x.id===c)||{}).name).join('+') : 'all categories',
+      STATE.chans.size < CHANNELS.length ? `${STATE.chans.size} channels` : 'all channels',
+      STATE.cities.size < CITIES.length ? [...STATE.cities].map(c=>(CITIES.find(x=>x.id===c)||{}).name).join('+') : 'all cities',
+    ].join(' · ')}`;
+
+  document.getElementById('briefFindings').innerHTML = findings.map(f => `
+    <div class="flex gap-2 text-sm leading-snug"><span style="flex-shrink:0">${f.icon}</span><span>${f.text}</span></div>
+  `).join('');
+  document.getElementById('briefRecommendations').innerHTML = recs.map(r => `
+    <div class="flex gap-2 text-sm leading-snug"><span style="flex-shrink:0">${r.icon}</span><span>${r.text}</span></div>
+  `).join('');
+}
+
+/* ---------- SPEND EFFICIENCY HEAT STRIP ---------- */
+
+function renderSpendHeatStrip(){
+  const strip = document.getElementById('spendHeatStrip');
+  const labels = document.getElementById('spendHeatLabels');
+  if (!strip || !labels) return;
+  const rows = DEEP_CHANNELS.filter(c => c.id !== 'overall').map(c => ({ch:c, ...computeKPIsForRow('channel', c.id)}));
+  const totalSpend = rows.reduce((s,r)=>s+r.spend,0);
+  if (totalSpend <= 0) { strip.innerHTML = '<div class="text-xs text-slate-400 italic p-3">No spend data.</div>'; labels.innerHTML = ''; return; }
+  const colorFor = (roas) => roas < 1.0 ? '#ef4444' : roas < 1.2 ? '#f59e0b' : '#10b981';
+  // sort blocks by spend descending so biggest channels lead
+  const sorted = rows.filter(r=>r.spend>0).sort((a,b)=>b.spend-a.spend);
+  strip.innerHTML = sorted.map((r,i) => {
+    const pct = (r.spend/totalSpend*100).toFixed(1);
+    return `<div title="${r.ch.name} · Spend ${fmtINR(r.spend)} (${pct}%) · Revenue ${fmtINR(r.revenue)} · RoAS ${r.roas.toFixed(2)}x" style="background:${colorFor(r.roas)};flex:${r.spend};display:flex;align-items:center;justify-content:center;color:#fff;font-weight:600;font-size:11px;padding:0 4px;text-align:center;border-right:${i<sorted.length-1?'1px solid rgba(255,255,255,0.4)':'none'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer" onclick="matrixDrillDown('channel','${r.ch.id}')">${pct >= 4 ? r.ch.name : ''}</div>`;
+  }).join('');
+  labels.innerHTML = sorted.map(r => `
+    <span class="inline-flex items-center gap-1.5"><span style="width:8px;height:8px;background:${colorFor(r.roas)};border-radius:2px"></span>${r.ch.name} <span class="text-slate-400">${r.roas.toFixed(2)}x · ${fmtINR(r.spend)}</span></span>
+  `).join('');
+}
+
+/* ---------- CATEGORY TAB: chips, drill, comparison ---------- */
+
+function renderCategoryTabChips(){
+  const host = document.getElementById('catTabChips');
+  if (!host) return;
+  const opts = [{id:'all',name:'All categories'}, ...CATEGORIES.map(c=>({id:c.id,name:c.name}))];
+  // Single-select: STATE.cats may have 1 cat (drilled) or all (default)
+  const isAll = STATE.cats.size >= CATEGORIES.length;
+  const currentId = isAll ? 'all' : [...STATE.cats][0];
+  host.innerHTML = opts.map(o => {
+    const cls = o.id === 'all' ? '' : `cat-${o.id}`;
+    return `<span class="chip ${cls} ${currentId===o.id?'active':''}" data-c="${o.id}">${o.name}</span>`;
+  }).join('');
+  host.querySelectorAll('.chip').forEach(c => c.onclick = () => {
+    const v = c.dataset.c;
+    if (v === 'all') STATE.cats = new Set(CATEGORIES.map(x=>x.id));
+    else STATE.cats = new Set([v]);
+    renderAll();
+  });
+}
+
+function renderCategoryDrillDeep(){
+  const wrap = document.getElementById('categoryDrillContent');
+  const sub = document.getElementById('categoryDrillSub');
+  if (!wrap) return;
+  const scoped = [...STATE.cats];
+  if (scoped.length !== 1) {
+    sub.textContent = 'Pick a single category above to expose its city + channel drivers.';
+    wrap.innerHTML = '<div class="text-sm text-slate-400 italic p-4 text-center">All categories shown. Pick one to drill into.</div>';
+    return;
+  }
+  const catId = scoped[0];
+  const catDef = CATEGORIES.find(c => c.id === catId);
+  sub.innerHTML = `Drilling <strong>${catDef ? catDef.name : catId}</strong>.`;
+
+  // City breakdown for this category
+  const cityRows = CITIES.map(city => {
+    let curr = 0, base = 0;
+    for (const cl of CLINICS.filter(x => x.cityId === city.id)) {
+      const s = BOOKINGS[cl.id];
+      if (!s) continue;
+      const last = s.length - 1;
+      const share = cl.catShare[catId] || 0;
+      for (let i = Math.max(0, last-6); i <= last; i++) curr += s[i].total * share;
+      for (let i = Math.max(0, last-13); i <= last-7; i++) base += s[i].total * share;
+    }
+    const delta = base > 0 ? (curr-base)/base : 0;
+    return {city, curr, base, delta};
+  }).filter(r => r.curr > 0 || r.base > 0).sort((a,b)=>b.curr-a.curr);
+
+  // Channel breakdown for this category
+  const chRows = CHANNELS.map(ch => {
+    let curr = 0, base = 0;
+    for (const cl of CLINICS) {
+      const s = BOOKINGS[cl.id];
+      if (!s) continue;
+      const last = s.length - 1;
+      const cShare = cl.catShare[catId] || 0;
+      const chShare = cl.chShare[ch.id] || 0;
+      for (let i = Math.max(0, last-6); i <= last; i++) curr += s[i].total * cShare * chShare;
+      for (let i = Math.max(0, last-13); i <= last-7; i++) base += s[i].total * cShare * chShare;
+    }
+    const delta = base > 0 ? (curr-base)/base : 0;
+    return {ch, curr, base, delta};
+  }).sort((a,b)=>b.curr-a.curr);
+
+  const maxCityCurr = Math.max(...cityRows.map(r=>r.curr), 1);
+  const maxChCurr = Math.max(...chRows.map(r=>r.curr), 1);
+
+  const topGrowing = cityRows.slice().sort((a,b)=>b.delta-a.delta)[0];
+  const topDeclining = cityRows.slice().sort((a,b)=>a.delta-b.delta)[0];
+  const topCh = chRows[0];
+
+  wrap.innerHTML = `
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div>
+        <div class="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">By City</div>
+        <div class="space-y-1">
+          ${cityRows.slice(0,10).map(r => {
+            const cls = r.delta < -0.05 ? 'delta-dn' : r.delta > 0.05 ? 'delta-up' : 'delta-flat';
+            const w = (r.curr/maxCityCurr)*100;
+            return `<div class="flex items-center gap-3 text-sm border border-slate-100 rounded px-3 py-1.5 cursor-pointer hover:bg-slate-50" onclick="matrixDrillDown('city','${r.city.id}')">
+              <span class="flex-1 font-medium text-slate-800">${r.city.name}</span>
+              <div class="bar-row" style="width:120px"><span style="width:${w}%;background:${catDef ? catDef.color : '#0f172a'}"></span></div>
+              <span class="text-slate-500" style="width:50px;text-align:right">${fmt(r.curr)}</span>
+              <span class="${cls} font-semibold" style="width:55px;text-align:right">${pct(r.delta)}</span>
+            </div>`;
+          }).join('')}
+        </div>
+      </div>
+      <div>
+        <div class="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">By Channel</div>
+        <div class="space-y-1">
+          ${chRows.map(r => {
+            const cls = r.delta < -0.05 ? 'delta-dn' : r.delta > 0.05 ? 'delta-up' : 'delta-flat';
+            const w = (r.curr/maxChCurr)*100;
+            return `<div class="flex items-center gap-3 text-sm border border-slate-100 rounded px-3 py-1.5 cursor-pointer hover:bg-slate-50" onclick="matrixDrillDown('channel','${r.ch.id}')">
+              <span class="flex-1 font-medium text-slate-800" style="display:flex;align-items:center;gap:6px"><span style="width:8px;height:8px;border-radius:50%;background:${r.ch.color}"></span>${r.ch.name}</span>
+              <div class="bar-row" style="width:120px"><span style="width:${w}%;background:${r.ch.color}"></span></div>
+              <span class="text-slate-500" style="width:50px;text-align:right">${fmt(r.curr)}</span>
+              <span class="${cls} font-semibold" style="width:55px;text-align:right">${pct(r.delta)}</span>
+            </div>`;
+          }).join('')}
+        </div>
+      </div>
+    </div>
+    <div class="insight mt-4">${AI_BADGE} <span>
+      ${topGrowing && topGrowing.delta > 0.05 ? `Best-performing city for <strong>${catDef.name}</strong>: <strong>${topGrowing.city.name}</strong> (${pct(topGrowing.delta)}). ` : ''}
+      ${topDeclining && topDeclining.delta < -0.05 ? `Worst: <strong>${topDeclining.city.name}</strong> (${pct(topDeclining.delta)}) — drill in to see why. ` : ''}
+      Top channel for this category: <strong>${topCh.ch.name}</strong> (${fmt(topCh.curr)} bookings). Click any row to scope the dashboard.
+    </span></div>
+  `;
+}
+
+function renderCategoryCompare(){
+  const table = document.getElementById('categoryCompareTable');
+  const canvas = document.getElementById('categoryCompareChart');
+  if (!table || !canvas) return;
+  const rows = CATEGORIES.map(c => {
+    const cur = bookingsInRange(7, 7, c.id);
+    const base = bookingsInRange(14, 7, c.id);
+    const m30 = bookingsInRange(30, 30, c.id);
+    const m60 = bookingsInRange(60, 30, c.id);
+    return {c, cur, base, mom:base?((cur-base)/base):0, monthDelta:m60?((m30-m60)/m60):0};
+  });
+  table.innerHTML = `
+    <table class="tbl">
+      <thead><tr><th>Category</th><th style="text-align:right">Bookings (7d)</th><th style="text-align:right">Prior 7d</th><th style="text-align:right">WoW Δ</th><th style="text-align:right">30d MoM</th><th></th></tr></thead>
+      <tbody>
+        ${rows.map(r => {
+          const cls = r.mom < -0.05 ? 'delta-dn' : r.mom > 0.05 ? 'delta-up' : 'delta-flat';
+          const mcls = r.monthDelta < -0.05 ? 'delta-dn' : r.monthDelta > 0.05 ? 'delta-up' : 'delta-flat';
+          return `<tr class="cursor-pointer hover:bg-slate-50" onclick="matrixDrillDown('category','${r.c.id}')">
+            <td><span class="font-medium text-slate-800" style="display:inline-flex;align-items:center;gap:6px"><span style="width:8px;height:8px;border-radius:50%;background:${r.c.color}"></span>${r.c.name}</span></td>
+            <td style="text-align:right">${fmt(r.cur)}</td>
+            <td style="text-align:right">${fmt(r.base)}</td>
+            <td style="text-align:right;font-weight:600" class="${cls}">${pct(r.mom)}</td>
+            <td style="text-align:right;font-weight:600" class="${mcls}">${pct(r.monthDelta)}</td>
+            <td style="text-align:right"><span class="text-xs text-indigo-600">Drill →</span></td>
+          </tr>`;
+        }).join('')}
+      </tbody>
+    </table>`;
+  if (window._categoryCompareChart) window._categoryCompareChart.destroy();
+  window._categoryCompareChart = new Chart(canvas, {
+    type:'bar',
+    data:{
+      labels:['Bookings (7d)','Prior 7d','30d Bookings'],
+      datasets:rows.map(r=>({
+        label:r.c.name,
+        data:[r.cur, r.base, bookingsInRange(30,30,r.c.id)],
+        backgroundColor: r.c.color,
+      }))
+    },
+    options:{responsive:true,maintainAspectRatio:false,animation:false,plugins:{legend:{position:'top',labels:{font:{size:11}}}}}
+  });
+}
+
+/* Hook into renderAll so the new pieces stay in sync with filter changes */
+const _origRenderAll2 = renderAll;
+renderAll = function(){
+  _origRenderAll2();
+  renderMaturityFilter();
+  renderKPIMatrix();
+  renderDrillCrumb();
+  renderAIInsights();
+  renderCityDrillDeep();
+  renderCityCompare();
+  renderClinicCompare();
+  renderChannelCompare();
+  renderCategoryTabChips();
+  renderCategoryDrillDeep();
+  renderCategoryCompare();
+  buildFounderBrief();
+  renderSpendHeatStrip();
+};
+
+// Matrix dimension toggle handler
+document.getElementById('matrixDimToggle').addEventListener('click', e => {
+  const tab = e.target.closest('.toggle-tab'); if (!tab) return;
+  STATE.matrixDim = tab.dataset.dim;
+  renderKPIMatrix();
+});
+
+// (init calls moved to the very end of the script so FOUNDER LAYERS is declared first)
 
 /* =============================================================
    FOUNDER LAYERS (Executive · Channel deep-dive · Campaign drill)
@@ -1461,7 +3143,15 @@ function bookingsInRange(daysFromEnd, lengthDays, catFilter='all') {
   const startIdx = DAYS - daysFromEnd;
   const endIdx = startIdx + lengthDays;
   let total = 0;
+  // Respect city + tier scope so drill-down propagates through founder layer
+  const cityScoped = STATE && STATE.cities && STATE.cities.size < CITIES.length;
+  const tierScoped = STATE && STATE.tiers && STATE.tiers.size < TIERS.length;
   for (const cl of CLINICS) {
+    if (cityScoped && !STATE.cities.has(cl.cityId)) continue;
+    if (tierScoped) {
+      const city = CITIES.find(c => c.id === cl.cityId);
+      if (!city || !STATE.tiers.has(city.tier)) continue;
+    }
     const series = BOOKINGS[cl.id];
     for (let i=Math.max(0,startIdx); i<Math.min(DAYS,endIdx); i++) {
       if (catFilter === 'all') total += series[i].total;
@@ -1580,10 +3270,14 @@ function renderExecutive(){
   const totalRev = wk * 1850; // ₹1850 avg RPC
   const roas = totalRev / totalSpend;
   const aov = totalRev / wk;
+  const doneTotal = wk * 0.62;            // Done ≈ 62% of Bookings (mock rate)
+  const newCustomerRatio = 0.75;          // ~75% of Done are first-time
+  const cac = totalSpend / (doneTotal * newCustomerRatio);
   const headlines = [
     {label:'Weekly spend',   value:fmtINR(totalSpend), delta:fmtDelta(0.04, 'down_good')},
     {label:'Weekly revenue', value:fmtINR(totalRev),   delta:fmtDelta(wkDelta, 'up_good')},
     {label:'Blended RoAS',   value:roas.toFixed(2)+'x',delta:fmtDelta(-0.07, 'up_good')},
+    {label:'Blended CAC',    value:fmtINR(cac),         delta:fmtDelta(0.05, 'down_good')},
   ];
   document.getElementById('execHeadlines').innerHTML = headlines.map(h => `
     <div class="border border-slate-200 rounded-lg p-3">
@@ -2162,8 +3856,11 @@ function renderFounderAll(){
   renderDeepChannel();
 }
 
-// Initial founder-layer render after the rest of the page is ready
-renderFounderAll();
+// Final init — runs after all declarations (base JS, TABS, FOUNDER LAYERS) are parsed
+initChat();
+initMap();
+renderAll();
+setTimeout(()=>map.invalidateSize(), 200);
 </script>
 </body>
 </html>
