@@ -1,0 +1,1316 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Holistic Demand Dashboard</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+  :root{
+    --red:#ef4444; --yellow:#f59e0b; --green:#10b981;
+    --redBg:#fef2f2; --yellowBg:#fffbeb; --greenBg:#ecfdf5;
+    --ink:#0f172a; --muted:#64748b; --line:#e2e8f0;
+  }
+  html,body{background:#f8fafc;color:var(--ink);}
+  .card{background:#fff;border:1px solid var(--line);border-radius:14px;box-shadow:0 1px 2px rgba(15,23,42,.04);}
+  .pill{display:inline-flex;align-items:center;gap:6px;padding:2px 10px;border-radius:999px;font-size:12px;font-weight:600;}
+  .pill .dot{width:8px;height:8px;border-radius:50%;}
+  .pill.red{background:var(--redBg);color:#b91c1c;} .pill.red .dot{background:var(--red);}
+  .pill.yellow{background:var(--yellowBg);color:#b45309;} .pill.yellow .dot{background:var(--yellow);}
+  .pill.green{background:var(--greenBg);color:#047857;} .pill.green .dot{background:var(--green);}
+  .pill.slot{background:#eff6ff;color:#1d4ed8;}
+  .pill.demand{background:#fdf2f8;color:#9d174d;}
+  .chip{padding:5px 11px;border:1px solid var(--line);border-radius:999px;font-size:12px;cursor:pointer;user-select:none;background:#fff;transition:all .15s;}
+  .chip:hover{border-color:#94a3b8;}
+  .chip.active{background:#0f172a;color:#fff;border-color:#0f172a;}
+  .chip.cat-active-sh{background:#7c3aed;color:#fff;border-color:#7c3aed;}
+  .chip.cat-active-sti{background:#0ea5e9;color:#fff;border-color:#0ea5e9;}
+  .chip.cat-active-mh{background:#14b8a6;color:#fff;border-color:#14b8a6;}
+  .chip.ch-active{background:#0f172a;color:#fff;border-color:#0f172a;}
+  .chip.tier-active-t1{background:#dc2626;color:#fff;border-color:#dc2626;}
+  .chip.tier-active-t2{background:#0891b2;color:#fff;border-color:#0891b2;}
+  .chip.sm{padding:3px 9px;font-size:11px;}
+  #map{height:100%;width:100%;border-radius:12px;}
+  .leaflet-container{background:#eef2f7;}
+  .marker-dot{border-radius:50%;border:2px solid #fff;box-shadow:0 0 0 2px rgba(15,23,42,.08),0 4px 10px rgba(0,0,0,.15);}
+  table.tbl{width:100%;border-collapse:separate;border-spacing:0;}
+  table.tbl th{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);text-align:left;padding:10px 12px;background:#f8fafc;border-bottom:1px solid var(--line);position:sticky;top:0;}
+  table.tbl td{padding:10px 12px;border-bottom:1px solid #f1f5f9;font-size:14px;}
+  table.tbl tr:hover td{background:#f8fafc;}
+  .sortable{cursor:pointer;user-select:none;}
+  .sortable:after{content:" \2195";opacity:.35;}
+  .sortable.asc:after{content:" \2191";opacity:1;}
+  .sortable.desc:after{content:" \2193";opacity:1;}
+  .bar-row{height:8px;border-radius:999px;background:#f1f5f9;overflow:hidden;}
+  .bar-row > span{display:block;height:100%;}
+  .scroll-y{max-height:430px;overflow-y:auto;}
+  .legend-box{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);margin-right:14px;}
+  .legend-box .sq{width:10px;height:10px;border-radius:3px;}
+  details > summary{list-style:none;cursor:pointer;}
+  details > summary::-webkit-details-marker{display:none;}
+  .kbd{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;background:#f1f5f9;border:1px solid var(--line);padding:1px 6px;border-radius:6px;color:#334155;}
+  .filter-section{border-right:1px solid var(--line);padding-right:14px;}
+  .filter-section:last-child{border-right:none;padding-right:0;}
+  input[type="number"].periods{width:54px;padding:3px 6px;border:1px solid var(--line);border-radius:6px;font-size:12px;text-align:center;}
+  .toggle-tab{padding:5px 11px;font-size:12px;font-weight:500;cursor:pointer;border-radius:6px;color:var(--muted);}
+  .toggle-tab.active{background:#0f172a;color:#fff;}
+  .filter-banner{display:flex;align-items:center;gap:8px;padding:8px 12px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;font-size:13px;color:#1e40af;margin-bottom:12px;}
+  .filter-banner .clear-x{margin-left:auto;background:#1e40af;color:#fff;border:none;padding:3px 10px;border-radius:6px;font-size:12px;cursor:pointer;font-weight:500;}
+  .filter-banner .clear-x:hover{background:#1e3a8a;}
+  .chip.reset{background:#0f172a;color:#fff;border-color:#0f172a;font-weight:600;}
+  .chip.reset:before{content:"\21BA  ";font-weight:bold;}
+  .inline-reset{font-size:11px;color:#1d4ed8;cursor:pointer;text-decoration:underline;margin-left:8px;font-weight:500;}
+  .inline-reset:hover{color:#1e3a8a;}
+</style>
+</head>
+<body class="min-h-screen">
+<div class="max-w-[1480px] mx-auto px-6 py-6">
+
+  <header class="flex flex-wrap items-end justify-between gap-4 mb-5">
+    <div>
+      <div class="text-xs uppercase tracking-wider text-slate-500">Holistic Demand</div>
+      <h1 class="text-2xl font-bold text-slate-900">Bookings & Demand Dashboard</h1>
+      <div id="header-sub" class="text-sm text-slate-500 mt-1"></div>
+    </div>
+    <div class="text-xs text-slate-500">
+      <span class="legend-box"><span class="sq" style="background:var(--green)"></span> Growing &gt; 5%</span>
+      <span class="legend-box"><span class="sq" style="background:var(--yellow)"></span> Flat (-15% to +5%)</span>
+      <span class="legend-box"><span class="sq" style="background:var(--red)"></span> Dropping &gt; 15%</span>
+    </div>
+  </header>
+
+  <!-- Filters -->
+  <section class="card p-4 mb-5">
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-4">
+
+      <!-- Category -->
+      <div class="filter-section lg:col-span-2">
+        <div class="text-[10px] font-semibold text-slate-500 uppercase tracking-wide mb-2">Category</div>
+        <div id="filter-cat" class="flex flex-wrap gap-1.5"></div>
+      </div>
+
+      <!-- Channel -->
+      <div class="filter-section lg:col-span-3">
+        <div class="text-[10px] font-semibold text-slate-500 uppercase tracking-wide mb-2">Channel</div>
+        <div id="filter-ch" class="flex flex-wrap gap-1.5"></div>
+      </div>
+
+      <!-- Tier + City -->
+      <div class="filter-section lg:col-span-2">
+        <div class="text-[10px] font-semibold text-slate-500 uppercase tracking-wide mb-2">City tier &amp; cities</div>
+        <div class="flex flex-wrap gap-1.5 mb-2" id="filter-tier"></div>
+        <div id="filter-city" class="flex flex-wrap gap-1.5 max-h-20 overflow-y-auto"></div>
+      </div>
+
+      <!-- Granularity + period -->
+      <div class="filter-section lg:col-span-3">
+        <div class="text-[10px] font-semibold text-slate-500 uppercase tracking-wide mb-2">Compare period</div>
+        <div class="flex items-center gap-2 mb-2" id="filter-gran"></div>
+        <div class="flex items-center gap-2 text-xs text-slate-600">
+          <span>Last</span>
+          <input type="number" min="1" max="24" id="filter-periods" class="periods" />
+          <span id="filter-periods-unit">periods</span>
+          <span class="text-slate-400">vs</span>
+          <span class="text-slate-700 font-medium" id="filter-vs-label">prior period</span>
+        </div>
+      </div>
+
+      <!-- Baseline -->
+      <div class="lg:col-span-2">
+        <div class="text-[10px] font-semibold text-slate-500 uppercase tracking-wide mb-2">Baseline</div>
+        <div id="filter-baseline" class="flex flex-col gap-1.5"></div>
+        <button id="resetBtn" class="mt-3 text-[11px] text-slate-500 hover:text-slate-800 underline">Reset all filters</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- Active drill-down banner (hidden when nothing filtered) -->
+  <div id="activeFilterBanner" style="display:none"></div>
+
+  <!-- KPI cards -->
+  <section class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-5">
+    <div class="card p-5">
+      <div class="text-xs font-semibold text-slate-500 uppercase tracking-wide">Total bookings</div>
+      <div class="flex items-baseline gap-3 mt-2">
+        <div id="kpi-bookings" class="text-3xl font-bold">—</div>
+        <div id="kpi-bookings-chg" class="text-sm font-semibold"></div>
+      </div>
+      <div class="text-xs text-slate-500 mt-1">vs <span id="kpi-bookings-baseline-label"></span> · <span id="kpi-bookings-prior"></span></div>
+      <div class="mt-3" style="height:60px"><canvas id="spark-bookings"></canvas></div>
+    </div>
+    <div class="card p-5">
+      <div class="text-xs font-semibold text-slate-500 uppercase tracking-wide">Drop alerts</div>
+      <div class="flex items-baseline gap-3 mt-2">
+        <div id="kpi-alerts" class="text-3xl font-bold text-red-600">—</div>
+        <div class="text-sm text-slate-500"><span id="kpi-alerts-cities"></span> cities · <span id="kpi-alerts-clinics"></span> clinics</div>
+      </div>
+      <div class="text-xs text-slate-500 mt-1">Locations dropping &gt; 15% vs baseline</div>
+      <div id="kpi-alerts-list" class="mt-3 text-xs text-slate-600 leading-relaxed"></div>
+    </div>
+    <div class="card p-5">
+      <div class="text-xs font-semibold text-slate-500 uppercase tracking-wide">Booking conversion rate</div>
+      <div class="flex items-baseline gap-3 mt-2">
+        <div id="kpi-cvr" class="text-3xl font-bold">—</div>
+        <div id="kpi-cvr-chg" class="text-sm font-semibold"></div>
+      </div>
+      <div class="text-xs text-slate-500 mt-1">Bookings / inbound leads</div>
+      <div class="mt-3" style="height:60px"><canvas id="spark-cvr"></canvas></div>
+    </div>
+  </section>
+
+  <!-- Map + Bookings Trend -->
+  <section class="grid grid-cols-1 lg:grid-cols-5 gap-4 mb-5">
+    <div class="card p-4 lg:col-span-3">
+      <div class="flex items-center justify-between mb-3">
+        <div>
+          <div class="text-sm font-semibold text-slate-900">City performance map</div>
+          <div class="text-xs text-slate-500">Marker color = change vs baseline. Size = current bookings volume.</div>
+        </div>
+        <div class="text-xs text-slate-500"><span class="kbd">Click</span> a city to drill in</div>
+      </div>
+      <div style="height:420px"><div id="map"></div></div>
+    </div>
+    <div class="card p-4 lg:col-span-2">
+      <div class="flex items-center justify-between mb-2">
+        <div>
+          <div class="text-sm font-semibold text-slate-900">Bookings trend</div>
+          <div class="text-xs text-slate-500" id="trend-sub">Actual vs expected by selected granularity</div>
+        </div>
+        <div class="flex items-center gap-1" id="trend-toggle">
+          <span class="toggle-tab active" data-show="expected">vs Expected</span>
+          <span class="toggle-tab" data-show="prior">vs Prior</span>
+        </div>
+      </div>
+      <div style="height:380px"><canvas id="trend"></canvas></div>
+    </div>
+  </section>
+
+  <!-- Channel mix trend + Category mix trend -->
+  <section class="grid grid-cols-1 lg:grid-cols-5 gap-4 mb-5">
+    <div class="card p-4 lg:col-span-3">
+      <div class="flex items-center justify-between mb-2">
+        <div>
+          <div class="text-sm font-semibold text-slate-900">Channel mix trend</div>
+          <div class="text-xs text-slate-500">How each acquisition channel has moved over time</div>
+        </div>
+        <div class="flex items-center gap-1" id="channelTrendToggle">
+          <span class="toggle-tab active" data-mode="volume">Volume</span>
+          <span class="toggle-tab" data-mode="share">Share %</span>
+        </div>
+      </div>
+      <div style="height:300px"><canvas id="channelTrend"></canvas></div>
+    </div>
+    <div class="card p-4 lg:col-span-2">
+      <div class="flex items-center justify-between mb-2">
+        <div>
+          <div class="text-sm font-semibold text-slate-900">Category mix trend</div>
+          <div class="text-xs text-slate-500">Bookings by category over time</div>
+        </div>
+        <div class="flex items-center gap-1" id="categoryTrendToggle">
+          <span class="toggle-tab active" data-mode="volume">Volume</span>
+          <span class="toggle-tab" data-mode="share">Share %</span>
+        </div>
+      </div>
+      <div style="height:300px"><canvas id="categoryTrend"></canvas></div>
+    </div>
+  </section>
+
+  <!-- City RYG table + Channel current vs baseline -->
+  <section class="grid grid-cols-1 lg:grid-cols-5 gap-4 mb-5">
+    <div class="card p-4 lg:col-span-3">
+      <div class="flex items-center justify-between mb-3">
+        <div>
+          <div class="text-sm font-semibold text-slate-900">City performance breakdown</div>
+          <div class="text-xs text-slate-500">Click a row to filter the dashboard to that city.</div>
+        </div>
+        <div class="text-xs text-slate-500 flex items-center" id="city-count"></div>
+      </div>
+      <div class="scroll-y">
+        <table class="tbl" id="cityTable">
+          <thead>
+            <tr>
+              <th class="sortable" data-k="city">City</th>
+              <th class="sortable" data-k="tier">Tier</th>
+              <th class="sortable" data-k="clinics">Clinics</th>
+              <th class="sortable" data-k="curr">Current</th>
+              <th class="sortable" data-k="prior">Baseline</th>
+              <th class="sortable desc" data-k="chg">Change</th>
+              <th>Status</th>
+              <th>Diagnosis</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card p-4 lg:col-span-2">
+      <div class="text-sm font-semibold text-slate-900">Channel · Current vs baseline</div>
+      <div class="text-xs text-slate-500 mb-3" id="channelBaselineLabel"></div>
+      <div style="height:260px"><canvas id="channelChart"></canvas></div>
+      <div id="channelBreakdown" class="mt-3 space-y-2"></div>
+    </div>
+  </section>
+
+  <!-- Clinics drill-down + Category breakdown -->
+  <section class="grid grid-cols-1 lg:grid-cols-5 gap-4 mb-10">
+    <div class="card p-4 lg:col-span-3">
+      <div class="flex items-center justify-between mb-3">
+        <div>
+          <div class="text-sm font-semibold text-slate-900">Clinic-level performance</div>
+          <div class="text-xs text-slate-500">Grouped by city. Worst-performing clinics at the top of each group.</div>
+        </div>
+        <div class="text-xs text-slate-500" id="clinic-count"></div>
+      </div>
+      <div id="clinicsByCity" class="space-y-3 scroll-y"></div>
+    </div>
+    <div class="card p-4 lg:col-span-2">
+      <div class="text-sm font-semibold text-slate-900">Category · Current vs baseline</div>
+      <div class="text-xs text-slate-500 mb-3" id="categoryBaselineLabel"></div>
+      <div style="height:220px"><canvas id="categoryChart"></canvas></div>
+      <div id="categoryBreakdown" class="mt-3 space-y-2"></div>
+    </div>
+  </section>
+
+  <footer class="text-xs text-slate-400 pb-8 text-center">Sample data, deterministic seed · 18 months of history · Replace <span class="kbd">BOOKINGS</span> data in source to plug in real numbers.</footer>
+</div>
+
+<script>
+/* =========================================================
+   1. CONFIG
+   ========================================================= */
+const CATEGORIES = [
+  {id:'sh',   name:'Sexual Health', color:'#7c3aed'},
+  {id:'sti',  name:'STI',           color:'#0ea5e9'},
+  {id:'mh',   name:'Mental Health', color:'#14b8a6'},
+];
+const CHANNELS = [
+  {id:'google',     name:'Google',       color:'#3b82f6'},
+  {id:'practo',     name:'Practo',       color:'#f97316'},
+  {id:'fb',         name:'FB',           color:'#1877f2'},
+  {id:'google_gmb', name:'Google + GMB', color:'#a855f7'},
+  {id:'organic',    name:'Organic',      color:'#10b981'},
+  {id:'justdial',   name:'JustDial',     color:'#dc2626'},
+  {id:'others',     name:'Others',       color:'#94a3b8'},
+];
+
+const CITIES = [
+  {id:'mum', name:'Mumbai',     lat:19.0760, lng:72.8777, clinicCount:7, baseDaily:42, trend:-0.32, tier:'t1'},
+  {id:'del', name:'Delhi',      lat:28.6139, lng:77.2090, clinicCount:7, baseDaily:48, trend: 0.04, tier:'t1'},
+  {id:'blr', name:'Bengaluru',  lat:12.9716, lng:77.5946, clinicCount:6, baseDaily:45, trend: 0.22, tier:'t1'},
+  {id:'hyd', name:'Hyderabad',  lat:17.3850, lng:78.4867, clinicCount:5, baseDaily:34, trend: 0.10, tier:'t1'},
+  {id:'maa', name:'Chennai',    lat:13.0827, lng:80.2707, clinicCount:5, baseDaily:30, trend:-0.06, tier:'t1'},
+  {id:'kol', name:'Kolkata',    lat:22.5726, lng:88.3639, clinicCount:5, baseDaily:26, trend:-0.28, tier:'t1'},
+  {id:'pun', name:'Pune',       lat:18.5204, lng:73.8567, clinicCount:4, baseDaily:28, trend: 0.14, tier:'t1'},
+  {id:'amd', name:'Ahmedabad',  lat:23.0225, lng:72.5714, clinicCount:4, baseDaily:22, trend:-0.10, tier:'t2'},
+  {id:'jai', name:'Jaipur',     lat:26.9124, lng:75.7873, clinicCount:4, baseDaily:18, trend: 0.03, tier:'t2'},
+  {id:'lko', name:'Lucknow',    lat:26.8467, lng:80.9462, clinicCount:3, baseDaily:14, trend:-0.36, tier:'t2'},
+  {id:'chd', name:'Chandigarh', lat:30.7333, lng:76.7794, clinicCount:3, baseDaily:16, trend: 0.26, tier:'t2'},
+  {id:'cok', name:'Kochi',      lat:9.9312,  lng:76.2673, clinicCount:3, baseDaily:13, trend: 0.08, tier:'t2'},
+];
+const TIERS = [{id:'t1',name:'Tier 1'},{id:'t2',name:'Tier 2'}];
+
+function mulberry32(seed){ return function(){ let t = seed += 0x6D2B79F5; t = Math.imul(t ^ t >>> 15, t | 1); t ^= t + Math.imul(t ^ t >>> 7, t | 61); return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+const rnd = mulberry32(20260520);
+
+const CLINIC_NAMES = ['Bandra','Andheri','Powai','Worli','Lower Parel','Thane','Borivali',
+  'Connaught','Saket','Gurugram','Noida','Dwarka','Karol Bagh','Lajpat Nagar',
+  'Indiranagar','Koramangala','HSR Layout','Whitefield','MG Road','Jayanagar',
+  'Banjara Hills','Jubilee Hills','Gachibowli','Hi-Tech City','Madhapur',
+  'T Nagar','Anna Nagar','Velachery','Adyar','Nungambakkam',
+  'Salt Lake','Park Street','Ballygunge','Howrah','New Town',
+  'Koregaon Park','Baner','Viman Nagar','Aundh',
+  'Satellite','Bodakdev','SG Highway','Maninagar',
+  'Malviya Nagar','C Scheme','Vaishali Nagar','Mansarovar',
+  'Hazratganj','Gomti Nagar','Alambagh',
+  'Sector 17','Sector 22','Sector 35',
+  'Marine Drive','Kakkanad','Edappally'];
+const CLINICS = [];
+let nameIdx = 0;
+CITIES.forEach(c => {
+  for (let i=0; i<c.clinicCount; i++){
+    const id = `${c.id}-${i+1}`;
+    const name = CLINIC_NAMES[nameIdx++] || `${c.name} ${i+1}`;
+    const trendNoise = (rnd()-0.5)*0.35;
+    const clinicTrend = c.trend + trendNoise;
+    const capacity = c.baseDaily/c.clinicCount * (0.7 + rnd()*0.8);
+    const catShare = (() => { const a=0.3+rnd()*0.5, b=0.2+rnd()*0.4, x=0.1+rnd()*0.3; const s=a+b+x; return {sh:a/s, sti:b/s, mh:x/s}; })();
+    const chShare = (() => {
+      const g  = 0.18 + rnd()*0.30;
+      const p  = 0.10 + rnd()*0.22;
+      const fb = 0.06 + rnd()*0.15;
+      const gg = 0.10 + rnd()*0.18;
+      const o  = 0.08 + rnd()*0.18;
+      const jd = 0.04 + rnd()*0.10;
+      const ot = 0.03 + rnd()*0.08;
+      const s = g+p+fb+gg+o+jd+ot;
+      return {google:g/s, practo:p/s, fb:fb/s, google_gmb:gg/s, organic:o/s, justdial:jd/s, others:ot/s};
+    })();
+    CLINICS.push({id, name, cityId:c.id, capacity, trend:clinicTrend, catShare, chShare});
+  }
+});
+
+/* =========================================================
+   2. DATA GENERATION (18 months)
+   ========================================================= */
+const TODAY = new Date(2026,4,20); // 2026-05-20
+const DAYS = 540; // 18 months
+const allDates = [];
+for (let i=DAYS-1; i>=0; i--){ const d = new Date(TODAY); d.setDate(d.getDate()-i); allDates.push(d); }
+
+// For each clinic: each day has actual bookings (with noise + trend) AND expected (target/forecast).
+// Expected = capacity * dowMult * seasonal * targetGrowthFactor (we assume mgmt expects ~5%/yr growth = 1.05 over 18 months)
+// Actual = expected * realTrendOnPace * noise. The "realTrendOnPace" diverges from expectation in last 90-180 days for some clinics.
+const BOOKINGS = {};
+CLINICS.forEach(cl => {
+  const series = [];
+  // Long-term gradual trend (over the whole 18 months, very gentle)
+  const longTrend = cl.trend * 0.30;
+  // Recent ramped trend (last ~2-3 months)
+  const recentBias = cl.trend < -0.10 ? 0.80 : cl.trend > 0.10 ? 0.78 : 0.70;
+  const recentStart = Math.floor(DAYS * (recentBias + rnd()*0.08));
+  const recentTrend = cl.trend * 0.55;
+  // Recent shock: sudden drop. shock starts 21-45 days ago — so it spans the current period but not prior
+  const hasShock = cl.trend < -0.10 && rnd() < 0.70;
+  const shockStart = DAYS - (21 + Math.floor(rnd()*24));
+  // Worst clinics get deeper shocks
+  const shockMagnitude = (cl.trend < -0.20 ? 0.28 : 0.20) + rnd()*0.18; // 20-46% drop
+  // Some struggling clinics had a slot-availability problem (leads stay up, bookings drop)
+  const isSlotConstrained = cl.trend < -0.10 && rnd() < 0.45;
+
+  for (let idx=0; idx<DAYS; idx++){
+    const d = allDates[idx];
+    const dow = d.getDay();
+    const dowMult = [0.62, 1.05, 1.12, 1.10, 1.08, 1.04, 0.85][dow];
+    const wave = 1 + 0.06*Math.sin((idx/45)) + 0.04*Math.cos((idx/12));
+    const targetGrowth = 1 + 0.05 * (idx/DAYS);
+    const expected = cl.capacity * dowMult * wave * targetGrowth;
+
+    // Long-term linear trend over whole period
+    const longMult = 1 + longTrend * (idx/DAYS);
+    // Recent ramped trend (power curve so most of the effect lands in last few weeks)
+    const recentT = idx >= recentStart ? (idx - recentStart)/Math.max(1, DAYS - recentStart) : 0;
+    const recentMult = 1 + recentTrend * Math.pow(recentT, 2.2);
+    // Shock: ramps to full magnitude over 3 days, then stays
+    let shockMult = 1;
+    if (hasShock && idx >= shockStart){
+      const sT = Math.min(1, (idx - shockStart)/3);
+      shockMult = 1 - shockMagnitude * sT;
+    }
+    const trendApplied = longMult * recentMult * shockMult;
+    const noise = 0.84 + rnd()*0.32;
+    const actual = Math.max(0, expected * trendApplied * noise);
+
+    const byCat = {sh:actual*cl.catShare.sh, sti:actual*cl.catShare.sti, mh:actual*cl.catShare.mh};
+    const byCh = {};
+    CHANNELS.forEach(ch => byCh[ch.id] = actual * cl.chShare[ch.id]);
+
+    // Leads: if slot-constrained, recent trend + shock don't affect leads (leads stay healthy, bookings fall)
+    const leadsMult = 3.2 + rnd()*1.6;
+    const leadsTrend = isSlotConstrained ? (longMult * recentMult) : trendApplied;
+    const leadsClean = expected * leadsMult * leadsTrend * (0.9 + rnd()*0.2);
+
+    series.push({date:d, total:actual, expected, byCat, byCh, leads:leadsClean});
+  }
+  cl.isSlotConstrained = isSlotConstrained;
+  cl.hasShock = hasShock;
+  BOOKINGS[cl.id] = series;
+});
+
+/* =========================================================
+   3. STATE
+   ========================================================= */
+const STATE = {
+  cats: new Set(CATEGORIES.map(c=>c.id)),
+  chans: new Set(CHANNELS.map(c=>c.id)),
+  cities: new Set(CITIES.map(c=>c.id)),
+  tiers: new Set(['t1','t2']),
+  gran: 'week',     // 'day' | 'week' | 'month'
+  periods: 4,       // how many periods to compare (current vs baseline if baseline=prior)
+  baseline: 'prior',// 'prior' | 'expected' | '8w_avg'
+  sort: {k:'chg', dir:'asc'},
+  trendShow: 'expected', // 'expected' or 'prior'
+  channelTrendMode: 'volume',
+  categoryTrendMode: 'volume',
+};
+
+const GRAN_DEFS = {
+  day:   {label:'day',   plural:'days',   default:7,  max:30, daysPer:1},
+  week:  {label:'week',  plural:'weeks',  default:4,  max:12, daysPer:7},
+  month: {label:'month', plural:'months', default:3,  max:6,  daysPer:30},
+};
+function periodDays(){ return STATE.periods * GRAN_DEFS[STATE.gran].daysPer; }
+
+/* =========================================================
+   4. AGG HELPERS
+   ========================================================= */
+function dayBookings(rec){
+  let catFrac = 0;
+  STATE.cats.forEach(id => { catFrac += rec.byCat[id]/Math.max(rec.total,1e-9); });
+  let chFrac = 0;
+  STATE.chans.forEach(id => { chFrac += rec.byCh[id]/Math.max(rec.total,1e-9); });
+  return rec.total * catFrac * chFrac;
+}
+function dayExpected(rec){
+  // expected scales with current category/channel mix proportions (assume target mix mirrors actual mix shape)
+  let catFrac=0; STATE.cats.forEach(id=>catFrac += rec.byCat[id]/Math.max(rec.total,1e-9));
+  let chFrac=0;  STATE.chans.forEach(id=>chFrac  += rec.byCh[id] /Math.max(rec.total,1e-9));
+  return rec.expected * catFrac * chFrac;
+}
+function dayLeads(rec){
+  let catFrac=0; STATE.cats.forEach(id=>catFrac += rec.byCat[id]/Math.max(rec.total,1e-9));
+  let chFrac=0;  STATE.chans.forEach(id=>chFrac  += rec.byCh[id] /Math.max(rec.total,1e-9));
+  return rec.leads * catFrac * chFrac;
+}
+
+// Sum a specific date window across a set of clinic ids
+function sumWindow(clinicIds, startIdx, endIdx /*exclusive*/, accessor){
+  let s = 0;
+  clinicIds.forEach(id => {
+    const series = BOOKINGS[id];
+    for (let i=startIdx; i<endIdx; i++) s += accessor(series[i]);
+  });
+  return s;
+}
+
+// Compute current bookings + baseline bookings + leads + change for given clinic ids
+function aggForBaseline(clinicIds){
+  const pdays = periodDays();
+  const endIdx = DAYS;
+  const currStart = endIdx - pdays;
+  let curr=0, base=0, leadsCurr=0, leadsBase=0, expectedCurr=0;
+  clinicIds.forEach(id => {
+    const s = BOOKINGS[id];
+    for (let i=currStart; i<endIdx; i++){
+      curr += dayBookings(s[i]);
+      leadsCurr += dayLeads(s[i]);
+      expectedCurr += dayExpected(s[i]);
+    }
+  });
+  if (STATE.baseline === 'prior'){
+    const priorStart = currStart - pdays;
+    clinicIds.forEach(id => {
+      const s = BOOKINGS[id];
+      for (let i=priorStart; i<currStart; i++){
+        base += dayBookings(s[i]);
+        leadsBase += dayLeads(s[i]);
+      }
+    });
+  } else if (STATE.baseline === 'expected'){
+    base = expectedCurr;
+    // leads baseline: use leads in same window — there is no "expected leads", so use leads themselves vs curr — keep cvr comparison sensible
+    leadsBase = leadsCurr;
+  } else if (STATE.baseline === '8w_avg'){
+    // 8-week-avg baseline: average daily bookings over the 8 weeks (56 days) immediately before the current window,
+    // then scale to current window length.
+    const lookback = 56;
+    const lbStart = currStart - lookback;
+    let lbTotal=0, lbLeads=0;
+    clinicIds.forEach(id => {
+      const s = BOOKINGS[id];
+      for (let i=lbStart; i<currStart; i++){
+        lbTotal += dayBookings(s[i]);
+        lbLeads += dayLeads(s[i]);
+      }
+    });
+    base = (lbTotal/lookback) * pdays;
+    leadsBase = (lbLeads/lookback) * pdays;
+  }
+  const change = base > 0 ? (curr-base)/base : 0;
+  return {curr, base, change, leadsCurr, leadsBase, expectedCurr};
+}
+
+function clinicAgg(clinicId){ return aggForBaseline([clinicId]); }
+function cityAgg(cityId){
+  const ids = CLINICS.filter(c=>c.cityId===cityId).map(c=>c.id);
+  const a = aggForBaseline(ids);
+  a.clinicsCount = ids.length;
+  return a;
+}
+
+function statusOf(change){
+  if (change < -0.15) return 'red';
+  if (change > 0.05)  return 'green';
+  return 'yellow';
+}
+function statusLabel(s){ return s==='red'?'Dropping':s==='green'?'Growing':'Flat'; }
+
+// Diagnose: when a city/clinic is red, is it likely slot (leads still healthy) or demand (leads also down)?
+// We compare leads change vs bookings change. If leads change > -7% but bookings change < -15%, that's slot.
+function diagnose(a){
+  if (statusOf(a.change) !== 'red') return null;
+  const leadsChg = a.leadsBase>0 ? (a.leadsCurr - a.leadsBase)/a.leadsBase : 0;
+  if (leadsChg > -0.07) return 'slot';
+  return 'demand';
+}
+
+function fmt(n){ return Math.round(n).toLocaleString('en-IN'); }
+function pct(n){ const s=n>=0?'+':''; return s+(n*100).toFixed(1)+'%'; }
+function baselineLabel(){
+  if (STATE.baseline==='prior')   return `prior ${STATE.periods} ${GRAN_DEFS[STATE.gran].plural}`;
+  if (STATE.baseline==='expected')return `expected`;
+  return `last 8-week average`;
+}
+
+/* =========================================================
+   5. FILTER UI
+   ========================================================= */
+function renderFilters(){
+  // Categories
+  const catEl = document.getElementById('filter-cat'); catEl.innerHTML='';
+  CATEGORIES.forEach(c => {
+    const el = document.createElement('div');
+    el.className = 'chip sm' + (STATE.cats.has(c.id)?` cat-active-${c.id}`:'');
+    el.textContent = c.name;
+    el.onclick = () => { STATE.cats.has(c.id) ? (STATE.cats.size>1 && STATE.cats.delete(c.id)) : STATE.cats.add(c.id); renderAll(); };
+    catEl.appendChild(el);
+  });
+  // Channels
+  const chEl = document.getElementById('filter-ch'); chEl.innerHTML='';
+  CHANNELS.forEach(c => {
+    const el = document.createElement('div');
+    el.className = 'chip sm' + (STATE.chans.has(c.id)?' ch-active':'');
+    el.textContent = c.name;
+    el.onclick = () => { STATE.chans.has(c.id) ? (STATE.chans.size>1 && STATE.chans.delete(c.id)) : STATE.chans.add(c.id); renderAll(); };
+    chEl.appendChild(el);
+  });
+  // Tiers
+  const tEl = document.getElementById('filter-tier'); tEl.innerHTML='';
+  TIERS.forEach(t => {
+    const el = document.createElement('div');
+    el.className = 'chip sm' + (STATE.tiers.has(t.id)?` tier-active-${t.id}`:'');
+    el.textContent = t.name;
+    el.onclick = () => {
+      if (STATE.tiers.has(t.id)){
+        if (STATE.tiers.size > 1){
+          STATE.tiers.delete(t.id);
+          // also drop cities of that tier
+          CITIES.filter(c=>c.tier===t.id).forEach(c=>STATE.cities.delete(c.id));
+        }
+      } else {
+        STATE.tiers.add(t.id);
+        CITIES.filter(c=>c.tier===t.id).forEach(c=>STATE.cities.add(c.id));
+      }
+      renderAll();
+    };
+    tEl.appendChild(el);
+  });
+  // Cities (respect tier)
+  const cityEl = document.getElementById('filter-city'); cityEl.innerHTML='';
+  const tierCities = CITIES.filter(c=>STATE.tiers.has(c.tier));
+  const allSelected = tierCities.every(c=>STATE.cities.has(c.id));
+  const allBtn = document.createElement('div');
+  // When NOT all selected: prominent dark "reset" chip. When all selected: normal active state.
+  allBtn.className = 'chip sm ' + (allSelected ? 'active' : 'reset');
+  allBtn.textContent = allSelected ? 'All cities' : `Show all ${tierCities.length} cities`;
+  allBtn.title = allSelected ? '' : 'Reset city filter';
+  allBtn.onclick = () => { STATE.cities = new Set(tierCities.map(c=>c.id)); renderAll(); };
+  cityEl.appendChild(allBtn);
+  CITIES.forEach(c => {
+    const inTier = STATE.tiers.has(c.tier);
+    const el = document.createElement('div');
+    el.className = 'chip sm' + (STATE.cities.has(c.id)?' active':'');
+    if (!inTier) el.style.opacity = '0.35';
+    el.textContent = c.name;
+    el.onclick = () => {
+      if (!inTier) return;
+      if (STATE.cities.has(c.id)){ if (STATE.cities.size>1) STATE.cities.delete(c.id); }
+      else STATE.cities.add(c.id);
+      renderAll();
+    };
+    cityEl.appendChild(el);
+  });
+  // Granularity
+  const gEl = document.getElementById('filter-gran'); gEl.innerHTML='';
+  ['day','week','month'].forEach(g => {
+    const el = document.createElement('div');
+    el.className = 'chip sm' + (STATE.gran===g?' active':'');
+    el.textContent = g==='day'?'Day-on-day':g==='week'?'Week-on-week':'Month-on-month';
+    el.onclick = () => {
+      STATE.gran = g;
+      STATE.periods = GRAN_DEFS[g].default;
+      renderAll();
+    };
+    gEl.appendChild(el);
+  });
+  // Periods input
+  const pInput = document.getElementById('filter-periods');
+  pInput.value = STATE.periods;
+  pInput.max = GRAN_DEFS[STATE.gran].max;
+  pInput.oninput = (e) => { const v = Math.max(1, Math.min(GRAN_DEFS[STATE.gran].max, +e.target.value||1)); STATE.periods = v; e.target.value = v; renderAll(); };
+  document.getElementById('filter-periods-unit').textContent = GRAN_DEFS[STATE.gran].plural;
+  document.getElementById('filter-vs-label').textContent = baselineLabel();
+  // Baseline
+  const bEl = document.getElementById('filter-baseline'); bEl.innerHTML='';
+  [{id:'prior',name:'Prior period'},{id:'expected',name:'Expected (target)'},{id:'8w_avg',name:'Last 8-week avg'}].forEach(b => {
+    const el = document.createElement('div');
+    el.className = 'chip sm' + (STATE.baseline===b.id?' active':'');
+    el.textContent = b.name;
+    el.onclick = () => { STATE.baseline = b.id; renderAll(); };
+    bEl.appendChild(el);
+  });
+
+  // Header sub
+  const head = document.getElementById('header-sub');
+  const gName = STATE.gran==='day'?'Day-on-day':STATE.gran==='week'?'Week-on-week':'Month-on-month';
+  head.innerHTML = `${gName} · Last <b>${STATE.periods}</b> ${GRAN_DEFS[STATE.gran].plural} vs <b>${baselineLabel()}</b> · Red/Yellow/Green based on % change · <span class="text-amber-600 font-medium">Sample data</span>`;
+
+  // Active drill-down banner: shows when city or tier selection is narrowed
+  const banner = document.getElementById('activeFilterBanner');
+  const allTiers = STATE.tiers.size === TIERS.length;
+  const allTierCities = CITIES.filter(c=>STATE.tiers.has(c.tier));
+  const allCitiesSelected = allTierCities.every(c=>STATE.cities.has(c.id));
+  if (!allCitiesSelected || !allTiers){
+    const cityNames = [...STATE.cities].map(id => CITIES.find(c=>c.id===id)?.name).filter(Boolean);
+    const tierLabel = allTiers ? '' : `Tier ${[...STATE.tiers].map(t=>t.replace('t','')).join(' + ')}`;
+    let scopeLabel;
+    if (cityNames.length === 1) scopeLabel = `<b>${cityNames[0]}</b>`;
+    else if (cityNames.length <= 3) scopeLabel = cityNames.map(n=>`<b>${n}</b>`).join(', ');
+    else scopeLabel = `<b>${cityNames.length} of ${allTierCities.length}</b> cities`;
+    banner.innerHTML = `
+      <div class="filter-banner">
+        <span>🔍</span>
+        <span>Drilled into: ${scopeLabel}${tierLabel?` <span class="text-blue-600">· ${tierLabel}</span>`:''}</span>
+        <button class="clear-x" onclick="clearCityDrilldown()">↺  Show all cities</button>
+      </div>`;
+    banner.style.display = 'block';
+  } else {
+    banner.style.display = 'none';
+    banner.innerHTML = '';
+  }
+}
+
+function clearCityDrilldown(){
+  STATE.tiers = new Set(['t1','t2']);
+  STATE.cities = new Set(CITIES.map(c=>c.id));
+  renderAll();
+}
+window.clearCityDrilldown = clearCityDrilldown;
+
+function activeCityIds(){ return CITIES.filter(c => STATE.cities.has(c.id) && STATE.tiers.has(c.tier)).map(c=>c.id); }
+function activeClinicIds(){ const ids = new Set(activeCityIds()); return CLINICS.filter(cl => ids.has(cl.cityId)).map(cl=>cl.id); }
+
+/* =========================================================
+   6. KPIs
+   ========================================================= */
+let sparkBookings, sparkCvr;
+function renderKPIs(){
+  const clinicIds = activeClinicIds();
+  const a = aggForBaseline(clinicIds);
+  document.getElementById('kpi-bookings').textContent = fmt(a.curr);
+  document.getElementById('kpi-bookings-prior').textContent = `${fmt(a.base)} baseline`;
+  document.getElementById('kpi-bookings-baseline-label').textContent = baselineLabel();
+  const chgEl = document.getElementById('kpi-bookings-chg');
+  chgEl.textContent = pct(a.change);
+  chgEl.className = 'text-sm font-semibold ' + (a.change>0.05?'text-emerald-600':a.change<-0.15?'text-red-600':'text-amber-600');
+
+  // Drop alerts
+  let dropCities=0, dropClinics=0, dropList=[];
+  activeCityIds().forEach(id => {
+    const ca = cityAgg(id);
+    if (statusOf(ca.change)==='red'){ dropCities++; const c=CITIES.find(x=>x.id===id); dropList.push(`${c.name} (${pct(ca.change)})`); }
+  });
+  clinicIds.forEach(id => { if (statusOf(clinicAgg(id).change)==='red') dropClinics++; });
+  document.getElementById('kpi-alerts').textContent = dropCities + dropClinics;
+  document.getElementById('kpi-alerts-cities').textContent = dropCities;
+  document.getElementById('kpi-alerts-clinics').textContent = dropClinics;
+  document.getElementById('kpi-alerts-list').innerHTML = dropList.slice(0,4).map(s => `<span class="pill red mr-1 mb-1"><span class="dot"></span>${s}</span>`).join('') + (dropList.length>4?` <span class="text-slate-400">+${dropList.length-4} more</span>`:'');
+
+  // Conversion
+  const cvrCurr = a.leadsCurr>0 ? a.curr/a.leadsCurr : 0;
+  const cvrBase = a.leadsBase>0 ? a.base/a.leadsBase : 0;
+  const cvrChg = cvrBase>0 ? (cvrCurr-cvrBase)/cvrBase : 0;
+  document.getElementById('kpi-cvr').textContent = (cvrCurr*100).toFixed(1)+'%';
+  const cvrChgEl = document.getElementById('kpi-cvr-chg');
+  cvrChgEl.textContent = pct(cvrChg);
+  cvrChgEl.className = 'text-sm font-semibold ' + (cvrChg>0.05?'text-emerald-600':cvrChg<-0.15?'text-red-600':'text-amber-600');
+
+  // Sparklines (over last ~90 days of bookings & cvr)
+  const sparkDays = 90;
+  const series = dailyTotalsForRange(clinicIds, DAYS-sparkDays, DAYS);
+  drawSpark('spark-bookings', series.bookings, '#0f172a', sparkBookings, x=>sparkBookings=x);
+  drawSpark('spark-cvr',      series.cvr,      '#0ea5e9', sparkCvr,      x=>sparkCvr=x);
+}
+function dailyTotalsForRange(clinicIds, startIdx, endIdx){
+  const bookings = [], cvr = [];
+  for (let i=startIdx; i<endIdx; i++){
+    let b=0, l=0;
+    clinicIds.forEach(id => { const rec = BOOKINGS[id][i]; b += dayBookings(rec); l += dayLeads(rec); });
+    bookings.push(b);
+    cvr.push(l>0 ? (b/l)*100 : 0);
+  }
+  return {bookings, cvr};
+}
+function drawSpark(canvasId, data, color, existing, setter){
+  if (existing) existing.destroy();
+  const chart = new Chart(document.getElementById(canvasId), {
+    type:'line',
+    data:{ labels:data.map((_,i)=>i), datasets:[{ data, borderColor:color, backgroundColor:hexA(color,.12), borderWidth:1.5, pointRadius:0, fill:true, tension:.3 }] },
+    options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false},tooltip:{enabled:false}}, scales:{x:{display:false},y:{display:false}} }
+  });
+  setter(chart);
+}
+function hexA(hex, a){ const h=hex.replace('#',''); const r=parseInt(h.substring(0,2),16); const g=parseInt(h.substring(2,4),16); const b=parseInt(h.substring(4,6),16); return `rgba(${r},${g},${b},${a})`; }
+
+/* =========================================================
+   7. MAP
+   ========================================================= */
+let map, markersLayer;
+function initMap(){
+  map = L.map('map', {zoomControl:true, scrollWheelZoom:false}).setView([22.5, 80], 5);
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+    attribution:'&copy; OpenStreetMap &copy; CARTO', subdomains:'abcd', maxZoom:9
+  }).addTo(map);
+  markersLayer = L.layerGroup().addTo(map);
+}
+function renderMap(){
+  markersLayer.clearLayers();
+  let max=0;
+  CITIES.forEach(c => { const a = cityAgg(c.id); if (a.curr>max) max=a.curr; });
+  CITIES.forEach(c => {
+    const visible = STATE.cities.has(c.id) && STATE.tiers.has(c.tier);
+    const a = cityAgg(c.id);
+    const status = statusOf(a.change);
+    const color = status==='red'?'#ef4444':status==='green'?'#10b981':'#f59e0b';
+    const size = 10 + (a.curr/Math.max(max,1))*22;
+    const html = `<div class="marker-dot" style="width:${size}px;height:${size}px;background:${color};opacity:${visible?1:0.18}"></div>`;
+    const icon = L.divIcon({className:'', html, iconSize:[size,size], iconAnchor:[size/2,size/2]});
+    const m = L.marker([c.lat, c.lng], {icon});
+    const diag = diagnose(a);
+    const diagHtml = diag ? `<br><span style="color:${diag==='slot'?'#1d4ed8':'#9d174d'};font-size:11px;font-weight:600">${diag==='slot'?'Likely slot issue':'Likely demand issue'}</span>` : '';
+    m.bindTooltip(`<b>${c.name}</b> <span style="color:#94a3b8">· ${c.tier.toUpperCase()}</span><br>${fmt(a.curr)} bookings · <span style="color:${color};font-weight:600">${pct(a.change)}</span>${diagHtml}`, {direction:'top', offset:[0,-size/2]});
+    if (visible) m.on('click', () => { STATE.cities = new Set([c.id]); STATE.tiers = new Set([c.tier,...STATE.tiers]); renderAll(); });
+    markersLayer.addLayer(m);
+  });
+}
+
+/* =========================================================
+   8. MAIN TREND CHART (granularity-aware)
+   ========================================================= */
+let trendChart;
+function bucketize(dailyValues, dailyDates){
+  // Returns {labels:[], values:[]}
+  if (STATE.gran === 'day'){
+    return { labels: dailyDates.map(d=>d.toLocaleDateString('en-IN',{day:'2-digit',month:'short'})), values: dailyValues };
+  }
+  if (STATE.gran === 'week'){
+    const out = [], labels = [];
+    // group by ISO-ish week; backwards from end
+    let bucket=0, count=0, lastStart=null;
+    for (let i=0; i<dailyValues.length; i++){
+      const d = dailyDates[i];
+      const dow = d.getDay(); // assume Mon as start; offset
+      const monday = new Date(d); monday.setDate(d.getDate() - ((dow+6)%7));
+      const key = monday.toISOString().slice(0,10);
+      if (lastStart !== key){
+        if (lastStart !== null){ out.push(bucket); labels.push('W of '+lastStart.slice(5)); }
+        lastStart = key; bucket=0; count=0;
+      }
+      bucket += dailyValues[i]; count++;
+    }
+    if (lastStart!==null){ out.push(bucket); labels.push('W of '+lastStart.slice(5)); }
+    return {labels, values:out};
+  }
+  // month
+  const out=[], labels=[];
+  let cur=null, bucket=0;
+  for (let i=0; i<dailyValues.length; i++){
+    const d = dailyDates[i];
+    const key = `${d.getFullYear()}-${d.getMonth()+1}`;
+    if (cur !== key){
+      if (cur !== null){ out.push(bucket); labels.push(cur); }
+      cur = key; bucket=0;
+    }
+    bucket += dailyValues[i];
+  }
+  if (cur!==null){ out.push(bucket); labels.push(cur); }
+  return {labels, values:out};
+}
+
+function renderTrend(){
+  const clinicIds = activeClinicIds();
+  // Show ~12 buckets of history
+  const buckets = STATE.gran==='day'?60 : STATE.gran==='week'?26 : 12;
+  const days = buckets * GRAN_DEFS[STATE.gran].daysPer;
+  const startIdx = Math.max(0, DAYS-days);
+  const dailyBookings=[], dailyExpected=[];
+  const dates = [];
+  for (let i=startIdx; i<DAYS; i++){
+    let b=0, e=0;
+    clinicIds.forEach(id => { const rec=BOOKINGS[id][i]; b+=dayBookings(rec); e+=dayExpected(rec); });
+    dailyBookings.push(b); dailyExpected.push(e); dates.push(allDates[i]);
+  }
+  const b1 = bucketize(dailyBookings, dates);
+  const b2 = bucketize(dailyExpected, dates);
+  const datasets = [
+    { label:'Actual bookings', data:b1.values, borderColor:'#0f172a', backgroundColor:'rgba(15,23,42,0.10)', borderWidth:2.4, pointRadius:0, tension:0.3, fill:true },
+  ];
+  if (STATE.trendShow === 'expected'){
+    datasets.unshift({ label:'Expected', data:b2.values, borderColor:'#94a3b8', borderDash:[5,4], backgroundColor:'transparent', borderWidth:2, pointRadius:0, tension:0.3, fill:false });
+  } else {
+    // vs prior: shift values by `periods` buckets to create a prior overlay
+    const priorShift = STATE.periods;
+    const priorVals = b1.values.map((v,i)=> i>=priorShift ? b1.values[i-priorShift] : null);
+    datasets.unshift({ label:`Prior ${STATE.gran}`, data:priorVals, borderColor:'#94a3b8', borderDash:[5,4], backgroundColor:'transparent', borderWidth:2, pointRadius:0, tension:0.3, fill:false });
+  }
+  if (trendChart) trendChart.destroy();
+  trendChart = new Chart(document.getElementById('trend'), {
+    type:'line',
+    data:{ labels:b1.labels, datasets },
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      interaction:{mode:'index', intersect:false},
+      plugins:{ legend:{position:'bottom', labels:{boxWidth:10, font:{size:11}}}, tooltip:{ callbacks:{ label:c=>` ${c.dataset.label}: ${c.parsed.y==null?'—':fmt(c.parsed.y)}` } } },
+      scales:{
+        x:{ ticks:{ maxTicksLimit:8, font:{size:10}, color:'#94a3b8' }, grid:{display:false} },
+        y:{ ticks:{ font:{size:10}, color:'#94a3b8', callback:v=>fmt(v) }, grid:{color:'#f1f5f9'} }
+      }
+    }
+  });
+}
+
+/* =========================================================
+   9. CHANNEL TREND (stacked area or share)
+   ========================================================= */
+let channelTrendChart;
+function renderChannelTrend(){
+  const clinicIds = activeClinicIds();
+  const buckets = STATE.gran==='day'?60 : STATE.gran==='week'?26 : 12;
+  const days = buckets * GRAN_DEFS[STATE.gran].daysPer;
+  const startIdx = Math.max(0, DAYS-days);
+
+  // Build per-channel daily totals
+  const perChannel = {};
+  CHANNELS.forEach(ch => perChannel[ch.id] = []);
+  const dates = [];
+  for (let i=startIdx; i<DAYS; i++){
+    const totals = Object.fromEntries(CHANNELS.map(ch=>[ch.id,0]));
+    clinicIds.forEach(id => {
+      const rec = BOOKINGS[id][i];
+      // apply category filter to rec.byCh proportionally
+      let catFrac=0; STATE.cats.forEach(cid=>catFrac+=rec.byCat[cid]/Math.max(rec.total,1e-9));
+      CHANNELS.forEach(ch => totals[ch.id] += rec.byCh[ch.id]*catFrac);
+    });
+    CHANNELS.forEach(ch => perChannel[ch.id].push(totals[ch.id]));
+    dates.push(allDates[i]);
+  }
+  // Bucketize per channel
+  const labels = bucketize(perChannel[CHANNELS[0].id], dates).labels;
+  const datasets = CHANNELS.filter(c=>STATE.chans.has(c.id)).map(ch => {
+    const b = bucketize(perChannel[ch.id], dates);
+    return { label:ch.name, data:b.values, borderColor:ch.color, backgroundColor:hexA(ch.color,0.55), borderWidth:1.5, pointRadius:0, tension:0.3, fill:true, _id:ch.id };
+  });
+
+  if (STATE.channelTrendMode === 'share'){
+    // Normalize to 100% per bucket
+    const sums = datasets[0].data.map((_,i) => datasets.reduce((s,d)=>s+(d.data[i]||0),0));
+    datasets.forEach(d => d.data = d.data.map((v,i)=> sums[i]>0 ? (v/sums[i])*100 : 0));
+  }
+
+  if (channelTrendChart) channelTrendChart.destroy();
+  channelTrendChart = new Chart(document.getElementById('channelTrend'), {
+    type:'line',
+    data:{ labels, datasets },
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      interaction:{mode:'index',intersect:false},
+      plugins:{ legend:{position:'bottom', labels:{boxWidth:10, font:{size:11}}}, tooltip:{ callbacks:{ label:c=>` ${c.dataset.label}: ${STATE.channelTrendMode==='share'? c.parsed.y.toFixed(1)+'%' : fmt(c.parsed.y)}` } } },
+      scales:{
+        x:{ ticks:{maxTicksLimit:8, font:{size:10}, color:'#94a3b8'}, grid:{display:false}, stacked:true },
+        y:{ stacked:true, ticks:{font:{size:10}, color:'#94a3b8', callback: v=> STATE.channelTrendMode==='share' ? v+'%' : fmt(v)}, grid:{color:'#f1f5f9'}, max: STATE.channelTrendMode==='share'?100:undefined }
+      }
+    }
+  });
+}
+
+/* =========================================================
+   10. CATEGORY TREND
+   ========================================================= */
+let categoryTrendChart;
+function renderCategoryTrend(){
+  const clinicIds = activeClinicIds();
+  const buckets = STATE.gran==='day'?60 : STATE.gran==='week'?26 : 12;
+  const days = buckets * GRAN_DEFS[STATE.gran].daysPer;
+  const startIdx = Math.max(0, DAYS-days);
+
+  const perCat = {sh:[],sti:[],mh:[]};
+  const dates = [];
+  for (let i=startIdx; i<DAYS; i++){
+    const totals = {sh:0,sti:0,mh:0};
+    clinicIds.forEach(id => {
+      const rec = BOOKINGS[id][i];
+      let chFrac=0; STATE.chans.forEach(cid=>chFrac+=rec.byCh[cid]/Math.max(rec.total,1e-9));
+      CATEGORIES.forEach(cat => totals[cat.id] += rec.byCat[cat.id]*chFrac);
+    });
+    CATEGORIES.forEach(cat => perCat[cat.id].push(totals[cat.id]));
+    dates.push(allDates[i]);
+  }
+  const labels = bucketize(perCat.sh, dates).labels;
+  const datasets = CATEGORIES.filter(c=>STATE.cats.has(c.id)).map(cat => {
+    const b = bucketize(perCat[cat.id], dates);
+    return { label:cat.name, data:b.values, borderColor:cat.color, backgroundColor:hexA(cat.color,0.55), borderWidth:1.5, pointRadius:0, tension:0.3, fill:true };
+  });
+  if (STATE.categoryTrendMode === 'share'){
+    const sums = datasets[0].data.map((_,i) => datasets.reduce((s,d)=>s+(d.data[i]||0),0));
+    datasets.forEach(d => d.data = d.data.map((v,i)=> sums[i]>0 ? (v/sums[i])*100 : 0));
+  }
+  if (categoryTrendChart) categoryTrendChart.destroy();
+  categoryTrendChart = new Chart(document.getElementById('categoryTrend'), {
+    type:'line',
+    data:{ labels, datasets },
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      interaction:{mode:'index',intersect:false},
+      plugins:{ legend:{position:'bottom', labels:{boxWidth:10, font:{size:11}}}, tooltip:{ callbacks:{ label:c=>` ${c.dataset.label}: ${STATE.categoryTrendMode==='share'? c.parsed.y.toFixed(1)+'%' : fmt(c.parsed.y)}` } } },
+      scales:{
+        x:{ ticks:{maxTicksLimit:8, font:{size:10}, color:'#94a3b8'}, grid:{display:false}, stacked:true },
+        y:{ stacked:true, ticks:{font:{size:10}, color:'#94a3b8', callback: v=> STATE.categoryTrendMode==='share' ? v+'%' : fmt(v)}, grid:{color:'#f1f5f9'}, max: STATE.categoryTrendMode==='share'?100:undefined }
+      }
+    }
+  });
+}
+
+/* =========================================================
+   11. CITY TABLE
+   ========================================================= */
+function renderCityTable(){
+  const rows = CITIES.filter(c=>STATE.cities.has(c.id) && STATE.tiers.has(c.tier)).map(c => {
+    const a = cityAgg(c.id);
+    return { city:c.name, cityId:c.id, tier:c.tier, clinics:c.clinicCount, curr:a.curr, prior:a.base, chg:a.change, status:statusOf(a.change), diag:diagnose(a) };
+  });
+  const {k, dir} = STATE.sort;
+  rows.sort((a,b) => {
+    const va = a[k], vb = b[k];
+    if (typeof va === 'string') return dir==='asc' ? va.localeCompare(vb) : vb.localeCompare(va);
+    return dir==='asc' ? va-vb : vb-va;
+  });
+  const tbody = document.querySelector('#cityTable tbody');
+  const maxAbs = Math.max(...rows.map(r=>Math.abs(r.chg)), 0.001);
+  tbody.innerHTML = rows.map(r => {
+    const pctW = (Math.abs(r.chg)/maxAbs)*100;
+    const color = r.status==='red'?'#ef4444':r.status==='green'?'#10b981':'#f59e0b';
+    const diagPill = r.diag ? `<span class="pill ${r.diag}">${r.diag==='slot'?'Slot issue':'Demand issue'}</span>` : `<span class="text-slate-300 text-xs">—</span>`;
+    return `<tr style="cursor:pointer" onclick="setSingleCity('${r.cityId}')">
+      <td><div class="font-semibold text-slate-900">${r.city}</div></td>
+      <td><span class="text-xs ${r.tier==='t1'?'text-red-600':'text-cyan-700'} font-semibold">${r.tier.toUpperCase()}</span></td>
+      <td class="text-slate-500">${r.clinics}</td>
+      <td class="font-medium">${fmt(r.curr)}</td>
+      <td class="text-slate-500">${fmt(r.prior)}</td>
+      <td>
+        <div class="flex items-center gap-2">
+          <div class="bar-row" style="width:80px"><span style="width:${pctW}%;background:${color}"></span></div>
+          <span style="color:${color};font-weight:600">${pct(r.chg)}</span>
+        </div>
+      </td>
+      <td><span class="pill ${r.status}"><span class="dot"></span>${statusLabel(r.status)}</span></td>
+      <td>${diagPill}</td>
+    </tr>`;
+  }).join('');
+  // City count + inline reset when filtered
+  const totalTierCities = CITIES.filter(c=>STATE.tiers.has(c.tier)).length;
+  const allTiersOn = STATE.tiers.size === TIERS.length;
+  const filtered = rows.length < totalTierCities || !allTiersOn;
+  document.getElementById('city-count').innerHTML = `${rows.length} of ${CITIES.length} cities${filtered ? ` <span class="inline-reset" onclick="clearCityDrilldown()">↺ Show all</span>` : ''}`;
+
+  document.querySelectorAll('#cityTable thead th.sortable').forEach(th => {
+    th.classList.remove('asc','desc');
+    if (th.dataset.k === STATE.sort.k) th.classList.add(STATE.sort.dir);
+    th.onclick = () => {
+      if (STATE.sort.k === th.dataset.k){ STATE.sort.dir = STATE.sort.dir==='asc'?'desc':'asc'; }
+      else { STATE.sort.k = th.dataset.k; STATE.sort.dir = 'asc'; }
+      renderCityTable();
+    };
+  });
+}
+function setSingleCity(id){
+  const c = CITIES.find(x=>x.id===id);
+  STATE.tiers = new Set([c.tier, ...STATE.tiers]);
+  STATE.cities = new Set([id]);
+  renderAll();
+}
+window.setSingleCity = setSingleCity;
+
+/* =========================================================
+   12. CHANNEL & CATEGORY CURRENT vs BASELINE
+   ========================================================= */
+let channelChart;
+function renderChannelBars(){
+  const clinicIds = activeClinicIds();
+  const pdays = periodDays();
+  const endIdx = DAYS, currStart = endIdx-pdays;
+
+  // Current
+  const curr = Object.fromEntries(CHANNELS.map(ch=>[ch.id,0]));
+  clinicIds.forEach(id => {
+    const s = BOOKINGS[id];
+    for (let i=currStart; i<endIdx; i++){
+      const rec = s[i];
+      let catFrac=0; STATE.cats.forEach(c=>catFrac+=rec.byCat[c]/Math.max(rec.total,1e-9));
+      CHANNELS.forEach(ch => curr[ch.id] += rec.byCh[ch.id]*catFrac);
+    }
+  });
+  // Baseline
+  const base = Object.fromEntries(CHANNELS.map(ch=>[ch.id,0]));
+  if (STATE.baseline==='prior'){
+    const ps = currStart-pdays;
+    clinicIds.forEach(id => {
+      const s = BOOKINGS[id];
+      for (let i=ps; i<currStart; i++){
+        const rec = s[i];
+        let catFrac=0; STATE.cats.forEach(c=>catFrac+=rec.byCat[c]/Math.max(rec.total,1e-9));
+        CHANNELS.forEach(ch => base[ch.id] += rec.byCh[ch.id]*catFrac);
+      }
+    });
+  } else if (STATE.baseline==='expected'){
+    // expected channel share scaled with expected total
+    clinicIds.forEach(id => {
+      const s = BOOKINGS[id];
+      const cl = CLINICS.find(c=>c.id===id);
+      for (let i=currStart; i<endIdx; i++){
+        const rec = s[i];
+        let catFrac=0; STATE.cats.forEach(c=>catFrac+=rec.byCat[c]/Math.max(rec.total,1e-9));
+        CHANNELS.forEach(ch => base[ch.id] += rec.expected * cl.chShare[ch.id] * catFrac);
+      }
+    });
+  } else if (STATE.baseline==='8w_avg'){
+    const lookback=56; const lbStart = currStart-lookback;
+    const sums = Object.fromEntries(CHANNELS.map(ch=>[ch.id,0]));
+    clinicIds.forEach(id => {
+      const s = BOOKINGS[id];
+      for (let i=lbStart; i<currStart; i++){
+        const rec = s[i];
+        let catFrac=0; STATE.cats.forEach(c=>catFrac+=rec.byCat[c]/Math.max(rec.total,1e-9));
+        CHANNELS.forEach(ch => sums[ch.id] += rec.byCh[ch.id]*catFrac);
+      }
+    });
+    CHANNELS.forEach(ch => base[ch.id] = (sums[ch.id]/lookback)*pdays);
+  }
+
+  const visibleCh = CHANNELS.filter(c=>STATE.chans.has(c.id));
+  const labels = visibleCh.map(c=>c.name);
+  const ids = visibleCh.map(c=>c.id);
+  const colors = visibleCh.map(c=>c.color);
+  const currData = ids.map(id => curr[id]);
+  const baseData = ids.map(id => base[id]);
+
+  if (channelChart) channelChart.destroy();
+  channelChart = new Chart(document.getElementById('channelChart'), {
+    type:'bar',
+    data:{ labels, datasets:[
+      { label:'Baseline', data:baseData, backgroundColor:'#cbd5e1', borderRadius:4 },
+      { label:'Current', data:currData, backgroundColor:colors, borderRadius:4 }
+    ]},
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{position:'bottom', labels:{boxWidth:10, font:{size:11}}}, tooltip:{ callbacks:{ label:c=>` ${c.dataset.label}: ${fmt(c.parsed.y)}` } } },
+      scales:{ x:{grid:{display:false}}, y:{ticks:{callback:v=>fmt(v), font:{size:10}, color:'#94a3b8'}, grid:{color:'#f1f5f9'}} }
+    }
+  });
+
+  document.getElementById('channelBaselineLabel').textContent = `Current ${STATE.periods} ${GRAN_DEFS[STATE.gran].plural} vs ${baselineLabel()}`;
+
+  const totalCurr = ids.reduce((s,id)=>s+curr[id],0);
+  document.getElementById('channelBreakdown').innerHTML = ids.map(id => {
+    const ch = CHANNELS.find(c=>c.id===id);
+    const c = curr[id], p = base[id];
+    const chg = p>0?(c-p)/p:0;
+    const share = totalCurr>0?c/totalCurr:0;
+    const status = statusOf(chg);
+    const color = status==='red'?'#ef4444':status==='green'?'#10b981':'#f59e0b';
+    return `<div class="flex items-center justify-between text-xs">
+      <div class="flex items-center gap-2"><span style="width:8px;height:8px;border-radius:50%;background:${ch.color}"></span><span class="font-medium text-slate-900">${ch.name}</span><span class="text-slate-400">${(share*100).toFixed(0)}%</span></div>
+      <div class="flex items-center gap-3"><span class="text-slate-500">${fmt(c)}</span><span style="color:${color};font-weight:600;width:54px;text-align:right">${pct(chg)}</span></div>
+    </div>`;
+  }).join('');
+}
+
+let categoryChart;
+function renderCategoryBars(){
+  const clinicIds = activeClinicIds();
+  const pdays = periodDays();
+  const endIdx = DAYS, currStart = endIdx-pdays;
+  const curr = {sh:0,sti:0,mh:0}, base = {sh:0,sti:0,mh:0};
+  clinicIds.forEach(id => {
+    const s = BOOKINGS[id];
+    for (let i=currStart; i<endIdx; i++){
+      const rec = s[i];
+      let chFrac=0; STATE.chans.forEach(c=>chFrac+=rec.byCh[c]/Math.max(rec.total,1e-9));
+      CATEGORIES.forEach(cat => curr[cat.id] += rec.byCat[cat.id]*chFrac);
+    }
+  });
+  if (STATE.baseline==='prior'){
+    const ps = currStart-pdays;
+    clinicIds.forEach(id => {
+      const s = BOOKINGS[id];
+      for (let i=ps; i<currStart; i++){
+        const rec = s[i];
+        let chFrac=0; STATE.chans.forEach(c=>chFrac+=rec.byCh[c]/Math.max(rec.total,1e-9));
+        CATEGORIES.forEach(cat => base[cat.id] += rec.byCat[cat.id]*chFrac);
+      }
+    });
+  } else if (STATE.baseline==='expected'){
+    clinicIds.forEach(id => {
+      const s = BOOKINGS[id]; const cl = CLINICS.find(c=>c.id===id);
+      for (let i=currStart; i<endIdx; i++){
+        const rec = s[i];
+        let chFrac=0; STATE.chans.forEach(c=>chFrac+=rec.byCh[c]/Math.max(rec.total,1e-9));
+        CATEGORIES.forEach(cat => base[cat.id] += rec.expected * cl.catShare[cat.id] * chFrac);
+      }
+    });
+  } else if (STATE.baseline==='8w_avg'){
+    const lookback=56; const lbStart=currStart-lookback;
+    const sums = {sh:0,sti:0,mh:0};
+    clinicIds.forEach(id => {
+      const s = BOOKINGS[id];
+      for (let i=lbStart; i<currStart; i++){
+        const rec = s[i];
+        let chFrac=0; STATE.chans.forEach(c=>chFrac+=rec.byCh[c]/Math.max(rec.total,1e-9));
+        CATEGORIES.forEach(cat => sums[cat.id] += rec.byCat[cat.id]*chFrac);
+      }
+    });
+    CATEGORIES.forEach(cat => base[cat.id] = (sums[cat.id]/lookback)*pdays);
+  }
+  const ids = CATEGORIES.filter(c=>STATE.cats.has(c.id)).map(c=>c.id);
+  const labels = CATEGORIES.filter(c=>STATE.cats.has(c.id)).map(c=>c.name);
+  const colors = CATEGORIES.filter(c=>STATE.cats.has(c.id)).map(c=>c.color);
+  const data = ids.map(id => curr[id]);
+
+  if (categoryChart) categoryChart.destroy();
+  categoryChart = new Chart(document.getElementById('categoryChart'), {
+    type:'doughnut',
+    data:{ labels, datasets:[{ data, backgroundColor:colors, borderWidth:0 }]},
+    options:{
+      responsive:true, maintainAspectRatio:false, cutout:'62%',
+      plugins:{ legend:{position:'bottom', labels:{boxWidth:10, font:{size:11}}}, tooltip:{ callbacks:{ label:c=>` ${c.label}: ${fmt(c.parsed)}` } } }
+    }
+  });
+  document.getElementById('categoryBaselineLabel').textContent = `Current ${STATE.periods} ${GRAN_DEFS[STATE.gran].plural} vs ${baselineLabel()}`;
+  const totalCurr = ids.reduce((s,id)=>s+curr[id],0);
+  document.getElementById('categoryBreakdown').innerHTML = ids.map(id => {
+    const cat = CATEGORIES.find(c=>c.id===id);
+    const c = curr[id], p = base[id];
+    const chg = p>0?(c-p)/p:0;
+    const share = totalCurr>0?c/totalCurr:0;
+    const status = statusOf(chg);
+    const color = status==='red'?'#ef4444':status==='green'?'#10b981':'#f59e0b';
+    return `<div class="flex items-center justify-between text-xs">
+      <div class="flex items-center gap-2"><span style="width:8px;height:8px;border-radius:50%;background:${cat.color}"></span><span class="font-medium text-slate-900">${cat.name}</span><span class="text-slate-400">${(share*100).toFixed(0)}%</span></div>
+      <div class="flex items-center gap-3"><span class="text-slate-500">${fmt(c)}</span><span style="color:${color};font-weight:600;width:54px;text-align:right">${pct(chg)}</span></div>
+    </div>`;
+  }).join('');
+}
+
+/* =========================================================
+   13. CLINIC LIST
+   ========================================================= */
+function renderClinicList(){
+  const visibleCityIds = activeCityIds();
+  const sections = visibleCityIds.map(id => {
+    const city = CITIES.find(c=>c.id===id);
+    const clinics = CLINICS.filter(cl => cl.cityId===id).map(cl => {
+      const a = clinicAgg(cl.id);
+      return { name:cl.name, curr:a.curr, prior:a.base, chg:a.change, status:statusOf(a.change), diag:diagnose(a), slot:cl.isSlotConstrained };
+    }).sort((x,y)=>x.chg-y.chg);
+    const cityA = cityAgg(id);
+    return { city:city.name, tier:city.tier, clinics, change:cityA.change, status:statusOf(cityA.change), diag:diagnose(cityA) };
+  }).sort((a,b)=>a.change-b.change);
+
+  const totalClinics = sections.reduce((s,sec)=>s+sec.clinics.length,0);
+  const allClinics = CLINICS.length;
+  const allTiersOn2 = STATE.tiers.size === TIERS.length;
+  const filtered2 = totalClinics < allClinics || !allTiersOn2;
+  document.getElementById('clinic-count').innerHTML = `${totalClinics} of ${allClinics} clinics${filtered2 ? ` <span class="inline-reset" onclick="clearCityDrilldown()">↺ Show all</span>` : ''}`;
+  const maxCurr = Math.max(...sections.flatMap(s=>s.clinics.map(c=>c.curr)),1);
+
+  document.getElementById('clinicsByCity').innerHTML = sections.map((sec, idx) => `
+    <details ${idx<3?'open':''} class="border border-slate-200 rounded-lg">
+      <summary class="flex items-center justify-between p-3 hover:bg-slate-50 rounded-lg">
+        <div class="flex items-center gap-3">
+          <span class="pill ${sec.status}"><span class="dot"></span></span>
+          <span class="font-semibold text-slate-900">${sec.city}</span>
+          <span class="text-[10px] ${sec.tier==='t1'?'text-red-600':'text-cyan-700'} font-semibold">${sec.tier.toUpperCase()}</span>
+          <span class="text-xs text-slate-500">${sec.clinics.length} clinics</span>
+          ${sec.diag ? `<span class="pill ${sec.diag}">${sec.diag==='slot'?'Slot issue':'Demand issue'}</span>` : ''}
+        </div>
+        <div class="flex items-center gap-3 text-xs">
+          <span style="color:${sec.status==='red'?'#ef4444':sec.status==='green'?'#10b981':'#f59e0b'};font-weight:600">${pct(sec.change)}</span>
+          <span class="text-slate-400">▾</span>
+        </div>
+      </summary>
+      <div class="border-t border-slate-100">
+        ${sec.clinics.map(cl => {
+          const color = cl.status==='red'?'#ef4444':cl.status==='green'?'#10b981':'#f59e0b';
+          const w = (cl.curr/maxCurr)*100;
+          const diagPill = cl.diag ? `<span class="pill ${cl.diag} ml-1" style="font-size:10px;padding:1px 6px">${cl.diag==='slot'?'slot':'demand'}</span>` : '';
+          return `<div class="px-3 py-2 flex items-center gap-3 text-sm border-b border-slate-50 last:border-0">
+            <span class="pill ${cl.status}" style="min-width:auto"><span class="dot"></span></span>
+            <span class="flex-1 font-medium text-slate-800">${cl.name}${diagPill}</span>
+            <div class="bar-row" style="width:120px"><span style="width:${w}%;background:${color}"></span></div>
+            <span class="text-slate-500" style="width:60px;text-align:right">${fmt(cl.curr)}</span>
+            <span style="color:${color};font-weight:600;width:60px;text-align:right">${pct(cl.chg)}</span>
+          </div>`;
+        }).join('')}
+      </div>
+    </details>
+  `).join('');
+}
+
+/* =========================================================
+   14. ORCHESTRATE
+   ========================================================= */
+function renderAll(){
+  renderFilters();
+  renderKPIs();
+  renderMap();
+  renderTrend();
+  renderChannelTrend();
+  renderCategoryTrend();
+  renderCityTable();
+  renderChannelBars();
+  renderCategoryBars();
+  renderClinicList();
+}
+
+document.getElementById('resetBtn').onclick = () => {
+  STATE.cats = new Set(CATEGORIES.map(c=>c.id));
+  STATE.chans = new Set(CHANNELS.map(c=>c.id));
+  STATE.cities = new Set(CITIES.map(c=>c.id));
+  STATE.tiers = new Set(['t1','t2']);
+  STATE.gran = 'week'; STATE.periods = 4;
+  STATE.baseline = 'prior';
+  STATE.sort = {k:'chg', dir:'asc'};
+  STATE.trendShow = 'expected';
+  STATE.channelTrendMode = 'volume';
+  STATE.categoryTrendMode = 'volume';
+  renderAll();
+};
+
+// Toggle handlers for trend chart sub-toggles
+document.getElementById('trend-toggle').addEventListener('click', e => {
+  const tab = e.target.closest('.toggle-tab'); if (!tab) return;
+  STATE.trendShow = tab.dataset.show;
+  document.querySelectorAll('#trend-toggle .toggle-tab').forEach(t => t.classList.toggle('active', t===tab));
+  renderTrend();
+});
+document.getElementById('channelTrendToggle').addEventListener('click', e => {
+  const tab = e.target.closest('.toggle-tab'); if (!tab) return;
+  STATE.channelTrendMode = tab.dataset.mode;
+  document.querySelectorAll('#channelTrendToggle .toggle-tab').forEach(t => t.classList.toggle('active', t===tab));
+  renderChannelTrend();
+});
+document.getElementById('categoryTrendToggle').addEventListener('click', e => {
+  const tab = e.target.closest('.toggle-tab'); if (!tab) return;
+  STATE.categoryTrendMode = tab.dataset.mode;
+  document.querySelectorAll('#categoryTrendToggle .toggle-tab').forEach(t => t.classList.toggle('active', t===tab));
+  renderCategoryTrend();
+});
+
+initMap();
+renderAll();
+setTimeout(()=>map.invalidateSize(), 200);
+</script>
+</body>
+</html>
