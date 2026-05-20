@@ -8,6 +8,7 @@
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="data_adapter.js"></script>
 <style>
   :root{
     --red:#ef4444; --yellow:#f59e0b; --green:#10b981;
@@ -96,6 +97,14 @@
   .chip.reset:before{content:"\21BA  ";font-weight:bold;}
   .inline-reset{font-size:11px;color:#1d4ed8;cursor:pointer;text-decoration:underline;margin-left:8px;font-weight:500;}
   .inline-reset:hover{color:#1e3a8a;}
+  /* AI insight button on each chart card */
+  .ai-btn{display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border:1px solid #c7d2fe;background:linear-gradient(135deg,#eef2ff,#e0e7ff);color:#4338ca;border-radius:999px;font-size:11px;font-weight:600;cursor:pointer;transition:transform .12s, box-shadow .12s;}
+  .ai-btn:hover{transform:translateY(-1px);box-shadow:0 2px 8px rgba(99,102,241,.18);}
+  .ai-btn[data-loading="1"]{opacity:.6;cursor:wait;}
+  .ai-insight{margin-top:10px;padding:10px 12px;border:1px solid #c7d2fe;background:#f5f7ff;border-radius:8px;font-size:12.5px;line-height:1.5;color:#312e81;display:none;}
+  .ai-insight.open{display:block;animation:slideDown .2s ease-out;}
+  .ai-insight strong{color:#1e1b4b;}
+  @keyframes slideDown { from { opacity:0; transform:translateY(-4px);} to {opacity:1; transform:translateY(0);} }
 </style>
 </head>
 <body class="min-h-screen">
@@ -260,15 +269,28 @@
 
   <!-- MULTI-DIMENSIONAL KPI MATRIX (founder view: where is the problem?) -->
   <section class="card p-5 mb-5">
-    <div class="flex items-center justify-between mb-3">
+    <div class="flex items-center justify-between mb-3 flex-wrap gap-2">
       <div>
         <div class="text-sm font-semibold text-slate-900">Where is the problem?</div>
         <div class="text-xs text-slate-500">Full economics by Channel · Category · City. Click any row to drill in.</div>
       </div>
-      <div class="flex items-center gap-1" id="matrixDimToggle">
-        <span class="toggle-tab active" data-dim="channel">By channel</span>
-        <span class="toggle-tab" data-dim="category">By category</span>
-        <span class="toggle-tab" data-dim="city">By city</span>
+      <div class="flex items-center gap-3 flex-wrap">
+        <div class="flex items-center gap-1.5">
+          <span class="text-[10px] font-semibold text-slate-500 uppercase tracking-wide">Compare</span>
+          <div class="flex items-center gap-1" id="matrixWindowToggle">
+            <span class="toggle-tab" data-win="7">7d</span>
+            <span class="toggle-tab" data-win="14">14d</span>
+            <span class="toggle-tab active" data-win="30">30d</span>
+            <span class="toggle-tab" data-win="60">60d</span>
+            <span class="toggle-tab" data-win="90">90d</span>
+          </div>
+          <span class="text-[10px] text-slate-400 ml-1">vs prior same length</span>
+        </div>
+        <div class="flex items-center gap-1" id="matrixDimToggle">
+          <span class="toggle-tab active" data-dim="channel">By channel</span>
+          <span class="toggle-tab" data-dim="category">By category</span>
+          <span class="toggle-tab" data-dim="city">By city</span>
+        </div>
       </div>
     </div>
     <div id="kpiMatrixWrap" style="overflow-x:auto"></div>
@@ -756,8 +778,8 @@ CITIES.forEach(c => {
 /* =========================================================
    2. DATA GENERATION (18 months)
    ========================================================= */
-const TODAY = new Date(2026,4,20); // 2026-05-20
-const DAYS = 540; // 18 months
+var TODAY = new Date(2026,4,20); // 2026-05-20
+var DAYS = 540; // 18 months (will be overridden if real data loaded)
 const allDates = [];
 for (let i=DAYS-1; i>=0; i--){ const d = new Date(TODAY); d.setDate(d.getDate()-i); allDates.push(d); }
 
@@ -1072,7 +1094,10 @@ function renderFilters(){
   // Header sub
   const head = document.getElementById('header-sub');
   const gName = STATE.gran==='day'?'Day-on-day':STATE.gran==='week'?'Week-on-week':'Month-on-month';
-  head.innerHTML = `${gName} · Last <b>${STATE.periods}</b> ${GRAN_DEFS[STATE.gran].plural} vs <b>${baselineLabel()}</b> · Red/Yellow/Green based on % change · <span class="text-amber-600 font-medium">Sample data</span>`;
+  const dataBadge = window.__REAL_DATA
+    ? `<span class="text-emerald-600 font-semibold">● Live Redshift</span> <span class="text-slate-400">(${window.__REAL_DATA.lookback_days}d · ${new Date(window.__REAL_DATA.generated_at).toLocaleString('en-IN',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})})</span>`
+    : `<span class="text-amber-600 font-medium">Sample data</span>`;
+  head.innerHTML = `${gName} · Last <b>${STATE.periods}</b> ${GRAN_DEFS[STATE.gran].plural} vs <b>${baselineLabel()}</b> · Red/Yellow/Green based on % change · ${dataBadge}`;
 
   // Active drill-down banner: shows when city or tier selection is narrowed
   const banner = document.getElementById('activeFilterBanner');
@@ -2124,6 +2149,7 @@ function initChat(){
 /* ---------- MULTI-DIM KPI MATRIX (founder view) ---------- */
 
 STATE.matrixDim = 'channel';
+STATE.matrixWindow = 30; // days for current vs prior comparison in "Where is the problem" matrix
 
 // Map DEEP_CHANNELS keys → existing cl.chShare keys (which only had 7 channels).
 // For brand-new channels (blog, gmb-standalone), we synthesize a portion from existing buckets.
@@ -2150,10 +2176,11 @@ const DEEP_CH_FACTOR = {
   others:        1.00,
 };
 
-// Generic helper: aggregate bookings + leads for a slice over the trailing 7-day window
-// (windowOffset=0 = last 7d, windowOffset=7 = the 7d before that, etc.)
-function sliceAggregate(catId, channelId, cityIds, windowOffset){
+// Generic helper: aggregate bookings + leads + done for a slice over a rolling window.
+// windowDays = length of window (default 7). windowOffset = how many days back the window ENDS (default 0 = ends today).
+function sliceAggregate(catId, channelId, cityIds, windowOffset, windowDays){
   windowOffset = windowOffset || 0;
+  windowDays = windowDays || 7;
   let bk=0, leads=0, done=0;
   const cl_list = CLINICS.filter(cl => !cityIds || cityIds.includes(cl.cityId));
   let shareKey = channelId, factor = 1;
@@ -2167,7 +2194,7 @@ function sliceAggregate(catId, channelId, cityIds, windowOffset){
     const catMult = catId === 'all' ? 1 : (cl.catShare[catId] || 0);
     const chMult  = channelId === 'all' ? 1 : ((cl.chShare[shareKey] || 0) * factor);
     const lastIdx = s.length - 1 - windowOffset;
-    for (let i = Math.max(0, lastIdx - 6); i <= lastIdx; i++){
+    for (let i = Math.max(0, lastIdx - (windowDays - 1)); i <= lastIdx; i++){
       if (i < 0) continue;
       bk += s[i].total * catMult * chMult;
       leads += s[i].leads * catMult * chMult;
@@ -2177,36 +2204,38 @@ function sliceAggregate(catId, channelId, cityIds, windowOffset){
   return {bk, leads, done};
 }
 
-// Helper: compute one KPI row for a window offset (0=current 7d, 7=prior 7d)
-function _computeKPIWindow(dim, key, windowOffset){
-  const totalWeeklySpend = 4250000;
+// Helper: compute one KPI row for a window starting at offset for windowDays in length.
+function _computeKPIWindow(dim, key, windowOffset, windowDays){
+  windowDays = windowDays || 7;
+  const dailySpend = 4250000 / 7;        // ₹42.5L per week baseline
+  const totalSpend = dailySpend * windowDays;
   let spendShare, agg;
   if (dim === 'channel') {
     spendShare = CHANNEL_SPEND_SHARE[key] || 0;
-    agg = sliceAggregate('all', key, null, windowOffset);
+    agg = sliceAggregate('all', key, null, windowOffset, windowDays);
   } else if (dim === 'category') {
     const catMix = {sh:0.65, sti:0.30, mh:0.05};
     spendShare = key === 'all' ? 1.0 : (catMix[key] || 0);
-    agg = sliceAggregate(key, 'all', null, windowOffset);
+    agg = sliceAggregate(key, 'all', null, windowOffset, windowDays);
   } else { // city
     const cl_list = CLINICS.filter(cl => cl.cityId === key);
-    const sumBk = (off) => CLINICS.reduce((s,cl)=>{
+    const sumBk = (off, days) => CLINICS.reduce((s,cl)=>{
       const ser = BOOKINGS[cl.id]; if (!ser) return s;
       const last = ser.length - 1 - off; let t=0;
-      for (let i=Math.max(0,last-6); i<=last; i++){ if (i>=0) t += ser[i].total; }
+      for (let i=Math.max(0,last-(days-1)); i<=last; i++){ if (i>=0) t += ser[i].total; }
       return s + t;
     }, 0);
     const cityBookingsShare = cl_list.reduce((s,cl)=>{
       const ser = BOOKINGS[cl.id]; if (!ser) return s;
       const last = ser.length - 1 - windowOffset; let t=0;
-      for (let i=Math.max(0,last-6); i<=last; i++){ if (i>=0) t += ser[i].total; }
+      for (let i=Math.max(0,last-(windowDays-1)); i<=last; i++){ if (i>=0) t += ser[i].total; }
       return s + t;
     }, 0);
-    const allTotal = sumBk(windowOffset);
+    const allTotal = sumBk(windowOffset, windowDays);
     spendShare = allTotal > 0 ? cityBookingsShare / allTotal : 0;
-    agg = sliceAggregate('all', 'all', [key], windowOffset);
+    agg = sliceAggregate('all', 'all', [key], windowOffset, windowDays);
   }
-  const spend = totalWeeklySpend * spendShare;
+  const spend = totalSpend * spendShare;
   const verifiedPct = 0.62;
   const verLeads = agg.leads * verifiedPct;
   const cpl = verLeads > 0 ? spend / verLeads : 0;
@@ -2223,10 +2252,12 @@ function _computeKPIWindow(dim, key, windowOffset){
   return {spend, verLeads, cpl, bookings, cpb, done, cpd, revenue, roas, cac};
 }
 
-// Returns current 7d + prior 7d + change deltas for every KPI
+// Returns current window + prior window (same length, immediately before) + change deltas.
+// Window length is taken from STATE.matrixWindow (configurable via UI), defaults to 7.
 function computeKPIsForRow(dim, key){
-  const curr = _computeKPIWindow(dim, key, 0);
-  const prior = _computeKPIWindow(dim, key, 7);
+  const w = STATE.matrixWindow || 7;
+  const curr = _computeKPIWindow(dim, key, 0, w);
+  const prior = _computeKPIWindow(dim, key, w, w);
   const dlt = (c, p) => p > 0 ? (c - p)/p : 0;
   return {
     ...curr,
@@ -2303,8 +2334,9 @@ function renderKPIMatrix(){
             <div style="text-align:right;font-size:11px;font-weight:600" class="${cls}">${arrow} ${sign}${(chg*100).toFixed(1)}%</div>`;
   };
 
+  const w = STATE.matrixWindow || 7;
   wrap.innerHTML = `
-    <div class="text-[11px] text-slate-500 mb-2">Each metric shows <b>current 7d</b> · <span class="text-slate-400">prior 7d</span> · <b>change %</b>. Red = bad direction. Click any row to drill in.</div>
+    <div class="text-[11px] text-slate-500 mb-2">Each metric shows <b>current ${w}d</b> · <span class="text-slate-400">prior ${w}d</span> · <b>change %</b>. Red = bad direction. Click any row to drill in.</div>
     <table class="tbl">
       <thead>
         <tr>
@@ -3060,6 +3092,17 @@ document.getElementById('matrixDimToggle').addEventListener('click', e => {
   STATE.matrixDim = tab.dataset.dim;
   renderKPIMatrix();
 });
+
+// Matrix comparison-window toggle handler (7d / 14d / 30d / 60d / 90d)
+const _matrixWinEl = document.getElementById('matrixWindowToggle');
+if (_matrixWinEl){
+  _matrixWinEl.addEventListener('click', e => {
+    const tab = e.target.closest('.toggle-tab'); if (!tab) return;
+    STATE.matrixWindow = parseInt(tab.dataset.win, 10);
+    _matrixWinEl.querySelectorAll('.toggle-tab').forEach(t => t.classList.toggle('active', t===tab));
+    renderKPIMatrix();
+  });
+}
 
 // (init calls moved to the very end of the script so FOUNDER LAYERS is declared first)
 
@@ -3856,11 +3899,135 @@ function renderFounderAll(){
   renderDeepChannel();
 }
 
-// Final init — runs after all declarations (base JS, TABS, FOUNDER LAYERS) are parsed
-initChat();
-initMap();
-renderAll();
-setTimeout(()=>map.invalidateSize(), 200);
+/* =========================================================
+   AI INSIGHTS — small button on each chart card
+   ========================================================= */
+function buildChartInsight(canvasId){
+  const cl = activeClinicIds();
+  switch (canvasId){
+    case 'trend': {
+      const a = aggForBaseline(cl);
+      const chg = a.change;
+      const dir = chg > 0.05 ? 'growing' : chg < -0.15 ? 'declining sharply' : chg < -0.05 ? 'soft' : 'flat';
+      const cvr = a.leadsCurr>0 ? (a.curr/a.leadsCurr)*100 : 0;
+      // Find biggest mover city
+      let topCity = null, topAbsChg = 0;
+      activeCityIds().forEach(cid => { const ca = cityAgg(cid); if (Math.abs(ca.change) > Math.abs(topAbsChg)){ topAbsChg = ca.change; topCity = CITIES.find(c=>c.id===cid); } });
+      return `Bookings are <strong>${dir}</strong> at <strong>${fmt(a.curr)}</strong> vs <strong>${fmt(a.base)}</strong> baseline (<strong>${pct(chg)}</strong>). L2B holds at <strong>${cvr.toFixed(1)}%</strong>. Biggest mover: <strong>${topCity?topCity.name:'—'} (${pct(topAbsChg)})</strong>. ${chg < -0.15 ? 'Action: review the city/clinic table for the worst slot vs demand splits.' : chg > 0.10 ? 'Action: capture the wins — check what changed in the top mover and replicate.' : 'Action: hold steady; watch the channel mix trend for early signals.'}`;
+    }
+    case 'channelTrend': {
+      // Find channel with biggest WoW change
+      const pdays = periodDays();
+      const e = DAYS, c = e - pdays, p = c - pdays;
+      const cur = {}, prev = {};
+      CHANNELS.forEach(ch => { cur[ch.id]=0; prev[ch.id]=0; });
+      cl.forEach(id => {
+        const s = BOOKINGS[id];
+        for (let i=c;i<e;i++){ CHANNELS.forEach(ch=>cur[ch.id]+=s[i].byCh[ch.id]); }
+        for (let i=p;i<c;i++){ CHANNELS.forEach(ch=>prev[ch.id]+=s[i].byCh[ch.id]); }
+      });
+      let winner=null, winChg=0, loser=null, loseChg=0;
+      CHANNELS.forEach(ch => { const d=prev[ch.id]>0?(cur[ch.id]-prev[ch.id])/prev[ch.id]:0; if (STATE.chans.has(ch.id)){ if (d>winChg){winner=ch;winChg=d;} if (d<loseChg){loser=ch;loseChg=d;}} });
+      return `Channel mix moving fastest: <strong>${winner?winner.name:'—'}</strong> ${winner?pct(winChg):''} ↑ &nbsp;·&nbsp; weakest: <strong>${loser?loser.name:'—'}</strong> ${loser?pct(loseChg):''} ↓. ${winner && winChg > 0.20 ? `Push more budget into ${winner.name} this week.` : ''} ${loser && loseChg < -0.20 ? `Investigate ${loser.name} — likely a tracking, creative, or competitor issue.` : ''}`;
+    }
+    case 'categoryTrend': {
+      const pdays = periodDays(); const e = DAYS, c = e - pdays, p = c - pdays;
+      const cur = {sh:0,sti:0,mh:0}, prev = {sh:0,sti:0,mh:0};
+      cl.forEach(id => {
+        const s = BOOKINGS[id];
+        for (let i=c;i<e;i++) CATEGORIES.forEach(cat=>cur[cat.id]+=s[i].byCat[cat.id]);
+        for (let i=p;i<c;i++) CATEGORIES.forEach(cat=>prev[cat.id]+=s[i].byCat[cat.id]);
+      });
+      const parts = CATEGORIES.filter(cat=>STATE.cats.has(cat.id)).map(cat => {
+        const d = prev[cat.id]>0 ? (cur[cat.id]-prev[cat.id])/prev[cat.id] : 0;
+        const dir = d > 0.05 ? '↑' : d < -0.05 ? '↓' : '→';
+        return `<strong>${cat.name}</strong> ${dir} ${pct(d)}`;
+      });
+      return `Category trajectory: ${parts.join(' &nbsp;·&nbsp; ')}. ${parts.length ? 'Reallocate creative + landing pages to whichever category is breaking out, and protect the declining one with retention plays.' : ''}`;
+    }
+    case 'channelChart': {
+      const w = activeClinicIds(); const pdays = periodDays();
+      const e = DAYS, c = e - pdays, p = c - pdays;
+      const cur = {}, base = {};
+      CHANNELS.forEach(ch => {cur[ch.id]=0; base[ch.id]=0;});
+      w.forEach(id => { const s=BOOKINGS[id]; for (let i=c;i<e;i++) CHANNELS.forEach(ch=>cur[ch.id]+=s[i].byCh[ch.id]); for (let i=p;i<c;i++) CHANNELS.forEach(ch=>base[ch.id]+=s[i].byCh[ch.id]); });
+      const ranked = CHANNELS.filter(ch=>STATE.chans.has(ch.id)).map(ch => ({ch, cur:cur[ch.id], chg:base[ch.id]>0?(cur[ch.id]-base[ch.id])/base[ch.id]:0})).sort((a,b)=>b.cur-a.cur);
+      const top = ranked[0], bot = ranked[ranked.length-1];
+      return `Largest channel right now: <strong>${top.ch.name}</strong> at ${fmt(top.cur)} bookings (${pct(top.chg)}). Smallest: <strong>${bot.ch.name}</strong> at ${fmt(bot.cur)} bookings. ${ranked.filter(r=>r.chg<-0.15).length ? `Channels dropping &gt;15%: ${ranked.filter(r=>r.chg<-0.15).map(r=>`<strong>${r.ch.name}</strong>`).join(', ')} — diagnose this first.` : 'No channel is in deep decline.'}`;
+    }
+    case 'categoryChart': {
+      const w = activeClinicIds(); const pdays = periodDays();
+      const e = DAYS, c = e - pdays;
+      const cur = {sh:0,sti:0,mh:0};
+      w.forEach(id => { const s=BOOKINGS[id]; for (let i=c;i<e;i++) CATEGORIES.forEach(cat=>cur[cat.id]+=s[i].byCat[cat.id]); });
+      const total = Object.values(cur).reduce((s,v)=>s+v,0);
+      const parts = CATEGORIES.filter(cat=>STATE.cats.has(cat.id)).map(cat=>`<strong>${cat.name}</strong> ${total>0?((cur[cat.id]/total)*100).toFixed(0)+'%':'0%'}`);
+      return `Category split this period: ${parts.join(' · ')}. ${cur.mh < total*0.05 ? 'MH is under 5% — explore demand-gen opportunity in mental health.' : ''}`;
+    }
+    default:
+      return `Insight is generated from the visible chart data. Switch filters above to see how the picture changes.`;
+  }
+}
+
+function injectInsightButtons(){
+  // Auto-inject the AI button into every <section class="card"> that contains a <canvas>.
+  document.querySelectorAll('section.card').forEach(card => {
+    if (card.querySelector('.ai-btn')) return; // already injected
+    const canvas = card.querySelector('canvas');
+    if (!canvas) return;
+    const canvasId = canvas.id;
+    if (!canvasId || canvasId.startsWith('spark-')) return; // skip sparklines
+    // Find the right place: prefer the header row (first .flex.items-center.justify-between)
+    const head = card.querySelector('.flex.items-center.justify-between');
+    if (!head) return;
+    const btn = document.createElement('button');
+    btn.className = 'ai-btn';
+    btn.innerHTML = '✨ AI Insight';
+    btn.dataset.canvas = canvasId;
+    // Insight panel anchored below the chart
+    let panel = card.querySelector('.ai-insight');
+    if (!panel){
+      panel = document.createElement('div');
+      panel.className = 'ai-insight';
+      card.appendChild(panel);
+    }
+    btn.addEventListener('click', () => {
+      btn.dataset.loading = '1';
+      // Tiny delay to feel responsive; the generator is synchronous, but this leaves
+      // a clean swap-in point for a real LLM call later (POST to /api/insight).
+      setTimeout(() => {
+        const txt = buildChartInsight(canvasId);
+        panel.innerHTML = `<span style="color:#6366f1;font-weight:700;letter-spacing:.04em">AI</span> &nbsp; ${txt}`;
+        panel.classList.add('open');
+        btn.dataset.loading = '0';
+      }, 220);
+    });
+    head.appendChild(btn);
+  });
+}
+
+// Final init — try real data first, then fall back to synthetic.
+(async function(){
+  const real = await window.__loadRealData('data.json');
+  if (real) {
+    try {
+      window.__applyRealData(real);
+      // Surface "live data" badge in the header
+      const sub = document.getElementById('header-sub');
+      if (sub){
+        sub.innerHTML += ` · <span class="text-emerald-600 font-semibold">● Live Redshift</span> <span class="text-slate-400">(${real.lookback_days}d)</span>`;
+      }
+    } catch(e){ console.error('[real-data] apply failed; falling back:', e); }
+  } else {
+    const sub = document.getElementById('header-sub');
+    if (sub) sub.innerHTML += ' · <span class="text-amber-600">○ Sample data</span>';
+  }
+  initChat();
+  initMap();
+  renderAll();
+  injectInsightButtons();
+  setTimeout(()=>map.invalidateSize(), 200);
+})();
 </script>
 </body>
 </html>
