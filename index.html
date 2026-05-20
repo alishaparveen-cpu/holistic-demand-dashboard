@@ -130,6 +130,46 @@
   <!-- Active drill-down banner (hidden when nothing filtered) -->
   <div id="activeFilterBanner" style="display:none"></div>
 
+  <!-- ===== LAYER 1: EXECUTIVE ===== -->
+
+  <!-- Executive narrative -->
+  <section class="card p-5 mb-5" id="execSummarySection">
+    <div class="flex items-center justify-between mb-3">
+      <div>
+        <div class="text-sm font-semibold text-slate-900">Executive snapshot</div>
+        <div class="text-xs text-slate-500">Auto-generated narrative · 30-second read</div>
+      </div>
+      <div class="text-xs text-slate-400" id="execAsOf"></div>
+    </div>
+    <div id="execNarrative" class="text-sm leading-relaxed text-slate-700"></div>
+    <div id="execHeadlines" class="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3"></div>
+  </section>
+
+  <!-- Category health -->
+  <section class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-5" id="catHealth"></section>
+
+  <!-- City scoreboard + Market share -->
+  <section class="grid grid-cols-1 lg:grid-cols-5 gap-4 mb-5">
+    <div class="card p-5 lg:col-span-3">
+      <div class="flex items-center justify-between mb-3">
+        <div>
+          <div class="text-sm font-semibold text-slate-900">Cities at a glance</div>
+          <div class="text-xs text-slate-500">Last 7d vs prior 7d. Click a column header to drill in.</div>
+        </div>
+      </div>
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-3" id="cityScoreboard"></div>
+    </div>
+    <div class="card p-5 lg:col-span-2">
+      <div class="flex items-center justify-between mb-3">
+        <div>
+          <div class="text-sm font-semibold text-slate-900">Estimated market share</div>
+          <div class="text-xs text-slate-500">Allo bookings vs estimated category TAM in addressable cities</div>
+        </div>
+      </div>
+      <div id="marketShare" class="space-y-3"></div>
+    </div>
+  </section>
+
   <!-- KPI cards -->
   <section class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-5">
     <div class="card p-5">
@@ -159,6 +199,35 @@
       <div class="text-xs text-slate-500 mt-1">Bookings / inbound leads</div>
       <div class="mt-3" style="height:60px"><canvas id="spark-cvr"></canvas></div>
     </div>
+  </section>
+
+  <!-- ===== LAYER 2 + 3: CHANNEL DEEP DIVE + CAMPAIGN DRILL ===== -->
+  <section class="card p-5 mb-5" id="channelDrillSection">
+    <div class="flex items-center justify-between mb-3">
+      <div>
+        <div class="text-sm font-semibold text-slate-900">Channel deep-dive</div>
+        <div class="text-xs text-slate-500">Last 7 days vs prior 7. Pick a category, then a channel. Click any group header to expand/collapse.</div>
+      </div>
+      <div class="text-xs text-slate-500" id="deepAsOf"></div>
+    </div>
+
+    <div class="flex items-center gap-2 mb-3 flex-wrap">
+      <span class="text-[10px] font-semibold text-slate-500 uppercase tracking-wide mr-1">Category</span>
+      <div id="deepCatChips" class="flex gap-2 flex-wrap"></div>
+    </div>
+    <div class="flex items-center gap-2 mb-4 flex-wrap">
+      <span class="text-[10px] font-semibold text-slate-500 uppercase tracking-wide mr-1">Channel</span>
+      <div id="deepChannelChips" class="flex gap-2 flex-wrap"></div>
+    </div>
+
+    <!-- Channel KPI strip -->
+    <div id="deepKpiStrip" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-5"></div>
+
+    <!-- Collapsible metric groups -->
+    <div id="deepMetricGroups" class="space-y-3"></div>
+
+    <!-- Layer 3: campaign-level drill -->
+    <div id="campaignTableWrap" class="mt-5"></div>
   </section>
 
   <!-- Map + Bookings Trend -->
@@ -1311,6 +1380,790 @@ document.getElementById('categoryTrendToggle').addEventListener('click', e => {
 initMap();
 renderAll();
 setTimeout(()=>map.invalidateSize(), 200);
+
+/* =============================================================
+   FOUNDER LAYERS (Executive · Channel deep-dive · Campaign drill)
+   ============================================================= */
+
+const FRND = mulberry32(20260520 + 7);
+function fr(min, max) { return min + FRND()*(max-min); }
+
+/* ---------- Constants ---------- */
+
+const DEEP_CHANNELS = [
+  {id:'overall',       name:'Overall',         kind:'aggregate'},
+  {id:'organic',       name:'Organic',         kind:'free'},
+  {id:'blog',          name:'Blog',            kind:'free'},
+  {id:'gmb_google',    name:'GMB + Google',    kind:'paid'},
+  {id:'gmb',           name:'GMB',             kind:'paid'},
+  {id:'google_search', name:'Google Search',   kind:'paid'},
+  {id:'practo',        name:'Practo',          kind:'paid', extras:['practo_breakout']},
+  {id:'fb',            name:'FB',              kind:'paid', extras:['fb_cities','fb_phone']},
+  {id:'justdial',      name:'Justdial',        kind:'paid', extras:['justdial_che_onl']},
+  {id:'others',        name:'Others',          kind:'minimal'},
+];
+
+const DEEP_CATS = [
+  {id:'all', name:'All categories'},
+  {id:'sh',  name:'SH'},
+  {id:'sti', name:'STI'},
+  {id:'mh',  name:'MH'},
+];
+
+const GROUPS_BY_KIND = {
+  paid:      ['Contribution','Spend & Reach','Leads','Bookings','Calls Done','Calls Done by Category','Revenue (1st TP)','TP Online','TP Offline'],
+  free:      ['Contribution','Leads','Bookings','Calls Done','Calls Done by Category','Revenue (1st TP)','TP Online','TP Offline'],
+  aggregate: ['Spend & Reach','Leads','Bookings','Calls Done','Calls Done by Category','Revenue (1st TP)','TP Online','TP Offline','AF Funnel','Journey Events'],
+  minimal:   ['Contribution','Leads','Bookings','Calls Done'],
+};
+
+// Allo's share of channel spend (% of total marketing spend, roughly)
+const CHANNEL_SPEND_SHARE = {
+  overall:1.00, organic:0.00, blog:0.01,
+  gmb_google:0.06, gmb:0.04, google_search:0.18,
+  practo:0.22, fb:0.30, justdial:0.07, others:0.12,
+};
+// How channels split bookings (independent of spend — some are very efficient)
+const CHANNEL_BOOKING_SHARE = {
+  overall:1.00, organic:0.30, blog:0.04,
+  gmb_google:0.06, gmb:0.05, google_search:0.13,
+  practo:0.10, fb:0.18, justdial:0.05, others:0.09,
+};
+
+// Category mix by channel (where do this channel's bookings go?)
+const CHANNEL_CAT_MIX = {
+  overall:       {sh:0.68, sti:0.27, mh:0.05},
+  organic:       {sh:0.70, sti:0.24, mh:0.06},
+  blog:          {sh:0.62, sti:0.34, mh:0.04},
+  gmb_google:    {sh:0.74, sti:0.22, mh:0.04},
+  gmb:           {sh:0.78, sti:0.18, mh:0.04},
+  google_search: {sh:0.60, sti:0.35, mh:0.05},
+  practo:        {sh:0.55, sti:0.40, mh:0.05},
+  fb:            {sh:0.72, sti:0.20, mh:0.08},
+  justdial:      {sh:0.80, sti:0.18, mh:0.02},
+  others:        {sh:0.65, sti:0.30, mh:0.05},
+};
+
+// Trend bias per channel (used in baseline delta — some channels growing, some shrinking)
+const CHANNEL_TREND = {
+  overall:-0.04, organic:+0.02, blog:+0.08,
+  gmb_google:-0.06, gmb:-0.18, google_search:-0.09,
+  practo:+0.17, fb:-0.12, justdial:-0.03, others:+0.04,
+};
+
+// Estimated monthly TAM in addressable cities (mock)
+const CATEGORY_TAM = { sh: 48000, sti: 14000, mh: 3200 };
+
+/* ---------- Data helpers ---------- */
+
+// Aggregate BOOKINGS data over a date range
+function bookingsInRange(daysFromEnd, lengthDays, catFilter='all') {
+  const startIdx = DAYS - daysFromEnd;
+  const endIdx = startIdx + lengthDays;
+  let total = 0;
+  for (const cl of CLINICS) {
+    const series = BOOKINGS[cl.id];
+    for (let i=Math.max(0,startIdx); i<Math.min(DAYS,endIdx); i++) {
+      if (catFilter === 'all') total += series[i].total;
+      else total += series[i].byCat[catFilter];
+    }
+  }
+  return total;
+}
+
+function pctDelta(curr, base) {
+  if (!base || base === 0) return 0;
+  return (curr - base) / base;
+}
+
+function fmtINR(n) {
+  if (n == null || isNaN(n)) return '—';
+  if (Math.abs(n) >= 1e7) return '₹' + (n/1e7).toFixed(2) + 'Cr';
+  if (Math.abs(n) >= 1e5) return '₹' + (n/1e5).toFixed(1) + 'L';
+  if (Math.abs(n) >= 1000) return '₹' + (n/1000).toFixed(1) + 'K';
+  return '₹' + Math.round(n);
+}
+function fmtNum(n) {
+  if (n == null || isNaN(n)) return '—';
+  if (Math.abs(n) >= 1e7) return (n/1e7).toFixed(2) + 'Cr';
+  if (Math.abs(n) >= 1e5) return (n/1e5).toFixed(1) + 'L';
+  if (Math.abs(n) >= 1000) return (n/1000).toFixed(1) + 'K';
+  return Math.round(n).toLocaleString('en-IN');
+}
+function fmtPct(n) {
+  if (n == null || isNaN(n)) return '—';
+  return (n*100).toFixed(1) + '%';
+}
+function fmtDelta(d, dir='up_good') {
+  if (d == null || isNaN(d) || !isFinite(d)) return {text:'—', cls:''};
+  const sign = d > 0 ? '+' : '';
+  const text = sign + (d*100).toFixed(1) + '%';
+  let good;
+  if (dir === 'up_good')   good = d > 0.005;
+  else if (dir === 'down_good') good = d < -0.005;
+  else                      good = false;
+  let bad;
+  if (dir === 'up_good')   bad = d < -0.005;
+  else if (dir === 'down_good') bad = d > 0.005;
+  else                      bad = false;
+  const cls = good ? 'text-emerald-600' : bad ? 'text-red-600' : 'text-slate-500';
+  return {text, cls};
+}
+function applyFmt(v, fmt){
+  if (fmt === 'inr') return fmtINR(v);
+  if (fmt === 'num') return fmtNum(v);
+  if (fmt === 'pct') return fmtPct(v);
+  if (fmt === 'ratio') return (v).toFixed(2) + 'x';
+  return fmtNum(v);
+}
+
+/* ---------- LAYER 1 RENDER ---------- */
+
+function renderExecutive(){
+  const now = new Date(TODAY);
+  document.getElementById('execAsOf').textContent = 'as of ' + now.toDateString();
+  document.getElementById('deepAsOf').textContent = 'as of ' + now.toDateString();
+
+  // Week-over-week aggregate
+  const wk = bookingsInRange(7, 7);
+  const wkPrior = bookingsInRange(14, 7);
+  const wkDelta = pctDelta(wk, wkPrior);
+
+  // Categories
+  const cats = ['sh','sti','mh'].map(c => {
+    const a = bookingsInRange(7, 7, c);
+    const b = bookingsInRange(14, 7, c);
+    const ay = bookingsInRange(7+365, 7, c) || b*0.9; // MoM/YoY fallback
+    return {id:c, name:c.toUpperCase(), curr:a, prior:b, mom:pctDelta(a,b), yoy:pctDelta(a,ay)};
+  });
+
+  // City W/L
+  const byCity = CITIES.map(c => {
+    const cur = sumCityRange(c.id, 7, 7);
+    const pri = sumCityRange(c.id, 14, 7);
+    return {city:c, delta:pctDelta(cur,pri), curr:cur, prior:pri};
+  });
+  const losers  = byCity.filter(x => x.delta < -0.05).sort((a,b)=>a.delta-b.delta);
+  const winners = byCity.filter(x => x.delta > 0.05).sort((a,b)=>b.delta-a.delta);
+  const flat    = byCity.filter(x => x.delta >= -0.05 && x.delta <= 0.05);
+
+  // Best/worst channel by deep mock data
+  const channelDeltas = DEEP_CHANNELS.filter(c => c.id!=='overall').map(c => ({id:c.id, name:c.name, d:CHANNEL_TREND[c.id]}));
+  const bestCh  = channelDeltas.slice().sort((a,b)=>b.d-a.d)[0];
+  const worstCh = channelDeltas.slice().sort((a,b)=>a.d-b.d)[0];
+
+  const wkDeltaPill = wkDelta < -0.10 ? '<span class="pill red"><span class="dot"></span>Below plan</span>' :
+                      wkDelta < -0.02 ? '<span class="pill yellow"><span class="dot"></span>Soft</span>' :
+                      wkDelta >  0.05 ? '<span class="pill green"><span class="dot"></span>Ahead</span>' :
+                                        '<span class="pill yellow"><span class="dot"></span>On track</span>';
+
+  const growingCat = cats.slice().sort((a,b)=>b.mom-a.mom)[0];
+  const decliningCat = cats.slice().sort((a,b)=>a.mom-b.mom)[0];
+
+  // Build narrative
+  const narr = [];
+  narr.push(`<strong>Bookings ${fmtNum(wk)} this week</strong>, ${fmtDelta(wkDelta).text} vs prior. ${wkDeltaPill}`);
+  if (losers.length > 0){
+    const top = losers.slice(0,2).map(l=>`<strong>${l.city.name}</strong> (${fmtDelta(l.delta).text})`).join(' and ');
+    narr.push(`Drag is concentrated in ${top}. ${losers.length} cities declining &gt;5%, ${flat.length} flat, ${winners.length} growing.`);
+  } else {
+    narr.push(`No cities declining &gt;5%. ${winners.length} cities growing, ${flat.length} flat.`);
+  }
+  if (growingCat.mom > 0.02) narr.push(`<strong>${growingCat.name}</strong> is the growth engine (${fmtDelta(growingCat.mom).text} WoW).`);
+  if (decliningCat.mom < -0.02) narr.push(`<strong>${decliningCat.name}</strong> is the drag (${fmtDelta(decliningCat.mom).text} WoW) — investigate.`);
+  narr.push(`Channel leaders: <strong>${bestCh.name}</strong> outperforming (${fmtDelta(bestCh.d).text} trend); <strong>${worstCh.name}</strong> losing share (${fmtDelta(worstCh.d).text}). Drill the channel deep-dive below.`);
+
+  document.getElementById('execNarrative').innerHTML = narr.map(s=>`<p class="mb-1.5">• ${s}</p>`).join('');
+
+  // Headline KPI strip (above-funnel founder metrics)
+  const totalSpend = 4250000; // ₹42.5L mock weekly
+  const totalRev = wk * 1850; // ₹1850 avg RPC
+  const roas = totalRev / totalSpend;
+  const aov = totalRev / wk;
+  const headlines = [
+    {label:'Weekly spend',   value:fmtINR(totalSpend), delta:fmtDelta(0.04, 'down_good')},
+    {label:'Weekly revenue', value:fmtINR(totalRev),   delta:fmtDelta(wkDelta, 'up_good')},
+    {label:'Blended RoAS',   value:roas.toFixed(2)+'x',delta:fmtDelta(-0.07, 'up_good')},
+  ];
+  document.getElementById('execHeadlines').innerHTML = headlines.map(h => `
+    <div class="border border-slate-200 rounded-lg p-3">
+      <div class="text-[10px] font-semibold text-slate-500 uppercase tracking-wide">${h.label}</div>
+      <div class="flex items-baseline gap-2 mt-1">
+        <div class="text-xl font-bold text-slate-900">${h.value}</div>
+        <div class="text-xs font-semibold ${h.delta.cls}">${h.delta.text}</div>
+      </div>
+    </div>
+  `).join('');
+}
+
+function sumCityRange(cityId, daysFromEnd, lengthDays){
+  const startIdx = DAYS - daysFromEnd;
+  const endIdx = startIdx + lengthDays;
+  let total = 0;
+  for (const cl of CLINICS) {
+    if (cl.cityId !== cityId) continue;
+    const series = BOOKINGS[cl.id];
+    for (let i=Math.max(0,startIdx); i<Math.min(DAYS,endIdx); i++) total += series[i].total;
+  }
+  return total;
+}
+
+function renderCategoryHealthCards(){
+  const cats = ['sh','sti','mh'].map(c => {
+    const cur = bookingsInRange(7, 7, c);
+    const pri = bookingsInRange(14, 7, c);
+    const mom = pctDelta(cur, pri);
+    const m30 = bookingsInRange(30, 30, c);
+    const m60 = bookingsInRange(60, 30, c);
+    const monthDelta = pctDelta(m30, m60);
+    const status = mom > 0.05 ? 'green' : mom < -0.05 ? 'red' : 'yellow';
+    const statusLabel = status === 'green' ? 'Growing' : status === 'red' ? 'Declining' : 'Flat';
+    const catDef = CATEGORIES.find(x=>x.id===c);
+    return {id:c, name:catDef.name, short:c.toUpperCase(), color:catDef.color, cur, mom, monthDelta, status, statusLabel};
+  });
+
+  document.getElementById('catHealth').innerHTML = cats.map(c => {
+    const d = fmtDelta(c.mom);
+    const md = fmtDelta(c.monthDelta);
+    return `
+    <div class="card p-5">
+      <div class="flex items-center justify-between mb-2">
+        <div class="flex items-center gap-2">
+          <span class="inline-block" style="width:10px;height:10px;border-radius:50%;background:${c.color}"></span>
+          <div class="text-sm font-semibold text-slate-900">${c.name} <span class="text-slate-400">(${c.short})</span></div>
+        </div>
+        <span class="pill ${c.status}"><span class="dot"></span>${c.statusLabel}</span>
+      </div>
+      <div class="text-2xl font-bold text-slate-900">${fmtNum(c.cur)}</div>
+      <div class="text-xs text-slate-500 mb-3">bookings, last 7 days</div>
+      <div class="grid grid-cols-2 gap-2 text-xs">
+        <div class="border border-slate-100 rounded p-2">
+          <div class="text-slate-500">WoW</div>
+          <div class="font-semibold ${d.cls}">${d.text}</div>
+        </div>
+        <div class="border border-slate-100 rounded p-2">
+          <div class="text-slate-500">MoM (30d)</div>
+          <div class="font-semibold ${md.cls}">${md.text}</div>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function renderCityScoreboardCards(){
+  const byCity = CITIES.map(c => {
+    const cur = sumCityRange(c.id, 7, 7);
+    const pri = sumCityRange(c.id, 14, 7);
+    return {city:c, delta:pctDelta(cur,pri), curr:cur, prior:pri};
+  });
+  const winners = byCity.filter(x => x.delta > 0.05).sort((a,b)=>b.delta-a.delta);
+  const flat    = byCity.filter(x => x.delta >= -0.05 && x.delta <= 0.05);
+  const losers  = byCity.filter(x => x.delta < -0.05).sort((a,b)=>a.delta-b.delta);
+
+  const col = (title, list, color, badge) => `
+    <div>
+      <div class="flex items-center gap-2 mb-2">
+        <span class="pill ${color}" style="font-size:11px"><span class="dot"></span>${badge}</span>
+        <div class="text-xs text-slate-500">${list.length} cities</div>
+      </div>
+      <div class="text-sm font-semibold text-slate-900 mb-2">${title}</div>
+      <div class="space-y-1">
+        ${list.slice(0,6).map(x => `
+          <div class="flex items-center justify-between border border-slate-100 rounded px-2 py-1.5 text-sm">
+            <span class="text-slate-800">${x.city.name}</span>
+            <span class="${fmtDelta(x.delta).cls} font-semibold text-xs">${fmtDelta(x.delta).text}</span>
+          </div>`).join('') || '<div class="text-xs text-slate-400 italic">—</div>'}
+      </div>
+    </div>`;
+
+  document.getElementById('cityScoreboard').innerHTML =
+    col('Growing',   winners, 'green',  'Up &gt;5%') +
+    col('Flat',      flat,    'yellow', '-5% to +5%') +
+    col('Declining', losers,  'red',    'Down &gt;5%');
+}
+
+function renderMarketShareCards(){
+  const m30 = (catId) => bookingsInRange(30, 30, catId);
+  const items = ['sh','sti','mh'].map(c => {
+    const tam = CATEGORY_TAM[c];
+    const my = m30(c);
+    const share = my / tam;
+    const catDef = CATEGORIES.find(x=>x.id===c);
+    return {id:c, name:catDef.name, short:c.toUpperCase(), color:catDef.color, tam, my, share};
+  });
+  document.getElementById('marketShare').innerHTML = items.map(it => {
+    const w = Math.min(100, it.share*100);
+    return `
+    <div>
+      <div class="flex items-baseline justify-between mb-1">
+        <div class="text-sm font-semibold text-slate-900">${it.name} <span class="text-slate-400">(${it.short})</span></div>
+        <div class="text-sm font-bold" style="color:${it.color}">${fmtPct(it.share)}</div>
+      </div>
+      <div class="bar-row mb-1"><span style="width:${w}%;background:${it.color}"></span></div>
+      <div class="flex items-center justify-between text-[11px] text-slate-500">
+        <span>${fmtNum(it.my)} bookings / mo</span>
+        <span>est. TAM ${fmtNum(it.tam)}/mo</span>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+/* ---------- LAYER 2: CHANNEL DEEP ---------- */
+
+const FOUNDER_STATE = {
+  deepCat: 'all',
+  deepChannel: 'overall',
+  collapsed: new Set(), // group names that are collapsed
+};
+
+function buildChannelMetrics(channelId, catId){
+  // Generate plausible metrics for (channel, category)
+  const ch = DEEP_CHANNELS.find(c => c.id === channelId);
+  const catMix = (catId === 'all') ? 1.0 : (CHANNEL_CAT_MIX[channelId][catId] || 0);
+  const totalWeekly = bookingsInRange(7,7);
+  const totalWeeklyBaseline = bookingsInRange(14,7);
+
+  // Channel's portion this week
+  const chBookings = totalWeekly * CHANNEL_BOOKING_SHARE[channelId] * catMix;
+  const chBookingsBase = totalWeeklyBaseline * CHANNEL_BOOKING_SHARE[channelId] * catMix / (1 + CHANNEL_TREND[channelId]*0.1);
+
+  // Spend (only for paid)
+  const totalSpend = 4250000 * (catId === 'all' ? 1 : 0.45 + FRND()*0.15);
+  const chSpend = totalSpend * CHANNEL_SPEND_SHARE[channelId];
+  const chSpendBase = chSpend * (1 - CHANNEL_TREND[channelId]*0.5);
+
+  // Online/Offline split
+  const onlineRatio = ch.id === 'practo' ? 0.62 : ch.id === 'fb' ? 0.35 : ch.id === 'organic' ? 0.42 : 0.38 + FRND()*0.12;
+
+  // Leads: bookings / lead-conv
+  const leadConv = 0.32 + FRND()*0.18;
+  const leads = chBookings / leadConv;
+  const leadsBase = chBookingsBase / (leadConv * (1 + (FRND()-0.5)*0.04));
+  const verifiedPct = 0.55 + FRND()*0.20;
+  const verLeads = leads * verifiedPct;
+  const verLeadsBase = leadsBase * (verifiedPct + (FRND()-0.5)*0.03);
+
+  // Calls Done = bookings * 0.55-0.75
+  const doneRate = 0.55 + FRND()*0.20;
+  const callsDone = chBookings * doneRate;
+  const callsDoneBase = chBookingsBase * (doneRate + (FRND()-0.5)*0.05);
+
+  // SH / STI split of calls done
+  const stiSplit = CHANNEL_CAT_MIX[channelId].sti;
+  const shSplit  = CHANNEL_CAT_MIX[channelId].sh;
+  const callsSH  = callsDone * shSplit;
+  const callsSTI = callsDone * stiSplit;
+  const stiContr = callsSTI / Math.max(1, callsDone);
+
+  // Revenue: 1st TP rev ~ ₹1500 per call done
+  const rpc = 1450 + FRND()*350;
+  const newRev = callsDone * rpc;
+  const consultRev = callsDone * 480 * (0.7 + FRND()*0.5);
+  const tpRev = newRev * (0.62 + FRND()*0.15);
+  const roas = (newRev + consultRev) / Math.max(1, chSpend);
+
+  // Online / Offline TP
+  const onlineTP  = chBookings * onlineRatio * 0.85;
+  const offlineTP = chBookings * (1-onlineRatio) * 0.92;
+  const onlineTPRev  = onlineTP  * rpc * 0.96;
+  const offlineTPRev = offlineTP * rpc * 1.08;
+
+  // Impressions (paid only)
+  const cpm = 320 + FRND()*180;
+  const impressions = (ch.kind === 'paid' || ch.kind === 'aggregate') ? (chSpend / cpm) * 1000 : null;
+  const ctr = 0.018 + FRND()*0.020;
+  const clicks = impressions ? impressions * ctr : null;
+  const cpc = clicks ? chSpend / clicks : null;
+  const c2l = clicks ? leads / clicks : null;
+
+  const cpl = verLeads ? chSpend / verLeads : null;
+  const cpb = chBookings ? chSpend / chBookings : null;
+  const cpd = callsDone ? chSpend / callsDone : null;
+
+  // ---- Helpers ----
+  const row = (name, value, baseline, fmt='num', dir='up_good') => ({name, value, baseline, fmt, dir});
+  const groups = {};
+
+  // Contribution group
+  if (channelId !== 'overall' && ch.kind !== 'aggregate') {
+    const spendContr = CHANNEL_SPEND_SHARE[channelId];
+    const leadContr  = leads / Math.max(1, totalWeekly*2.6);
+    const bkContr    = chBookings / Math.max(1, totalWeekly);
+    const doneContr  = callsDone / Math.max(1, totalWeekly*0.65);
+    groups['Contribution'] = [
+      row('Spend Contr.',   spendContr, spendContr*1.04, 'pct','neutral'),
+      row('Lead Contr.',    leadContr,  leadContr*0.97,  'pct','up_good'),
+      row('Booking Contr.', bkContr,    bkContr*1.02,    'pct','up_good'),
+      row('Done Contr.',    doneContr,  doneContr*1.01,  'pct','up_good'),
+    ];
+  }
+
+  // Spend & Reach
+  if (ch.kind === 'paid' || ch.kind === 'aggregate') {
+    const sr = [row('Spends', chSpend, chSpendBase, 'inr','down_good')];
+    if (ch.id === 'fb' || ch.kind === 'aggregate') {
+      sr.push(row('Doc Hiring / ATA', chSpend*0.04, chSpend*0.05, 'inr','down_good'));
+      sr.push(row('Awareness', chSpend*0.12, chSpend*0.10, 'inr','neutral'));
+    }
+    if (impressions) {
+      sr.push(row('Impressions (\'000)', impressions/1000, (impressions/1000)*(1-CHANNEL_TREND[channelId]*0.3), 'num','up_good'));
+      sr.push(row('CPM', cpm, cpm*0.95, 'inr','down_good'));
+      sr.push(row('Clicks', clicks, clicks*(1-CHANNEL_TREND[channelId]*0.4), 'num','up_good'));
+      sr.push(row('CTR', ctr, ctr*0.96, 'pct','up_good'));
+      sr.push(row('CPC', cpc, cpc*0.97, 'inr','down_good'));
+    }
+    groups['Spend & Reach'] = sr;
+  }
+
+  // Leads
+  const leadsGrp = [
+    row('Leads', leads, leadsBase, 'num','up_good'),
+  ];
+  if (channelId === 'google_search' || channelId === 'fb') leadsGrp.push(row('Leads — Phone Call', leads*0.18, leadsBase*0.19, 'num','up_good'));
+  if (impressions) leadsGrp.push(row('C2L', c2l, c2l*0.98, 'pct','up_good'));
+  leadsGrp.push(row('Verified Leads', verLeads, verLeadsBase, 'num','up_good'));
+  leadsGrp.push(row('Verified %', verifiedPct, verifiedPct*0.99, 'pct','up_good'));
+  if (cpl != null) leadsGrp.push(row('CPL (Verified)', cpl, cpl*0.95, 'inr','down_good'));
+  groups['Leads'] = leadsGrp;
+
+  // Bookings
+  const bkGrp = [
+    row('Bookings', chBookings, chBookingsBase, 'num','up_good'),
+    row('   Online',  chBookings*onlineRatio,    chBookingsBase*onlineRatio, 'num','up_good'),
+    row('   Offline', chBookings*(1-onlineRatio),chBookingsBase*(1-onlineRatio), 'num','up_good'),
+    row('Bookings / Lead %', chBookings/leads, chBookingsBase/leadsBase, 'pct','up_good'),
+  ];
+  if (cpb != null) bkGrp.push(row('CPB', cpb, cpb*0.92, 'inr','down_good'));
+  groups['Bookings'] = bkGrp;
+
+  // Calls Done
+  const cdGrp = [
+    row('Calls Done', callsDone, callsDoneBase, 'num','up_good'),
+    row('   Online',  callsDone*onlineRatio,    callsDoneBase*onlineRatio, 'num','up_good'),
+    row('   Offline', callsDone*(1-onlineRatio),callsDoneBase*(1-onlineRatio), 'num','up_good'),
+    row('Done / Bookings', doneRate, doneRate*0.99, 'pct','up_good'),
+  ];
+  if (cpd != null) cdGrp.push(row('CPD', cpd, cpd*0.94, 'inr','down_good'));
+  groups['Calls Done'] = cdGrp;
+
+  // Calls Done by Category
+  groups['Calls Done by Category'] = [
+    row('Calls Done — SH',  callsSH, callsDoneBase*shSplit, 'num','up_good'),
+    row('   Online',         callsSH*onlineRatio, callsDoneBase*shSplit*onlineRatio, 'num','up_good'),
+    row('   Offline',        callsSH*(1-onlineRatio), callsDoneBase*shSplit*(1-onlineRatio), 'num','up_good'),
+    row('Calls Done — STI', callsSTI, callsDoneBase*stiSplit, 'num','up_good'),
+    row('   Online',         callsSTI*onlineRatio, callsDoneBase*stiSplit*onlineRatio, 'num','up_good'),
+    row('   Offline',        callsSTI*(1-onlineRatio), callsDoneBase*stiSplit*(1-onlineRatio), 'num','up_good'),
+    row('STI Contr.',        stiContr, stiContr*0.98, 'pct','up_good'),
+  ];
+
+  // Revenue (1st TP)
+  const revGrp = [
+    row('1st TP Rev',  newRev, newRev*0.98, 'inr','up_good'),
+    row('Consult Rev', consultRev, consultRev*0.96, 'inr','up_good'),
+    row('New Rev',     newRev + consultRev, (newRev + consultRev)*0.97, 'inr','up_good'),
+    row('RPC',         rpc, rpc*0.99, 'inr','up_good'),
+  ];
+  if (ch.kind === 'paid' || ch.kind === 'aggregate') revGrp.splice(3, 0, row('1st TP RoAS', roas, roas*1.08, 'ratio','up_good'));
+  groups['Revenue (1st TP)'] = revGrp;
+
+  // TP Online
+  groups['TP Online'] = [
+    row('Online TP #',   onlineTP,    onlineTP*0.97, 'num','up_good'),
+    row('Online TP Rev', onlineTPRev, onlineTPRev*0.96, 'inr','up_good'),
+    row('AOV',           onlineTPRev/Math.max(1,onlineTP), (onlineTPRev/Math.max(1,onlineTP))*1.02, 'inr','up_good'),
+    row('Conv',          onlineTP/Math.max(1,chBookings*onlineRatio), 0.88, 'pct','up_good'),
+    row('RPC',           rpc*0.96, rpc*0.95, 'inr','up_good'),
+  ];
+
+  // TP Offline
+  groups['TP Offline'] = [
+    row('Offline TP #',   offlineTP,    offlineTP*0.95, 'num','up_good'),
+    row('Offline TP Rev', offlineTPRev, offlineTPRev*0.94, 'inr','up_good'),
+    row('AOV',            offlineTPRev/Math.max(1,offlineTP), (offlineTPRev/Math.max(1,offlineTP))*1.03, 'inr','up_good'),
+    row('Conv',           offlineTP/Math.max(1,chBookings*(1-onlineRatio)), 0.91, 'pct','up_good'),
+    row('RPC',            rpc*1.08, rpc*1.06, 'inr','up_good'),
+  ];
+
+  // Practo extras
+  if (ch.id === 'practo') {
+    const banner = chSpend*0.42, lead = chSpend*0.31, book = chSpend*0.18, call = chSpend*0.09;
+    groups['Spend & Reach'] = groups['Spend & Reach'] || [];
+    groups['Spend & Reach'].push(row('Banner Spends', banner, banner*1.05, 'inr','down_good'));
+    groups['Spend & Reach'].push(row('Lead Spends',   lead,   lead*0.95,   'inr','down_good'));
+    groups['Spend & Reach'].push(row('Book Spends',   book,   book*1.10,   'inr','down_good'));
+    groups['Spend & Reach'].push(row('Call Spends',   call,   call*1.02,   'inr','down_good'));
+    groups['Spend & Reach'].push(row('Banner Spends %', banner/chSpend, 0.44, 'pct','neutral'));
+    groups['Bookings'].push(row('Bookings — Book', chBookings*0.66, chBookingsBase*0.65, 'num','up_good'));
+    groups['Bookings'].push(row('Bookings — Call', chBookings*0.34, chBookingsBase*0.35, 'num','up_good'));
+    const cpbNoBanner = (chSpend - banner)/Math.max(1, chBookings);
+    groups['Bookings'].push(row('CPB w/o Banner',        cpbNoBanner, cpbNoBanner*1.05, 'inr','down_good'));
+    groups['Bookings'].push(row('CPB w/o Banner (Book)', cpbNoBanner*0.85, cpbNoBanner*0.85*1.04, 'inr','down_good'));
+    groups['Bookings'].push(row('CPB w/o Banner (Call)', cpbNoBanner*1.25, cpbNoBanner*1.25*1.06, 'inr','down_good'));
+  }
+
+  // Justdial extras
+  if (ch.id === 'justdial') {
+    const cheOnl = chBookings*0.55;
+    groups['Bookings'].splice(1, 0, row('Bookings (Che+Onl)', cheOnl, cheOnl*0.92, 'num','up_good'));
+    if (cpb != null) groups['Bookings'].splice(2, 0, row('CPB (Che+Onl)', chSpend/cheOnl, chSpend*0.95/cheOnl, 'inr','down_good'));
+  }
+
+  // FB city split
+  if (ch.id === 'fb') {
+    const cityNames = ['Bangalore','Hyderabad','Mumbai','Pune','Chennai','Mysuru','Ranchi','Nagpur','Nashik','Vijayawada','Mangaluru','Coimbatore'];
+    const fbCities = cityNames.map(n => {
+      const v = chBookings * (0.04 + FRND()*0.12);
+      return row(`   ${n}`, v, v*(0.9 + FRND()*0.2), 'num','up_good');
+    });
+    groups['Bookings'].push(...fbCities);
+    groups['Bookings'].push(row('Leads — Phone',    leads*0.18, leadsBase*0.19, 'num','up_good'));
+    groups['Bookings'].push(row('Bookings — Phone', chBookings*0.14, chBookingsBase*0.15, 'num','up_good'));
+  }
+
+  // Aggregate-only groups: AF Funnel + Journey events
+  if (ch.kind === 'aggregate') {
+    const afLeads = leads;
+    const afFilled = afLeads * (0.42 + FRND()*0.12);
+    const afFilledPct = afFilled/afLeads;
+    const booked = afFilled * (0.38 + FRND()*0.12);
+    const bookedPct = booked/afFilled;
+    groups['AF Funnel'] = [
+      row('AF Leads',   afLeads,      afLeads*0.97, 'num','up_good'),
+      row('AF Filled',  afFilled,     afFilled*0.96, 'num','up_good'),
+      row('AF Filled %',afFilledPct,  afFilledPct*0.99, 'pct','up_good'),
+      row('Booked',     booked,       booked*0.95, 'num','up_good'),
+      row('Booked %',   bookedPct,    bookedPct*0.99, 'pct','up_good'),
+    ];
+    groups['Journey Events'] = [
+      row('online_scheduled',    afFilled*0.48, afFilled*0.49, 'num','up_good'),
+      row('medium_selection',    afFilled*0.62, afFilled*0.60, 'num','up_good'),
+      row('clinic_selection',    afFilled*0.41, afFilled*0.42, 'num','up_good'),
+      row('doctor_first_offline',afFilled*0.18, afFilled*0.17, 'num','up_good'),
+      row('clinic_slot_selection',afFilled*0.34, afFilled*0.36, 'num','up_good'),
+      row('WA Leads',            afLeads*0.22,  afLeads*0.20,  'num','up_good'),
+      row('Call Leads',          afLeads*0.18,  afLeads*0.19,  'num','up_good'),
+    ];
+  }
+
+  // KPI strip — 6 headline numbers for this channel
+  const kpis = [
+    {label:'Spend',      value:(ch.kind==='paid'||ch.kind==='aggregate') ? fmtINR(chSpend) : '—'},
+    {label:'Leads (V)',  value:fmtNum(verLeads), delta:pctDelta(verLeads, verLeadsBase), dir:'up_good'},
+    {label:'Bookings',   value:fmtNum(chBookings), delta:pctDelta(chBookings, chBookingsBase), dir:'up_good'},
+    {label:'CPB',        value:cpb!=null ? fmtINR(cpb) : '—', delta:cpb!=null?(0.04):null, dir:'down_good'},
+    {label:'Calls Done', value:fmtNum(callsDone), delta:pctDelta(callsDone, callsDoneBase), dir:'up_good'},
+    {label:'1st TP RoAS',value:(ch.kind==='paid'||ch.kind==='aggregate') ? roas.toFixed(2)+'x' : '—', delta:(ch.kind==='paid'||ch.kind==='aggregate')?-0.05:null, dir:'up_good'},
+  ];
+
+  return {kpis, groups};
+}
+
+function renderDeepChannel(){
+  // Render category chips
+  document.getElementById('deepCatChips').innerHTML = DEEP_CATS.map(c => `
+    <span class="chip ${FOUNDER_STATE.deepCat===c.id?'active':''}" data-cat="${c.id}">${c.name}</span>
+  `).join('');
+  document.querySelectorAll('#deepCatChips .chip').forEach(el => {
+    el.onclick = () => { FOUNDER_STATE.deepCat = el.dataset.cat; renderDeepChannel(); };
+  });
+
+  // Render channel chips
+  document.getElementById('deepChannelChips').innerHTML = DEEP_CHANNELS.map(ch => `
+    <span class="chip ${FOUNDER_STATE.deepChannel===ch.id?'active':''}" data-ch="${ch.id}">${ch.name}</span>
+  `).join('');
+  document.querySelectorAll('#deepChannelChips .chip').forEach(el => {
+    el.onclick = () => { FOUNDER_STATE.deepChannel = el.dataset.ch; renderDeepChannel(); };
+  });
+
+  const ch = DEEP_CHANNELS.find(c => c.id === FOUNDER_STATE.deepChannel);
+  const data = buildChannelMetrics(FOUNDER_STATE.deepChannel, FOUNDER_STATE.deepCat);
+
+  // KPI strip
+  document.getElementById('deepKpiStrip').innerHTML = data.kpis.map(k => {
+    const d = (k.delta!=null) ? fmtDelta(k.delta, k.dir||'up_good') : {text:'',cls:''};
+    return `
+      <div class="border border-slate-200 rounded-lg p-3">
+        <div class="text-[10px] font-semibold text-slate-500 uppercase tracking-wide">${k.label}</div>
+        <div class="flex items-baseline gap-2 mt-1">
+          <div class="text-lg font-bold text-slate-900">${k.value}</div>
+          <div class="text-xs font-semibold ${d.cls}">${d.text}</div>
+        </div>
+      </div>`;
+  }).join('');
+
+  // Metric groups
+  const groupOrder = GROUPS_BY_KIND[ch.kind];
+  const html = groupOrder.filter(g => data.groups[g]).map(gName => {
+    const rows = data.groups[gName];
+    const isCollapsed = FOUNDER_STATE.collapsed.has(gName);
+    return `
+      <details class="border border-slate-200 rounded-lg" ${isCollapsed?'':'open'} data-group="${gName}">
+        <summary class="px-4 py-2 cursor-pointer flex items-center justify-between bg-slate-50 rounded-t-lg">
+          <span class="text-sm font-semibold text-slate-900">${gName}</span>
+          <span class="text-xs text-slate-500">${rows.length} metrics</span>
+        </summary>
+        <div class="border-t border-slate-100">
+          <table class="tbl">
+            <thead><tr><th>Metric</th><th style="text-align:right">Value</th><th style="text-align:right">Baseline</th><th style="text-align:right">Δ</th></tr></thead>
+            <tbody>
+              ${rows.map(r => {
+                const d = fmtDelta(pctDelta(r.value, r.baseline), r.dir);
+                return `<tr>
+                  <td>${r.name}</td>
+                  <td style="text-align:right">${applyFmt(r.value, r.fmt)}</td>
+                  <td style="text-align:right;color:#94a3b8">${applyFmt(r.baseline, r.fmt)}</td>
+                  <td style="text-align:right;font-weight:600" class="${d.cls}">${d.text}</td>
+                </tr>`;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
+      </details>`;
+  }).join('');
+  document.getElementById('deepMetricGroups').innerHTML = html;
+  document.querySelectorAll('#deepMetricGroups details').forEach(el => {
+    el.addEventListener('toggle', () => {
+      const g = el.dataset.group;
+      if (el.open) FOUNDER_STATE.collapsed.delete(g);
+      else FOUNDER_STATE.collapsed.add(g);
+    });
+  });
+
+  // Layer 3: campaign drill — only for paid channels
+  renderCampaignDrill(ch, FOUNDER_STATE.deepCat);
+}
+
+/* ---------- LAYER 3: CAMPAIGN DRILL ---------- */
+
+function mockCampaignsFor(channelId, catId){
+  const base = {
+    google_search: ['STI Test Brand','STI Test Generic','SH Doctor Brand','SH Doctor Generic','MH Therapist','Competitor — Doctor Insta','Competitor — Practo'],
+    gmb:           ['Allo Clinic — Bangalore','Allo Clinic — Delhi NCR','Allo Clinic — Mumbai','Allo Clinic — Hyderabad','Allo Clinic — Chennai'],
+    gmb_google:    ['STI Local — BLR','STI Local — DEL','SH Local — MUM','SH Local — HYD','Doctor Nearby — National'],
+    practo:        ['Doctor Profile — SH','Doctor Profile — STI','Banner — STI Test','Lead Forms — Mumbai','Sponsored — Bangalore','Sponsored — Delhi NCR'],
+    fb:            ['STI Test — Cold','STI Test — Lookalike','SH Couple — Cold','SH Men 25-40','Doctor Hiring — Pune','Awareness — National','MH Therapy — Urban'],
+    justdial:      ['Allo — Chennai+Online','Allo — Mumbai','Allo — Bangalore'],
+  };
+  const names = base[channelId] || [];
+  return names.map((name,i) => {
+    const isBrand = /brand|allo/i.test(name);
+    const isCompetitor = /competitor/i.test(name);
+    const spend = 80000 + FRND()*420000;
+    const impressions = 50000 + FRND()*450000;
+    const ctr = isBrand ? 0.085 + FRND()*0.06 : isCompetitor ? 0.02 + FRND()*0.02 : 0.025 + FRND()*0.035;
+    const clicks = impressions * ctr;
+    const cpc = spend / clicks;
+    const impShare = isBrand ? 0.78 + FRND()*0.18 : isCompetitor ? 0.22 + FRND()*0.15 : 0.40 + FRND()*0.30;
+    const lostRank = (1 - impShare) * (0.45 + FRND()*0.30);
+    const lostBudget = (1 - impShare) * (1 - 0.45 - FRND()*0.30);
+    const c2l = 0.18 + FRND()*0.14;
+    const leads = clicks * c2l;
+    const verPct = 0.50 + FRND()*0.18;
+    const verLeads = leads * verPct;
+    const leadConv = 0.30 + FRND()*0.18;
+    const bookings = verLeads * leadConv;
+    const cpb = spend / Math.max(1, bookings);
+    const wowDelta = -0.12 + FRND()*0.30;
+    let issue = null;
+    if (impShare < 0.40 && lostRank > 0.30) issue = 'Losing rank';
+    else if (lostBudget > 0.35) issue = 'Budget-capped';
+    else if (ctr < 0.025 && !isBrand) issue = 'Low CTR';
+    else if (cpb > 1800) issue = 'CPB high';
+    return {name, spend, impressions, impShare, lostRank, lostBudget, ctr, cpc, clicks, leads, verLeads, bookings, cpb, wowDelta, issue};
+  });
+}
+
+function renderCampaignDrill(ch, catId){
+  const wrap = document.getElementById('campaignTableWrap');
+  if (ch.kind !== 'paid') { wrap.innerHTML = ''; return; }
+  const camps = mockCampaignsFor(ch.id, catId);
+  if (camps.length === 0) { wrap.innerHTML = ''; return; }
+  const totalSpend = camps.reduce((s,c)=>s+c.spend, 0);
+
+  // Win/loss callouts
+  const losingRank = camps.filter(c => c.issue === 'Losing rank').sort((a,b)=>b.lostRank-a.lostRank).slice(0,2);
+  const budgetCap  = camps.filter(c => c.issue === 'Budget-capped').sort((a,b)=>b.lostBudget-a.lostBudget).slice(0,2);
+  const cpbHigh    = camps.filter(c => c.issue === 'CPB high').sort((a,b)=>b.cpb-a.cpb).slice(0,2);
+
+  const callouts = [];
+  if (losingRank.length) callouts.push(`<span class="pill red"><span class="dot"></span>${losingRank.map(c=>c.name+' '+fmtPct(c.lostRank)+' lost to rank').join('; ')}</span>`);
+  if (budgetCap.length)  callouts.push(`<span class="pill yellow"><span class="dot"></span>${budgetCap.map(c=>c.name+' '+fmtPct(c.lostBudget)+' lost to budget').join('; ')}</span>`);
+  if (cpbHigh.length)    callouts.push(`<span class="pill yellow"><span class="dot"></span>${cpbHigh.map(c=>c.name+' CPB '+fmtINR(c.cpb)).join('; ')}</span>`);
+
+  wrap.innerHTML = `
+    <div class="border-t border-slate-200 pt-4">
+      <div class="flex items-center justify-between mb-2">
+        <div>
+          <div class="text-sm font-semibold text-slate-900">Campaign drill — ${ch.name}</div>
+          <div class="text-xs text-slate-500">Top campaigns by spend · last 7 days vs prior 7</div>
+        </div>
+        <div class="text-xs text-slate-500">Total spend ${fmtINR(totalSpend)}</div>
+      </div>
+      ${callouts.length ? `<div class="flex flex-wrap gap-2 mb-3">${callouts.join('')}</div>` : ''}
+      <div style="overflow-x:auto">
+        <table class="tbl">
+          <thead><tr>
+            <th>Campaign</th>
+            <th style="text-align:right">Spend</th>
+            <th style="text-align:right">Imp.</th>
+            <th style="text-align:right">Imp Share</th>
+            <th style="text-align:right">Lost — Rank</th>
+            <th style="text-align:right">Lost — Budget</th>
+            <th style="text-align:right">CTR</th>
+            <th style="text-align:right">CPC</th>
+            <th style="text-align:right">Leads (V)</th>
+            <th style="text-align:right">Bookings</th>
+            <th style="text-align:right">CPB</th>
+            <th style="text-align:right">WoW</th>
+            <th>Status</th>
+          </tr></thead>
+          <tbody>
+            ${camps.sort((a,b)=>b.spend-a.spend).map(c => {
+              const d = fmtDelta(c.wowDelta, 'up_good');
+              const ispPill = c.impShare < 0.40 ? 'red' : c.impShare < 0.65 ? 'yellow' : 'green';
+              const issueBadge = c.issue ? `<span class="pill ${c.issue==='Losing rank'?'red':'yellow'}" style="font-size:10px;padding:1px 6px"><span class="dot"></span>${c.issue}</span>` : `<span class="text-xs text-slate-400">—</span>`;
+              return `<tr>
+                <td><div class="font-medium text-slate-800">${c.name}</div></td>
+                <td style="text-align:right">${fmtINR(c.spend)}</td>
+                <td style="text-align:right">${fmtNum(c.impressions)}</td>
+                <td style="text-align:right"><span class="pill ${ispPill}" style="font-size:11px;padding:1px 6px">${fmtPct(c.impShare)}</span></td>
+                <td style="text-align:right;color:#dc2626">${fmtPct(c.lostRank)}</td>
+                <td style="text-align:right;color:#b45309">${fmtPct(c.lostBudget)}</td>
+                <td style="text-align:right">${fmtPct(c.ctr)}</td>
+                <td style="text-align:right">${fmtINR(c.cpc)}</td>
+                <td style="text-align:right">${fmtNum(c.verLeads)}</td>
+                <td style="text-align:right">${fmtNum(c.bookings)}</td>
+                <td style="text-align:right">${fmtINR(c.cpb)}</td>
+                <td style="text-align:right" class="${d.cls}">${d.text}</td>
+                <td>${issueBadge}</td>
+              </tr>`;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
+
+/* ---------- Hook into renderAll ---------- */
+
+const _origRenderAll = renderAll;
+renderAll = function(){
+  _origRenderAll();
+  renderFounderAll();
+};
+
+function renderFounderAll(){
+  renderExecutive();
+  renderCategoryHealthCards();
+  renderCityScoreboardCards();
+  renderMarketShareCards();
+  renderDeepChannel();
+}
+
+// Initial founder-layer render after the rest of the page is ready
+renderFounderAll();
 </script>
 </body>
 </html>
