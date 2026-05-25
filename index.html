@@ -8,6 +8,8 @@
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-chart-sankey@0.12.1/dist/chartjs-chart-sankey.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-chart-matrix@2.0.1/dist/chartjs-chart-matrix.min.js"></script>
 <script src="data_adapter.js"></script>
 <style>
   :root{
@@ -105,6 +107,104 @@
   .ai-insight.open{display:block;animation:slideDown .2s ease-out;}
   .ai-insight strong{color:#1e1b4b;}
   @keyframes slideDown { from { opacity:0; transform:translateY(-4px);} to {opacity:1; transform:translateY(0);} }
+  /* ===== Wave-1 additions ===== */
+  /* Data-quality caveat banner */
+  .caveat-banner{display:flex;align-items:flex-start;gap:10px;padding:10px 14px;background:#fffbeb;border:1px solid #fcd34d;border-radius:10px;font-size:12.5px;color:#92400e;margin-bottom:14px;line-height:1.45;}
+  .caveat-banner .cv-ico{flex-shrink:0;font-size:14px;line-height:1;margin-top:1px;}
+  .caveat-banner .cv-close{margin-left:auto;cursor:pointer;color:#92400e;opacity:.55;font-size:14px;line-height:1;padding:0 4px;border:none;background:transparent;flex-shrink:0;}
+  .caveat-banner .cv-close:hover{opacity:1;}
+  /* Drill-back breadcrumb */
+  #drillCrumb{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:8px 12px;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:10px;font-size:12.5px;color:#334155;}
+  #drillCrumb .crumb{padding:3px 9px;background:#fff;border:1px solid #e2e8f0;border-radius:999px;cursor:pointer;font-weight:500;}
+  #drillCrumb .crumb:hover{border-color:#94a3b8;background:#f8fafc;}
+  #drillCrumb .crumb.root{background:#0f172a;color:#fff;border-color:#0f172a;}
+  #drillCrumb .crumb-sep{color:#94a3b8;}
+  #drillCrumb .crumb-clear{margin-left:auto;font-size:11px;color:#1d4ed8;cursor:pointer;text-decoration:underline;}
+  /* Drillthrough table component */
+  .dt-table{width:100%;border-collapse:separate;border-spacing:0;font-size:13px;}
+  .dt-table th{background:#f8fafc;border-bottom:1px solid #e2e8f0;padding:9px 12px;text-align:left;font-size:11px;font-weight:600;color:#475569;text-transform:uppercase;letter-spacing:.04em;position:sticky;top:0;z-index:1;cursor:pointer;user-select:none;}
+  .dt-table th.numeric{text-align:right;}
+  .dt-table th .sort-ind{opacity:.35;margin-left:3px;}
+  .dt-table th.sort-asc .sort-ind, .dt-table th.sort-desc .sort-ind{opacity:1;}
+  .dt-table td{padding:8px 12px;border-bottom:1px solid #f1f5f9;}
+  .dt-table td.numeric{text-align:right;font-variant-numeric:tabular-nums;}
+  .dt-table tr.clickable{cursor:pointer;}
+  .dt-table tr.clickable:hover td{background:#f8fafc;}
+  .dt-wrap{border:1px solid #e2e8f0;border-radius:10px;overflow:hidden;background:#fff;}
+  .dt-toolbar{display:flex;align-items:center;gap:10px;padding:8px 10px;background:#f8fafc;border-bottom:1px solid #e2e8f0;}
+  .dt-toolbar input{flex:1;max-width:280px;border:1px solid #e2e8f0;border-radius:8px;padding:5px 10px;font-size:12.5px;outline:none;}
+  .dt-toolbar input:focus{border-color:#0f172a;}
+  .dt-toolbar select{border:1px solid #e2e8f0;border-radius:8px;padding:4px 8px;font-size:12px;background:#fff;}
+  .dt-toolbar button{padding:5px 12px;background:#0f172a;color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;}
+  .dt-toolbar button:hover{background:#1e293b;}
+  .dt-scroll{max-height:480px;overflow-y:auto;}
+  .dt-footer{padding:8px 12px;background:#f8fafc;border-top:1px solid #e2e8f0;display:flex;justify-content:space-between;align-items:center;font-size:12px;color:#64748b;}
+  .dt-footer .pager{display:flex;gap:4px;}
+  .dt-footer .pager button{padding:3px 9px;border:1px solid #e2e8f0;background:#fff;border-radius:6px;cursor:pointer;font-size:12px;}
+  .dt-footer .pager button:disabled{opacity:.4;cursor:not-allowed;}
+  .dt-footer .pager button.active{background:#0f172a;color:#fff;border-color:#0f172a;}
+  /* Anomaly cards */
+  .anom-card{display:flex;align-items:flex-start;gap:12px;padding:12px 14px;border:1px solid #e2e8f0;border-radius:10px;background:#fff;transition:border-color .12s;}
+  .anom-card:hover{border-color:#94a3b8;}
+  .anom-card.sev-high{border-left:4px solid #dc2626;}
+  .anom-card.sev-med{border-left:4px solid #f59e0b;}
+  .anom-card.sev-low{border-left:4px solid #6366f1;}
+  .anom-sev{display:inline-block;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;padding:2px 8px;border-radius:999px;}
+  .anom-sev.high{background:#fee2e2;color:#991b1b;}
+  .anom-sev.med{background:#fef3c7;color:#92400e;}
+  .anom-sev.low{background:#e0e7ff;color:#3730a3;}
+  .anom-title{font-size:13.5px;font-weight:600;color:#0f172a;margin-bottom:3px;}
+  .anom-detail{font-size:12.5px;color:#475569;line-height:1.5;}
+  .anom-cta{margin-left:auto;flex-shrink:0;padding:5px 12px;background:#0f172a;color:#fff;border:none;border-radius:8px;font-size:11.5px;font-weight:600;cursor:pointer;align-self:center;}
+  .anom-cta:hover{background:#1e293b;}
+  /* Source-quality heat cells */
+  .sq-heat-good{background:#dcfce7;color:#166534;}
+  .sq-heat-mid{background:#fef3c7;color:#854d0e;}
+  .sq-heat-bad{background:#fee2e2;color:#991b1b;}
+  .sq-heat-na{color:#94a3b8;font-style:italic;}
+  /* Funnel waterfall blocks */
+  .funnel-stage{display:flex;align-items:center;gap:14px;padding:14px 16px;border-radius:10px;background:linear-gradient(90deg,#0f172a 0%,#1e293b 100%);color:#fff;margin-bottom:6px;}
+  .funnel-stage .fs-name{font-size:12px;font-weight:600;opacity:.85;text-transform:uppercase;letter-spacing:.05em;min-width:90px;}
+  .funnel-stage .fs-val{font-size:20px;font-weight:700;font-variant-numeric:tabular-nums;}
+  .funnel-stage .fs-bar{flex:1;height:8px;background:rgba(255,255,255,.15);border-radius:999px;overflow:hidden;}
+  .funnel-stage .fs-bar > span{display:block;height:100%;background:#22d3ee;}
+  .funnel-drop{display:flex;justify-content:space-between;padding:4px 16px;font-size:11.5px;color:#dc2626;font-weight:600;margin-bottom:6px;}
+  /* Comparison pin chips */
+  .cmp-pin{display:inline-flex;align-items:center;gap:6px;padding:5px 12px;background:#0f172a;color:#fff;border-radius:999px;font-size:12px;font-weight:500;}
+  .cmp-pin .x{cursor:pointer;opacity:.6;margin-left:2px;}
+  .cmp-pin .x:hover{opacity:1;}
+  /* Modal overlay (clinic intel drillthrough) */
+  .modal-overlay{position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:60;display:flex;align-items:flex-start;justify-content:flex-end;}
+  .modal-overlay.hidden{display:none;}
+  .modal-panel{width:min(960px,92vw);height:100vh;background:#f8fafc;overflow-y:auto;box-shadow:-8px 0 32px rgba(15,23,42,.18);animation:slideInRight .22s ease-out;}
+  @keyframes slideInRight{from{transform:translateX(20px);opacity:0;}to{transform:translateX(0);opacity:1;}}
+  .modal-header{display:flex;justify-content:space-between;align-items:flex-start;padding:18px 22px;border-bottom:1px solid #e2e8f0;background:#fff;position:sticky;top:0;z-index:2;}
+  .modal-close{background:#0f172a;color:#fff;border:none;border-radius:8px;padding:6px 14px;font-size:12px;font-weight:600;cursor:pointer;}
+  /* Print/PDF — when printing, show only active tab as a clean A4 report */
+  @media print {
+    @page { size: A4 portrait; margin: 10mm; }
+    body { background: #fff !important; font-size: 9.5pt !important; }
+    /* Hide all dashboard chrome: top header, filter row, tabnav, sidebar, etc. */
+    .no-print, .tabnav, .sidebar, #drillCrumb, #chat-fab, .modal-overlay { display: none !important; }
+    body > div > header { display: none !important; }     /* page header */
+    body > div > section.card:first-of-type { display: none !important; } /* filter card */
+    footer { display: none !important; }
+    /* Show only the active tab panel */
+    .tab-panel { display: none !important; }
+    .tab-panel.active { display: block !important; }
+    /* Inside the active panel, also hide controls/print-buttons */
+    .tab-panel.active .no-print { display: none !important; }
+    /* Cleaner cards */
+    .card { box-shadow: none !important; border: 1px solid #cbd5e1 !important; page-break-inside: avoid !important; }
+    section { page-break-inside: avoid; margin-bottom: 8px !important; }
+    canvas { max-height: 220px !important; }
+    table { font-size: 8pt !important; }
+    th, td { padding: 3px 5px !important; }
+    h1, h2, h3 { color: #0f172a !important; }
+    /* Show print-only report header */
+    .print-only-header { display: block !important; }
+  }
+  .print-only-header { display: none; }
 </style>
 </head>
 <body class="min-h-screen">
@@ -174,11 +274,17 @@
   <!-- Tab navigation -->
   <div class="tabnav" id="tabnav">
     <span class="tab active" data-tab="exec">Executive Summary</span>
+    <span class="tab" data-tab="stidive" style="background:linear-gradient(135deg,#dbeafe 0%,#bfdbfe 100%);color:#1e40af;font-weight:600">Deep Dive</span>
+    <span class="tab" data-tab="spike" style="background:linear-gradient(135deg,#fef3c7 0%,#fde68a 100%);color:#92400e;font-weight:600">Spike Decomposition</span>
     <span class="tab" data-tab="bookings">Bookings &amp; Demand</span>
     <span class="tab" data-tab="category">Category</span>
     <span class="tab" data-tab="city">City Performance</span>
     <span class="tab" data-tab="clinic">Clinic Performance</span>
     <span class="tab" data-tab="channel">Channel Deep-Dive</span>
+    <span class="tab" data-tab="funnel">Funnel Leakage</span>
+    <span class="tab" data-tab="srcquality">Source Quality</span>
+    <span class="tab" data-tab="anomaly">Anomaly Center</span>
+    <span class="tab" data-tab="compare">Compare</span>
   </div>
 
   <!-- Active drill breadcrumb -->
@@ -206,6 +312,11 @@
         <div id="briefRecommendations" class="space-y-2"></div>
       </div>
     </div>
+  </section>
+
+  <!-- ===== TOP EXCEPTIONS (Wave 1: anomaly summary on landing) ===== -->
+  <section class="card p-4 mb-5" id="execAnomaliesCard" style="display:none">
+    <div id="execAnomalies"></div>
   </section>
 
   <!-- ===== SPEND EFFICIENCY HEAT STRIP ===== -->
@@ -298,6 +409,321 @@
   </section>
 
   </div><!-- /tab exec -->
+
+  <!-- ===== TAB: DEEP DIVE (generic — works for any metric × any dimension) ===== -->
+  <div class="tab-panel" data-panel="stidive">
+
+  <!-- Controls bar -->
+  <section class="card p-4 mb-5" style="background:linear-gradient(to right,#f0f9ff,#ffffff);border-left:4px solid #0ea5e9">
+    <div class="flex flex-wrap items-end gap-4">
+      <div>
+        <div class="text-[10px] font-semibold text-sky-700 uppercase tracking-wide mb-1">Analyze</div>
+        <select id="ddMetric" class="text-sm border border-slate-300 rounded px-3 py-2 bg-white font-semibold min-w-[180px]"></select>
+      </div>
+      <div>
+        <div class="text-[10px] font-semibold text-sky-700 uppercase tracking-wide mb-1">Pivot by</div>
+        <select id="ddDimension" class="text-sm border border-slate-300 rounded px-3 py-2 bg-white font-semibold min-w-[140px]"></select>
+      </div>
+      <div>
+        <div class="text-[10px] font-semibold text-sky-700 uppercase tracking-wide mb-1">Target</div>
+        <input id="ddTarget" type="text" class="text-sm border border-slate-300 rounded px-3 py-2 bg-white font-semibold w-[100px]" placeholder="e.g. 30%"/>
+      </div>
+      <div class="flex-1"></div>
+      <div class="text-right">
+        <div class="text-[10px] text-slate-500 uppercase">Headline</div>
+        <div class="flex items-baseline gap-1 justify-end">
+          <div id="ddHeadlineValue" class="text-3xl font-bold text-sky-600">—</div>
+          <div id="ddHeadlineTarget" class="text-sm text-slate-500"></div>
+        </div>
+        <div id="ddHeadlineGap" class="text-xs font-semibold mt-1">—</div>
+      </div>
+    </div>
+    <!-- Progress bar (only shown for rate-type metrics) -->
+    <div id="ddProgressWrap" class="mt-3" style="display:none">
+      <div class="h-2 bg-slate-100 rounded-full overflow-hidden relative">
+        <div id="ddProgressBar" class="h-full bg-sky-500 transition-all" style="width:0%"></div>
+        <div id="ddProgressTarget" class="absolute top-0 h-full" style="width:1px;background:#dc2626"></div>
+      </div>
+      <div id="ddProgressTicks" class="flex justify-between text-[10px] text-slate-400 mt-1"></div>
+    </div>
+    <div id="ddHeadlineText" class="text-sm text-slate-600 mt-3"></div>
+  </section>
+
+  <!-- Data caveat (shown only for rate metrics tied to tags) -->
+  <section id="ddCaveat" class="border border-amber-200 bg-amber-50 rounded-lg p-3 mb-5 text-sm" style="display:none">
+    <div class="flex items-start gap-2">
+      <span class="font-semibold text-amber-900">⚠ Data caveat:</span>
+      <div class="text-amber-800" id="ddCaveatText"></div>
+    </div>
+  </section>
+
+  <!-- KPI row -->
+  <section class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-5" id="ddKpis"></section>
+
+  <!-- Cross-cut: by city -->
+  <section class="card p-5 mb-5">
+    <div class="flex items-center justify-between mb-3">
+      <h3 class="text-base font-semibold text-slate-900">By city</h3>
+      <div class="text-xs text-slate-500">Last 180 days · sorted by metric</div>
+    </div>
+    <div id="ddCityTable" style="overflow-x:auto"></div>
+  </section>
+
+  <!-- Cross-cut: by acquisition channel -->
+  <section class="card p-5 mb-5">
+    <div class="flex items-center justify-between mb-3">
+      <h3 class="text-base font-semibold text-slate-900">By acquisition channel</h3>
+      <div class="text-xs text-slate-500">Each channel's contribution and rate</div>
+    </div>
+    <div id="ddChannelTable" style="overflow-x:auto"></div>
+  </section>
+
+  <!-- Per-clinic dynamics (Sheet13 framework) -->
+  <section class="card p-5 mb-5">
+    <div class="flex items-center justify-between mb-3 flex-wrap gap-2">
+      <div>
+        <h3 class="text-base font-semibold text-slate-900">Per-clinic dynamics — first half → last half of window</h3>
+        <div class="text-xs text-slate-500">First 90 days vs last 90 days. Story column flags what's happening for the chosen metric.</div>
+      </div>
+      <div class="flex items-center gap-2">
+        <select id="ddClinicCityFilter" class="text-xs border border-slate-200 rounded px-2 py-1 bg-white">
+          <option value="">All cities</option>
+        </select>
+        <select id="ddClinicStoryFilter" class="text-xs border border-slate-200 rounded px-2 py-1 bg-white">
+          <option value="">All stories</option>
+        </select>
+        <select id="ddClinicMaturityFilter" class="text-xs border border-slate-200 rounded px-2 py-1 bg-white">
+          <option value="">All maturity</option>
+          <option value="new">New (&lt; 90d)</option>
+          <option value="ramping">Ramping (90-365d)</option>
+          <option value="mature">Mature (1y+)</option>
+          <option value="unknown">Unknown age</option>
+        </select>
+      </div>
+    </div>
+    <div id="ddClinicTable" style="overflow-x:auto"></div>
+    <div id="ddClinicSummary" class="text-xs text-slate-500 mt-2"></div>
+  </section>
+
+  <!-- Story rollup -->
+  <section class="card p-5 mb-5">
+    <h3 class="text-base font-semibold text-slate-900 mb-3">Story rollup — clinics by what's happening</h3>
+    <div id="ddStoryRollup" class="grid grid-cols-1 md:grid-cols-5 gap-3"></div>
+  </section>
+
+  </div><!-- /tab stidive -->
+
+  <!-- ===== TAB: SPIKE DECOMPOSITION (online bookings from founder's WoW tracker) ===== -->
+  <div class="tab-panel" data-panel="spike">
+
+  <!-- Print-only header (visible only when printing to PDF) -->
+  <div class="print-only-header" style="margin-bottom:14px;padding-bottom:8px;border-bottom:2px solid #0f172a">
+    <h1 style="font-size:18pt;font-weight:bold;color:#0f172a;margin:0">Online Bookings — Spike Decomposition</h1>
+    <div style="font-size:9pt;color:#64748b;margin-top:2px" id="print-report-meta">
+      Source: weekly WTD tracker · Allo Health · auto-generated
+    </div>
+  </div>
+
+  <!-- Print button + headline -->
+  <div class="flex justify-end mb-2 no-print">
+    <button onclick="printSpikeReport()" class="text-xs font-semibold px-3 py-1.5 rounded bg-amber-500 text-white hover:bg-amber-600 shadow">
+      🖨️ Save as PDF / Print Report
+    </button>
+  </div>
+
+  <!-- Headline -->
+  <section class="card p-5 mb-5" style="border-left:4px solid #f59e0b;background:linear-gradient(to right,#fffbeb,#ffffff)">
+    <div class="flex items-start justify-between gap-4 flex-wrap">
+      <div>
+        <div class="text-xs font-semibold text-amber-700 uppercase tracking-wide mb-1">Online Bookings · Weekly Tracker</div>
+        <h2 class="text-2xl font-bold text-slate-900">What drove the spike — and why didn't it stick?</h2>
+        <div class="text-sm text-slate-600 mt-1" id="spkHeadline">Loading weekly data…</div>
+      </div>
+      <div class="text-right">
+        <div class="text-[10px] text-slate-500 uppercase">Spike vs Baseline</div>
+        <div class="flex items-baseline gap-2 justify-end">
+          <div id="spkSpikeVal" class="text-4xl font-bold text-emerald-600">—</div>
+          <div class="text-sm text-slate-500">vs</div>
+          <div id="spkBaseVal" class="text-xl font-semibold text-slate-700">—</div>
+        </div>
+        <div id="spkDelta" class="text-sm font-bold mt-1">—</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Controls -->
+  <section class="card p-3 mb-5">
+    <div class="flex flex-wrap gap-4 items-end">
+      <div>
+        <div class="text-[10px] font-semibold text-slate-500 uppercase mb-1">Spike week</div>
+        <select id="spkSpikeWk" class="text-sm border border-slate-300 rounded px-2 py-1.5 bg-white min-w-[170px]"></select>
+      </div>
+      <div>
+        <div class="text-[10px] font-semibold text-slate-500 uppercase mb-1">Baseline (avg of N weeks before spike)</div>
+        <select id="spkBaseN" class="text-sm border border-slate-300 rounded px-2 py-1.5 bg-white">
+          <option value="2">2 weeks</option>
+          <option value="3">3 weeks</option>
+          <option value="4" selected>4 weeks</option>
+          <option value="6">6 weeks</option>
+          <option value="8">8 weeks</option>
+        </select>
+      </div>
+      <div>
+        <div class="text-[10px] font-semibold text-slate-500 uppercase mb-1">Headline metric</div>
+        <select id="spkMetric" class="text-sm border border-slate-300 rounded px-2 py-1.5 bg-white min-w-[200px]">
+          <option value="all_unique_bookings" selected>All Unique Bookings</option>
+          <option value="new_bookings">New Bookings (first-time)</option>
+          <option value="calls_done">Calls Done (completed)</option>
+          <option value="calls_done_sti">Calls Done — STI</option>
+          <option value="gross_bookings">Gross Bookings</option>
+        </select>
+      </div>
+      <div>
+        <div class="text-[10px] font-semibold text-slate-500 uppercase mb-1">Target (1000+ roadmap)</div>
+        <input id="spkTarget" type="number" value="1000" min="100" max="5000" step="50"
+               class="text-sm border border-slate-300 rounded px-2 py-1.5 bg-white w-[100px]"/>
+      </div>
+    </div>
+  </section>
+
+  <!-- Weekly trend chart -->
+  <section class="card p-5 mb-5">
+    <h3 class="text-base font-semibold text-slate-900 mb-2">Weekly trend</h3>
+    <div class="text-xs text-slate-500 mb-3">Headline metric across all available weeks. Spike (highlighted) vs baseline shown on the chart.</div>
+    <div style="position:relative;height:280px;width:100%"><canvas id="spkTrendChart"></canvas></div>
+  </section>
+
+  <!-- Waterfall + Contribution Table -->
+  <section class="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-5">
+    <div class="card p-5">
+      <h3 class="text-base font-semibold text-slate-900 mb-2">Where the lift came from</h3>
+      <div class="text-xs text-slate-500 mb-3">Decomposing <span id="spkLiftLabel">+117</span> bookings vs baseline, by channel.</div>
+      <div style="position:relative;height:320px;width:100%"><canvas id="spkWaterfallChart"></canvas></div>
+    </div>
+    <div class="card p-5">
+      <h3 class="text-base font-semibold text-slate-900 mb-2">Channel contribution table</h3>
+      <div class="text-xs text-slate-500 mb-3">Spike week vs baseline, sorted by contribution to the lift.</div>
+      <div id="spkChannelTable" style="overflow-x:auto"></div>
+    </div>
+  </section>
+
+  <!-- Post-spike collapse + repeatability classification -->
+  <section class="card p-5 mb-5">
+    <div class="flex items-start justify-between mb-3 flex-wrap gap-3">
+      <div>
+        <h3 class="text-base font-semibold text-slate-900">Was it sustained? Repeatable vs one-off</h3>
+        <div class="text-xs text-slate-500">Compares spike-week channel mix to the 2 weeks AFTER. If a channel collapsed back to baseline → it was a one-time push.</div>
+      </div>
+    </div>
+    <div id="spkSustainTable" style="overflow-x:auto"></div>
+  </section>
+
+  <!-- Funnel context: gross → completed -->
+  <section class="card p-5 mb-5">
+    <h3 class="text-base font-semibold text-slate-900 mb-3">Funnel context — same week</h3>
+    <div id="spkFunnelGrid" class="grid grid-cols-2 md:grid-cols-5 gap-3"></div>
+  </section>
+
+  <!-- Traffic vs conversion decomposition (leads-to-bookings) -->
+  <section class="card p-5 mb-5">
+    <div class="flex items-start justify-between mb-3 flex-wrap gap-3">
+      <div>
+        <h3 class="text-base font-semibold text-slate-900">Traffic vs conversion — why did each channel move?</h3>
+        <div class="text-xs text-slate-500">Lead volume change × lead-to-booking conversion. Splits each channel's lift into "more eyeballs" vs "better closing".</div>
+      </div>
+    </div>
+    <div id="spkTraffConvTable" style="overflow-x:auto"></div>
+    <div id="spkTraffConvSummary" class="text-xs text-slate-600 mt-3 p-3 bg-slate-50 rounded border-l-4 border-slate-300"></div>
+  </section>
+
+  <!-- Per-clinic contribution (from data.json bookings table — TOTAL bookings) -->
+  <section class="card p-5 mb-5">
+    <div class="flex items-start justify-between mb-3 flex-wrap gap-3">
+      <div>
+        <h3 class="text-base font-semibold text-slate-900">Per-clinic contribution to the spike</h3>
+        <div class="text-xs text-slate-500">From Redshift (data.json) — TOTAL bookings per clinic, not online-only. <span class="text-amber-600">Network total 5,400/wk; CSV "online" subset is ~14%. Use the deltas to spot which clinics moved.</span></div>
+      </div>
+      <select id="spkClinicSort" class="text-xs border border-slate-200 rounded px-2 py-1 bg-white">
+        <option value="delta_desc" selected>Sort by Δ (top contributors)</option>
+        <option value="delta_asc">Sort by Δ (most negative)</option>
+        <option value="spike_desc">Sort by spike-week absolute</option>
+      </select>
+    </div>
+    <div id="spkClinicTable" style="overflow-x:auto"></div>
+  </section>
+
+  <!-- Ad-platform spend decomposition (FB + Google) -->
+  <section class="card p-5 mb-5">
+    <h3 class="text-base font-semibold text-slate-900 mb-3">Ad platform decomposition</h3>
+    <div id="spkAdSpendBox"></div>
+  </section>
+
+  <!-- Path to 1000+ roadmap (math floor) -->
+  <section class="card p-5 mb-5">
+    <div class="flex items-start justify-between mb-3 flex-wrap gap-3">
+      <div>
+        <h3 class="text-base font-semibold text-slate-900">Path to <span id="spkTargetLabel">1000+</span> — math floor</h3>
+        <div class="text-xs text-slate-500">Each channel's "proven ceiling" = highest weekly value observed. This is the FLOOR — what's achievable just by restoring lost ground (no new campaigns required).</div>
+      </div>
+    </div>
+    <div id="spkRoadmapTable" style="overflow-x:auto"></div>
+    <div id="spkRoadmapTotal" class="text-sm font-semibold mt-3 p-3 bg-amber-50 border-l-4 border-amber-400 rounded"></div>
+  </section>
+
+  <!-- Path to 1000+ — actionable 5-lever roadmap -->
+  <section class="card p-5 mb-5" style="border-left:4px solid #059669;background:linear-gradient(to right,#ecfdf5,#ffffff)">
+    <div class="mb-4">
+      <h3 class="text-base font-semibold text-slate-900 mb-1">Path to <span class="spk-target-label">1000+</span> — actionable roadmap</h3>
+      <div class="text-xs text-slate-600">Five levers grounded in your data. Adjust each lever's target to model scenarios. The running total updates live below.</div>
+    </div>
+
+    <div id="spkLeverGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-4"></div>
+
+    <!-- Stacked composition chart -->
+    <div class="mb-4">
+      <div class="text-xs font-semibold text-slate-700 mb-2">Scenario composition</div>
+      <div style="position:relative;height:120px;width:100%"><canvas id="spkRoadmapChart"></canvas></div>
+    </div>
+
+    <!-- Verdict -->
+    <div id="spkRoadmapVerdict" class="text-sm p-4 rounded font-semibold"></div>
+
+    <!-- Recommended actions -->
+    <div class="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+      <div class="border border-emerald-200 rounded p-3">
+        <div class="text-xs font-semibold text-emerald-700 uppercase mb-1.5">↗ Repeatable mechanics</div>
+        <ul class="list-disc list-inside text-slate-700 space-y-1 text-xs">
+          <li><strong>FB sustained scale</strong>: replicate the 4-10 May budget burst, but kept on continuously. Lift was +25% leads at constant 19% CVR → linear in spend. <span class="text-amber-700">Prereq: fix the FB-spend Redshift feed (broken since Feb 9) so you can measure efficiency before scaling.</span></li>
+          <li><strong>FB creative diversification</strong>: the spike came from a single push. Run 4-6 creative variants in parallel to find ones that beat 19% CVR.</li>
+          <li><strong>Google Search push</strong>: peak 145, current 122. Small lever (+20-30/wk) but proven & cheap.</li>
+          <li><strong>No-show reduction</strong>: 240 no-shows/wk = 33% leakage. Even 25% recovery = +60 bookings → done.</li>
+        </ul>
+      </div>
+      <div class="border border-amber-200 rounded p-3">
+        <div class="text-xs font-semibold text-amber-700 uppercase mb-1.5">⚠ Ceiling-breakers (need investment)</div>
+        <ul class="list-disc list-inside text-slate-700 space-y-1 text-xs">
+          <li><strong>Instagram + YouTube</strong>: current ~13 + 0 bookings/wk. Adjacent FB audience, untested.</li>
+          <li><strong>City expansion</strong>: top-delta during spike was Practo Online (+213 total bookings). Replicate the virtual-clinic capacity model.</li>
+          <li><strong>Conversion improvement on FB</strong>: 19% lead→booking. Better landing page / faster response time could lift to 22-25% — that's +60-100 bookings/wk on FB alone at current spend.</li>
+          <li><strong>New top-of-funnel</strong>: WhatsApp click-to-chat, content marketing, doctor-referral programs. Anything that isn't FB/GS dependency.</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="mt-3 text-[10px] text-slate-500 italic">Lever defaults are calibrated from your 13-week data. Adjust the inputs to test sensitivity — e.g. "what if FB only gets to 350?" or "what if conversion stays flat?". The roadmap chart updates instantly.</div>
+  </section>
+
+  <!-- Data caveats -->
+  <section class="border border-amber-200 bg-amber-50 rounded-lg p-3 mb-5 text-sm">
+    <div class="font-semibold text-amber-900 mb-1">⚠ Data caveats</div>
+    <ul class="text-amber-800 list-disc list-inside text-xs space-y-1">
+      <li>Source: <code>Clinic Wise WoW - GMB_ Clinic Wise WTD Tracker.csv</code> — founder's weekly tracker, online bookings only</li>
+      <li>Per-clinic breakdown rows in the CSV are <code>#REF!</code> errors — clinic-level decomposition unavailable from this file</li>
+      <li>Two channel rows (organic, organic-wa, whatsapp) overlap — likely whatsapp + organic-wa are subsets of organic; not double-counted in the waterfall but the math may shift if your definitions differ</li>
+    </ul>
+  </section>
+
+  </div><!-- /tab spike -->
 
   <!-- ===== TAB: BOOKINGS & DEMAND ===== -->
   <div class="tab-panel" data-panel="bookings">
@@ -661,6 +1087,58 @@
     <div class="insight" id="i_clinics"></div>
   </section>
 
+  <!-- Weekly category share, by city or clinic (live data only) -->
+  <section class="card p-4 mb-5" id="catShareSection" style="display:none">
+    <div class="flex items-center justify-between mb-3">
+      <div>
+        <div class="text-sm font-semibold text-slate-900">Weekly category share — by city or clinic</div>
+        <div class="text-xs text-slate-500">For the selected city/clinic, % of completed consultations carrying each diagnosis tag. This week vs 8-week avg, with weekly trend.</div>
+      </div>
+      <div class="text-xs text-slate-500" id="catShareMeta"></div>
+    </div>
+    <div class="flex flex-wrap gap-3 mb-3 items-center">
+      <div class="flex items-center flex-wrap gap-1.5">
+        <span class="text-[10px] font-semibold text-slate-500 uppercase tracking-wide mr-1">Scope</span>
+        <div id="catShareScope" class="flex flex-wrap gap-1.5"></div>
+      </div>
+      <div class="flex items-center flex-wrap gap-1.5">
+        <span class="text-[10px] font-semibold text-slate-500 uppercase tracking-wide mr-1">Pick</span>
+        <select id="catSharePick" class="text-xs border border-slate-200 rounded px-2 py-1 bg-white"></select>
+      </div>
+    </div>
+    <div id="catShareTable" style="overflow-x:auto"></div>
+    <div class="mt-4">
+      <div class="text-xs font-semibold text-slate-500 mb-2">All entities — latest week share by category</div>
+      <div id="catShareAllTable" style="overflow-x:auto"></div>
+    </div>
+  </section>
+
+  <!-- Clinic landings by source × category (live data only) -->
+  <section class="card p-4 mb-5" id="clinicSrcCatSection" style="display:none">
+    <div class="flex items-center justify-between mb-3">
+      <div>
+        <div class="text-sm font-semibold text-slate-900">Clinic landings by source × category</div>
+        <div class="text-xs text-slate-500">Completed consultations attributed to a UTM source and diagnosis tag. Pick a source and category to rank clinics.</div>
+      </div>
+      <div class="text-xs text-slate-500" id="clinicSrcCatMeta"></div>
+    </div>
+    <div class="flex flex-wrap gap-3 mb-3 items-center">
+      <div class="flex items-center flex-wrap gap-1.5">
+        <span class="text-[10px] font-semibold text-slate-500 uppercase tracking-wide mr-1">Source</span>
+        <div id="clinicSrcCatSource" class="flex flex-wrap gap-1.5"></div>
+      </div>
+      <div class="flex items-center flex-wrap gap-1.5">
+        <span class="text-[10px] font-semibold text-slate-500 uppercase tracking-wide mr-1">Category</span>
+        <div id="clinicSrcCatTag" class="flex flex-wrap gap-1.5"></div>
+      </div>
+      <div class="flex items-center flex-wrap gap-1.5">
+        <span class="text-[10px] font-semibold text-slate-500 uppercase tracking-wide mr-1">Window</span>
+        <div id="clinicSrcCatWin" class="flex flex-wrap gap-1.5"></div>
+      </div>
+    </div>
+    <div id="clinicSrcCatTable" style="overflow-x:auto"></div>
+  </section>
+
   <!-- Comparison layer: clinic vs clinic -->
   <section class="card p-4 mb-5">
     <div class="flex items-center justify-between mb-3">
@@ -677,7 +1155,105 @@
 
   </div><!-- /tab clinic -->
 
-  <footer class="text-xs text-slate-400 pb-8 text-center">Sample data, deterministic seed · 18 months of history · AI insights are mock until live API wired · Replace <span class="kbd">BOOKINGS</span> data in source to plug in real numbers.</footer>
+  <!-- ===== TAB: FUNNEL LEAKAGE EXPLORER ===== -->
+  <div class="tab-panel" data-panel="funnel">
+    <section class="card p-5 mb-5">
+      <div class="flex items-center justify-between mb-3">
+        <div>
+          <div class="text-sm font-semibold text-slate-900">Funnel leakage</div>
+          <div class="text-xs text-slate-500">Where leads, bookings, and visits leak. Data window respects global filters above.</div>
+        </div>
+        <div class="text-[11px] text-slate-400" id="funnelScopeLabel"></div>
+      </div>
+      <div id="funnelCaveat"></div>
+      <div id="funnelWaterfall" class="mt-3"></div>
+      <div class="mt-5" style="height:340px"><canvas id="funnelSankey"></canvas></div>
+      <div class="text-[11px] text-slate-400 mt-2">Sankey shows estimated allocation: leads have no clinic_id in source, so flows are weighted by clinic share of bookings.</div>
+    </section>
+    <section class="card p-5 mb-5">
+      <div class="text-sm font-semibold text-slate-900 mb-2">Stage drop-off by clinic</div>
+      <div class="text-xs text-slate-500 mb-3">Z-score vs all clinics. Red = clinic loses more leads/bookings at that stage than peers.</div>
+      <div id="funnelClinicHeatmap"></div>
+    </section>
+    <section class="card p-5 mb-5">
+      <div class="flex items-center justify-between mb-3">
+        <div class="text-sm font-semibold text-slate-900">Conversion table</div>
+        <div class="text-xs text-slate-500">Click a row to drill the clinic.</div>
+      </div>
+      <div id="funnelClinicTable"></div>
+    </section>
+  </div>
+
+  <!-- ===== TAB: SOURCE QUALITY MATRIX ===== -->
+  <div class="tab-panel" data-panel="srcquality">
+    <section class="card p-5 mb-5">
+      <div class="flex items-center justify-between mb-3">
+        <div>
+          <div class="text-sm font-semibold text-slate-900">Source quality matrix</div>
+          <div class="text-xs text-slate-500">14 raw lead sources. Volume, conversion to Done, and where spend exists, cost per Done.</div>
+        </div>
+        <div class="text-[11px] text-slate-400" id="srcQualityScope"></div>
+      </div>
+      <div id="srcQualityCaveat"></div>
+      <div id="srcQualityMatrix"></div>
+    </section>
+    <section class="card p-5 mb-5">
+      <div class="text-sm font-semibold text-slate-900 mb-2">Sources with leads but no bookings</div>
+      <div class="text-xs text-slate-500 mb-3">Highest spend leakage candidates. Pinned to last 28 days.</div>
+      <div id="srcQualityDeadweight"></div>
+    </section>
+  </div>
+
+  <!-- ===== TAB: ANOMALY / EXCEPTION CENTER ===== -->
+  <div class="tab-panel" data-panel="anomaly">
+    <section class="card p-5 mb-5">
+      <div class="flex items-center justify-between mb-3">
+        <div>
+          <div class="text-sm font-semibold text-slate-900">Needs attention</div>
+          <div class="text-xs text-slate-500">Auto-detected over current filter scope. Click <em>Investigate</em> to drill.</div>
+        </div>
+        <div class="flex gap-2 text-[11px]" id="anomFilters"></div>
+      </div>
+      <div id="anomList" class="grid grid-cols-1 lg:grid-cols-2 gap-3"></div>
+    </section>
+  </div>
+
+  <!-- ===== TAB: COMPARE ===== -->
+  <div class="tab-panel" data-panel="compare">
+    <section class="card p-5 mb-5">
+      <div class="flex items-center justify-between mb-3">
+        <div>
+          <div class="text-sm font-semibold text-slate-900">Comparison mode</div>
+          <div class="text-xs text-slate-500">Pin up to 4 entities of the same type and see KPIs side-by-side.</div>
+        </div>
+        <div class="flex items-center gap-2" id="cmpTypeToggle"></div>
+      </div>
+      <div class="flex items-center gap-2 mb-3 flex-wrap">
+        <span class="text-xs text-slate-500">Pinned:</span>
+        <div id="cmpPinned" class="flex flex-wrap gap-2"></div>
+        <select id="cmpPicker" class="border border-slate-200 rounded-lg px-2 py-1 text-xs ml-2"></select>
+      </div>
+      <div id="cmpKPIs" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 mb-4"></div>
+      <div style="height:280px"><canvas id="cmpTrendChart"></canvas></div>
+    </section>
+  </div>
+
+  <!-- Clinic-intel slide-in modal -->
+  <div class="modal-overlay hidden" id="clinicModal">
+    <div class="modal-panel">
+      <div class="modal-header">
+        <div>
+          <div class="text-xs uppercase tracking-wider text-slate-500">Clinic intelligence</div>
+          <h2 class="text-xl font-bold text-slate-900" id="clinicModalTitle">—</h2>
+          <div class="text-xs text-slate-500" id="clinicModalSub"></div>
+        </div>
+        <button class="modal-close" id="clinicModalClose">Close</button>
+      </div>
+      <div class="px-6 py-5" id="clinicModalBody"></div>
+    </div>
+  </div>
+
+  <footer class="text-xs text-slate-400 pb-8 text-center">Live Redshift · <span id="footer-coverage" class="text-amber-600">computing tag coverage…</span> · STI rates reflect tagged consultations only</footer>
 </div>
 
 <!-- Chatbot -->
@@ -704,147 +1280,44 @@
 /* =========================================================
    1. CONFIG
    ========================================================= */
+// Diagnosis-tag categories. Match build_data.py's encounter-tag rollup: STI is its
+// own bucket; SH groups ed_plus / pe_plus / ed_plus_pe_plus; "others" is the residual
+// tagged bucket; "untagged" represents completed consults with no diagnosis tag at all
+// (~50% of total — surfaced explicitly so coverage isn't hidden).
 const CATEGORIES = [
-  {id:'sh',   name:'Sexual Health', color:'#7c3aed'},
-  {id:'sti',  name:'STI',           color:'#0ea5e9'},
-  {id:'mh',   name:'Mental Health', color:'#14b8a6'},
+  {id:'sti',      name:'STI',           color:'#0ea5e9'},
+  {id:'sh',       name:'Sexual Health', color:'#7c3aed'},
+  {id:'others',   name:'Others',        color:'#14b8a6'},
+  {id:'untagged', name:'Untagged',      color:'#cbd5e1'},
 ];
+// Channel ids match the canonicalized utm_source from build_data.py SOURCE_CASE.
 const CHANNELS = [
-  {id:'google',     name:'Google',       color:'#3b82f6'},
-  {id:'practo',     name:'Practo',       color:'#f97316'},
-  {id:'fb',         name:'FB',           color:'#1877f2'},
-  {id:'google_gmb', name:'Google + GMB', color:'#a855f7'},
-  {id:'organic',    name:'Organic',      color:'#10b981'},
-  {id:'justdial',   name:'JustDial',     color:'#dc2626'},
-  {id:'others',     name:'Others',       color:'#94a3b8'},
-];
-
-const CITIES = [
-  {id:'mum', name:'Mumbai',     lat:19.0760, lng:72.8777, clinicCount:7, baseDaily:42, trend:-0.32, tier:'t1'},
-  {id:'del', name:'Delhi',      lat:28.6139, lng:77.2090, clinicCount:7, baseDaily:48, trend: 0.04, tier:'t1'},
-  {id:'blr', name:'Bengaluru',  lat:12.9716, lng:77.5946, clinicCount:6, baseDaily:45, trend: 0.22, tier:'t1'},
-  {id:'hyd', name:'Hyderabad',  lat:17.3850, lng:78.4867, clinicCount:5, baseDaily:34, trend: 0.10, tier:'t1'},
-  {id:'maa', name:'Chennai',    lat:13.0827, lng:80.2707, clinicCount:5, baseDaily:30, trend:-0.06, tier:'t1'},
-  {id:'kol', name:'Kolkata',    lat:22.5726, lng:88.3639, clinicCount:5, baseDaily:26, trend:-0.28, tier:'t1'},
-  {id:'pun', name:'Pune',       lat:18.5204, lng:73.8567, clinicCount:4, baseDaily:28, trend: 0.14, tier:'t1'},
-  {id:'amd', name:'Ahmedabad',  lat:23.0225, lng:72.5714, clinicCount:4, baseDaily:22, trend:-0.10, tier:'t2'},
-  {id:'jai', name:'Jaipur',     lat:26.9124, lng:75.7873, clinicCount:4, baseDaily:18, trend: 0.03, tier:'t2'},
-  {id:'lko', name:'Lucknow',    lat:26.8467, lng:80.9462, clinicCount:3, baseDaily:14, trend:-0.36, tier:'t2'},
-  {id:'chd', name:'Chandigarh', lat:30.7333, lng:76.7794, clinicCount:3, baseDaily:16, trend: 0.26, tier:'t2'},
-  {id:'cok', name:'Kochi',      lat:9.9312,  lng:76.2673, clinicCount:3, baseDaily:13, trend: 0.08, tier:'t2'},
+  {id:'google',        name:'Google Ads',  color:'#3b82f6'},
+  {id:'gmb',           name:'GMB',         color:'#a855f7'},
+  {id:'googlelisting', name:'G Listing',   color:'#8b5cf6'},
+  {id:'practo',        name:'Practo',      color:'#f97316'},
+  {id:'fb',            name:'Facebook',    color:'#1877f2'},
+  {id:'ig',            name:'Instagram',   color:'#e1306c'},
+  {id:'organic',       name:'Organic',     color:'#10b981'},
+  {id:'justdial',      name:'JustDial',    color:'#dc2626'},
+  {id:'directwalkin',  name:'Walk-in',     color:'#0891b2'},
+  {id:'vcard',         name:'V-Card',      color:'#6366f1'},
+  {id:'youtube',       name:'YouTube',     color:'#ef4444'},
+  {id:'referral',      name:'Referral',    color:'#65a30d'},
+  {id:'chatgpt',       name:'ChatGPT',     color:'#0ea5e9'},
+  {id:'perplexity',    name:'Perplexity',  color:'#7c3aed'},
+  {id:'other',         name:'Other',       color:'#94a3b8'},
 ];
 const TIERS = [{id:'t1',name:'Tier 1'},{id:'t2',name:'Tier 2'}];
 
-function mulberry32(seed){ return function(){ let t = seed += 0x6D2B79F5; t = Math.imul(t ^ t >>> 15, t | 1); t ^= t + Math.imul(t ^ t >>> 7, t | 61); return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
-const rnd = mulberry32(20260520);
-
-const CLINIC_NAMES = ['Bandra','Andheri','Powai','Worli','Lower Parel','Thane','Borivali',
-  'Connaught','Saket','Gurugram','Noida','Dwarka','Karol Bagh','Lajpat Nagar',
-  'Indiranagar','Koramangala','HSR Layout','Whitefield','MG Road','Jayanagar',
-  'Banjara Hills','Jubilee Hills','Gachibowli','Hi-Tech City','Madhapur',
-  'T Nagar','Anna Nagar','Velachery','Adyar','Nungambakkam',
-  'Salt Lake','Park Street','Ballygunge','Howrah','New Town',
-  'Koregaon Park','Baner','Viman Nagar','Aundh',
-  'Satellite','Bodakdev','SG Highway','Maninagar',
-  'Malviya Nagar','C Scheme','Vaishali Nagar','Mansarovar',
-  'Hazratganj','Gomti Nagar','Alambagh',
-  'Sector 17','Sector 22','Sector 35',
-  'Marine Drive','Kakkanad','Edappally'];
+// Real data populates these via data_adapter.js (__applyRealData).
+// They start empty — if data.json fails to load, dashboard shows an error, not fake data.
+const CITIES = [];
 const CLINICS = [];
-let nameIdx = 0;
-CITIES.forEach(c => {
-  for (let i=0; i<c.clinicCount; i++){
-    const id = `${c.id}-${i+1}`;
-    const name = CLINIC_NAMES[nameIdx++] || `${c.name} ${i+1}`;
-    const trendNoise = (rnd()-0.5)*0.35;
-    const clinicTrend = c.trend + trendNoise;
-    const capacity = c.baseDaily/c.clinicCount * (0.7 + rnd()*0.8);
-    const catShare = (() => { const a=0.3+rnd()*0.5, b=0.2+rnd()*0.4, x=0.1+rnd()*0.3; const s=a+b+x; return {sh:a/s, sti:b/s, mh:x/s}; })();
-    const chShare = (() => {
-      const g  = 0.18 + rnd()*0.30;
-      const p  = 0.10 + rnd()*0.22;
-      const fb = 0.06 + rnd()*0.15;
-      const gg = 0.10 + rnd()*0.18;
-      const o  = 0.08 + rnd()*0.18;
-      const jd = 0.04 + rnd()*0.10;
-      const ot = 0.03 + rnd()*0.08;
-      const s = g+p+fb+gg+o+jd+ot;
-      return {google:g/s, practo:p/s, fb:fb/s, google_gmb:gg/s, organic:o/s, justdial:jd/s, others:ot/s};
-    })();
-    CLINICS.push({id, name, cityId:c.id, capacity, trend:clinicTrend, catShare, chShare});
-  }
-});
-
-/* =========================================================
-   2. DATA GENERATION (18 months)
-   ========================================================= */
-var TODAY = new Date(2026,4,20); // 2026-05-20
-var DAYS = 540; // 18 months (will be overridden if real data loaded)
-const allDates = [];
-for (let i=DAYS-1; i>=0; i--){ const d = new Date(TODAY); d.setDate(d.getDate()-i); allDates.push(d); }
-
-// For each clinic: each day has actual bookings (with noise + trend) AND expected (target/forecast).
-// Expected = capacity * dowMult * seasonal * targetGrowthFactor (we assume mgmt expects ~5%/yr growth = 1.05 over 18 months)
-// Actual = expected * realTrendOnPace * noise. The "realTrendOnPace" diverges from expectation in last 90-180 days for some clinics.
 const BOOKINGS = {};
-CLINICS.forEach(cl => {
-  const series = [];
-  // Long-term gradual trend (over the whole 18 months, very gentle)
-  const longTrend = cl.trend * 0.30;
-  // Recent ramped trend (last ~2-3 months)
-  const recentBias = cl.trend < -0.10 ? 0.80 : cl.trend > 0.10 ? 0.78 : 0.70;
-  const recentStart = Math.floor(DAYS * (recentBias + rnd()*0.08));
-  const recentTrend = cl.trend * 0.55;
-  // Recent shock: sudden drop. shock starts 21-45 days ago — so it spans the current period but not prior
-  const hasShock = cl.trend < -0.10 && rnd() < 0.70;
-  const shockStart = DAYS - (21 + Math.floor(rnd()*24));
-  // Worst clinics get deeper shocks
-  const shockMagnitude = (cl.trend < -0.20 ? 0.28 : 0.20) + rnd()*0.18; // 20-46% drop
-  // Some struggling clinics had a slot-availability problem (leads stay up, bookings drop)
-  const isSlotConstrained = cl.trend < -0.10 && rnd() < 0.45;
-
-  for (let idx=0; idx<DAYS; idx++){
-    const d = allDates[idx];
-    const dow = d.getDay();
-    const dowMult = [0.62, 1.05, 1.12, 1.10, 1.08, 1.04, 0.85][dow];
-    const wave = 1 + 0.06*Math.sin((idx/45)) + 0.04*Math.cos((idx/12));
-    const targetGrowth = 1 + 0.05 * (idx/DAYS);
-    const expected = cl.capacity * dowMult * wave * targetGrowth;
-
-    // Long-term linear trend over whole period
-    const longMult = 1 + longTrend * (idx/DAYS);
-    // Recent ramped trend (power curve so most of the effect lands in last few weeks)
-    const recentT = idx >= recentStart ? (idx - recentStart)/Math.max(1, DAYS - recentStart) : 0;
-    const recentMult = 1 + recentTrend * Math.pow(recentT, 2.2);
-    // Shock: ramps to full magnitude over 3 days, then stays
-    let shockMult = 1;
-    if (hasShock && idx >= shockStart){
-      const sT = Math.min(1, (idx - shockStart)/3);
-      shockMult = 1 - shockMagnitude * sT;
-    }
-    const trendApplied = longMult * recentMult * shockMult;
-    const noise = 0.84 + rnd()*0.32;
-    const actual = Math.max(0, expected * trendApplied * noise);
-
-    const byCat = {sh:actual*cl.catShare.sh, sti:actual*cl.catShare.sti, mh:actual*cl.catShare.mh};
-    const byCh = {};
-    CHANNELS.forEach(ch => byCh[ch.id] = actual * cl.chShare[ch.id]);
-
-    // Leads: if slot-constrained, recent trend + shock don't affect leads (leads stay healthy, bookings fall)
-    const leadsMult = 3.2 + rnd()*1.6;
-    const leadsTrend = isSlotConstrained ? (longMult * recentMult) : trendApplied;
-    const leadsClean = expected * leadsMult * leadsTrend * (0.9 + rnd()*0.2);
-
-    // Consultations done: ~70-85% of bookings (B2D). Drops further when shock present.
-    const doneRatio = (0.74 + rnd()*0.11) * (hasShock && idx >= shockStart ? 0.92 : 1.0);
-    const doneClean = actual * doneRatio;
-
-    series.push({date:d, total:actual, expected, byCat, byCh, leads:leadsClean, done:doneClean});
-  }
-  cl.isSlotConstrained = isSlotConstrained;
-  cl.hasShock = hasShock;
-  BOOKINGS[cl.id] = series;
-});
+var TODAY = new Date();
+var DAYS = 180;
+const allDates = [];
 
 /* =========================================================
    3. STATE
@@ -1453,10 +1926,10 @@ function renderCategoryTrend(){
   const days = STATE.categoryTrendWindowDays || (STATE.gran==='day'?60 : STATE.gran==='week'?26*7 : 12*30);
   const startIdx = Math.max(0, DAYS-days);
 
-  const perCat = {sh:[],sti:[],mh:[]};
+  const perCat = Object.fromEntries(CATEGORIES.map(c=>[c.id,[]]));
   const dates = [];
   for (let i=startIdx; i<DAYS; i++){
-    const totals = {sh:0,sti:0,mh:0};
+    const totals = Object.fromEntries(CATEGORIES.map(c=>[c.id,0]));
     clinicIds.forEach(id => {
       const rec = BOOKINGS[id][i];
       let chFrac=0; STATE.chans.forEach(cid=>chFrac+=rec.byCh[cid]/Math.max(rec.total,1e-9));
@@ -1465,7 +1938,7 @@ function renderCategoryTrend(){
     CATEGORIES.forEach(cat => perCat[cat.id].push(totals[cat.id]));
     dates.push(allDates[i]);
   }
-  const labels = bucketize(perCat.sh, dates).labels;
+  const labels = bucketize(perCat[CATEGORIES[0].id], dates).labels;
   const datasets = CATEGORIES.filter(c=>STATE.cats.has(c.id)).map(cat => {
     const b = bucketize(perCat[cat.id], dates);
     return { label:cat.name, data:b.values, borderColor:cat.color, backgroundColor:hexA(cat.color,0.55), borderWidth:1.5, pointRadius:0, tension:0.3, fill:true };
@@ -1691,7 +2164,7 @@ function renderCategoryBars(){
   const clinicIds = activeClinicIds();
   const pdays = periodDays();
   const endIdx = DAYS, currStart = endIdx-pdays;
-  const curr = {sh:0,sti:0,mh:0}, base = {sh:0,sti:0,mh:0};
+  const curr = Object.fromEntries(CATEGORIES.map(c=>[c.id,0])), base = Object.fromEntries(CATEGORIES.map(c=>[c.id,0]));
   clinicIds.forEach(id => {
     const s = BOOKINGS[id];
     for (let i=currStart; i<endIdx; i++){
@@ -1721,7 +2194,7 @@ function renderCategoryBars(){
     });
   } else if (STATE.baseline==='8w_avg'){
     const lookback=56; const lbStart=currStart-lookback;
-    const sums = {sh:0,sti:0,mh:0};
+    const sums = Object.fromEntries(CATEGORIES.map(c=>[c.id,0]));
     clinicIds.forEach(id => {
       const s = BOOKINGS[id];
       for (let i=lbStart; i<currStart; i++){
@@ -1933,7 +2406,17 @@ function setActiveTab(tabId){
     });
   });
 }
-document.querySelectorAll('.tabnav .tab').forEach(el => el.onclick = () => setActiveTab(el.dataset.tab));
+document.querySelectorAll('.tabnav .tab').forEach(el => el.onclick = () => {
+  setActiveTab(el.dataset.tab);
+  history.replaceState(null, '', '#'+el.dataset.tab);
+});
+// Honour URL hash on load — e.g. index.html#stidive opens Deep Dive directly
+(function applyHash(){
+  const h = (location.hash || '').replace(/^#/, '');
+  if (h && document.querySelector(`.tabnav [data-tab="${h}"]`)) {
+    setTimeout(() => setActiveTab(h), 0);
+  }
+})();
 
 function renderMaturityFilter(){
   const el = document.getElementById('filter-maturity');
@@ -2287,9 +2770,9 @@ function renderKPIMatrix(){
     rows = DEEP_CHANNELS.filter(c => c.id !== 'overall').map(c => ({key:c.id, label:c.name, dim:'channel'}));
   } else if (STATE.matrixDim === 'category') {
     rows = [
-      {key:'sh',  label:'Sexual Health (SH)', dim:'category'},
-      {key:'sti', label:'STI',                dim:'category'},
-      {key:'mh',  label:'Mental Health (MH)', dim:'category'},
+      {key:'sti',    label:'STI',                dim:'category'},
+      {key:'sh',     label:'Sexual Health (SH)', dim:'category'},
+      {key:'others', label:'Others',             dim:'category'},
     ];
   } else { // city
     rows = CITIES.map(c => ({key:c.id, label:c.name, dim:'city'}));
@@ -3082,9 +3565,277 @@ renderAll = function(){
   renderCategoryTabChips();
   renderCategoryDrillDeep();
   renderCategoryCompare();
+  renderClinicSrcCatDrill();
+  renderCatShareView();
   buildFounderBrief();
   renderSpendHeatStrip();
 };
+
+/* ---------- Weekly category share (by city or clinic) ---------- */
+const CAT_SHARE_STATE = { scope:'city', id:null };
+
+function _mondayOf(dateStr){
+  const d = new Date(dateStr + 'T00:00:00Z');
+  const day = d.getUTCDay();
+  const diff = (day === 0 ? -6 : 1 - day);
+  d.setUTCDate(d.getUTCDate() + diff);
+  return d.toISOString().slice(0,10);
+}
+
+function renderCatShareView(){
+  const section = document.getElementById('catShareSection');
+  const rows = window.__REAL_DATA && window.__REAL_DATA.clinic_source_category;
+  if (!rows || !rows.length){ section.style.display = 'none'; return; }
+  section.style.display = '';
+
+  const clinicById = {};
+  (window.__REAL_DATA.clinics || []).forEach(c => { clinicById[c.id] = c; });
+
+  // Index: week → scopeKey → tag_type → done.  scopeKey = location_id (clinic) or city name (city).
+  const byClinic = {}; // week → clinic_id → tag → done
+  const byCity   = {}; // week → city      → tag → done
+  const tagSet = new Set();
+  const weekSet = new Set();
+  for (const r of rows){
+    const w = _mondayOf(r.d);
+    weekSet.add(w);
+    tagSet.add(r.tag_type);
+    if (!byClinic[w]) byClinic[w] = {};
+    if (!byClinic[w][r.location_id]) byClinic[w][r.location_id] = {};
+    byClinic[w][r.location_id][r.tag_type] = (byClinic[w][r.location_id][r.tag_type] || 0) + r.done;
+    const cityName = (clinicById[r.location_id] && clinicById[r.location_id].city) || 'Online';
+    if (!byCity[w]) byCity[w] = {};
+    if (!byCity[w][cityName]) byCity[w][cityName] = {};
+    byCity[w][cityName][r.tag_type] = (byCity[w][cityName][r.tag_type] || 0) + r.done;
+  }
+  const tags = [...tagSet].sort();
+  const weeksAsc = [...weekSet].sort();           // oldest → newest
+  const last8 = weeksAsc.slice(-9, -1);            // 8 prior weeks (exclude current)
+  const currentWeek = weeksAsc[weeksAsc.length - 1];
+
+  // Scope chips
+  function chip(host, label, isActive, onClick){
+    const el = document.createElement('button');
+    el.textContent = label;
+    el.style.cssText = `padding:4px 10px;border-radius:999px;font-size:11px;border:1px solid ${isActive?'#0f172a':'#e2e8f0'};background:${isActive?'#0f172a':'#fff'};color:${isActive?'#fff':'#0f172a'};cursor:pointer`;
+    el.onclick = onClick;
+    host.appendChild(el);
+  }
+  const scopeHost = document.getElementById('catShareScope'); scopeHost.innerHTML = '';
+  ['city','clinic'].forEach(s => chip(scopeHost, s==='city'?'By city':'By clinic', s===CAT_SHARE_STATE.scope, () => { CAT_SHARE_STATE.scope = s; CAT_SHARE_STATE.id = null; renderCatShareView(); }));
+
+  // Pick dropdown — populate by scope, sorted by current-week total volume desc
+  const tbl = CAT_SHARE_STATE.scope === 'city' ? byCity : byClinic;
+  const cur = tbl[currentWeek] || {};
+  const entries = Object.keys(cur).map(k => {
+    const tot = Object.values(cur[k]).reduce((s,v)=>s+v,0);
+    let name = k;
+    if (CAT_SHARE_STATE.scope === 'clinic'){
+      const c = clinicById[k];
+      name = c ? (c.name || c.code || k).replace(/_Allo_?Clinic$/i,'').replace(/_/g,' ').trim() : k;
+      const city = c && c.city ? ` · ${c.city}` : '';
+      name = name + city;
+    }
+    return { id: k, name, total: tot };
+  }).sort((a,b) => b.total - a.total);
+
+  const pick = document.getElementById('catSharePick');
+  pick.innerHTML = '';
+  entries.forEach(e => {
+    const opt = document.createElement('option');
+    opt.value = e.id; opt.textContent = `${e.name}  (${e.total.toLocaleString('en-IN')} done this wk)`;
+    pick.appendChild(opt);
+  });
+  if (!CAT_SHARE_STATE.id || !entries.some(e => e.id === CAT_SHARE_STATE.id)){
+    CAT_SHARE_STATE.id = entries.length ? entries[0].id : null;
+  }
+  pick.value = CAT_SHARE_STATE.id || '';
+  pick.onchange = () => { CAT_SHARE_STATE.id = pick.value; renderCatShareView(); };
+
+  document.getElementById('catShareMeta').textContent =
+    `Current week: ${currentWeek} · prior 8 weeks for avg · ${entries.length} ${CAT_SHARE_STATE.scope === 'city' ? 'cities' : 'clinics'} active`;
+
+  // Build per-category weekly share array for the chosen scope id
+  function sharesFor(scopeId){
+    const out = {}; // tag → [{week, share}]
+    const allWeeks = weeksAsc.slice(-12); // last 12 weeks of context
+    tags.forEach(t => { out[t] = []; });
+    for (const w of allWeeks){
+      const bucket = (tbl[w] && tbl[w][scopeId]) || {};
+      const total = Object.values(bucket).reduce((s,v)=>s+v,0);
+      tags.forEach(t => {
+        const v = bucket[t] || 0;
+        out[t].push({ week: w, share: total ? v/total : 0, n: v, total });
+      });
+    }
+    return out;
+  }
+
+  function spark(values, color){
+    const w = 80, h = 24;
+    if (!values.length) return '';
+    const max = Math.max(...values, 0.001);
+    const pts = values.map((v,i) => {
+      const x = (i/(values.length-1 || 1)) * (w-2) + 1;
+      const y = h - (v/max) * (h-4) - 2;
+      return `${x},${y}`;
+    }).join(' ');
+    return `<svg width="${w}" height="${h}" style="vertical-align:middle"><polyline points="${pts}" fill="none" stroke="${color}" stroke-width="1.5"/></svg>`;
+  }
+
+  // Detail table for selected entity
+  const host = document.getElementById('catShareTable');
+  if (!CAT_SHARE_STATE.id){ host.innerHTML = '<div class="text-xs text-slate-500 py-3">No data.</div>'; }
+  else {
+    const sh = sharesFor(CAT_SHARE_STATE.id);
+    const selName = entries.find(e => e.id === CAT_SHARE_STATE.id)?.name || CAT_SHARE_STATE.id;
+    const rowsHtml = tags.map(t => {
+      const series = sh[t];
+      const currentRec = series[series.length - 1] || { share:0, n:0 };
+      const priorRecs = series.slice(-9, -1); // 8 prior weeks
+      const avg8 = priorRecs.length ? priorRecs.reduce((s,r)=>s+r.share, 0) / priorRecs.length : 0;
+      const delta = (currentRec.share - avg8) * 100;
+      const deltaColor = delta > 1 ? '#10b981' : delta < -1 ? '#ef4444' : '#94a3b8';
+      const sparkColor = t === 'sti' ? '#0ea5e9' : t === 'ed_plus' ? '#7c3aed' : t === 'pe_plus' ? '#f59e0b' : t === 'ed_plus_pe_plus' ? '#ec4899' : '#94a3b8';
+      const sparkSeries = series.map(r => r.share);
+      return `<tr>
+        <td class="font-medium">${t}</td>
+        <td style="text-align:right" class="font-semibold">${(currentRec.share*100).toFixed(1)}%</td>
+        <td style="text-align:right" class="text-slate-600">${currentRec.n.toLocaleString('en-IN')}</td>
+        <td style="text-align:right" class="text-slate-600">${(avg8*100).toFixed(1)}%</td>
+        <td style="text-align:right;color:${deltaColor};font-weight:600">${delta>=0?'+':''}${delta.toFixed(1)}pp</td>
+        <td>${spark(sparkSeries, sparkColor)}</td>
+      </tr>`;
+    }).join('');
+    host.innerHTML = `
+      <div class="text-xs text-slate-500 mb-2">Selected: <span class="font-semibold text-slate-900">${selName}</span></div>
+      <table class="tbl">
+        <thead><tr>
+          <th>Category</th>
+          <th style="text-align:right">This Wk %</th>
+          <th style="text-align:right">This Wk Done</th>
+          <th style="text-align:right">8-Wk Avg %</th>
+          <th style="text-align:right">Δ vs 8w</th>
+          <th>Trend (12w)</th>
+        </tr></thead>
+        <tbody>${rowsHtml}</tbody>
+      </table>
+    `;
+  }
+
+  // All-entity overview table — % of each category in the current week
+  const allHost = document.getElementById('catShareAllTable');
+  const allRows = entries.slice(0, 30).map(e => {
+    const bucket = (tbl[currentWeek] && tbl[currentWeek][e.id]) || {};
+    const total = Object.values(bucket).reduce((s,v)=>s+v,0);
+    const cells = tags.map(t => {
+      const sh = total ? (bucket[t]||0)/total : 0;
+      return `<td style="text-align:right">${(sh*100).toFixed(0)}%</td>`;
+    }).join('');
+    return `<tr><td class="font-medium">${e.name}</td><td style="text-align:right" class="text-slate-600">${total.toLocaleString('en-IN')}</td>${cells}</tr>`;
+  }).join('');
+  const headTags = tags.map(t => `<th style="text-align:right">${t}</th>`).join('');
+  allHost.innerHTML = `
+    <table class="tbl">
+      <thead><tr><th>${CAT_SHARE_STATE.scope === 'city' ? 'City' : 'Clinic'}</th><th style="text-align:right">Total this wk</th>${headTags}</tr></thead>
+      <tbody>${allRows || `<tr><td colspan="${tags.length + 2}" class="text-slate-500 text-xs">No data this week.</td></tr>`}</tbody>
+    </table>
+  `;
+}
+
+/* ---------- Clinic × Source × Category drill (live data only) ---------- */
+const CSC_STATE = { source:'gmb', tag:'sti', windowDays:180 };
+
+function renderClinicSrcCatDrill(){
+  const section = document.getElementById('clinicSrcCatSection');
+  const rows = window.__REAL_DATA && window.__REAL_DATA.clinic_source_category;
+  if (!rows || !rows.length){ section.style.display = 'none'; return; }
+  section.style.display = '';
+
+  const sources = [...new Set(rows.map(r => r.source))].sort();
+  const tags    = [...new Set(rows.map(r => r.tag_type))].sort();
+  if (!sources.includes(CSC_STATE.source)) CSC_STATE.source = sources[0];
+  if (!tags.includes(CSC_STATE.tag))       CSC_STATE.tag    = tags[0];
+
+  const clinicById = {};
+  (window.__REAL_DATA.clinics || []).forEach(c => { clinicById[c.id] = c; });
+
+  function chip(host, label, isActive, onClick){
+    const el = document.createElement('button');
+    el.className = 'pill';
+    el.textContent = label;
+    el.style.cssText = `padding:4px 10px;border-radius:999px;font-size:11px;border:1px solid ${isActive?'#0f172a':'#e2e8f0'};background:${isActive?'#0f172a':'#fff'};color:${isActive?'#fff':'#0f172a'};cursor:pointer`;
+    el.onclick = onClick;
+    host.appendChild(el);
+  }
+
+  const srcHost = document.getElementById('clinicSrcCatSource'); srcHost.innerHTML = '';
+  sources.forEach(s => chip(srcHost, s, s===CSC_STATE.source, () => { CSC_STATE.source = s; renderClinicSrcCatDrill(); }));
+
+  const tagHost = document.getElementById('clinicSrcCatTag'); tagHost.innerHTML = '';
+  tags.forEach(t => chip(tagHost, t, t===CSC_STATE.tag, () => { CSC_STATE.tag = t; renderClinicSrcCatDrill(); }));
+
+  const winHost = document.getElementById('clinicSrcCatWin'); winHost.innerHTML = '';
+  [30, 90, 180].forEach(w => chip(winHost, `${w}d`, w===CSC_STATE.windowDays, () => { CSC_STATE.windowDays = w; renderClinicSrcCatDrill(); }));
+
+  const cutoff = new Date(); cutoff.setHours(0,0,0,0); cutoff.setDate(cutoff.getDate() - CSC_STATE.windowDays);
+  const cutoffStr = cutoff.toISOString().slice(0,10);
+
+  const byClinic = {};   // location_id → done in (source,tag)
+  const totalByClinic = {}; // location_id → done across all sources/tags (denom for share)
+  for (const r of rows){
+    if (r.d < cutoffStr) continue;
+    totalByClinic[r.location_id] = (totalByClinic[r.location_id] || 0) + r.done;
+    if (r.source === CSC_STATE.source && r.tag_type === CSC_STATE.tag){
+      byClinic[r.location_id] = (byClinic[r.location_id] || 0) + r.done;
+    }
+  }
+
+  const ranked = Object.entries(byClinic)
+    .map(([id, done]) => {
+      const c = clinicById[id] || {};
+      return {
+        id, done,
+        name: (c.name || c.code || id).replace(/_Allo_?Clinic$/i, '').replace(/_/g,' ').trim(),
+        city: c.city || 'Online',
+        share: totalByClinic[id] ? done / totalByClinic[id] : 0,
+      };
+    })
+    .sort((a,b) => b.done - a.done);
+
+  const totalDone = ranked.reduce((s,r) => s + r.done, 0);
+  document.getElementById('clinicSrcCatMeta').textContent = `${ranked.length} clinics · ${totalDone.toLocaleString('en-IN')} completed consultations (last ${CSC_STATE.windowDays}d)`;
+
+  const host = document.getElementById('clinicSrcCatTable');
+  if (!ranked.length){
+    host.innerHTML = `<div class="text-xs text-slate-500 py-3">No completed consultations for source=<b>${CSC_STATE.source}</b> · category=<b>${CSC_STATE.tag}</b> in the last ${CSC_STATE.windowDays} days.</div>`;
+    return;
+  }
+  const maxDone = ranked[0].done;
+  host.innerHTML = `
+    <table class="tbl">
+      <thead><tr>
+        <th>#</th><th>Clinic</th><th>City</th>
+        <th style="text-align:right">Done</th>
+        <th style="text-align:right">Share of clinic</th>
+        <th>Volume</th>
+      </tr></thead>
+      <tbody>
+      ${ranked.map((r, i) => {
+        const w = Math.round(r.done / maxDone * 100);
+        return `<tr>
+          <td class="text-slate-400">${i+1}</td>
+          <td class="font-medium">${r.name}</td>
+          <td class="text-slate-600">${r.city}</td>
+          <td style="text-align:right" class="font-semibold">${r.done.toLocaleString('en-IN')}</td>
+          <td style="text-align:right" class="text-slate-600">${(r.share*100).toFixed(1)}%</td>
+          <td><div style="width:${w}%;height:6px;background:#0ea5e9;border-radius:3px"></div></td>
+        </tr>`;
+      }).join('')}
+      </tbody>
+    </table>
+  `;
+}
 
 // Matrix dimension toggle handler
 document.getElementById('matrixDimToggle').addEventListener('click', e => {
@@ -3108,8 +3859,23 @@ if (_matrixWinEl){
 
 /* =============================================================
    FOUNDER LAYERS (Executive · Channel deep-dive · Campaign drill)
+   ⚠ LEGACY: this section still drives some KPIs from modeled estimates
+   (FRND-seeded math: RoAS, CPC, CPM, CTR, leads/spend ratios, etc.).
+   Real-data replacement is pending. See STI Deep Dive tab for the
+   first fully-real-data view. Numbers below derived from real spend
+   (where data.spend has the platform) but ratios/funnel-mid are modeled.
    ============================================================= */
 
+// Tiny deterministic PRNG (Mulberry32) used only by the legacy founder layer
+// to keep the same numbers stable across reloads. Slated for removal.
+function mulberry32(seed){
+  return function(){
+    let t = seed += 0x6D2B79F5;
+    t = Math.imul(t ^ t >>> 15, t | 1);
+    t ^= t + Math.imul(t ^ t >>> 7, t | 61);
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
 const FRND = mulberry32(20260520 + 7);
 function fr(min, max) { return min + FRND()*(max-min); }
 
@@ -3129,10 +3895,10 @@ const DEEP_CHANNELS = [
 ];
 
 const DEEP_CATS = [
-  {id:'all', name:'All categories'},
-  {id:'sh',  name:'SH'},
-  {id:'sti', name:'STI'},
-  {id:'mh',  name:'MH'},
+  {id:'all',    name:'All categories'},
+  {id:'sti',    name:'STI'},
+  {id:'sh',     name:'SH'},
+  {id:'others', name:'Others'},
 ];
 
 const GROUPS_BY_KIND = {
@@ -3263,7 +4029,7 @@ function renderExecutive(){
   const wkDelta = pctDelta(wk, wkPrior);
 
   // Categories
-  const cats = ['sh','sti','mh'].map(c => {
+  const cats = ['sti','sh','others'].map(c => {
     const a = bookingsInRange(7, 7, c);
     const b = bookingsInRange(14, 7, c);
     const ay = bookingsInRange(7+365, 7, c) || b*0.9; // MoM/YoY fallback
@@ -3346,7 +4112,7 @@ function sumCityRange(cityId, daysFromEnd, lengthDays){
 }
 
 function renderCategoryHealthCards(){
-  const cats = ['sh','sti','mh'].map(c => {
+  const cats = ['sti','sh','others'].map(c => {
     const cur = bookingsInRange(7, 7, c);
     const pri = bookingsInRange(14, 7, c);
     const mom = pctDelta(cur, pri);
@@ -3421,7 +4187,7 @@ function renderCityScoreboardCards(){
 
 function renderMarketShareCards(){
   const m30 = (catId) => bookingsInRange(30, 30, catId);
-  const items = ['sh','sti','mh'].map(c => {
+  const items = ['sti','sh','others'].map(c => {
     const tam = CATEGORY_TAM[c];
     const my = m30(c);
     const share = my / tam;
@@ -3932,7 +4698,7 @@ function buildChartInsight(canvasId){
     }
     case 'categoryTrend': {
       const pdays = periodDays(); const e = DAYS, c = e - pdays, p = c - pdays;
-      const cur = {sh:0,sti:0,mh:0}, prev = {sh:0,sti:0,mh:0};
+      const cur = Object.fromEntries(CATEGORIES.map(c=>[c.id,0])), prev = Object.fromEntries(CATEGORIES.map(c=>[c.id,0]));
       cl.forEach(id => {
         const s = BOOKINGS[id];
         for (let i=c;i<e;i++) CATEGORIES.forEach(cat=>cur[cat.id]+=s[i].byCat[cat.id]);
@@ -3958,7 +4724,7 @@ function buildChartInsight(canvasId){
     case 'categoryChart': {
       const w = activeClinicIds(); const pdays = periodDays();
       const e = DAYS, c = e - pdays;
-      const cur = {sh:0,sti:0,mh:0};
+      const cur = Object.fromEntries(CATEGORIES.map(c=>[c.id,0]));
       w.forEach(id => { const s=BOOKINGS[id]; for (let i=c;i<e;i++) CATEGORIES.forEach(cat=>cur[cat.id]+=s[i].byCat[cat.id]); });
       const total = Object.values(cur).reduce((s,v)=>s+v,0);
       const parts = CATEGORIES.filter(cat=>STATE.cats.has(cat.id)).map(cat=>`<strong>${cat.name}</strong> ${total>0?((cur[cat.id]/total)*100).toFixed(0)+'%':'0%'}`);
@@ -4006,21 +4772,2261 @@ function injectInsightButtons(){
   });
 }
 
-// Final init — try real data first, then fall back to synthetic.
-(async function(){
-  const real = await window.__loadRealData('data.json');
-  if (real) {
-    try {
-      window.__applyRealData(real);
-      // Surface "live data" badge in the header
-      const sub = document.getElementById('header-sub');
-      if (sub){
-        sub.innerHTML += ` · <span class="text-emerald-600 font-semibold">● Live Redshift</span> <span class="text-slate-400">(${real.lookback_days}d)</span>`;
+/* =============================================================
+   WAVE-1 ANALYST MODULES
+   Foundations (RAW accessor, cross-filter, mkTable, caveat banner)
+   + Anomaly Center + Source Quality Matrix + Funnel Leakage stubs
+   ============================================================= */
+
+/* --- STATE → raw-source / raw-tag mapping ------------------- */
+const SYN_CHAN_TO_RAW = {
+  google:     ['google'],
+  practo:     ['practo'],
+  fb:         ['fb','ig'],
+  google_gmb: ['gmb','googlelisting'],
+  organic:    ['organic'],
+  justdial:   ['justdial'],
+  others:     ['other','directwalkin','youtube','chatgpt','referral','perplexity','vcard'],
+};
+const SYN_CAT_TO_RAW = {
+  sh:  ['ed_plus','pe_plus','ed_plus_pe_plus'],
+  sti: ['sti'],
+  mh:  ['others'],
+};
+function activeRawSources(){
+  const out = new Set();
+  STATE.chans.forEach(c => (SYN_CHAN_TO_RAW[c]||[]).forEach(r => out.add(r)));
+  return out;
+}
+function activeRawTags(){
+  const out = new Set();
+  STATE.cats.forEach(c => (SYN_CAT_TO_RAW[c]||[]).forEach(r => out.add(r)));
+  return out;
+}
+function activeRealLocIds(){
+  const cityIds = STATE.cities;
+  return new Set(CLINICS.filter(cl => cityIds.has(cl.cityId) && cl.realId).map(cl => cl.realId));
+}
+
+/* --- RAW data accessors (use window.__REAL_DATA) ------------ */
+const RAW = (function(){
+  let idx = null;
+  function build(){
+    const real = window.__REAL_DATA;
+    if (!real) return null;
+    // Index bookings by location_id then date
+    const bookByLoc = {};
+    for (const r of real.bookings){
+      if (!bookByLoc[r.location_id]) bookByLoc[r.location_id] = {};
+      bookByLoc[r.location_id][r.d] = r;
+    }
+    // Sorted unique dates from leads (covers full window)
+    const allDates = [...new Set(real.leads.map(r => r.d))].sort();
+    const minD = allDates[0], maxD = allDates[allDates.length-1];
+    // Pre-index clinic_source_category by date for fast windowing
+    const cscByDate = {};
+    for (const r of real.clinic_source_category){
+      if (!cscByDate[r.d]) cscByDate[r.d] = [];
+      cscByDate[r.d].push(r);
+    }
+    // Leads grouped by source (for matrix)
+    const leadsBySrcDate = {};
+    for (const r of real.leads){
+      if (!leadsBySrcDate[r.source]) leadsBySrcDate[r.source] = {};
+      leadsBySrcDate[r.source][r.d] = r.leads;
+    }
+    // Spend grouped
+    const spendByPlatDate = {};
+    for (const r of real.spend){
+      if (!spendByPlatDate[r.platform]) spendByPlatDate[r.platform] = {};
+      spendByPlatDate[r.platform][r.d] = r;
+    }
+    // List of all sources
+    const allSources = [...new Set(real.leads.map(r => r.source))];
+    // location_id → clinic object (CLINICS entry)
+    const locToClinic = {};
+    CLINICS.forEach(cl => { if (cl.realId) locToClinic[cl.realId] = cl; });
+    return {real, bookByLoc, cscByDate, leadsBySrcDate, spendByPlatDate, allSources, locToClinic, minD, maxD, allDates};
+  }
+  function ready(){
+    if (!idx) idx = build();
+    return idx;
+  }
+  function reset(){ idx = null; }
+  // Compute date window from STATE: returns [d0, d1) ISO strings, current period only
+  function windowDates(daysBackOverride){
+    const i = ready(); if (!i) return null;
+    const dayCount = daysBackOverride || periodDays();
+    const d1 = i.maxD; // inclusive end
+    // walk back dayCount days
+    const dEnd = new Date(d1 + 'T00:00:00Z');
+    const dStart = new Date(dEnd); dStart.setUTCDate(dStart.getUTCDate() - dayCount + 1);
+    return {d0: dStart.toISOString().slice(0,10), d1, days: dayCount};
+  }
+  function priorWindowDates(daysBackOverride){
+    const w = windowDates(daysBackOverride); if (!w) return null;
+    const dEnd = new Date(w.d0 + 'T00:00:00Z'); dEnd.setUTCDate(dEnd.getUTCDate() - 1);
+    const dStart = new Date(dEnd); dStart.setUTCDate(dStart.getUTCDate() - w.days + 1);
+    return {d0: dStart.toISOString().slice(0,10), d1: dEnd.toISOString().slice(0,10), days: w.days};
+  }
+  // Aggregate bookings (b/d/missed/cancelled) over loc + date window
+  function bookingsAgg(locIds, d0, d1){
+    const i = ready(); if (!i) return {bookings:0,done:0,missed:0,cancelled:0,locs:0};
+    let b=0,dn=0,m=0,c=0,n=0;
+    const ids = locIds || Object.keys(i.bookByLoc);
+    ids.forEach(loc => {
+      const byD = i.bookByLoc[loc]; if (!byD) return;
+      n++;
+      for (const k of Object.keys(byD)){
+        if (k < d0 || k > d1) continue;
+        const r = byD[k];
+        b += r.bookings; dn += r.done; m += r.missed; c += r.cancelled;
       }
-    } catch(e){ console.error('[real-data] apply failed; falling back:', e); }
+    });
+    return {bookings:b, done:dn, missed:m, cancelled:c, locs:n};
+  }
+  // Leads aggregate by source (returns {source: total})
+  function leadsBySource(d0, d1, sourceFilter){
+    const i = ready(); if (!i) return {};
+    const out = {};
+    const srcs = sourceFilter || i.allSources;
+    srcs.forEach(s => {
+      const byD = i.leadsBySrcDate[s]; if (!byD){ out[s]=0; return; }
+      let sum = 0;
+      for (const k of Object.keys(byD)){
+        if (k >= d0 && k <= d1) sum += byD[k];
+      }
+      out[s] = sum;
+    });
+    return out;
+  }
+  // Done by source from clinic_source_category, filtered by loc + tag
+  function doneBySourceClinic(d0, d1, locFilter, tagFilter){
+    const i = ready(); if (!i) return {bySource:{}, byClinic:{}, total:0};
+    const bySource = {}, byClinic = {};
+    let tot = 0;
+    for (const dStr of Object.keys(i.cscByDate)){
+      if (dStr < d0 || dStr > d1) continue;
+      for (const r of i.cscByDate[dStr]){
+        if (locFilter && !locFilter.has(r.location_id)) continue;
+        if (tagFilter && !tagFilter.has(r.tag_type)) continue;
+        bySource[r.source] = (bySource[r.source]||0) + r.done;
+        byClinic[r.location_id] = (byClinic[r.location_id]||0) + r.done;
+        tot += r.done;
+      }
+    }
+    return {bySource, byClinic, total: tot};
+  }
+  function spendAgg(d0, d1, platformFilter){
+    const i = ready(); if (!i) return {};
+    const out = {};
+    const plats = platformFilter || Object.keys(i.spendByPlatDate);
+    plats.forEach(p => {
+      const byD = i.spendByPlatDate[p]; if (!byD){ out[p] = {spend:0,impr:0,clk:0,conv:0}; return; }
+      let s=0,im=0,c=0,cv=0;
+      for (const k of Object.keys(byD)){
+        if (k >= d0 && k <= d1){
+          const r = byD[k]; s += r.spend_paise; im += r.impressions; c += r.clicks; cv += r.conversions;
+        }
+      }
+      out[p] = {spend: s/100, impr: im, clk: c, conv: cv};
+    });
+    return out;
+  }
+  // Weekly bookings series for a single clinic (for sparkline / trend detection)
+  function clinicWeeklySeries(locId, weeks){
+    const i = ready(); if (!i) return [];
+    const byD = i.bookByLoc[locId] || {};
+    const dates = Object.keys(byD).sort();
+    if (!dates.length) return [];
+    const series = [];
+    const end = new Date(i.maxD + 'T00:00:00Z');
+    for (let w = weeks-1; w >= 0; w--){
+      const wEnd = new Date(end); wEnd.setUTCDate(wEnd.getUTCDate() - w*7);
+      const wStart = new Date(wEnd); wStart.setUTCDate(wStart.getUTCDate() - 6);
+      const s0 = wStart.toISOString().slice(0,10), s1 = wEnd.toISOString().slice(0,10);
+      let b=0,dn=0,m=0,c=0;
+      for (const k of Object.keys(byD)){
+        if (k >= s0 && k <= s1){
+          b += byD[k].bookings; dn += byD[k].done; m += byD[k].missed; c += byD[k].cancelled;
+        }
+      }
+      series.push({weekEnd:s1, bookings:b, done:dn, missed:m, cancelled:c});
+    }
+    return series;
+  }
+  return {ready, reset, windowDates, priorWindowDates, bookingsAgg, leadsBySource, doneBySourceClinic, spendAgg, clinicWeeklySeries};
+})();
+window.RAW = RAW;
+
+/* --- Cross-filter helper + drill breadcrumb ----------------- */
+const DRILL = {stack: []};
+function setFilter(kind, value){
+  // kind: 'clinic' | 'source' | 'city' | 'category' | 'date'
+  if (kind === 'source'){
+    // value can be raw source ('fb') or synthetic chan id ('fb') — either way map to synthetic
+    const syn = Object.entries(SYN_CHAN_TO_RAW).find(([s,arr]) => arr.includes(value) || s === value);
+    const synId = syn ? syn[0] : value;
+    STATE.chans = new Set([synId]);
+    DRILL.stack.push({kind:'source', value: synId, label: 'Source · '+synId});
+  } else if (kind === 'category'){
+    STATE.cats = new Set([value]);
+    DRILL.stack.push({kind:'category', value, label: 'Category · '+value});
+  } else if (kind === 'city'){
+    STATE.cities = new Set([value]);
+    DRILL.stack.push({kind:'city', value, label: 'City · '+value});
+  } else if (kind === 'clinic'){
+    // value = synthetic clinic id; show its city only
+    const cl = CLINICS.find(c => c.id === value);
+    if (cl){
+      STATE.cities = new Set([cl.cityId]);
+      DRILL.stack.push({kind:'clinic', value, label: 'Clinic · '+cl.name});
+    }
+  }
+  renderCrumb();
+  renderAll();
+}
+function popDrill(idx){
+  // Pop everything at or after idx
+  DRILL.stack = DRILL.stack.slice(0, idx);
+  // Re-apply: easiest is reset and replay
+  STATE.cats = new Set(CATEGORIES.map(c=>c.id));
+  STATE.chans = new Set(CHANNELS.map(c=>c.id));
+  STATE.cities = new Set(CITIES.map(c=>c.id));
+  DRILL.stack.forEach(s => {
+    if (s.kind === 'source') STATE.chans = new Set([s.value]);
+    else if (s.kind === 'category') STATE.cats = new Set([s.value]);
+    else if (s.kind === 'city') STATE.cities = new Set([s.value]);
+    else if (s.kind === 'clinic'){
+      const cl = CLINICS.find(c => c.id === s.value);
+      if (cl) STATE.cities = new Set([cl.cityId]);
+    }
+  });
+  renderCrumb();
+  renderAll();
+}
+function clearDrill(){
+  DRILL.stack = [];
+  STATE.cats = new Set(CATEGORIES.map(c=>c.id));
+  STATE.chans = new Set(CHANNELS.map(c=>c.id));
+  STATE.cities = new Set(CITIES.map(c=>c.id));
+  renderCrumb();
+  renderAll();
+}
+function renderCrumb(){
+  const el = document.getElementById('drillCrumb');
+  if (!el) return;
+  if (!DRILL.stack.length){ el.style.display='none'; return; }
+  el.style.display = 'flex';
+  el.innerHTML = '';
+  const root = document.createElement('span'); root.className='crumb root'; root.textContent='All';
+  root.onclick = () => clearDrill();
+  el.appendChild(root);
+  DRILL.stack.forEach((s, i) => {
+    const sep = document.createElement('span'); sep.className='crumb-sep'; sep.textContent='▶';
+    el.appendChild(sep);
+    const c = document.createElement('span'); c.className='crumb'; c.textContent = s.label;
+    c.onclick = () => popDrill(i+1);
+    el.appendChild(c);
+  });
+  const clr = document.createElement('span'); clr.className='crumb-clear'; clr.textContent='Clear all';
+  clr.onclick = () => clearDrill();
+  el.appendChild(clr);
+}
+
+/* --- Caveat banner helper ----------------------------------- */
+const CAVEATS = {
+  sti: {
+    key: 'caveat-sti-dismissed',
+    text: '<strong>Heads up:</strong> STI category counts reflect a known EMR tagging issue at clinic level (per the GMB audit). Treat absolute STI numbers as upper-bound; trends and inter-clinic comparisons are still meaningful.',
+  },
+  done: {
+    key: 'caveat-done-dismissed',
+    text: '<strong>Heads up:</strong> Consult/done counts pulled from Redshift are roughly 2× the underlying truth per the GMB audit. Conversion <em>ratios</em> remain comparable across clinics; absolute volumes do not.',
+  },
+};
+function injectCaveat(hostId, kind){
+  const host = document.getElementById(hostId); if (!host) return;
+  const cv = CAVEATS[kind]; if (!cv) return;
+  if (sessionStorage.getItem(cv.key) === '1') { host.innerHTML = ''; return; }
+  host.innerHTML = `<div class="caveat-banner"><span class="cv-ico">⚠</span><div>${cv.text}</div><button class="cv-close" title="Dismiss for this session">×</button></div>`;
+  host.querySelector('.cv-close').onclick = () => { sessionStorage.setItem(cv.key,'1'); host.innerHTML=''; };
+}
+
+/* --- mkTable() reusable drillthrough table ------------------ */
+function mkTable(opts){
+  // opts: {columns:[{key,label,numeric?,fmt?,sortable?,cls?}], rows:[obj], search?:bool, pageSize?:int, csvName?:string, onRowClick?:fn(row), defaultSort?:{key,dir}}
+  const state = {
+    sort: opts.defaultSort || null,
+    search: '',
+    page: 0,
+    pageSize: opts.pageSize || 25,
+  };
+  const wrap = document.createElement('div'); wrap.className='dt-wrap';
+  const toolbar = document.createElement('div'); toolbar.className='dt-toolbar';
+  if (opts.search !== false){
+    const inp = document.createElement('input');
+    inp.placeholder = 'Search…'; inp.type='search';
+    inp.oninput = e => { state.search = e.target.value.toLowerCase(); state.page = 0; render(); };
+    toolbar.appendChild(inp);
+  } else { toolbar.appendChild(document.createElement('div')); }
+  const sizeSel = document.createElement('select');
+  [10,25,50,100].forEach(n => {
+    const o = document.createElement('option'); o.value=n; o.textContent=`${n} / page`;
+    if (n === state.pageSize) o.selected=true;
+    sizeSel.appendChild(o);
+  });
+  sizeSel.onchange = e => { state.pageSize = +e.target.value; state.page=0; render(); };
+  toolbar.appendChild(sizeSel);
+  if (opts.csvName){
+    const csv = document.createElement('button'); csv.textContent='Export CSV';
+    csv.onclick = () => exportCSV(opts);
+    toolbar.appendChild(csv);
+  }
+  wrap.appendChild(toolbar);
+  const scrollEl = document.createElement('div'); scrollEl.className='dt-scroll';
+  const tbl = document.createElement('table'); tbl.className='dt-table';
+  const thead = document.createElement('thead'); const trh = document.createElement('tr');
+  opts.columns.forEach(c => {
+    const th = document.createElement('th');
+    th.className = (c.numeric?'numeric ':'') + (c.cls||'');
+    th.innerHTML = `${c.label}<span class="sort-ind">⇅</span>`;
+    if (c.sortable !== false){
+      th.onclick = () => {
+        const dir = state.sort && state.sort.key === c.key && state.sort.dir === 'desc' ? 'asc' : 'desc';
+        state.sort = {key: c.key, dir};
+        state.page = 0; render();
+      };
+    }
+    trh.appendChild(th);
+  });
+  thead.appendChild(trh); tbl.appendChild(thead);
+  const tbody = document.createElement('tbody'); tbl.appendChild(tbody);
+  scrollEl.appendChild(tbl); wrap.appendChild(scrollEl);
+  const footer = document.createElement('div'); footer.className='dt-footer';
+  wrap.appendChild(footer);
+  function getFilteredSorted(){
+    let rows = opts.rows;
+    if (state.search){
+      const q = state.search;
+      rows = rows.filter(r => opts.columns.some(c => {
+        const v = r[c.key]; return v != null && String(v).toLowerCase().includes(q);
+      }));
+    }
+    if (state.sort){
+      const {key, dir} = state.sort;
+      rows = rows.slice().sort((a,b) => {
+        const av=a[key], bv=b[key];
+        if (av==null && bv==null) return 0;
+        if (av==null) return 1; if (bv==null) return -1;
+        if (typeof av === 'number' && typeof bv === 'number') return dir==='asc'?av-bv:bv-av;
+        return dir==='asc' ? String(av).localeCompare(String(bv)) : String(bv).localeCompare(String(av));
+      });
+    }
+    return rows;
+  }
+  function render(){
+    // header sort indicators
+    [...trh.children].forEach((th, i) => {
+      th.classList.remove('sort-asc','sort-desc');
+      const c = opts.columns[i];
+      if (state.sort && state.sort.key === c.key) th.classList.add('sort-'+state.sort.dir);
+    });
+    const all = getFilteredSorted();
+    const total = all.length, pages = Math.max(1, Math.ceil(total/state.pageSize));
+    state.page = Math.min(state.page, pages-1);
+    const slice = all.slice(state.page*state.pageSize, (state.page+1)*state.pageSize);
+    tbody.innerHTML = '';
+    slice.forEach(r => {
+      const tr = document.createElement('tr');
+      if (opts.onRowClick){ tr.className='clickable'; tr.onclick = () => opts.onRowClick(r); }
+      opts.columns.forEach(c => {
+        const td = document.createElement('td');
+        td.className = (c.numeric?'numeric ':'') + (c.cls||'');
+        const v = r[c.key];
+        td.innerHTML = c.fmt ? c.fmt(v, r) : (v==null?'—':String(v));
+        tr.appendChild(td);
+      });
+      tbody.appendChild(tr);
+    });
+    // footer
+    footer.innerHTML = `<div>${total.toLocaleString()} row${total===1?'':'s'}${state.search?` (filtered)`:''}</div>`;
+    const pager = document.createElement('div'); pager.className='pager';
+    const prev = document.createElement('button'); prev.textContent='Prev'; prev.disabled = state.page===0;
+    prev.onclick = () => { state.page=Math.max(0,state.page-1); render(); };
+    pager.appendChild(prev);
+    const info = document.createElement('span'); info.style.padding='0 8px'; info.textContent = `${state.page+1} / ${pages}`;
+    pager.appendChild(info);
+    const next = document.createElement('button'); next.textContent='Next'; next.disabled = state.page >= pages-1;
+    next.onclick = () => { state.page=Math.min(pages-1,state.page+1); render(); };
+    pager.appendChild(next);
+    footer.appendChild(pager);
+  }
+  function exportCSV(o){
+    const rows = getFilteredSorted();
+    const head = o.columns.map(c => '"'+c.label.replace(/"/g,'""')+'"').join(',');
+    const body = rows.map(r => o.columns.map(c => {
+      const v = r[c.key]; const s = v==null?'':String(v);
+      return '"'+s.replace(/"/g,'""')+'"';
+    }).join(',')).join('\n');
+    const blob = new Blob([head+'\n'+body], {type:'text/csv'});
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+    a.download = (o.csvName||'export') + '.csv'; a.click();
+    setTimeout(()=>URL.revokeObjectURL(a.href), 500);
+  }
+  render();
+  return wrap;
+}
+
+/* --- Anomaly / Exception Center ----------------------------- */
+function detectAnomalies(){
+  const i = RAW.ready(); if (!i) return [];
+  const out = [];
+  const sources = activeRawSources();
+  const locs = activeRealLocIds();
+  const tags = activeRawTags();
+  // Window: last 7 days vs prior 7 days, regardless of STATE.periods (anomaly is its own time-frame)
+  const w7 = RAW.windowDates(7), p7 = RAW.priorWindowDates(7);
+  if (!w7 || !p7) return [];
+  // Rule 1: Source-level lead drop >25% WoW
+  const curLeads = RAW.leadsBySource(w7.d0, w7.d1, [...sources]);
+  const priLeads = RAW.leadsBySource(p7.d0, p7.d1, [...sources]);
+  Object.keys(curLeads).forEach(s => {
+    const c = curLeads[s], p = priLeads[s] || 0;
+    if (p >= 50 && c < p * 0.75){
+      const dropPct = ((p-c)/p*100).toFixed(0);
+      out.push({
+        sev: c < p*0.5 ? 'high' : 'med',
+        title: `${s.toUpperCase()} leads down ${dropPct}% week-over-week`,
+        detail: `${p.toLocaleString()} → ${c.toLocaleString()} leads (last 7d vs prior 7d). ${c<5?'Channel may be off.':''}`,
+        drill: {kind:'source', value:s},
+      });
+    }
+  });
+  // Rule 2: Clinic no-show >15% AND >5pp above city median over last 28d
+  const w28 = RAW.windowDates(28);
+  const cityNoShow = {}; // cityName -> list of no-show%
+  const clinicAgg = []; // {locId, clinic, b, d, m, c, noShow%}
+  CLINICS.forEach(cl => {
+    if (!cl.realId) return;
+    if (!locs.has(cl.realId)) return;
+    const a = RAW.bookingsAgg([cl.realId], w28.d0, w28.d1);
+    if (a.bookings < 50) return; // need volume
+    const nsPct = a.bookings>0 ? a.missed/a.bookings : 0;
+    const city = CITIES.find(c => c.id === cl.cityId);
+    const cityName = city ? city.name : cl.cityId;
+    if (!cityNoShow[cityName]) cityNoShow[cityName] = [];
+    cityNoShow[cityName].push(nsPct);
+    clinicAgg.push({locId: cl.realId, clinic: cl, nsPct, bookings:a.bookings});
+  });
+  const cityMedNS = {};
+  Object.keys(cityNoShow).forEach(c => {
+    const arr = cityNoShow[c].slice().sort((a,b)=>a-b);
+    cityMedNS[c] = arr[Math.floor(arr.length/2)] || 0;
+  });
+  clinicAgg.forEach(ca => {
+    const city = CITIES.find(c => c.id === ca.clinic.cityId);
+    const cName = city ? city.name : ca.clinic.cityId;
+    const med = cityMedNS[cName] || 0;
+    if (ca.nsPct > 0.15 && ca.nsPct - med > 0.05){
+      out.push({
+        sev: ca.nsPct > 0.25 ? 'high' : 'med',
+        title: `${ca.clinic.name}: no-show ${(ca.nsPct*100).toFixed(1)}%`,
+        detail: `${(med*100).toFixed(1)}% city median in ${cName}. ${ca.bookings.toLocaleString()} bookings in last 28d.`,
+        drill: {kind:'clinic', value: ca.clinic.id},
+      });
+    }
+  });
+  // Rule 3: Clinic B→D falling 3 consecutive weeks
+  CLINICS.forEach(cl => {
+    if (!cl.realId || !locs.has(cl.realId)) return;
+    const series = RAW.clinicWeeklySeries(cl.realId, 5);
+    if (series.length < 5) return;
+    const ratios = series.map(s => s.bookings>10 ? s.done/s.bookings : null);
+    // Check ratios[1] > ratios[2] > ratios[3] > ratios[4] (last 4 weeks declining)
+    let dropping = true;
+    for (let k=1; k<4; k++){
+      if (ratios[k+1] == null || ratios[k] == null || ratios[k+1] >= ratios[k]) { dropping=false; break; }
+    }
+    if (dropping && ratios[4] != null && ratios[1] - ratios[4] > 0.08){
+      out.push({
+        sev: 'med',
+        title: `${cl.name}: visit completion falling 3 weeks straight`,
+        detail: `B→D dropped from ${(ratios[1]*100).toFixed(0)}% to ${(ratios[4]*100).toFixed(0)}%.`,
+        drill: {kind:'clinic', value: cl.id},
+      });
+    }
+  });
+  // Rule 4: Source with >100 leads in last 7d but <5 done
+  const doneBy = RAW.doneBySourceClinic(w7.d0, w7.d1, locs, tags);
+  Object.keys(curLeads).forEach(s => {
+    if (curLeads[s] >= 100 && (doneBy.bySource[s] || 0) < 5){
+      out.push({
+        sev: 'high',
+        title: `${s.toUpperCase()}: ${curLeads[s].toLocaleString()} leads but ${doneBy.bySource[s]||0} done last 7d`,
+        detail: `Conversion ${((doneBy.bySource[s]||0)/curLeads[s]*100).toFixed(2)}%. Either lead quality is poor or hand-off is broken.`,
+        drill: {kind:'source', value:s},
+      });
+    }
+  });
+  // Rule 5: Spend up >20% WoW but done flat/down (only fb/google have spend)
+  const spCur = RAW.spendAgg(w7.d0, w7.d1);
+  const spPri = RAW.spendAgg(p7.d0, p7.d1);
+  Object.keys(spCur).forEach(plat => {
+    const c = spCur[plat].spend, p = spPri[plat].spend;
+    if (p < 1000) return;
+    if (c > p * 1.2){
+      // Map platform → source synonyms for done check
+      const srcMatch = plat === 'facebook' ? ['fb','ig'] : plat === 'google' ? ['google','gmb','googlelisting'] : [plat];
+      const curDone = srcMatch.reduce((s,x)=>s+(doneBy.bySource[x]||0), 0);
+      const priDone = (function(){
+        const pdb = RAW.doneBySourceClinic(p7.d0, p7.d1, locs, tags);
+        return srcMatch.reduce((s,x)=>s+(pdb.bySource[x]||0), 0);
+      })();
+      if (priDone > 5 && curDone <= priDone * 1.05){
+        out.push({
+          sev: 'high',
+          title: `${plat} spend ↑${((c-p)/p*100).toFixed(0)}% but done ${curDone>=priDone?'flat':'down'}`,
+          detail: `Spend ₹${(c/1000).toFixed(1)}k → ₹${(p/1000).toFixed(1)}k. Done ${priDone} → ${curDone}. ROAS deteriorating.`,
+          drill: {kind:'source', value: plat==='facebook' ? 'fb' : 'google'},
+        });
+      }
+    }
+  });
+  // Sort: high > med > low, then alphabetic
+  const sevRank = {high:0, med:1, low:2};
+  out.sort((a,b) => sevRank[a.sev]-sevRank[b.sev] || a.title.localeCompare(b.title));
+  return out;
+}
+function renderAnomalyCenter(){
+  const el = document.getElementById('anomList'); if (!el) return;
+  const list = detectAnomalies();
+  el.innerHTML = '';
+  if (!list.length){
+    el.innerHTML = '<div class="text-sm text-slate-500 p-6 text-center col-span-2">Nothing unusual in the current scope.</div>';
   } else {
+    list.forEach(a => {
+      const card = document.createElement('div'); card.className=`anom-card sev-${a.sev}`;
+      const left = document.createElement('div'); left.style.flex='1';
+      left.innerHTML = `<div style="display:flex;gap:8px;align-items:center;margin-bottom:5px;">
+        <span class="anom-sev ${a.sev}">${a.sev==='high'?'High':a.sev==='med'?'Medium':'Low'}</span>
+      </div>
+      <div class="anom-title">${a.title}</div>
+      <div class="anom-detail">${a.detail}</div>`;
+      card.appendChild(left);
+      if (a.drill){
+        const btn = document.createElement('button'); btn.className='anom-cta'; btn.textContent='Investigate';
+        btn.onclick = () => { setFilter(a.drill.kind, a.drill.value); setActiveTab(a.drill.kind==='source'?'srcquality':'clinic'); };
+        card.appendChild(btn);
+      }
+      el.appendChild(card);
+    });
+  }
+  // Also surface top 3 on Exec tab if a host exists
+  const exec = document.getElementById('execAnomalies');
+  if (exec){
+    const card = document.getElementById('execAnomaliesCard');
+    if (!list.length){ exec.innerHTML=''; if (card) card.style.display='none'; return; }
+    if (card) card.style.display='';
+    exec.innerHTML = `<div class="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Top exceptions (last 7d)</div>`;
+    list.slice(0,3).forEach(a => {
+      const row = document.createElement('div');
+      row.style.cssText='display:flex;gap:8px;align-items:center;padding:6px 0;border-bottom:1px solid #f1f5f9;font-size:12.5px;';
+      row.innerHTML = `<span class="anom-sev ${a.sev}">${a.sev==='high'?'H':a.sev==='med'?'M':'L'}</span><span style="flex:1">${a.title}</span>`;
+      const link = document.createElement('a'); link.href='#'; link.textContent='Open'; link.style.cssText='color:#1d4ed8;font-size:11px;';
+      link.onclick = e => { e.preventDefault(); setActiveTab('anomaly'); };
+      row.appendChild(link);
+      exec.appendChild(row);
+    });
+  }
+}
+
+/* --- Source Quality Matrix --------------------------------- */
+function renderSourceQuality(){
+  injectCaveat('srcQualityCaveat','done');
+  const host = document.getElementById('srcQualityMatrix'); if (!host) return;
+  const i = RAW.ready(); if (!i){ host.innerHTML = '<div class="text-sm text-slate-500 p-4">Live data not loaded.</div>'; return; }
+  const w = RAW.windowDates();
+  const locs = activeRealLocIds();
+  const tags = activeRawTags();
+  const allSrcs = i.allSources;
+  const leads = RAW.leadsBySource(w.d0, w.d1, allSrcs);
+  const done = RAW.doneBySourceClinic(w.d0, w.d1, locs, tags);
+  const spend = RAW.spendAgg(w.d0, w.d1);
+  const platToSrc = {fb:'facebook', ig:'facebook', google:'google', gmb:'google', googlelisting:'google'};
+  // Compute top clinic by source
+  const topClinicBySource = {};
+  Object.keys(i.cscByDate).forEach(d => {
+    if (d < w.d0 || d > w.d1) return;
+    for (const r of i.cscByDate[d]){
+      if (!topClinicBySource[r.source]) topClinicBySource[r.source] = {};
+      topClinicBySource[r.source][r.location_id] = (topClinicBySource[r.source][r.location_id]||0) + r.done;
+    }
+  });
+  const scopeLabel = document.getElementById('srcQualityScope');
+  if (scopeLabel) scopeLabel.textContent = `Window: last ${w.days} days · ${locs.size} clinics · ${[...tags].join(',')||'all'} categories`;
+  const rows = allSrcs.map(s => {
+    const ld = leads[s] || 0;
+    const dn = done.bySource[s] || 0;
+    const conv = ld > 0 ? dn/ld : null;
+    const platKey = platToSrc[s];
+    const sp = platKey ? (spend[platKey]||{}).spend : null;
+    const cpd = (sp && dn>0) ? sp/dn : null;
+    // top clinic
+    const tcMap = topClinicBySource[s] || {};
+    const tcId = Object.entries(tcMap).sort((a,b)=>b[1]-a[1])[0];
+    const tcName = tcId ? (i.locToClinic[tcId[0]] ? i.locToClinic[tcId[0]].name : '—') : '—';
+    return {source:s, leads:ld, done:dn, conv, costPerDone:cpd, topClinic:tcName, _conv:conv, _cpd:cpd};
+  });
+  // Color logic helpers
+  function convCls(v){ if (v==null) return 'sq-heat-na'; if (v>=0.30) return 'sq-heat-good'; if (v>=0.15) return 'sq-heat-mid'; return 'sq-heat-bad'; }
+  function cpdCls(v){ if (v==null) return 'sq-heat-na'; if (v<=500) return 'sq-heat-good'; if (v<=1500) return 'sq-heat-mid'; return 'sq-heat-bad'; }
+  const table = mkTable({
+    columns: [
+      {key:'source', label:'Source', sortable:true},
+      {key:'leads',  label:'Leads', numeric:true, fmt:v=>v.toLocaleString('en-IN')},
+      {key:'done',   label:'Done',  numeric:true, fmt:v=>v.toLocaleString('en-IN')},
+      {key:'_conv',  label:'L→Done %', numeric:true, fmt:(v,r)=>v==null?'<span class="sq-heat-na">—</span>':`<span class="${convCls(v)}" style="padding:2px 8px;border-radius:6px;font-weight:600;">${(v*100).toFixed(2)}%</span>`},
+      {key:'_cpd',   label:'Cost / Done', numeric:true, fmt:(v,r)=>v==null?'<span class="sq-heat-na">n/a</span>':`<span class="${cpdCls(v)}" style="padding:2px 8px;border-radius:6px;font-weight:600;">₹${Math.round(v).toLocaleString('en-IN')}</span>`},
+      {key:'topClinic', label:'Top clinic', sortable:true},
+    ],
+    rows,
+    csvName: 'source-quality',
+    defaultSort: {key:'leads', dir:'desc'},
+    onRowClick: r => setFilter('source', r.source),
+  });
+  host.innerHTML = ''; host.appendChild(table);
+  // Deadweight panel
+  const dw = document.getElementById('srcQualityDeadweight'); if (dw){
+    const w28 = RAW.windowDates(28);
+    const ld28 = RAW.leadsBySource(w28.d0, w28.d1, allSrcs);
+    const dn28 = RAW.doneBySourceClinic(w28.d0, w28.d1, locs, tags);
+    const deadweight = allSrcs.map(s => {
+      const ld = ld28[s] || 0, dn = dn28.bySource[s] || 0;
+      const ratio = ld>0 ? dn/ld : 0;
+      return {source:s, leads:ld, done:dn, conv:ratio};
+    }).filter(r => r.leads > 50 && r.conv < 0.05).sort((a,b)=>b.leads-a.leads);
+    if (!deadweight.length){
+      dw.innerHTML = '<div class="text-sm text-slate-500 p-3">No high-volume / zero-yield sources in the last 28 days.</div>';
+    } else {
+      dw.appendChild(mkTable({
+        columns: [
+          {key:'source', label:'Source'},
+          {key:'leads', label:'Leads (28d)', numeric:true, fmt:v=>v.toLocaleString('en-IN')},
+          {key:'done',  label:'Done (28d)', numeric:true, fmt:v=>v.toLocaleString('en-IN')},
+          {key:'conv',  label:'Conv %', numeric:true, fmt:v=>`<span class="sq-heat-bad" style="padding:2px 8px;border-radius:6px;font-weight:600;">${(v*100).toFixed(2)}%</span>`},
+        ],
+        rows: deadweight,
+        csvName: 'source-deadweight',
+        defaultSort: {key:'leads', dir:'desc'},
+        onRowClick: r => setFilter('source', r.source),
+        search: false,
+      }));
+    }
+  }
+}
+
+/* --- Funnel Leakage Explorer (initial pass) ----------------- */
+let _funnelSankeyChart = null;
+function renderFunnelLeakage(){
+  injectCaveat('funnelCaveat','done');
+  const i = RAW.ready(); if (!i){
+    const wfH = document.getElementById('funnelWaterfall'); if (wfH) wfH.innerHTML = '<div class="text-sm text-slate-500 p-4">Live data not loaded.</div>';
+    return;
+  }
+  const w = RAW.windowDates();
+  const locs = activeRealLocIds();
+  const sources = activeRawSources();
+  const tags = activeRawTags();
+  // ---- 1. 4-stage waterfall ----
+  const leadsAll = RAW.leadsBySource(w.d0, w.d1, [...sources]);
+  const totalLeads = Object.values(leadsAll).reduce((s,v)=>s+v, 0);
+  const book = RAW.bookingsAgg([...locs], w.d0, w.d1);
+  // Estimated portion of bookings due to selected sources/tags (proportional)
+  const doneAll = RAW.doneBySourceClinic(w.d0, w.d1, locs, tags);
+  // Note: bookings table doesn't have source — so bookings.total represents ALL sources in selected clinics.
+  // We'll show two parallel funnels honestly.
+  const scope = document.getElementById('funnelScopeLabel');
+  if (scope) scope.textContent = `${w.days}d · ${locs.size} clinics · ${sources.size} sources`;
+  const wf = document.getElementById('funnelWaterfall'); if (!wf) return;
+  const stages = [
+    {name:'Leads', val: totalLeads, note:'global by source (no clinic_id in source)'},
+    {name:'Bookings', val: book.bookings, note:`across ${locs.size} clinics`},
+    {name:'Done', val: book.done, note:''},
+  ];
+  const peak = Math.max(...stages.map(s=>s.val), 1);
+  wf.innerHTML = '';
+  stages.forEach((s, idx) => {
+    const row = document.createElement('div'); row.className='funnel-stage';
+    row.innerHTML = `<div class="fs-name">${s.name}</div>
+      <div class="fs-val">${s.val.toLocaleString('en-IN')}</div>
+      <div class="fs-bar"><span style="width:${(s.val/peak*100).toFixed(1)}%"></span></div>
+      <div class="text-[11px] opacity-70" style="min-width:140px;text-align:right">${s.note||''}</div>`;
+    wf.appendChild(row);
+    if (idx < stages.length-1){
+      const drop = stages[idx].val - stages[idx+1].val;
+      const dropPct = stages[idx].val>0 ? drop/stages[idx].val*100 : 0;
+      const d = document.createElement('div'); d.className='funnel-drop';
+      d.innerHTML = `<span>↓ Drop-off</span><span>−${drop.toLocaleString('en-IN')} (${dropPct.toFixed(1)}%)</span>`;
+      wf.appendChild(d);
+    }
+  });
+  // Side leakage: missed + cancelled
+  const sideRow = document.createElement('div');
+  sideRow.style.cssText='display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px;';
+  sideRow.innerHTML = `
+    <div style="padding:10px 14px;background:#fef3c7;border-radius:8px;font-size:12.5px;">
+      <div class="text-[11px] uppercase font-semibold tracking-wide text-amber-700">Missed (no-show)</div>
+      <div class="text-base font-bold text-amber-900 mt-1">${book.missed.toLocaleString('en-IN')} <span class="text-xs font-normal">(${book.bookings>0?(book.missed/book.bookings*100).toFixed(1):0}% of bookings)</span></div>
+    </div>
+    <div style="padding:10px 14px;background:#fee2e2;border-radius:8px;font-size:12.5px;">
+      <div class="text-[11px] uppercase font-semibold tracking-wide text-red-700">Cancelled</div>
+      <div class="text-base font-bold text-red-900 mt-1">${book.cancelled.toLocaleString('en-IN')} <span class="text-xs font-normal">(${book.bookings>0?(book.cancelled/book.bookings*100).toFixed(1):0}% of bookings)</span></div>
+    </div>`;
+  wf.appendChild(sideRow);
+
+  // ---- 2. Sankey: top-N sources → done/missed/cancelled (estimated) ----
+  const canvas = document.getElementById('funnelSankey');
+  if (canvas && typeof Chart !== 'undefined' && Chart.registry.controllers.get('sankey')){
+    // Top 8 sources by leads in window
+    const srcEntries = Object.entries(leadsAll).sort((a,b)=>b[1]-a[1]).slice(0,8);
+    const totalSrcLeads = srcEntries.reduce((s,[,v])=>s+v, 0) || 1;
+    // For each source: allocate done from doneBy.bySource (we have it), missed/cancelled = book.missed/cancelled × source-share (proxy)
+    const flows = [];
+    srcEntries.forEach(([s, ld]) => {
+      const share = ld / totalSrcLeads;
+      const dn = doneAll.bySource[s] || 0;
+      const ms = Math.round(book.missed * share);
+      const cn = Math.round(book.cancelled * share);
+      // We split done into "done" only here; missed/cancelled flow from a pseudo-stage representing "Bookings missing source attribution" since they don't have source — but for visual clarity we route each source directly to outcomes weighted by its share of bookings.
+      if (dn > 0)  flows.push({from: s, to: 'Done',      flow: dn});
+      if (ms > 0)  flows.push({from: s, to: 'Missed',    flow: ms});
+      if (cn > 0)  flows.push({from: s, to: 'Cancelled', flow: cn});
+    });
+    if (_funnelSankeyChart) { _funnelSankeyChart.destroy(); _funnelSankeyChart = null; }
+    if (flows.length){
+      _funnelSankeyChart = new Chart(canvas, {
+        type: 'sankey',
+        data: {
+          datasets: [{
+            data: flows,
+            colorFrom: ctx => '#3b82f6',
+            colorTo: ctx => ctx.dataIndex !== undefined && ctx.parsed && ctx.parsed.to === 'Done' ? '#10b981' : ctx.parsed && ctx.parsed.to === 'Missed' ? '#f59e0b' : '#ef4444',
+            borderWidth: 0,
+          }],
+        },
+        options: {responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}}
+      });
+    }
+  }
+
+  // ---- 3. Clinic heatmap (drop-off z-score) ----
+  const hm = document.getElementById('funnelClinicHeatmap');
+  if (hm){
+    // Build clinic rows: L→B(approx via overall leads), B→D, no-show%
+    const clinicRows = [];
+    CLINICS.forEach(cl => {
+      if (!cl.realId || !locs.has(cl.realId)) return;
+      const a = RAW.bookingsAgg([cl.realId], w.d0, w.d1);
+      if (a.bookings < 20) return;
+      clinicRows.push({
+        clinic: cl,
+        b: a.bookings, d: a.done, m: a.missed, c: a.cancelled,
+        bd: a.bookings>0 ? a.done/a.bookings : 0,
+        ns: a.bookings>0 ? a.missed/a.bookings : 0,
+        cnc: a.bookings>0 ? a.cancelled/a.bookings : 0,
+      });
+    });
+    function zArr(arr, key){
+      const v = arr.map(r=>r[key]); const mean = v.reduce((s,x)=>s+x,0)/v.length;
+      const sd = Math.sqrt(v.reduce((s,x)=>s+(x-mean)**2,0)/v.length) || 1;
+      return v.map(x => (x-mean)/sd);
+    }
+    if (clinicRows.length){
+      const bdZ = zArr(clinicRows, 'bd'); const nsZ = zArr(clinicRows, 'ns');
+      clinicRows.forEach((r,k) => { r.bdZ = bdZ[k]; r.nsZ = nsZ[k]; });
+      clinicRows.sort((a,b) => (a.bdZ + (-a.nsZ)) - (b.bdZ + (-b.nsZ))); // worst first
+      const top = clinicRows.slice(0, 20);
+      function zCell(z, invert){
+        // invert=true means low values are bad (e.g. bd ratio)
+        const score = invert ? -z : z;
+        const c = score < -1 ? '#fee2e2' : score < -0.3 ? '#fef3c7' : score > 1 ? '#dcfce7' : '#f8fafc';
+        const col = score < -1 ? '#991b1b' : score < -0.3 ? '#854d0e' : score > 1 ? '#166534' : '#475569';
+        return `background:${c};color:${col};`;
+      }
+      let html = '<table class="dt-table"><thead><tr><th>Clinic</th><th class="numeric">B→D %</th><th class="numeric">No-show %</th><th class="numeric">Cancel %</th><th class="numeric">Bookings</th></tr></thead><tbody>';
+      top.forEach(r => {
+        html += `<tr class="clickable" data-clinic="${r.clinic.id}">
+          <td>${r.clinic.name}</td>
+          <td class="numeric" style="${zCell(r.bdZ,true)}">${(r.bd*100).toFixed(1)}%</td>
+          <td class="numeric" style="${zCell(r.nsZ,false)}">${(r.ns*100).toFixed(1)}%</td>
+          <td class="numeric">${(r.cnc*100).toFixed(1)}%</td>
+          <td class="numeric">${r.b.toLocaleString('en-IN')}</td>
+        </tr>`;
+      });
+      html += '</tbody></table>';
+      hm.innerHTML = `<div class="dt-wrap"><div class="dt-scroll">${html}</div></div>`;
+      hm.querySelectorAll('tr[data-clinic]').forEach(tr => {
+        tr.onclick = () => openClinicModal(tr.dataset.clinic);
+      });
+    }
+    // Full conversion table
+    const ftbl = document.getElementById('funnelClinicTable');
+    if (ftbl && clinicRows.length){
+      ftbl.innerHTML = '';
+      ftbl.appendChild(mkTable({
+        columns: [
+          {key:'clinicName', label:'Clinic'},
+          {key:'city',       label:'City'},
+          {key:'b',          label:'Bookings', numeric:true, fmt:v=>v.toLocaleString('en-IN')},
+          {key:'d',          label:'Done',     numeric:true, fmt:v=>v.toLocaleString('en-IN')},
+          {key:'bd',         label:'B→D %',    numeric:true, fmt:v=>(v*100).toFixed(1)+'%'},
+          {key:'ns',         label:'No-show %',numeric:true, fmt:v=>(v*100).toFixed(1)+'%'},
+          {key:'cnc',        label:'Cancel %', numeric:true, fmt:v=>(v*100).toFixed(1)+'%'},
+        ],
+        rows: clinicRows.map(r => ({
+          ...r,
+          clinicName: r.clinic.name,
+          city: (CITIES.find(c=>c.id===r.clinic.cityId)||{}).name || '—',
+          _id: r.clinic.id,
+        })),
+        csvName: 'funnel-by-clinic',
+        defaultSort: {key:'b', dir:'desc'},
+        onRowClick: r => openClinicModal(r._id),
+      }));
+    }
+  }
+}
+
+/* --- Clinic Intelligence drillthrough modal (stub) --------- */
+function openClinicModal(clinicId){
+  const cl = CLINICS.find(c => c.id === clinicId); if (!cl || !cl.realId) return;
+  const w = RAW.windowDates();
+  const a = RAW.bookingsAgg([cl.realId], w.d0, w.d1);
+  const city = CITIES.find(c => c.id === cl.cityId);
+  // City-wide baseline for benchmarking
+  const cityLocs = CLINICS.filter(c => c.cityId === cl.cityId && c.realId).map(c => c.realId);
+  const cityAggR = RAW.bookingsAgg(cityLocs, w.d0, w.d1);
+  const cityBD = cityAggR.bookings>0 ? cityAggR.done/cityAggR.bookings : 0;
+  const cityNS = cityAggR.bookings>0 ? cityAggR.missed/cityAggR.bookings : 0;
+  const clBD = a.bookings>0 ? a.done/a.bookings : 0;
+  const clNS = a.bookings>0 ? a.missed/a.bookings : 0;
+  document.getElementById('clinicModalTitle').textContent = cl.name;
+  document.getElementById('clinicModalSub').textContent = `${city?city.name:'—'} · ${cl.code||''} · window: last ${w.days} days`;
+  const body = document.getElementById('clinicModalBody');
+  function delta(v, base){ const d = v - base; const cls = d > 0.02 ? 'text-emerald-600' : d < -0.02 ? 'text-red-600' : 'text-slate-500'; return `<span class="${cls}">${(d*100>=0?'+':'')}${(d*100).toFixed(1)}pp vs city</span>`; }
+  // Source breakdown for this clinic
+  const csc = RAW.doneBySourceClinic(w.d0, w.d1, new Set([cl.realId]), activeRawTags());
+  const sourceRows = Object.entries(csc.bySource).map(([s,d]) => ({source:s, done:d, share: csc.total>0?d/csc.total:0})).sort((a,b)=>b.done-a.done);
+  // Weekly trend
+  const weekly = RAW.clinicWeeklySeries(cl.realId, 12);
+  body.innerHTML = `
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+      <div class="card p-3"><div class="text-[11px] text-slate-500 uppercase">Bookings</div><div class="text-xl font-bold mt-1">${a.bookings.toLocaleString('en-IN')}</div></div>
+      <div class="card p-3"><div class="text-[11px] text-slate-500 uppercase">Done</div><div class="text-xl font-bold mt-1">${a.done.toLocaleString('en-IN')}</div></div>
+      <div class="card p-3"><div class="text-[11px] text-slate-500 uppercase">B→D %</div><div class="text-xl font-bold mt-1">${(clBD*100).toFixed(1)}%</div><div class="text-[11px] mt-1">${delta(clBD, cityBD)}</div></div>
+      <div class="card p-3"><div class="text-[11px] text-slate-500 uppercase">No-show %</div><div class="text-xl font-bold mt-1">${(clNS*100).toFixed(1)}%</div><div class="text-[11px] mt-1">${delta(clNS, cityNS)}</div></div>
+    </div>
+    <div class="card p-4 mb-4">
+      <div class="text-sm font-semibold mb-3">12-week weekly trend</div>
+      <div style="height:200px"><canvas id="clinicModalTrend"></canvas></div>
+    </div>
+    <div class="card p-4 mb-4">
+      <div class="text-sm font-semibold mb-3">Source breakdown (window)</div>
+      <div id="clinicModalSourceTable"></div>
+    </div>
+  `;
+  // Trend chart
+  if (weekly.length){
+    new Chart(document.getElementById('clinicModalTrend'), {
+      type:'line',
+      data:{
+        labels: weekly.map(w => w.weekEnd.slice(5)),
+        datasets:[
+          {label:'Bookings', data: weekly.map(w=>w.bookings), borderColor:'#0f172a', tension:.3, fill:false},
+          {label:'Done',     data: weekly.map(w=>w.done),     borderColor:'#10b981', tension:.3, fill:false},
+          {label:'Missed',   data: weekly.map(w=>w.missed),   borderColor:'#f59e0b', tension:.3, fill:false},
+        ]
+      },
+      options:{responsive:true, maintainAspectRatio:false, plugins:{legend:{position:'bottom',labels:{font:{size:11}}}}}
+    });
+  }
+  if (sourceRows.length){
+    document.getElementById('clinicModalSourceTable').appendChild(mkTable({
+      columns: [
+        {key:'source', label:'Source'},
+        {key:'done',   label:'Done', numeric:true, fmt:v=>v.toLocaleString('en-IN')},
+        {key:'share',  label:'Share', numeric:true, fmt:v=>(v*100).toFixed(1)+'%'},
+      ],
+      rows: sourceRows,
+      csvName: `${cl.name}-sources`,
+      defaultSort:{key:'done',dir:'desc'},
+      search:false,
+      onRowClick: r => { setFilter('source', r.source); closeClinicModal(); },
+    }));
+  }
+  document.getElementById('clinicModal').classList.remove('hidden');
+}
+function closeClinicModal(){ document.getElementById('clinicModal').classList.add('hidden'); }
+
+/* --- Compare mode (basic implementation) ------------------- */
+const CMP = {type:'clinic', pinned:[]};
+let _cmpTrendChart = null;
+function renderCompare(){
+  // type toggle
+  const tg = document.getElementById('cmpTypeToggle');
+  if (tg && !tg.dataset.wired){
+    tg.dataset.wired = '1';
+    [['clinic','Clinic'],['source','Source'],['city','City'],['category','Category']].forEach(([id,lbl]) => {
+      const t = document.createElement('span'); t.className='toggle-tab'+(id===CMP.type?' active':''); t.textContent=lbl;
+      t.onclick = () => { CMP.type = id; CMP.pinned = []; renderCompare(); };
+      tg.appendChild(t);
+    });
+  } else if (tg){
+    [...tg.children].forEach(c => c.classList.toggle('active', c.textContent.toLowerCase() === CMP.type));
+  }
+  // picker options
+  const sel = document.getElementById('cmpPicker'); if (sel){
+    sel.innerHTML = '<option value="">+ Add to compare…</option>';
+    let opts = [];
+    if (CMP.type === 'clinic') opts = CLINICS.filter(c=>c.realId).map(c=>({id:c.id, name:c.name}));
+    else if (CMP.type === 'source') opts = (RAW.ready()?RAW.ready().allSources:[]).map(s=>({id:s,name:s}));
+    else if (CMP.type === 'city') opts = CITIES.map(c=>({id:c.id,name:c.name}));
+    else if (CMP.type === 'category') opts = ['ed_plus','pe_plus','ed_plus_pe_plus','sti','others'].map(s=>({id:s,name:s}));
+    opts.forEach(o => { if (CMP.pinned.includes(o.id)) return; const op=document.createElement('option'); op.value=o.id; op.textContent=o.name; sel.appendChild(op); });
+    sel.onchange = e => {
+      if (!e.target.value) return;
+      if (CMP.pinned.length >= 4){ alert('Max 4 pinned'); e.target.value=''; return; }
+      CMP.pinned.push(e.target.value); renderCompare();
+    };
+  }
+  // pinned chips
+  const pp = document.getElementById('cmpPinned'); if (pp){
+    pp.innerHTML = '';
+    CMP.pinned.forEach(id => {
+      const lbl = (CMP.type==='clinic' ? (CLINICS.find(c=>c.id===id)||{}).name : id) || id;
+      const chip = document.createElement('span'); chip.className='cmp-pin';
+      chip.innerHTML = `${lbl} <span class="x">×</span>`;
+      chip.querySelector('.x').onclick = () => { CMP.pinned = CMP.pinned.filter(x=>x!==id); renderCompare(); };
+      pp.appendChild(chip);
+    });
+  }
+  // KPI cards
+  const kpis = document.getElementById('cmpKPIs'); if (kpis){
+    kpis.innerHTML = '';
+    if (!CMP.pinned.length){ kpis.innerHTML = '<div class="text-sm text-slate-500 col-span-full p-4">Add up to 4 entities above to compare.</div>'; }
+    const w = RAW.windowDates(); if (!w) return;
+    const series = []; // for trend chart
+    CMP.pinned.forEach(id => {
+      let locs = null, sources = null, tags = null, label = id;
+      if (CMP.type === 'clinic'){
+        const cl = CLINICS.find(c=>c.id===id); if (!cl || !cl.realId) return;
+        locs = new Set([cl.realId]); label = cl.name;
+      } else if (CMP.type === 'source'){
+        sources = new Set([id]);
+      } else if (CMP.type === 'city'){
+        const cityClinics = CLINICS.filter(c=>c.cityId===id && c.realId).map(c=>c.realId);
+        locs = new Set(cityClinics);
+        label = (CITIES.find(c=>c.id===id)||{}).name || id;
+      } else if (CMP.type === 'category'){
+        tags = new Set([id]);
+      }
+      let bookings = 0, done = 0, missed = 0;
+      if (locs || CMP.type === 'clinic' || CMP.type === 'city'){
+        const a = RAW.bookingsAgg([...locs], w.d0, w.d1);
+        bookings = a.bookings; done = a.done; missed = a.missed;
+      } else if (sources){
+        const ld = RAW.leadsBySource(w.d0, w.d1, [...sources]);
+        const dn = RAW.doneBySourceClinic(w.d0, w.d1, activeRealLocIds(), activeRawTags());
+        bookings = ld[id] || 0; // proxy: treat leads as TOF volume
+        done = dn.bySource[id] || 0;
+        missed = 0;
+      } else if (tags){
+        const dn = RAW.doneBySourceClinic(w.d0, w.d1, activeRealLocIds(), tags);
+        done = dn.total; bookings = 0; missed = 0;
+      }
+      const card = document.createElement('div'); card.className = 'card p-3';
+      card.innerHTML = `<div class="text-[11px] text-slate-500 uppercase truncate">${label}</div>
+        <div class="grid grid-cols-3 gap-2 mt-2">
+          <div><div class="text-[10px] text-slate-400">${CMP.type==='source'?'Leads':'Bookings'}</div><div class="text-base font-bold">${bookings.toLocaleString('en-IN')}</div></div>
+          <div><div class="text-[10px] text-slate-400">Done</div><div class="text-base font-bold">${done.toLocaleString('en-IN')}</div></div>
+          <div><div class="text-[10px] text-slate-400">Conv %</div><div class="text-base font-bold">${bookings>0?(done/bookings*100).toFixed(1):'—'}%</div></div>
+        </div>`;
+      kpis.appendChild(card);
+      // For trend chart: weekly series
+      if (CMP.type === 'clinic'){
+        const cl = CLINICS.find(c=>c.id===id);
+        series.push({label, weekly: RAW.clinicWeeklySeries(cl.realId, 12)});
+      } else if (CMP.type === 'city'){
+        const cityClinics = CLINICS.filter(c=>c.cityId===id && c.realId).map(c=>c.realId);
+        // sum weekly across clinics
+        const merged = []; cityClinics.forEach(loc => {
+          const s = RAW.clinicWeeklySeries(loc, 12);
+          s.forEach((w,k)=>{ if (!merged[k]) merged[k] = {weekEnd:w.weekEnd, bookings:0, done:0}; merged[k].bookings+=w.bookings; merged[k].done+=w.done; });
+        });
+        series.push({label, weekly: merged});
+      }
+    });
+    if (series.length && document.getElementById('cmpTrendChart')){
+      if (_cmpTrendChart){ _cmpTrendChart.destroy(); _cmpTrendChart = null; }
+      const labels = series[0].weekly.map(w=>w.weekEnd.slice(5));
+      const palette = ['#0f172a','#3b82f6','#10b981','#f59e0b'];
+      _cmpTrendChart = new Chart(document.getElementById('cmpTrendChart'), {
+        type:'line',
+        data:{labels, datasets: series.map((s,i)=>({label:s.label, data:s.weekly.map(w=>w.bookings), borderColor:palette[i], tension:.3, fill:false}))},
+        options:{responsive:true, maintainAspectRatio:false, plugins:{legend:{position:'bottom',labels:{font:{size:11}}}}}
+      });
+    }
+  }
+}
+
+/* --- Inject caveats on existing tabs ------------------------ */
+function injectExistingCaveats(){
+  // Category section gets STI caveat
+  const catTab = document.querySelector('[data-panel="category"]');
+  if (catTab && !catTab.dataset.cvInjected){
+    catTab.dataset.cvInjected = '1';
+    const host = document.createElement('div'); host.id = 'cv-host-category';
+    catTab.insertBefore(host, catTab.firstChild);
+    injectCaveat('cv-host-category','sti');
+  }
+  // Bookings/exec tabs get "done" caveat
+  ['exec','bookings'].forEach(p => {
+    const tab = document.querySelector(`[data-panel="${p}"]`);
+    if (tab && !tab.dataset.cvDoneInjected){
+      tab.dataset.cvDoneInjected = '1';
+      const host = document.createElement('div'); host.id = `cv-host-${p}`;
+      tab.insertBefore(host, tab.firstChild);
+      injectCaveat(`cv-host-${p}`,'done');
+    }
+  });
+}
+
+/* --- Hook into renderAll ------------------------------------ */
+const _wave1PrevRenderAll = renderAll;
+renderAll = function(){
+  _wave1PrevRenderAll();
+  try {
+    renderCrumb();
+    injectExistingCaveats();
+    // Only heavy-render the visible tab; the rest stay cached
+    if (STATE.tab === 'anomaly')   renderAnomalyCenter();
+    if (STATE.tab === 'srcquality') renderSourceQuality();
+    if (STATE.tab === 'funnel')     renderFunnelLeakage();
+    if (STATE.tab === 'compare')    renderCompare();
+    // Anomaly summary on exec tab — always compute
+    if (STATE.tab === 'exec' && document.getElementById('execAnomalies')) renderAnomalyCenter();
+  } catch(e){ console.error('[wave1] render error:', e); }
+};
+
+// Modal close — wire directly (DOMContentLoaded already fired by the time this script runs in some paths)
+(function(){
+  const mc = document.getElementById('clinicModalClose');
+  if (mc) mc.onclick = closeClinicModal;
+  const mo = document.getElementById('clinicModal');
+  if (mo) mo.onclick = (e) => { if (e.target === mo) closeClinicModal(); };
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeClinicModal(); });
+})();
+
+/* =========================================================
+   DEEP DIVE — generic engine
+   Pick any METRIC × any DIMENSION; the engine renders KPIs, by-city
+   and by-channel breakdowns, per-clinic first→last dynamics, and a
+   Story rollup. Sheet13's framework, parameterized.
+   ========================================================= */
+
+// ---- Metric registry ----
+// kind: 'rate'      → num/den (e.g. STI%, SH%, B2D, completion rate)
+//       'absolute'  → counter (e.g. bookings, leads, done)
+// pickNum/pickDen: pull from a per-day record (a BOOKINGS series entry)
+// targetDefault: starting target value (rate metrics)
+// caveat: optional text shown in the amber banner
+const METRICS = [
+  { id:'sti_rate',  label:'STI share',        kind:'rate',     targetDefault:0.30,
+    pickNum:r=>r.sti_done||0,    pickDen:r=>r.done||0,
+    caveat:'Computed as sti_done / done (across ALL completed consults, untagged counted in denominator). Clinics with <40% tag coverage are flagged with ⚐.' },
+  { id:'sti_of_tagged',  label:'STI share (of tagged)', kind:'rate', targetDefault:0.30,
+    pickNum:r=>r.sti_done||0,    pickDen:r=>r.tagged_done||0,
+    caveat:'Computed as sti_done / tagged_done. Excludes the ~50% untagged consults. Higher than the all-consult STI share but biased by who-bothered-to-tag.' },
+  { id:'sh_rate',   label:'SH share',         kind:'rate',     targetDefault:0.50,
+    pickNum:r=>r.sh_done||0,     pickDen:r=>r.done||0 },
+  { id:'others_rate',label:'Others share',    kind:'rate',     targetDefault:0.10,
+    pickNum:r=>r.others_done||0, pickDen:r=>r.done||0 },
+  { id:'tag_cov',   label:'Tag coverage',     kind:'rate',     targetDefault:0.80,
+    pickNum:r=>r.tagged_done||0, pickDen:r=>r.done||0,
+    caveat:'Tagged consults / total completed. Upstream EMR-tagging discipline; ~50% network avg is the constraint identified in the prior GMB audit.' },
+  { id:'b2d',       label:'Booking → Done %', kind:'rate',     targetDefault:0.70,
+    pickNum:r=>r.done||0,        pickDen:r=>r.total||0 },
+  { id:'missed_rate',label:'Missed rate',     kind:'rate',     targetDefault:0.05, lowerIsBetter:true,
+    pickNum:r=>r.missed||0,      pickDen:r=>r.total||0 },
+  { id:'cancelled_rate',label:'Cancelled rate', kind:'rate',   targetDefault:0.05, lowerIsBetter:true,
+    pickNum:r=>r.cancelled||0,   pickDen:r=>r.total||0 },
+  { id:'bookings',  label:'Bookings (absolute)', kind:'absolute',
+    pickNum:r=>r.total||0 },
+  { id:'done',      label:'Consults done (absolute)', kind:'absolute',
+    pickNum:r=>r.done||0 },
+  { id:'sti_done',  label:'STI consults (absolute)', kind:'absolute',
+    pickNum:r=>r.sti_done||0 },
+  { id:'leads',     label:'Leads (per-clinic)', kind:'absolute',
+    pickNum:r=>r.leads||0,
+    caveat:'Per-clinic leads require the lead → first-appointment join (new schema). Until build_data.py is re-run, leads may be 0 for some clinics.' },
+];
+
+// ---- Dimensions registry ----
+// keyOf(cl): grouping key. labelOf(key): readable name.
+const DIMENSIONS = [
+  { id:'clinic', label:'Clinic',
+    keyOf: cl => cl.id, labelOf: key => (CLINICS.find(c=>c.id===key)||{}).name || key,
+    subOf:  key => (CITIES.find(c=>c.id===(CLINICS.find(cl=>cl.id===key)||{}).cityId)||{}).name || '' },
+  { id:'city',   label:'City',
+    keyOf: cl => cl.cityId, labelOf: key => (CITIES.find(c=>c.id===key)||{}).name || key,
+    subOf:  key => `${CLINICS.filter(cl=>cl.cityId===key).length} clinics` },
+  { id:'tier',   label:'Tier',
+    keyOf: cl => (CITIES.find(c=>c.id===cl.cityId)||{}).tier || 't2',
+    labelOf: key => key === 't1' ? 'Tier 1 (top 8 metros)' : 'Tier 2 (rest)',
+    subOf: key => `${CLINICS.filter(cl=>(CITIES.find(c=>c.id===cl.cityId)||{}).tier===key).length} clinics` },
+  { id:'maturity', label:'Maturity',
+    keyOf: cl => _ddMaturityBucket(cl.ageDays).key,
+    labelOf: key => ({new:'New (<90d)', ramping:'Ramping (90–365d)', mature:'Mature (1y+)', unknown:'Unknown age'})[key] || key,
+    subOf: key => `${CLINICS.filter(cl=>_ddMaturityBucket(cl.ageDays).key===key).length} clinics` },
+];
+
+function _ddBucket(series, metric, fromIdx, toIdxExcl){
+  let num = 0, den = 0;
+  for (let i = Math.max(0, fromIdx); i < Math.min(series.length, toIdxExcl); i++){
+    num += metric.pickNum(series[i]);
+    if (metric.kind === 'rate') den += metric.pickDen(series[i]);
+  }
+  const value = metric.kind === 'rate' ? (den > 0 ? num/den : 0) : num;
+  return {num, den, value};
+}
+
+function _ddAcrossClinics(clinicIds, metric){
+  let num = 0, den = 0;
+  for (const id of clinicIds){
+    const s = BOOKINGS[id] || [];
+    for (const r of s){
+      num += metric.pickNum(r);
+      if (metric.kind === 'rate') den += metric.pickDen(r);
+    }
+  }
+  const value = metric.kind === 'rate' ? (den > 0 ? num/den : 0) : num;
+  return {num, den, value};
+}
+
+function _ddPctDelta(cur, prior){ return prior > 0 ? (cur - prior) / prior : (cur > 0 ? 1 : 0); }
+
+function _ddClassify(first, last, metric){
+  const numChg = _ddPctDelta(last.num, first.num);
+  if (metric.kind === 'rate'){
+    const denChg = _ddPctDelta(last.den, first.den);
+    const ppChg  = last.value - first.value;
+    const lower  = metric.lowerIsBetter;
+    if      ((!lower && ppChg <= -0.05) || (lower && ppChg >=  0.05))  return {key:'dropping', label:'↓ Rate dropping',     color:'#dc2626'};
+    else if ((!lower && ppChg >=  0.05) || (lower && ppChg <= -0.05))  return {key:'surging',  label:'↑ Rate improving',    color:'#059669'};
+    else if (numChg >= 0.30 && numChg > denChg)                        return {key:'growing',  label:'⚠ Numerator growing faster', color:'#0891b2'};
+    else if (denChg >  0.05 && numChg <= 0)                            return {key:'volup',    label:'✓ Volume up, target metric not', color:'#d97706'};
+    return                                                                     {key:'tracking', label:'Tracking',            color:'#64748b'};
+  } else {
+    if (numChg >=  0.20)  return {key:'surging',  label:'↑ Surging (+20%+)',  color:'#059669'};
+    if (numChg <= -0.15)  return {key:'dropping', label:'↓ Declining (-15%+)', color:'#dc2626'};
+    if (numChg >=  0.05)  return {key:'growing',  label:'⚠ Growing',          color:'#0891b2'};
+    if (numChg <= -0.05)  return {key:'volup',    label:'✗ Slipping',         color:'#d97706'};
+    return                       {key:'tracking', label:'Tracking',            color:'#64748b'};
+  }
+}
+
+function _ddArrow(d){
+  if (d >  0.05) return `<span class="text-emerald-600">▲</span>`;
+  if (d < -0.05) return `<span class="text-red-600">▼</span>`;
+  return `<span class="text-slate-400">▸</span>`;
+}
+function _ddFmtPct(p){ return (p*100).toFixed(1)+'%'; }
+function _ddFmtNum(n){ return Math.round(n).toLocaleString('en-IN'); }
+function _ddFmtDelta(d){
+  const cls = d > 0.005 ? 'text-emerald-600' : d < -0.005 ? 'text-red-600' : 'text-slate-500';
+  const sign = d > 0 ? '+' : '';
+  return `<span class="${cls}">${sign}${(d*100).toFixed(1)}%</span>`;
+}
+function _ddFmtPp(pp){
+  const cls = pp > 0.005 ? 'text-emerald-600' : pp < -0.005 ? 'text-red-600' : 'text-slate-500';
+  const sign = pp > 0 ? '+' : '';
+  return `<span class="${cls}">${sign}${(pp*100).toFixed(1)}pp</span>`;
+}
+function _ddFmtValue(v, metric){ return metric.kind === 'rate' ? _ddFmtPct(v) : _ddFmtNum(v); }
+function _ddMaturityBucket(ageDays){
+  if (ageDays == null) return {key:'unknown', label:'Unknown', color:'#94a3b8'};
+  if (ageDays <  90)   return {key:'new',     label:'New',     color:'#0ea5e9'};
+  if (ageDays < 365)   return {key:'ramping', label:'Ramping', color:'#a855f7'};
+  return                       {key:'mature',  label:'Mature',  color:'#64748b'};
+}
+
+const DD_STATE = {
+  metricId: 'sti_rate',
+  dimensionId: 'clinic',
+  target: null,        // null = use metric.targetDefault
+  filterCity: '',
+  filterStory: '',
+  filterMaturity: '',
+};
+
+function renderDeepDive(){
+  if (!CLINICS.length){
+    document.getElementById('ddKpis').innerHTML = '<div class="col-span-full text-sm text-slate-500 p-4 text-center">No clinic data loaded.</div>';
+    return;
+  }
+
+  const metric = METRICS.find(m => m.id === DD_STATE.metricId) || METRICS[0];
+  const dimension = DIMENSIONS.find(d => d.id === DD_STATE.dimensionId) || DIMENSIONS[0];
+  const target = (DD_STATE.target != null && !isNaN(DD_STATE.target)) ? DD_STATE.target : metric.targetDefault;
+
+  // ---- Populate selectors once ----
+  const metricSel = document.getElementById('ddMetric');
+  if (metricSel && !metricSel.dataset.wired){
+    metricSel.dataset.wired = '1';
+    METRICS.forEach(m => {
+      const o = document.createElement('option'); o.value = m.id; o.textContent = m.label;
+      metricSel.appendChild(o);
+    });
+    metricSel.onchange = e => {
+      DD_STATE.metricId = e.target.value;
+      DD_STATE.target = null; // reset to default
+      document.getElementById('ddTarget').value = '';
+      renderDeepDive();
+    };
+  }
+  metricSel.value = metric.id;
+
+  const dimSel = document.getElementById('ddDimension');
+  if (dimSel && !dimSel.dataset.wired){
+    dimSel.dataset.wired = '1';
+    DIMENSIONS.forEach(d => {
+      const o = document.createElement('option'); o.value = d.id; o.textContent = d.label;
+      dimSel.appendChild(o);
+    });
+    dimSel.onchange = e => { DD_STATE.dimensionId = e.target.value; renderDeepDive(); };
+  }
+  dimSel.value = dimension.id;
+
+  const targetInp = document.getElementById('ddTarget');
+  if (targetInp && !targetInp.dataset.wired){
+    targetInp.dataset.wired = '1';
+    targetInp.onchange = e => {
+      const v = e.target.value.replace('%','').trim();
+      const n = parseFloat(v);
+      if (!isNaN(n)) DD_STATE.target = n > 1 ? n/100 : n;
+      else DD_STATE.target = null;
+      renderDeepDive();
+    };
+  }
+  if (targetInp && !targetInp.value){
+    targetInp.value = metric.kind === 'rate' ? (target*100).toFixed(0)+'%' : '';
+    targetInp.style.display = metric.kind === 'rate' ? '' : 'none';
+  }
+
+  // ---- Network headline ----
+  const allIds = CLINICS.map(cl => cl.id);
+  const net = _ddAcrossClinics(allIds, metric);
+
+  const headlineVal = document.getElementById('ddHeadlineValue');
+  headlineVal.textContent = _ddFmtValue(net.value, metric);
+  const headlineTgt = document.getElementById('ddHeadlineTarget');
+  headlineTgt.textContent = metric.kind === 'rate' ? ` / ${_ddFmtPct(target)}` : '';
+
+  const gap = metric.lowerIsBetter ? net.value - target : target - net.value;
+  const gapEl = document.getElementById('ddHeadlineGap');
+  if (metric.kind === 'rate'){
+    gapEl.textContent = gap > 0
+      ? `${(gap*100).toFixed(1)}pp ${metric.lowerIsBetter ? 'above' : 'to'} target`
+      : `${Math.abs(gap*100).toFixed(1)}pp ${metric.lowerIsBetter ? 'below' : 'above'} target`;
+    gapEl.className = 'text-xs font-semibold mt-1 ' + (gap > 0 ? 'text-amber-600' : 'text-emerald-600');
+  } else {
+    gapEl.textContent = '';
+  }
+
+  // Progress bar
+  const progWrap = document.getElementById('ddProgressWrap');
+  if (metric.kind === 'rate'){
+    progWrap.style.display = '';
+    const max = Math.max(0.5, target * 1.5);
+    const pct = Math.min(100, (net.value / max) * 100);
+    document.getElementById('ddProgressBar').style.width = pct + '%';
+    document.getElementById('ddProgressTarget').style.left = ((target/max) * 100) + '%';
+    const ticks = [0, 0.25, 0.5, 0.75, 1].map(t => Math.round(t*max*100));
+    document.getElementById('ddProgressTicks').innerHTML = ticks.map((v,i) =>
+      `<span ${Math.abs((v/100)-target)<0.005?'class="text-red-600 font-semibold"':''}>${v}%</span>`
+    ).join('');
+  } else {
+    progWrap.style.display = 'none';
+  }
+
+  // Caveat banner
+  const caveatBox = document.getElementById('ddCaveat');
+  if (metric.caveat){
+    caveatBox.style.display = '';
+    document.getElementById('ddCaveatText').innerHTML = metric.caveat;
+  } else {
+    caveatBox.style.display = 'none';
+  }
+
+  // Headline text
+  const aboveCount = CLINICS.filter(cl => {
+    const v = _ddAcrossClinics([cl.id], metric).value;
+    const denOK = metric.kind === 'rate'
+      ? _ddAcrossClinics([cl.id], metric).den >= 10
+      : v >= 10;
+    if (!denOK) return false;
+    return metric.lowerIsBetter ? v <= target : v >= target;
+  }).length;
+
+  document.getElementById('ddHeadlineText').innerHTML =
+    `Network <strong>${metric.label}</strong> = <strong>${_ddFmtValue(net.value, metric)}</strong>` +
+    (metric.kind === 'rate' ? ` across <strong>${_ddFmtNum(net.den)}</strong> consults. ` : `. `) +
+    `<strong>${aboveCount}</strong> of ${CLINICS.length} clinics ${metric.lowerIsBetter?'≤':'≥'} target.`;
+
+  // ---- KPI cards ----
+  const kpis = [];
+  if (metric.kind === 'rate'){
+    kpis.push({label:'Numerator (180d)', val:_ddFmtNum(net.num), sub:`sum of ${metric.id} numerator`});
+    kpis.push({label:'Denominator (180d)', val:_ddFmtNum(net.den), sub:`sum of ${metric.id} denominator`});
+    kpis.push({label:`Clinics ${metric.lowerIsBetter?'≤':'≥'} target`, val:`${aboveCount}/${CLINICS.length}`,
+               sub:`target ${_ddFmtPct(target)}`});
+    const coverage = window.__NETWORK_COVERAGE || 0;
+    kpis.push({label:'Network tag coverage', val:_ddFmtPct(coverage), sub:'tagged / total done'});
+  } else {
+    kpis.push({label:'Total (180d)', val:_ddFmtNum(net.num), sub:'sum across all clinics'});
+    kpis.push({label:'Avg / clinic', val:_ddFmtNum(net.num/CLINICS.length), sub:`${CLINICS.length} clinics`});
+    kpis.push({label:'Avg / day',   val:_ddFmtNum(net.num/DAYS), sub:`${DAYS} days`});
+    const coverage = window.__NETWORK_COVERAGE || 0;
+    kpis.push({label:'Network tag coverage', val:_ddFmtPct(coverage), sub:'tagged / total done'});
+  }
+  document.getElementById('ddKpis').innerHTML = kpis.map(k => `
+    <div class="card p-4">
+      <div class="text-[10px] text-slate-500 uppercase font-semibold">${k.label}</div>
+      <div class="text-2xl font-bold text-slate-900 mt-1">${k.val}</div>
+      <div class="text-xs text-slate-500 mt-0.5">${k.sub}</div>
+    </div>`).join('');
+
+  // ---- By-city table ----
+  const cityRows = CITIES.map(city => {
+    const ids = CLINICS.filter(cl => cl.cityId === city.id).map(cl => cl.id);
+    const tot = _ddAcrossClinics(ids, metric);
+    return {city, ...tot, clinicCount: ids.length};
+  }).filter(r => (metric.kind === 'rate' ? r.den : r.num) >= 5);
+  cityRows.sort((a,b) => metric.lowerIsBetter ? a.value - b.value : b.value - a.value);
+
+  const maxCity = Math.max(...cityRows.map(r => r.value), target*1.2, 0.0001);
+  const cityHtml = cityRows.map(r => {
+    const hit = metric.lowerIsBetter ? r.value <= target : r.value >= target;
+    const cls = hit ? 'bg-emerald-50' : '';
+    const bar = Math.min(100, (r.value / maxCity) * 100);
+    return `<tr class="${cls}">
+      <td class="px-3 py-2 text-sm font-medium text-slate-800">${r.city.name}</td>
+      <td class="px-3 py-2 text-xs text-slate-500">${r.clinicCount}</td>
+      ${metric.kind === 'rate'
+        ? `<td class="px-3 py-2 text-sm text-slate-700 text-right">${_ddFmtNum(r.num)}</td>
+           <td class="px-3 py-2 text-sm text-slate-700 text-right">${_ddFmtNum(r.den)}</td>`
+        : `<td class="px-3 py-2 text-sm text-slate-700 text-right" colspan="2">—</td>`}
+      <td class="px-3 py-2 text-sm font-bold ${hit?'text-emerald-700':'text-slate-900'} text-right">${_ddFmtValue(r.value, metric)}</td>
+      <td class="px-3 py-2">
+        <div class="h-2 bg-slate-100 rounded relative" style="min-width:100px">
+          <div class="h-full ${hit?'bg-emerald-500':'bg-sky-500'} rounded" style="width:${bar}%"></div>
+          ${metric.kind==='rate' ? `<div class="absolute top-0 h-full" style="left:${(target/maxCity)*100}%;width:1px;background:#dc2626"></div>` : ''}
+        </div>
+      </td>
+    </tr>`;
+  }).join('');
+
+  document.getElementById('ddCityTable').innerHTML = `
+    <table class="w-full text-sm">
+      <thead><tr class="text-[10px] uppercase text-slate-500 border-b border-slate-200">
+        <th class="px-3 py-2 text-left">City</th>
+        <th class="px-3 py-2 text-left">Clinics</th>
+        ${metric.kind === 'rate'
+          ? `<th class="px-3 py-2 text-right">Num</th><th class="px-3 py-2 text-right">Den</th>`
+          : `<th class="px-3 py-2" colspan="2"></th>`}
+        <th class="px-3 py-2 text-right">${metric.label}</th>
+        <th class="px-3 py-2 text-left">vs target</th>
+      </tr></thead>
+      <tbody>${cityHtml}</tbody>
+    </table>`;
+
+  // ---- By-channel table ----
+  // Aggregate from clinic_source_diagnosis. For rate metrics where num/den live in CSD,
+  // we can compute per-source. For metrics not in CSD (bookings/leads), we show 'n/a per channel'.
+  const csd = (window.__REAL_DATA && window.__REAL_DATA.clinic_source_diagnosis) || [];
+  const csc = (window.__REAL_DATA && window.__REAL_DATA.clinic_source_category)   || [];
+  // Build per-source aggregates from CSD (new schema). If empty, fall back to CSC.
+  const bySrc = {};
+  function srcRow(s){ if (!bySrc[s]) bySrc[s] = {total_done:0, tagged_done:0, sti_done:0, sh_done:0, others_done:0}; return bySrc[s]; }
+  if (csd.length){
+    csd.forEach(r => {
+      const s = srcRow(r.source);
+      s.total_done  += r.total_done  || 0;
+      s.tagged_done += r.tagged_done || 0;
+      s.sti_done    += r.sti_done    || 0;
+      s.sh_done     += r.sh_done     || 0;
+      s.others_done += r.others_done || 0;
+    });
+  } else if (csc.length){
+    const SH = new Set(['ed_plus','pe_plus','ed_plus_pe_plus']);
+    csc.forEach(r => {
+      const s = srcRow(r.source);
+      s.tagged_done += r.done;
+      s.total_done  += r.done; // approx — old schema has no total
+      if (r.tag_type === 'sti') s.sti_done += r.done;
+      else if (SH.has(r.tag_type)) s.sh_done += r.done;
+      else s.others_done += r.done;
+    });
+  }
+  // Compute metric per source from aggregates we have
+  const srcMetric = (s) => {
+    // Build a fake "series" entry shape to feed pickNum/pickDen
+    const fake = {
+      done: s.total_done, total: s.total_done, missed: 0, cancelled: 0, leads: 0,
+      tagged_done: s.tagged_done, sti_done: s.sti_done, sh_done: s.sh_done, others_done: s.others_done,
+    };
+    const num = metric.pickNum(fake);
+    if (metric.kind === 'rate'){
+      const den = metric.pickDen(fake);
+      return {num, den, value: den>0 ? num/den : 0};
+    }
+    return {num, den:0, value:num};
+  };
+  const srcRows = Object.entries(bySrc).map(([src, s]) => ({src, ...srcMetric(s)}))
+    .filter(r => (metric.kind === 'rate' ? r.den : r.num) >= 5);
+  srcRows.sort((a,b) => metric.lowerIsBetter ? a.value - b.value : b.value - a.value);
+
+  const maxSrc = Math.max(...srcRows.map(r => r.value), target*1.2, 0.0001);
+  const srcHtml = srcRows.map(r => {
+    const chMeta = CHANNELS.find(c => c.id === r.src) || {name: r.src, color:'#64748b'};
+    const hit = metric.lowerIsBetter ? r.value <= target : r.value >= target;
+    const cls = hit ? 'bg-emerald-50' : '';
+    const bar = Math.min(100, (r.value / maxSrc) * 100);
+    return `<tr class="${cls}">
+      <td class="px-3 py-2 text-sm font-medium">
+        <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${chMeta.color};margin-right:6px"></span>${chMeta.name}
+      </td>
+      ${metric.kind === 'rate'
+        ? `<td class="px-3 py-2 text-sm text-slate-700 text-right">${_ddFmtNum(r.num)}</td>
+           <td class="px-3 py-2 text-sm text-slate-700 text-right">${_ddFmtNum(r.den)}</td>`
+        : `<td class="px-3 py-2 text-sm text-slate-700 text-right" colspan="2">${_ddFmtNum(r.num)}</td>`}
+      <td class="px-3 py-2 text-sm font-bold ${hit?'text-emerald-700':'text-slate-900'} text-right">${_ddFmtValue(r.value, metric)}</td>
+      <td class="px-3 py-2">
+        <div class="h-2 bg-slate-100 rounded relative" style="min-width:100px">
+          <div class="h-full ${hit?'bg-emerald-500':'bg-sky-500'} rounded" style="width:${bar}%"></div>
+          ${metric.kind==='rate' ? `<div class="absolute top-0 h-full" style="left:${(target/maxSrc)*100}%;width:1px;background:#dc2626"></div>` : ''}
+        </div>
+      </td>
+    </tr>`;
+  }).join('');
+  document.getElementById('ddChannelTable').innerHTML = srcRows.length ? `
+    <table class="w-full text-sm">
+      <thead><tr class="text-[10px] uppercase text-slate-500 border-b border-slate-200">
+        <th class="px-3 py-2 text-left">Channel</th>
+        ${metric.kind === 'rate'
+          ? `<th class="px-3 py-2 text-right">Num</th><th class="px-3 py-2 text-right">Den</th>`
+          : `<th class="px-3 py-2 text-right" colspan="2">Total</th>`}
+        <th class="px-3 py-2 text-right">${metric.label}</th>
+        <th class="px-3 py-2 text-left">vs target</th>
+      </tr></thead>
+      <tbody>${srcHtml}</tbody>
+    </table>` :
+    `<div class="text-sm text-slate-500 p-4 text-center">Per-channel breakdown for "${metric.label}" requires diagnosis-level data per source. Re-run <code>build_data.py</code> with the updated schema to populate.</div>`;
+
+  // ---- Per-clinic dynamics (Sheet13 framework) ----
+  const HALF = Math.floor(DAYS / 2);
+  const monthlyFactor = HALF/30;
+  const clinicDeep = CLINICS.map(cl => {
+    const series = BOOKINGS[cl.id] || [];
+    if (!series.length) return null;
+    const first = _ddBucket(series, metric, 0, HALF);
+    const last  = _ddBucket(series, metric, HALF, series.length);
+    const all   = _ddBucket(series, metric, 0, series.length);
+    const denCheck = metric.kind === 'rate' ? all.den : all.num;
+    if (denCheck < 5) return null;
+    const story = _ddClassify(first, last, metric);
+    const numChg = _ddPctDelta(last.num, first.num);
+    const denChg = metric.kind === 'rate' ? _ddPctDelta(last.den, first.den) : 0;
+    const ppChg = metric.kind === 'rate' ? (last.value - first.value) : 0;
+    const maturity = _ddMaturityBucket(cl.ageDays);
+    const cityName = (CITIES.find(c => c.id === cl.cityId)||{}).name || '—';
+    return {
+      cl, city: cityName, ageDays: cl.ageDays,
+      value: all.value, num: all.num, den: all.den,
+      first, last, numChg, denChg, ppChg,
+      story, maturity,
+      coverage: cl.tagCoverage || 0,
+      monthly_first_num: (first.num / monthlyFactor).toFixed(1),
+      monthly_last_num:  (last.num  / monthlyFactor).toFixed(1),
+      monthly_first_den: metric.kind === 'rate' ? (first.den / monthlyFactor).toFixed(1) : null,
+      monthly_last_den:  metric.kind === 'rate' ? (last.den  / monthlyFactor).toFixed(1) : null,
+    };
+  }).filter(Boolean);
+
+  // Populate filters
+  const cityFilter = document.getElementById('ddClinicCityFilter');
+  if (cityFilter && cityFilter.children.length <= 1){
+    [...new Set(CLINICS.map(cl => (CITIES.find(c=>c.id===cl.cityId)||{}).name || '-'))].sort().forEach(name => {
+      const opt = document.createElement('option'); opt.value = name; opt.textContent = name;
+      cityFilter.appendChild(opt);
+    });
+  }
+  const storyFilter = document.getElementById('ddClinicStoryFilter');
+  if (storyFilter){
+    const newOpts = ['', 'surging','growing','tracking','volup','dropping'];
+    const current = storyFilter.value;
+    storyFilter.innerHTML = newOpts.map(k => {
+      if (!k) return `<option value="">All stories</option>`;
+      // pick a label from one clinic's story to be consistent with current metric
+      const sample = clinicDeep.find(c => c.story.key === k);
+      const lbl = sample ? sample.story.label : k;
+      return `<option value="${k}">${lbl}</option>`;
+    }).join('');
+    storyFilter.value = current;
+  }
+
+  const filterCity = (cityFilter && cityFilter.value) || '';
+  const filterStory = (storyFilter && storyFilter.value) || '';
+  const filterMaturity = (document.getElementById('ddClinicMaturityFilter')||{}).value || '';
+
+  const filtered = clinicDeep.filter(r => {
+    if (filterCity && r.city !== filterCity) return false;
+    if (filterStory && r.story.key !== filterStory) return false;
+    if (filterMaturity && r.maturity.key !== filterMaturity) return false;
+    return true;
+  });
+  filtered.sort((a,b) => metric.lowerIsBetter ? a.value - b.value : b.value - a.value);
+
+  const lowCovFlag = (cov) => (metric.id === 'sti_rate' || metric.id === 'sti_of_tagged' || metric.id === 'sh_rate' || metric.id === 'others_rate') && cov < 0.4
+    ? `<span class="text-amber-600 text-base" title="Low tag coverage (${(cov*100).toFixed(0)}%)">⚐</span>` : '';
+
+  const rowsHtml = filtered.map(r => {
+    const hit = metric.lowerIsBetter ? r.value <= target : r.value >= target;
+    return `<tr class="border-b border-slate-100 hover:bg-slate-50">
+      <td class="px-2 py-2 text-sm font-medium text-slate-800">${r.cl.name} ${lowCovFlag(r.coverage)}</td>
+      <td class="px-2 py-2 text-xs text-slate-500">${r.city}</td>
+      <td class="px-2 py-2 text-xs">
+        <span class="inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold" style="background:${r.maturity.color}20;color:${r.maturity.color}">${r.maturity.label}</span>
+      </td>
+      <td class="px-2 py-2 text-sm font-bold ${hit?'text-emerald-700':'text-slate-900'} text-right">${_ddFmtValue(r.value, metric)}</td>
+      <td class="px-2 py-2 text-xs text-slate-700">
+        ${r.monthly_first_num}→${r.monthly_last_num} ${_ddArrow(r.numChg)}${_ddFmtDelta(r.numChg)}
+      </td>
+      ${metric.kind === 'rate'
+        ? `<td class="px-2 py-2 text-xs text-slate-700">${r.monthly_first_den}→${r.monthly_last_den} ${_ddArrow(r.denChg)}${_ddFmtDelta(r.denChg)}</td>
+           <td class="px-2 py-2 text-xs">${_ddFmtPct(r.first.value)}→${_ddFmtPct(r.last.value)} ${_ddFmtPp(r.ppChg)}</td>`
+        : ''}
+      <td class="px-2 py-2 text-xs font-semibold" style="color:${r.story.color}">${r.story.label}</td>
+    </tr>`;
+  }).join('');
+
+  document.getElementById('ddClinicTable').innerHTML = `
+    <table class="w-full text-sm">
+      <thead><tr class="text-[10px] uppercase text-slate-500 border-b border-slate-200 bg-slate-50">
+        <th class="px-2 py-2 text-left">Clinic</th>
+        <th class="px-2 py-2 text-left">City</th>
+        <th class="px-2 py-2 text-left">Maturity</th>
+        <th class="px-2 py-2 text-right">Avg ${metric.label}</th>
+        <th class="px-2 py-2 text-left">${metric.kind==='rate'?'Numerator':'Value'} (monthly, first→last)</th>
+        ${metric.kind === 'rate'
+          ? `<th class="px-2 py-2 text-left">Denominator (monthly, first→last)</th>
+             <th class="px-2 py-2 text-left">${metric.label} (first→last)</th>`
+          : ''}
+        <th class="px-2 py-2 text-left">Story</th>
+      </tr></thead>
+      <tbody>${rowsHtml}</tbody>
+    </table>`;
+  document.getElementById('ddClinicSummary').textContent =
+    `Showing ${filtered.length} of ${clinicDeep.length} clinics. Window split: first ${HALF}d vs last ${DAYS-HALF}d. Monthly = bucket / ${monthlyFactor.toFixed(1)} months. Target ${metric.kind==='rate'?_ddFmtPct(target):'—'}.`;
+
+  // ---- Story rollup ----
+  const storyKeys = ['surging','growing','tracking','volup','dropping'];
+  const rollup = {};
+  storyKeys.forEach(k => rollup[k] = []);
+  clinicDeep.forEach(r => { if (rollup[r.story.key]) rollup[r.story.key].push(r); });
+
+  document.getElementById('ddStoryRollup').innerHTML = storyKeys.map(k => {
+    const items = rollup[k].sort((a,b) => metric.lowerIsBetter ? a.value - b.value : b.value - a.value);
+    const sampleStory = items[0] && items[0].story;
+    if (!items.length){
+      return `<div class="border border-slate-200 rounded-lg p-3 opacity-50">
+        <div class="text-xs font-semibold mb-1 text-slate-400">—</div>
+        <div class="text-2xl font-bold text-slate-300">0</div>
+        <div class="text-[10px] text-slate-400">clinics</div></div>`;
+    }
+    return `<div class="border border-slate-200 rounded-lg p-3" style="border-left:3px solid ${sampleStory.color}">
+      <div class="text-xs font-semibold mb-1" style="color:${sampleStory.color}">${sampleStory.label}</div>
+      <div class="text-2xl font-bold text-slate-900">${items.length}</div>
+      <div class="text-[10px] text-slate-500 mb-2">clinics</div>
+      <div class="space-y-0.5">
+        ${items.slice(0,5).map(r =>
+          `<div class="text-xs text-slate-700 flex justify-between"><span class="truncate">${r.cl.name}</span><span class="font-semibold text-slate-500">${_ddFmtValue(r.value, metric)}</span></div>`
+        ).join('')}
+        ${items.length > 5 ? `<div class="text-[10px] text-slate-400">+${items.length - 5} more</div>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+
+  // Footer
+  const footerCov = document.getElementById('footer-coverage');
+  if (footerCov) footerCov.innerHTML = `tag coverage: <strong>${_ddFmtPct(window.__NETWORK_COVERAGE || 0)}</strong>`;
+}
+
+function _wireDDFilters(){
+  ['ddClinicCityFilter','ddClinicStoryFilter','ddClinicMaturityFilter'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el && !el.dataset.wired){ el.dataset.wired = '1'; el.onchange = renderDeepDive; }
+  });
+}
+
+const _ddPrevRenderAll = renderAll;
+renderAll = function(){
+  _ddPrevRenderAll();
+  try {
+    if (STATE.tab === 'stidive'){
+      _wireDDFilters();
+      renderDeepDive();
+    }
+    if (STATE.tab === 'spike'){
+      renderSpikeAnalysis();
+    }
+  } catch(e){ console.error('[deep-dive] render error:', e); }
+};
+
+/* =========================================================
+   SPIKE DECOMPOSITION — wow_data.json
+   Founder's online-bookings weekly tracker. Decomposes any spike
+   week vs N-week trailing baseline; shows channel contribution
+   waterfall, sustainability classification, and path-to-target.
+   ========================================================= */
+
+window.__WOW = null;
+let _spkCharts = {trend:null, waterfall:null};
+
+const SPK_CHANNELS = [
+  {id:'fb',             label:'Facebook',     color:'#1877f2'},
+  {id:'google_search',  label:'Google Search',color:'#4285f4'},
+  {id:'organic',        label:'Organic',      color:'#10b981'},
+  {id:'whatsapp',       label:'WhatsApp',     color:'#25d366'},
+  {id:'organic_wa',     label:'Organic-WA',   color:'#34d399'},
+  {id:'practo',         label:'Practo',       color:'#f97316'},
+  {id:'justdial',       label:'JustDial',     color:'#dc2626'},
+];
+
+const SPK_FUNNEL = [
+  {id:'slot_booked',     label:'Slots booked'},
+  {id:'gross_bookings',  label:'Gross bookings'},
+  {id:'all_unique_bookings', label:'Unique bookings'},
+  {id:'calls_done',      label:'Calls done'},
+  {id:'no_show',         label:'No-shows'},
+];
+
+async function _loadWow(){
+  if (window.__WOW) return window.__WOW;
+  try {
+    const r = await fetch('wow_data.json', {cache:'no-cache'});
+    if (!r.ok) throw new Error('HTTP '+r.status);
+    window.__WOW = await r.json();
+    // Once loaded, trigger another render if user is currently on the spike tab —
+    // first-load may have fired before fetch completed.
+    if (typeof STATE !== 'undefined' && STATE.tab === 'spike'){
+      setTimeout(() => renderSpikeAnalysis(), 0);
+    }
+    return window.__WOW;
+  } catch(e){
+    console.warn('[spike] wow_data.json failed:', e.message);
+    return null;
+  }
+}
+
+function _spkFmtPct(p){ const cls = p>0.005?'text-emerald-600':p<-0.005?'text-red-600':'text-slate-500'; const sg=p>0?'+':''; return `<span class="${cls}">${sg}${(p*100).toFixed(1)}%</span>`; }
+function _spkFmtDelta(d){ const cls = d>0?'text-emerald-600':d<0?'text-red-600':'text-slate-500'; const sg=d>0?'+':''; return `<span class="${cls}">${sg}${d.toFixed(0)}</span>`; }
+
+async function renderSpikeAnalysis(){
+  const wow = await _loadWow();
+  if (!wow){
+    document.getElementById('spkHeadline').innerHTML =
+      `<span class="text-red-600">Failed to load wow_data.json. Run <code>python3 gmb_audit/parse_wow_csv.py</code> to regenerate.</span>`;
+    return;
+  }
+  const weeks = wow.weeks;
+  const metrics = wow.metrics;
+
+  // Populate spike-week selector (default: week with highest "all_unique_bookings")
+  const spkSel = document.getElementById('spkSpikeWk');
+  if (spkSel && !spkSel.dataset.wired){
+    spkSel.dataset.wired = '1';
+    const valid = weeks.map((w,i)=>({w,i,v:metrics.all_unique_bookings[i]})).filter(x=>x.v>0);
+    valid.forEach(({w,i,v}) => {
+      const o = document.createElement('option'); o.value = i; o.textContent = `${w.label} · ${v.toFixed(0)}`;
+      spkSel.appendChild(o);
+    });
+    // default = highest value (skip current week, col 6, if partial)
+    const best = valid.slice(1).sort((a,b)=>b.v-a.v)[0] || valid[1] || valid[0];
+    spkSel.value = best.i;
+    spkSel.onchange = renderSpikeAnalysis;
+  }
+  ['spkBaseN','spkMetric','spkTarget'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el && !el.dataset.wired){ el.dataset.wired='1'; el.onchange = renderSpikeAnalysis; el.oninput = renderSpikeAnalysis; }
+  });
+
+  const spkIdx = parseInt(spkSel.value, 10);
+  const baseN  = parseInt(document.getElementById('spkBaseN').value, 10) || 4;
+  const metricId = document.getElementById('spkMetric').value;
+  const target = parseFloat(document.getElementById('spkTarget').value) || 1000;
+
+  const metricSeries = metrics[metricId] || metrics.all_unique_bookings;
+  const spikeVal = metricSeries[spkIdx];
+
+  // Baseline = avg of N weeks BEFORE spike (higher indices = older)
+  const baseIdxs = [];
+  for (let off=1; off <= baseN; off++){
+    const i = spkIdx + off;
+    if (i < weeks.length && metricSeries[i] > 0) baseIdxs.push(i);
+  }
+  const baseVal = baseIdxs.length ? baseIdxs.reduce((s,i)=>s+metricSeries[i],0)/baseIdxs.length : 0;
+  const lift = spikeVal - baseVal;
+  const liftPct = baseVal > 0 ? lift/baseVal : 0;
+
+  // Headline
+  document.getElementById('spkSpikeVal').textContent = spikeVal.toFixed(0);
+  document.getElementById('spkBaseVal').textContent = baseVal.toFixed(0);
+  document.getElementById('spkDelta').innerHTML = `${_spkFmtDelta(lift)} (${_spkFmtPct(liftPct)})`;
+  document.getElementById('spkDelta').className = 'text-sm font-bold mt-1 ' + (lift > 0 ? 'text-emerald-700' : 'text-red-600');
+  document.getElementById('spkLiftLabel').textContent = (lift > 0 ? '+' : '') + lift.toFixed(0);
+  document.getElementById('spkTargetLabel').textContent = target.toFixed(0) + '+';
+
+  // Channel decomposition (only meaningful for all_unique_bookings; works for new_bookings too if channel mix data exists)
+  const channelDecomp = SPK_CHANNELS.map(ch => {
+    const cs = metrics[ch.id] || [];
+    const spike = cs[spkIdx] || 0;
+    const base = baseIdxs.length ? baseIdxs.reduce((s,i)=>s+(cs[i]||0),0)/baseIdxs.length : 0;
+    const delta = spike - base;
+    return {...ch, spike, base, delta};
+  }).filter(x => x.spike > 0 || x.base > 0);
+  channelDecomp.sort((a,b) => b.delta - a.delta);
+
+  // Headline text
+  const topDriver = channelDecomp[0];
+  const contribStory = channelDecomp.filter(x => Math.abs(x.delta) > 0.5).slice(0,3)
+    .map(x => `<strong>${x.label}</strong> ${_spkFmtDelta(x.delta)}`).join(', ');
+  document.getElementById('spkHeadline').innerHTML =
+    `Week of <strong>${weeks[spkIdx].label}</strong> = <strong>${spikeVal.toFixed(0)}</strong> ` +
+    `${metricId.replace(/_/g,' ')}, vs baseline of <strong>${baseVal.toFixed(0)}</strong> (avg of prior ${baseIdxs.length} wk). ` +
+    `Lift of <strong>${lift>0?'+':''}${lift.toFixed(0)}</strong> driven by: ${contribStory}.`;
+
+  // --- WEEKLY TREND CHART ---
+  const trendCtx = document.getElementById('spkTrendChart').getContext('2d');
+  if (_spkCharts.trend) _spkCharts.trend.destroy();
+  // Plot oldest → newest left-to-right (reverse order of array which is newest-first)
+  const orderedIdxs = weeks.map((_,i)=>i).slice().reverse();
+  const trendLabels = orderedIdxs.map(i => weeks[i].end || '');
+  const trendData   = orderedIdxs.map(i => metricSeries[i]);
+  const spikePos    = orderedIdxs.indexOf(spkIdx);
+  _spkCharts.trend = new Chart(trendCtx, {
+    type: 'line',
+    data: {
+      labels: trendLabels,
+      datasets: [
+        {
+          label: metricId.replace(/_/g,' '),
+          data: trendData,
+          borderColor: '#0ea5e9',
+          backgroundColor: 'rgba(14,165,233,0.10)',
+          fill: true, tension: 0.25, pointRadius: 4,
+          pointBackgroundColor: trendData.map((_,i) => i===spikePos ? '#f59e0b' : '#0ea5e9'),
+          pointRadius: trendData.map((_,i) => i===spikePos ? 8 : 4),
+        },
+        {
+          label: `Baseline (${baseVal.toFixed(0)})`,
+          data: trendLabels.map(() => baseVal),
+          borderColor: '#94a3b8', borderDash:[6,4], pointRadius:0, fill:false,
+        },
+        {
+          label: `Target (${target})`,
+          data: trendLabels.map(() => target),
+          borderColor: '#dc2626', borderDash:[3,3], pointRadius:0, fill:false,
+        },
+      ],
+    },
+    options: {responsive:true, maintainAspectRatio:false, plugins:{legend:{position:'bottom',labels:{font:{size:11}}}},
+              scales:{y:{beginAtZero:false}}},
+  });
+
+  // --- WATERFALL CHART (baseline → +ch → spike) ---
+  const wfCtx = document.getElementById('spkWaterfallChart').getContext('2d');
+  if (_spkCharts.waterfall) _spkCharts.waterfall.destroy();
+  // Build bar segments: [Baseline] [+ch1] [+ch2] ... [-chN] [Spike]
+  const wfLabels = ['Baseline', ...channelDecomp.map(x => x.label), 'Spike'];
+  let running = baseVal;
+  const wfBars  = [{base:0, value:baseVal, color:'#64748b'}];
+  channelDecomp.forEach(x => {
+    if (x.delta >= 0){
+      wfBars.push({base:running, value:x.delta, color:x.color});
+      running += x.delta;
+    } else {
+      running += x.delta;
+      wfBars.push({base:running, value:-x.delta, color:'#fca5a5'});
+    }
+  });
+  wfBars.push({base:0, value:spikeVal, color:'#10b981'});
+  // Chart.js floating-bar trick: data = [[base, base+value]]
+  _spkCharts.waterfall = new Chart(wfCtx, {
+    type: 'bar',
+    data: {
+      labels: wfLabels,
+      datasets: [{
+        label: 'Contribution',
+        data: wfBars.map(b => [b.base, b.base + b.value]),
+        backgroundColor: wfBars.map(b => b.color),
+        borderColor: wfBars.map(b => b.color),
+      }],
+    },
+    options: {responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false},
+              tooltip:{callbacks:{label: ctx => {
+                const i = ctx.dataIndex; const b = wfBars[i]; const sign = i===0||i===wfBars.length-1?'':b.color==='#fca5a5'?'-':'+';
+                return `${ctx.label}: ${sign}${b.value.toFixed(0)}`;
+              }}}},
+              scales:{x:{ticks:{font:{size:10}}},y:{beginAtZero:true}}},
+  });
+
+  // --- CHANNEL CONTRIBUTION TABLE ---
+  const totalLift = channelDecomp.reduce((s,x)=>s+x.delta, 0);
+  document.getElementById('spkChannelTable').innerHTML = `
+    <table class="w-full text-sm">
+      <thead><tr class="text-[10px] uppercase text-slate-500 border-b border-slate-200">
+        <th class="px-2 py-1.5 text-left">Channel</th>
+        <th class="px-2 py-1.5 text-right">Spike</th>
+        <th class="px-2 py-1.5 text-right">Baseline</th>
+        <th class="px-2 py-1.5 text-right">Δ</th>
+        <th class="px-2 py-1.5 text-right">Δ %</th>
+        <th class="px-2 py-1.5 text-right">% of lift</th>
+      </tr></thead>
+      <tbody>
+        ${channelDecomp.map(x => `
+          <tr class="border-b border-slate-100">
+            <td class="px-2 py-1.5"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${x.color};margin-right:6px"></span>${x.label}</td>
+            <td class="px-2 py-1.5 text-right">${x.spike.toFixed(0)}</td>
+            <td class="px-2 py-1.5 text-right text-slate-500">${x.base.toFixed(0)}</td>
+            <td class="px-2 py-1.5 text-right font-semibold">${_spkFmtDelta(x.delta)}</td>
+            <td class="px-2 py-1.5 text-right text-xs">${x.base>0 ? _spkFmtPct(x.delta/x.base) : '—'}</td>
+            <td class="px-2 py-1.5 text-right font-bold">${totalLift !== 0 ? ((x.delta/totalLift)*100).toFixed(0)+'%' : '—'}</td>
+          </tr>`).join('')}
+      </tbody>
+    </table>`;
+
+  // --- SUSTAINABILITY TABLE (compare spike to weeks AFTER) ---
+  // Weeks AFTER spike are at LOWER indices (newer)
+  const afterIdxs = [];
+  for (let off=1; off<=2; off++){
+    const i = spkIdx - off;
+    if (i >= 0 && metricSeries[i] >= 0) afterIdxs.push(i);
+  }
+  const sustainRows = channelDecomp.map(x => {
+    const cs = metrics[x.id] || [];
+    const after = afterIdxs.length ? afterIdxs.reduce((s,i)=>s+(cs[i]||0),0)/afterIdxs.length : null;
+    const heldPct = (after != null && x.spike > 0) ? (after - x.base)/(x.spike - x.base) : null;
+    let verdict, color;
+    if (heldPct == null) { verdict = '—'; color='#94a3b8'; }
+    else if (heldPct >= 0.7) { verdict = '✓ Sustained (>70% of lift held)'; color='#059669'; }
+    else if (heldPct >= 0.3) { verdict = '~ Partial (30-70% held)'; color='#d97706'; }
+    else if (x.delta > 0) { verdict = '✗ One-off (lift evaporated)'; color='#dc2626'; }
+    else { verdict = '— (not a driver of the spike)'; color='#94a3b8'; }
+    return {...x, after, heldPct, verdict, color};
+  });
+  document.getElementById('spkSustainTable').innerHTML = `
+    <table class="w-full text-sm">
+      <thead><tr class="text-[10px] uppercase text-slate-500 border-b border-slate-200">
+        <th class="px-2 py-1.5 text-left">Channel</th>
+        <th class="px-2 py-1.5 text-right">Baseline</th>
+        <th class="px-2 py-1.5 text-right">Spike</th>
+        <th class="px-2 py-1.5 text-right">Avg post-spike</th>
+        <th class="px-2 py-1.5 text-right">% of lift held</th>
+        <th class="px-2 py-1.5 text-left">Verdict</th>
+      </tr></thead>
+      <tbody>
+        ${sustainRows.map(x => `
+          <tr class="border-b border-slate-100">
+            <td class="px-2 py-1.5"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${x.color || '#94a3b8'};margin-right:6px"></span>${x.label}</td>
+            <td class="px-2 py-1.5 text-right text-slate-500">${x.base.toFixed(0)}</td>
+            <td class="px-2 py-1.5 text-right">${x.spike.toFixed(0)}</td>
+            <td class="px-2 py-1.5 text-right">${x.after != null ? x.after.toFixed(0) : '—'}</td>
+            <td class="px-2 py-1.5 text-right">${x.heldPct != null && Math.abs(x.delta)>0.5 ? (x.heldPct*100).toFixed(0)+'%' : '—'}</td>
+            <td class="px-2 py-1.5 text-xs font-semibold" style="color:${x.color}">${x.verdict}</td>
+          </tr>`).join('')}
+      </tbody>
+    </table>`;
+
+  // --- FUNNEL CONTEXT ---
+  document.getElementById('spkFunnelGrid').innerHTML = SPK_FUNNEL.map(f => {
+    const s = (metrics[f.id]||[])[spkIdx] || 0;
+    const b = baseIdxs.length ? baseIdxs.reduce((sum,i)=>sum+((metrics[f.id]||[])[i]||0),0)/baseIdxs.length : 0;
+    const d = s - b;
+    return `<div class="border border-slate-200 rounded p-3">
+      <div class="text-[10px] text-slate-500 uppercase font-semibold">${f.label}</div>
+      <div class="text-xl font-bold mt-1">${s.toFixed(0)}</div>
+      <div class="text-xs text-slate-500 mt-0.5">baseline ${b.toFixed(0)} · ${_spkFmtDelta(d)}</div>
+    </div>`;
+  }).join('');
+
+  // --- PATH TO TARGET ROADMAP ---
+  // For each channel, find its observed ceiling (max weekly value); compare to current baseline
+  // gap-to-ceiling per channel = lever potential
+  const ceilings = SPK_CHANNELS.map(ch => {
+    const cs = metrics[ch.id] || [];
+    const ceiling = Math.max(...cs.filter(v=>v>0));
+    const current = cs[0] || 0; // most recent week
+    const baseAvg = baseIdxs.length ? baseIdxs.reduce((s,i)=>s+(cs[i]||0),0)/baseIdxs.length : 0;
+    const lever = Math.max(0, ceiling - baseAvg);
+    return {...ch, ceiling, current, baseAvg, lever};
+  }).filter(x => x.ceiling > 0).sort((a,b)=>b.lever-a.lever);
+  const totalLever = ceilings.reduce((s,x)=>s+x.lever, 0);
+  const projectedTotal = baseVal + totalLever;
+  const targetGap = target - projectedTotal;
+
+  document.getElementById('spkRoadmapTable').innerHTML = `
+    <table class="w-full text-sm">
+      <thead><tr class="text-[10px] uppercase text-slate-500 border-b border-slate-200">
+        <th class="px-2 py-1.5 text-left">Channel</th>
+        <th class="px-2 py-1.5 text-right">Baseline</th>
+        <th class="px-2 py-1.5 text-right">Observed ceiling</th>
+        <th class="px-2 py-1.5 text-right">Lever (ceiling − baseline)</th>
+        <th class="px-2 py-1.5 text-right">% of total lever</th>
+      </tr></thead>
+      <tbody>
+        ${ceilings.map(x => `
+          <tr class="border-b border-slate-100">
+            <td class="px-2 py-1.5"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${x.color};margin-right:6px"></span>${x.label}</td>
+            <td class="px-2 py-1.5 text-right text-slate-500">${x.baseAvg.toFixed(0)}</td>
+            <td class="px-2 py-1.5 text-right">${x.ceiling.toFixed(0)}</td>
+            <td class="px-2 py-1.5 text-right font-bold text-emerald-700">+${x.lever.toFixed(0)}</td>
+            <td class="px-2 py-1.5 text-right">${totalLever>0?((x.lever/totalLever)*100).toFixed(0)+'%':'—'}</td>
+          </tr>`).join('')}
+        <tr class="border-t-2 border-slate-300 bg-amber-50">
+          <td class="px-2 py-2 font-bold">If every channel returns to ceiling</td>
+          <td class="px-2 py-2 text-right text-slate-600">${baseVal.toFixed(0)}</td>
+          <td class="px-2 py-2 text-right text-slate-600">—</td>
+          <td class="px-2 py-2 text-right font-bold text-emerald-700">+${totalLever.toFixed(0)}</td>
+          <td class="px-2 py-2 text-right font-bold">= ${projectedTotal.toFixed(0)}</td>
+        </tr>
+      </tbody>
+    </table>`;
+  document.getElementById('spkRoadmapTotal').innerHTML = targetGap > 0
+    ? `🎯 Even at proven ceilings across every channel, projected total is <strong>${projectedTotal.toFixed(0)}</strong> — still <strong>${targetGap.toFixed(0)} short</strong> of ${target}. Reaching ${target}+ requires lifting ceilings (new campaigns/cities) on top of restoring existing channels.`
+    : `🎯 Returning every channel to its proven ceiling would yield <strong>${projectedTotal.toFixed(0)}</strong>, comfortably above the ${target} target by <strong>${Math.abs(targetGap).toFixed(0)}</strong>. The target is achievable purely by restoring lost ground.`;
+
+  /* ---- TRAFFIC vs CONVERSION decomposition ---- */
+  // Maps CSV channel ids → leads-table source ids (data.json)
+  const CH_TO_LEAD_SRC = {
+    fb: 'fb', google_search: 'google', organic: 'organic',
+    whatsapp: ['organic','other'],   // wa is buried in organic/other in our leads table
+    practo: 'practo', justdial: 'justdial', organic_wa: 'organic',
+  };
+  const leadDelta = wow.lead_delta || [];
+  const leadBySrc = Object.fromEntries(leadDelta.map(x => [x.source, x]));
+
+  const tcRows = channelDecomp.map(ch => {
+    const ldSrc = CH_TO_LEAD_SRC[ch.id];
+    const sources = Array.isArray(ldSrc) ? ldSrc : ldSrc ? [ldSrc] : [];
+    const leadSpike = sources.reduce((s, src) => s + (leadBySrc[src]?.spike || 0), 0);
+    const leadBase  = sources.reduce((s, src) => s + (leadBySrc[src]?.baseline || 0), 0);
+    const cvrSpike  = leadSpike > 0 ? ch.spike / leadSpike : 0;
+    const cvrBase   = leadBase  > 0 ? ch.base  / leadBase  : 0;
+    const trafficDriven = (leadSpike - leadBase) * cvrBase;
+    const convDriven    = ch.spike - ch.base - trafficDriven;
+    let verdict, color;
+    if (Math.abs(ch.delta) < 1) { verdict = 'minimal change'; color = '#94a3b8'; }
+    else if (Math.abs(trafficDriven) > Math.abs(convDriven) * 2)  { verdict = 'traffic-driven'; color = '#0891b2'; }
+    else if (Math.abs(convDriven) > Math.abs(trafficDriven) * 2)  { verdict = 'conversion-driven'; color = '#7c3aed'; }
+    else { verdict = 'mixed'; color = '#64748b'; }
+    return {...ch, leadSpike, leadBase, cvrSpike, cvrBase, trafficDriven, convDriven, verdict, color};
+  });
+
+  document.getElementById('spkTraffConvTable').innerHTML = `
+    <table class="w-full text-sm">
+      <thead><tr class="text-[10px] uppercase text-slate-500 border-b border-slate-200">
+        <th class="px-2 py-1.5 text-left">Channel</th>
+        <th class="px-2 py-1.5 text-right">Leads (spike)</th>
+        <th class="px-2 py-1.5 text-right">Leads (base)</th>
+        <th class="px-2 py-1.5 text-right">CVR (spike)</th>
+        <th class="px-2 py-1.5 text-right">CVR (base)</th>
+        <th class="px-2 py-1.5 text-right">Δ bookings</th>
+        <th class="px-2 py-1.5 text-right">↗ Traffic</th>
+        <th class="px-2 py-1.5 text-right">⇡ Conversion</th>
+        <th class="px-2 py-1.5 text-left">Verdict</th>
+      </tr></thead>
+      <tbody>
+        ${tcRows.map(x => `
+          <tr class="border-b border-slate-100">
+            <td class="px-2 py-1.5"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${x.color || '#94a3b8'};margin-right:6px"></span>${x.label}</td>
+            <td class="px-2 py-1.5 text-right">${x.leadSpike.toFixed(0) || '—'}</td>
+            <td class="px-2 py-1.5 text-right text-slate-500">${x.leadBase.toFixed(0) || '—'}</td>
+            <td class="px-2 py-1.5 text-right">${x.cvrSpike ? (x.cvrSpike*100).toFixed(1)+'%' : '—'}</td>
+            <td class="px-2 py-1.5 text-right text-slate-500">${x.cvrBase ? (x.cvrBase*100).toFixed(1)+'%' : '—'}</td>
+            <td class="px-2 py-1.5 text-right font-semibold">${_spkFmtDelta(x.delta)}</td>
+            <td class="px-2 py-1.5 text-right">${x.leadSpike ? _spkFmtDelta(x.trafficDriven) : '—'}</td>
+            <td class="px-2 py-1.5 text-right">${x.leadSpike ? _spkFmtDelta(x.convDriven) : '—'}</td>
+            <td class="px-2 py-1.5 text-xs font-semibold" style="color:${x.color}">${x.verdict}</td>
+          </tr>`).join('')}
+      </tbody>
+    </table>`;
+
+  // Summary line
+  const topTC = tcRows.filter(x => Math.abs(x.delta) >= 2).sort((a,b)=> Math.abs(b.delta) - Math.abs(a.delta))[0];
+  if (topTC){
+    const repeatable = topTC.verdict === 'traffic-driven'
+      ? `<strong>Repeatable mechanism</strong>: increase ad budget / impressions on ${topTC.label}. Conversion rate held, so more spend = more bookings at the same efficiency.`
+      : topTC.verdict === 'conversion-driven'
+      ? `<strong>Process change suspected</strong>: ${topTC.label} converted better without more leads. Investigate landing-page changes, response time, or pricing changes.`
+      : `Mixed driver — combination of more leads AND better conversion.`;
+    document.getElementById('spkTraffConvSummary').innerHTML =
+      `Biggest mover: <strong>${topTC.label}</strong> ${_spkFmtDelta(topTC.delta)} bookings, of which ${_spkFmtDelta(topTC.trafficDriven)} from traffic vs ${_spkFmtDelta(topTC.convDriven)} from conversion. ${repeatable}`;
+  }
+
+  /* ---- PER-CLINIC TABLE ---- */
+  const pcd = (wow.per_clinic_spike || []).slice();
+  const sortMode = (document.getElementById('spkClinicSort') || {}).value || 'delta_desc';
+  if (sortMode === 'delta_asc')  pcd.sort((a,b)=>a.delta-b.delta);
+  else if (sortMode === 'spike_desc') pcd.sort((a,b)=>b.spike-a.spike);
+  else pcd.sort((a,b)=>b.delta-a.delta);
+
+  // Wire the sort selector
+  const sortSel = document.getElementById('spkClinicSort');
+  if (sortSel && !sortSel.dataset.wired){ sortSel.dataset.wired='1'; sortSel.onchange = renderSpikeAnalysis; }
+
+  const TOP_N = 25;
+  document.getElementById('spkClinicTable').innerHTML = pcd.length === 0
+    ? `<div class="text-sm text-slate-500 p-4">Per-clinic data not loaded. Re-run <code>python3 gmb_audit/parse_wow_csv.py</code>.</div>`
+    : `
+    <table class="w-full text-sm">
+      <thead><tr class="text-[10px] uppercase text-slate-500 border-b border-slate-200">
+        <th class="px-2 py-1.5 text-left">Clinic</th>
+        <th class="px-2 py-1.5 text-left">City</th>
+        <th class="px-2 py-1.5 text-right">Spike wk</th>
+        <th class="px-2 py-1.5 text-right">Base wk avg</th>
+        <th class="px-2 py-1.5 text-right">Δ</th>
+        <th class="px-2 py-1.5 text-right">Δ %</th>
+      </tr></thead>
+      <tbody>
+        ${pcd.slice(0,TOP_N).map(c => `
+          <tr class="border-b border-slate-100">
+            <td class="px-2 py-1.5">${c.clinic}</td>
+            <td class="px-2 py-1.5 text-xs text-slate-500">${c.city}</td>
+            <td class="px-2 py-1.5 text-right">${c.spike.toFixed(0)}</td>
+            <td class="px-2 py-1.5 text-right text-slate-500">${c.baseline.toFixed(0)}</td>
+            <td class="px-2 py-1.5 text-right font-semibold">${_spkFmtDelta(c.delta)}</td>
+            <td class="px-2 py-1.5 text-right text-xs">${c.baseline > 0 ? _spkFmtPct(c.delta/c.baseline) : '—'}</td>
+          </tr>`).join('')}
+      </tbody>
+    </table>
+    <div class="text-xs text-slate-400 mt-2">Showing top ${Math.min(TOP_N, pcd.length)} of ${pcd.length} clinics.</div>`;
+
+  /* ---- AD SPEND DECOMPOSITION ---- */
+  // Real spend data lives in window.__REAL_DATA.spend (platform-level daily)
+  const spendData = (window.__REAL_DATA && window.__REAL_DATA.spend) || [];
+  if (!spendData.length){
+    document.getElementById('spkAdSpendBox').innerHTML =
+      `<div class="text-sm text-slate-500 p-3">No spend data loaded.</div>`;
+  } else {
+    const spikeWk = weeks[spkIdx];
+    if (!spikeWk.start || !spikeWk.end){
+      document.getElementById('spkAdSpendBox').innerHTML =
+        `<div class="text-sm text-slate-500 p-3">Spike week dates not parseable.</div>`;
+    } else {
+      const inWk = (d, start, end) => d >= start && d <= end;
+      const baseStart = (() => { const d = new Date(spikeWk.start); d.setDate(d.getDate() - 28); return d.toISOString().slice(0,10); })();
+      const baseEnd   = (() => { const d = new Date(spikeWk.start); d.setDate(d.getDate() - 1);  return d.toISOString().slice(0,10); })();
+      const agg = {};  // platform → {spike:{}, base:{}}
+      spendData.forEach(r => {
+        if (!agg[r.platform]) agg[r.platform] = {spike:{spend:0,impr:0,clk:0,cnv:0,days:0}, base:{spend:0,impr:0,clk:0,cnv:0,days:0}};
+        let bucket = null;
+        if (inWk(r.d, spikeWk.start, spikeWk.end)) bucket = agg[r.platform].spike;
+        else if (inWk(r.d, baseStart, baseEnd))    bucket = agg[r.platform].base;
+        if (bucket){
+          bucket.spend += (r.spend_paise||0)/100;
+          bucket.impr  += r.impressions||0;
+          bucket.clk   += r.clicks||0;
+          bucket.cnv   += r.conversions||0;
+          bucket.days  += 1;
+        }
+      });
+      const platforms = Object.keys(agg);
+      const platformCards = platforms.map(p => {
+        const s = agg[p].spike, b = agg[p].base;
+        if (s.days === 0 && b.days === 0){
+          return `<div class="border border-slate-200 rounded p-3"><div class="text-xs font-semibold uppercase text-slate-500 mb-1">${p}</div><div class="text-xs text-slate-500">No data in window</div></div>`;
+        }
+        const bwk = {spend:b.spend/4, impr:b.impr/4, clk:b.clk/4, cnv:b.cnv/4};
+        const dataGap = s.days === 0 ? `<div class="text-xs text-red-600 font-semibold mt-2">⚠ No data for spike week — Redshift ad_platforms_data feed broken for ${p} from late Feb</div>` : '';
+        return `<div class="border border-slate-200 rounded p-3">
+          <div class="text-xs font-semibold uppercase text-slate-700 mb-2">${p}</div>
+          <table class="text-xs w-full"><tbody>
+            <tr><td class="text-slate-500">Spend</td><td class="text-right">₹${s.spend.toFixed(0)}</td><td class="text-right text-slate-400">vs ₹${bwk.spend.toFixed(0)}</td><td class="text-right">${bwk.spend>0?_spkFmtPct(s.spend/bwk.spend-1):'—'}</td></tr>
+            <tr><td class="text-slate-500">Impressions</td><td class="text-right">${s.impr.toLocaleString('en-IN')}</td><td class="text-right text-slate-400">vs ${bwk.impr.toFixed(0).toLocaleString('en-IN')}</td><td class="text-right">${bwk.impr>0?_spkFmtPct(s.impr/bwk.impr-1):'—'}</td></tr>
+            <tr><td class="text-slate-500">Clicks</td><td class="text-right">${s.clk.toLocaleString('en-IN')}</td><td class="text-right text-slate-400">vs ${bwk.clk.toFixed(0)}</td><td class="text-right">${bwk.clk>0?_spkFmtPct(s.clk/bwk.clk-1):'—'}</td></tr>
+            <tr><td class="text-slate-500">Conversions (platform)</td><td class="text-right">${s.cnv}</td><td class="text-right text-slate-400">vs ${bwk.cnv.toFixed(0)}</td><td class="text-right">${bwk.cnv>0?_spkFmtPct(s.cnv/bwk.cnv-1):'—'}</td></tr>
+          </tbody></table>
+          ${dataGap}
+        </div>`;
+      }).join('');
+      document.getElementById('spkAdSpendBox').innerHTML = `<div class="grid grid-cols-1 md:grid-cols-2 gap-3">${platformCards}</div>`;
+    }
+  }
+
+  /* ---- ACTIONABLE 5-LEVER ROADMAP ---- */
+  // Levers grounded in this dataset:
+  //   L1: FB scale (sustained higher budget — proven mechanism)
+  //   L2: Google Search restoration (return to peak)
+  //   L3: Other-channel total (Organic + WA + Practo + JustDial — modest)
+  //   L4: New channels (IG + YouTube + content) — currently 0
+  //   L5: Conversion improvement OR clinic expansion (uplift on top of all)
+  // Each lever has a calibrated "default target" and shows the gap from current.
+  const fbBase = metrics.fb ? metrics.fb[spkIdx+1] || metrics.fb[0] : 0;  // most-recent week as "current"
+  const gsBase = metrics.google_search ? metrics.google_search[spkIdx+1] || metrics.google_search[0] : 0;
+  const orgBase = metrics.organic ? metrics.organic[spkIdx+1] || metrics.organic[0] : 0;
+  const waBase  = metrics.whatsapp ? metrics.whatsapp[spkIdx+1] || metrics.whatsapp[0] : 0;
+  const practoBase = metrics.practo ? metrics.practo[spkIdx+1] || metrics.practo[0] : 0;
+  const jdBase = metrics.justdial ? metrics.justdial[spkIdx+1] || metrics.justdial[0] : 0;
+  const otherBase = orgBase + waBase + practoBase + jdBase;
+
+  // Calibrated defaults from data:
+  // - FB peak 371; sustained scale-up target ~500 (35% above peak)
+  // - GS peak 145; target 150 (slightly above peak)
+  // - "Other" current ~100; ceiling expansion to 130
+  // - New channels (IG+YT+content+ChatGPT/Perplexity): target 80 from current ~15
+  // - Conversion + clinic expansion uplift: +120 spread across all
+  const LEVERS = [
+    {id:'L1', label:'1. FB sustained scale',  current: fbBase, target: 500,
+     why:'Spike proved 371/wk achievable. Sustained scale-up to 500/wk = +35% above peak.',
+     action:'Increase FB weekly budget ~40% above baseline + run 4-6 creative variants in parallel'},
+    {id:'L2', label:'2. Google Search push',  current: gsBase, target: 150,
+     why:'Peak observed 145. Modest target 150 — proven + cheap.',
+     action:'Add 5-10 high-intent keyword campaigns + boost bids on top performers'},
+    {id:'L3', label:'3. Restore other channels', current: otherBase, target: 130,
+     why:'Organic + WA + Practo + JustDial. Currently ~100, ceiling 130 — restore to peak.',
+     action:'Improve organic SEO content cadence + activate WhatsApp click-to-chat ads'},
+    {id:'L4', label:'4. New channels', current: 15, target: 80,
+     why:'IG (13/wk) + YouTube (0) + ChatGPT/Perplexity (~0). New surfaces with adjacent audience.',
+     action:'Launch IG Reels campaigns + YouTube pre-roll + answer engine optimization (AEO)'},
+    {id:'L5', label:'5. Conversion + clinic expansion', current: 0, target: 140,
+     why:'On top of channel growth: lift FB CVR 19→23% adds ~70; new clinic / virtual capacity adds ~70.',
+     action:'Faster lead-response SLA + new Tier-2 clinic activation + reduce 240/wk no-shows by 25%'},
+  ];
+  // If state for adjusted targets exists, prefer that
+  if (!window.__SPK_LEVERS) window.__SPK_LEVERS = {};
+  LEVERS.forEach(l => { if (window.__SPK_LEVERS[l.id] != null) l.target = window.__SPK_LEVERS[l.id]; });
+
+  // Build lever inputs
+  const leverGrid = document.getElementById('spkLeverGrid');
+  if (leverGrid){
+    leverGrid.innerHTML = LEVERS.map(l => {
+      const delta = l.target - l.current;
+      const cls = delta > 0 ? 'text-emerald-700' : 'text-slate-500';
+      return `<div class="border border-slate-200 rounded-lg p-3 bg-white">
+        <div class="text-[10px] font-semibold text-slate-500 uppercase mb-1">${l.label}</div>
+        <div class="flex items-center gap-1 mb-2">
+          <span class="text-xs text-slate-500">current</span>
+          <span class="text-sm font-semibold text-slate-700">${l.current.toFixed(0)}</span>
+          <span class="text-slate-400 mx-1">→</span>
+          <span class="text-xs text-slate-500">target</span>
+          <input type="number" data-lever="${l.id}" value="${l.target.toFixed(0)}" min="0" max="2000" step="10"
+                 class="text-sm font-bold w-[60px] border border-slate-300 rounded px-1.5 py-0.5"/>
+          <span class="text-xs ${cls} font-semibold ml-1">${delta >= 0 ? '+' : ''}${delta.toFixed(0)}</span>
+        </div>
+        <div class="text-[10px] text-slate-500 mb-1.5">${l.why}</div>
+        <div class="text-[10px] text-slate-600 italic">→ ${l.action}</div>
+      </div>`;
+    }).join('');
+    // Wire change handlers
+    leverGrid.querySelectorAll('input[data-lever]').forEach(inp => {
+      inp.oninput = (e) => {
+        window.__SPK_LEVERS[e.target.dataset.lever] = parseFloat(e.target.value) || 0;
+        renderSpikeAnalysis();
+      };
+    });
+  }
+
+  // Compute totals
+  const projectedTarget = LEVERS.reduce((s,l) => s+l.target, 0);
+  const currentBase = LEVERS.slice(0,4).reduce((s,l)=>s+l.current, 0); // L1-L4 are channel-level
+  // Plus L5 (uplift on top)
+
+  // Stacked roadmap chart: shows scenario composition
+  if (typeof Chart !== 'undefined' && document.getElementById('spkRoadmapChart')){
+    if (window._spkRoadmapChart) window._spkRoadmapChart.destroy();
+    const labels = ['Today', 'After all levers'];
+    const datasets = LEVERS.map((l, i) => ({
+      label: l.label.replace(/^\d+\.\s*/, ''),
+      data: [l.current, l.target],
+      backgroundColor: ['#1877f2','#4285f4','#10b981','#a855f7','#f59e0b'][i],
+      borderWidth: 0,
+    }));
+    window._spkRoadmapChart = new Chart(document.getElementById('spkRoadmapChart'), {
+      type:'bar',
+      data:{labels, datasets},
+      options:{
+        indexAxis: 'y',
+        responsive:true, maintainAspectRatio:false,
+        plugins:{legend:{position:'bottom',labels:{font:{size:10}, boxWidth:10}},
+                 tooltip:{callbacks:{footer: items => `Total: ${items.reduce((s,it)=>s+it.parsed.x,0).toFixed(0)}`}}},
+        scales:{x:{stacked:true,
+                   ticks:{callback:v=>v},
+                   max: Math.max(target*1.1, projectedTarget*1.05)},
+                y:{stacked:true}},
+      },
+    });
+    // Add target reference annotation by drawing on the canvas after render — Chart.js v4 needs a plugin for that
+    // Skipping for simplicity — verdict text below states the target gap.
+  }
+
+  // Verdict
+  const verdictBox = document.getElementById('spkRoadmapVerdict');
+  if (verdictBox){
+    const gap = target - projectedTarget;
+    if (gap <= 0){
+      verdictBox.className = 'text-sm p-4 rounded font-semibold bg-emerald-50 border-l-4 border-emerald-500 text-emerald-900';
+      verdictBox.innerHTML =
+        `✓ <strong>Projected total: ${projectedTarget.toFixed(0)}</strong> — clears the ${target} target by ${Math.abs(gap).toFixed(0)}. ` +
+        `<br><span class="font-normal text-xs">Mix: FB ${LEVERS[0].target.toFixed(0)} (${(LEVERS[0].target/projectedTarget*100).toFixed(0)}%), GS ${LEVERS[1].target.toFixed(0)}, Other ${LEVERS[2].target.toFixed(0)}, New ${LEVERS[3].target.toFixed(0)}, Uplift ${LEVERS[4].target.toFixed(0)}.</span>`;
+    } else {
+      verdictBox.className = 'text-sm p-4 rounded font-semibold bg-amber-50 border-l-4 border-amber-500 text-amber-900';
+      verdictBox.innerHTML =
+        `⚠ <strong>Projected total: ${projectedTarget.toFixed(0)}</strong> — still ${gap.toFixed(0)} short of ${target}. ` +
+        `<br><span class="font-normal text-xs">Adjust the lever targets above to find a path that clears it. Most realistic candidates: push FB harder (lever 1) or add Lever-5 uplift (conversion + clinic).</span>`;
+    }
+  }
+
+  // Sync the in-page "target" labels everywhere
+  document.querySelectorAll('.spk-target-label').forEach(el => { el.textContent = target.toFixed(0) + '+'; });
+}
+
+/* ---- Print/PDF helper ---- */
+function printSpikeReport(){
+  // Make sure we're on the spike tab before printing
+  if (typeof setActiveTab === 'function' && STATE.tab !== 'spike') setActiveTab('spike');
+  // Give charts a moment to settle
+  setTimeout(() => window.print(), 600);
+}
+
+// Final init — Redshift-only, no synthetic fallback.
+(async function(){
+  try {
+    const real = await window.__loadRealData('data.json');
+    window.__applyRealData(real);
     const sub = document.getElementById('header-sub');
-    if (sub) sub.innerHTML += ' · <span class="text-amber-600">○ Sample data</span>';
+    if (sub){
+      sub.innerHTML += ` · <span class="text-emerald-600 font-semibold">● Live Redshift</span> <span class="text-slate-400">(${real.lookback_days}d)</span>`;
+    }
+  } catch(e){
+    console.error('[real-data] load failed:', e);
+    document.body.insertAdjacentHTML('afterbegin',
+      `<div style="background:#fee2e2;border-bottom:2px solid #dc2626;padding:12px 16px;font-size:14px;color:#991b1b">
+        <strong>Failed to load data.json:</strong> ${e.message}<br>
+        Run <code style="background:#fff;padding:2px 6px;border-radius:3px">AWS_PROFILE=redshift-data uv run --with boto3 python build_data.py</code> to regenerate.
+      </div>`);
+    return;
   }
   initChat();
   initMap();
