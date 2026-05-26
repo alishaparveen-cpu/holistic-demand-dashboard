@@ -83,6 +83,7 @@ html,body{background:#f8fafc;color:var(--ink);font-family:ui-sans-serif,system-u
   <div class="max-w-7xl mx-auto px-6 py-3 flex items-center gap-4 flex-wrap">
     <a href="index.html"     class="text-xs text-slate-400 hover:text-slate-600">← Dashboard</a>
     <span class="text-slate-200 text-sm">|</span>
+    <a href="overview.html"  class="text-xs text-slate-400 hover:text-slate-600">Overview</a>
     <a href="category.html"  class="text-xs text-slate-400 hover:text-slate-600">Category</a>
     <a href="city.html"      class="text-xs text-slate-400 hover:text-slate-600">City</a>
     <a href="efficiency.html"  class="text-xs text-slate-400 hover:text-slate-600">Efficiency</a>
@@ -133,6 +134,11 @@ const SHEET_ID   = '1bZWGVKu6b4EFPDt3aKHn21gYjdhN1aT1-LT60BFe8g0';
 const SHEET_URL  = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Booking%20and%20Leads%20trend%20summary`;
 const PRACTO_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=RD_Practo_Leads`;
 
+// L0 sheet for ad-platform signals (impressions, clicks, CTR)
+const L0_ID  = '1jyyFYpd7gfYyAQ3U7E56c7OA3OuQQAVgJrAGyQr90XM';
+const L0_URL = `https://docs.google.com/spreadsheets/d/${L0_ID}/gviz/tq?tqx=out:csv&sheet=L0`;
+const L0_WEEK_COLS = [3, 4, 5, 6, 7, 8, 9]; // 0-indexed, most-recent first
+
 // City tier definitions — Tier 1 = high-volume metros, Tier 2 = smaller cities
 const CITY_TIERS = {
   T1: ['Bangalore','Mumbai','Pune','Hyderabad','Chennai'],
@@ -176,8 +182,9 @@ const GMB_C   = 27;
 
 // ─── State ──────────────────────────────────────────────────────────────────
 let JDATA       = null; // data.json
-let SDATA       = {};   // parsed sheet: city → clinic → {allBk[7], gmbLeads[7], avail[7]}
+let SDATA       = {};   // parsed sheet: city → clinic → {allBk[7], gmbLeads[7], avail[7], unavailCount[7], doctorCount[7]}
 let PRACTO_DATA = {};   // from RD_Practo_Leads: weekKey → city → count
+let L0_DIAG     = null; // parsed L0 metrics for ad-platform signals
 let activeWkIdx = 0;
 let activeCityF = 'ALL';
 let activeTier  = 'ALL'; // 'ALL' | 'T1' | 'T2'
@@ -205,7 +212,92 @@ function pAvail(s) {
   if (!s||s==='-') return 0;
   const m = s.match(/(\d+)\s*\|/); return m ? parseInt(m[1]) : 0;
 }
+// Returns true if doctor is completely unavailable (wd=0 AND we=0 in "wd|we" string)
+function isUnavail(s) {
+  if (!s || s.trim() === '' || s === '-') return false;
+  const parts = s.trim().split('|');
+  const wd = parseInt(parts[0]) || 0;
+  const we = parts.length > 1 ? (parseInt(parts[1]) || 0) : 0;
+  return wd === 0 && we === 0;
+}
+// Returns true if the cell has any availability data (not blank/dash)
+function hasAvailData(s) {
+  return !(!s || s.trim() === '' || s === '-');
+}
 function aggArr(arr) { return arr.reduce((a,b)=>a+b,0); }
+
+// ─── Parse L0 sheet for ad-platform diagnostic signals ────────────────────────
+function parseL0Diag(text) {
+  const rows = parseCSV(text);
+  function numVal(s) {
+    if (!s) return null;
+    const c = s.toString().trim().replace('%','').replace(/,/g,'').replace('₹','').replace(/\s/g,'');
+    const v = parseFloat(c);
+    return isNaN(v) ? null : v;
+  }
+  function rowArr(idx) {
+    if (!rows[idx]) return Array(7).fill(null);
+    return L0_WEEK_COLS.map(c => numVal(rows[idx][c]));
+  }
+  function findSection(lbl) {
+    return rows.findIndex(r => (r[0]||'').trim() === lbl);
+  }
+  const L0_SECS = ['<>Organic','GMB+Google','GMB','Google Search','Practo','FB','Justdial','Others'];
+  function secRow(secLbl, metricLbl) {
+    const start = findSection(secLbl);
+    if (start < 0) return -1;
+    let end = rows.length;
+    for (const sh of L0_SECS) {
+      if (sh === secLbl) continue;
+      const si = findSection(sh);
+      if (si > start && si < end) end = si;
+    }
+    const lc = metricLbl.toLowerCase();
+    for (let i = start + 1; i < end; i++) {
+      if ((rows[i][0]||'').trim().toLowerCase() === lc) return i;
+    }
+    return -1;
+  }
+  function secArr(sec, ...labels) {
+    for (const lbl of labels) {
+      const r = secRow(sec, lbl);
+      if (r >= 0) return rowArr(r);
+    }
+    return Array(7).fill(null);
+  }
+
+  return {
+    endLabels: L0_WEEK_COLS.map(c => (rows[1]?.[c]||'').trim()),
+    overall: {
+      spends:   rowArr(3),
+      leads:    rowArr(4),
+      cpl:      rowArr(7),
+      roas:     rowArr(13),
+    },
+    google: {
+      spend_contr: secArr('Google Search', 'spend contr.'),
+      impressions: secArr('Google Search', "impressions ('000)", 'impressions'),
+      clicks:      secArr('Google Search', 'clicks'),
+      ctr:         secArr('Google Search', 'ctr'),
+      cpc:         secArr('Google Search', 'cpc'),
+      leads:       secArr('Google Search', 'leads #'),
+      cpl:         secArr('Google Search', 'cpl (verfified)', 'cpl (verified)', 'cpl'),
+    },
+    fb: {
+      spend_contr: secArr('FB', 'spend contr.'),
+      impressions: secArr('FB', "impressions ('000)", 'impressions'),
+      clicks:      secArr('FB', 'clicks'),
+      ctr:         secArr('FB', 'ctr'),
+      cpc:         secArr('FB', 'cpc'),
+      leads:       secArr('FB', 'leads #'),
+      cpl:         secArr('FB', 'cpl (verfified)', 'cpl (verified)', 'cpl'),
+    },
+    gmb: {
+      leads:  secArr('GMB', 'leads #'),
+      bookings: secArr('GMB', 'bookings'),
+    },
+  };
+}
 
 // ─── Parse RD_Practo_Leads CSV → PRACTO_DATA ────────────────────────────────
 // Date format in that tab: "DD-MM-YYYY"  (e.g. "02-03-2026")
@@ -256,21 +348,28 @@ function parseSheet(rows) {
     if (!c2) continue;
     if (!raw[curCity]) raw[curCity] = {};
     if (!raw[curCity][c2]) raw[curCity][c2] = {};
-    const allBk    = Array.from({length:7}, (_,i) => pn(r[ALLBK_C+i]));
-    const gmbLeads = Array.from({length:7}, (_,i) => pn(r[GMB_C+i]));
-    const avail    = Array.from({length:7}, (_,i) => pAvail(r[AVAIL_C+i]));
-    raw[curCity][c2][c3] = { allBk, gmbLeads, avail };
+    const allBk       = Array.from({length:7}, (_,i) => pn(r[ALLBK_C+i]));
+    const gmbLeads    = Array.from({length:7}, (_,i) => pn(r[GMB_C+i]));
+    const avail       = Array.from({length:7}, (_,i) => pAvail(r[AVAIL_C+i]));
+    const unavailCount = Array.from({length:7}, (_,i) => isUnavail(r[AVAIL_C+i]) ? 1 : 0);
+    const doctorCount  = Array.from({length:7}, (_,i) => hasAvailData(r[AVAIL_C+i]) ? 1 : 0);
+    raw[curCity][c2][c3] = { allBk, gmbLeads, avail, unavailCount, doctorCount };
   }
 
   // Aggregate to clinic and city level
   const agg = (objs) => {
-    const r = { allBk:Array(7).fill(0), gmbLeads:Array(7).fill(0), avail:Array(7).fill(0) };
+    const r = {
+      allBk:Array(7).fill(0), gmbLeads:Array(7).fill(0), avail:Array(7).fill(0),
+      unavailCount:Array(7).fill(0), doctorCount:Array(7).fill(0),
+    };
     for (const o of objs) {
       if (!o?.allBk) continue;
       for (let i=0;i<7;i++){
-        r.allBk[i]    += o.allBk[i]    || 0;
-        r.gmbLeads[i] += o.gmbLeads[i] || 0;
-        r.avail[i]    += o.avail[i]    || 0;
+        r.allBk[i]        += o.allBk[i]        || 0;
+        r.gmbLeads[i]     += o.gmbLeads[i]     || 0;
+        r.avail[i]        += o.avail[i]         || 0;
+        r.unavailCount[i] += o.unavailCount?.[i]|| 0;
+        r.doctorCount[i]  += o.doctorCount?.[i] || 0;
       }
     }
     return r;
@@ -316,20 +415,24 @@ function getSheetCity(city, wkIdx) {
   const s  = SDATA[city]?._total || {};
   const wk = WEEKS[wkIdx]?.json;
   return {
-    gmbLeads : s.gmbLeads?.[wkIdx]          || 0,
-    practo   : PRACTO_DATA[wk]?.[city]       || 0,
-    allBk    : s.allBk?.[wkIdx]             || 0,
-    avail    : s.avail?.[wkIdx]             || 0,
+    gmbLeads    : s.gmbLeads?.[wkIdx]          || 0,
+    practo      : PRACTO_DATA[wk]?.[city]       || 0,
+    allBk       : s.allBk?.[wkIdx]             || 0,
+    avail       : s.avail?.[wkIdx]             || 0,
+    unavailCount: s.unavailCount?.[wkIdx]       || 0,
+    doctorCount : s.doctorCount?.[wkIdx]        || 0,
   };
 }
 function getSheetClinic(city, clinic, wkIdx) {
   const s  = SDATA[city]?.[clinic]?._total || {};
   const wk = WEEKS[wkIdx]?.json;
   return {
-    gmbLeads : s.gmbLeads?.[wkIdx]                  || 0,
-    practo   : PRACTO_DATA[wk]?.[`${city}/${clinic}`] || 0,
-    allBk    : s.allBk?.[wkIdx]                     || 0,
-    avail    : s.avail?.[wkIdx]                     || 0,
+    gmbLeads    : s.gmbLeads?.[wkIdx]                  || 0,
+    practo      : PRACTO_DATA[wk]?.[`${city}/${clinic}`] || 0,
+    allBk       : s.allBk?.[wkIdx]                     || 0,
+    avail       : s.avail?.[wkIdx]                     || 0,
+    unavailCount: s.unavailCount?.[wkIdx]               || 0,
+    doctorCount : s.doctorCount?.[wkIdx]                || 0,
   };
 }
 
@@ -341,16 +444,18 @@ function buildRow(sheetFn, jsonFn, wkIdx) {
   const totalLeads = sc.gmbLeads + sc.practo;
   const totalLeadsP = sp.gmbLeads + sp.practo;
   return {
-    avail      : sc.avail,
-    gmbLeads   : sc.gmbLeads,   gmbLeadsP : sp.gmbLeads,
-    practo     : sc.practo,     practoP   : sp.practo,
-    totalLeads : totalLeads,    totalLeadsP,
-    allBk      : sc.allBk,      allBkP    : sp.allBk,
-    callsDone  : jc.callsDone,  callsDoneP: jp.callsDone,
-    gross      : jc.gross,      grossP    : jp.gross,
-    b2dPct     : jc.b2dPct,     b2dPctP   : jp.b2dPct,
-    noShow     : jc.noShow,     noShowP   : jp.noShow,
-    availP     : sp.avail,
+    avail        : sc.avail,
+    gmbLeads     : sc.gmbLeads,    gmbLeadsP  : sp.gmbLeads,
+    practo       : sc.practo,      practoP    : sp.practo,
+    totalLeads   : totalLeads,     totalLeadsP,
+    allBk        : sc.allBk,       allBkP     : sp.allBk,
+    callsDone    : jc.callsDone,   callsDoneP : jp.callsDone,
+    gross        : jc.gross,       grossP     : jp.gross,
+    b2dPct       : jc.b2dPct,      b2dPctP    : jp.b2dPct,
+    noShow       : jc.noShow,      noShowP    : jp.noShow,
+    availP       : sp.avail,
+    unavailCount : sc.unavailCount, unavailCountP: sp.unavailCount,
+    doctorCount  : sc.doctorCount,  doctorCountP : sp.doctorCount,
   };
 }
 
@@ -377,12 +482,18 @@ function diagnose(row) {
 
   const issues = [];
 
+  // 0. Availability: detect doctor-level issues
+  const allDocUnavail = row.doctorCount > 0 && row.unavailCount >= row.doctorCount;
+  const someDocUnavail = row.doctorCount > 0 && row.unavailCount > 0 && row.unavailCount < row.doctorCount;
+  if (allDocUnavail)   issues.push('🔴 Shut');
+  else if (someDocUnavail) issues.push('🟡 Partial Avail');
+
   // 1. Lead gen problem: GMB leads fell significantly
   if (leadsWow !== null && leadsWow < -10)
     issues.push('Leads ↓');
 
-  // 2. Availability constraint: slots fell and calls fell together
-  if (availWow !== null && availWow < -20 && callsWow !== null && callsWow < -10)
+  // 2. Availability constraint (slot count drop): slots fell and calls fell together
+  if (!allDocUnavail && availWow !== null && availWow < -20 && callsWow !== null && callsWow < -10)
     issues.push('Avail ↓');
 
   // 3. Calls fell but leads are fine → booking conversion or B2D problem
@@ -400,9 +511,11 @@ function diagnose(row) {
     return { label:'✓ OK', cls:'diag-ok' };
   }
 
-  const cls = issues.some(i=>i.startsWith('Leads'))  ? 'diag-leads'
-            : issues.some(i=>i.startsWith('Avail'))   ? 'diag-avail'
-            : issues.some(i=>i.startsWith('B2D'))     ? 'diag-b2d'
+  const cls = issues.some(i=>i.includes('Shut'))    ? 'diag-avail'
+            : issues.some(i=>i.includes('Partial'))  ? 'diag-avail'
+            : issues.some(i=>i.startsWith('Leads'))  ? 'diag-leads'
+            : issues.some(i=>i.startsWith('Avail'))  ? 'diag-avail'
+            : issues.some(i=>i.startsWith('B2D'))    ? 'diag-b2d'
             : 'diag-drop';
   return { label: issues.join(' · '), cls };
 }
@@ -533,6 +646,161 @@ function buildFunnelStrip() {
       ${fCard('No Show %',f.ns_pct||0,  fp.ns_pct||0,  true, null, 'Appointments where patient did not show up')}
     </div>
 
+  </div>`;
+}
+
+// ─── Ad Platform Health ─────────────────────────────────────────────────────
+// Answers: "was the drop caused by fewer ad impressions/clicks, or conversion?"
+function buildAdPlatformHealth() {
+  if (!L0_DIAG) return '';
+
+  const wkIdx = activeWkIdx;
+  const prevIdx = wkIdx + 1;
+
+  // Helper: WoW % change with color
+  function wPct(cur, prev, inv=false) {
+    if (cur == null || prev == null || prev === 0) return '<span style="color:#94a3b8;">—</span>';
+    const p = (cur - prev) / Math.abs(prev) * 100;
+    const isGood = inv ? p < 0 : p > 0;
+    const clr = Math.abs(p) < 2 ? '#94a3b8' : isGood ? '#059669' : '#dc2626';
+    const sign = p >= 0 ? '+' : '';
+    return `<span style="color:${clr};font-size:10px;">${sign}${p.toFixed(1)}%</span>`;
+  }
+  function wPp(cur, prev) {
+    if (cur == null || prev == null) return '<span style="color:#94a3b8;">—</span>';
+    const p = cur - prev;
+    const clr = Math.abs(p) < 0.3 ? '#94a3b8' : p > 0 ? '#059669' : '#dc2626';
+    const sign = p >= 0 ? '+' : '';
+    return `<span style="color:${clr};font-size:10px;">${sign}${p.toFixed(2)}pp</span>`;
+  }
+
+  // Format: null-safe
+  function fN(v, suffix='') { return v != null ? Math.round(v).toLocaleString() + suffix : '—'; }
+  function fF(v, dec=1, suffix='') { return v != null ? v.toFixed(dec) + suffix : '—'; }
+  function fINR(v) {
+    if (v == null) return '—';
+    if (v >= 100000) return '₹'+(v/100000).toFixed(1)+'L';
+    if (v >= 1000) return '₹'+(v/1000).toFixed(0)+'K';
+    return '₹'+Math.round(v);
+  }
+
+  const g  = L0_DIAG.google;
+  const fb = L0_DIAG.fb;
+  const ov = L0_DIAG.overall;
+
+  // Build channel rows
+  function adRow(icon, name, color, data) {
+    const impr = data.impressions?.[wkIdx];
+    const imprP= data.impressions?.[prevIdx];
+    const clks = data.clicks?.[wkIdx];
+    const clksP= data.clicks?.[prevIdx];
+    const ctr  = data.ctr?.[wkIdx];
+    const ctrP = data.ctr?.[prevIdx];
+    const cpc  = data.cpc?.[wkIdx];
+    const cpcP = data.cpc?.[prevIdx];
+    const leads= data.leads?.[wkIdx];
+    const leadsP=data.leads?.[prevIdx];
+    const cpl  = data.cpl?.[wkIdx];
+    const cplP = data.cpl?.[prevIdx];
+
+    // Signal: is there a problem?
+    const imprDrop = (impr != null && imprP != null && imprP > 0) ? (impr-imprP)/imprP*100 : null;
+    const clkDrop  = (clks != null && clksP != null && clksP > 0) ? (clks-clksP)/clksP*100 : null;
+    const ctrDrop  = (ctr  != null && ctrP  != null) ? ctr - ctrP : null;
+
+    let signal = '';
+    if (imprDrop !== null && imprDrop < -15)
+      signal = `<span class="badge red" style="font-size:9px;">📉 Reach ↓</span>`;
+    else if (clkDrop !== null && clkDrop < -10 && (imprDrop === null || imprDrop > -5))
+      signal = `<span class="badge amber" style="font-size:9px;">📉 CTR drop</span>`;
+    else if (imprDrop !== null && imprDrop > 10)
+      signal = `<span class="badge green" style="font-size:9px;">📈 Reach ↑</span>`;
+
+    const allNull = impr == null && clks == null && ctr == null;
+    if (allNull) return '';
+
+    return `<tr>
+      <td style="font-weight:600;font-size:12px;white-space:nowrap;">
+        <span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${color};margin-right:5px;vertical-align:middle;"></span>
+        ${icon} ${name}
+      </td>
+      <td class="metric-cell">
+        <span class="metric-val">${impr != null ? fF(impr,0,"K") : '—'}</span>
+        <span class="metric-wow">${wPct(impr,imprP)}</span>
+      </td>
+      <td class="metric-cell">
+        <span class="metric-val">${fN(clks)}</span>
+        <span class="metric-wow">${wPct(clks,clksP)}</span>
+      </td>
+      <td class="metric-cell">
+        <span class="metric-val">${fF(ctr,2,'%')}</span>
+        <span class="metric-wow">${wPp(ctr,ctrP)}</span>
+      </td>
+      <td class="metric-cell">
+        <span class="metric-val">${fINR(cpc != null ? cpc : null)}</span>
+        <span class="metric-wow">${wPct(cpc,cpcP,true)}</span>
+      </td>
+      <td class="metric-cell">
+        <span class="metric-val">${fN(leads)}</span>
+        <span class="metric-wow">${wPct(leads,leadsP)}</span>
+      </td>
+      <td class="metric-cell">
+        <span class="metric-val">${fINR(cpl)}</span>
+        <span class="metric-wow">${wPct(cpl,cplP,true)}</span>
+      </td>
+      <td>${signal}</td>
+    </tr>`;
+  }
+
+  const googleRow = adRow('🔍', 'Google Search', '#4285F4', g);
+  const fbRow     = adRow('📱', 'Meta / FB',     '#1877F2', fb);
+  if (!googleRow && !fbRow) return '';
+
+  // Overall spend + RoAS
+  const spend  = ov.spends?.[wkIdx];
+  const spendP = ov.spends?.[prevIdx];
+  const roas   = ov.roas?.[wkIdx];
+  const roasP  = ov.roas?.[prevIdx];
+
+  const spendChip = spend != null
+    ? `<span style="font-size:11px;color:#64748b;">Total Spend: <strong>${fINR(spend)}</strong> ${wPct(spend,spendP,true)}</span>`
+    : '';
+  const roasChip  = roas != null
+    ? `<span style="font-size:11px;color:#64748b;margin-left:14px;">RoAS: <strong>${Math.round(roas)}%</strong> ${wPct(roas,roasP)}</span>`
+    : '';
+
+  return `<div class="card" style="padding:0;overflow:hidden;margin-bottom:0;">
+    <div style="padding:10px 16px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+      <span style="font-weight:700;font-size:13px;">📡 Ad Platform Health</span>
+      <span style="font-size:10px;color:#94a3b8;">${L0_DIAG.endLabels?.[wkIdx] || ''} vs prev wk · L0 Sheet</span>
+      <span style="margin-left:auto;display:flex;align-items:center;gap:10px;">${spendChip}${roasChip}</span>
+    </div>
+    <div style="overflow-x:auto;">
+    <table class="dtbl" style="font-size:12px;">
+      <thead>
+        <tr>
+          <th>Channel</th>
+          <th class="right">Impressions<br><span style="font-weight:400;text-transform:none">('000)</span></th>
+          <th class="right">Clicks</th>
+          <th class="right">CTR</th>
+          <th class="right">CPC</th>
+          <th class="right">Leads #</th>
+          <th class="right">CPL</th>
+          <th>Signal</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${googleRow}
+        ${fbRow}
+      </tbody>
+    </table>
+    </div>
+    <div style="padding:6px 14px;font-size:10px;color:#94a3b8;border-top:1px solid var(--line);">
+      Source: L0 Demand Tracker Sheet (network-wide) ·
+      <strong>Reach ↓</strong> = impressions dropped >15% (budget cut / ad rank) ·
+      <strong>CTR drop</strong> = more reach but fewer clicks (creative fatigue / competition) ·
+      If ad signals are stable but calls dropped → booking/B2D issue, not ad platform
+    </div>
   </div>`;
 }
 
@@ -721,6 +989,13 @@ function buildTable() {
     const expIcon = isExp ? '▾' : '▸';
     const hasClinicData = Object.keys(SDATA[city] || {}).filter(k=>k!=='_total').length > 0;
 
+    // Availability signal
+    const availShut    = row.doctorCount > 0 && row.unavailCount >= row.doctorCount;
+    const availPartial = row.doctorCount > 0 && row.unavailCount > 0 && row.unavailCount < row.doctorCount;
+    const availSignal  = availShut    ? `<span style="font-size:9px;color:#7c3aed;font-weight:700;display:block;">🔴 ${row.unavailCount}/${row.doctorCount} drs off</span>`
+                       : availPartial ? `<span style="font-size:9px;color:#d97706;font-weight:700;display:block;">🟡 ${row.unavailCount}/${row.doctorCount} drs off</span>`
+                       : '';
+
     tBody += `<tr class="city-row" onclick="toggleCity('${city}')">
       <td style="font-weight:700;font-size:13px;">
         <span class="expand-btn">${hasClinicData ? expIcon : '·'}</span>${city}${tierBadge(city)}
@@ -728,6 +1003,7 @@ function buildTable() {
       <td class="metric-cell">
         <span class="metric-val">${row.avail}</span>
         <span class="metric-wow">${wowBadge(row.avail, row.availP)}</span>
+        ${availSignal}
       </td>
       ${metricCell(row.gmbLeads,  row.gmbLeadsP)}
       ${metricCell(row.allBk,     row.allBkP)}
@@ -751,6 +1027,11 @@ function buildTable() {
       clinicRows.sort((a,b) => sortVal(a.row) - sortVal(b.row));
 
       for (const { clinic, row: cr, diag: cd } of clinicRows) {
+        const crShut    = cr.doctorCount > 0 && cr.unavailCount >= cr.doctorCount;
+        const crPartial = cr.doctorCount > 0 && cr.unavailCount > 0 && cr.unavailCount < cr.doctorCount;
+        const crSignal  = crShut    ? `<span style="font-size:9px;color:#7c3aed;font-weight:700;display:block;">🔴 Shut (${cr.unavailCount}/${cr.doctorCount})</span>`
+                        : crPartial ? `<span style="font-size:9px;color:#d97706;font-weight:700;display:block;">🟡 Partial (${cr.unavailCount}/${cr.doctorCount})</span>`
+                        : '';
         tBody += `<tr class="clinic-row">
           <td class="indent" style="font-size:12px;color:#334155;">
             <span style="color:#cbd5e1;margin-right:4px;">└</span>${clinic}
@@ -758,6 +1039,7 @@ function buildTable() {
           <td class="metric-cell">
             <span class="metric-val" style="font-size:12px;">${cr.avail}</span>
             <span class="metric-wow">${wowBadge(cr.avail, cr.availP)}</span>
+            ${crSignal}
           </td>
           ${metricCell(cr.gmbLeads,  cr.gmbLeadsP)}
           ${metricCell(cr.allBk,     cr.allBkP)}
@@ -836,6 +1118,7 @@ function render() {
   const { alertHtml, tableHtml } = buildTable();
   document.getElementById('mainContent').innerHTML = `
     ${buildFunnelStrip()}
+    ${buildAdPlatformHealth()}
     ${buildChannelBreakdown()}
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
       <div class="lg:col-span-1">
@@ -868,11 +1151,12 @@ function render() {
 // ─── Init ─────────────────────────────────────────────────────────────────────
 async function init() {
   try {
-    // Fetch all three sources in parallel
-    const [jsonRes, csvRes, practoRes] = await Promise.all([
+    // Fetch all four sources in parallel
+    const [jsonRes, csvRes, practoRes, l0Res] = await Promise.all([
       fetch('data.json'),
       fetch(SHEET_URL),
       fetch(PRACTO_URL),
+      fetch(L0_URL),
     ]);
 
     if (!jsonRes.ok) throw new Error('data.json not found');
@@ -891,6 +1175,13 @@ async function init() {
       console.log('Practo weeks loaded:', Object.keys(PRACTO_DATA).sort().slice(-4));
     } else {
       console.warn('RD_Practo_Leads fetch failed — Practo leads will show 0');
+    }
+
+    if (l0Res.ok) {
+      L0_DIAG = parseL0Diag(await l0Res.text());
+      console.log('L0 sheet loaded for ad-platform signals');
+    } else {
+      console.warn('L0 sheet fetch failed — ad platform section will be hidden');
     }
 
     // Populate week selector
