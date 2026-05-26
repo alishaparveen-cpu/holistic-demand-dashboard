@@ -1,0 +1,721 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>City Analysis · Allo Health</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+:root{--ink:#0f172a;--muted:#64748b;--line:#e2e8f0;
+  --red:#ef4444;--amber:#f59e0b;--green:#10b981;
+  --redBg:#fef2f2;--amberBg:#fffbeb;--greenBg:#ecfdf5;}
+html,body{background:#f8fafc;color:var(--ink);font-family:ui-sans-serif,system-ui,sans-serif;font-size:13px;}
+.card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:16px;box-shadow:0 1px 3px rgba(15,23,42,.05);}
+.toggle-btn{padding:4px 11px;font-size:12px;border:1px solid var(--line);border-radius:6px;cursor:pointer;background:#fff;color:var(--ink);}
+.toggle-btn.active{background:#0f172a;color:#fff;border-color:#0f172a;}
+/* City card */
+.city-card{background:#fff;border:1.5px solid var(--line);border-radius:12px;padding:14px 16px;
+  cursor:pointer;transition:all .15s;position:relative;}
+.city-card:hover{box-shadow:0 4px 12px rgba(15,23,42,.08);}
+.city-card.status-green{border-color:#10b981;background:#f0fdf4;}
+.city-card.status-amber{border-color:#f59e0b;background:#fffbeb;}
+.city-card.status-red  {border-color:#ef4444;background:#fef2f2;}
+.city-card.status-gray {border-color:#cbd5e1;background:#f8fafc;}
+/* Metric mini */
+.mini-metric{display:flex;flex-direction:column;gap:1px;}
+.mini-val{font-size:15px;font-weight:700;line-height:1.2;}
+.mini-wow{font-size:10px;font-weight:600;}
+.wow-red  {color:#dc2626;} .wow-amber{color:#d97706;}
+.wow-green{color:#059669;} .wow-gray {color:#94a3b8;}
+/* Clinic table */
+.ctbl{width:100%;border-collapse:separate;border-spacing:0;font-size:12px;}
+.ctbl th{font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);
+  text-align:right;padding:6px 10px;background:#f8fafc;border-bottom:1px solid var(--line);}
+.ctbl th:first-child{text-align:left;}
+.ctbl td{padding:6px 10px;border-bottom:1px solid #f1f5f9;text-align:right;}
+.ctbl td:first-child{text-align:left;}
+.ctbl tr:last-child td{border-bottom:none;}
+.ctbl tr:hover td{background:#fafafa;}
+/* Trend sparkline canvas */
+.spark{height:32px;width:80px;}
+/* Heat bar */
+.hbar{display:inline-block;height:6px;border-radius:3px;margin-left:4px;}
+/* Diag pill */
+.dpill{display:inline-flex;align-items:center;gap:3px;padding:2px 7px;border-radius:999px;
+  font-size:10px;font-weight:700;white-space:nowrap;}
+.dp-ok    {background:#ecfdf5;color:#065f46;}
+.dp-leads {background:#fef2f2;color:#991b1b;}
+.dp-b2d   {background:#eff6ff;color:#1e40af;}
+.dp-avail {background:#f5f3ff;color:#5b21b6;}
+.dp-drop  {background:#fffbeb;color:#92400e;}
+.dp-na    {background:#f1f5f9;color:#475569;}
+/* Section header */
+.tier-hdr{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;
+  color:#64748b;padding:4px 0 6px;border-bottom:1px solid var(--line);margin-bottom:12px;}
+</style>
+</head>
+<body class="min-h-screen">
+
+<!-- Header -->
+<div class="border-b bg-white sticky top-0 z-20" style="border-color:var(--line);">
+  <div class="max-w-7xl mx-auto px-6 py-3 flex items-center gap-4 flex-wrap">
+    <a href="index.html"       class="text-xs text-slate-400 hover:text-slate-600">← Dashboard</a>
+    <a href="diagnostic.html"  class="text-xs text-slate-400 hover:text-slate-600">Diagnostic</a>
+    <a href="category.html"    class="text-xs text-slate-400 hover:text-slate-600">Category</a>
+    <a href="efficiency.html"  class="text-xs text-slate-400 hover:text-slate-600">Efficiency</a>
+    <a href="comparison.html" class="text-xs text-slate-400 hover:text-slate-600">Comparison →</a>
+    <div>
+      <div class="font-bold text-base">City Analysis</div>
+      <div class="text-xs text-slate-400">Which cities are growing or declining? Drill into clinics &amp; channels.</div>
+    </div>
+    <div class="ml-auto flex items-center gap-3 flex-wrap">
+      <!-- Tier -->
+      <div class="flex gap-1 border rounded-lg p-0.5" style="border-color:var(--line);">
+        <button class="toggle-btn active" id="tierAll" onclick="setTier('ALL')">All</button>
+        <button class="toggle-btn"        id="tierT1"  onclick="setTier('T1')">Tier 1</button>
+        <button class="toggle-btn"        id="tierT2"  onclick="setTier('T2')">Tier 2</button>
+      </div>
+      <!-- Week -->
+      <div>
+        <label class="text-xs text-slate-400 mr-1">Week:</label>
+        <select id="weekSel" onchange="setWeek(this.value)"
+          style="font-size:12px;border:1.5px solid var(--line);border-radius:6px;padding:3px 8px;background:#fff;">
+        </select>
+      </div>
+      <!-- Metric -->
+      <div class="flex gap-1 border rounded-lg p-0.5" style="border-color:var(--line);">
+        <button class="toggle-btn active" id="mCalls"   onclick="setMetric('calls')">Calls Done</button>
+        <button class="toggle-btn"        id="mLeads"   onclick="setMetric('leads')">Leads</button>
+        <button class="toggle-btn"        id="mB2d"     onclick="setMetric('b2d')">B2D%</button>
+        <button class="toggle-btn"        id="mBookings"onclick="setMetric('bookings')">Bookings</button>
+      </div>
+      <!-- Sort -->
+      <div class="flex gap-1 border rounded-lg p-0.5" style="border-color:var(--line);">
+        <button class="toggle-btn active" id="sortWow"   onclick="setSort('wow')">WoW drop</button>
+        <button class="toggle-btn"        id="sortVol"   onclick="setSort('vol')">Volume</button>
+        <button class="toggle-btn"        id="sortAlpha" onclick="setSort('alpha')">A–Z</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="max-w-7xl mx-auto px-6 py-5 space-y-5" id="mainContent">
+  <div style="min-height:200px;display:flex;align-items:center;justify-content:center;color:#94a3b8;">
+    Loading city data…
+  </div>
+</div>
+
+<script>
+// ─── Config ────────────────────────────────────────────────────────────────
+const SHEET_ID   = '1bZWGVKu6b4EFPDt3aKHn21gYjdhN1aT1-LT60BFe8g0';
+const SHEET_URL  = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Booking%20and%20Leads%20trend%20summary`;
+const PRACTO_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=RD_Practo_Leads`;
+const AVAIL_C = 4, ALLBK_C = 20, GMB_C = 27;
+// Sheet week index 0 = most recent; matches city.html wkIdx 0 = most recent
+const SHEET_WEEK_KEYS = ['2026-05-18','2026-05-11','2026-05-04','2026-04-27','2026-04-20','2026-04-13','2026-04-06'];
+
+const CITY_TIERS = {
+  T1: ['Bangalore','Mumbai','Pune','Hyderabad','Chennai'],
+  T2: ['Navi Mumbai','Coimbatore','Nagpur','Ranchi','Jaipur','Ahmedabad',
+       'Surat','Nashik','Aurangabad','Hubli','Mysuru','Mangaluru',
+       'Bhopal','Visakhapatnam','Thane','Gandhinagar','Vijayawada'],
+};
+function cityTier(c) {
+  return CITY_TIERS.T1.includes(c)?'T1':CITY_TIERS.T2.includes(c)?'T2':null;
+}
+
+// ─── State ──────────────────────────────────────────────────────────────────
+let JDATA       = null;
+let SDATA       = {};   // parsed demand-tracker sheet: city → {_total:{gmbLeads[7],allBk[7]}}
+let PRACTO_DATA = {};   // from RD_Practo_Leads: weekKey → city → count
+let activeTier   = 'ALL';
+let activeWkIdx  = 0;
+let activeMetric = 'calls'; // calls | leads | b2d | bookings
+let activeSort   = 'wow';   // wow | vol | alpha
+let expandedCity = null;
+let sparkCharts  = {};
+
+// ─── Helpers ────────────────────────────────────────────────────────────────
+function fmt(n) {
+  if (n == null || isNaN(n)) return '—';
+  return n >= 1000 ? (n/1000).toFixed(1)+'k' : String(n);
+}
+function pct(n) { return n == null ? '—' : n.toFixed(1)+'%'; }
+function wow(c, p) {
+  if (!p) return null;
+  return (c - p) / p * 100;
+}
+function wowStr(w) {
+  if (w == null) return '—';
+  return (w >= 0 ? '+' : '') + w.toFixed(1) + '%';
+}
+function wowCls(w, isRate=false) {
+  if (w == null) return 'wow-gray';
+  const thresh = isRate ? 3 : 7; // pp for rate, % for count
+  return w <= -thresh*1.5 ? 'wow-red' : w <= -thresh*.5 ? 'wow-amber' : w >= thresh*.5 ? 'wow-green' : 'wow-gray';
+}
+function statusClass(w) {
+  if (w == null) return 'status-gray';
+  return w <= -10 ? 'status-red' : w <= -4 ? 'status-amber' : w >= 4 ? 'status-green' : 'status-gray';
+}
+function diagPill(row) {
+  const cw = wow(row.callsDone, row.callsDoneP);
+  const lw = wow(row.leads,     row.leadsP);
+  const bw = wow(row.b2dPct,    row.b2dPctP);
+  if (row.callsDone === 0 && row.callsDoneP === 0) return `<span class="dpill dp-na">No Data</span>`;
+  const issues = [], cls = [];
+  if (lw != null && lw <= -10) { issues.push('Leads ↓'); cls.push('dp-leads'); }
+  if (cw != null && cw <= -10) { issues.push('Calls ↓'); cls.push('dp-drop'); }
+  if (bw != null && bw <= -4)  { issues.push('B2D ↓');  cls.push('dp-b2d'); }
+  if (!issues.length) return `<span class="dpill dp-ok">✓ OK</span>`;
+  return `<span class="dpill ${cls[0]}">${issues.join(' · ')}</span>`;
+}
+
+// ─── Sheet parsing (demand tracker) ─────────────────────────────────────────
+function parseCSV(text) {
+  const rows = [];
+  for (const line of text.split('\n')) {
+    if (!line.trim()) continue;
+    const row = []; let inQ = false, cell = '';
+    for (const c of line) {
+      if (c === '"') { inQ = !inQ; }
+      else if (c === ',' && !inQ) { row.push(cell.trim()); cell = ''; }
+      else { cell += c; }
+    }
+    row.push(cell.trim());
+    rows.push(row);
+  }
+  return rows;
+}
+function pn(s) { const n = parseInt((s||'').replace(/[^\d.-]/g,''),10); return isNaN(n)?0:n; }
+
+function _practoMondayKey(dateStr) {
+  const p = dateStr.split('-');
+  if (p.length !== 3) return null;
+  const d = new Date(+p[2], +p[1]-1, +p[0]);
+  if (isNaN(d)) return null;
+  const day = d.getDay();
+  const off = (day === 0 ? -6 : 1 - day);
+  d.setDate(d.getDate() + off);
+  return d.toISOString().slice(0,10);
+}
+function parsePractoLeads(rows) {
+  const data = {};
+  for (let i = 1; i < rows.length; i++) {
+    const r = rows[i];
+    if (!r || r.length < 3) continue;
+    const dateStr = (r[0]||'').trim();
+    const city    = (r[8]||r[2]||'').trim();
+    if (!dateStr || !city) continue;
+    const wk = _practoMondayKey(dateStr);
+    if (!wk) continue;
+    if (!data[wk]) data[wk] = {};
+    data[wk][city] = (data[wk][city] || 0) + 1;
+  }
+  return data;
+}
+function parseSheet(rows) {
+  const raw = {};
+  let curCity = '';
+  for (let ri = 3; ri < rows.length; ri++) {
+    const r = rows[ri];
+    if (!r || r.length < 12) continue;
+    const c0 = r[0]||'', c1 = r[1]||'', c2 = r[2]||'', c3 = r[3]||'';
+    if (c1 && !c1.startsWith('<>')) curCity = c1;
+    if (c0 && !c0.startsWith('<>')) curCity = c0;
+    if (!curCity || c2 === '<>All' || c2 === '<>ALL' || c3 === '<>All') continue;
+    if (!c2) continue;
+    if (!raw[curCity]) raw[curCity] = {};
+    if (!raw[curCity][c2]) raw[curCity][c2] = {};
+    const allBk    = Array.from({length:7}, (_,i) => pn(r[ALLBK_C+i]));
+    const gmbLeads = Array.from({length:7}, (_,i) => pn(r[GMB_C+i]));
+    raw[curCity][c2][c3] = { allBk, gmbLeads };
+  }
+  const agg = (objs) => {
+    const r = { allBk:Array(7).fill(0), gmbLeads:Array(7).fill(0) };
+    for (const o of objs) {
+      if (!o?.allBk) continue;
+      for (let i=0;i<7;i++){
+        r.allBk[i]    += o.allBk[i]    || 0;
+        r.gmbLeads[i] += o.gmbLeads[i] || 0;
+      }
+    }
+    return r;
+  };
+  const out = {};
+  for (const [city, clinics] of Object.entries(raw)) {
+    out[city] = {};
+    const allDoctorObjs = [];
+    for (const [clinic, doctors] of Object.entries(clinics)) {
+      const dObjs = Object.values(doctors);
+      allDoctorObjs.push(...dObjs);
+      out[city][clinic] = { _total: agg(dObjs) };
+    }
+    out[city]._total = agg(allDoctorObjs);
+  }
+  return out;
+}
+
+// ─── Data getters ────────────────────────────────────────────────────────────
+function getWeekKey(idx) { return JDATA?.weeks?.[JDATA.weeks.length - 1 - idx]; }
+function getCityRow(city, wkIdx) {
+  const offline = JDATA?.offline;
+  const wk  = getWeekKey(wkIdx);
+  const wkp = getWeekKey(wkIdx + 1);
+  const d  = offline?.weekly_city?.[wk]?.[city]  || {};
+  const dp = offline?.weekly_city?.[wkp]?.[city] || {};
+  // Leads = GMB leads + Practo leads (from demand tracker sheet, offline cities)
+  const gmb   = SDATA[city]?._total?.gmbLeads?.[wkIdx]     || 0;
+  const gmbP  = SDATA[city]?._total?.gmbLeads?.[wkIdx + 1] || 0;
+  const prac  = PRACTO_DATA[wk]?.[city]  || 0;
+  const pracP = PRACTO_DATA[wkp]?.[city] || 0;
+  return {
+    callsDone : d.calls_done || 0, callsDoneP: dp.calls_done || 0,
+    gross     : d.gross      || 0, grossP    : dp.gross      || 0,
+    newBk     : d.gross      || 0, newBkP    : dp.gross      || 0, // gross = completed+NS by schedule date
+    b2dPct    : d.b2d_pct    || 0, b2dPctP   : dp.b2d_pct   || 0,
+    noShow    : d.no_show    || 0, noShowP   : dp.no_show    || 0,
+    leads     : gmb + prac,        leadsP    : gmbP + pracP,
+    slotBooked: d.slot_booked|| 0,
+  };
+}
+function getClinicRow(city, clinic, wkIdx) {
+  const offline = JDATA?.offline;
+  const wk  = getWeekKey(wkIdx);
+  const wkp = getWeekKey(wkIdx + 1);
+  const key = `${city}_${clinic}`;
+  const d  = offline?.weekly_clinic?.[wk]?.[key]  || {};
+  const dp = offline?.weekly_clinic?.[wkp]?.[key] || {};
+  return {
+    callsDone: d.calls_done||0, callsDoneP: dp.calls_done||0,
+    gross    : d.gross    ||0,  grossP    : dp.gross    ||0,
+    newBk    : d.gross||0, newBkP  : dp.gross||0,
+    b2dPct   : d.b2d_pct  ||0,  b2dPctP  : dp.b2d_pct  ||0,
+    noShow   : d.no_show  ||0,  noShowP  : dp.no_show  ||0,
+  };
+}
+function getCityChannelData(city, wkIdx) {
+  // Approximate: use channel totals scaled by city share
+  // Exact city×channel not in data.json currently
+  const wk = getWeekKey(wkIdx);
+  const all = JDATA?.offline?.weekly_city?.[wk]?.[city];
+  const netTotal = JDATA?.offline?.weekly_total?.[wk]?.total || 1;
+  const cityTotal = all?.total || 0;
+  const frac = netTotal ? cityTotal / netTotal : 0;
+  const netCh = JDATA?.offline?.weekly_channel?.[wk] || {};
+  const result = {};
+  for (const [ch, d] of Object.entries(netCh)) {
+    result[ch] = Math.round((d.calls_done || 0) * frac);
+  }
+  return result;
+}
+
+function primaryMetricValue(row) {
+  switch (activeMetric) {
+    case 'calls':    return { cur: row.callsDone, prev: row.callsDoneP, isRate: false };
+    case 'leads':    return { cur: row.leads,     prev: row.leadsP,     isRate: false };
+    case 'b2d':      return { cur: row.b2dPct,    prev: row.b2dPctP,   isRate: true  };
+    case 'bookings': return { cur: row.newBk,      prev: row.newBkP,    isRate: false };
+    default:         return { cur: row.callsDone, prev: row.callsDoneP, isRate: false };
+  }
+}
+
+// ─── Trend sparkline ─────────────────────────────────────────────────────────
+function buildSparkline(canvasId, city) {
+  const allWeeks = JDATA?.weeks || [];
+  const vals = allWeeks.slice(-8).map((wk, rawI) => {
+    const d = JDATA?.offline?.weekly_city?.[wk]?.[city];
+    if (!d) return null;
+    // wkIdx within the 8-week slice (0 = oldest in slice)
+    // We need SHEET_WEEK_KEYS index: most recent wk → sheetIdx 0
+    const sheetIdx = SHEET_WEEK_KEYS.indexOf(wk);
+    switch (activeMetric) {
+      case 'calls':    return d.calls_done || 0;
+      case 'b2d':      return d.b2d_pct    || 0;
+      case 'bookings': return d.gross       || 0;
+      case 'leads': {
+        const gmb  = sheetIdx >= 0 ? (SDATA[city]?._total?.gmbLeads?.[sheetIdx] || 0) : 0;
+        const prac = PRACTO_DATA[wk]?.[city] || 0;
+        return gmb + prac;
+      }
+      default: return d.calls_done || 0;
+    }
+  }).filter(v => v !== null);
+  if (!vals.length) return;
+  const ctx = document.getElementById(canvasId)?.getContext('2d');
+  if (!ctx) return;
+  if (sparkCharts[canvasId]) { sparkCharts[canvasId].destroy(); }
+  sparkCharts[canvasId] = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: vals.map((_,i)=>i),
+      datasets: [{ data: vals, borderColor:'#6366f1', borderWidth:1.5, pointRadius:0,
+                   fill:true, backgroundColor:'rgba(99,102,241,.08)', tension:0.3 }],
+    },
+    options: { responsive:false, animation:false,
+      plugins:{ legend:{display:false}, tooltip:{enabled:false} },
+      scales:{ x:{display:false}, y:{display:false} } },
+  });
+}
+
+// ─── Build city card ─────────────────────────────────────────────────────────
+function buildCityCard(city, row, idx) {
+  const m = primaryMetricValue(row);
+  const w = wow(m.cur, m.prev);
+  const dispVal = m.isRate ? pct(m.cur) : fmt(m.cur);
+  const tier = cityTier(city);
+  const tierHtml = tier ? `<span style="font-size:8px;font-weight:700;padding:1px 4px;border-radius:3px;
+    background:${tier==='T1'?'#6366f120':'#0ea5e920'};color:${tier==='T1'?'#6366f1':'#0ea5e9'};
+    margin-left:4px;">${tier}</span>` : '';
+
+  const extraMetrics = [
+    { label:'Calls', val: fmt(row.callsDone), w: wow(row.callsDone, row.callsDoneP) },
+    { label:'B2D',   val: pct(row.b2dPct),   w: wow(row.b2dPct, row.b2dPctP), isRate:true },
+    { label:'Books', val: fmt(row.newBk),     w: wow(row.newBk, row.newBkP) },
+  ].filter(x => x.label.toLowerCase() !== activeMetric.slice(0,4));
+
+  const extraHtml = extraMetrics.slice(0,2).map(x => `
+    <div class="mini-metric" style="padding:0 8px;border-left:1px solid var(--line);">
+      <div style="font-size:9px;color:#94a3b8;text-transform:uppercase;">${x.label}</div>
+      <div style="font-size:12px;font-weight:600;">${x.val}</div>
+      <div class="mini-wow ${wowCls(x.w, x.isRate)}" style="font-size:9px;">${wowStr(x.w)}</div>
+    </div>`).join('');
+
+  return `
+    <div class="city-card ${statusClass(w)}" onclick="toggleCity('${city}',${idx})" id="card-${city.replace(/\s/g,'_')}">
+      <div style="display:flex;align-items:flex-start;gap:8px;">
+        <div style="flex:1;min-width:0;">
+          <div style="font-weight:700;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
+            ${city}${tierHtml}
+          </div>
+          <div style="display:flex;align-items:center;gap:12px;margin-top:6px;">
+            <div class="mini-metric">
+              <div style="font-size:9px;color:#94a3b8;text-transform:uppercase;">${activeMetric==='calls'?'Calls Done':activeMetric==='b2d'?'B2D%':activeMetric==='bookings'?'Bookings':'Leads'}</div>
+              <div class="mini-val">${dispVal}</div>
+              <div class="mini-wow ${wowCls(w, m.isRate)}">${wowStr(w)}</div>
+            </div>
+            ${extraHtml}
+          </div>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex-shrink:0;">
+          ${diagPill(row)}
+          <canvas class="spark" id="spark-${city.replace(/\s/g,'_')}"></canvas>
+        </div>
+      </div>
+    </div>
+    <div id="expand-${city.replace(/\s/g,'_')}" style="display:none;margin-top:-6px;"></div>
+  `;
+}
+
+// ─── Build clinic expansion ───────────────────────────────────────────────────
+function buildClinicExpansion(city) {
+  const offline = JDATA?.offline;
+  const wk  = getWeekKey(activeWkIdx);
+  const clinicData = offline?.weekly_clinic?.[wk] || {};
+  const clinics = Object.keys(clinicData)
+    .filter(k => k.startsWith(city + '_'))
+    .map(k => ({ name: k.replace(city + '_', ''), key: k }));
+
+  if (!clinics.length) {
+    return `<div style="padding:12px 16px;font-size:12px;color:#94a3b8;">No clinic-level data available</div>`;
+  }
+
+  // Sort clinics by calls_done desc
+  clinics.sort((a, b) => {
+    const da = clinicData[a.key] || {};
+    const db = clinicData[b.key] || {};
+    return (db.calls_done||0) - (da.calls_done||0);
+  });
+
+  let rows = '';
+  for (const { name, key } of clinics) {
+    const row = getClinicRow(city, name, activeWkIdx);
+    const cw  = wow(row.callsDone, row.callsDoneP);
+    const bw  = wow(row.b2dPct,    row.b2dPctP);
+    const nw  = wow(row.newBk,     row.newBkP);
+
+    rows += `<tr>
+      <td style="font-weight:600;padding-left:20px;">${name}</td>
+      <td style="text-align:right;"><span style="${cw!=null&&cw<=-10?'color:#dc2626':cw!=null&&cw>=-5&&cw<=5?'':'color:#059669'}">${fmt(row.callsDone)}</span>
+        <div class="mini-wow ${wowCls(cw)}">${wowStr(cw)}</div></td>
+      <td style="text-align:right;">${fmt(row.newBk)}<div class="mini-wow ${wowCls(nw)}">${wowStr(nw)}</div></td>
+      <td style="text-align:right;">${pct(row.b2dPct)}<div class="mini-wow ${wowCls(bw,true)}">${wowStr(bw)} pp</div></td>
+      <td style="text-align:right;">${fmt(row.noShow)}</td>
+    </tr>`;
+  }
+
+  return `<div class="card" style="border-top-left-radius:0;border-top-right-radius:0;margin-top:0;padding:0;border-top:none;">
+    <div style="padding:8px 16px;border-bottom:1px solid var(--line);font-size:10px;color:#94a3b8;display:flex;gap:8px;align-items:center;">
+      <span style="font-weight:700;color:#334155;">${city} — Clinic Breakdown</span>
+      <span>Week: ${JDATA?.week_labels?.[wk] || wk}</span>
+    </div>
+    <div style="overflow-x:auto;">
+    <table class="ctbl">
+      <thead>
+        <tr>
+          <th style="text-align:left;">Clinic</th>
+          <th>Calls Done</th><th>New Bookings</th><th>B2D%</th><th>No Shows</th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>
+    </div>
+  </div>`;
+}
+
+// ─── Channel bar chart per city ───────────────────────────────────────────────
+function buildCityChannelChart(city) {
+  const wk  = getWeekKey(activeWkIdx);
+  const wkp = getWeekKey(activeWkIdx + 1);
+  const off = JDATA?.offline;
+  const CHANNELS = ['GMB','Google','Practo','Organic','Meta','Others'];
+  const CH_COL   = ['#10b981','#3b82f6','#8b5cf6','#f59e0b','#f97316','#94a3b8'];
+
+  // Scale network channel to city proportion
+  const cityTotal   = off?.weekly_city?.[wk]?.[city]?.total || 0;
+  const cityTotalP  = off?.weekly_city?.[wkp]?.[city]?.total || 0;
+  const netTotal    = off?.weekly_total?.[wk]?.total  || 1;
+  const netTotalP   = off?.weekly_total?.[wkp]?.total || 1;
+  const fracC = netTotal  ? cityTotal  / netTotal  : 0;
+  const fracP = netTotalP ? cityTotalP / netTotalP : 0;
+
+  const valsC = CHANNELS.map(ch => Math.round((off?.weekly_channel?.[wk]?.[ch]?.calls_done||0) * fracC));
+  const valsP = CHANNELS.map(ch => Math.round((off?.weekly_channel?.[wkp]?.[ch]?.calls_done||0) * fracP));
+
+  const canvasId = `ch-${city.replace(/\s/g,'_')}`;
+  setTimeout(() => {
+    const ctx = document.getElementById(canvasId)?.getContext('2d');
+    if (!ctx) return;
+    new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels: CHANNELS,
+        datasets: [
+          { label: JDATA?.week_labels?.[wk] || 'Current', data: valsC,
+            backgroundColor: CH_COL, borderRadius: 4 },
+          { label: JDATA?.week_labels?.[wkp] || 'Prev',   data: valsP,
+            backgroundColor: CH_COL.map(c => c+'60'), borderRadius: 4,
+            borderColor: CH_COL, borderWidth: 1 },
+        ],
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { position:'top', labels:{ font:{size:10}, padding:8 } } },
+        scales: {
+          x: { grid:{ display:false }, ticks:{ font:{size:10} } },
+          y: { grid:{ color:'#f1f5f9' }, ticks:{ font:{size:10} }, title:{ display:true, text:'Calls Done (est.)', font:{size:9} } },
+        },
+      },
+    });
+  }, 50);
+
+  return `<div style="position:relative;height:170px;"><canvas id="${canvasId}"></canvas></div>`;
+}
+
+// ─── Main render ─────────────────────────────────────────────────────────────
+function render() {
+  if (!JDATA) return;
+  const offline = JDATA.offline;
+  const wk  = getWeekKey(activeWkIdx);
+  const wkp = getWeekKey(activeWkIdx + 1);
+  if (!wk) return;
+
+  // Destroy old sparkline charts
+  for (const id in sparkCharts) { try { sparkCharts[id].destroy(); } catch(e){} }
+  sparkCharts = {};
+
+  // Gather cities
+  let cities = Object.keys(offline?.weekly_city?.[wk] || {})
+    .filter(c => c !== 'Practo Online' && c !== 'Online');
+
+  if (activeTier !== 'ALL') cities = cities.filter(c => cityTier(c) === activeTier);
+
+  // Build city rows
+  const cityRows = cities.map(city => {
+    const row = getCityRow(city, activeWkIdx);
+    return { city, row };
+  });
+
+  // Sort
+  const m = r => primaryMetricValue(r);
+  cityRows.sort((a, b) => {
+    if (activeSort === 'alpha') return a.city.localeCompare(b.city);
+    if (activeSort === 'vol')   return m(b.row).cur - m(a.row).cur;
+    // wow: most dropped first
+    const wa = wow(m(a.row).cur, m(a.row).prev);
+    const wb = wow(m(b.row).cur, m(b.row).prev);
+    return (wa ?? 0) - (wb ?? 0);
+  });
+
+  // Network summary
+  const nf  = offline?.weekly_funnel?.[wk]  || {};
+  const nfp = offline?.weekly_funnel?.[wkp] || {};
+  function sfCard(lbl, cur, prev, isRate=false) {
+    const w = isRate ? (prev?cur-prev:null) : wow(cur,prev);
+    const wstr = w===null ? '–' : (w>=0?'+':'')+( isRate ? w.toFixed(1)+'pp' : w.toFixed(1)+'%');
+    const wcls = wowCls(w, isRate);
+    return `<div style="flex:1;padding:12px 16px;border-right:1px solid var(--line);">
+      <div style="font-size:10px;color:#94a3b8;text-transform:uppercase;letter-spacing:.06em;">${lbl}</div>
+      <div style="font-size:22px;font-weight:700;margin:4px 0;">${isRate?pct(cur):fmt(cur)}</div>
+      <div class="mini-wow ${wcls}" style="font-size:11px;">${wstr} vs prev wk</div>
+    </div>`;
+  }
+
+  const summaryHtml = `<div class="card" style="padding:0;overflow:hidden;">
+    <div style="padding:8px 16px;border-bottom:1px solid var(--line);font-size:10px;font-weight:700;
+      text-transform:uppercase;letter-spacing:.07em;color:#64748b;">
+      Network Summary — ${JDATA.week_labels?.[wk] || wk}
+      ${activeTier!=='ALL'?`<span style="background:#6366f120;color:#6366f1;padding:1px 6px;border-radius:4px;margin-left:6px;">${activeTier} only</span>`:''}
+    </div>
+    <div style="display:flex;">
+      ${sfCard('New Bookings', nf.new_bookings||0, nfp.new_bookings||0)}
+      ${sfCard('Gross Bookings', nf.gross||0, nfp.gross||0)}
+      ${sfCard('Calls Done', nf.calls_done||0, nfp.calls_done||0)}
+      ${sfCard('B2D%', nf.b2d_pct||0, nfp.b2d_pct||0, true)}
+      ${sfCard('No Show%', nf.ns_pct||0, nfp.ns_pct||0, true)}
+      <div style="flex:1;padding:12px 16px;">
+        <div style="font-size:10px;color:#94a3b8;text-transform:uppercase;letter-spacing:.06em;">Cities shown</div>
+        <div style="font-size:22px;font-weight:700;margin:4px 0;">${cities.length}</div>
+        <div style="font-size:11px;color:#94a3b8;">${activeTier==='ALL'?'All tiers':activeTier+' tier'}</div>
+      </div>
+    </div>
+  </div>`;
+
+  // City grid
+  const t1Cities = cityRows.filter(r => cityTier(r.city) === 'T1');
+  const t2Cities = cityRows.filter(r => cityTier(r.city) !== 'T1');
+
+  function cityGrid(rows, tier) {
+    if (!rows.length) return '';
+    const hdr = tier ? `<div class="tier-hdr">${tier==='T1'?'🏙 Tier 1 — High Volume':tier==='T2'?'🌆 Tier 2 — Growing Cities':'All Cities'}</div>` : '';
+    const cards = rows.map((r, i) =>
+      `<div>${buildCityCard(r.city, r.row, i)}</div>`
+    ).join('');
+    return `${hdr}<div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 mb-6">${cards}</div>`;
+  }
+
+  const gridHtml = activeTier === 'ALL'
+    ? cityGrid(t1Cities, 'T1') + cityGrid(t2Cities, 'T2')
+    : cityGrid(cityRows, null);
+
+  document.getElementById('mainContent').innerHTML = `
+    ${summaryHtml}
+    <div>
+      <div style="font-size:11px;color:#94a3b8;margin-bottom:8px;">
+        Sorted by: <strong>${activeSort==='wow'?'biggest WoW drop':activeSort==='vol'?'highest volume':'A–Z'}</strong> ·
+        Metric: <strong>${activeMetric==='calls'?'Calls Done':activeMetric==='leads'?'Leads':activeMetric==='b2d'?'B2D%':'Bookings'}</strong> ·
+        Click any city card to see clinic breakdown
+      </div>
+      ${gridHtml}
+    </div>
+    <div id="expandArea"></div>
+  `;
+
+  // Draw sparklines after DOM is ready
+  setTimeout(() => {
+    for (const { city } of cityRows) {
+      buildSparkline(`spark-${city.replace(/\s/g,'_')}`, city);
+    }
+  }, 80);
+}
+
+function toggleCity(city, idx) {
+  if (expandedCity === city) {
+    expandedCity = null;
+    document.getElementById('expandArea').innerHTML = '';
+    return;
+  }
+  expandedCity = city;
+  const clinicHtml = buildClinicExpansion(city);
+  const chartHtml  = buildCityChannelChart(city);
+  document.getElementById('expandArea').innerHTML = `
+    <div style="scroll-margin-top:80px;" id="expand-anchor">
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div>${clinicHtml}</div>
+      <div class="card">
+        <div style="font-weight:700;font-size:13px;margin-bottom:10px;">
+          📡 Channel Breakdown — ${city}
+          <span style="font-size:10px;font-weight:400;color:#94a3b8;">(estimated from network proportions)</span>
+        </div>
+        ${chartHtml}
+      </div>
+    </div>
+    </div>
+  `;
+  setTimeout(() => document.getElementById('expand-anchor')?.scrollIntoView({behavior:'smooth',block:'start'}), 100);
+}
+
+// ─── State setters ────────────────────────────────────────────────────────────
+function setTier(t) {
+  activeTier = t;
+  ['tierAll','tierT1','tierT2'].forEach(id => document.getElementById(id)?.classList.remove('active'));
+  document.getElementById(t==='ALL'?'tierAll':t==='T1'?'tierT1':'tierT2')?.classList.add('active');
+  expandedCity = null;
+  render();
+}
+function setWeek(v) { activeWkIdx = parseInt(v); expandedCity = null; render(); }
+function setMetric(m) {
+  activeMetric = m;
+  ['mCalls','mLeads','mB2d','mBookings'].forEach(id => document.getElementById(id)?.classList.remove('active'));
+  document.getElementById(m==='calls'?'mCalls':m==='leads'?'mLeads':m==='b2d'?'mB2d':'mBookings')?.classList.add('active');
+  expandedCity = null;
+  render();
+}
+function setSort(s) {
+  activeSort = s;
+  ['sortWow','sortVol','sortAlpha'].forEach(id => document.getElementById(id)?.classList.remove('active'));
+  document.getElementById(s==='wow'?'sortWow':s==='vol'?'sortVol':'sortAlpha')?.classList.add('active');
+  render();
+}
+
+// ─── Init ─────────────────────────────────────────────────────────────────────
+async function init() {
+  try {
+    // Load data.json + demand tracker sheet + Practo leads in parallel
+    const [jsonRes, sheetRes, practoRes] = await Promise.all([
+      fetch('data.json'),
+      fetch(SHEET_URL).catch(() => null),
+      fetch(PRACTO_URL).catch(() => null),
+    ]);
+
+    if (!jsonRes.ok) throw new Error('data.json not found');
+    JDATA = await jsonRes.json();
+
+    // Parse demand tracker sheet
+    if (sheetRes?.ok) {
+      try {
+        const text = await sheetRes.text();
+        SDATA = parseSheet(parseCSV(text));
+      } catch(e) { console.warn('Sheet parse error:', e); }
+    }
+
+    // Parse Practo leads
+    if (practoRes?.ok) {
+      try {
+        const text = await practoRes.text();
+        PRACTO_DATA = parsePractoLeads(parseCSV(text));
+      } catch(e) { console.warn('Practo parse error:', e); }
+    }
+
+    // Populate week selector (most recent first)
+    const wSel = document.getElementById('weekSel');
+    const weeks = [...(JDATA.weeks || [])].reverse();
+    weeks.forEach((wk, i) => {
+      const opt = document.createElement('option');
+      opt.value = i;
+      opt.textContent = JDATA.week_labels?.[wk] || wk;
+      if (i === 0) opt.selected = true;
+      wSel.appendChild(opt);
+    });
+
+    render();
+  } catch(e) {
+    document.getElementById('mainContent').innerHTML =
+      `<div style="padding:40px;color:#ef4444;">Error: ${e.message}</div>`;
+  }
+}
+init();
+</script>
+</body>
+</html>

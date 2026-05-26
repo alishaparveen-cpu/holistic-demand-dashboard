@@ -1,0 +1,625 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Comparison · Allo Health</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+:root{
+  --ink:#0f172a;--muted:#64748b;--line:#e2e8f0;
+  --red:#ef4444;--amber:#f59e0b;--green:#10b981;
+}
+html,body{background:#f8fafc;color:var(--ink);font-family:ui-sans-serif,system-ui,sans-serif;font-size:13px;margin:0;}
+.card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:20px;box-shadow:0 1px 3px rgba(15,23,42,.05);}
+.nav-link{font-size:12px;color:#64748b;text-decoration:none;padding:4px 8px;border-radius:6px;transition:background .12s;}
+.nav-link:hover{background:#f1f5f9;color:#0f172a;}
+.nav-link.active{font-weight:700;color:#0f172a;background:#f1f5f9;}
+/* Pills for selected items */
+.cmp-pill{display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border-radius:999px;font-size:12px;font-weight:600;border:2px solid transparent;cursor:default;white-space:nowrap;}
+.cmp-pill .cmp-x{cursor:pointer;opacity:.6;font-size:11px;line-height:1;padding:1px 3px;border-radius:3px;}
+.cmp-pill .cmp-x:hover{opacity:1;background:rgba(0,0,0,.08);}
+/* Type badge on pill */
+.type-tag{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;opacity:.7;}
+/* Chooser panel */
+.chooser{background:#fff;border:1px solid var(--line);border-radius:12px;box-shadow:0 8px 24px rgba(15,23,42,.12);overflow:hidden;}
+.chooser-tabs{display:flex;border-bottom:1px solid var(--line);}
+.ctab{padding:9px 14px;font-size:12px;font-weight:500;cursor:pointer;color:#64748b;border-bottom:2px solid transparent;user-select:none;white-space:nowrap;}
+.ctab:hover{color:#0f172a;}
+.ctab.active{color:#0f172a;border-bottom-color:#0f172a;font-weight:700;}
+.chooser-body{max-height:260px;overflow-y:auto;padding:8px;}
+.chooser-item{padding:7px 10px;border-radius:8px;cursor:pointer;display:flex;align-items:center;gap:8px;font-size:12px;}
+.chooser-item:hover{background:#f1f5f9;}
+.chooser-item.selected{background:#eff6ff;font-weight:600;}
+.chooser-item .item-badge{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;padding:1px 5px;border-radius:4px;}
+/* Table */
+.ctbl{width:100%;border-collapse:separate;border-spacing:0;}
+.ctbl th{font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);padding:8px 12px;background:#f8fafc;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap;position:sticky;top:0;}
+.ctbl th:first-child{text-align:left;}
+.ctbl td{padding:8px 12px;border-bottom:1px solid #f1f5f9;text-align:right;font-size:12px;}
+.ctbl td:first-child{text-align:left;font-weight:600;font-size:12px;}
+.ctbl tr:last-child td{border-bottom:none;}
+.ctbl tr:hover td{background:#f8fafc;}
+/* Control button */
+.ctrl-btn{padding:6px 12px;font-size:12px;border:1px solid var(--line);border-radius:8px;cursor:pointer;background:#fff;color:var(--ink);display:flex;align-items:center;gap:5px;font-weight:500;transition:all .15s;}
+.ctrl-btn:hover{border-color:#94a3b8;background:#f8fafc;}
+.ctrl-btn.primary{background:#0f172a;color:#fff;border-color:#0f172a;}
+.ctrl-btn.primary:hover{background:#1e293b;}
+select.ctrl-sel{padding:6px 10px;font-size:12px;border:1px solid var(--line);border-radius:8px;background:#fff;cursor:pointer;color:var(--ink);}
+/* Search */
+.search-inp{width:100%;padding:7px 10px;border:1px solid var(--line);border-radius:8px;font-size:12px;outline:none;background:#fff;}
+.search-inp:focus{border-color:#6366f1;box-shadow:0 0 0 3px #6366f118;}
+/* Delta in table */
+.dn{color:#dc2626;} .up{color:#059669;} .flat{color:#94a3b8;}
+/* Empty state */
+.empty{text-align:center;padding:60px 20px;color:var(--muted);}
+.empty-icon{font-size:40px;margin-bottom:12px;}
+/* Metric sparkline dot */
+.spark-dot{display:inline-block;width:10px;height:10px;border-radius:50%;flex-shrink:0;}
+</style>
+</head>
+<body>
+<div style="max-width:1200px;margin:0 auto;padding:20px 16px;">
+
+<!-- ═══ NAV ═══ -->
+<div style="display:flex;align-items:center;gap:6px;margin-bottom:20px;flex-wrap:wrap;">
+  <a href="index.html"      class="nav-link">← Dashboard</a>
+  <span style="color:#e2e8f0;">|</span>
+  <a href="diagnostic.html" class="nav-link">Diagnostic</a>
+  <a href="category.html"   class="nav-link">Category</a>
+  <a href="city.html"       class="nav-link">City</a>
+  <a href="efficiency.html" class="nav-link">Efficiency</a>
+  <span class="nav-link active">Comparison</span>
+</div>
+
+<!-- ═══ HEADER ═══ -->
+<div style="margin-bottom:20px;">
+  <h1 style="font-size:22px;font-weight:700;margin:0 0 4px;">Comparison</h1>
+  <p style="color:var(--muted);margin:0;font-size:12px;">
+    Compare up to 6 cities, clinics, or channels across any metric over 12 weeks
+  </p>
+</div>
+
+<!-- ═══ CONTROLS ROW ═══ -->
+<div class="card" style="margin-bottom:16px;padding:14px 20px;">
+  <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+
+    <!-- Add item button -->
+    <div style="position:relative;" id="addItemWrap">
+      <button class="ctrl-btn primary" id="addItemBtn" onclick="toggleChooser()">
+        <span style="font-size:14px;font-weight:700;">+</span> Add Item
+      </button>
+      <!-- Chooser dropdown -->
+      <div class="chooser" id="chooserPanel"
+           style="position:absolute;top:calc(100% + 6px);left:0;z-index:100;width:340px;display:none;">
+        <div style="padding:8px 10px 0;">
+          <input id="chooserSearch" class="search-inp" placeholder="Search city, clinic, or channel…"
+                 oninput="filterChooser(this.value)"/>
+        </div>
+        <div class="chooser-tabs">
+          <div class="ctab active" id="ctab-channel" onclick="setChooserTab('channel')">Channels</div>
+          <div class="ctab"        id="ctab-city"    onclick="setChooserTab('city')">Cities</div>
+          <div class="ctab"        id="ctab-clinic"  onclick="setChooserTab('clinic')">Clinics</div>
+        </div>
+        <div class="chooser-body" id="chooserList"></div>
+      </div>
+    </div>
+
+    <span style="color:#e2e8f0;font-size:16px;">|</span>
+
+    <!-- Metric -->
+    <div style="display:flex;align-items:center;gap:6px;">
+      <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#94a3b8;">Metric:</span>
+      <select id="metricSel" class="ctrl-sel" onchange="setMetric(this.value)">
+        <optgroup label="Funnel">
+          <option value="calls_done">Calls Done</option>
+          <option value="gross">Gross Bookings</option>
+          <option value="slot_booked">Slot Booked</option>
+          <option value="no_show">No Shows</option>
+          <option value="rescheduled">Rescheduled</option>
+        </optgroup>
+        <optgroup label="Rates">
+          <option value="b2d_pct">B2D %</option>
+          <option value="ns_pct">No Show %</option>
+        </optgroup>
+        <optgroup label="Category Mix">
+          <option value="STI">STI Done</option>
+          <option value="SH">Sexual Health Done</option>
+          <option value="ED+">ED Done</option>
+          <option value="PE+">PE Done</option>
+          <option value="ED+PE+">ED+PE Done</option>
+        </optgroup>
+      </select>
+    </div>
+
+    <!-- Scope -->
+    <div style="display:flex;align-items:center;gap:6px;">
+      <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#94a3b8;">Scope:</span>
+      <select id="scopeSel" class="ctrl-sel" onchange="setScope(this.value)">
+        <option value="all">All</option>
+        <option value="offline">Offline</option>
+        <option value="online">Online</option>
+      </select>
+    </div>
+
+    <!-- Chart type -->
+    <div style="display:flex;align-items:center;gap:6px;">
+      <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#94a3b8;">View:</span>
+      <select id="chartTypeSel" class="ctrl-sel" onchange="setChartType(this.value)">
+        <option value="line">Line</option>
+        <option value="bar">Bar</option>
+      </select>
+    </div>
+
+    <!-- Clear all -->
+    <button class="ctrl-btn" onclick="clearAll()" style="margin-left:auto;color:#dc2626;border-color:#fecaca;">
+      ✕ Clear All
+    </button>
+  </div>
+
+  <!-- Selected pills -->
+  <div id="selectedPills" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;min-height:32px;align-items:center;">
+    <span style="font-size:11px;color:#94a3b8;" id="pillsPlaceholder">Select items above to compare →</span>
+  </div>
+</div>
+
+<!-- Online scope banner -->
+<div id="onlineScopeBanner" style="display:none;margin-bottom:12px;padding:10px 14px;
+  background:#fffbeb;border:1px solid #fcd34d;border-radius:10px;font-size:12px;color:#92400e;line-height:1.5;">
+</div>
+
+<!-- ═══ CHART ═══ -->
+<div class="card" id="chartCard" style="margin-bottom:20px;">
+  <div id="chartEmpty" class="empty">
+    <div class="empty-icon">📊</div>
+    <div style="font-size:15px;font-weight:600;margin-bottom:6px;">Nothing selected yet</div>
+    <div style="font-size:12px;">Add cities, clinics, or channels above to start comparing</div>
+  </div>
+  <div id="chartWrap" style="display:none;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
+      <div>
+        <span id="chartTitle" style="font-size:15px;font-weight:700;"></span>
+        <span id="chartSub"   style="font-size:11px;color:var(--muted);margin-left:8px;"></span>
+      </div>
+    </div>
+    <div style="height:300px;"><canvas id="cmpChart"></canvas></div>
+  </div>
+</div>
+
+<!-- ═══ SUMMARY CARDS ═══ -->
+<div id="summaryCards" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;margin-bottom:20px;"></div>
+
+<!-- ═══ DATA TABLE ═══ -->
+<div class="card" id="tableCard" style="margin-bottom:40px;display:none;">
+  <div style="font-size:15px;font-weight:700;margin-bottom:12px;">Weekly Detail</div>
+  <div style="overflow-x:auto;max-height:400px;overflow-y:auto;">
+    <table class="ctbl" id="cmpTable">
+      <thead><tr id="cmpTableHead"></tr></thead>
+      <tbody id="cmpTableBody"></tbody>
+    </table>
+  </div>
+</div>
+
+</div><!-- /container -->
+
+<script>
+// ── CONFIG ────────────────────────────────────────────────────────────────
+const COLOR_PALETTE = [
+  '#6366f1','#f59e0b','#ef4444','#10b981',
+  '#8b5cf6','#f97316','#0ea5e9','#ec4899',
+];
+
+const METRIC_LABELS = {
+  calls_done:'Calls Done',   gross:'Gross Bookings',
+  slot_booked:'Slot Booked', no_show:'No Shows',
+  rescheduled:'Rescheduled', b2d_pct:'B2D %',
+  ns_pct:'No Show %',        STI:'STI Done',
+  SH:'SH Done',              'ED+':'ED Done',
+  'PE+':'PE Done',           'ED+PE+':'ED+PE Done',
+};
+const IS_PCT = { b2d_pct:true, ns_pct:true };
+
+// ── STATE ─────────────────────────────────────────────────────────────────
+let JDATA        = null;
+let selected     = [];   // [{type, id, label, color}]
+let activeMetric = 'calls_done';
+let activeScope  = 'all';
+let chartType    = 'line';
+let chooserTab   = 'channel';
+let chooserQ     = '';
+let cmpChart     = null;
+
+const MAX_ITEMS  = 6;
+
+// ── DATA ──────────────────────────────────────────────────────────────────
+function getSHVal(obj) {
+  return ['ED+','PE+','ED+PE+','NSSD','oth'].reduce((s,k) => s+(obj[k]||0), 0);
+}
+
+function getItemWeekly(item, metric, scope) {
+  // Returns array aligned with JDATA.weeks (12 values)
+  const scopeData = JDATA?.[scope];
+  if (!scopeData) return JDATA.weeks.map(() => null);
+
+  return JDATA.weeks.map(wk => {
+    let d = {};
+    if      (item.type === 'channel') d = scopeData.weekly_channel?.[wk]?.[item.id] || {};
+    else if (item.type === 'city')    d = scopeData.weekly_city?.[wk]?.[item.id]    || {};
+    else if (item.type === 'clinic')  d = scopeData.weekly_clinic?.[wk]?.[item.id]  || {};
+
+    if (metric === 'SH') return getSHVal(d);
+    return d[metric] ?? null;
+  });
+}
+
+function fmtMetric(v, metric) {
+  if (v === null || v === undefined) return '—';
+  if (IS_PCT[metric]) return v.toFixed(1) + '%';
+  return Math.round(v).toLocaleString();
+}
+
+function deltaStr(cur, prev, metric) {
+  if (cur === null || prev === null || prev === 0) return '';
+  const pct = (cur - prev) / Math.abs(prev) * 100;
+  if (Math.abs(pct) < 1) return `<span class="flat">→</span>`;
+  const up = pct > 0;
+  const cls = IS_PCT[metric] ? (up ? 'up' : 'dn') : (up ? 'up' : 'dn');
+  return `<span class="${cls}">${up?'▲':'▼'} ${Math.abs(pct).toFixed(0)}%</span>`;
+}
+
+// ── CHOOSER ───────────────────────────────────────────────────────────────
+function toggleChooser() {
+  const panel = document.getElementById('chooserPanel');
+  const open  = panel.style.display !== 'none';
+  panel.style.display = open ? 'none' : 'block';
+  if (!open) {
+    renderChooserList();
+    setTimeout(() => document.getElementById('chooserSearch')?.focus(), 50);
+  }
+}
+
+document.addEventListener('click', e => {
+  if (!document.getElementById('addItemWrap')?.contains(e.target)) {
+    document.getElementById('chooserPanel').style.display = 'none';
+  }
+});
+
+function setChooserTab(tab) {
+  chooserTab = tab;
+  chooserQ   = '';
+  document.getElementById('chooserSearch').value = '';
+  ['channel','city','clinic'].forEach(t => {
+    document.getElementById('ctab-'+t).classList.toggle('active', t === tab);
+  });
+  renderChooserList();
+}
+
+function filterChooser(q) {
+  chooserQ = q.toLowerCase().trim();
+  renderChooserList();
+}
+
+function getChooserItems() {
+  if (!JDATA) return [];
+  const sc = JDATA[activeScope] || JDATA.all;
+
+  if (chooserTab === 'channel') {
+    return (JDATA.channels || []).map(ch => ({ type:'channel', id:ch, label:ch }));
+  }
+  if (chooserTab === 'city') {
+    return (sc.cities || []).map(c => ({ type:'city', id:c, label:c }));
+  }
+  if (chooserTab === 'clinic') {
+    // clinic keys are "city_locality"
+    return (sc.clinics || []).map(ck => {
+      const parts = ck.split('_');
+      const city  = parts[0] || '';
+      const loc   = parts.slice(1).join('_') || ck;
+      return { type:'clinic', id:ck, label: loc + (city ? ' · ' + city : '') };
+    });
+  }
+  return [];
+}
+
+function renderChooserList() {
+  const list = document.getElementById('chooserList');
+
+  // Online scope has no city/clinic breakdown — only channels are available
+  if (activeScope === 'online' && (chooserTab === 'city' || chooserTab === 'clinic')) {
+    list.innerHTML = `<div style="padding:16px;text-align:center;font-size:11px;color:#92400e;background:#fffbeb;margin:4px;border-radius:8px;line-height:1.6;">
+      <strong>Online scope</strong><br>
+      City &amp; clinic data is only available for <em>All</em> or <em>Offline</em> scope.<br>
+      Online bookings are not location-assigned.
+    </div>`;
+    return;
+  }
+
+  let items = getChooserItems();
+  if (chooserQ) items = items.filter(it => it.label.toLowerCase().includes(chooserQ));
+
+  if (!items.length) {
+    list.innerHTML = `<div style="padding:16px;text-align:center;color:var(--muted);font-size:12px;">No matches</div>`;
+    return;
+  }
+
+  const selectedIds = new Set(selected.map(s => s.type+'__'+s.id));
+  list.innerHTML = items.map(it => {
+    const key = it.type+'__'+it.id;
+    const isSel = selectedIds.has(key);
+    const isMaxed = selected.length >= MAX_ITEMS && !isSel;
+    const typeColor = {channel:'#4338ca', city:'#059669', clinic:'#d97706'}[it.type] || '#64748b';
+    return `<div class="chooser-item${isSel?' selected':''}"
+                 onclick="${isMaxed ? '' : `addItem('${it.type}','${it.id.replace(/'/g,"\\'")}','${it.label.replace(/'/g,"\\'")}');`}"
+                 style="${isMaxed ? 'opacity:.35;cursor:not-allowed;' : ''}">
+      <span class="item-badge" style="background:${typeColor}18;color:${typeColor};">${it.type}</span>
+      <span>${it.label}</span>
+      ${isSel ? '<span style="margin-left:auto;color:#6366f1;font-size:12px;">✓</span>' : ''}
+    </div>`;
+  }).join('');
+}
+
+// ── ITEM MANAGEMENT ───────────────────────────────────────────────────────
+function addItem(type, id, label) {
+  const key = type+'__'+id;
+  if (selected.some(s => s.type+'__'+s.id === key)) {
+    removeItem(type, id); return;
+  }
+  if (selected.length >= MAX_ITEMS) return;
+  const color = COLOR_PALETTE[selected.length % COLOR_PALETTE.length];
+  selected.push({ type, id, label, color });
+  renderPills();
+  renderChooserList();
+  render();
+}
+
+function removeItem(type, id) {
+  selected = selected.filter(s => !(s.type===type && s.id===id));
+  // Reassign colors
+  selected.forEach((s,i) => s.color = COLOR_PALETTE[i % COLOR_PALETTE.length]);
+  renderPills();
+  renderChooserList();
+  render();
+}
+
+function clearAll() {
+  selected = [];
+  renderPills();
+  renderChooserList();
+  render();
+}
+
+function renderPills() {
+  const container   = document.getElementById('selectedPills');
+  const placeholder = document.getElementById('pillsPlaceholder');
+  if (selected.length === 0) {
+    container.innerHTML = '';
+    container.appendChild(document.getElementById('pillsPlaceholder') ||
+      Object.assign(document.createElement('span'), {
+        id:'pillsPlaceholder', style:'font-size:11px;color:#94a3b8;',
+        textContent:'Select items above to compare →'
+      }));
+    return;
+  }
+  container.innerHTML = selected.map(s => {
+    const tc = {channel:'Channel', city:'City', clinic:'Clinic'}[s.type];
+    return `<div class="cmp-pill"
+                 style="background:${s.color}18;border-color:${s.color}44;color:${s.color};">
+      <span class="spark-dot" style="background:${s.color};"></span>
+      <span class="type-tag">${tc}</span>
+      <span style="color:#1e293b;">${s.label}</span>
+      <span class="cmp-x" onclick="removeItem('${s.type}','${s.id.replace(/'/g,"\\'")}')">✕</span>
+    </div>`;
+  }).join('');
+
+  // Add count badge if max
+  if (selected.length >= MAX_ITEMS) {
+    container.innerHTML += `<span style="font-size:11px;color:#94a3b8;margin-left:4px;">max ${MAX_ITEMS}</span>`;
+  }
+}
+
+// ── CONTROLS ──────────────────────────────────────────────────────────────
+function setMetric(m) { activeMetric = m; render(); }
+function setScope(s)  {
+  activeScope = s;
+  // If switching to online, city/clinic items have no data — auto-remove them
+  if (s === 'online') {
+    const removed = selected.filter(x => x.type === 'city' || x.type === 'clinic');
+    if (removed.length) {
+      selected = selected.filter(x => x.type === 'channel');
+      selected.forEach((x,i) => x.color = COLOR_PALETTE[i % COLOR_PALETTE.length]);
+      renderPills();
+    }
+  }
+  // Refresh chooser in case cities/clinics differ
+  if (document.getElementById('chooserPanel').style.display !== 'none') renderChooserList();
+  render();
+}
+function setChartType(t) { chartType = t; render(); }
+
+// ── RENDER ────────────────────────────────────────────────────────────────
+function render() {
+  if (!JDATA) return;
+
+  const metricLabel = METRIC_LABELS[activeMetric] || activeMetric;
+  const scopeLabel  = activeScope === 'all' ? 'All' : activeScope === 'offline' ? 'Offline' : 'Online';
+
+  if (selected.length === 0) {
+    document.getElementById('chartEmpty').style.display = '';
+    document.getElementById('chartWrap').style.display  = 'none';
+    document.getElementById('summaryCards').innerHTML   = '';
+    document.getElementById('tableCard').style.display  = 'none';
+    if (cmpChart) { cmpChart.destroy(); cmpChart = null; }
+    return;
+  }
+
+  document.getElementById('chartEmpty').style.display = 'none';
+  document.getElementById('chartWrap').style.display  = '';
+  document.getElementById('tableCard').style.display  = '';
+
+  // Online-scope city/clinic warning
+  const offlineOnlyItems = activeScope === 'online'
+    ? selected.filter(s => s.type === 'city' || s.type === 'clinic')
+    : [];
+  const bannerEl = document.getElementById('onlineScopeBanner');
+  if (offlineOnlyItems.length) {
+    if (bannerEl) {
+      bannerEl.style.display = '';
+      bannerEl.innerHTML = `⚠️ <strong>No data for online scope:</strong> ${offlineOnlyItems.map(s=>s.label).join(', ')} —
+        city &amp; clinic data is offline-only. Switch scope to <em>All</em> or <em>Offline</em>, or remove those items.`;
+    }
+  } else if (bannerEl) {
+    bannerEl.style.display = 'none';
+  }
+
+  // Build week labels
+  const labels = JDATA.weeks.map(wk => JDATA.week_labels?.[wk] || wk);
+
+  // Build datasets
+  const datasets = selected.map(item => {
+    const data = getItemWeekly(item, activeMetric, activeScope);
+    return {
+      label: item.label,
+      data,
+      borderColor: item.color,
+      backgroundColor: chartType === 'bar' ? item.color + 'CC' : item.color + '18',
+      fill: chartType === 'line' ? false : false,
+      tension: 0.3,
+      borderWidth: 2.5,
+      pointRadius: 4,
+      pointBackgroundColor: item.color,
+      borderRadius: chartType === 'bar' ? 5 : 0,
+      spanGaps: true,
+    };
+  });
+
+  // Chart title
+  document.getElementById('chartTitle').textContent = metricLabel + ' Comparison';
+  document.getElementById('chartSub').textContent   = `${scopeLabel} · 12 weeks · ${selected.length} item${selected.length>1?'s':''}`;
+
+  // Destroy & recreate chart
+  if (cmpChart) cmpChart.destroy();
+  const ctx = document.getElementById('cmpChart');
+  cmpChart = new Chart(ctx, {
+    type: chartType,
+    data: { labels, datasets },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { mode:'index', intersect:false },
+      plugins: {
+        legend: { position:'top', labels:{ font:{size:11}, boxWidth:12, padding:12 } },
+        tooltip: {
+          callbacks: {
+            label: ctx => `${ctx.dataset.label}: ${fmtMetric(ctx.raw, activeMetric)}`
+          }
+        }
+      },
+      scales: {
+        x: {
+          grid:{display:false},
+          ticks:{ font:{size:10}, maxRotation:30 }
+        },
+        y: {
+          grid:{color:'#f1f5f9'},
+          ticks:{
+            callback: v => IS_PCT[activeMetric] ? v+'%' : v.toLocaleString(),
+            font:{size:11}
+          },
+          beginAtZero: !IS_PCT[activeMetric],
+        }
+      }
+    }
+  });
+
+  // Summary cards
+  renderSummaryCards(metricLabel, scopeLabel);
+
+  // Table
+  renderTable(labels);
+}
+
+function renderSummaryCards(metricLabel, scopeLabel) {
+  const lastIdx = JDATA.weeks.length - 1;
+  const prevIdx = lastIdx - 1;
+  const lastWk  = JDATA.weeks[lastIdx];
+  const prevWk  = JDATA.weeks[prevIdx];
+
+  const html = selected.map(item => {
+    const all  = getItemWeekly(item, activeMetric, activeScope);
+    const cur  = all[lastIdx];
+    const prev = all[prevIdx];
+    const wow  = (cur !== null && prev !== null && prev !== 0)
+               ? (cur - prev) / Math.abs(prev) * 100 : null;
+
+    const peak = all.reduce((mx, v, i) => v !== null && v > (mx.v ?? -Infinity) ? {v,i} : mx, {});
+    const peakWk = peak.i !== undefined ? (JDATA.week_labels?.[JDATA.weeks[peak.i]] || '') : '';
+
+    const wowHtml = wow !== null
+      ? `<span class="${wow > 2 ? 'up' : wow < -2 ? 'dn' : 'flat'}">${wow > 0 ? '▲' : '▼'} ${Math.abs(wow).toFixed(1)}%</span>`
+      : '<span style="color:#94a3b8;">—</span>';
+
+    return `<div class="card" style="border-left:3px solid ${item.color};">
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">
+        <span class="spark-dot" style="background:${item.color};"></span>
+        <span style="font-size:11px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:.04em;">${item.type}</span>
+      </div>
+      <div style="font-size:13px;font-weight:700;color:var(--ink);margin-bottom:2px;">${item.label}</div>
+      <div style="font-size:22px;font-weight:700;color:${item.color};margin:4px 0;line-height:1.1;">${fmtMetric(cur, activeMetric)}</div>
+      <div style="font-size:11px;color:var(--muted);">WoW: ${wowHtml}</div>
+      ${peak.v !== undefined ? `<div style="font-size:10px;color:#94a3b8;margin-top:3px;">Peak: ${fmtMetric(peak.v, activeMetric)} (${peakWk})</div>` : ''}
+    </div>`;
+  }).join('');
+
+  document.getElementById('summaryCards').innerHTML = html;
+}
+
+function renderTable(weekLabels) {
+  // Header
+  const thHtml = `<th>Week</th>` +
+    selected.map(s =>
+      `<th style="color:${s.color};">${s.label}</th>`
+    ).join('');
+  document.getElementById('cmpTableHead').innerHTML = thHtml;
+
+  // Body — most recent first
+  const allData = selected.map(item => getItemWeekly(item, activeMetric, activeScope));
+
+  const rows = [...JDATA.weeks].reverse().map((wk, ri) => {
+    const origIdx = JDATA.weeks.length - 1 - ri;
+    const prevIdx = origIdx - 1;
+    const weekLabel = JDATA.week_labels?.[wk] || wk;
+    const cells = allData.map(col => {
+      const cur  = col[origIdx];
+      const prev = col[prevIdx];
+      const d    = deltaStr(cur, prev, activeMetric);
+      return `<td>${fmtMetric(cur, activeMetric)} ${d}</td>`;
+    });
+    return `<tr><td>${weekLabel}</td>${cells.join('')}</tr>`;
+  }).join('');
+
+  document.getElementById('cmpTableBody').innerHTML = rows;
+}
+
+// ── INIT ──────────────────────────────────────────────────────────────────
+async function init() {
+  try {
+    const res = await fetch('data.json');
+    if (!res.ok) throw new Error('data.json failed');
+    JDATA = await res.json();
+
+    renderPills();
+    render();
+
+  } catch(err) {
+    document.getElementById('chartCard').innerHTML =
+      `<div style="padding:20px;background:#fef2f2;border:1px solid #fca5a5;border-radius:10px;color:#991b1b;">
+         ⚠️ <strong>Could not load data:</strong> ${err.message}
+       </div>`;
+    console.error(err);
+  }
+}
+
+document.addEventListener('DOMContentLoaded', init);
+</script>
+</body>
+</html>

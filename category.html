@@ -1,0 +1,901 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Category Analysis · Demand Dashboard</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+:root{
+  --ink:#0f172a;--muted:#64748b;--line:#e2e8f0;
+  --red:#ef4444;--green:#10b981;--yellow:#f59e0b;
+  --redBg:#fef2f2;--greenBg:#ecfdf5;--yellowBg:#fffbeb;
+}
+html,body{background:#f8fafc;color:var(--ink);font-family:ui-sans-serif,system-ui,sans-serif;}
+.card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:20px;box-shadow:0 1px 3px rgba(15,23,42,.05);}
+.chip{display:inline-flex;align-items:center;gap:5px;padding:5px 13px;border:1.5px solid var(--line);border-radius:999px;font-size:12px;font-weight:600;cursor:pointer;transition:all .15s;background:#fff;}
+.chip:hover{border-color:#94a3b8;}
+.chip.active{color:#fff;border-color:transparent;}
+.stat-label{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);}
+.stat-val{font-size:26px;font-weight:700;line-height:1.2;}
+.stat-sub{font-size:13px;margin-top:2px;}
+.up{color:#059669;} .down{color:#dc2626;} .neutral{color:var(--muted);}
+.badge{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600;}
+.badge.up{background:#ecfdf5;color:#065f46;}
+.badge.down{background:#fef2f2;color:#991b1b;}
+.badge.neutral{background:#f1f5f9;color:#475569;}
+table.tbl{width:100%;border-collapse:separate;border-spacing:0;}
+table.tbl th{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);text-align:left;padding:9px 12px;background:#f8fafc;border-bottom:1px solid var(--line);}
+table.tbl td{padding:9px 12px;border-bottom:1px solid #f1f5f9;font-size:13px;}
+table.tbl tr:last-child td{border-bottom:none;}
+table.tbl tr:hover td{background:#f8fafc;}
+.bar-bg{height:7px;border-radius:999px;background:#f1f5f9;overflow:hidden;min-width:60px;}
+.bar-fill{height:100%;border-radius:999px;}
+.toggle-btn{padding:4px 12px;font-size:12px;border:1px solid var(--line);border-radius:6px;cursor:pointer;background:#fff;}
+.toggle-btn.active{background:#0f172a;color:#fff;border-color:#0f172a;}
+.section-title{font-size:14px;font-weight:700;color:var(--ink);}
+.section-sub{font-size:12px;color:var(--muted);margin-top:2px;}
+canvas{display:block;}
+.loading{display:flex;align-items:center;justify-content:center;min-height:200px;color:var(--muted);font-size:13px;}
+</style>
+</head>
+<body class="min-h-screen">
+
+<!-- Header -->
+<div class="border-b bg-white sticky top-0 z-20" style="border-color:var(--line);">
+  <div class="max-w-7xl mx-auto px-6 py-4 flex items-center gap-6 flex-wrap">
+    <a href="index.html" class="text-xs text-slate-400 hover:text-slate-600 flex items-center gap-1">
+      ← Dashboard
+    </a>
+    <span class="text-slate-200 text-sm">|</span>
+    <a href="diagnostic.html" class="text-xs font-semibold px-3 py-1.5 rounded-lg flex items-center gap-1"
+       style="background:#fef2f2;color:#dc2626;border:1px solid #fecaca;">
+      🔍 Diagnostic
+    </a>
+    <a href="city.html"       class="text-xs text-slate-400 hover:text-slate-600">City</a>
+    <a href="efficiency.html"  class="text-xs text-slate-400 hover:text-slate-600">Efficiency</a>
+    <a href="comparison.html" class="text-xs text-slate-400 hover:text-slate-600">Comparison →</a>
+    <div>
+      <div class="font-bold text-base">Category Analysis</div>
+      <div class="text-xs text-slate-400">In-depth category performance across channels, cities &amp; clinics</div>
+      <div class="text-xs mt-0.5 flex items-center gap-1.5" id="dataNote"></div>
+    </div>
+    <div class="flex items-center gap-2 ml-auto flex-wrap" id="catChips"></div>
+    <!-- Tier filter -->
+    <div class="flex gap-1 border rounded-lg p-0.5" style="border-color:var(--line);">
+      <button class="toggle-btn active" id="tierAllCat" onclick="setTierCat('ALL')">All Cities</button>
+      <button class="toggle-btn"        id="tierT1Cat"  onclick="setTierCat('T1')">Tier 1</button>
+      <button class="toggle-btn"        id="tierT2Cat"  onclick="setTierCat('T2')">Tier 2</button>
+    </div>
+    <!-- Offline / Online / All scope toggle -->
+    <div class="flex gap-1 border rounded-lg p-0.5" style="border-color:var(--line);" id="scopeToggle">
+      <button class="toggle-btn active" id="scopeOffline" onclick="setScope('offline')">Offline</button>
+      <button class="toggle-btn" id="scopeOnline" onclick="setScope('online')">Online</button>
+      <button class="toggle-btn" id="scopeAll" onclick="setScope('all')">All</button>
+    </div>
+    <div class="flex gap-1 border rounded-lg p-0.5" style="border-color:var(--line);">
+      <button class="toggle-btn active" id="modeAbs" onclick="setMode('abs')">Calls Done</button>
+      <button class="toggle-btn" id="modeShare" onclick="setMode('share')">Share %</button>
+    </div>
+  </div>
+</div>
+
+<div class="max-w-7xl mx-auto px-6 py-6 space-y-6" id="mainContent">
+  <div class="loading">Loading data…</div>
+</div>
+
+<script>
+const CAT_META = {
+  'STI':    { label:'STI', color:'#0ea5e9', bg:'#eff6ff' },
+  'SH':     { label:'Sexual Health', isSHAggregate:true, color:'#7c3aed', bg:'#f5f3ff' },
+  'ED+':    { label:'ED+',    parent:'Sexual Health', color:'#7c3aed', bg:'#f5f3ff' },
+  'PE+':    { label:'PE+',    parent:'Sexual Health', color:'#f59e0b', bg:'#fffbeb' },
+  'ED+PE+': { label:'ED+PE+', parent:'Sexual Health', color:'#10b981', bg:'#ecfdf5' },
+  'NSSD':   { label:'NSSD',   parent:'Sexual Health', color:'#94a3b8', bg:'#f8fafc' },
+  'oth':    { label:'Others', parent:'Sexual Health', color:'#cbd5e1', bg:'#f8fafc' },
+  'ALL':    { label:'All Categories', color:'#0f172a', bg:'#f1f5f9' },
+};
+
+const SH_SUBS = ['ED+', 'PE+', 'ED+PE+', 'NSSD', 'oth'];
+
+function getSHVal(obj) {
+  return SH_SUBS.reduce((s, k) => s + (obj[k] || 0), 0);
+}
+
+function catDisplayLabel(cat) {
+  const m = CAT_META[cat] || CAT_META['oth'];
+  if (m.parent) return m.parent + ' › ' + m.label;
+  return m.label;
+}
+
+const CH_COLORS = {
+  'GMB':     '#10b981',
+  'Google':  '#3b82f6',
+  'Practo':  '#8b5cf6',
+  'Organic': '#f59e0b',
+  'Meta':    '#f97316',
+  'Others':  '#94a3b8'
+};
+
+const CITY_TIERS = {
+  T1: ['Bangalore','Mumbai','Pune','Hyderabad','Chennai'],
+  T2: ['Navi Mumbai','Coimbatore','Nagpur','Ranchi','Jaipur','Ahmedabad',
+       'Surat','Nashik','Aurangabad','Hubli','Mysuru','Mangaluru',
+       'Bhopal','Visakhapatnam','Thane','Gandhinagar','Vijayawada'],
+};
+function cityTier(c) {
+  return CITY_TIERS.T1.includes(c) ? 'T1'
+       : CITY_TIERS.T2.includes(c) ? 'T2' : null;
+}
+
+let DATA = null;
+let activeCat    = 'STI';
+let viewMode     = 'abs';
+let activeScope  = 'offline';
+let activeChannel= 'ALL';
+let activeCity   = 'ALL';
+let activeTier   = 'ALL';
+let charts       = {};
+
+function S() { return DATA[activeScope]; }
+
+function getFilteredData(weekKey) {
+  const scope = S();
+  if (activeChannel !== 'ALL') {
+    const d = scope.weekly_channel?.[weekKey]?.[activeChannel] || {};
+    return { cats: d, funnel: d, total: d.total || 0, isFiltered: true };
+  }
+  if (activeCity !== 'ALL' && scope.weekly_city) {
+    const d = scope.weekly_city?.[weekKey]?.[activeCity] || {};
+    return { cats: d, funnel: d, total: d.total || 0, isFiltered: true };
+  }
+  if (activeTier !== 'ALL') {
+    const t = getTierTotal(weekKey);
+    if (t) return { cats: t.by_cat, funnel: scope.weekly_funnel?.[weekKey]||{}, total: t.total, isFiltered: true };
+  }
+  const wt = scope.weekly_total[weekKey] || {};
+  return { cats: wt.by_cat || {}, funnel: scope.weekly_funnel?.[weekKey] || {}, total: wt.total || 0, isFiltered: false };
+}
+
+function setTierCat(t) {
+  activeTier = t; activeCity = 'ALL'; activeChannel = 'ALL';
+  ['tierAllCat','tierT1Cat','tierT2Cat'].forEach(id => document.getElementById(id)?.classList.remove('active'));
+  document.getElementById(t==='ALL'?'tierAllCat':t==='T1'?'tierT1Cat':'tierT2Cat')?.classList.add('active');
+  render();
+}
+
+function getTierTotal(weekKey) {
+  const scope = S();
+  if (activeTier === 'ALL') return null;
+  const cities = Object.keys(scope.weekly_city?.[weekKey] || {}).filter(c => cityTier(c) === activeTier);
+  const totals = { total: 0, by_cat: { STI:0,'ED+':0,'PE+':0,'ED+PE+':0,NSSD:0,oth:0 } };
+  for (const c of cities) {
+    const d = scope.weekly_city[weekKey][c];
+    totals.total += d.total || 0;
+    for (const cat of Object.keys(totals.by_cat)) totals.by_cat[cat] += d[cat] || 0;
+  }
+  return totals;
+}
+
+function setScope(s) {
+  activeScope = s; activeChannel = 'ALL'; activeCity = 'ALL';
+  ['offline','online','all'].forEach(k => {
+    document.getElementById('scope' + k.charAt(0).toUpperCase() + k.slice(1))
+      ?.classList.toggle('active', k === s);
+  });
+  const noteEl = document.getElementById('dataNote');
+  if (noteEl) {
+    const lbl = s==='offline'?'Offline clinics':s==='online'?'Online / remote':'All appointments';
+    const total = Object.values(S().weekly_total).reduce((a,b)=>a+(b.total||0),0);
+    noteEl.innerHTML = `<span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${s==='offline'?'#10b981':s==='online'?'#3b82f6':'#f59e0b'};flex-shrink:0"></span>
+      <span class="text-slate-500">${lbl}</span><span class="text-slate-300">·</span>
+      <span class="text-slate-500 font-medium">${total.toLocaleString()} appointments</span>`;
+  }
+  render();
+}
+
+function setMode(m) {
+  viewMode = m;
+  document.getElementById('modeAbs').classList.toggle('active', m==='abs');
+  document.getElementById('modeShare').classList.toggle('active', m==='share');
+  render();
+}
+
+function setChannel(ch) {
+  activeChannel = ch;
+  if (ch !== 'ALL') activeCity = 'ALL';
+  render();
+}
+
+function setCity(city) {
+  activeCity = city;
+  if (city !== 'ALL') activeChannel = 'ALL';
+  render();
+}
+
+function clearFilters() {
+  activeChannel = 'ALL'; activeCity = 'ALL';
+  render();
+}
+
+function getCatValue(weekKey, cat) {
+  const { cats, total } = getFilteredData(weekKey);
+  if (cat === 'ALL') return total;
+  if (cat === 'SH')  return getSHVal(cats);
+  return cats[cat] || 0;
+}
+
+function getCatShare(weekKey, cat) {
+  const { total } = getFilteredData(weekKey);
+  return (getCatValue(weekKey, cat) / (total || 1)) * 100;
+}
+
+function last8WeeksAvg(weeks, cat, upToIdx) {
+  const start = Math.max(0, upToIdx - 8);
+  const slice = weeks.slice(start, upToIdx);
+  if (!slice.length) return 0;
+  const vals = slice.map(w => viewMode === 'share' ? getCatShare(w, cat) : getCatValue(w, cat));
+  return vals.reduce((a,b) => a+b, 0) / vals.length;
+}
+
+function fmt(n)    { return n >= 1000 ? (n/1000).toFixed(1)+'k' : Math.round(n).toString(); }
+function fmtPct(n) { return n.toFixed(1)+'%'; }
+
+// ── KPI card helpers ────────────────────────────────────────────────────────
+function kpiCard(label, val, sub, color) {
+  return `<div class="card" style="padding:14px 16px;">
+    <div style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:4px;">${label}</div>
+    <div style="font-size:22px;font-weight:700;color:${color};line-height:1.2;">${val}</div>
+    <div style="font-size:11px;color:var(--muted);margin-top:4px;">${sub}</div>
+  </div>`;
+}
+
+function kpiCard2(label, val, sub, color) {
+  return `<div style="background:#f8fafc;border:1px solid var(--line);border-radius:12px;padding:14px 16px;">
+    <div style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:4px;">${label}</div>
+    <div style="font-size:26px;font-weight:700;color:${color};line-height:1.2;">${val}</div>
+    <div style="font-size:12px;color:var(--muted);margin-top:4px;">${sub}</div>
+  </div>`;
+}
+
+function miniKpi(label, val, sub, color) {
+  return `<div style="background:#f8fafc;border-radius:8px;padding:8px 10px;">
+    <div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:3px;">${label}</div>
+    <div style="font-size:17px;font-weight:700;color:${color};line-height:1.2;">${val}</div>
+    <div style="font-size:10px;color:var(--muted);margin-top:2px;">${sub}</div>
+  </div>`;
+}
+
+// ── SVG sparkline ────────────────────────────────────────────────────────────
+function svgSparkline(vals, color, w, h, filled) {
+  w = w||80; h = h||28; if (filled === undefined) filled = true;
+  const valid = vals.filter(v => v != null && !isNaN(v) && isFinite(v));
+  if (!valid.length || valid.length < 2) return `<svg width="${w}" height="${h}"></svg>`;
+  const mn  = Math.min(...valid);
+  const mx  = Math.max(...valid);
+  const rng = mx - mn || 1;
+  const pts = vals.map((v, i) => {
+    if (v == null || isNaN(v) || !isFinite(v)) return null;
+    const x = (i / (vals.length - 1)) * (w - 6) + 3;
+    const y = h - 3 - ((v - mn) / rng) * (h - 8);
+    return [x.toFixed(1), y.toFixed(1)];
+  }).filter(Boolean);
+  if (pts.length < 2) return `<svg width="${w}" height="${h}"></svg>`;
+  const pStr = pts.map(p => p.join(',')).join(' ');
+  const last = pts[pts.length - 1];
+  const fill = filled ? `<polygon points="${pts[0][0]},${h} ${pStr} ${last[0]},${h}" fill="${color}22"/>` : '';
+  return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" style="overflow:visible;">
+    ${fill}
+    <polyline points="${pStr}" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="${last[0]}" cy="${last[1]}" r="2.5" fill="${color}"/>
+  </svg>`;
+}
+
+// ── Mini trend box (sparkline + latest + trend indicator) ───────────────────
+function buildMiniTrendBox(label, vals, color, latestStr, trendVal, isRatePp) {
+  const trendSign  = trendVal >= 0 ? '▲' : '▼';
+  const trendAbs   = Math.abs(trendVal);
+  const trendColor = isRatePp
+    ? (trendVal <= -2 ? '#dc2626' : trendVal >= 2 ? '#059669' : '#94a3b8')
+    : (trendVal >= 0 ? '#059669' : '#dc2626');
+  const trendStr = isRatePp
+    ? trendAbs.toFixed(1) + 'pp'
+    : (trendAbs < 10 ? trendAbs.toFixed(1) : Math.round(trendAbs)) + '%';
+  const spark = svgSparkline(vals, color, 72, 26, true);
+  return `<div style="background:#f8fafc;border-radius:8px;padding:8px 10px;">
+    <div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${label}</div>
+    <div style="display:flex;align-items:flex-end;justify-content:space-between;gap:4px;">
+      <div>
+        <div style="font-size:14px;font-weight:700;color:var(--ink);line-height:1.1;">${latestStr}</div>
+        <div style="font-size:9px;color:${trendColor};margin-top:2px;font-weight:600;">${trendSign}${trendStr}</div>
+      </div>
+      ${spark}
+    </div>
+  </div>`;
+}
+
+// ── Growth index chart ────────────────────────────────────────────────────────
+function buildGrowthIndexChart(weeks, cat, m, wkLabels, allWeekData) {
+  const ctx = document.getElementById('growthIndexChart');
+  if (!ctx) return;
+  const baseCat   = allWeekData[0]?.catVal  || 1;
+  const baseTotal = allWeekData[0]?.total   || 1;
+  const baseNon   = Math.max(baseTotal - baseCat, 1);
+  const totalIdx  = allWeekData.map(d => d.total    / baseTotal * 100);
+  const catIdx    = allWeekData.map(d => d.catVal   / baseCat   * 100);
+  const nonIdx    = allWeekData.map(d => Math.max(d.total - d.catVal, 0) / baseNon * 100);
+
+  charts.growthIndex = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: wkLabels,
+      datasets: [
+        { label:'Total calls',         data:totalIdx, borderColor:'#64748b', backgroundColor:'transparent',  borderWidth:2,   borderDash:[5,3], pointRadius:3, pointBackgroundColor:'#64748b', tension:0.3, spanGaps:true },
+        { label:m.label+' calls',      data:catIdx,   borderColor:m.color,  backgroundColor:m.color+'18',   fill:true, borderWidth:2.5, pointRadius:4, pointBackgroundColor:m.color,   tension:0.3, spanGaps:true },
+        { label:'Non-'+m.label+' calls',data:nonIdx,  borderColor:'#10b981',backgroundColor:'transparent',  borderWidth:2,   borderDash:[3,3], pointRadius:3, pointBackgroundColor:'#10b981', tension:0.3, spanGaps:true },
+      ]
+    },
+    options: {
+      responsive:true, maintainAspectRatio:false,
+      plugins: {
+        legend: { position:'top', labels:{ font:{size:11}, boxWidth:14, padding:12 } },
+        tooltip: { mode:'index', callbacks:{ label: ctx => `${ctx.dataset.label}: ${(ctx.raw||0).toFixed(0)}` } }
+      },
+      scales: {
+        x: { grid:{display:false}, ticks:{font:{size:10}} },
+        y: { grid:{color:'#f1f5f9'}, ticks:{font:{size:10}, callback:v=>v.toFixed(0)}, suggestedMin:80 }
+      }
+    }
+  });
+}
+
+// ── MAIN RENDER ────────────────────────────────────────────────────────────
+function render() {
+  const scope    = S();
+  const weeks    = scope.weeks || DATA.weeks;
+  const cat      = activeCat;
+  const m        = CAT_META[cat] || CAT_META['oth'];
+  const catLabel = m.label;
+  const lastWeek = weeks[weeks.length - 1];
+  const hasGeo   = activeScope !== 'online';
+
+  // ── Summary stats across all weeks ──
+  const allWeekData = weeks.map(wk => {
+    const { cats, total } = getFilteredData(wk);
+    const catVal = cat==='SH' ? getSHVal(cats) : cat==='ALL' ? total : (cats[cat]||0);
+    return { wk, total, catVal };
+  });
+  const totalCatAll   = allWeekData.reduce((s,d) => s + d.catVal, 0);
+  const totalCallsAll = allWeekData.reduce((s,d) => s + d.total,  0);
+  const avgCatPct     = totalCallsAll ? totalCatAll / totalCallsAll * 100 : 0;
+
+  const weekRates = allWeekData.map(d => ({ wk:d.wk, rate: d.total ? d.catVal/d.total*100 : 0 }));
+  const peakWk    = weekRates.reduce((a,b) => b.rate > a.rate ? b : a);
+  const lowWk     = weekRates.reduce((a,b) => b.rate < a.rate ? b : a);
+  const catPctMin = Math.min(...weekRates.map(r => r.rate));
+  const catPctMax = Math.max(...weekRates.map(r => r.rate));
+  const catPctAvg = weekRates.reduce((s,r) => s + r.rate, 0) / weekRates.length;
+
+  // Top channel (scope-level, network-wide)
+  const channels = DATA.channels || ['GMB','Google','Practo','Organic','Meta','Others'];
+  const chCatTotals = channels.map(ch => ({
+    ch,
+    total: weeks.reduce((s,wk) => {
+      const d = scope.weekly_channel?.[wk]?.[ch] || {};
+      return s + (cat==='SH' ? getSHVal(d) : cat==='ALL' ? (d.total||0) : (d[cat]||0));
+    }, 0)
+  })).sort((a,b) => b.total - a.total);
+  const topCh    = chCatTotals[0] || { ch:'—', total:0 };
+  const topChPct = totalCatAll ? topCh.total / totalCatAll * 100 : 0;
+
+  // Growth: first N4 vs last N4 weeks
+  const n4        = Math.min(4, Math.floor(weeks.length / 2));
+  const first4    = allWeekData.slice(0, n4);
+  const last4     = allWeekData.slice(-n4);
+  const avgTotF   = first4.reduce((s,d) => s + d.total,  0) / n4;
+  const avgTotL   = last4.reduce((s,d)  => s + d.total,  0) / n4;
+  const avgCatF   = first4.reduce((s,d) => s + d.catVal, 0) / n4;
+  const avgCatL   = last4.reduce((s,d)  => s + d.catVal, 0) / n4;
+  const totGrowth = avgTotF ? (avgTotL - avgTotF) / avgTotF * 100 : 0;
+  const catGrowth = avgCatF ? (avgCatL - avgCatF) / avgCatF * 100 : 0;
+
+  // Short week labels for charts
+  const MS = ['J','F','M','A','My','Jn','Jl','Au','S','O','N','D'];
+  const shortLabel = wk => { const d = new Date(wk+'T00:00:00Z'); return d.getUTCDate()+MS[d.getUTCMonth()]; };
+  const wkLabels   = weeks.map(shortLabel);
+
+  // ── Channel stats (always scope-level/network-wide) ──
+  const channelStats = channels.map(ch => {
+    const totVals = weeks.map(wk => scope.weekly_channel?.[wk]?.[ch]?.total || 0);
+    const catVals = weeks.map(wk => {
+      const d = scope.weekly_channel?.[wk]?.[ch] || {};
+      return cat==='SH' ? getSHVal(d) : cat==='ALL' ? (d.total||0) : (d[cat]||0);
+    });
+    const rates      = totVals.map((t,i) => t ? catVals[i]/t*100 : null);
+    const validR     = rates.filter(v => v != null);
+    const avgRate    = validR.length ? validR.reduce((a,b)=>a+b,0)/validR.length : 0;
+    const latestRate = [...rates].reverse().find(v => v != null) ?? 0;
+    const earlyR     = validR.slice(0, n4);
+    const recentR    = validR.slice(-n4);
+    const earlyAvg   = earlyR.length  ? earlyR.reduce((a,b)=>a+b,0)/earlyR.length   : avgRate;
+    const recentAvg  = recentR.length ? recentR.reduce((a,b)=>a+b,0)/recentR.length : avgRate;
+    const trend      = recentAvg - earlyAvg;
+    const avgVol     = totVals.reduce((a,b)=>a+b,0) / totVals.length;
+    const avgCat     = catVals.reduce((a,b)=>a+b,0) / catVals.length;
+    const netTots    = weeks.map(wk => scope.weekly_total?.[wk]?.total || 0);
+    const netCatTots = weeks.map(wk => {
+      const wt = scope.weekly_total?.[wk]?.by_cat || {};
+      return cat==='SH' ? getSHVal(wt) : cat==='ALL' ? (scope.weekly_total?.[wk]?.total||0) : (wt[cat]||0);
+    });
+    const avgNetVol  = netTots.reduce((a,b)=>a+b,0)    / netTots.length    || 1;
+    const avgNetCat  = netCatTots.reduce((a,b)=>a+b,0) / netCatTots.length || 1;
+    const volShare   = avgNetVol ? avgVol / avgNetVol * 100 : 0;
+    const catShare   = avgNetCat ? avgCat / avgNetCat * 100 : 0;
+    const earlyVol   = totVals.slice(0,n4).reduce((a,b)=>a+b,0)/n4 || 1;
+    const recentVol  = totVals.slice(-n4).reduce((a,b)=>a+b,0)/n4;
+    const volTrend   = (recentVol - earlyVol) / earlyVol * 100;
+    const earlyC     = catVals.slice(0,n4).reduce((a,b)=>a+b,0)/n4 || 1;
+    const recentC    = catVals.slice(-n4).reduce((a,b)=>a+b,0)/n4;
+    const catTrend   = (recentC - earlyC) / earlyC * 100;
+    return { ch, totVals, catVals, rates, avgRate, latestRate, earlyAvg, trend,
+             avgVol, avgCat, volShare, catShare, volTrend, catTrend };
+  });
+
+  const maxAvgVol = Math.max(...channelStats.map(s => s.avgVol)) || 1;
+
+  function getSignal(stats) {
+    const { avgVol, trend, volTrend } = stats;
+    if (avgVol === maxAvgVol && Math.abs(trend) < 2)  return {key:'anchor',  label:'Anchor channel',        color:'#059669', bg:'#ecfdf5', bd:'#6ee7b7'};
+    if (volTrend > 10 && trend < -2)                  return {key:'slipping',label:'Vol↑ · Rate slipping',  color:'#d97706', bg:'#fffbeb', bd:'#fcd34d'};
+    if (trend < -3)                                   return {key:'dropping',label:catLabel+' rate dropping',color:'#dc2626', bg:'#fef2f2', bd:'#fca5a5'};
+    if (trend > 2)                                    return {key:'rising',  label:catLabel+' rate rising',  color:'#059669', bg:'#f0fdf4', bd:'#86efac'};
+    return                                                    {key:'stable',  label:'Stable',                color:'#0ea5e9', bg:'#eff6ff', bd:'#93c5fd'};
+  }
+
+  function getInsight(sig, st) {
+    const lb = catLabel;
+    switch(sig.key) {
+      case 'anchor':   return `<strong>Healthy anchor:</strong> Largest channel (${st.volShare.toFixed(1)}% of calls), drives ${st.catShare.toFixed(1)}% of all ${lb}. ${lb} rate steady — ${st.avgRate.toFixed(1)}% avg, latest ${st.latestRate.toFixed(1)}%. Nothing to fix.`;
+      case 'slipping': return `<strong>Volume up, ${lb} rate slipping:</strong> Volume +${Math.abs(st.volTrend).toFixed(0)}% vs early weeks but ${lb} rate declining (${st.avgRate.toFixed(1)}% avg, latest ${st.latestRate.toFixed(1)}%, trend ${st.trend.toFixed(1)}pp). More traffic, proportionally fewer ${lb}. Check campaign targeting.`;
+      case 'dropping': return `<strong>${lb} rate dropping:</strong> Rate declined from ${st.earlyAvg.toFixed(1)}% to ${st.latestRate.toFixed(1)}% (trend ${st.trend.toFixed(1)}pp). Review lead quality and mix shift.`;
+      case 'rising':   return `<strong>${lb} rate rising:</strong> Rate improved from ${st.earlyAvg.toFixed(1)}% to ${st.latestRate.toFixed(1)}% (+${st.trend.toFixed(1)}pp). Positive quality signal — keep monitoring.`;
+      default:         return `<strong>Stable:</strong> ${lb} rate consistent around ${st.avgRate.toFixed(1)}%. Volume and ${lb} broadly in line with network trends.`;
+    }
+  }
+
+  // ── Channel cards ──
+  const latestWkStr = (DATA.week_labels?.[lastWeek]||lastWeek).split(' - ')[1] || 'latest';
+  const channelCardsHTML = channelStats.map(stats => {
+    const sig = getSignal(stats);
+    const { ch, totVals, catVals, rates, avgRate, latestRate, avgVol, avgCat,
+            volShare, catShare, catTrend, volTrend, trend } = stats;
+    const cc     = CH_COLORS[ch] || '#94a3b8';
+    const chName = ch==='GMB' ? 'Google GMB' : ch==='Google' ? 'Google ex GMB' : ch;
+    const latestTot = totVals[totVals.length-1];
+    const latestCat = catVals[catVals.length-1];
+    const rateColor = v => v >= 25 ? '#dc2626' : v >= 18 ? '#d97706' : 'var(--ink)';
+    return `<div style="background:#fff;border:1.5px solid var(--line);border-radius:14px;padding:18px;">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
+        <span style="width:12px;height:12px;border-radius:50%;background:${cc};flex-shrink:0;display:inline-block;"></span>
+        <span style="font-size:15px;font-weight:700;">${chName}</span>
+        <span style="margin-left:auto;padding:2px 10px;border-radius:999px;font-size:10px;font-weight:700;background:${sig.bg};color:${sig.color};border:1px solid ${sig.bd};">${sig.label}</span>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:14px;">
+        ${miniKpi('avg calls/wk', Math.round(avgVol).toLocaleString(), volShare.toFixed(1)+'% of total', cc)}
+        ${miniKpi('avg '+catLabel+'/wk', Math.round(avgCat).toString(), catShare.toFixed(1)+'% of all '+catLabel, cc)}
+        ${miniKpi(catLabel+' rate '+weeks.length+'-wk avg', avgRate.toFixed(1)+'%', 'all-wk avg', rateColor(avgRate))}
+        ${miniKpi(catLabel+' rate latest', latestRate.toFixed(1)+'%', latestWkStr, rateColor(latestRate))}
+      </div>
+      <div style="margin-bottom:12px;">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:5px;">
+          <div style="width:72px;font-size:10px;color:var(--muted);">Vol share</div>
+          <div style="flex:1;height:8px;background:#f1f5f9;border-radius:4px;overflow:hidden;">
+            <div style="height:100%;width:${Math.min(volShare*2.5,100)}%;background:${cc};border-radius:4px;"></div>
+          </div>
+          <div style="font-size:11px;font-weight:700;color:${cc};width:42px;text-align:right;">${volShare.toFixed(1)}%</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <div style="width:72px;font-size:10px;color:var(--muted);">${catLabel} share</div>
+          <div style="flex:1;height:8px;background:#f1f5f9;border-radius:4px;overflow:hidden;">
+            <div style="height:100%;width:${Math.min(catShare*2.5,100)}%;background:#f59e0b;border-radius:4px;"></div>
+          </div>
+          <div style="font-size:11px;font-weight:700;color:#d97706;width:42px;text-align:right;">${catShare.toFixed(1)}%</div>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px;">
+        ${buildMiniTrendBox('Total calls / week', totVals, cc, latestTot.toLocaleString(), volTrend, false)}
+        ${buildMiniTrendBox(catLabel+' calls / week', catVals, '#f59e0b', latestCat.toString(), catTrend, false)}
+        ${buildMiniTrendBox(catLabel+' rate / week', rates.map(r => r ?? 0), sig.color, latestRate.toFixed(1)+'%', trend, true)}
+      </div>
+      <div style="padding:10px 12px;background:${sig.bg};border:1px solid ${sig.bd};border-radius:8px;font-size:12px;line-height:1.5;color:var(--ink);">
+        ${getInsight(sig, stats)}
+      </div>
+    </div>`;
+  }).join('');
+
+  // ── City analysis ──
+  let citySection = '';
+  if (hasGeo) {
+    const allCities = (S().cities || []).filter(c => c && c !== 'Online');
+    const cityAgg   = {};
+    for (const city of allCities) {
+      let total=0, catV=0;
+      for (const wk of weeks) {
+        const d = S().weekly_city?.[wk]?.[city] || {};
+        total += d.total || 0;
+        catV  += cat==='SH' ? getSHVal(d) : cat==='ALL' ? (d.total||0) : (d[cat]||0);
+      }
+      cityAgg[city] = { total, catV, rate: total ? catV/total*100 : 0 };
+    }
+
+    // Network rate (scope-level for threshold)
+    const netRate = totalCallsAll ? totalCatAll/totalCallsAll*100 : 0;
+    const watchT  = netRate * 1.4; // ≥1.4× network avg = watch
+
+    const filteredCities = (activeTier==='ALL' ? allCities : allCities.filter(c => cityTier(c)===activeTier))
+      .filter(c => cityAgg[c]?.total > 0)
+      .sort((a,b) => cityAgg[b].rate - cityAgg[a].rate);
+    const maxCR = Math.max(...filteredCities.map(c => cityAgg[c].rate), 1);
+
+    // Aggregate clinic data across all weeks
+    const clinicAgg = {};
+    for (const wk of weeks) {
+      for (const [key, d] of Object.entries(S().weekly_clinic?.[wk] || {})) {
+        if (!clinicAgg[key]) clinicAgg[key] = { total:0, catV:0 };
+        clinicAgg[key].total += d.total || 0;
+        clinicAgg[key].catV  += cat==='SH' ? getSHVal(d) : cat==='ALL' ? (d.total||0) : (d[cat]||0);
+      }
+    }
+
+    const cityBarRows = filteredCities.map(city => {
+      const cd  = cityAgg[city];
+      const bw  = maxCR ? cd.rate/maxCR*100 : 0;
+      const bc  = cd.rate >= watchT ? '#f59e0b' : '#10b981';
+      const tc  = cd.rate >= watchT ? '#d97706' : '#059669';
+      return `<div style="display:flex;align-items:center;gap:8px;margin-bottom:5px;">
+        <div style="width:88px;font-size:11px;font-weight:600;text-align:right;color:var(--ink);">${city}</div>
+        <div style="flex:1;height:16px;background:#f1f5f9;border-radius:4px;overflow:hidden;">
+          <div style="height:100%;width:${Math.min(bw,100)}%;background:${bc};border-radius:4px;"></div>
+        </div>
+        <div style="font-size:11px;font-weight:700;color:${tc};width:34px;text-align:right;">${cd.rate.toFixed(0)}%</div>
+      </div>`;
+    }).join('');
+
+    const cityCards = filteredCities.map(city => {
+      const cd      = cityAgg[city];
+      const clinics = Object.keys(clinicAgg)
+        .filter(k => k.startsWith(city+'_'))
+        .map(k => ({ name:k.replace(city+'_',''), ...clinicAgg[k],
+                     rate: clinicAgg[k].total ? clinicAgg[k].catV/clinicAgg[k].total*100 : 0 }))
+        .filter(c => c.total > 0)
+        .sort((a,b) => b.rate - a.rate);
+      const maxClinicR = Math.max(...clinics.map(c => c.rate), 1);
+      const alertC     = clinics.find(c => c.rate >= watchT);
+      const hdrColor   = cd.rate >= watchT ? '#d97706' : '#059669';
+      return `<div style="border:1px solid var(--line);border-radius:12px;overflow:hidden;margin-bottom:10px;">
+        <div style="padding:10px 14px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:12px;background:#fafafa;">
+          <span style="font-size:22px;font-weight:700;color:${hdrColor};">${cd.rate.toFixed(0)}%</span>
+          <div>
+            <div style="font-size:13px;font-weight:700;">${city}</div>
+            <div style="font-size:11px;color:var(--muted);">${clinics.length} active clinic${clinics.length!==1?'s':''} · ${cd.catV.toLocaleString()} ${catLabel} / ${cd.total.toLocaleString()} total</div>
+          </div>
+        </div>
+        <div style="padding:10px 14px;">
+          ${clinics.map(c => {
+            const cbc = c.rate >= watchT ? '#f59e0b' : '#10b981';
+            const ctc = c.rate >= watchT ? '#d97706' : '#059669';
+            return `<div style="display:flex;align-items:center;gap:8px;margin-bottom:5px;">
+              <div style="width:110px;font-size:11px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${c.name}">${c.name}</div>
+              <div style="flex:1;height:6px;background:#f1f5f9;border-radius:3px;overflow:hidden;">
+                <div style="height:100%;width:${Math.min(c.rate/maxClinicR*100,100)}%;background:${cbc};border-radius:3px;"></div>
+              </div>
+              <div style="font-size:11px;font-weight:700;color:${ctc};width:30px;text-align:right;">${c.rate.toFixed(0)}%</div>
+            </div>`;
+          }).join('')}
+          ${alertC
+            ? `<div style="margin-top:8px;padding:6px 10px;background:#fffbeb;border:1px solid #fcd34d;border-radius:6px;font-size:11px;color:#92400e;display:flex;gap:6px;align-items:center;">⚠️ Moderate ${catLabel} load. Watch ${alertC.name} (${alertC.rate.toFixed(0)}%)</div>`
+            : `<div style="margin-top:8px;padding:6px 10px;background:#ecfdf5;border:1px solid #6ee7b7;border-radius:6px;font-size:11px;color:#065f46;display:flex;gap:6px;align-items:center;">✓ Stable — low ${catLabel} share overall</div>`
+          }
+        </div>
+      </div>`;
+    }).join('');
+
+    const dateRange = `${(DATA.week_labels?.[weeks[0]]||'').split(' - ')[0]||weeks[0]} – ${(DATA.week_labels?.[lastWeek]||'').split(' - ')[1]||lastWeek}`;
+    citySection = `<div class="card">
+      <div style="font-size:15px;font-weight:700;margin-bottom:4px;">City &amp; Clinic Analysis — ${catDisplayLabel(cat)}</div>
+      <div style="font-size:11px;color:var(--muted);margin-bottom:16px;">${catLabel} % by city · all-time aggregated · ${dateRange} · ${activeScope}</div>
+      <div style="display:grid;grid-template-columns:240px 1fr;gap:20px;align-items:start;">
+        <div>
+          <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#94a3b8;margin-bottom:10px;">${catLabel} % by city — ${dateRange}</div>
+          ${cityBarRows}
+          <div style="margin-top:12px;display:flex;gap:12px;flex-wrap:wrap;font-size:10px;color:#64748b;">
+            <span><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:#10b981;margin-right:3px;vertical-align:middle;"></span>Below watch (${watchT.toFixed(0)}%)</span>
+            <span><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:#f59e0b;margin-right:3px;vertical-align:middle;"></span>Watch zone</span>
+          </div>
+        </div>
+        <div style="max-height:660px;overflow-y:auto;">${cityCards}</div>
+      </div>
+    </div>`;
+  }
+
+  // ── Filter bar ──
+  const allCh2 = ['ALL', ...channels];
+  const chipsHTML = allCh2.map(ch => {
+    const active = ch === activeChannel;
+    const color  = ch==='ALL' ? '#0f172a' : (CH_COLORS[ch] || '#94a3b8');
+    const style  = active ? `background:${color};color:#fff;border-color:${color};` : `color:${ch==='ALL'?'var(--ink)':color};border-color:#e2e8f0;`;
+    const dot    = ch !== 'ALL' ? `<span style="width:7px;height:7px;border-radius:50%;background:${active?'#fff':color};display:inline-block;flex-shrink:0;"></span>` : '';
+    return `<button class="chip" style="${style}font-size:11px;padding:3px 10px;" onclick="setChannel('${ch}')">${dot}${ch==='ALL'?'All':ch}</button>`;
+  }).join('');
+
+  const citiesForFilter = hasGeo ? ['ALL', ...(S().cities||[]).filter(c => c && c!=='Online')] : [];
+  const citySel = hasGeo ? `
+    <span style="width:1px;height:20px;background:#e2e8f0;flex-shrink:0;"></span>
+    <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#94a3b8;flex-shrink:0;">City:</span>
+    <select style="font-size:12px;border:1.5px solid ${activeCity!=='ALL'?'#7c3aed':'var(--line)'};border-radius:6px;padding:3px 8px;background:#fff;cursor:pointer;" onchange="setCity(this.value)">
+      ${citiesForFilter.map(c=>`<option value="${c}" ${c===activeCity?'selected':''}>${c==='ALL'?'All Cities':c}</option>`).join('')}
+    </select>` : '';
+
+  const filterNote = activeChannel!=='ALL'||activeCity!=='ALL'
+    ? `<span style="font-size:11px;color:#7c3aed;font-weight:600;">Filtered: ${activeChannel!=='ALL'?activeChannel+' channel':activeCity+' city'}</span>
+       <button onclick="clearFilters();" style="font-size:10px;color:#94a3b8;border:1px solid #e2e8f0;border-radius:4px;padding:1px 7px;background:#fff;cursor:pointer;margin-left:4px;">✕ Clear</button>` : '';
+
+  // ── Assemble all HTML ──
+  document.getElementById('mainContent').innerHTML = `
+    <div class="card" style="padding:10px 16px;">
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+        <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#94a3b8;flex-shrink:0;">Channel:</span>
+        <div style="display:flex;gap:5px;flex-wrap:wrap;align-items:center;">${chipsHTML}</div>
+        ${citySel}${filterNote}
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px;">
+      ${kpiCard('Total '+catLabel+' calls', totalCatAll.toLocaleString(), weeks.length+' weeks · all cities', m.color)}
+      ${kpiCard('Avg '+catLabel+'%', avgCatPct.toFixed(1)+'%', 'overall', avgCatPct>=22?'#dc2626':avgCatPct>=16?'#d97706':'#059669')}
+      ${kpiCard('Peak week', peakWk.rate.toFixed(1)+'%', (DATA.week_labels?.[peakWk.wk]||peakWk.wk).split(' - ')[0], '#dc2626')}
+      ${kpiCard('Low week',  lowWk.rate.toFixed(1)+'%',  (DATA.week_labels?.[lowWk.wk] ||lowWk.wk ).split(' - ')[0], '#059669')}
+      ${kpiCard('Top channel', topCh.ch, topCh.total.toLocaleString()+' '+catLabel+' ('+topChPct.toFixed(0)+'%)', m.color)}
+    </div>
+
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;">
+      ${kpiCard2('Total calls growth',
+        (totGrowth>=0?'+':'')+totGrowth.toFixed(0)+'%',
+        Math.round(avgTotF).toLocaleString()+' → '+Math.round(avgTotL).toLocaleString()+' avg/wk',
+        totGrowth>=0?'#059669':'#dc2626')}
+      ${kpiCard2(catLabel+' calls growth',
+        (catGrowth>=0?'+':'')+catGrowth.toFixed(0)+'%',
+        Math.round(avgCatF).toLocaleString()+' → '+Math.round(avgCatL).toLocaleString()+' avg/wk',
+        catGrowth>=0?'#059669':'#dc2626')}
+      ${kpiCard2(catLabel+'% range',
+        catPctMin.toFixed(1)+'–'+catPctMax.toFixed(1)+'%',
+        'avg '+catPctAvg.toFixed(1)+'%', '#d97706')}
+    </div>
+
+    <div class="card">
+      <div style="font-size:14px;font-weight:700;margin-bottom:2px;">
+        Growth index — ${catLabel} growing ${catGrowth>totGrowth?'faster than':'at pace with'} total
+        <span style="font-size:11px;font-weight:400;color:var(--muted);">(${(DATA.week_labels?.[weeks[0]]||weeks[0]).split(' - ')[0]} = 100)</span>
+      </div>
+      <div style="font-size:11px;color:var(--muted);margin-bottom:12px;">Indexed to first week = 100 · ${activeScope} scope${activeChannel!=='ALL'?' · filtered: '+activeChannel:''}</div>
+      <div style="height:220px;"><canvas id="growthIndexChart"></canvas></div>
+    </div>
+
+    <div>
+      <div style="font-size:16px;font-weight:700;margin-bottom:4px;">Channel Analysis — ${catDisplayLabel(cat)}</div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:14px;">Per-channel ${catLabel} rate, volume trend &amp; health signal · ${activeScope} · ${weeks.length} weeks · network-wide</div>
+      <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:14px;">${channelCardsHTML}</div>
+    </div>
+
+    ${citySection}
+
+    <div class="card">
+      <div style="font-size:14px;font-weight:700;margin-bottom:2px;">Weekly Trend — ${catDisplayLabel(cat)}</div>
+      <div style="font-size:11px;color:var(--muted);margin-bottom:12px;">
+        Showing: <strong>${viewMode==='share'?'% of Calls Done':'Calls Done'} · ${activeScope}</strong>${activeChannel!=='ALL'?' · '+activeChannel+' channel':activeCity!=='ALL'?' · '+activeCity:''}
+        · Bars = week · Dashed = 8-wk rolling avg
+      </div>
+      <div style="height:240px;"><canvas id="trendChart"></canvas></div>
+    </div>
+
+    <div class="card" style="border-color:${m.color}44;">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
+        <span style="width:10px;height:10px;border-radius:50%;background:${m.color};display:inline-block;"></span>
+        <span style="font-size:14px;font-weight:700;">Deep Dive — ${catDisplayLabel(cat)}</span>
+      </div>
+      <div style="font-size:11px;color:var(--muted);margin-bottom:12px;">Channel mix within category · online vs offline split · channel share trend (100% stacked) · network-wide</div>
+      ${activeTier!=='ALL'||activeCity!=='ALL'?`<div style="display:inline-flex;align-items:center;gap:6px;padding:5px 10px;background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;font-size:11px;color:#92400e;margin-bottom:12px;">⚠️ Channel breakdown is network-wide — city/tier filter does not apply here.</div>`:''}
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">
+        <div>
+          <div style="font-size:13px;font-weight:600;margin-bottom:8px;">Which channels drive ${catDisplayLabel(cat)}?</div>
+          <div style="height:200px;"><canvas id="catMixChart"></canvas></div>
+        </div>
+        <div>
+          <div style="font-size:13px;font-weight:600;margin-bottom:8px;">Online vs Offline — ${catDisplayLabel(cat)}</div>
+          <div style="height:200px;"><canvas id="catSplitChart"></canvas></div>
+        </div>
+      </div>
+      <div>
+        <div style="font-size:13px;font-weight:600;margin-bottom:8px;">Channel share trend — ${catDisplayLabel(cat)} (100% stacked)</div>
+        <div style="height:220px;"><canvas id="catChShareTrend"></canvas></div>
+      </div>
+    </div>`;
+
+  Object.values(charts).forEach(c => { try { c.destroy(); } catch(e){} });
+  charts = {};
+  buildGrowthIndexChart(weeks, cat, m, wkLabels, allWeekData);
+  buildTrendChart(weeks, cat, m);
+  buildCatMixChart(weeks, cat, m);
+  buildCatSplitChart(weeks, cat, m);
+  buildCatChShareTrend(weeks, cat, m);
+}
+
+// ── Deep-dive helpers ────────────────────────────────────────────────────────
+function getCatChVal(scope, weekKey, cat, ch) {
+  const chData = scope.weekly_channel?.[weekKey]?.[ch] || {};
+  if (cat === 'ALL') return chData.total || 0;
+  if (cat === 'SH')  return getSHVal(chData);
+  return chData[cat] || 0;
+}
+
+function getScopeCatTotal(weekKey, cat) {
+  const wt = S().weekly_total?.[weekKey];
+  if (!wt) return 1;
+  if (cat === 'ALL') return wt.total || 1;
+  if (cat === 'SH')  return getSHVal(wt.by_cat || {});
+  return (wt.by_cat || {})[cat] || 1;
+}
+
+function buildCatMixChart(weeks, cat, m) {
+  const ctx = document.getElementById('catMixChart');
+  if (!ctx) return;
+  const scope    = S();
+  const channels = DATA.channels;
+  const lastW    = weeks[weeks.length - 1];
+  const avg8     = weeks.slice(Math.max(0, weeks.length - 9), weeks.length - 1);
+  const catTotalCur = getScopeCatTotal(lastW, cat);
+  const curVals = channels.map(ch => getCatChVal(scope, lastW, cat, ch) / catTotalCur * 100);
+  const avgVals = channels.map(ch => {
+    const vals = avg8.map(w => getCatChVal(scope, w, cat, ch) / getScopeCatTotal(w, cat) * 100);
+    return vals.length ? vals.reduce((a,b) => a+b, 0) / vals.length : 0;
+  });
+  charts.catMix = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: channels,
+      datasets: [
+        { label:'This Week %',  data:curVals, backgroundColor:channels.map(ch=>(CH_COLORS[ch]||'#94a3b8')+'CC'), borderColor:channels.map(ch=>CH_COLORS[ch]||'#94a3b8'), borderWidth:1.5, borderRadius:5, order:2 },
+        { label:'8-Wk Avg %',  data:avgVals, type:'line', borderColor:'#0f172a', backgroundColor:'transparent', borderWidth:2, borderDash:[4,3], pointRadius:4, pointBackgroundColor:'#0f172a', order:1 }
+      ]
+    },
+    options: { responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{position:'top',labels:{font:{size:10},boxWidth:10,padding:8}}, tooltip:{callbacks:{label:ctx=>`${ctx.dataset.label}: ${(ctx.raw||0).toFixed(1)}%`}} },
+      scales:{ x:{grid:{display:false}}, y:{beginAtZero:true,ticks:{callback:v=>v+'%'},grid:{color:'#f1f5f9'}} }
+    }
+  });
+}
+
+function buildCatSplitChart(weeks, cat, m) {
+  const ctx = document.getElementById('catSplitChart');
+  if (!ctx) return;
+  const channels = DATA.channels;
+  function getScopeTotal(scopeKey, weekKey) {
+    if (!DATA[scopeKey]?.weekly_channel) return 0;
+    return channels.reduce((s, ch) => s + getCatChVal(DATA[scopeKey], weekKey, cat, ch), 0);
+  }
+  const labels     = weeks.map(w => DATA.week_labels[w] || w);
+  const offlineAbs = weeks.map(w => getScopeTotal('offline', w));
+  const onlineAbs  = weeks.map(w => getScopeTotal('online',  w));
+  const offlinePct = weeks.map((_,i) => offlineAbs[i] / ((offlineAbs[i]+onlineAbs[i])||1) * 100);
+  const onlinePct  = weeks.map((_,i) => onlineAbs[i]  / ((offlineAbs[i]+onlineAbs[i])||1) * 100);
+  charts.catSplit = new Chart(ctx, {
+    type: 'bar',
+    data: { labels, datasets: [
+      { label:'Offline', data:offlinePct, backgroundColor:'#10b981CC', borderColor:'#10b981', borderWidth:1 },
+      { label:'Online',  data:onlinePct,  backgroundColor:'#3b82f6CC', borderColor:'#3b82f6', borderWidth:1 },
+    ]},
+    options: { responsive:true, maintainAspectRatio:false,
+      scales:{ x:{stacked:true,grid:{display:false},ticks:{font:{size:10},maxRotation:30}}, y:{stacked:true,max:105,ticks:{callback:v=>v+'%'},grid:{color:'#f1f5f9'}} },
+      plugins:{ legend:{position:'top',labels:{font:{size:10},boxWidth:10,padding:8}}, tooltip:{mode:'index',callbacks:{label:ctx=>`${ctx.dataset.label}: ${(ctx.raw||0).toFixed(1)}%`}} }
+    }
+  });
+}
+
+function buildCatChShareTrend(weeks, cat, m) {
+  const ctx = document.getElementById('catChShareTrend');
+  if (!ctx) return;
+  const scope    = S();
+  const channels = DATA.channels;
+  const labels   = weeks.map(w => DATA.week_labels[w] || w);
+  const datasets = channels.map(ch => ({
+    label: ch,
+    data: weeks.map(w => getCatChVal(scope, w, cat, ch) / getScopeCatTotal(w, cat) * 100),
+    backgroundColor:(CH_COLORS[ch]||'#94a3b8')+'CC', borderColor:CH_COLORS[ch]||'#94a3b8', borderWidth:1,
+  }));
+  charts.catChShare = new Chart(ctx, {
+    type: 'bar',
+    data: { labels, datasets },
+    options: { responsive:true, maintainAspectRatio:false,
+      scales:{ x:{stacked:true,grid:{display:false},ticks:{font:{size:10},maxRotation:30}}, y:{stacked:true,max:105,ticks:{callback:v=>v+'%'},grid:{color:'#f1f5f9'}} },
+      plugins:{ legend:{position:'top',labels:{font:{size:10},boxWidth:10,padding:8}}, tooltip:{mode:'index',callbacks:{label:ctx=>`${ctx.dataset.label}: ${(ctx.raw||0).toFixed(1)}%`}} }
+    }
+  });
+}
+
+function buildTrendChart(weeks, cat, m) {
+  const ctx = document.getElementById('trendChart');
+  if (!ctx) return;
+  const labels = weeks.map(w => DATA.week_labels[w] || w);
+  const vals   = weeks.map(w => viewMode==='share' ? getCatShare(w, cat) : getCatValue(w, cat));
+  const avgs   = weeks.map((_,i) => last8WeeksAvg(weeks, cat, i));
+  charts.trend = new Chart(ctx, {
+    type: 'bar',
+    data: { labels, datasets: [
+      { label:m.label, data:vals, backgroundColor:m.color+'99', borderColor:m.color, borderWidth:1.5, borderRadius:4, order:2 },
+      { label:'8-Week Avg', data:avgs, type:'line', borderColor:'#0f172a', borderWidth:2, borderDash:[5,3], pointRadius:0, fill:false, tension:0.3, order:1 }
+    ]},
+    options: { responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{position:'top',labels:{font:{size:11},boxWidth:14,padding:12}}, tooltip:{mode:'index'} },
+      scales:{ x:{grid:{display:false},ticks:{font:{size:10},maxRotation:30}}, y:{beginAtZero:true, ticks:{font:{size:11},callback:v=>viewMode==='share'?v.toFixed(1)+'%':fmt(v)}, grid:{color:'#f1f5f9'}} }
+    }
+  });
+}
+
+async function init() {
+  try {
+    const res  = await fetch('data.json');
+    DATA       = await res.json();
+    const firstLabel = DATA.week_labels[DATA.weeks[0]] || DATA.weeks[0];
+    const lastLabel  = DATA.week_labels[DATA.weeks[DATA.weeks.length-1]] || DATA.weeks[DATA.weeks.length-1];
+    const noteEl = document.getElementById('dataNote');
+    if (noteEl) {
+      noteEl.innerHTML += `<span class="text-slate-300">·</span>
+        <span class="text-slate-400">${firstLabel.split(' - ')[0]} – ${lastLabel.split(' - ')[1]}</span>`;
+    }
+    buildCatChips();
+    setScope('offline');
+  } catch(e) {
+    document.getElementById('mainContent').innerHTML = `<div class="loading text-red-500">Failed to load data.json: ${e.message}</div>`;
+  }
+}
+
+function buildCatChips() {
+  const container = document.getElementById('catChips');
+  makeChip(container, 'STI');
+  const div = document.createElement('span');
+  div.style.cssText = 'width:1px;height:20px;background:#e2e8f0;display:inline-block;margin:0 4px;';
+  container.appendChild(div);
+  const shHeader = document.createElement('span');
+  shHeader.style.cssText = 'font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:#7c3aed;font-weight:700;white-space:nowrap;align-self:center;';
+  shHeader.textContent = 'Sexual Health ›';
+  container.appendChild(shHeader);
+  ['SH', 'ED+', 'PE+', 'ED+PE+', 'NSSD', 'oth'].forEach(cat => makeChip(container, cat));
+  const div2 = document.createElement('span');
+  div2.style.cssText = 'width:1px;height:20px;background:#e2e8f0;display:inline-block;margin:0 4px;';
+  container.appendChild(div2);
+  makeChip(container, 'ALL');
+}
+
+function makeChip(container, cat) {
+  const m   = CAT_META[cat] || CAT_META['oth'];
+  const btn = document.createElement('button');
+  btn.className = 'chip' + (cat === activeCat ? ' active' : '');
+  btn.style.cssText = cat === activeCat ? `background:${m.color};border-color:${m.color};color:#fff;` : '';
+  const dot = m.isSHAggregate
+    ? `<span style="width:8px;height:8px;border-radius:2px;background:${m.color};display:inline-block;"></span>`
+    : `<span style="width:8px;height:8px;border-radius:50%;background:${m.color};display:inline-block;"></span>`;
+  btn.innerHTML = dot + m.label;
+  btn.onclick = () => {
+    activeCat = cat;
+    document.querySelectorAll('#catChips .chip').forEach(b => { b.classList.remove('active'); b.style.background=''; b.style.borderColor=''; b.style.color=''; });
+    btn.classList.add('active'); btn.style.background=m.color; btn.style.borderColor=m.color; btn.style.color='#fff';
+    render();
+  };
+  container.appendChild(btn);
+}
+
+init();
+</script>
+</body>
+</html>

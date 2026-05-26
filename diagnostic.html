@@ -1,0 +1,928 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Demand Diagnostic · Allo Health</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+:root{
+  --ink:#0f172a;--muted:#64748b;--line:#e2e8f0;
+  --red:#ef4444;--amber:#f59e0b;--green:#10b981;
+  --redBg:#fef2f2;--amberBg:#fffbeb;--greenBg:#ecfdf5;
+}
+html,body{background:#f8fafc;color:var(--ink);font-family:ui-sans-serif,system-ui,sans-serif;font-size:13px;}
+.card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:20px;box-shadow:0 1px 3px rgba(15,23,42,.05);}
+.badge{display:inline-flex;align-items:center;gap:3px;padding:1px 6px;border-radius:999px;font-size:10px;font-weight:700;white-space:nowrap;}
+.badge.red  {background:var(--redBg);   color:#991b1b;}
+.badge.amber{background:var(--amberBg); color:#92400e;}
+.badge.green{background:var(--greenBg); color:#065f46;}
+.badge.gray {background:#f1f5f9;        color:#475569;}
+.toggle-btn{padding:4px 11px;font-size:12px;border:1px solid var(--line);border-radius:6px;cursor:pointer;background:#fff;color:var(--ink);}
+.toggle-btn.active{background:#0f172a;color:#fff;border-color:#0f172a;}
+.stat-label{font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);}
+
+/* Diagnostic table */
+.dtbl{width:100%;border-collapse:separate;border-spacing:0;}
+.dtbl th{font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);
+  text-align:left;padding:8px 12px;background:#f8fafc;border-bottom:1px solid var(--line);
+  white-space:nowrap;position:sticky;top:0;z-index:5;}
+.dtbl th.right{text-align:right;}
+.dtbl td{padding:7px 12px;border-bottom:1px solid #f1f5f9;vertical-align:middle;}
+.dtbl tr:last-child td{border-bottom:none;}
+.dtbl tr.city-row{background:#f8fafc;cursor:pointer;}
+.dtbl tr.city-row:hover td{background:#f1f5f9;}
+.dtbl tr.clinic-row td{background:#fff;}
+.dtbl tr.clinic-row:hover td{background:#fafafa;}
+.metric-cell{text-align:right;}
+.metric-val{font-size:13px;font-weight:600;display:block;}
+.metric-wow{font-size:10px;display:block;margin-top:1px;}
+.wow-red   {color:#dc2626;}
+.wow-amber {color:#d97706;}
+.wow-green {color:#059669;}
+.wow-gray  {color:#94a3b8;}
+.cell-red   {background:#fef2f2 !important;}
+.cell-amber {background:#fffbeb !important;}
+.cell-green {background:#ecfdf5 !important;}
+
+/* Diagnosis pill */
+.diag{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:999px;
+  font-size:10px;font-weight:700;white-space:nowrap;}
+.diag-ok    {background:#ecfdf5;color:#065f46;}
+.diag-leads {background:#fef2f2;color:#991b1b;}
+.diag-conv  {background:#fff7ed;color:#9a3412;}
+.diag-b2d   {background:#eff6ff;color:#1e40af;}
+.diag-avail {background:#f5f3ff;color:#5b21b6;}
+.diag-drop  {background:#fffbeb;color:#92400e;}
+.diag-na    {background:#f1f5f9;color:#475569;}
+
+/* Expand toggle */
+.expand-btn{font-size:11px;cursor:pointer;color:#94a3b8;margin-right:6px;display:inline-block;width:16px;text-align:center;}
+.indent{padding-left:28px!important;}
+
+/* Funnel flow (top strip) */
+.funnel-flow{display:flex;gap:0;align-items:stretch;}
+.funnel-stage{flex:1;padding:14px 16px;border-right:1px solid var(--line);}
+.funnel-stage:last-child{border-right:none;}
+.funnel-arrow{display:flex;align-items:center;color:#cbd5e1;font-size:20px;padding:0 4px;flex-shrink:0;}
+
+/* Alert cards */
+.alert-card{border-radius:10px;padding:10px 14px;border-left:3px solid;margin-bottom:6px;}
+.alert-red   {background:#fef2f2;border-color:#ef4444;}
+.alert-amber {background:#fffbeb;border-color:#f59e0b;}
+.alert-green {background:#ecfdf5;border-color:#10b981;}
+.alert-blue  {background:#eff6ff;border-color:#3b82f6;}
+
+.loading-msg{display:flex;align-items:center;justify-content:center;min-height:200px;color:var(--muted);}
+</style>
+</head>
+<body class="min-h-screen">
+
+<!-- Header -->
+<div class="border-b bg-white sticky top-0 z-20" style="border-color:var(--line);">
+  <div class="max-w-7xl mx-auto px-6 py-3 flex items-center gap-4 flex-wrap">
+    <a href="index.html"     class="text-xs text-slate-400 hover:text-slate-600">← Dashboard</a>
+    <span class="text-slate-200 text-sm">|</span>
+    <a href="category.html"  class="text-xs text-slate-400 hover:text-slate-600">Category</a>
+    <a href="city.html"      class="text-xs text-slate-400 hover:text-slate-600">City</a>
+    <a href="efficiency.html"  class="text-xs text-slate-400 hover:text-slate-600">Efficiency</a>
+    <a href="comparison.html" class="text-xs text-slate-400 hover:text-slate-600">Comparison →</a>
+    <div>
+      <div class="font-bold text-base">Demand Diagnostic</div>
+      <div class="text-xs text-slate-400">Full funnel: Leads → Bookings → Calls Done — where is it breaking?</div>
+    </div>
+    <div class="ml-auto flex items-center gap-3 flex-wrap">
+      <!-- Week selector -->
+      <div>
+        <label class="text-xs text-slate-400 mr-1">Analysing week:</label>
+        <select id="weekSelect" onchange="setWeek(this.value)"
+          style="font-size:12px;border:1.5px solid var(--line);border-radius:6px;padding:3px 8px;background:#fff;cursor:pointer;">
+        </select>
+      </div>
+      <!-- Tier filter -->
+      <div class="flex gap-1 border rounded-lg p-0.5" style="border-color:var(--line);">
+        <button class="toggle-btn active" id="tierAll" onclick="setTier('ALL')">All</button>
+        <button class="toggle-btn"        id="tierT1"  onclick="setTier('T1')">Tier 1</button>
+        <button class="toggle-btn"        id="tierT2"  onclick="setTier('T2')">Tier 2</button>
+      </div>
+      <!-- City filter -->
+      <div>
+        <select id="citySelect" onchange="setCity(this.value)"
+          style="font-size:12px;border:1.5px solid var(--line);border-radius:6px;padding:3px 8px;background:#fff;cursor:pointer;">
+          <option value="ALL">All Cities</option>
+        </select>
+      </div>
+      <!-- Sort -->
+      <div class="flex gap-1 border rounded-lg p-0.5" style="border-color:var(--line);">
+        <button class="toggle-btn active" id="sortLeads"   onclick="setSort('leads_drop')">Leads</button>
+        <button class="toggle-btn"        id="sortBook"    onclick="setSort('book_drop')">Bookings</button>
+        <button class="toggle-btn"        id="sortCalls"   onclick="setSort('calls_drop')">Calls</button>
+        <button class="toggle-btn"        id="sortB2d"     onclick="setSort('b2d_drop')">B2D</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="max-w-7xl mx-auto px-6 py-5 space-y-5" id="mainContent">
+  <div class="loading-msg">Loading funnel data…</div>
+</div>
+
+<script>
+// ─── Config ────────────────────────────────────────────────────────────────
+const SHEET_ID   = '1bZWGVKu6b4EFPDt3aKHn21gYjdhN1aT1-LT60BFe8g0';
+const SHEET_URL  = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Booking%20and%20Leads%20trend%20summary`;
+const PRACTO_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=RD_Practo_Leads`;
+
+// City tier definitions — Tier 1 = high-volume metros, Tier 2 = smaller cities
+const CITY_TIERS = {
+  T1: ['Bangalore','Mumbai','Pune','Hyderabad','Chennai'],
+  T2: ['Navi Mumbai','Coimbatore','Nagpur','Ranchi','Jaipur','Ahmedabad',
+       'Surat','Nashik','Aurangabad','Hubli','Mysuru','Mangaluru',
+       'Bhopal','Visakhapatnam','Thane','Gandhinagar','Vijayawada'],
+};
+function cityTier(c) {
+  return CITY_TIERS.T1.includes(c) ? 'T1'
+       : CITY_TIERS.T2.includes(c) ? 'T2' : null;
+}
+function tierBadge(c) {
+  const t = cityTier(c);
+  if (!t) return '';
+  const col = t==='T1' ? '#6366f1' : '#0ea5e9';
+  return `<span style="font-size:8px;font-weight:700;padding:1px 4px;border-radius:3px;background:${col}20;color:${col};margin-left:4px;">${t}</span>`;
+}
+
+// Aligned weeks (index 0 = most recent).
+// Sheet dates are Sunday-ending; data.json keys are the matching Monday start.
+// Both sources cover the same Mon–Sun week — exact match, no offset.
+const WEEKS = [
+  { sheet:'24/05/2026', json:'2026-05-18', label:'18–24 May' },
+  { sheet:'17/05/2026', json:'2026-05-11', label:'11–17 May' },
+  { sheet:'10/05/2026', json:'2026-05-04', label:'4–10 May'  },
+  { sheet:'03/05/2026', json:'2026-04-27', label:'27 Apr–3 May' },
+  { sheet:'26/04/2026', json:'2026-04-20', label:'20–26 Apr' },
+  { sheet:'19/04/2026', json:'2026-04-13', label:'13–19 Apr' },
+  { sheet:'12/04/2026', json:'2026-04-06', label:'6–12 Apr'  },
+];
+
+// "Booking and Leads trend summary" CSV column offsets (0-indexed)
+// Row structure: City(0) | City(1) | Clinic(2) | Doctor(3)
+//   Availability cols 4-10  (7 weeks: index 0-6 = 24/05…12/04)
+//   All Bookings cols 20-26 (7 weeks, but col26 = 29/03)
+//   GMB Leads    cols 27-33 (same structure)
+// Practo is NO LONGER read from this tab — comes from RD_Practo_Leads instead.
+const AVAIL_C = 4;
+const ALLBK_C = 20;
+const GMB_C   = 27;
+
+// ─── State ──────────────────────────────────────────────────────────────────
+let JDATA       = null; // data.json
+let SDATA       = {};   // parsed sheet: city → clinic → {allBk[7], gmbLeads[7], avail[7]}
+let PRACTO_DATA = {};   // from RD_Practo_Leads: weekKey → city → count
+let activeWkIdx = 0;
+let activeCityF = 'ALL';
+let activeTier  = 'ALL'; // 'ALL' | 'T1' | 'T2'
+let sortBy = 'leads_drop';
+let expandedCities = new Set();
+
+// ─── CSV Parser ─────────────────────────────────────────────────────────────
+function parseCSV(text) {
+  const rows = [];
+  for (const line of text.split('\n')) {
+    if (!line.trim()) continue;
+    const row = []; let inQ = false, cell = '';
+    for (const c of line) {
+      if (c === '"') { inQ = !inQ; }
+      else if (c === ',' && !inQ) { row.push(cell.trim()); cell = ''; }
+      else { cell += c; }
+    }
+    row.push(cell.trim());
+    rows.push(row);
+  }
+  return rows;
+}
+function pn(s) { const n = parseInt((s||'').replace(/[^\d.-]/g,''),10); return isNaN(n)?0:n; }
+function pAvail(s) {
+  if (!s||s==='-') return 0;
+  const m = s.match(/(\d+)\s*\|/); return m ? parseInt(m[1]) : 0;
+}
+function aggArr(arr) { return arr.reduce((a,b)=>a+b,0); }
+
+// ─── Parse RD_Practo_Leads CSV → PRACTO_DATA ────────────────────────────────
+// Date format in that tab: "DD-MM-YYYY"  (e.g. "02-03-2026")
+function _practoMondayKey(dateStr) {
+  const p = dateStr.split('-');
+  if (p.length !== 3) return null;
+  const d = new Date(+p[2], +p[1]-1, +p[0]);
+  if (isNaN(d)) return null;
+  const day = d.getDay(); // 0=Sun 1=Mon … 6=Sat
+  const off = (day === 0 ? -6 : 1 - day);
+  d.setDate(d.getDate() + off);
+  return d.toISOString().slice(0,10); // YYYY-MM-DD
+}
+function parsePractoLeads(rows) {
+  const data = {}; // weekKey → city → count  AND  weekKey → 'city/clinic' → count
+  for (let i = 1; i < rows.length; i++) {
+    const r = rows[i];
+    if (!r || r.length < 3) continue;
+    const dateStr = (r[0]||'').trim();
+    // col 8 = "City" (preferred), fallback to col 2 = "Practice City"
+    const city    = (r[8]||r[2]||'').trim();
+    // col 7 = "Clinic" (locality name, matches SDATA keys)
+    const clinic  = (r[7]||r[1]||'').trim();
+    if (!dateStr || !city) continue;
+    const wk = _practoMondayKey(dateStr);
+    if (!wk) continue;
+    if (!data[wk]) data[wk] = {};
+    data[wk][city] = (data[wk][city] || 0) + 1;
+    if (clinic) {
+      const ck = `${city}/${clinic}`;
+      data[wk][ck] = (data[wk][ck] || 0) + 1;
+    }
+  }
+  return data;
+}
+
+// ─── Parse sheet CSV into SDATA ──────────────────────────────────────────────
+function parseSheet(rows) {
+  const raw = {}; // city → clinic → doctor → {allBk[7], gmbLeads[7], avail[7]}
+  let curCity = '';
+  for (let ri = 3; ri < rows.length; ri++) {
+    const r = rows[ri];
+    if (!r || r.length < 12) continue;
+    const c0 = r[0]||'', c1 = r[1]||'', c2 = r[2]||'', c3 = r[3]||'';
+    if (c1 && !c1.startsWith('<>')) curCity = c1;
+    if (c0 && !c0.startsWith('<>')) curCity = c0;
+    if (!curCity || c2 === '<>All' || c2 === '<>ALL' || c3 === '<>All') continue;
+    if (!c2) continue;
+    if (!raw[curCity]) raw[curCity] = {};
+    if (!raw[curCity][c2]) raw[curCity][c2] = {};
+    const allBk    = Array.from({length:7}, (_,i) => pn(r[ALLBK_C+i]));
+    const gmbLeads = Array.from({length:7}, (_,i) => pn(r[GMB_C+i]));
+    const avail    = Array.from({length:7}, (_,i) => pAvail(r[AVAIL_C+i]));
+    raw[curCity][c2][c3] = { allBk, gmbLeads, avail };
+  }
+
+  // Aggregate to clinic and city level
+  const agg = (objs) => {
+    const r = { allBk:Array(7).fill(0), gmbLeads:Array(7).fill(0), avail:Array(7).fill(0) };
+    for (const o of objs) {
+      if (!o?.allBk) continue;
+      for (let i=0;i<7;i++){
+        r.allBk[i]    += o.allBk[i]    || 0;
+        r.gmbLeads[i] += o.gmbLeads[i] || 0;
+        r.avail[i]    += o.avail[i]    || 0;
+      }
+    }
+    return r;
+  };
+
+  const out = {};
+  for (const [city, clinics] of Object.entries(raw)) {
+    out[city] = {};
+    const allDoctorObjs = [];
+    for (const [clinic, doctors] of Object.entries(clinics)) {
+      const dObjs = Object.values(doctors);
+      allDoctorObjs.push(...dObjs);
+      out[city][clinic] = { _total: agg(dObjs), doctors };
+    }
+    out[city]._total = agg(allDoctorObjs);
+  }
+  return out;
+}
+
+// ─── Data accessors ──────────────────────────────────────────────────────────
+function getJsonCity(city, wkIdx) {
+  const jw  = WEEKS[wkIdx].json;
+  const d   = JDATA?.offline?.weekly_city?.[jw]?.[city] || {};
+  return {
+    callsDone : d.calls_done || 0,
+    gross     : d.gross      || 0,
+    b2dPct    : d.b2d_pct    || 0,
+    noShow    : d.no_show    || 0,
+  };
+}
+function getJsonClinic(city, clinic, wkIdx) {
+  const jw  = WEEKS[wkIdx].json;
+  const key = `${city}_${clinic}`;
+  const d   = JDATA?.offline?.weekly_clinic?.[jw]?.[key] || {};
+  return {
+    callsDone : d.calls_done || 0,
+    gross     : d.gross      || 0,
+    b2dPct    : d.b2d_pct    || 0,
+    noShow    : d.no_show    || 0,
+  };
+}
+function getSheetCity(city, wkIdx) {
+  const s  = SDATA[city]?._total || {};
+  const wk = WEEKS[wkIdx]?.json;
+  return {
+    gmbLeads : s.gmbLeads?.[wkIdx]          || 0,
+    practo   : PRACTO_DATA[wk]?.[city]       || 0,
+    allBk    : s.allBk?.[wkIdx]             || 0,
+    avail    : s.avail?.[wkIdx]             || 0,
+  };
+}
+function getSheetClinic(city, clinic, wkIdx) {
+  const s  = SDATA[city]?.[clinic]?._total || {};
+  const wk = WEEKS[wkIdx]?.json;
+  return {
+    gmbLeads : s.gmbLeads?.[wkIdx]                  || 0,
+    practo   : PRACTO_DATA[wk]?.[`${city}/${clinic}`] || 0,
+    allBk    : s.allBk?.[wkIdx]                     || 0,
+    avail    : s.avail?.[wkIdx]                     || 0,
+  };
+}
+
+function buildRow(sheetFn, jsonFn, wkIdx) {
+  const sc = sheetFn(wkIdx);
+  const jc = jsonFn(wkIdx);
+  const sp = sheetFn(wkIdx + 1);
+  const jp = jsonFn(wkIdx + 1);
+  const totalLeads = sc.gmbLeads + sc.practo;
+  const totalLeadsP = sp.gmbLeads + sp.practo;
+  return {
+    avail      : sc.avail,
+    gmbLeads   : sc.gmbLeads,   gmbLeadsP : sp.gmbLeads,
+    practo     : sc.practo,     practoP   : sp.practo,
+    totalLeads : totalLeads,    totalLeadsP,
+    allBk      : sc.allBk,      allBkP    : sp.allBk,
+    callsDone  : jc.callsDone,  callsDoneP: jp.callsDone,
+    gross      : jc.gross,      grossP    : jp.gross,
+    b2dPct     : jc.b2dPct,     b2dPctP   : jp.b2dPct,
+    noShow     : jc.noShow,     noShowP   : jp.noShow,
+    availP     : sp.avail,
+  };
+}
+
+// ─── Diagnosis ───────────────────────────────────────────────────────────────
+function wow(cur, prev) {
+  if (!prev || prev === 0) return null;
+  return (cur - prev) / prev * 100;
+}
+function wowPp(cur, prev) {
+  if (prev === undefined || prev === null) return null;
+  return cur - prev;
+}
+
+function diagnose(row) {
+  // Use GMB leads as the lead indicator (always available; Practo has gaps in recent weeks)
+  const leadsWow  = wow(row.gmbLeads,   row.gmbLeadsP);
+  const callsWow  = wow(row.callsDone,  row.callsDoneP);
+  const b2dWow    = wowPp(row.b2dPct,   row.b2dPctP);
+  const availWow  = wow(row.avail,      row.availP);
+
+  // No data at all
+  if (row.callsDone === 0 && row.gross === 0 && row.gmbLeads === 0)
+    return { label:'No Data', cls:'diag-na' };
+
+  const issues = [];
+
+  // 1. Lead gen problem: GMB leads fell significantly
+  if (leadsWow !== null && leadsWow < -10)
+    issues.push('Leads ↓');
+
+  // 2. Availability constraint: slots fell and calls fell together
+  if (availWow !== null && availWow < -20 && callsWow !== null && callsWow < -10)
+    issues.push('Avail ↓');
+
+  // 3. Calls fell but leads are fine → booking conversion or B2D problem
+  if (callsWow !== null && callsWow < -10 && (leadsWow === null || leadsWow > -5))
+    issues.push('Calls ↓');
+
+  // 4. B2D rate dropped (quality/show-up issue, separate from volume)
+  if (b2dWow !== null && b2dWow < -4)
+    issues.push('B2D ↓');
+
+  if (issues.length === 0) {
+    const anyDrop = (leadsWow !== null && leadsWow < -5) ||
+                    (callsWow !== null && callsWow < -5);
+    if (anyDrop) return { label:'Slight Drop', cls:'diag-drop' };
+    return { label:'✓ OK', cls:'diag-ok' };
+  }
+
+  const cls = issues.some(i=>i.startsWith('Leads'))  ? 'diag-leads'
+            : issues.some(i=>i.startsWith('Avail'))   ? 'diag-avail'
+            : issues.some(i=>i.startsWith('B2D'))     ? 'diag-b2d'
+            : 'diag-drop';
+  return { label: issues.join(' · '), cls };
+}
+
+// ─── Sort key ────────────────────────────────────────────────────────────────
+function sortVal(row) {
+  switch (sortBy) {
+    case 'leads_drop': return wow(row.totalLeads, row.totalLeadsP) ?? 999;
+    case 'book_drop':  return wow(row.allBk,      row.allBkP)     ?? 999;
+    case 'calls_drop': return wow(row.callsDone,  row.callsDoneP) ?? 999;
+    case 'b2d_drop':   return wowPp(row.b2dPct,   row.b2dPctP)   ?? 999;
+    default:           return 0;
+  }
+}
+
+// ─── Formatting ──────────────────────────────────────────────────────────────
+function fmt(n) { return n >= 1000 ? (n/1000).toFixed(1)+'k' : n.toFixed ? n.toFixed(0) : String(n); }
+function wowBadge(cur, prev, isRate=false) {
+  const w = isRate ? wowPp(cur,prev) : wow(cur,prev);
+  if (w === null) return '<span class="wow-gray">–</span>';
+  const sign = w >= 0 ? '+' : '';
+  const lbl  = isRate ? `${sign}${w.toFixed(1)}pp` : `${sign}${w.toFixed(1)}%`;
+  const cls  = w <= -10 ? 'wow-red' : w < -3 ? 'wow-amber' : w >= 3 ? 'wow-green' : 'wow-gray';
+  return `<span class="${cls}">${lbl}</span>`;
+}
+function cellClass(cur, prev, isRate=false, inverted=false) {
+  const w = isRate ? wowPp(cur,prev) : wow(cur,prev);
+  if (w === null) return '';
+  const bad  = inverted ? w > 5  : w < -5;
+  const mild = inverted ? w > 2  : w < -2;
+  const good = inverted ? w < -2 : w > 2;
+  return bad ? 'cell-red' : mild ? 'cell-amber' : good ? 'cell-green' : '';
+}
+
+// ─── Metric cell HTML ─────────────────────────────────────────────────────────
+function metricCell(cur, prev, isRate=false, inverted=false, suffix='') {
+  const dispVal = isRate ? cur.toFixed(1)+'%' : fmt(cur);
+  const bg = cellClass(cur, prev, isRate, inverted);
+  return `<td class="metric-cell ${bg}">
+    <span class="metric-val">${dispVal}${suffix}</span>
+    <span class="metric-wow">${wowBadge(cur, prev, isRate)}</span>
+  </td>`;
+}
+
+// ─── Funnel overview strip (two separate tracks) ─────────────────────────────
+function buildFunnelStrip() {
+  const scope = JDATA?.offline;
+  const jw  = WEEKS[activeWkIdx].json;
+  const jwp = WEEKS[activeWkIdx+1]?.json;
+  const f  = scope?.weekly_funnel?.[jw]  || {};
+  const fp = scope?.weekly_funnel?.[jwp] || {};
+
+  // Aggregate cities filtered by activeTier
+  let gmbCur=0, gmbPrev=0, availCur=0, availPrev=0, practoCur=0, practoPrev=0;
+  const allSheetCities = new Set([
+    ...Object.keys(SDATA),
+    ...Object.keys(PRACTO_DATA[WEEKS[activeWkIdx]?.json] || {}),
+    ...Object.keys(PRACTO_DATA[WEEKS[activeWkIdx+1]?.json] || {}),
+  ]);
+  for (const city of allSheetCities) {
+    if (city.includes('/')) continue;
+    if (city === 'Practo Online' || city === 'Online') continue;
+    if (activeTier !== 'ALL' && cityTier(city) !== activeTier) continue;
+    if (activeCityF !== 'ALL' && city !== activeCityF) continue;
+    const sc = getSheetCity(city, activeWkIdx);
+    const sp = getSheetCity(city, activeWkIdx + 1);
+    gmbCur    += sc.gmbLeads; gmbPrev    += sp.gmbLeads;
+    availCur  += sc.avail;   availPrev  += sp.avail;
+    practoCur += sc.practo;  practoPrev += sp.practo;
+  }
+  // Tier label for funnel header
+  const tierSuffix = activeTier !== 'ALL' ? ` · ${activeTier} Cities` : '';
+
+  function fCard(label, val, prev, isRate=false, staleNote=null, tip='') {
+    const dispV = isRate ? val.toFixed(1)+'%' : fmt(val);
+    const w = isRate ? wowPp(val, prev) : wow(val, prev);
+    const wlbl = w===null ? '–' : (w>=0?'+':'')+( isRate ? w.toFixed(1)+'pp' : w.toFixed(1)+'%');
+    const wcls = staleNote ? 'wow-gray'
+               : w===null  ? 'wow-gray'
+               : w<=-7     ? 'wow-red' : w<-2 ? 'wow-amber' : w>=2 ? 'wow-green' : 'wow-gray';
+    return `<div class="funnel-stage" title="${tip}" style="${staleNote?'opacity:.7':''}">
+      <div class="stat-label">${label}</div>
+      <div style="font-size:20px;font-weight:700;margin:3px 0;line-height:1.1;${staleNote?'color:#94a3b8':''}">${dispV}</div>
+      <div class="metric-wow">
+        <span class="${wcls}">${wlbl}</span>
+        <span style="color:#94a3b8;font-size:9px"> vs prev wk</span>
+      </div>
+      ${staleNote ? `<div style="font-size:9px;color:#f59e0b;margin-top:3px;">⚠ ${staleNote}</div>` : ''}
+    </div>`;
+  }
+
+  const divider = `<div style="width:1px;background:var(--line);margin:8px 6px;flex-shrink:0;"></div>`;
+  const arrow   = `<div class="funnel-arrow" style="flex-shrink:0;">→</div>`;
+  const sHdr = (icon, title, dateInfo, color) =>
+    `<div style="padding:8px 16px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+       <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:${color};">${icon} ${title}</span>
+       <span style="font-size:10px;color:#94a3b8;">${dateInfo}</span>
+     </div>`;
+
+  return `<div class="card" style="padding:0;overflow:hidden;">
+
+    ${sHdr('📊', `Digital Acquisition${tierSuffix}`,
+      `Demand Tracker Sheet · <strong>Offline clinics only</strong> · week ending ${WEEKS[activeWkIdx].sheet}
+       &nbsp;vs&nbsp; ${WEEKS[activeWkIdx+1]?.sheet ?? '–'}`,
+      '#7c3aed')}
+    <div class="funnel-flow">
+      ${fCard('GMB+Google Leads', gmbCur,    gmbPrev,    false, null, 'Leads that clicked/called from GMB or Google Search')}
+      <div style="display:flex;align-items:center;padding:0 2px;color:#e2e8f0;font-size:16px;flex-shrink:0;">+</div>
+      ${fCard('Practo Leads',     practoCur, practoPrev, false, null, 'Practo call + booked leads (from RD_Practo_Leads tab)')}
+      ${divider}
+      ${fCard('Total Digital Leads', gmbCur+practoCur, gmbPrev+practoPrev, false, null, 'GMB+Google + Practo combined')}
+      ${divider}
+      ${fCard('Avail. Slots',  availCur, availPrev, false, null, 'Total doctor sessions available this week')}
+    </div>
+
+    ${sHdr('📋', `Appointment Funnel${tierSuffix}`,
+      `Raw appointment data (all channels) · ${WEEKS[activeWkIdx].label}
+       &nbsp;vs&nbsp; ${WEEKS[activeWkIdx+1]?.label ?? '–'}`,
+      '#0ea5e9')}
+    <div class="funnel-flow">
+      ${fCard('New Bookings',   f.new_bookings||0, fp.new_bookings||0, false, null, 'Appointments booked this week (by booking creation date)')}
+      ${arrow}
+      ${fCard('Gross Bookings', f.gross||0,        fp.gross||0,        false, null, 'Completed + No Show (by appointment date — ran their course)')}
+      ${arrow}
+      ${fCard('Calls Done',     f.calls_done||0,   fp.calls_done||0,   false, null, 'Completed appointments (doctor saw patient)')}
+      ${divider}
+      ${fCard('B2D %',    f.b2d_pct||0, fp.b2d_pct||0, true, null, 'Book-to-Done: Calls Done ÷ Gross Bookings')}
+      ${fCard('No Show %',f.ns_pct||0,  fp.ns_pct||0,  true, null, 'Appointments where patient did not show up')}
+    </div>
+
+  </div>`;
+}
+
+// ─── Channel Breakdown (item 2) ──────────────────────────────────────────────
+// Answers: "if leads/calls fell, which channel broke?"
+function buildChannelBreakdown() {
+  const wk  = WEEKS[activeWkIdx]?.json;
+  const wkp = WEEKS[activeWkIdx+1]?.json;
+  if (!JDATA || !wk) return '';
+
+  const CHANNELS = ['GMB','Google','Practo','Organic','Meta','Others'];
+  const CH_COLOR = { GMB:'#059669', Google:'#2563eb', Practo:'#7c3aed',
+                     Organic:'#78716c', Meta:'#db2777', Others:'#64748b' };
+  const CH_NOTE  = {
+    GMB    : 'If GMB calls fell — check GMB listing impressions/clicks in Efficiency tab →',
+    Google : 'If Google calls fell — check Search impression share and clicks in Efficiency tab →',
+    Practo : 'If Practo calls fell — check profile views and call connection rate',
+    Meta   : 'Meta is paid social — if calls fell check spend and creative performance',
+    Organic: 'Organic = direct/unknown source',
+    Others : 'Others = Justdial, YouTube, Referral, etc.',
+  };
+
+  // Get calls_done (and optionally leads) per channel for cur+prev week, filtered by tier
+  function chData(weekKey) {
+    const allCh = JDATA?.offline?.weekly_channel?.[weekKey] || {};
+    if (activeTier === 'ALL') return allCh;
+    // Need to aggregate tier-filtered city×channel — approximate using city proportion
+    // For now use network-level but note this limitation; for city filter use city data
+    return allCh;
+  }
+
+  const cur  = chData(wk);
+  const prev = chData(wkp);
+
+  // Also add lead data where available
+  const gmbLeadsC = Object.values(SDATA).reduce((s,c) => s + (c._total?.gmbLeads?.[activeWkIdx]||0), 0);
+  const gmbLeadsP = Object.values(SDATA).reduce((s,c) => s + (c._total?.gmbLeads?.[activeWkIdx+1]||0), 0);
+  const practoC   = Object.keys(PRACTO_DATA[wk]||{}).filter(k=>!k.includes('/')).reduce((s,c)=>s+(PRACTO_DATA[wk][c]||0),0);
+  const practoP   = Object.keys(PRACTO_DATA[wkp]||{}).filter(k=>!k.includes('/')).reduce((s,c)=>s+(PRACTO_DATA[wkp]?.[c]||0),0);
+
+  let rows = '';
+  let anyAlert = false;
+  for (const ch of CHANNELS) {
+    const c = cur[ch] || {}; const p = prev[ch] || {};
+    const cd = c.calls_done||0; const pd = p.calls_done||0;
+    const w = pd > 0 ? ((cd-pd)/pd*100) : null;
+    const isFall = w !== null && w <= -7;
+    if (isFall) anyAlert = true;
+    const wStr = w===null ? '—' : (w>=0?'+':'')+w.toFixed(1)+'%';
+    const wcls = w===null ? 'wow-gray' : w<=-15 ? 'wow-red' : w<=-7 ? 'wow-amber' : w>=5 ? 'wow-green' : 'wow-gray';
+
+    // Lead counts (only for GMB and Practo where we have lead data)
+    let leadCell = '';
+    if (ch === 'GMB') {
+      const lw = gmbLeadsP > 0 ? ((gmbLeadsC-gmbLeadsP)/gmbLeadsP*100) : null;
+      const lwStr = lw===null?'–':(lw>=0?'+':'')+lw.toFixed(1)+'%';
+      const lwCls = lw===null?'wow-gray':lw<=-10?'wow-red':lw<=-5?'wow-amber':lw>=5?'wow-green':'wow-gray';
+      leadCell = `<td class="metric-cell"><span class="metric-val">${fmt(gmbLeadsC)}</span><span class="metric-wow ${lwCls}">${lwStr}</span></td>`;
+    } else if (ch === 'Practo') {
+      const lw = practoP > 0 ? ((practoC-practoP)/practoP*100) : null;
+      const lwStr = lw===null?'–':(lw>=0?'+':'')+lw.toFixed(1)+'%';
+      const lwCls = lw===null?'wow-gray':lw<=-10?'wow-red':lw<=-5?'wow-amber':lw>=5?'wow-green':'wow-gray';
+      leadCell = `<td class="metric-cell"><span class="metric-val">${fmt(practoC)}</span><span class="metric-wow ${lwCls}">${lwStr}</span></td>`;
+    } else {
+      leadCell = `<td class="metric-cell" style="color:#94a3b8;font-size:11px;">—</td>`;
+    }
+
+    const rowBg = isFall ? 'background:#fef2f202;' : '';
+    rows += `<tr style="${rowBg}">
+      <td style="font-weight:600;font-size:12px;">
+        <span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${CH_COLOR[ch]};margin-right:5px;"></span>
+        ${ch}
+      </td>
+      ${leadCell}
+      <td class="metric-cell">
+        <span class="metric-val">${fmt(cd)}</span>
+        <span class="metric-wow ${wcls}">${wStr}</span>
+      </td>
+      ${isFall ? `<td style="font-size:10px;color:#94a3b8;padding:4px 8px;">${CH_NOTE[ch]}</td>` : '<td></td>'}
+    </tr>`;
+  }
+
+  const noData = !Object.keys(cur).length;
+  return `<div class="card" style="padding:0;overflow:hidden;">
+    <div style="padding:10px 16px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+      <span style="font-weight:700;font-size:13px;">📡 Channel Breakdown</span>
+      <span style="font-size:10px;color:#94a3b8;">${WEEKS[activeWkIdx].label} vs ${WEEKS[activeWkIdx+1]?.label ?? '–'} · appointment data (all channels)</span>
+      ${anyAlert ? `<span class="badge red" style="margin-left:auto;">⚠ Drops detected</span>` : `<span class="badge green" style="margin-left:auto;">✓ Stable</span>`}
+    </div>
+    ${noData ? '<div style="padding:20px;color:#94a3b8;font-size:12px;">No channel data available</div>' : `
+    <table class="dtbl" style="font-size:12px;">
+      <thead>
+        <tr>
+          <th>Channel</th>
+          <th class="right">Leads <span style="font-weight:400;text-transform:none">(where available)</span></th>
+          <th class="right">Calls Done</th>
+          <th>Diagnostic note</th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>
+    <div style="padding:6px 12px;font-size:10px;color:#94a3b8;border-top:1px solid var(--line);">
+      Leads: GMB+Google from Demand Tracker sheet (offline), Practo from RD_Practo_Leads tab ·
+      Calls Done: appointment data (offline + online) ·
+      <a href="efficiency.html" style="color:#6366f1;text-decoration:none;">→ Efficiency tab for impressions, clicks, CPL, spend data</a>
+    </div>`}
+  </div>`;
+}
+
+// ─── Diagnostic alert panel ──────────────────────────────────────────────────
+function buildAlertPanel(cityRows) {
+  const alerts = [];
+
+  // Top 3 most broken cities
+  const broken = cityRows
+    .filter(r => r.diag.label !== '✓ OK' && r.diag.label !== 'No Data')
+    .sort((a,b) => sortVal(a) - sortVal(b))
+    .slice(0, 5);
+
+  for (const r of broken) {
+    const parts = [];
+    const lw = wow(r.row.totalLeads, r.row.totalLeadsP);
+    const bw = wow(r.row.allBk,      r.row.allBkP);
+    const cw = wow(r.row.callsDone,  r.row.callsDoneP);
+    const bw2= wowPp(r.row.b2dPct,  r.row.b2dPctP);
+    if (lw !== null) parts.push(`Leads ${lw>=0?'+':''}${lw.toFixed(0)}%`);
+    if (bw !== null) parts.push(`Bookings ${bw>=0?'+':''}${bw.toFixed(0)}%`);
+    if (cw !== null) parts.push(`Calls ${cw>=0?'+':''}${cw.toFixed(0)}%`);
+    if (bw2!== null) parts.push(`B2D ${bw2>=0?'+':''}${bw2.toFixed(1)}pp`);
+
+    const isGood = !r.diag.label.includes('↓');
+    const cls = isGood ? 'alert-green' : r.diag.cls.includes('leads') ? 'alert-red'
+              : r.diag.cls.includes('b2d') ? 'alert-blue' : 'alert-amber';
+
+    alerts.push(`<div class="alert-card ${cls}">
+      <strong>${r.city}</strong>
+      <span class="diag ${r.diag.cls}" style="margin-left:8px;">${r.diag.label}</span>
+      <span style="float:right;font-size:11px;color:#64748b;">${parts.join(' · ')}</span>
+    </div>`);
+  }
+
+  if (alerts.length === 0)
+    return `<div class="alert-card alert-green"><strong>All cities looking healthy this week ✓</strong></div>`;
+
+  return `<div>
+    <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#94a3b8;margin-bottom:8px;">
+      Top Issues — ${WEEKS[activeWkIdx].label}
+    </div>
+    ${alerts.join('')}
+  </div>`;
+}
+
+// ─── Main diagnostic table ────────────────────────────────────────────────────
+function buildTable() {
+  // Collect all cities with data
+  const allCities = [...new Set([
+    ...Object.keys(SDATA),
+    ...Object.keys(JDATA?.offline?.weekly_city?.[WEEKS[activeWkIdx].json] || {})
+  ])].filter(c => c && c !== 'Online');
+
+  const filteredCities = allCities.filter(c => {
+    if (c === 'Practo Online' || c === 'Online') return false;
+    if (activeCityF !== 'ALL' && c !== activeCityF) return false;
+    if (activeTier !== 'ALL') return cityTier(c) === activeTier;
+    return true;
+  });
+
+  // Build city rows
+  const cityRows = filteredCities.map(city => {
+    const row = buildRow(
+      wi => getSheetCity(city, wi),
+      wi => getJsonCity(city, wi),
+      activeWkIdx
+    );
+    return { city, row, diag: diagnose(row) };
+  });
+
+  // Sort
+  cityRows.sort((a, b) => sortVal(a.row) - sortVal(b.row));
+
+  const alertHtml = buildAlertPanel(cityRows);
+
+  let tBody = '';
+  for (const { city, row, diag } of cityRows) {
+    const isExp = expandedCities.has(city);
+    const expIcon = isExp ? '▾' : '▸';
+    const hasClinicData = Object.keys(SDATA[city] || {}).filter(k=>k!=='_total').length > 0;
+
+    tBody += `<tr class="city-row" onclick="toggleCity('${city}')">
+      <td style="font-weight:700;font-size:13px;">
+        <span class="expand-btn">${hasClinicData ? expIcon : '·'}</span>${city}${tierBadge(city)}
+      </td>
+      <td class="metric-cell">
+        <span class="metric-val">${row.avail}</span>
+        <span class="metric-wow">${wowBadge(row.avail, row.availP)}</span>
+      </td>
+      ${metricCell(row.gmbLeads,  row.gmbLeadsP)}
+      ${metricCell(row.allBk,     row.allBkP)}
+      ${metricCell(row.callsDone, row.callsDoneP)}
+      ${metricCell(row.b2dPct,    row.b2dPctP, true)}
+      ${metricCell(row.noShow,    row.noShowP,  false, true)}
+      <td><span class="diag ${diag.cls}">${diag.label}</span></td>
+    </tr>`;
+
+    if (isExp && hasClinicData) {
+      // Clinic rows
+      const clinicNames = Object.keys(SDATA[city] || {}).filter(k => k !== '_total');
+      const clinicRows = clinicNames.map(clinic => {
+        const cr = buildRow(
+          wi => getSheetClinic(city, clinic, wi),
+          wi => getJsonClinic(city, clinic, wi),
+          activeWkIdx
+        );
+        return { clinic, row: cr, diag: diagnose(cr) };
+      });
+      clinicRows.sort((a,b) => sortVal(a.row) - sortVal(b.row));
+
+      for (const { clinic, row: cr, diag: cd } of clinicRows) {
+        tBody += `<tr class="clinic-row">
+          <td class="indent" style="font-size:12px;color:#334155;">
+            <span style="color:#cbd5e1;margin-right:4px;">└</span>${clinic}
+          </td>
+          <td class="metric-cell">
+            <span class="metric-val" style="font-size:12px;">${cr.avail}</span>
+            <span class="metric-wow">${wowBadge(cr.avail, cr.availP)}</span>
+          </td>
+          ${metricCell(cr.gmbLeads,  cr.gmbLeadsP)}
+          ${metricCell(cr.allBk,     cr.allBkP)}
+          ${metricCell(cr.callsDone, cr.callsDoneP)}
+          ${metricCell(cr.b2dPct,    cr.b2dPctP, true)}
+          ${metricCell(cr.noShow,    cr.noShowP, false, true)}
+          <td><span class="diag ${cd.cls}" style="font-size:9px;">${cd.label}</span></td>
+        </tr>`;
+      }
+    }
+  }
+
+  return { alertHtml, tableHtml: `
+    <table class="dtbl">
+      <thead>
+        <tr>
+          <th>Location</th>
+          <th class="right" title="Doctor availability slots — Offline only (Demand Tracker sheet)">
+            <span style="color:#7c3aed">📊</span> Avail<br><span style="font-weight:400;text-transform:none;letter-spacing:0;color:#a78bfa">offline</span>
+          </th>
+          <th class="right" title="GMB+Google leads — Offline clinics only (Demand Tracker sheet)">
+            <span style="color:#7c3aed">📊</span> GMB+Google<br><span style="font-weight:400;text-transform:none;letter-spacing:0;color:#a78bfa">leads · offline</span>
+          </th>
+          <th class="right" title="New offline bookings created this week — Offline clinics only (Demand Tracker sheet)">
+            <span style="color:#7c3aed">📊</span> New Bookings<br><span style="font-weight:400;text-transform:none;letter-spacing:0;color:#a78bfa">offline only</span>
+          </th>
+          <th class="right" title="Calls Done = Completed appointments — from raw appointment data">
+            <span style="color:#0ea5e9">📋</span> Calls Done<br><span style="font-weight:400;text-transform:none;letter-spacing:0;">completed appts</span>
+          </th>
+          <th class="right" title="B2D% = Calls Done ÷ Gross Bookings — from raw appointment data">
+            <span style="color:#0ea5e9">📋</span> B2D %
+          </th>
+          <th class="right" title="No Shows — from raw appointment data">
+            <span style="color:#0ea5e9">📋</span> No Shows
+          </th>
+          <th>Diagnosis</th>
+        </tr>
+      </thead>
+      <tbody>${tBody}</tbody>
+    </table>` };
+}
+
+// ─── State setters ────────────────────────────────────────────────────────────
+function setWeek(val) {
+  activeWkIdx = parseInt(val);
+  render();
+}
+function setCity(val) {
+  activeCityF = val;
+  render();
+}
+function setTier(t) {
+  activeTier = t;
+  activeCityF = 'ALL'; // reset city filter when changing tier
+  document.getElementById('citySelect').value = 'ALL';
+  ['tierAll','tierT1','tierT2'].forEach(id => document.getElementById(id)?.classList.remove('active'));
+  document.getElementById(t==='ALL'?'tierAll':t==='T1'?'tierT1':'tierT2')?.classList.add('active');
+  render();
+}
+function setSort(key) {
+  sortBy = key;
+  ['sortLeads','sortBook','sortCalls','sortB2d'].forEach(id =>
+    document.getElementById(id)?.classList.remove('active'));
+  const idMap = {leads_drop:'sortLeads',book_drop:'sortBook',calls_drop:'sortCalls',b2d_drop:'sortB2d'};
+  document.getElementById(idMap[key])?.classList.add('active');
+  render();
+}
+function toggleCity(city) {
+  if (expandedCities.has(city)) expandedCities.delete(city);
+  else expandedCities.add(city);
+  render();
+}
+
+// ─── Render ───────────────────────────────────────────────────────────────────
+function render() {
+  const { alertHtml, tableHtml } = buildTable();
+  document.getElementById('mainContent').innerHTML = `
+    ${buildFunnelStrip()}
+    ${buildChannelBreakdown()}
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      <div class="lg:col-span-1">
+        ${alertHtml}
+      </div>
+      <div class="lg:col-span-2 card" style="padding:0;overflow:hidden;">
+        <div style="padding:12px 16px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+          <span style="font-weight:700;font-size:13px;">City / Clinic Funnel</span>
+          <span style="font-size:11px;color:#94a3b8;">Click a city row to expand clinics · Sorted by biggest ${sortBy.replace('_drop','')} drop</span>
+        </div>
+        <div style="overflow-x:auto;max-height:600px;overflow-y:auto;">
+          ${tableHtml}
+        </div>
+        <div style="padding:8px 16px;font-size:10px;color:#94a3b8;border-top:1px solid var(--line);line-height:1.6;">
+          <span style="color:#7c3aed;font-weight:700;">📊 Sheet columns</span> (GMB Leads, New Bookings):
+          Demand Tracker, week ending <strong>${WEEKS[activeWkIdx].sheet}</strong>
+          &nbsp;·&nbsp;
+          <span style="color:#0ea5e9;font-weight:700;">📋 Appt columns</span> (Calls Done, B2D%):
+          Raw data, <strong>${WEEKS[activeWkIdx].label}</strong>
+          &nbsp;·&nbsp;
+          Both sources use the same Mon–Sun week — numbers are directly comparable
+          &nbsp;·&nbsp;
+          Practo leads from RD_Practo_Leads tab (all weeks covered)
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+// ─── Init ─────────────────────────────────────────────────────────────────────
+async function init() {
+  try {
+    // Fetch all three sources in parallel
+    const [jsonRes, csvRes, practoRes] = await Promise.all([
+      fetch('data.json'),
+      fetch(SHEET_URL),
+      fetch(PRACTO_URL),
+    ]);
+
+    if (!jsonRes.ok) throw new Error('data.json not found');
+    JDATA = await jsonRes.json();
+
+    if (csvRes.ok) {
+      const csvText = await csvRes.text();
+      SDATA = parseSheet(parseCSV(csvText));
+    } else {
+      console.warn('Summary sheet fetch failed — showing calls data only');
+    }
+
+    if (practoRes.ok) {
+      const practoText = await practoRes.text();
+      PRACTO_DATA = parsePractoLeads(parseCSV(practoText));
+      console.log('Practo weeks loaded:', Object.keys(PRACTO_DATA).sort().slice(-4));
+    } else {
+      console.warn('RD_Practo_Leads fetch failed — Practo leads will show 0');
+    }
+
+    // Populate week selector
+    const wSel = document.getElementById('weekSelect');
+    WEEKS.forEach((w, i) => {
+      const opt = document.createElement('option');
+      opt.value = i;
+      opt.textContent = w.label;
+      if (i === 0) opt.selected = true;
+      wSel.appendChild(opt);
+    });
+
+    // Populate city filter
+    const cSel = document.getElementById('citySelect');
+    const allCities = [...new Set([
+      ...Object.keys(SDATA),
+      ...Object.keys(JDATA?.offline?.weekly_city?.[WEEKS[0].json] || {})
+    ])].filter(c => c && c !== 'Online').sort();
+    for (const city of allCities) {
+      const opt = document.createElement('option');
+      opt.value = city; opt.textContent = city;
+      cSel.appendChild(opt);
+    }
+
+    render();
+  } catch(e) {
+    document.getElementById('mainContent').innerHTML =
+      `<div class="loading-msg text-red-500">Error: ${e.message}<br>Make sure data.json is present and the server is running.</div>`;
+  }
+}
+
+init();
+</script>
+</body>
+</html>
