@@ -1,0 +1,843 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Channel Analysis · Demand Dashboard</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+:root{
+  --ink:#0f172a;--muted:#64748b;--line:#e2e8f0;
+  --red:#ef4444;--green:#10b981;--yellow:#f59e0b;
+}
+html,body{background:#f8fafc;color:var(--ink);font-family:ui-sans-serif,system-ui,sans-serif;}
+.card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:20px;box-shadow:0 1px 3px rgba(15,23,42,.05);}
+.chip{display:inline-flex;align-items:center;gap:5px;padding:5px 13px;border:1.5px solid var(--line);border-radius:999px;font-size:12px;font-weight:600;cursor:pointer;transition:all .15s;background:#fff;}
+.chip:hover{border-color:#94a3b8;}
+.chip.active{color:#fff;border-color:transparent;}
+.stat-label{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);}
+.badge{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600;}
+table.tbl{width:100%;border-collapse:separate;border-spacing:0;}
+table.tbl th{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);text-align:left;padding:9px 12px;background:#f8fafc;border-bottom:1px solid var(--line);white-space:nowrap;}
+table.tbl th.r{text-align:right;}
+table.tbl td{padding:9px 12px;border-bottom:1px solid #f1f5f9;font-size:13px;vertical-align:middle;}
+table.tbl tr:last-child td{border-bottom:none;}
+table.tbl tr:hover td{background:#f8fafc;}
+table.tbl td.r{text-align:right;}
+.toggle-btn{padding:4px 12px;font-size:12px;border:1px solid var(--line);border-radius:6px;cursor:pointer;background:#fff;color:var(--ink);}
+.toggle-btn.active{background:#0f172a;color:#fff;border-color:#0f172a;}
+.section-title{font-size:14px;font-weight:700;color:var(--ink);}
+canvas{display:block;}
+.loading{display:flex;align-items:center;justify-content:center;min-height:200px;color:var(--muted);font-size:13px;}
+.wow-up{color:#059669;font-size:11px;} .wow-dn{color:#dc2626;font-size:11px;} .wow-fl{color:#94a3b8;font-size:11px;}
+</style>
+</head>
+<body class="min-h-screen">
+
+<!-- ═══ NAV ═══ -->
+<div class="border-b bg-white sticky top-0 z-20" style="border-color:var(--line);">
+  <div class="max-w-7xl mx-auto px-6 py-3 flex items-center gap-5 flex-wrap">
+    <a href="index.html" class="text-xs text-slate-400 hover:text-slate-600">← Dashboard</a>
+    <span class="text-slate-200">|</span>
+    <a href="overview.html"   class="text-xs text-slate-400 hover:text-slate-600">Overview</a>
+    <a href="diagnostic.html" class="text-xs text-slate-400 hover:text-slate-600">Diagnostic</a>
+    <a href="category.html"   class="text-xs text-slate-400 hover:text-slate-600">Category</a>
+    <a href="city.html"       class="text-xs text-slate-400 hover:text-slate-600">City</a>
+    <a href="clinic.html"     class="text-xs text-slate-400 hover:text-slate-600">Clinics</a>
+    <span class="text-xs font-bold text-slate-800">Channel</span>
+    <a href="efficiency.html" class="text-xs text-slate-400 hover:text-slate-600">Efficiency</a>
+    <a href="comparison.html" class="text-xs text-slate-400 hover:text-slate-600">Comparison →</a>
+
+    <div class="flex items-center gap-3 ml-auto flex-wrap">
+      <!-- Scope -->
+      <div class="flex gap-1 border rounded-lg p-0.5" style="border-color:var(--line);">
+        <button class="toggle-btn active" id="scopeOffline" onclick="setScope('offline')">Offline</button>
+        <button class="toggle-btn"        id="scopeAll"     onclick="setScope('all')">All</button>
+        <button class="toggle-btn"        id="scopeOnline"  onclick="setScope('online')">Online</button>
+      </div>
+      <!-- Mode -->
+      <div class="flex gap-1 border rounded-lg p-0.5" style="border-color:var(--line);">
+        <button class="toggle-btn active" id="modeAbs"   onclick="setMode('abs')">Calls Done</button>
+        <button class="toggle-btn"        id="modeShare" onclick="setMode('share')">Share %</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="max-w-7xl mx-auto px-6 py-6 space-y-6" id="mainContent">
+  <div class="loading">Loading data…</div>
+</div>
+
+<script>
+// ── CONFIG ────────────────────────────────────────────────────────────────
+const CH_META = {
+  GMB:     { label:'GMB',        fullLabel:'Google Business Profile (GMB)',  color:'#10b981', bg:'#ecfdf5', bd:'#6ee7b7' },
+  Google:  { label:'Google',     fullLabel:'Google Search (ex-GMB)',          color:'#3b82f6', bg:'#eff6ff', bd:'#93c5fd' },
+  Practo:  { label:'Practo',     fullLabel:'Practo',                          color:'#8b5cf6', bg:'#f5f3ff', bd:'#c4b5fd' },
+  Organic: { label:'Organic',    fullLabel:'Organic / Direct',                color:'#f59e0b', bg:'#fffbeb', bd:'#fcd34d' },
+  Meta:    { label:'Meta',       fullLabel:'Meta (Facebook / Instagram)',      color:'#f97316', bg:'#fff7ed', bd:'#fdba74' },
+  Others:  { label:'Others',     fullLabel:'Others',                          color:'#94a3b8', bg:'#f8fafc', bd:'#cbd5e1' },
+  ALL:     { label:'All Channels',fullLabel:'All Channels',                   color:'#0f172a', bg:'#f1f5f9', bd:'#94a3b8' },
+};
+
+const CAT_META = {
+  STI:    { label:'STI',    color:'#0ea5e9' },
+  'ED+':  { label:'ED+',   color:'#7c3aed' },
+  'PE+':  { label:'PE+',   color:'#f59e0b' },
+  'ED+PE+':{ label:'ED+PE+',color:'#10b981' },
+  NSSD:   { label:'NSSD',  color:'#94a3b8' },
+  oth:    { label:'Others',color:'#cbd5e1' },
+};
+const CAT_KEYS = ['STI','ED+','PE+','ED+PE+','NSSD','oth'];
+
+// ── STATE ─────────────────────────────────────────────────────────────────
+let DATA        = null;
+let activeScope = 'offline';
+let activeCh    = 'ALL';
+let viewMode    = 'abs';
+let charts      = {};
+
+function S() { return DATA[activeScope]; }
+
+// ── HELPERS ───────────────────────────────────────────────────────────────
+function fmt(n)    { if (n == null) return '—'; return n >= 1000 ? (n/1000).toFixed(1)+'k' : Math.round(n).toString(); }
+function fmtPct(n) { if (n == null) return '—'; return n.toFixed(1)+'%'; }
+function fmtN(n)   { if (n == null) return '—'; return Math.round(n).toLocaleString(); }
+
+function wowHtml(cur, prev, isRate=false) {
+  if (cur == null || prev == null) return '<span class="wow-fl">—</span>';
+  const delta = isRate ? (cur - prev) : (cur - prev) / Math.abs(prev) * 100;
+  const abs   = Math.abs(delta);
+  if (abs < (isRate ? 0.3 : 1)) return `<span class="wow-fl">→ flat</span>`;
+  const up    = delta > 0;
+  const cls   = up ? 'wow-up' : 'wow-dn';
+  const sign  = up ? '▲' : '▼';
+  const str   = isRate ? abs.toFixed(1)+'pp' : abs.toFixed(1)+'%';
+  return `<span class="${cls}">${sign} ${str}</span>`;
+}
+
+function svgSpark(vals, color, w, h, filled) {
+  w=w||80; h=h||26; filled=(filled!==false);
+  const v = vals.filter(x => x != null && isFinite(x));
+  if (v.length < 2) return `<svg width="${w}" height="${h}"></svg>`;
+  const mn = Math.min(...v), mx = Math.max(...v), rng = mx-mn||1;
+  const pts = vals.map((val, i) => {
+    if (val==null||!isFinite(val)) return null;
+    const x = (i/(vals.length-1))*(w-6)+3;
+    const y = h-3-((val-mn)/rng)*(h-8);
+    return [x.toFixed(1), y.toFixed(1)];
+  }).filter(Boolean);
+  if (pts.length < 2) return `<svg width="${w}" height="${h}"></svg>`;
+  const ps = pts.map(p=>p.join(',')).join(' ');
+  const [lx,ly] = pts[pts.length-1];
+  const fill = filled ? `<polygon points="${pts[0][0]},${h} ${ps} ${lx},${h}" fill="${color}22"/>` : '';
+  return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" style="overflow:visible;">
+    ${fill}
+    <polyline points="${ps}" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="${lx}" cy="${ly}" r="2.5" fill="${color}"/>
+  </svg>`;
+}
+
+function miniBox(label, val, sub, color, spark) {
+  return `<div style="background:#f8fafc;border-radius:8px;padding:8px 10px;">
+    <div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:3px;">${label}</div>
+    <div style="display:flex;align-items:flex-end;justify-content:space-between;gap:4px;">
+      <div>
+        <div style="font-size:14px;font-weight:700;color:${color};line-height:1.1;">${val}</div>
+        <div style="font-size:9px;color:var(--muted);margin-top:2px;">${sub}</div>
+      </div>
+      ${spark||''}
+    </div>
+  </div>`;
+}
+
+function kpiCard(label, val, sub, color) {
+  return `<div class="card" style="padding:14px 16px;">
+    <div style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:4px;">${label}</div>
+    <div style="font-size:22px;font-weight:700;color:${color};line-height:1.2;">${val}</div>
+    <div style="font-size:11px;color:var(--muted);margin-top:4px;">${sub}</div>
+  </div>`;
+}
+function kpiCard2(label, val, sub, color, wow) {
+  return `<div style="background:#f8fafc;border:1px solid var(--line);border-radius:12px;padding:14px 16px;">
+    <div style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:4px;">${label}</div>
+    <div style="font-size:24px;font-weight:700;color:${color};line-height:1.2;">${val}</div>
+    <div style="font-size:11px;color:var(--muted);margin-top:4px;">${sub}</div>
+    ${wow?`<div style="margin-top:4px;">${wow}</div>`:''}
+  </div>`;
+}
+
+const MS = ['J','F','M','A','My','Jn','Jl','Au','S','O','N','D'];
+function shortLabel(wk) { const d=new Date(wk+'T00:00:00Z'); return d.getUTCDate()+MS[d.getUTCMonth()]; }
+
+function destroyCharts() {
+  Object.values(charts).forEach(c => { try{c.destroy();}catch(e){} });
+  charts = {};
+}
+
+// ── DATA HELPERS ──────────────────────────────────────────────────────────
+function chWeekVals(ch, metric) {
+  const weeks = S().weeks || DATA.weeks;
+  return weeks.map(wk => S().weekly_channel?.[wk]?.[ch]?.[metric] ?? null);
+}
+function netWeekVals(metric) {
+  const weeks = S().weeks || DATA.weeks;
+  return weeks.map(wk => S().weekly_funnel?.[wk]?.[metric] ?? null);
+}
+function avg8wk(arr, fromIdx) {
+  const vals = arr.slice(fromIdx+1, fromIdx+9).filter(v=>v!=null&&isFinite(v));
+  return vals.length ? vals.reduce((a,b)=>a+b,0)/vals.length : null;
+}
+
+// ── CHANNEL SIGNAL ────────────────────────────────────────────────────────
+function getSignal(stats) {
+  const { volTrend, b2dTrend, volShare } = stats;
+  const large = volShare > 20; // dominant channel
+  if (large && Math.abs(volTrend) < 8 && Math.abs(b2dTrend) < 1.5)
+    return { key:'anchor',  label:'Anchor',          color:'#059669', bg:'#ecfdf5', bd:'#6ee7b7' };
+  if (volTrend > 10 && b2dTrend >= 0)
+    return { key:'growing', label:'Growing',          color:'#0369a1', bg:'#eff6ff', bd:'#93c5fd' };
+  if (volTrend > 8 && b2dTrend < -2)
+    return { key:'vol_up_q_dn', label:'Vol↑ · B2D↓', color:'#d97706', bg:'#fffbeb', bd:'#fcd34d' };
+  if (b2dTrend < -3 || (volTrend < -8 && b2dTrend < -1))
+    return { key:'declining',label:'Declining',       color:'#dc2626', bg:'#fef2f2', bd:'#fca5a5' };
+  if (b2dTrend > 2)
+    return { key:'quality',  label:'Quality↑',        color:'#059669', bg:'#f0fdf4', bd:'#86efac' };
+  if (volTrend < -10)
+    return { key:'shrinking',label:'Shrinking',       color:'#9333ea', bg:'#faf5ff', bd:'#d8b4fe' };
+  return   { key:'stable',   label:'Stable',          color:'#64748b', bg:'#f8fafc', bd:'#cbd5e1' };
+}
+
+function getInsight(sig, st) {
+  switch(sig.key) {
+    case 'anchor':    return `<strong>Dominant anchor channel:</strong> ${st.volShare.toFixed(1)}% of total calls. B2D ${st.avgB2d.toFixed(1)}% avg (latest ${st.latestB2d.toFixed(1)}%). Volume and quality both stable — this is the backbone of demand.`;
+    case 'growing':   return `<strong>Channel growing:</strong> Volume +${Math.abs(st.volTrend).toFixed(0)}% vs early weeks, now ${st.volShare.toFixed(1)}% of calls. B2D holding at ${st.latestB2d.toFixed(1)}% — quality staying intact as volume scales. Watch for saturation.`;
+    case 'vol_up_q_dn':return `<strong>Volume up, quality slipping:</strong> Volume +${Math.abs(st.volTrend).toFixed(0)}% but B2D has dropped ${Math.abs(st.b2dTrend).toFixed(1)}pp. More traffic, worse conversion. Check campaign targeting — may be pulling in lower-intent leads.`;
+    case 'declining': return `<strong>Declining channel:</strong> Volume ${st.volTrend.toFixed(0)}%, B2D ${st.b2dTrend>=0?'+':''}${st.b2dTrend.toFixed(1)}pp trend. Both volume and quality are down. Investigate ad spend, listing health, or organic factors.`;
+    case 'quality':   return `<strong>Quality improving:</strong> B2D up ${st.b2dTrend.toFixed(1)}pp — this channel is converting better. Vol share is ${st.volShare.toFixed(1)}%. Consider scaling spend/investment here.`;
+    case 'shrinking': return `<strong>Shrinking channel:</strong> Volume down ${Math.abs(st.volTrend).toFixed(0)}% vs early weeks, now ${st.volShare.toFixed(1)}% share. B2D ${st.latestB2d.toFixed(1)}% (trend ${st.b2dTrend>=0?'+':''}${st.b2dTrend.toFixed(1)}pp). Check listing health and organic ranking.`;
+    default:          return `<strong>Stable:</strong> Volume and quality broadly consistent. ${st.volShare.toFixed(1)}% share, B2D ${st.avgB2d.toFixed(1)}% avg (latest ${st.latestB2d.toFixed(1)}%). No action needed — monitor weekly.`;
+  }
+}
+
+// ── BUILD CHANNEL STATS ────────────────────────────────────────────────────
+function buildChStats(weeks) {
+  const channels = DATA.channels || ['GMB','Google','Practo','Organic','Meta','Others'];
+  const netTotals = weeks.map(wk => S().weekly_funnel?.[wk]?.calls_done || 0);
+  const avgNetTotal = netTotals.reduce((a,b)=>a+b,0)/netTotals.length || 1;
+  const n4 = Math.min(4, Math.floor(weeks.length/2));
+
+  return channels.map(ch => {
+    const callsArr = weeks.map(wk => S().weekly_channel?.[wk]?.[ch]?.calls_done || 0);
+    const grossArr = weeks.map(wk => S().weekly_channel?.[wk]?.[ch]?.gross || 0);
+    const b2dArr   = weeks.map(wk => S().weekly_channel?.[wk]?.[ch]?.b2d_pct ?? null);
+    const nsArr    = weeks.map(wk => S().weekly_channel?.[wk]?.[ch]?.ns_pct ?? null);
+
+    const avgCalls  = callsArr.reduce((a,b)=>a+b,0)/callsArr.length;
+    const avgGross  = grossArr.reduce((a,b)=>a+b,0)/grossArr.length;
+    const volShare  = avgNetTotal ? avgCalls/avgNetTotal*100 : 0;
+    const validB2d  = b2dArr.filter(v=>v!=null);
+    const avgB2d    = validB2d.length ? validB2d.reduce((a,b)=>a+b,0)/validB2d.length : null;
+    const latestB2d = [...b2dArr].reverse().find(v=>v!=null) ?? null;
+    const latestCalls = callsArr[callsArr.length-1];
+    const latestNet   = netTotals[netTotals.length-1];
+    const latestVolShare = latestNet ? latestCalls/latestNet*100 : 0;
+
+    // trends (first n4 avg vs last n4 avg)
+    const earlyVol  = callsArr.slice(0,n4).reduce((a,b)=>a+b,0)/n4 || 1;
+    const recentVol = callsArr.slice(-n4).reduce((a,b)=>a+b,0)/n4;
+    const volTrend  = (recentVol-earlyVol)/earlyVol*100;
+    const earlyB2d  = b2dArr.slice(0,n4).filter(v=>v!=null);
+    const recentB2d = b2dArr.slice(-n4).filter(v=>v!=null);
+    const earlyB2dA = earlyB2d.length  ? earlyB2d.reduce((a,b)=>a+b,0)/earlyB2d.length   : avgB2d;
+    const recentB2dA= recentB2d.length ? recentB2d.reduce((a,b)=>a+b,0)/recentB2d.length : avgB2d;
+    const b2dTrend  = (recentB2dA??0) - (earlyB2dA??0);
+
+    // WoW
+    const wowCalls = callsArr.length>=2 && callsArr[callsArr.length-2] > 0
+      ? (callsArr[callsArr.length-1]-callsArr[callsArr.length-2])/callsArr[callsArr.length-2]*100 : null;
+
+    // Category mix (latest week)
+    const latestWk = weeks[weeks.length-1];
+    const catData  = S().weekly_channel?.[latestWk]?.[ch] || {};
+    const catTotal = CAT_KEYS.reduce((s,k)=>s+(catData[k]||0),0) || 1;
+    const catMix   = CAT_KEYS.map(k => ({ k, v: catData[k]||0, pct: (catData[k]||0)/catTotal*100 }));
+
+    return { ch, callsArr, grossArr, b2dArr, nsArr, avgCalls, avgGross, volShare, latestVolShare,
+             avgB2d, latestB2d, earlyB2dA, b2dTrend, volTrend, wowCalls, catMix, latestCalls, latestWk };
+  });
+}
+
+// ── RENDER ALL-CHANNELS VIEW ───────────────────────────────────────────────
+function renderAllChannels(weeks, wkLabels) {
+  const stats = buildChStats(weeks);
+  const lastWk = weeks[weeks.length-1];
+  const netCalls = S().weekly_funnel?.[lastWk]?.calls_done || 1;
+  const netGross = S().weekly_funnel?.[lastWk]?.gross || 1;
+  const netB2d   = S().weekly_funnel?.[lastWk]?.b2d_pct;
+  const netNs    = S().weekly_funnel?.[lastWk]?.ns_pct;
+  const netCallsAll = weeks.reduce((s,wk)=>s+(S().weekly_funnel?.[wk]?.calls_done||0),0);
+
+  // KPI strip
+  const lastWkLbl = (DATA.week_labels?.[lastWk]||lastWk).split(' - ').pop();
+  const kpis = `<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px;">
+    ${kpiCard('Total Calls Done', fmtN(netCalls), 'latest week · all channels', '#0f172a')}
+    ${kpiCard('Gross Bookings',   fmtN(netGross), 'latest week · all channels', '#0f172a')}
+    ${kpiCard('Network B2D %',    fmtPct(netB2d), 'latest week benchmark',      netB2d>=70?'#059669':netB2d>=60?'#d97706':'#dc2626')}
+    ${kpiCard('No Show %',        fmtPct(netNs),  'latest week benchmark',      netNs<=30?'#059669':netNs<=40?'#d97706':'#dc2626')}
+    ${kpiCard('Channels Active',  DATA.channels?.length || 6, weeks.length+' weeks of data', '#0f172a')}
+  </div>`;
+
+  // Channel composition bar
+  const maxShare = Math.max(...stats.map(s=>s.latestVolShare),1);
+  const compBars = stats
+    .sort((a,b)=>b.latestVolShare-a.latestVolShare)
+    .map(st => {
+      const m = CH_META[st.ch] || CH_META.Others;
+      const pct = st.latestVolShare.toFixed(1);
+      const wowStr = st.wowCalls!=null ? (st.wowCalls>=0?'▲':'▼')+Math.abs(st.wowCalls).toFixed(1)+'%' : '';
+      const wowColor = st.wowCalls>0?'#059669':st.wowCalls<0?'#dc2626':'#94a3b8';
+      return `<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
+        <div style="width:70px;font-size:12px;font-weight:600;text-align:right;color:${m.color};flex-shrink:0;">${m.label}</div>
+        <div style="flex:1;height:20px;background:#f1f5f9;border-radius:4px;overflow:hidden;position:relative;">
+          <div style="height:100%;width:${(st.latestVolShare/maxShare*100).toFixed(1)}%;background:${m.color};border-radius:4px;transition:width .4s;"></div>
+        </div>
+        <div style="font-size:12px;font-weight:700;color:${m.color};width:38px;flex-shrink:0;">${pct}%</div>
+        <div style="font-size:10px;font-weight:600;color:${wowColor};width:48px;flex-shrink:0;">${wowStr}</div>
+        <div style="font-size:11px;color:#64748b;width:56px;flex-shrink:0;">${fmtN(st.latestCalls)} calls</div>
+      </div>`;
+    }).join('');
+
+  // Channel cards
+  const chCards = stats
+    .sort((a,b)=>b.avgCalls-a.avgCalls)
+    .map(st => {
+      const sig = getSignal(st);
+      const m   = CH_META[st.ch] || CH_META.Others;
+      const b2dColor = v => v==null?'#94a3b8':v>=70?'#059669':v>=60?'#d97706':'#dc2626';
+      const nsColor  = v => v==null?'#94a3b8':v<=30?'#059669':v<=40?'#d97706':'#dc2626';
+
+      // Category mix mini bars
+      const catMax = Math.max(...st.catMix.map(c=>c.pct),1);
+      const catBars = st.catMix.filter(c=>c.v>0).map(c => {
+        const cm = CAT_META[c.k]||{color:'#94a3b8',label:c.k};
+        return `<div style="display:flex;align-items:center;gap:4px;margin-bottom:3px;">
+          <div style="width:36px;font-size:9px;color:var(--muted);text-align:right;">${cm.label}</div>
+          <div style="flex:1;height:5px;background:#f1f5f9;border-radius:3px;overflow:hidden;">
+            <div style="height:100%;width:${(c.pct/catMax*100).toFixed(0)}%;background:${cm.color};border-radius:3px;"></div>
+          </div>
+          <div style="font-size:9px;font-weight:600;color:${cm.color};width:28px;">${c.pct.toFixed(0)}%</div>
+        </div>`;
+      }).join('');
+
+      const b2dTrendStr = st.b2dTrend!=null
+        ? `${st.b2dTrend>=0?'+':''}${st.b2dTrend.toFixed(1)}pp trend`
+        : '';
+      const volTrendStr = `${st.volTrend>=0?'+':''}${st.volTrend.toFixed(0)}% vol growth`;
+
+      return `<div style="background:#fff;border:1.5px solid var(--line);border-radius:14px;padding:18px;cursor:pointer;"
+               onclick="setCh('${st.ch}')">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
+          <span style="width:12px;height:12px;border-radius:50%;background:${m.color};flex-shrink:0;display:inline-block;"></span>
+          <span style="font-size:15px;font-weight:700;">${m.label}</span>
+          <span style="font-size:10px;color:#94a3b8;margin-top:1px;">${m.fullLabel}</span>
+          <span style="margin-left:auto;padding:2px 10px;border-radius:999px;font-size:10px;font-weight:700;background:${sig.bg};color:${sig.color};border:1px solid ${sig.bd};">${sig.label}</span>
+        </div>
+
+        <!-- 4 mini KPIs -->
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:14px;">
+          ${miniBox('avg calls/wk', fmt(st.avgCalls), st.latestVolShare.toFixed(1)+'% of total', m.color, svgSpark(st.callsArr, m.color, 56, 22))}
+          ${miniBox('avg gross/wk', fmt(st.avgGross), 'bookings', '#64748b', '')}
+          ${miniBox('B2D% avg',   fmtPct(st.avgB2d),   b2dTrendStr, b2dColor(st.avgB2d), svgSpark(st.b2dArr.map(v=>v??null), b2dColor(st.avgB2d), 56, 22, false))}
+          ${miniBox('No Show% avg',fmtPct(S().weekly_channel?.[lastWk]?.[st.ch]?.ns_pct), 'latest week', nsColor(S().weekly_channel?.[lastWk]?.[st.ch]?.ns_pct), '')}
+        </div>
+
+        <!-- Vol share + B2D bars -->
+        <div style="margin-bottom:12px;">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:5px;">
+            <div style="width:68px;font-size:10px;color:var(--muted);">Vol share</div>
+            <div style="flex:1;height:8px;background:#f1f5f9;border-radius:4px;overflow:hidden;">
+              <div style="height:100%;width:${Math.min(st.latestVolShare*2.5,100)}%;background:${m.color};border-radius:4px;"></div>
+            </div>
+            <div style="font-size:11px;font-weight:700;color:${m.color};width:46px;text-align:right;">${st.latestVolShare.toFixed(1)}%</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <div style="width:68px;font-size:10px;color:var(--muted);">B2D %</div>
+            <div style="flex:1;height:8px;background:#f1f5f9;border-radius:4px;overflow:hidden;">
+              <div style="height:100%;width:${Math.min((st.latestB2d||0)*1.1,100)}%;background:${b2dColor(st.latestB2d)};border-radius:4px;"></div>
+            </div>
+            <div style="font-size:11px;font-weight:700;color:${b2dColor(st.latestB2d)};width:46px;text-align:right;">${fmtPct(st.latestB2d)}</div>
+          </div>
+        </div>
+
+        <!-- 3 trend boxes -->
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px;">
+          ${miniBox('calls/wk trend', fmtN(st.latestCalls), volTrendStr, m.color, svgSpark(st.callsArr, m.color, 60, 24))}
+          ${miniBox('B2D% trend', fmtPct(st.latestB2d), b2dTrendStr, b2dColor(st.latestB2d), svgSpark(st.b2dArr.map(v=>v??null), b2dColor(st.latestB2d), 60, 24, false))}
+          <div style="background:#f8fafc;border-radius:8px;padding:8px 10px;">
+            <div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px;">Category mix</div>
+            ${catBars}
+          </div>
+        </div>
+
+        <!-- Insight -->
+        <div style="padding:10px 12px;background:${sig.bg};border:1px solid ${sig.bd};border-radius:8px;font-size:12px;line-height:1.5;color:var(--ink);">
+          ${getInsight(sig, st)}
+        </div>
+        <div style="margin-top:8px;font-size:10px;color:#94a3b8;text-align:right;">Click to drill in →</div>
+      </div>`;
+    }).join('');
+
+  // Stacked area chart (use canvas)
+  const stackedHtml = `<div class="card">
+    <div style="font-size:14px;font-weight:700;margin-bottom:2px;">12-Week Volume by Channel</div>
+    <div style="font-size:11px;color:var(--muted);margin-bottom:12px;">Calls Done stacked by channel · ${activeScope} scope</div>
+    <div style="height:250px;"><canvas id="stackedChart"></canvas></div>
+  </div>`;
+
+  // B2D comparison table
+  const b2dRows = stats
+    .sort((a,b)=>(b.latestB2d||0)-(a.latestB2d||0))
+    .map(st => {
+      const m   = CH_META[st.ch]||CH_META.Others;
+      const sig = getSignal(st);
+      const b2dDelta = st.b2dTrend!=null ? (st.b2dTrend>=0?'+':'')+st.b2dTrend.toFixed(1)+'pp' : '—';
+      const b2dColor = v=>v==null?'#94a3b8':v>=70?'#059669':v>=60?'#d97706':'#dc2626';
+      const wowStr = st.wowCalls!=null ? (st.wowCalls>=0?'+':'')+st.wowCalls.toFixed(1)+'%' : '—';
+      const wowColor = st.wowCalls>0?'#059669':st.wowCalls<0?'#dc2626':'#94a3b8';
+      return `<tr>
+        <td style="font-weight:600;">
+          <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${m.color};margin-right:8px;vertical-align:middle;"></span>
+          ${m.label}
+        </td>
+        <td class="r">${fmtN(st.latestCalls)}</td>
+        <td class="r" style="color:${wowColor};font-weight:600;">${wowStr}</td>
+        <td class="r" style="font-weight:600;">${st.latestVolShare.toFixed(1)}%</td>
+        <td class="r" style="color:${b2dColor(st.latestB2d)};font-weight:600;">${fmtPct(st.latestB2d)}</td>
+        <td class="r" style="color:${st.b2dTrend>0?'#059669':st.b2dTrend<-1?'#dc2626':'#94a3b8'};font-weight:600;">${b2dDelta}</td>
+        <td class="r" style="color:${st.volTrend>0?'#059669':st.volTrend<-5?'#dc2626':'#94a3b8'};font-weight:600;">${st.volTrend>=0?'+':''}${st.volTrend.toFixed(0)}%</td>
+        <td class="r">
+          <span style="padding:2px 8px;border-radius:999px;font-size:10px;font-weight:700;background:${sig.bg};color:${sig.color};border:1px solid ${sig.bd};">${sig.label}</span>
+        </td>
+        <td>${svgSpark(st.callsArr, m.color, 80, 20)}</td>
+      </tr>`;
+    }).join('');
+
+  document.getElementById('mainContent').innerHTML = `
+    ${kpis}
+
+    <div class="card" style="padding:16px 20px;">
+      <div style="font-size:14px;font-weight:700;margin-bottom:12px;">Channel Volume Share · Latest Week</div>
+      <div style="font-size:11px;color:var(--muted);margin-bottom:14px;">${(DATA.week_labels?.[lastWk]||lastWk)} · ${activeScope} scope</div>
+      ${compBars}
+    </div>
+
+    <div class="card" style="padding:0;overflow:hidden;">
+      <div style="padding:14px 20px;border-bottom:1px solid var(--line);">
+        <div style="font-size:14px;font-weight:700;">Channel Comparison — All Metrics</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:2px;">Latest week · sortable · ${activeScope} scope</div>
+      </div>
+      <div style="overflow-x:auto;">
+      <table class="tbl">
+        <thead><tr>
+          <th>Channel</th>
+          <th class="r">Calls Done</th>
+          <th class="r">WoW</th>
+          <th class="r">Vol Share</th>
+          <th class="r">B2D %</th>
+          <th class="r">B2D Trend</th>
+          <th class="r">Vol Growth</th>
+          <th class="r">Signal</th>
+          <th>${weeks.length}wk Trend</th>
+        </tr></thead>
+        <tbody>${b2dRows}</tbody>
+      </table>
+      </div>
+    </div>
+
+    <div>
+      <div style="font-size:16px;font-weight:700;margin-bottom:4px;">Channel Deep-Dive Cards</div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:14px;">Click any card to see 12-week trend, category mix & more · ${activeScope} · ${weeks.length} weeks</div>
+      <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:14px;">${chCards}</div>
+    </div>
+
+    ${stackedHtml}
+  `;
+
+  // Stacked area chart
+  requestAnimationFrame(() => {
+    const ctx = document.getElementById('stackedChart');
+    if (!ctx) return;
+    const channels = DATA.channels || ['GMB','Google','Practo','Organic','Meta','Others'];
+    charts.stacked = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels: wkLabels,
+        datasets: channels.map(ch => ({
+          label: ch,
+          data:  weeks.map(wk => S().weekly_channel?.[wk]?.[ch]?.calls_done || 0),
+          backgroundColor: (CH_META[ch]||CH_META.Others).color + 'cc',
+          borderColor:     (CH_META[ch]||CH_META.Others).color,
+          borderWidth: 0,
+          borderRadius: 2,
+        }))
+      },
+      options: {
+        responsive:true, maintainAspectRatio:false,
+        scales: {
+          x: { stacked:true, grid:{display:false}, ticks:{font:{size:10}} },
+          y: { stacked:true, grid:{color:'#f1f5f9'}, ticks:{font:{size:10}, callback:v=>v>=1000?(v/1000).toFixed(1)+'k':v} },
+        },
+        plugins: {
+          legend: { position:'top', labels:{font:{size:11}, boxWidth:12, padding:10} },
+          tooltip: { mode:'index', callbacks:{ label: ctx => `${ctx.dataset.label}: ${ctx.raw?.toLocaleString()}` } },
+        }
+      }
+    });
+  });
+}
+
+// ── RENDER SINGLE CHANNEL VIEW ─────────────────────────────────────────────
+function renderSingleChannel(ch, weeks, wkLabels) {
+  const m      = CH_META[ch] || CH_META.Others;
+  const stats  = buildChStats(weeks).find(s=>s.ch===ch);
+  if (!stats) return;
+
+  const lastWk     = weeks[weeks.length-1];
+  const prevWk     = weeks[weeks.length-2];
+  const netTotals  = weeks.map(wk => S().weekly_funnel?.[wk]?.calls_done||0);
+  const netB2d     = weeks.map(wk => S().weekly_funnel?.[wk]?.b2d_pct??null);
+  const n4 = Math.min(4, Math.floor(weeks.length/2));
+  const sig = getSignal(stats);
+
+  const latestData  = S().weekly_channel?.[lastWk]?.[ch] || {};
+  const prevData    = S().weekly_channel?.[prevWk]?.[ch] || {};
+  const latestNet   = S().weekly_funnel?.[lastWk]?.calls_done || 1;
+
+  // KPI strip
+  const callsWow   = prevData.calls_done > 0 ? (latestData.calls_done - prevData.calls_done)/prevData.calls_done*100 : null;
+  const grossWow   = prevData.gross > 0 ? (latestData.gross - prevData.gross)/prevData.gross*100 : null;
+  const b2dWow     = latestData.b2d_pct != null && prevData.b2d_pct != null ? latestData.b2d_pct - prevData.b2d_pct : null;
+  const nsWow      = latestData.ns_pct  != null && prevData.ns_pct  != null ? latestData.ns_pct  - prevData.ns_pct  : null;
+  const vs8wk      = avg8wk(stats.callsArr.slice().reverse(), 0);
+  const vs8wkDelta = vs8wk ? (latestData.calls_done - vs8wk)/vs8wk*100 : null;
+
+  const b2dColor = v=>v==null?'#94a3b8':v>=70?'#059669':v>=60?'#d97706':'#dc2626';
+
+  // Growth stats
+  const earlyVol  = stats.callsArr.slice(0,n4).reduce((a,b)=>a+b,0)/n4||1;
+  const recentVol = stats.callsArr.slice(-n4).reduce((a,b)=>a+b,0)/n4;
+
+  // Category breakdown in this channel (latest week vs network)
+  const netCatData = S().weekly_total?.[lastWk]?.by_cat || {};
+  const netTotal   = S().weekly_total?.[lastWk]?.total || 1;
+  const chTotal    = latestData.calls_done || latestData.total || 1;
+  const catRows = CAT_KEYS.map(k => {
+    const chVal   = latestData[k] || 0;
+    const chPct   = chTotal ? chVal/chTotal*100 : 0;
+    const netPct  = netTotal ? (netCatData[k]||0)/netTotal*100 : 0;
+    const delta   = chPct - netPct;
+    const cm      = CAT_META[k]||{color:'#94a3b8',label:k};
+    // 12wk trend for this category in this channel
+    const catArr  = weeks.map(wk => S().weekly_channel?.[wk]?.[ch]?.[k] || 0);
+    const catEarly= catArr.slice(0,n4).reduce((a,b)=>a+b,0)/n4||1;
+    const catRecent=catArr.slice(-n4).reduce((a,b)=>a+b,0)/n4;
+    const catGrowth=(catRecent-catEarly)/catEarly*100;
+    return { k, chVal, chPct, netPct, delta, catArr, catGrowth, cm };
+  }).filter(r=>r.chVal>0).sort((a,b)=>b.chPct-a.chPct);
+
+  const maxCatPct = Math.max(...catRows.map(r=>r.chPct),1);
+
+  const catRowsHtml = catRows.map(r => {
+    const deltaColor = r.delta>2?'#059669':r.delta<-2?'#dc2626':'#94a3b8';
+    return `<tr>
+      <td style="font-weight:600;">
+        <span style="display:inline-block;width:9px;height:9px;border-radius:2px;background:${r.cm.color};margin-right:8px;vertical-align:middle;"></span>${r.cm.label}
+      </td>
+      <td class="r">${fmtN(r.chVal)}</td>
+      <td class="r">
+        <div style="display:flex;align-items:center;gap:8px;justify-content:flex-end;">
+          <div style="width:80px;height:6px;background:#f1f5f9;border-radius:3px;overflow:hidden;">
+            <div style="height:100%;width:${(r.chPct/maxCatPct*100).toFixed(0)}%;background:${r.cm.color};border-radius:3px;"></div>
+          </div>
+          <span style="font-weight:700;color:${r.cm.color};width:32px;text-align:right;">${r.chPct.toFixed(1)}%</span>
+        </div>
+      </td>
+      <td class="r" style="color:#94a3b8;">${r.netPct.toFixed(1)}%</td>
+      <td class="r" style="color:${deltaColor};font-weight:700;">${r.delta>=0?'+':''}${r.delta.toFixed(1)}pp</td>
+      <td class="r" style="color:${r.catGrowth>0?'#059669':r.catGrowth<-5?'#dc2626':'#94a3b8'};font-weight:600;">${r.catGrowth>=0?'+':''}${r.catGrowth.toFixed(0)}%</td>
+      <td>${svgSpark(r.catArr, r.cm.color, 80, 20)}</td>
+    </tr>`;
+  }).join('');
+
+  // All-channel B2D comparison (latest week)
+  const allStats = buildChStats(weeks);
+  const b2dCompRows = allStats
+    .sort((a,b)=>(b.latestB2d||0)-(a.latestB2d||0))
+    .map(st => {
+      const mc = CH_META[st.ch]||CH_META.Others;
+      const highlight = st.ch === ch;
+      return `<tr style="${highlight?'background:#faf5ff;font-weight:700;':''}" >
+        <td><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${mc.color};margin-right:7px;vertical-align:middle;"></span>${mc.label} ${highlight?'← You':''}</td>
+        <td class="r">${fmtN(st.latestCalls)}</td>
+        <td class="r" style="font-weight:600;">${st.latestVolShare.toFixed(1)}%</td>
+        <td class="r" style="color:${b2dColor(st.latestB2d)};font-weight:600;">${fmtPct(st.latestB2d)}</td>
+        <td class="r" style="color:${st.b2dTrend>0?'#059669':st.b2dTrend<-1?'#dc2626':'#94a3b8'};font-weight:600;">${st.b2dTrend>=0?'+':''}${st.b2dTrend.toFixed(1)}pp</td>
+        <td>${svgSpark(st.b2dArr.map(v=>v??null), b2dColor(st.latestB2d), 80, 20, false)}</td>
+      </tr>`;
+    }).join('');
+
+  document.getElementById('mainContent').innerHTML = `
+    <!-- Header -->
+    <div class="card" style="padding:14px 18px;border-left:4px solid ${m.color};">
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+        <span style="width:14px;height:14px;border-radius:50%;background:${m.color};flex-shrink:0;display:inline-block;"></span>
+        <div>
+          <div style="font-size:17px;font-weight:700;">${m.fullLabel}</div>
+          <div style="font-size:11px;color:var(--muted);">${activeScope} scope · ${weeks.length} weeks of data</div>
+        </div>
+        <span style="padding:3px 12px;border-radius:999px;font-size:11px;font-weight:700;background:${sig.bg};color:${sig.color};border:1px solid ${sig.bd};">${sig.label}</span>
+        <div style="margin-left:auto;font-size:12px;color:var(--muted);">
+          <span style="padding:4px 10px;background:#f8fafc;border:1px solid var(--line);border-radius:6px;cursor:pointer;" onclick="setCh('ALL')">← All Channels</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- KPI Strip -->
+    <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px;">
+      ${kpiCard2('Calls Done', fmtN(latestData.calls_done), 'latest week', m.color, wowHtml(latestData.calls_done, prevData.calls_done))}
+      ${kpiCard2('Vol Share',  latestData.calls_done ? (latestData.calls_done/latestNet*100).toFixed(1)+'%' : '—', 'of total calls', m.color, '')}
+      ${kpiCard2('Gross Bkgs', fmtN(latestData.gross), 'latest week', '#64748b', wowHtml(latestData.gross, prevData.gross))}
+      ${kpiCard2('B2D %',      fmtPct(latestData.b2d_pct), 'booking-to-done', b2dColor(latestData.b2d_pct), wowHtml(latestData.b2d_pct, prevData.b2d_pct, true))}
+      ${kpiCard2('No Show %',  fmtPct(latestData.ns_pct), 'of gross bookings', latestData.ns_pct<=30?'#059669':latestData.ns_pct<=40?'#d97706':'#dc2626', wowHtml(latestData.ns_pct, prevData.ns_pct, true))}
+    </div>
+
+    <!-- Growth row -->
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;">
+      ${kpiCard2('Calls Growth (4wk)', (recentVol-earlyVol)/earlyVol*100>=0?'+':''+(((recentVol-earlyVol)/earlyVol*100).toFixed(0))+'%',
+        Math.round(earlyVol)+' → '+Math.round(recentVol)+' avg/wk', (recentVol-earlyVol)>=0?'#059669':'#dc2626', '')}
+      ${kpiCard2('B2D Trend (4wk)', (stats.b2dTrend>=0?'+':'')+stats.b2dTrend.toFixed(1)+'pp',
+        (stats.earlyB2dA??0).toFixed(1)+'% early → '+stats.latestB2d?.toFixed(1)+'% latest', stats.b2dTrend>=0?'#059669':'#dc2626', '')}
+      ${kpiCard2('vs 8wk Avg', vs8wkDelta!=null ? (vs8wkDelta>=0?'+':'')+vs8wkDelta.toFixed(1)+'%' : '—',
+        vs8wk ? Math.round(vs8wk)+' calls 8wk avg' : '', vs8wkDelta>=0?'#059669':'#dc2626', '')}
+      ${kpiCard2('Signal', sig.label, getInsight(sig, stats).replace(/<[^>]+>/g,'').slice(0,60)+'…', sig.color, '')}
+    </div>
+
+    <!-- Insight -->
+    <div class="card" style="padding:14px 18px;background:${sig.bg};border-color:${sig.bd};">
+      <div style="font-size:13px;line-height:1.6;color:var(--ink);">${getInsight(sig, stats)}</div>
+    </div>
+
+    <!-- Growth index chart -->
+    <div class="card">
+      <div style="font-size:14px;font-weight:700;margin-bottom:2px;">Growth Index — ${m.label} vs Total Network</div>
+      <div style="font-size:11px;color:var(--muted);margin-bottom:12px;">Indexed to first week = 100 · ${activeScope} scope · tracks relative pace of growth</div>
+      <div style="height:220px;"><canvas id="growthChart"></canvas></div>
+    </div>
+
+    <!-- Category mix in this channel -->
+    <div class="card">
+      <div style="font-size:14px;font-weight:700;margin-bottom:2px;">Category Mix within ${m.label}</div>
+      <div style="font-size:11px;color:var(--muted);margin-bottom:12px;">Latest week · vs network average · delta = over/under-indexing · ${activeScope} scope</div>
+      <table class="tbl">
+        <thead><tr>
+          <th>Category</th>
+          <th class="r">Calls</th>
+          <th class="r">Share in Channel</th>
+          <th class="r">Network Avg %</th>
+          <th class="r">Index vs Network</th>
+          <th class="r">${n4*2}wk Growth</th>
+          <th>${weeks.length}wk Trend</th>
+        </tr></thead>
+        <tbody>${catRowsHtml}</tbody>
+      </table>
+      <div style="margin-top:12px;font-size:11px;color:#94a3b8;">Index = difference vs all-channel average. +pp means this channel over-indexes on this category relative to the network.</div>
+    </div>
+
+    <!-- 12-week trend chart -->
+    <div class="card">
+      <div style="font-size:14px;font-weight:700;margin-bottom:2px;">12-Week Trend — ${m.label}</div>
+      <div style="font-size:11px;color:var(--muted);margin-bottom:12px;">Calls Done (bars) · B2D% (line) · Network B2D% (dashed reference) · ${activeScope} scope</div>
+      <div style="height:240px;"><canvas id="trendChart"></canvas></div>
+      <div style="height:140px;margin-top:12px;"><canvas id="b2dChart"></canvas></div>
+    </div>
+
+    <!-- B2D comparison across channels -->
+    <div class="card" style="padding:0;overflow:hidden;">
+      <div style="padding:14px 20px;border-bottom:1px solid var(--line);">
+        <div style="font-size:14px;font-weight:700;">B2D% Comparison — All Channels</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:2px;">How does ${m.label} compare on quality? · Latest week · ${m.label} highlighted</div>
+      </div>
+      <div style="overflow-x:auto;">
+      <table class="tbl">
+        <thead><tr>
+          <th>Channel</th><th class="r">Calls</th><th class="r">Vol Share</th>
+          <th class="r">B2D %</th><th class="r">B2D Trend</th><th>B2D Sparkline</th>
+        </tr></thead>
+        <tbody>${b2dCompRows}</tbody>
+      </table>
+      </div>
+    </div>
+  `;
+
+  // Render charts
+  requestAnimationFrame(() => {
+    const base1    = stats.callsArr[0] || 1;
+    const baseNet  = netTotals[0] || 1;
+    const chIdx    = stats.callsArr.map(v => v/base1*100);
+    const netIdx   = netTotals.map(v => v/baseNet*100);
+
+    const gCtx = document.getElementById('growthChart');
+    if (gCtx) {
+      charts.growth = new Chart(gCtx, {
+        type: 'line',
+        data: {
+          labels: wkLabels,
+          datasets: [
+            { label: m.label+' (indexed)',  data: chIdx,   borderColor: m.color,   backgroundColor: m.color+'18', fill:true, borderWidth:2.5, tension:0.3, pointRadius:3, spanGaps:true },
+            { label: 'Total network (indexed)', data: netIdx, borderColor:'#64748b', backgroundColor:'transparent', borderWidth:2, borderDash:[5,3], tension:0.3, pointRadius:2, spanGaps:true },
+          ]
+        },
+        options: {
+          responsive:true, maintainAspectRatio:false,
+          plugins: { legend:{position:'top',labels:{font:{size:11},boxWidth:14,padding:10}}, tooltip:{mode:'index'} },
+          scales: {
+            x:{grid:{display:false},ticks:{font:{size:10}}},
+            y:{grid:{color:'#f1f5f9'},ticks:{font:{size:10},callback:v=>v.toFixed(0)},suggestedMin:60}
+          }
+        }
+      });
+    }
+
+    const tCtx = document.getElementById('trendChart');
+    if (tCtx) {
+      charts.trend = new Chart(tCtx, {
+        type: 'bar',
+        data: {
+          labels: wkLabels,
+          datasets: [{
+            label: m.label+' Calls Done',
+            data: stats.callsArr,
+            backgroundColor: m.color+'99', borderColor: m.color, borderWidth:1.5, borderRadius:3,
+          }]
+        },
+        options: {
+          responsive:true, maintainAspectRatio:false,
+          plugins: { legend:{display:false}, tooltip:{callbacks:{label:ctx=>`${ctx.dataset.label}: ${ctx.raw?.toLocaleString()}`}} },
+          scales: {
+            x:{grid:{display:false},ticks:{font:{size:10}}},
+            y:{grid:{color:'#f1f5f9'},ticks:{font:{size:10},callback:v=>v>=1000?(v/1000).toFixed(1)+'k':v},beginAtZero:false}
+          }
+        }
+      });
+    }
+
+    const b2dCtx = document.getElementById('b2dChart');
+    if (b2dCtx) {
+      charts.b2d = new Chart(b2dCtx, {
+        type: 'line',
+        data: {
+          labels: wkLabels,
+          datasets: [
+            { label:m.label+' B2D%', data:stats.b2dArr, borderColor:m.color, backgroundColor:m.color+'22', fill:true, tension:0.3, borderWidth:2.5, pointRadius:3, spanGaps:true },
+            { label:'Network B2D%',  data:netB2d,       borderColor:'#94a3b8', backgroundColor:'transparent', tension:0.3, borderWidth:1.5, borderDash:[4,3], pointRadius:2, spanGaps:true },
+          ]
+        },
+        options: {
+          responsive:true, maintainAspectRatio:false,
+          plugins: { legend:{position:'top',labels:{font:{size:10},boxWidth:12,padding:8}}, tooltip:{mode:'index',callbacks:{label:ctx=>`${ctx.dataset.label}: ${ctx.raw?.toFixed(1)}%`}} },
+          scales: {
+            x:{grid:{display:false},ticks:{font:{size:10}}},
+            y:{grid:{color:'#f1f5f9'},ticks:{font:{size:10},callback:v=>v+'%'},suggestedMin:50,suggestedMax:90}
+          }
+        }
+      });
+    }
+  });
+}
+
+// ── MAIN RENDER ────────────────────────────────────────────────────────────
+function render() {
+  if (!DATA) return;
+  destroyCharts();
+
+  const scope = S();
+  const weeks = scope.weeks || DATA.weeks;
+  const wkLabels = weeks.map(shortLabel);
+
+  // Channel chips
+  const channels = DATA.channels || ['GMB','Google','Practo','Organic','Meta','Others'];
+  const allChs = ['ALL', ...channels];
+  const chipsHTML = allChs.map(ch => {
+    const active = ch === activeCh;
+    const mm = CH_META[ch] || CH_META.Others;
+    const color = mm.color;
+    const style = active ? `background:${color};color:#fff;border-color:${color};` : `color:${ch==='ALL'?'var(--ink)':color};border-color:#e2e8f0;`;
+    const dot = ch !== 'ALL' ? `<span style="width:7px;height:7px;border-radius:50%;background:${active?'#fff':color};display:inline-block;flex-shrink:0;"></span>` : '';
+    return `<button class="chip" style="${style}font-size:11px;padding:4px 12px;" onclick="setCh('${ch}')">${dot}${mm.label}</button>`;
+  }).join('');
+
+  // Build filter bar
+  document.getElementById('mainContent').innerHTML = `
+    <div class="card" style="padding:10px 16px;">
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+        <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#94a3b8;">Channel:</span>
+        <div style="display:flex;gap:5px;flex-wrap:wrap;">${chipsHTML}</div>
+      </div>
+    </div>
+    <div id="channelBody"><div class="loading">Building analysis…</div></div>
+  `;
+
+  // Render into channelBody
+  const slot = document.getElementById('channelBody');
+  const tmp  = document.createElement('div');
+  tmp.className = 'space-y-6';
+  slot.replaceWith(tmp);
+  tmp.id = 'channelBody';
+  document.getElementById('mainContent').appendChild(tmp);
+
+  if (activeCh === 'ALL') {
+    renderAllChannels(weeks, wkLabels);
+  } else {
+    renderSingleChannel(activeCh, weeks, wkLabels);
+  }
+}
+
+// ── CONTROLS ──────────────────────────────────────────────────────────────
+function setCh(ch) {
+  activeCh = ch;
+  render();
+  window.scrollTo({ top:0, behavior:'smooth' });
+}
+function setScope(s) {
+  activeScope = s;
+  ['scopeOffline','scopeAll','scopeOnline'].forEach(id =>
+    document.getElementById(id)?.classList.toggle('active', id.replace('scope','').toLowerCase() === s)
+  );
+  render();
+}
+function setMode(m) {
+  viewMode = m;
+  document.getElementById('modeAbs').classList.toggle('active', m==='abs');
+  document.getElementById('modeShare').classList.toggle('active', m==='share');
+  render();
+}
+
+// ── INIT ──────────────────────────────────────────────────────────────────
+async function init() {
+  try {
+    const res = await fetch('data.json');
+    if (!res.ok) throw new Error('data.json not found');
+    DATA = await res.json();
+    render();
+  } catch(err) {
+    document.getElementById('mainContent').innerHTML =
+      `<div class="loading" style="color:#dc2626;">⚠ ${err.message}</div>`;
+  }
+}
+
+document.addEventListener('DOMContentLoaded', init);
+</script>
+</body>
+</html>
