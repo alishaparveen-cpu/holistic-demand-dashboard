@@ -1,5 +1,5 @@
 // sparkzoom.js — shared sparkline zoom modal for Allo Health demand dashboard
-// Double-click any .spark-wrap element to zoom into actual week-by-week values
+// Click any .spark-wrap element to zoom into actual week-by-week values
 (function () {
   'use strict';
   const MODAL_ID = 'sparkZoomModal';
@@ -46,7 +46,7 @@
         </div>
         <div style="height:220px;position:relative;"><canvas id="szCanvas"></canvas></div>
         <div id="szTable" style="margin-top:16px;"></div>
-        <div class="sz-hint">Double-click any sparkline throughout the dashboard to zoom</div>
+        <div class="sz-hint">Click any sparkline throughout the dashboard to zoom</div>
       </div>`;
     document.body.appendChild(div);
     div.addEventListener('click', e => { if (e.target === div) closeZoom(); });
@@ -162,7 +162,7 @@
   function init() {
     injectStyles();
     injectModal();
-    document.addEventListener('dblclick', e => {
+    document.addEventListener('click', e => {
       const wrap = e.target.closest?.('.spark-wrap');
       if (wrap) { e.preventDefault(); openZoom(wrap); }
     });
