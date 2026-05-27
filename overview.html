@@ -95,7 +95,7 @@ html,body{background:#f8fafc;color:var(--ink);font-family:ui-sans-serif,system-u
       <div style="display:flex;gap:3px;">
         <button class="toggle-btn active" id="mCalls"    onclick="setMet('calls_done')">Calls</button>
         <button class="toggle-btn"        id="mBookings" onclick="setMet('new_bookings')">Bookings</button>
-        <button class="toggle-btn"        id="mLeads"    onclick="setMet('gmb_leads')">Leads</button>
+        <button class="toggle-btn"        id="mLeads"    onclick="setMet('total_leads')">Leads</button>
       </div>
       <!-- Week -->
       <select id="weekSel" onchange="setWeek(this.value)"
@@ -140,6 +140,14 @@ const OV_SHEET_URL  = `https://docs.google.com/spreadsheets/d/${OV_SHEET_ID}/gvi
 const OV_SHEET_WEEKS = ['2026-05-18','2026-05-11','2026-05-04','2026-04-27','2026-04-20','2026-04-13','2026-04-06'];
 const OV_GMB_C = 27; // 0-indexed column start for GMB leads (7 weeks newest→oldest)
 
+// L0 sheet — for total leads (shared cache with efficiency tab)
+const L0_ID        = '1jyyFYpd7gfYyAQ3U7E56c7OA3OuQQAVgJrAGyQr90XM';
+const L0_CSV_URL   = `https://docs.google.com/spreadsheets/d/${L0_ID}/gviz/tq?tqx=out:csv&sheet=L0`;
+const L0_CACHE_KEY = 'allo_eff_l0_v2';
+const L0_CACHE_TTL = 45 * 60 * 1000;
+const L0_WK_KEYS   = ['2026-05-18','2026-05-11','2026-05-04','2026-04-27','2026-04-20','2026-04-13','2026-04-06'];
+const L0_WK_COLS   = [3,4,5,6,7,8,9]; // 0-indexed columns in L0 CSV
+
 // ── STATE ─────────────────────────────────────────────────────────────────
 let JDATA      = null;
 let ALL_WEEKS  = []; // newest-first week keys
@@ -147,8 +155,9 @@ let WK_LABELS  = {}; // wkKey → label string
 let dataScope  = 'all';
 let activeTier = 'ALL';
 let activeWkIdx = 0;  // index into ALL_WEEKS (0 = newest)
-let activeMet  = 'calls_done'; // 'calls_done' | 'new_bookings' | 'gmb_leads'
-let GMB_LEADS_BY_CITY = {};    // weekKey → city → total leads (loaded from sheet)
+let activeMet  = 'calls_done'; // 'calls_done' | 'new_bookings' | 'total_leads'
+let GMB_LEADS_BY_CITY = {};    // weekKey → city → GMB leads (loaded from OV sheet)
+let TOTAL_LEADS_WK    = {};    // weekKey → total leads (loaded from L0 sheet)
 let charts     = {};
 
 // ── HELPERS ───────────────────────────────────────────────────────────────
@@ -294,6 +303,46 @@ function cityArr(city, metric) {
   return ALL_WEEKS.map(wk => cityData(wk, city)[metric] ?? null);
 }
 
+// ── TOTAL LEADS FROM L0 (shared cache with efficiency tab) ────────────────
+async function loadTotalLeads() {
+  try {
+    let text = null;
+    // Re-use the efficiency tab's L0 cache if available — zero extra cost
+    const cached = localStorage.getItem(L0_CACHE_KEY);
+    if (cached) {
+      const { ts, text: t } = JSON.parse(cached);
+      if (Date.now() - ts < L0_CACHE_TTL) text = t;
+    }
+    if (!text) {
+      const res = await fetch(L0_CSV_URL);
+      if (!res.ok) return;
+      text = await res.text();
+      try { localStorage.setItem(L0_CACHE_KEY, JSON.stringify({ ts: Date.now(), text })); } catch(e) {}
+    }
+    // Minimal CSV parse — just need row 4 (overall total leads, 0-indexed)
+    const rows = [];
+    for (const line of text.split('\n')) {
+      if (!line.trim()) continue;
+      const row = []; let cur = '', inQ = false;
+      for (const c of line) {
+        if (c === '"') { inQ = !inQ; }
+        else if (c === ',' && !inQ) { row.push(cur.trim()); cur = ''; }
+        else cur += c;
+      }
+      row.push(cur.trim());
+      rows.push(row);
+    }
+    const leadsRow = rows[4]; // overall leads
+    if (!leadsRow) return;
+    L0_WK_COLS.forEach((col, i) => {
+      const wk  = L0_WK_KEYS[i];
+      const raw = (leadsRow[col] || '').replace(/[^\d.]/g, '');
+      const v   = parseFloat(raw);
+      if (!isNaN(v) && v > 0) TOTAL_LEADS_WK[wk] = v;
+    });
+  } catch(e) {}
+}
+
 // ── GMB LEADS HELPERS ─────────────────────────────────────────────────────
 function parseCSVSimple(text) {
   const rows = [];
@@ -346,10 +395,12 @@ function leadsVal(wkKey) {
 }
 function leadsArr() { return ALL_WEEKS.map(wk => leadsVal(wk)); }
 function metLabel(met) {
-  return { calls_done:'Calls Done', new_bookings:'New Bookings', gmb_leads:'GMB Leads' }[met] || met;
+  return { calls_done:'Calls Done', new_bookings:'New Bookings', total_leads:'Total Leads', gmb_leads:'GMB Leads' }[met] || met;
 }
 function metArr(met) {
-  return met === 'gmb_leads' ? leadsArr() : funnelArr(met);
+  if (met === 'total_leads') return ALL_WEEKS.map(wk => TOTAL_LEADS_WK[wk] ?? null);
+  if (met === 'gmb_leads')   return leadsArr();
+  return funnelArr(met);
 }
 
 // ── BUILD KPI STRIP ────────────────────────────────────────────────────────
@@ -847,7 +898,7 @@ function setWeek(val) {
 function setMet(met) {
   activeMet = met;
   ['mCalls','mBookings','mLeads'].forEach(id => document.getElementById(id)?.classList.remove('active'));
-  const m = { calls_done:'mCalls', new_bookings:'mBookings', gmb_leads:'mLeads' };
+  const m = { calls_done:'mCalls', new_bookings:'mBookings', total_leads:'mLeads', gmb_leads:'mLeads' };
   document.getElementById(m[met])?.classList.add('active');
   render();
 }
@@ -875,16 +926,21 @@ async function init() {
 
     render();
 
-    // Load GMB leads from demand tracker sheet (non-blocking — page renders immediately above)
+    // Load total leads from L0 sheet (non-blocking, shares cache with efficiency tab)
+    loadTotalLeads().then(() => {
+      if (activeMet === 'total_leads') render();
+    });
+
+    // Load GMB leads from demand tracker sheet (non-blocking — kept for backward compat)
     fetch(OV_SHEET_URL)
       .then(r => r.ok ? r.text() : null)
       .then(text => {
         if (text) {
           GMB_LEADS_BY_CITY = parseGmbLeads(text);
-          if (activeMet === 'gmb_leads') render(); // re-render if leads tab is active
+          if (activeMet === 'gmb_leads') render();
         }
       })
-      .catch(() => {}); // silently ignore if sheet is inaccessible
+      .catch(() => {});
 
   } catch (err) {
     document.getElementById('root').innerHTML =
