@@ -853,18 +853,25 @@ function buildChannelTable() {
   const chs  = Object.keys(JDATA?.[dataScope]?.weekly_channel?.[wk] || {});
   if (!chs.length) return '';
 
-  const totalCalls = Object.values(JDATA[dataScope].weekly_channel[wk])
-    .reduce((s, d) => s + (d.calls_done || 0), 0) || 1;
+  // Map activeMet to the JDATA field available per-channel
+  // calls_done → 'calls_done', new_bookings → 'gross' (JDATA uses 'gross' for bookings), total_leads → 'slot_booked'
+  const chanMetricKey = activeMet === 'new_bookings' ? 'gross'
+                      : activeMet === 'total_leads'  ? 'slot_booked'
+                      : 'calls_done';
+  const metLbl = metLabel(activeMet);
+
+  const totalForMet = Object.values(JDATA[dataScope].weekly_channel[wk])
+    .reduce((s, d) => s + (d[chanMetricKey] || 0), 0) || 1;
 
   const rows = chs.map(ch => {
-    const arr   = chanArr(ch, 'calls_done');
+    const arr   = chanArr(ch, chanMetricKey);
     const b2dA  = chanArr(ch, 'b2d_pct');
     const cur   = arr[activeWkIdx];
     const prev  = arr[activeWkIdx + 1];
     const avgV  = avg8(arr, activeWkIdx);
     const b2dCur = b2dA[activeWkIdx];
     const b2dAvg = avg8(b2dA, activeWkIdx);
-    const share  = cur != null && totalCalls ? (cur / totalCalls * 100) : null;
+    const share  = cur != null && totalForMet ? (cur / totalForMet * 100) : null;
     const color  = CH_COLORS[ch] || '#94a3b8';
 
     const wowStr  = wowPct(cur, prev);
@@ -893,16 +900,19 @@ function buildChannelTable() {
     </tr>`;
   }).join('');
 
+  const noteHtml = activeMet === 'total_leads' ? `<span style="font-size:10px;color:#f59e0b;margin-left:8px;">⚠ Leads per channel not in JDATA — showing Slot Booked as proxy</span>` : '';
+
   return `<div class="card" style="margin-bottom:20px;padding:0;overflow:hidden;">
     <div style="padding:14px 20px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
       <span class="sec-hdr">Channel Breakdown</span>
-      <span class="sec-sub">Calls Done · ${dataScope} · with 8-week rolling average</span>
+      <span class="sec-sub">${metLbl} · ${dataScope} · with 8-week rolling average</span>
+      ${noteHtml}
     </div>
     <div style="overflow-x:auto;">
     <table class="tbl">
       <thead><tr>
         <th>Channel</th>
-        <th class="r">Calls Done</th>
+        <th class="r">${metLbl}</th>
         <th class="r">vs 8wk Avg</th>
         <th class="r">Share %</th>
         <th class="r">B2D %</th>
@@ -935,11 +945,16 @@ function buildCityTable() {
 
   if (!filtered.length) return '';
 
-  // Sort by calls done (highest first)
+  // Map activeMet to JDATA city field
+  const cityMetricKey = activeMet === 'new_bookings' ? 'gross'
+                      : activeMet === 'total_leads'  ? 'slot_booked'
+                      : 'calls_done';
+  const metLbl = metLabel(activeMet);
+
   const sorted = filtered
     .map(city => ({
       city,
-      arr:    cityArr(city, 'calls_done'),
+      arr:    cityArr(city, cityMetricKey),
       b2dArr: cityArr(city, 'b2d_pct'),
     }))
     .map(o => ({
@@ -985,16 +1000,19 @@ function buildCityTable() {
     </tr>`;
   }).join('');
 
+  const cityNoteHtml = activeMet === 'total_leads' ? `<span style="font-size:10px;color:#f59e0b;margin-left:8px;">⚠ Showing Slot Booked as proxy for Leads per city</span>` : '';
+
   return `<div class="card" style="margin-bottom:20px;padding:0;overflow:hidden;">
     <div style="padding:14px 20px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
       <span class="sec-hdr">City Breakdown</span>
-      <span class="sec-sub">Calls Done · ${dataScope} · ${activeTier === 'ALL' ? 'All tiers' : activeTier} · with 8wk avg</span>
+      <span class="sec-sub">${metLbl} · ${dataScope} · ${activeTier === 'ALL' ? 'All tiers' : activeTier} · with 8wk avg</span>
+      ${cityNoteHtml}
     </div>
     <div style="overflow-x:auto;max-height:480px;overflow-y:auto;">
     <table class="tbl">
       <thead><tr>
         <th>City</th>
-        <th class="r">Calls Done</th>
+        <th class="r">${metLbl}</th>
         <th class="r">vs 8wk Avg</th>
         <th class="r">B2D %</th>
         <th>9wk Trend</th>
