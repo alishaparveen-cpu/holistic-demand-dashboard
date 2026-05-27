@@ -80,6 +80,10 @@ html,body{background:#f8fafc;color:var(--ink);font-family:ui-sans-serif,system-u
         <button class="toggle-btn"        id="tT1"  onclick="setTier('T1')">T1</button>
         <button class="toggle-btn"        id="tT2"  onclick="setTier('T2')">T2</button>
       </div>
+      <!-- Clinic search -->
+      <input id="clinicSearch" type="text" placeholder="🔍 Search clinic…"
+        oninput="setClinicSearch(this.value)"
+        style="padding:5px 10px;border:1px solid var(--line);border-radius:7px;font-size:12px;background:#fff;min-width:160px;outline:none;"/>
       <!-- City -->
       <select id="citySel" onchange="setCity(this.value)" class="city-sel">
         <option value="ALL">All Clinics</option>
@@ -99,6 +103,9 @@ html,body{background:#f8fafc;color:var(--ink);font-family:ui-sans-serif,system-u
 
 <script>
 // ── CONFIG ────────────────────────────────────────────────────────────────
+const NS_TARGET = 25;   // No-show % target: below this is acceptable
+const B2D_TARGET = 65;  // B2D% target: above this is good
+
 const CITY_TIERS = {
   T1: ['Bangalore','Mumbai','Pune','Hyderabad','Chennai'],
   T2: ['Navi Mumbai','Coimbatore','Nagpur','Ranchi','Jaipur','Ahmedabad',
@@ -117,8 +124,9 @@ let activeCity    = 'ALL';
 let activeWkIdx   = 0;
 let sortCol       = 'calls_done';
 let sortAsc       = false;
-let heatmapMetric = 'calls_done';
-let bubbleChart   = null;
+let heatmapMetric  = 'calls_done';
+let bubbleChart    = null;
+let clinicSearch   = '';  // text filter for clinic name/city
 
 // ── HELPERS ───────────────────────────────────────────────────────────────
 function fmtN(v)  { if (v == null) return '—'; return Math.round(v).toLocaleString(); }
@@ -208,10 +216,13 @@ function clinicKey_name(key) { return key.split('_').slice(1).join(' '); }
 function getFilteredClinics() {
   const wk = ALL_WEEKS[activeWkIdx];
   const allClinics = Object.keys(JDATA?.offline?.weekly_clinic?.[wk] || {});
+  const searchQ = clinicSearch.toLowerCase().trim();
   return allClinics.filter(key => {
     const city = clinicKey_city(key);
+    const name = clinicKey_name(key);
     if (activeCity !== 'ALL' && city !== activeCity) return false;
     if (activeTier !== 'ALL' && cityTier(city) !== activeTier) return false;
+    if (searchQ && !name.toLowerCase().includes(searchQ) && !city.toLowerCase().includes(searchQ)) return false;
     return true;
   });
 }
@@ -297,7 +308,7 @@ function buildKPIStrip() {
     ${kpiCard('Gross Bookings', curGross, prvGross, avg8(grArr, activeWkIdx), fmtN)}
     ${kpiCard('B2D %',          curB2d,   prvB2d,   avgB2d(activeWkIdx),     fmtPct, true)}
     ${kpiCard('No Show',        curNoSh,  prvNoSh,  null,                    fmtN)}
-    ${kpiCard('No Show %',      curNsPct, prvNsPct, avgNsPct(activeWkIdx),   fmtPct, true, true)}
+    ${kpiCard('No Show % <small style="font-weight:400;color:#94a3b8;font-size:9px;">target &lt;${NS_TARGET}%</small>', curNsPct, prvNsPct, avgNsPct(activeWkIdx), fmtPct, true, true)}
   </div>`;
 }
 
@@ -385,7 +396,7 @@ function buildClinicTable() {
       </td>
       <td class="cell-r">
         <span class="val-main">${fmtN(nsCur)}</span>
-        <span class="val-sub" style="color:${nsPCur >= 35 ? '#dc2626' : nsPCur >= 25 ? '#d97706' : '#94a3b8'};">${nsPCur != null ? nsPCur.toFixed(1)+'%' : ''}</span>
+        <span class="val-sub" style="color:${nsPCur >= NS_TARGET+10 ? '#dc2626' : nsPCur >= NS_TARGET ? '#d97706' : '#94a3b8'};">${nsPCur != null ? nsPCur.toFixed(1)+'% '+(nsPCur>=NS_TARGET?'⚠':'✓') : ''}</span>
       </td>
       <td style="padding-right:12px;">${spark(sparkVals, color, 84, 24)}</td>
     </tr>`;
@@ -405,7 +416,7 @@ function buildClinicTable() {
         <th class="r">vs 8wk Avg</th>
         <th class="r">${sortHdr('Gross Bkgs', 'gross')}</th>
         <th class="r">${sortHdr('B2D %', 'b2d_pct')}</th>
-        <th class="r">${sortHdr('No Show', 'no_show')}</th>
+        <th class="r">${sortHdr('No Show', 'no_show')} <div style="font-size:8px;font-weight:400;color:#94a3b8;margin-top:1px;">target &lt;${NS_TARGET}%</div></th>
         <th>9wk Trend</th>
       </tr></thead>
       <tbody>${tableRows}</tbody>
@@ -650,6 +661,10 @@ function buildHeatmapSection() {
 // ── HEATMAP METRIC TOGGLE ─────────────────────────────────────────────────
 function setHeatmapMetric(m) {
   heatmapMetric = m;
+  render();
+}
+function setClinicSearch(val) {
+  clinicSearch = val;
   render();
 }
 

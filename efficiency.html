@@ -191,11 +191,12 @@ html,body{background:#f8fafc;color:var(--ink);font-family:ui-sans-serif,system-u
           <th class="right" onclick="sortTbl(6)" title="Est. Spend ÷ calls done (CSV)">CPD (est)</th>
           <th class="right" onclick="sortTbl(7)">Calls Done</th>
           <th class="right" onclick="sortTbl(8)">B2D%</th>
+          <th class="right" onclick="sortTbl(9)" title="1st TP Revenue ÷ Spend (L0)">RoAS</th>
           <th class="center nosort" style="cursor:default;">Drill Down</th>
         </tr>
       </thead>
       <tbody id="chanTblBody">
-        <tr><td colspan="10" class="loading-state">Loading…</td></tr>
+        <tr><td colspan="11" class="loading-state">Loading…</td></tr>
       </tbody>
     </table>
   </div>
@@ -1331,7 +1332,7 @@ function buildKPIStrip(wkIdx) {
 
 // ── CHANNEL TABLE ─────────────────────────────────────────────────────────
 function buildTableRows(wkIdx) {
-  if (!L0 || !JDATA) return '<tr><td colspan="10" class="loading-state">Loading…</td></tr>';
+  if (!L0 || !JDATA) return '<tr><td colspan="11" class="loading-state">Loading…</td></tr>';
   const prev = wkIdx + 1;
   const totalSpend = L0.overall.spends[wkIdx] || 0;
   const totalLeads = L0.overall.leads[wkIdx]  || 1;
@@ -1350,13 +1351,14 @@ function buildTableRows(wkIdx) {
     const cpl = (estSpend>0&&estLeads>0)  ? Math.round(estSpend/estLeads)  : null;
     const cpd = (estSpend>0&&callsDone>0) ? Math.round(estSpend/callsDone) : null;
     const doneWow = prevDone>0 ? (callsDone-prevDone)/prevDone*100 : null;
-    return { ch, spendContr, leadContr, doneContr, estSpend, estLeads, cpl, cpd, callsDone, b2dPct, doneWow };
+    const roasV   = l0?.roas?.[wkIdx] ?? null;
+    return { ch, spendContr, leadContr, doneContr, estSpend, estLeads, cpl, cpd, callsDone, b2dPct, doneWow, roasV };
   }).filter(r => activeScope==='paid' ? r.ch.type==='paid' : true);
 
   data.sort((a, b) => {
     const cols = [
       r=>r.ch.label, r=>r.spendContr??-1, r=>r.leadContr??-1, r=>r.doneContr??-1,
-      r=>r.estSpend, r=>r.cpl??0, r=>r.cpd??0, r=>r.callsDone, r=>r.b2dPct,
+      r=>r.estSpend, r=>r.cpl??0, r=>r.cpd??0, r=>r.callsDone, r=>r.b2dPct, r=>r.roasV??-1,
     ];
     const av = cols[sortCol]?.(a), bv = cols[sortCol]?.(b);
     if (typeof av === 'string') return sortAsc ? av.localeCompare(bv) : bv.localeCompare(av);
@@ -1400,6 +1402,7 @@ function buildTableRows(wkIdx) {
       <td class="right">${cpdCell}</td>
       <td class="right" style="font-weight:600;">${r.callsDone>0?r.callsDone.toLocaleString():'0'}${wowBadge}</td>
       <td class="right"><span style="font-weight:600;color:${b2dColor};">${r.b2dPct>0?r.b2dPct.toFixed(1)+'%':'—'}</span></td>
+      <td class="right" style="font-weight:600;color:${r.roasV!=null?(r.roasV>=150?'#059669':r.roasV>=80?'#d97706':'#dc2626'):'#94a3b8'};">${r.roasV!=null?Math.round(r.roasV)+'%':ch.type==='free'?'—':'—'}</td>
       <td style="text-align:center;">${detailBtn}</td>
     </tr>`;
   }).join('');
