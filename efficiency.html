@@ -146,12 +146,6 @@ html,body{background:#f8fafc;color:var(--ink);font-family:ui-sans-serif,system-u
   <button class="ch-tab" id="chtPracto"      onclick="setChView('Practo')">
     <span class="ch-dot-sm" style="background:#6B4EFF;"></span> Practo
   </button>
-  <button class="ch-tab" id="chtJustDial"    onclick="setChView('JustDial')">
-    <span class="ch-dot-sm" style="background:#f97316;"></span> JustDial
-  </button>
-  <button class="ch-tab" id="chtClinicsplots" onclick="setChView('Clinicspots')">
-    <span class="ch-dot-sm" style="background:#8b5cf6;"></span> Clinicspots
-  </button>
   <button class="ch-tab" id="chtGMB"         onclick="setChView('GMB')">
     <span class="ch-dot-sm" style="background:#34A853;"></span> GMB
   </button>
@@ -378,26 +372,27 @@ html,body{background:#f8fafc;color:var(--ink);font-family:ui-sans-serif,system-u
 // ── CONFIG ────────────────────────────────────────────────────────────────
 const L0_SHEET_ID = '1jyyFYpd7gfYyAQ3U7E56c7OA3OuQQAVgJrAGyQr90XM';
 const L0_URL      = `https://docs.google.com/spreadsheets/d/${L0_SHEET_ID}/gviz/tq?tqx=out:csv&sheet=L0`;
-const L0_CACHE_KEY = 'allo_eff_l0_v2';
+const L0_CACHE_KEY = 'allo_eff_l0_v4';
 const L0_CACHE_TTL = 45 * 60 * 1000; // 45 min
 
 const L0_WEEK_COLS = [3, 4, 5, 6, 7, 8, 9];
 const JSON_WEEK_KEYS = [
-  '2026-05-18','2026-05-11','2026-05-04',
-  '2026-04-27','2026-04-20','2026-04-13','2026-04-06'
+  '2026-05-24','2026-05-17','2026-05-10','2026-05-03',
+  '2026-04-26','2026-04-19','2026-04-12'
 ];
 
 const CHANNELS = [
-  { key:'Google',      label:'Google Search', section:'Google Search', type:'paid', color:'#4285F4' },
-  { key:'Meta',        label:'Meta / FB',     section:'FB',            type:'paid', color:'#1877F2' },
-  { key:'Practo',      label:'Practo',        section:'Practo',        type:'paid', color:'#6B4EFF' },
-  { key:'JustDial',    label:'JustDial',      section:'Justdial',      type:'paid', color:'#f97316' },
-  { key:'Clinicspots', label:'Clinicspots',   section:'Clinicspots',   type:'paid', color:'#8b5cf6' },
-  { key:'GMB',         label:'GMB',           section:'GMB',           type:'free', color:'#34A853' },
-  { key:'Organic',     label:'Organic',       section:'<>Organic',     type:'free', color:'#10b981' },
-  { key:'Others',      label:'Others',        section:null,            type:'free', color:'#94a3b8' },
+  { key:'Google',  label:'Google Search', section:'Google Search', type:'paid', color:'#4285F4' },
+  { key:'Meta',    label:'Meta / FB',     section:'FB',            type:'paid', color:'#1877F2' },
+  { key:'Practo',  label:'Practo',        section:'Practo',        type:'paid', color:'#6B4EFF' },
+  { key:'GMB',     label:'GMB',           section:'GMB',           type:'free', color:'#34A853' },
+  { key:'Organic', label:'Organic',       section:'<>Organic',     type:'free', color:'#10b981' },
+  { key:'Others',  label:'Others',        section:null,            type:'free', color:'#94a3b8' },
 ];
 
+// ALL section labels that appear as headers in the sheet — used for section boundary detection.
+// Keep Justdial and Clinicspots even though they're not displayed channels, otherwise the
+// parser bleeds FB data into those zero-filled rows and breaks Meta CPL parsing.
 const L0_SECTIONS = [
   '<>Organic','GMB+Google','GMB','Google Search','Practo','FB','Justdial','Clinicspots','Others'
 ];
@@ -540,29 +535,40 @@ function parseL0(text) {
   const endLabels   = L0_WEEK_COLS.map(c => (rows[1]?.[c]||'').trim());
   const startLabels = L0_WEEK_COLS.map(c => (rows[2]?.[c]||'').trim());
 
+  // ── CONFIRMED ROW INDICES (fetched & verified from live L0 CSV) ──
+  // Row 0: empty  Row 1: week-end labels  Row 2: week-start labels
+  // Rows 3-32: overall metrics  Row 33+: per-channel sections
   const overall = {
-    // Existing rows (0-indexed array positions, tested and working)
-    spends:      rowArr(3),  leads:      rowArr(4),  verified:    rowArr(5),
-    cpl:         rowArr(7),  cpb:        rowArr(8),  cpd:         rowArr(9),
-    sti_contr:   rowArr(10), roas:       rowArr(13),
-    online_tp:   rowArr(15), offline_tp: rowArr(18),
-    // Extended rows per user spec (1-indexed sheet rows → 0-indexed)
-    // Row 9→idx8 conflicts with cpb above; compute verified_pct instead (see post-parse)
-    bookings:    rowArr(10),  // row 11 — total bookings network
-    bkg_online:  rowArr(11),  // row 12
-    bkg_offline: rowArr(12),  // row 13
-    cpb_v2:      rowArr(14),  // row 15 — CPB (detailed)
-    online_done: rowArr(16),  // row 17
-    offline_done:rowArr(17),  // row 18
-    cpd_v2:      rowArr(19),  // row 20 — CPD (detailed)
-    sti_contr_v2:rowArr(26),  // row 27
-    sti_online:  rowArr(27),  // row 28
-    sti_offline: rowArr(28),  // row 29
-    rev_1st_tp:  rowArr(32),  // row 33
-    consult_rev: rowArr(33),  // row 34
-    new_rev:     rowArr(34),  // row 35
-    roas_1tp:    rowArr(35),  // row 36 — 1st TP RoAS
-    rpc_net:     rowArr(36),  // row 37 — Network RPC
+    spends:            rowArr(3),   // "Spends"           → 539570…
+    leads:             rowArr(4),   // "Leads"            → 6139…
+    verified:          rowArr(5),   // "Verified Leads"   → 5986…
+    verified_pct:      rowArr(6),   // "Verified%"        → 97.5… (direct %)
+    cpl:               rowArr(7),   // "CPL (Verified)"   → 90…
+    bookings:          rowArr(8),   // "Bookings"         → 1764…
+    bkg_lead_pct:      rowArr(9),   // "Bookings/Lead%"   → 29…
+    cpb:               rowArr(10),  // "CPB"              → 306…
+    calls_done:        rowArr(11),  // "Calls Done"       → 1471…
+    online_done:       rowArr(12),  // "Online" done      → 499…
+    offline_done:      rowArr(13),  // "Offline" done     → 972…
+    b2d_blank:         rowArr(14),  // B2D% (blank label) → 74.4…
+    cpd:               rowArr(15),  // "CPD"              → 367…
+    sti_contr:         rowArr(16),  // "STI Contr."       → 15.1…
+    sti_contr_online:  rowArr(17),  // "STI Contr-Online" → 7.4…
+    sti_contr_offline: rowArr(18),  // "STI Contr-Offline"→ 19.0…
+    b2d:               rowArr(19),  // "Calls Done / Bookings" → 83…
+    b2d_online:        rowArr(20),  // "Online" B2D%      → 109…
+    b2d_offline:       rowArr(21),  // "Offline" B2D%     → 74…
+    rev_1st_tp:        rowArr(22),  // "1st TP Rev" LAKHS → 29.79…
+    consult_rev:       rowArr(23),  // "Consult Rev" LAKHS→ 5.84…
+    new_rev:           rowArr(24),  // "New Rev" LAKHS    → 35.64…
+    roas_1tp:          rowArr(25),  // "1st TP RoAS"      → 660.5…
+    rpc_net:           rowArr(26),  // "RPC"              → 2025…
+    online_tp:         rowArr(27),  // "Online TP #"      → 192…
+    online_tp_conv:    rowArr(28),  // "Conv"             → 38…
+    online_tp_rpc:     rowArr(29),  // "RPC" online TP    → 1102…
+    offline_tp:        rowArr(30),  // "Offline TP #"     → 726…
+    offline_tp_conv:   rowArr(31),  // "Conv"             → 75…
+    offline_tp_rpc:    rowArr(32),  // "RPC" offline TP   → 2500…
   };
 
   function parseChannel(sectionLabel) {
@@ -583,7 +589,7 @@ function parseL0(text) {
       c2l:         secArr(sectionLabel,'c2l'),
       verified_leads: secArr(sectionLabel,'verified leads'),
       verified_pct: secArr(sectionLabel,'verified%'),
-      cpl:         secArr(sectionLabel,'cpl (verfified)','cpl (verified)','cpl'),
+      cpl:         secArr(sectionLabel,'cpl (verified)','cpl (verfified)','cpl'),
       doc_hiring:  secArr(sectionLabel,'doc hiring / ata','doc hiring/ata','doc hiring'),
       awareness:   secArr(sectionLabel,'awareness'),
       bookings:    secArr(sectionLabel,'bookings'),
@@ -636,21 +642,14 @@ function parseL0(text) {
       phone_bookings_offline: pr(['bookings- phone','phone bookings'],2,'offline'),
     };
   }
-  // Compute verified_pct from counts (avoids row-index conflict)
-  overall.verified_pct = overall.leads.map((l, i) =>
-    (l != null && l > 0 && overall.verified[i] != null)
-      ? overall.verified[i] / l * 100 : null);
-
   return {
     endLabels, startLabels, overall,
-    organic:     parseChannel('<>Organic'),
-    gmb_google:  parseChannel('GMB+Google'),
-    gmb:         parseChannel('GMB'),
-    google:      parseChannel('Google Search'),
-    practo:      parseChannel('Practo'),
-    meta:        parseChannel('FB'),
-    justdial:    parseChannel('Justdial'),
-    clinicspots: parseChannel('Clinicspots'),
+    organic:    parseChannel('<>Organic'),
+    gmb_google: parseChannel('GMB+Google'),
+    gmb:        parseChannel('GMB'),
+    google:     parseChannel('Google Search'),
+    practo:     parseChannel('Practo'),
+    meta:       parseChannel('FB'),
   };
 }
 
@@ -658,8 +657,8 @@ function parseL0(text) {
 function getChannelL0(ch) {
   if (!L0) return null;
   const map = {
-    Google:'google', Meta:'meta', Practo:'practo', GMB:'gmb',
-    Organic:'organic', JustDial:'justdial', Clinicspots:'clinicspots'
+    Google:'google', Meta:'meta', Practo:'practo',
+    GMB:'gmb', Organic:'organic'
   };
   return map[ch.key] ? L0[map[ch.key]] : null;
 }
@@ -688,6 +687,11 @@ function fmtINR(v) {
   if (v >= 100000) return '₹' + (v/100000).toFixed(1) + 'L';
   if (v >= 1000)   return '₹' + (v/1000).toFixed(0) + 'K';
   return '₹' + Math.round(v);
+}
+// Revenue values in L0 are stored in LAKHS (e.g. 35.64 = ₹35.64L)
+function fmtLakh(v) {
+  if (v === null || v === undefined || isNaN(v)) return '—';
+  return '₹' + (+v).toFixed(1) + 'L';
 }
 function fmtN(v)   { if (v==null) return '—'; return Math.round(v).toLocaleString(); }
 function pctStr(v, dec=0) { if (v==null) return '—'; return v.toFixed(dec)+'%'; }
@@ -961,6 +965,7 @@ function buildChannelFunnel(chKey, wkIdx) {
   const c    = ch.color;
   const fPct = v => v != null ? v.toFixed(1)+'%' : '—';
   const fINR = v => v != null ? fmtINR(v) : '—';
+  const fLak = v => v != null ? fmtLakh(v) : '—';   // revenue already in lakhs
   const fN   = v => v != null ? Math.round(v).toLocaleString() : '—';
   const fRup = v => v != null ? '₹'+Math.round(v).toLocaleString() : '—';
   const fKNum= v => v != null ? (v>=1000?(v/1000).toFixed(1)+'K':v.toFixed(0)) : '—';
@@ -1089,9 +1094,9 @@ function buildChannelFunnel(chKey, wkIdx) {
   if (hasAny(d.roas)||hasAny(d.rev_1st_tp)) {
     s7 = stage('💰','Revenue',
       sCard('1st TP RoAS',  fPct(d.roas[wkIdx]), 'Revenue ÷ Spend', true) +
-      sCard('1st TP Rev',   fINR(d.rev_1st_tp[wkIdx]), '', true) +
-      sCard('Consult Rev',  fINR(d.consult_rev[wkIdx])) +
-      sCard('New Rev',      fINR(d.new_rev[wkIdx])) +
+      sCard('1st TP Rev',   fLak(d.rev_1st_tp[wkIdx]), '', true) +
+      sCard('Consult Rev',  fLak(d.consult_rev[wkIdx])) +
+      sCard('New Rev',      fLak(d.new_rev[wkIdx])) +
       sCard('RPC',          fRup(d.rpc[wkIdx]))
     );
   }
@@ -1099,14 +1104,14 @@ function buildChannelFunnel(chKey, wkIdx) {
   let s8='';
   if (hasAny(d.online_tp_num)) s8 += stage('💻','Online TP',
     sCard('TP #',    fN(d.online_tp_num[wkIdx])) +
-    sCard('Revenue', fINR(d.online_tp_rev[wkIdx])) +
+    sCard('Revenue', fLak(d.online_tp_rev[wkIdx])) +
     sCard('AOV',     fRup(d.online_tp_aov[wkIdx])) +
     sCard('Conv%',   fPct(d.online_tp_conv[wkIdx])) +
     sCard('RPC',     fRup(d.online_tp_rpc[wkIdx]))
   );
   if (hasAny(d.offline_tp_num)) s8 += stage('🏥','Offline TP',
     sCard('TP #',    fN(d.offline_tp_num[wkIdx])) +
-    sCard('Revenue', fINR(d.offline_tp_rev[wkIdx])) +
+    sCard('Revenue', fLak(d.offline_tp_rev[wkIdx])) +
     sCard('AOV',     fRup(d.offline_tp_aov[wkIdx])) +
     sCard('Conv%',   fPct(d.offline_tp_conv[wkIdx])) +
     sCard('RPC',     fRup(d.offline_tp_rpc[wkIdx]))
@@ -1221,28 +1226,30 @@ function buildChannelDeepDive(chKey, wkIdx) {
     mCard('STI% Offline',     d.sti_contr_offline,  wkIdx,fPct,c),
   ].join('');
 
+  // revenue values are in LAKHS — use fmtLakh
+  const fLakFmt = v => fmtLakh(v);
   const secRev = [
-    mCard('1st TP RoAS', d.roas,       wkIdx,fPct,c),
-    mCard('1st TP Rev',  d.rev_1st_tp, wkIdx,fINR,c),
-    mCard('Consult Rev', d.consult_rev,wkIdx,fINR,c),
-    mCard('New Rev',     d.new_rev,    wkIdx,fINR,c),
-    mCard('RPC',         d.rpc,        wkIdx,fRup,c),
+    mCard('1st TP RoAS', d.roas,       wkIdx,fPct,    c),
+    mCard('1st TP Rev',  d.rev_1st_tp, wkIdx,fLakFmt, c),
+    mCard('Consult Rev', d.consult_rev,wkIdx,fLakFmt, c),
+    mCard('New Rev',     d.new_rev,    wkIdx,fLakFmt, c),
+    mCard('RPC',         d.rpc,        wkIdx,fRup,    c),
   ].join('');
 
   const secOnlineTP = [
-    mCard('Online TP #',d.online_tp_num, wkIdx,fN,  c),
-    mCard('TP Revenue', d.online_tp_rev, wkIdx,fINR,c),
-    mCard('AOV',        d.online_tp_aov, wkIdx,fRup,c),
-    mCard('Conv%',      d.online_tp_conv,wkIdx,fPct,c),
-    mCard('RPC',        d.online_tp_rpc, wkIdx,fRup,c),
+    mCard('Online TP #',d.online_tp_num, wkIdx,fN,       c),
+    mCard('TP Revenue', d.online_tp_rev, wkIdx,fLakFmt,  c),
+    mCard('AOV',        d.online_tp_aov, wkIdx,fRup,     c),
+    mCard('Conv%',      d.online_tp_conv,wkIdx,fPct,     c),
+    mCard('RPC',        d.online_tp_rpc, wkIdx,fRup,     c),
   ].join('');
 
   const secOfflineTP = [
-    mCard('Offline TP #',d.offline_tp_num, wkIdx,fN,  c),
-    mCard('TP Revenue',  d.offline_tp_rev, wkIdx,fINR,c),
-    mCard('AOV',         d.offline_tp_aov, wkIdx,fRup,c),
-    mCard('Conv%',       d.offline_tp_conv,wkIdx,fPct,c),
-    mCard('RPC',         d.offline_tp_rpc, wkIdx,fRup,c),
+    mCard('Offline TP #',d.offline_tp_num, wkIdx,fN,       c),
+    mCard('TP Revenue',  d.offline_tp_rev, wkIdx,fLakFmt,  c),
+    mCard('AOV',         d.offline_tp_aov, wkIdx,fRup,     c),
+    mCard('Conv%',       d.offline_tp_conv,wkIdx,fPct,     c),
+    mCard('RPC',         d.offline_tp_rpc, wkIdx,fRup,     c),
   ].join('');
 
   const secPhone = [
@@ -1279,7 +1286,6 @@ function buildChannelDeepDive(chKey, wkIdx) {
 // ── CHANNEL VIEW ──────────────────────────────────────────────────────────
 const CH_TAB_ID_MAP = {
   all:'chtAll', Google:'chtGoogle', Meta:'chtMeta', Practo:'chtPracto',
-  JustDial:'chtJustDial', Clinicspots:'chtClinicsplots',
   GMB:'chtGMB', Organic:'chtOrganic',
 };
 function setChView(chKey) {
@@ -1450,30 +1456,19 @@ function buildKPIStrip(wkIdx) {
   const o = L0.overall;
   const p = wkIdx + 1;
 
-  // Pull from overall rows. For metrics with new & old rows, prefer the one that
-  // looks like a sensible value (e.g. RoAS should be < 2000%, CPD should be > 50).
-  // New-row indices (34-36) might not align with all sheet layouts, so fall back gracefully.
-  function pickVal(newV, oldV, sanityFn) {
-    if (newV != null && sanityFn(newV)) return newV;
-    return oldV ?? null;
-  }
-  // Prefer gmb_google section (label-based, reliable) over overall fixed rows for revenue
-  const newRevCur  = (L0.gmb_google?.new_rev?.[wkIdx] ?? o.new_rev?.[wkIdx]) ?? null;
-  const newRevPrv  = (L0.gmb_google?.new_rev?.[p]     ?? o.new_rev?.[p])     ?? null;
-  // RoAS: rowArr(35) often returns raw revenue; fall back to rowArr(13) which is tested
-  const roasCur    = (o.roas?.[wkIdx] ?? o.roas_1tp?.[wkIdx]) ?? null;
-  const roasPrv    = (o.roas?.[p]     ?? o.roas_1tp?.[p])     ?? null;
-  // RPC: prefer GMB+Google section (reliable label-based lookup), rpc_net may be 0
-  const rpcCur     = (o.rpc_net?.[wkIdx] > 0 ? o.rpc_net?.[wkIdx] : null) ?? L0.gmb_google?.rpc?.[wkIdx] ?? null;
-  const rpcPrv     = (o.rpc_net?.[p]     > 0 ? o.rpc_net?.[p]     : null) ?? L0.gmb_google?.rpc?.[p]     ?? null;
-  // CPD: rowArr(9) is tested; rowArr(19) is user-specified — use whichever > 0
-  const cpdCur     = pickVal(o.cpd_v2?.[wkIdx], o.cpd?.[wkIdx], v => v > 50 && v < 50000);
-  const cpdPrv     = pickVal(o.cpd_v2?.[p],     o.cpd?.[p],     v => v > 50 && v < 50000);
-  const verPctCur  = o.verified_pct?.[wkIdx] ?? null;
+  // All row indices confirmed from live CSV. Revenue is in LAKHS (e.g. 35.64 = ₹35.64L).
+  const newRevCur  = o.new_rev?.[wkIdx] ?? null;  // rowArr(24) = "New Rev" LAKHS
+  const newRevPrv  = o.new_rev?.[p]     ?? null;
+  const roasCur    = o.roas_1tp?.[wkIdx] ?? null;  // rowArr(25) = "1st TP RoAS" %
+  const roasPrv    = o.roas_1tp?.[p]     ?? null;
+  const rpcCur     = o.rpc_net?.[wkIdx]  ?? null;  // rowArr(26) = "RPC" ₹
+  const rpcPrv     = o.rpc_net?.[p]      ?? null;
+  const cpdCur     = o.cpd?.[wkIdx]      ?? null;  // rowArr(15) = "CPD" ₹
+  const cpdPrv     = o.cpd?.[p]          ?? null;
+  const verPctCur  = o.verified_pct?.[wkIdx] ?? null;  // rowArr(6) = "Verified%"
   const verPctPrv  = o.verified_pct?.[p]     ?? null;
-  // STI: rowArr(10) is tested; rowArr(26) may be wrong row
-  const stiCur     = pickVal(o.sti_contr_v2?.[wkIdx], o.sti_contr?.[wkIdx], v => v >= 0 && v <= 100);
-  const stiPrv     = pickVal(o.sti_contr_v2?.[p],     o.sti_contr?.[p],     v => v >= 0 && v <= 100);
+  const stiCur     = o.sti_contr?.[wkIdx] ?? null;  // rowArr(16) = "STI Contr." %
+  const stiPrv     = o.sti_contr?.[p]     ?? null;
 
   // Target badge helper
   function tgt(val, target, lowerBetter=false) {
@@ -1509,7 +1504,7 @@ function buildKPIStrip(wkIdx) {
 
   return [
     kpiCard('New Revenue',
-      newRevCur!=null ? fmtINR(newRevCur) : '—',
+      newRevCur!=null ? fmtLakh(newRevCur) : '—',
       wow(newRevCur, newRevPrv), false),
     kpiCard('1st TP RoAS',
       roasCur!=null ? Math.round(roasCur)+'%' : '—',
@@ -1539,8 +1534,12 @@ function buildTableRows(wkIdx) {
     const d = getChannelL0(ch);
     if (!d) return { ch, _empty: true };
     const isFree = ch.type === 'free';
-    const spendV    = d.spends?.[wkIdx]               ?? null;
-    const spContr   = d.spend_contr?.[wkIdx]          ?? null;
+    // For channels without absolute spend rows (e.g. Google Search), estimate from overall × contr%
+    const spContr    = d.spend_contr?.[wkIdx]          ?? null;
+    const spendRaw   = d.spends?.[wkIdx]               ?? null;
+    const spendV     = spendRaw ??
+      (spContr != null && !isFree ? (L0.overall.spends[wkIdx] ?? 0) * spContr / 100 : null);
+    const isEstSpend = (spendRaw == null && spendV != null);
     const cpmV      = d.cpm?.[wkIdx]                  ?? null;
     const cpcV      = d.cpc?.[wkIdx]                  ?? null;
     const cplV      = d.cpl?.[wkIdx]                  ?? null;
@@ -1560,7 +1559,7 @@ function buildTableRows(wkIdx) {
     // WoW for calls done
     const callsPrv  = d.calls_done_l0?.[prev]          ?? null;
     const doneWow   = (callsV!=null&&callsPrv!=null&&callsPrv>0) ? (callsV-callsPrv)/callsPrv*100 : null;
-    return { ch, isFree, spendV, spContr, cpmV, cpcV, cplV, cpbV, cpdV, leadsV, verPctV,
+    return { ch, isFree, spendV, isEstSpend, spContr, cpmV, cpcV, cplV, cpbV, cpdV, leadsV, verPctV,
              bkgsV, callsV, onDoneV, offDoneV, b2dV, stiV, roasV, rpcV, newRevV, doneWow };
   }).filter(r => r && !r._empty && (activeScope==='paid' ? r.ch.type==='paid' : true));
 
@@ -1611,7 +1610,7 @@ function buildTableRows(wkIdx) {
           <span class="badge ${ch.type}" style="font-size:9px;">${ch.type==='paid'?'P':'F'}</span>
         </div>
       </td>
-      ${td(r.spendV!=null?fmtINR(r.spendV):(isFree?'—':'—'), {bold:true})}
+      ${td(r.spendV!=null?(r.isEstSpend?'~'+fmtINR(r.spendV):fmtINR(r.spendV)):(isFree?'—':'—'), {bold:true, color:r.isEstSpend?'#94a3b8':null})}
       ${td(r.spContr!=null?r.spContr.toFixed(0)+'%':(isFree?'—':'—'), {bold:false})}
       ${td(r.cpmV!=null?'₹'+Math.round(r.cpmV):(isFree?freeCell:'—'), {})}
       ${td(r.cpcV!=null?'₹'+Math.round(r.cpcV):(isFree?freeCell:'—'), {})}
@@ -1628,7 +1627,7 @@ function buildTableRows(wkIdx) {
       ${td(r.stiV!=null?r.stiV.toFixed(1)+'%':'—', {color:r.stiV!=null?(r.stiV>=20?'#059669':'#d97706'):null})}
       ${td(r.roasV!=null?Math.round(r.roasV)+'%':'—', {bold:true, color:roasClr})}
       ${td(r.rpcV!=null?'₹'+Math.round(r.rpcV).toLocaleString():'—', {})}
-      ${td(r.newRevV!=null?fmtINR(r.newRevV):'—', {})}
+      ${td(r.newRevV!=null?fmtLakh(r.newRevV):'—', {})}
       <td style="padding:8px 10px;text-align:center;">${detailBtn}</td>
     </tr>`;
   }).join('');
@@ -1680,7 +1679,7 @@ function buildCPLCPDTrend() {
   destroyChart('cplCpdTrend');
   if (!L0) return;
   const o = L0.overall;
-  const cpdSrc = o.cpd_v2 ?? o.cpd;
+  const cpdSrc = o.cpd;  // rowArr(15) = "CPD" confirmed 367…
   charts.cplCpdTrend = new Chart(document.getElementById('cplCpdTrend'), {
     type:'line',
     data:{ labels:revLabelsN(), datasets:[
@@ -1806,10 +1805,10 @@ function buildChartFunnel(wkIdx) {
   destroyChart('chartFunnel');
   if (!L0) return;
   const o = L0.overall;
-  const leads  = o.leads[wkIdx]    ?? 0;
-  const verif  = o.verified[wkIdx] ?? 0;
-  const bkgs   = o.bookings?.[wkIdx] ?? (leads > 0 ? leads * 0.6 : 0); // fallback estimate
-  const calls  = (o.online_tp[wkIdx]??0) + (o.offline_tp[wkIdx]??0);
+  const leads  = o.leads[wkIdx]      ?? 0;
+  const verif  = o.verified[wkIdx]  ?? 0;
+  const bkgs   = o.bookings?.[wkIdx] ?? 0;   // rowArr(8)
+  const calls  = o.calls_done?.[wkIdx] ?? 0; // rowArr(11) = total calls done
 
   const stages = ['Leads','Verified','Bookings','Calls Done'];
   const vals   = [leads, verif, bkgs, calls];
@@ -1867,13 +1866,12 @@ function buildChartRevTrend() {
   destroyChart('chartRevTrend');
   if (!L0) return;
   const o  = L0.overall;
-  const gg = L0.gmb_google;
-  const toL = v => v != null ? +(v/100000).toFixed(2) : null;
-  // Prefer overall rows if they look like real revenue (>50K), else fall back to gmb_google section
-  // Prefer gmb_google section (label-based, reliable) for revenue lines
-  const revTP  = revArrN(gg?.rev_1st_tp  || o.rev_1st_tp  || []).map(toL);
-  const revCon = revArrN(gg?.consult_rev || o.consult_rev || []).map(toL);
-  const revNew = revArrN(gg?.new_rev     || o.new_rev     || []).map(toL);
+  // Revenue rows (22-24) store values IN LAKHS already (e.g. 29.79 = ₹29.79L)
+  // Keep 2 dp for the chart axis labels
+  const toL = v => v != null ? +parseFloat(v).toFixed(2) : null;
+  const revTP  = revArrN(o.rev_1st_tp  || []).map(toL);
+  const revCon = revArrN(o.consult_rev || []).map(toL);
+  const revNew = revArrN(o.new_rev     || []).map(toL);
   charts.chartRevTrend = new Chart(document.getElementById('chartRevTrend'), {
     type: 'line',
     data: { labels: revLabelsN(), datasets: [
@@ -1900,10 +1898,8 @@ function buildChartRoasTrend() {
   destroyChart('chartRoasTrend');
   if (!L0) return;
   const o = L0.overall;
-  // roas_1tp (row 36) may point to a wrong row; use it only if values look like RoAS %
-  const rawRoas = (o.roas_1tp || []).some(v => v != null && v > 0 && v < 2000)
-    ? o.roas_1tp : (o.roas ?? []);
-  const roasData = revArrN(rawRoas);
+  // roas_1tp = rowArr(25) = "1st TP RoAS" confirmed 660.5%… 654%…
+  const roasData = revArrN(o.roas_1tp || []);
   const labels   = revLabelsN();
   charts.chartRoasTrend = new Chart(document.getElementById('chartRoasTrend'), {
     type: 'line',
@@ -1970,10 +1966,12 @@ function buildChartOnlineOffline() {
   destroyChart('chartOnlineOffline');
   if (!L0) return;
   const o = L0.overall;
-  const onlineDone  = revArrN(o.online_done  ?? o.online_tp  ?? []);
-  const offlineDone = revArrN(o.offline_done ?? o.offline_tp ?? []);
-  const onlineBkg   = revArrN(o.bkg_online   ?? []);
-  const offlineBkg  = revArrN(o.bkg_offline  ?? []);
+  // online_done = rowArr(12), offline_done = rowArr(13)
+  const onlineDone  = revArrN(o.online_done  || []);
+  const offlineDone = revArrN(o.offline_done || []);
+  // online_tp / offline_tp are TP# counts (rowArr 27/30), use for booking split
+  const onlineBkg   = revArrN(o.online_tp    || []);
+  const offlineBkg  = revArrN(o.offline_tp   || []);
   const labels = revLabelsN();
   charts.chartOnlineOffline = new Chart(document.getElementById('chartOnlineOffline'), {
     type:'bar',
@@ -2047,12 +2045,10 @@ function buildChartStiTrend() {
   destroyChart('chartStiTrend');
   if (!L0) return;
   const o = L0.overall;
-  // Use sanity-checked STI array: pick v2 if values look like %, else use existing
-  const rawSti = (o.sti_contr_v2 || []).some(v => v != null && v >= 0 && v <= 100)
-    ? o.sti_contr_v2 : (o.sti_contr ?? []);
-  const stiData = revArrN(rawSti);
-  const stiOn   = revArrN(o.sti_online  ?? []);
-  const stiOff  = revArrN(o.sti_offline ?? []);
+  // sti_contr = rowArr(16) = "STI Contr." confirmed 15.1%…
+  const stiData = revArrN(o.sti_contr         || []);
+  const stiOn   = revArrN(o.sti_contr_online  || []);  // rowArr(17)
+  const stiOff  = revArrN(o.sti_contr_offline || []);  // rowArr(18)
   const labels  = revLabelsN();
   const datasets = [
     { label:'STI Contr%', data:stiData, borderColor:'#6366f1', backgroundColor:'#6366f115', fill:true, tension:0.3, borderWidth:2.5, pointRadius:4, pointBackgroundColor:'#6366f1', spanGaps:true },
