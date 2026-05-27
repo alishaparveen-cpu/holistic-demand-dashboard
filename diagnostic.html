@@ -734,6 +734,143 @@ function buildUpstreamHealth() {
   </div>`;
 }
 
+// ─── Funnel Verdict Signal Card ────────────────────────────────────────────────
+// Review item #7: automated "where is it breaking?" verdict at the top of the page.
+// Identifies the single biggest funnel drop-off for the selected week and surfaces
+// a plain-language action.
+function buildFunnelVerdict() {
+  const jw  = WEEKS[activeWkIdx]?.json;
+  const jwp = WEEKS[activeWkIdx+1]?.json;
+  if (!jw || !jwp || activeWkIdx >= WEEKS.length - 1) return '';
+
+  const f  = JDATA?.offline?.weekly_funnel?.[jw]  || {};
+  const fp = JDATA?.offline?.weekly_funnel?.[jwp] || {};
+
+  // Aggregate leads across filtered cities (GMB + Practo)
+  let leadsC = 0, leadsP = 0;
+  for (const city of Object.keys(SDATA)) {
+    if (city === 'Online' || city === 'Practo Online') continue;
+    if (activeTier !== 'ALL' && cityTier(city) !== activeTier) continue;
+    if (activeCityF !== 'ALL' && city !== activeCityF) continue;
+    const sc = SDATA[city]?._total;
+    if (!sc) continue;
+    leadsC += (sc.gmbLeads?.[activeWkIdx]   || 0) + (PRACTO_DATA[jw]?.[city]   || 0);
+    leadsP += (sc.gmbLeads?.[activeWkIdx+1] || 0) + (PRACTO_DATA[jwp]?.[city] || 0);
+  }
+
+  const bkC = f.new_bookings || 0, bkP = fp.new_bookings || 0;
+  const cdC = f.calls_done   || 0, cdP = fp.calls_done   || 0;
+  const b2C = f.b2d_pct      || 0, b2P = fp.b2d_pct      || 0;
+
+  const leadsWow = leadsP > 0 ? (leadsC - leadsP) / leadsP * 100 : null;
+  const bkWow    = bkP    > 0 ? (bkC    - bkP)    / bkP    * 100 : null;
+  const cdWow    = cdP    > 0 ? (cdC    - cdP)    / cdP    * 100 : null;
+  const b2Wow    = b2P    > 0 ? (b2C - b2P)                      : null; // pp delta
+
+  const stages = [
+    { key:'leads',    icon:'📥', label:'Leads',         sub:'GMB + Practo',
+      disp: fmt(leadsC), wow: leadsWow, isRate: false,
+      action: 'Check GMB listing impressions, Google CTR, Practo call rate, ad spend' },
+    { key:'bookings', icon:'📅', label:'New Bookings',  sub:'by booking date',
+      disp: fmt(bkC),    wow: bkWow,    isRate: false,
+      action: 'Check doctor slot availability, booking response time, confirmation SMS rate' },
+    { key:'calls',    icon:'✅', label:'Calls Done',    sub:'by appt date',
+      disp: fmt(cdC),    wow: cdWow,    isRate: false,
+      action: 'Check no-show rate, doctor absences, last-minute cancellation reasons' },
+    { key:'b2d',      icon:'🎯', label:'B2D Rate',      sub:'Calls ÷ Gross Bkgs',
+      disp: b2C.toFixed(1)+'%', wow: b2Wow, isRate: true,
+      action: 'Check no-show follow-up process, doctor efficiency, ops execution' },
+  ];
+
+  // Find the biggest drop: normalise pp to ~% scale (1pp ≈ 2.5%) for ranking
+  let worstStage = null, worstNorm = Infinity;
+  for (const s of stages) {
+    if (s.wow === null) continue;
+    const norm = s.isRate ? s.wow * 2.5 : s.wow;
+    if (norm < worstNorm) { worstNorm = norm; worstStage = s; }
+  }
+
+  // Stage box
+  function stageBox(s) {
+    const w = s.wow;
+    const wColor = w === null  ? '#94a3b8'
+      : (s.isRate ? w < -4  : w < -10) ? '#dc2626'
+      : (s.isRate ? w < -1  : w < -3)  ? '#d97706'
+      : (s.isRate ? w >  1  : w >  3)  ? '#059669'
+      : '#94a3b8';
+    const wStr = w === null ? '—'
+      : `${w >= 0 ? '+' : ''}${w.toFixed(1)}${s.isRate ? 'pp' : '%'}`;
+    const isBottleneck = worstStage?.key === s.key && worstNorm < -5;
+    const bg     = isBottleneck ? '#fef2f2' : '#f8fafc';
+    const border = isBottleneck ? '2px solid #ef4444' : '1.5px solid #e2e8f0';
+    return `<div style="flex:1;min-width:90px;padding:10px 8px;background:${bg};border:${border};
+        border-radius:10px;text-align:center;position:relative;">
+      ${isBottleneck ? `<div style="position:absolute;top:-9px;left:50%;transform:translateX(-50%);
+        background:#ef4444;color:#fff;font-size:8px;font-weight:700;padding:1px 7px;
+        border-radius:4px;white-space:nowrap;letter-spacing:.04em;">⚠ BOTTLENECK</div>` : ''}
+      <div style="font-size:9px;text-transform:uppercase;letter-spacing:.05em;color:#94a3b8;">${s.icon} ${s.label}</div>
+      <div style="font-size:19px;font-weight:700;line-height:1.2;color:#0f172a;margin:4px 0 2px;">${s.disp}</div>
+      <div style="font-size:11px;font-weight:700;color:${wColor};">
+        ${wStr}&thinsp;<span style="font-size:9px;font-weight:400;color:#94a3b8;">WoW</span>
+      </div>
+      <div style="font-size:9px;color:#c4cdd8;margin-top:2px;">${s.sub}</div>
+    </div>`;
+  }
+
+  const arrow = `<div style="flex-shrink:0;padding:0 4px;color:#cbd5e1;font-size:20px;
+    display:flex;align-items:center;line-height:1;">→</div>`;
+
+  // Verdict message
+  let verdictHtml;
+  if (!worstStage || worstNorm >= -3) {
+    verdictHtml = `<div style="background:#ecfdf5;border-left:3px solid #10b981;
+        border-radius:0 8px 8px 0;padding:8px 14px;font-size:12px;color:#065f46;line-height:1.6;">
+      ✓ <strong>Funnel healthy</strong> — no stage dropped significantly this week.
+      Monitor for sustained flatness vs prior month.
+    </div>`;
+  } else {
+    const pct  = worstStage.wow.toFixed(1);
+    const unit = worstStage.isRate ? 'pp' : '% WoW';
+    const bg     = worstNorm < -15 ? '#fef2f2'  : worstNorm < -7 ? '#fff7ed'  : '#fffbeb';
+    const color  = worstNorm < -15 ? '#991b1b'  : worstNorm < -7 ? '#9a3412'  : '#92400e';
+    const border = worstNorm < -15 ? '#ef4444'  : worstNorm < -7 ? '#f59e0b'  : '#fcd34d';
+    const headlines = {
+      leads    : `📉 <strong>Top-funnel drop</strong> — Lead volume ${pct}${unit}. Everything downstream is a secondary effect. Fix upstream first.`,
+      bookings : `📅 <strong>Booking conversion gap</strong> — Leads arriving but New Bookings ${pct}${unit}. Slot availability or booking confirmation is the bottleneck.`,
+      calls    : `✅ <strong>Ops execution gap</strong> — Bookings taken but Calls Done ${pct}${unit}. Patients aren't showing or appointments are getting cancelled.`,
+      b2d      : `🎯 <strong>B2D rate drop</strong> — Volume OK but B2D rate ${pct}${unit}. Fewer appointments completing per booking created.`,
+    };
+    verdictHtml = `<div style="background:${bg};border-left:3px solid ${border};
+        border-radius:0 8px 8px 0;padding:8px 14px;font-size:12px;color:${color};line-height:1.6;">
+      ${headlines[worstStage.key] || `⚠ Biggest drop: ${worstStage.label} ${pct}${unit}.`}
+      <div style="margin-top:4px;font-size:11px;opacity:.85;">→ ${worstStage.action}</div>
+    </div>`;
+  }
+
+  const filterNote = (activeCityF !== 'ALL' || activeTier !== 'ALL')
+    ? `<span class="badge gray" style="font-size:9px;margin-left:4px;">
+         Note: Leads are filtered; Bookings + Calls are network-wide
+       </span>` : '';
+
+  return `<div class="card" style="padding:0;overflow:hidden;">
+    <div style="padding:10px 16px;border-bottom:1px solid var(--line);
+        display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+      <span style="font-weight:700;font-size:13px;">🎯 Funnel Verdict</span>
+      <span style="font-size:10px;color:#94a3b8;">
+        ${WEEKS[activeWkIdx].label} vs prev week · automated bottleneck detection
+      </span>
+      ${filterNote}
+    </div>
+    <div style="padding:14px 16px;">
+      <div style="display:flex;align-items:center;gap:4px;
+          flex-wrap:nowrap;overflow-x:auto;padding-bottom:14px;">
+        ${stages.map((s,i) => stageBox(s) + (i < stages.length-1 ? arrow : '')).join('')}
+      </div>
+      ${verdictHtml}
+    </div>
+  </div>`;
+}
+
 // ─── Funnel overview strip (two separate tracks) ─────────────────────────────
 function buildFunnelStrip() {
   const scope = JDATA?.offline;
@@ -1383,6 +1520,7 @@ function render() {
   const { alertHtml, tableHtml, cityRows } = buildTable();
   document.getElementById('mainContent').innerHTML = `
     ${buildTldr(cityRows)}
+    ${buildFunnelVerdict()}
     ${buildFunnelStrip()}
     ${buildUpstreamHealth()}
     ${buildAdPlatformHealth()}
