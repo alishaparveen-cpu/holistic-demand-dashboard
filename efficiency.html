@@ -1450,19 +1450,30 @@ function buildKPIStrip(wkIdx) {
   const o = L0.overall;
   const p = wkIdx + 1;
 
-  // Pull from extended overall rows; fall back where needed
-  const newRevCur  = o.new_rev?.[wkIdx]     ?? null;
-  const newRevPrv  = o.new_rev?.[p]         ?? null;
-  const roasCur    = (o.roas_1tp?.[wkIdx]   ?? o.roas?.[wkIdx]) ?? null;
-  const roasPrv    = (o.roas_1tp?.[p]       ?? o.roas?.[p])     ?? null;
-  const rpcCur     = o.rpc_net?.[wkIdx]     ?? null;
-  const rpcPrv     = o.rpc_net?.[p]         ?? null;
-  const cpdCur     = (o.cpd_v2?.[wkIdx]     ?? o.cpd?.[wkIdx])  ?? null;
-  const cpdPrv     = (o.cpd_v2?.[p]         ?? o.cpd?.[p])      ?? null;
-  const verPctCur  = o.verified_pct?.[wkIdx]?? null;
-  const verPctPrv  = o.verified_pct?.[p]    ?? null;
-  const stiCur     = (o.sti_contr_v2?.[wkIdx] ?? o.sti_contr?.[wkIdx]) ?? null;
-  const stiPrv     = (o.sti_contr_v2?.[p]     ?? o.sti_contr?.[p])     ?? null;
+  // Pull from overall rows. For metrics with new & old rows, prefer the one that
+  // looks like a sensible value (e.g. RoAS should be < 2000%, CPD should be > 50).
+  // New-row indices (34-36) might not align with all sheet layouts, so fall back gracefully.
+  function pickVal(newV, oldV, sanityFn) {
+    if (newV != null && sanityFn(newV)) return newV;
+    return oldV ?? null;
+  }
+  // Require new_rev > ₹50K to rule out wrong rows (network weekly revenue should be lakhs range)
+  const newRevCur  = pickVal(o.new_rev?.[wkIdx],  L0.gmb_google?.new_rev?.[wkIdx], v => v > 50000);
+  const newRevPrv  = pickVal(o.new_rev?.[p],       L0.gmb_google?.new_rev?.[p],     v => v > 50000);
+  // RoAS: rowArr(35) often returns raw revenue; fall back to rowArr(13) which is tested
+  const roasCur    = (o.roas?.[wkIdx] ?? o.roas_1tp?.[wkIdx]) ?? null;
+  const roasPrv    = (o.roas?.[p]     ?? o.roas_1tp?.[p])     ?? null;
+  // RPC: prefer GMB+Google section (reliable label-based lookup), rpc_net may be 0
+  const rpcCur     = (o.rpc_net?.[wkIdx] > 0 ? o.rpc_net?.[wkIdx] : null) ?? L0.gmb_google?.rpc?.[wkIdx] ?? null;
+  const rpcPrv     = (o.rpc_net?.[p]     > 0 ? o.rpc_net?.[p]     : null) ?? L0.gmb_google?.rpc?.[p]     ?? null;
+  // CPD: rowArr(9) is tested; rowArr(19) is user-specified — use whichever > 0
+  const cpdCur     = pickVal(o.cpd_v2?.[wkIdx], o.cpd?.[wkIdx], v => v > 50 && v < 50000);
+  const cpdPrv     = pickVal(o.cpd_v2?.[p],     o.cpd?.[p],     v => v > 50 && v < 50000);
+  const verPctCur  = o.verified_pct?.[wkIdx] ?? null;
+  const verPctPrv  = o.verified_pct?.[p]     ?? null;
+  // STI: rowArr(10) is tested; rowArr(26) may be wrong row
+  const stiCur     = pickVal(o.sti_contr_v2?.[wkIdx], o.sti_contr?.[wkIdx], v => v >= 0 && v <= 100);
+  const stiPrv     = pickVal(o.sti_contr_v2?.[p],     o.sti_contr?.[p],     v => v >= 0 && v <= 100);
 
   // Target badge helper
   function tgt(val, target, lowerBetter=false) {
@@ -1855,11 +1866,17 @@ function buildChartFunnel(wkIdx) {
 function buildChartRevTrend() {
   destroyChart('chartRevTrend');
   if (!L0) return;
-  const o = L0.overall;
+  const o  = L0.overall;
+  const gg = L0.gmb_google;
   const toL = v => v != null ? +(v/100000).toFixed(2) : null;
-  const revTP  = revArrN(o.rev_1st_tp || []).map(toL);
-  const revCon = revArrN(o.consult_rev || []).map(toL);
-  const revNew = revArrN(o.new_rev    || []).map(toL);
+  // Prefer overall rows if they look like real revenue (>50K), else fall back to gmb_google section
+  function revSrc(oArr, ggArr) {
+    const hasReal = (oArr||[]).some(v => v != null && v > 50000);
+    return hasReal ? oArr : (ggArr || []);
+  }
+  const revTP  = revArrN(revSrc(o.rev_1st_tp,  gg?.rev_1st_tp)).map(toL);
+  const revCon = revArrN(revSrc(o.consult_rev,  gg?.consult_rev)).map(toL);
+  const revNew = revArrN(revSrc(o.new_rev,       gg?.new_rev)).map(toL);
   charts.chartRevTrend = new Chart(document.getElementById('chartRevTrend'), {
     type: 'line',
     data: { labels: revLabelsN(), datasets: [
@@ -1886,7 +1903,10 @@ function buildChartRoasTrend() {
   destroyChart('chartRoasTrend');
   if (!L0) return;
   const o = L0.overall;
-  const roasData = revArrN(o.roas_1tp ?? o.roas ?? []);
+  // roas_1tp (row 36) may point to a wrong row; use it only if values look like RoAS %
+  const rawRoas = (o.roas_1tp || []).some(v => v != null && v > 0 && v < 2000)
+    ? o.roas_1tp : (o.roas ?? []);
+  const roasData = revArrN(rawRoas);
   const labels   = revLabelsN();
   charts.chartRoasTrend = new Chart(document.getElementById('chartRoasTrend'), {
     type: 'line',
@@ -2030,7 +2050,10 @@ function buildChartStiTrend() {
   destroyChart('chartStiTrend');
   if (!L0) return;
   const o = L0.overall;
-  const stiData = revArrN(o.sti_contr_v2 ?? o.sti_contr ?? []);
+  // Use sanity-checked STI array: pick v2 if values look like %, else use existing
+  const rawSti = (o.sti_contr_v2 || []).some(v => v != null && v >= 0 && v <= 100)
+    ? o.sti_contr_v2 : (o.sti_contr ?? []);
+  const stiData = revArrN(rawSti);
   const stiOn   = revArrN(o.sti_online  ?? []);
   const stiOff  = revArrN(o.sti_offline ?? []);
   const labels  = revLabelsN();
