@@ -160,6 +160,7 @@ let activeMet  = 'calls_done'; // 'calls_done' | 'new_bookings' | 'total_leads'
 let GMB_LEADS_BY_CITY = {};    // weekKey → city → GMB leads (loaded from OV sheet)
 let TOTAL_LEADS_WK    = {};    // weekKey → total leads (loaded from L0 sheet)
 let charts     = {};
+let GMB_INSIGHTS = null;  // loaded from data_gmb.json (null if not yet generated)
 
 // ── HELPERS ───────────────────────────────────────────────────────────────
 function fmtN(v) {
@@ -402,6 +403,178 @@ function metArr(met) {
   if (met === 'total_leads') return ALL_WEEKS.map(wk => TOTAL_LEADS_WK[wk] ?? null);
   if (met === 'gmb_leads')   return leadsArr();
   return funnelArr(met);
+}
+
+// ── GMB INSIGHTS LOADER ────────────────────────────────────────────────────
+async function loadGmbInsights() {
+  try {
+    const r = await fetch('data_gmb.json');
+    if (!r.ok) return;  // file doesn't exist yet — silently skip
+    GMB_INSIGHTS = await r.json();
+  } catch(e) {}
+}
+
+// ── GMB SEARCH INTENT CARD ─────────────────────────────────────────────────
+// Shows Discovery vs Direct vs Branded split from data_gmb.json.
+// Gracefully degrades to a setup prompt when the file hasn't been generated.
+function buildSearchIntentCard() {
+  // ── Not yet set up ─────────────────────────────────────────────────────────
+  if (!GMB_INSIGHTS) {
+    return `<div class="card" style="padding:14px 20px;display:flex;align-items:center;gap:12px;
+        border-left:3px solid #e2e8f0;opacity:.7;">
+      <div style="font-size:20px;">🔍</div>
+      <div>
+        <div style="font-weight:700;font-size:12px;color:#0f172a;">GMB Search Intent — not yet connected</div>
+        <div style="font-size:11px;color:#94a3b8;margin-top:2px;">
+          Drop <code style="background:#f1f5f9;padding:1px 5px;border-radius:4px;">credentials.json</code>
+          in the project folder, then run
+          <code style="background:#f1f5f9;padding:1px 5px;border-radius:4px;">python3 scripts/fetch_gmb.py</code>
+          to enable Discovery vs Direct vs Branded split.
+        </div>
+      </div>
+    </div>`;
+  }
+
+  const wkKey  = ALL_WEEKS[activeWkIdx];
+  const wkKeyP = ALL_WEEKS[activeWkIdx + 1];
+  if (!wkKey) return '';
+
+  // Helper: get network value for a metric at a given week key
+  function netVal(metric, wk) {
+    if (!wk || !GMB_INSIGHTS?.network) return null;
+    const idx = GMB_INSIGHTS.weeks?.indexOf(wk);
+    if (idx < 0) return null;
+    return GMB_INSIGHTS.network[metric]?.[idx] ?? null;
+  }
+
+  // Filter to city/tier if active
+  function filteredVal(metric, wk) {
+    if (!wk) return null;
+    const idx = (GMB_INSIGHTS.weeks || []).indexOf(wk);
+    if (idx < 0) return null;
+    if (activeTier === 'ALL') {
+      return GMB_INSIGHTS.network?.[metric]?.[idx] ?? null;
+    }
+    const tier1 = ['Bangalore','Mumbai','Pune','Hyderabad','Chennai'];
+    let total = 0;
+    for (const [city, d] of Object.entries(GMB_INSIGHTS.by_city || {})) {
+      if (activeTier === 'T1' && !tier1.includes(city)) continue;
+      if (activeTier === 'T2' && tier1.includes(city)) continue;
+      total += d[metric]?.[idx] || 0;
+    }
+    return total || null;
+  }
+
+  const disc  = filteredVal('queries_indirect', wkKey);
+  const dir   = filteredVal('queries_direct',   wkKey);
+  const chain = filteredVal('queries_chain',     wkKey);
+  const dirs  = filteredVal('directions',        wkKey);
+  const calls = filteredVal('calls',             wkKey);
+
+  const discP  = filteredVal('queries_indirect', wkKeyP);
+  const dirP   = filteredVal('queries_direct',   wkKeyP);
+  const chainP = filteredVal('queries_chain',    wkKeyP);
+  const dirsP  = filteredVal('directions',       wkKeyP);
+
+  // No data for selected week — show empty state
+  if (disc == null && dir == null && chain == null) {
+    return `<div class="card" style="padding:14px 20px;color:#94a3b8;font-size:12px;">
+      🔍 <strong>GMB Search Intent</strong> — no data for week ${wkKey}.
+      Re-run <code style="background:#f1f5f9;padding:1px 5px;border-radius:4px;">scripts/fetch_gmb.py</code> to refresh.
+    </div>`;
+  }
+
+  const total = (disc||0) + (dir||0) + (chain||0) || 1;
+  function pct(v) { return v != null ? Math.round(v / total * 100) : 0; }
+  function wow(c, p) {
+    if (c == null || p == null || p === 0) return null;
+    return (c - p) / p * 100;
+  }
+  function wowStr(c, p) {
+    const w = wow(c, p);
+    if (w === null) return '';
+    const sign = w >= 0 ? '+' : '';
+    const cls  = w >= 5 ? 'wow-up' : w <= -5 ? 'wow-dn' : 'wow-flat';
+    return `<span class="${cls}" style="font-size:10px;">${sign}${w.toFixed(1)}%</span>`;
+  }
+
+  const pDisc  = pct(disc);
+  const pDir   = pct(dir);
+  const pChain = pct(chain);
+
+  // Verdict: is brand growing without paid?
+  const discWow = wow(disc, discP);
+  const dirWow  = wow(dir,  dirP);
+  let verdict = '';
+  if (discWow !== null && dirWow !== null) {
+    if (discWow >= 5 && dirWow >= 5) {
+      verdict = `<span style="color:#059669;">✓ Both discovery and direct growing — healthy demand signal.</span>`;
+    } else if (discWow >= 5 && dirWow < 0) {
+      verdict = `<span style="color:#0284c7;">↗ New audience growing (discovery ▲${discWow.toFixed(0)}%), but returning intent is softer (direct ▼${Math.abs(dirWow).toFixed(0)}%). Watch retention.</span>`;
+    } else if (discWow < -5) {
+      verdict = `<span style="color:#dc2626;">⚠ Discovery searches declining — fewer people finding Allo via category search. Check GMB listing, SEO, or category ad spend.</span>`;
+    } else if (dirWow < -5) {
+      verdict = `<span style="color:#d97706;">⚠ Direct searches dropping — existing audience recall weakening. Check brand salience and CRM retention.</span>`;
+    }
+  }
+
+  function statBox(label, val, prevVal, sub) {
+    return `<div style="flex:1;min-width:90px;text-align:center;">
+      <div style="font-size:9px;text-transform:uppercase;letter-spacing:.06em;color:#94a3b8;margin-bottom:4px;">${label}</div>
+      <div style="font-size:20px;font-weight:700;color:#0f172a;">${val != null ? Math.round(val).toLocaleString() : '—'}</div>
+      <div style="font-size:11px;margin-top:1px;">${wowStr(val, prevVal)}<span style="color:#94a3b8;font-size:9px;"> WoW</span></div>
+      <div style="font-size:9px;color:#94a3b8;margin-top:1px;">${sub}</div>
+    </div>`;
+  }
+
+  // Stacked bar
+  const barHtml = `<div style="display:flex;height:8px;border-radius:4px;overflow:hidden;gap:1px;margin:10px 0 6px;">
+    <div style="width:${pDisc}%;background:#0ea5e9;"></div>
+    <div style="width:${pDir}%;background:#6366f1;"></div>
+    <div style="width:${pChain}%;background:#8b5cf6;"></div>
+  </div>
+  <div style="display:flex;gap:12px;flex-wrap:wrap;">
+    <span style="font-size:10px;color:#0ea5e9;">■ Discovery ${pDisc}%</span>
+    <span style="font-size:10px;color:#6366f1;">■ Direct ${pDir}%</span>
+    <span style="font-size:10px;color:#8b5cf6;">■ Branded ${pChain}%</span>
+  </div>`;
+
+  const dirsRow = dirs != null ? `
+    <div style="border-top:1px solid var(--line);margin-top:12px;padding-top:10px;
+        display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+      <span style="font-size:11px;color:#64748b;font-weight:600;">📍 Direction Requests</span>
+      <span style="font-size:15px;font-weight:700;">${Math.round(dirs).toLocaleString()}</span>
+      ${wowStr(dirs, dirsP)}
+      <span style="font-size:10px;color:#94a3b8;">WoW · foot-traffic intent proxy</span>
+    </div>` : '';
+
+  const genTime = GMB_INSIGHTS.generated
+    ? `<span style="margin-left:auto;font-size:10px;color:#94a3b8;">
+         Data: ${GMB_INSIGHTS.generated.slice(0,10)}
+       </span>` : '';
+
+  return `<div class="card" style="padding:0;overflow:hidden;">
+    <div style="padding:10px 18px;border-bottom:1px solid var(--line);
+        display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+      <span style="font-weight:700;font-size:13px;">🔍 GMB Search Intent</span>
+      <span style="font-size:10px;color:#94a3b8;">
+        ${ALL_WEEKS[activeWkIdx]} vs prev · Google Business Profile API
+      </span>
+      ${genTime}
+    </div>
+    <div style="padding:14px 18px;">
+      <div style="display:flex;align-items:flex-start;gap:8px;flex-wrap:nowrap;overflow-x:auto;padding-bottom:4px;">
+        ${statBox('🌐 Discovery', disc,  discP,  'new demand · category searches')}
+        <div style="width:1px;background:var(--line);margin:0 4px;flex-shrink:0;"></div>
+        ${statBox('🎯 Direct',   dir,   dirP,   'brand recall · name searches')}
+        <div style="width:1px;background:var(--line);margin:0 4px;flex-shrink:0;"></div>
+        ${statBox('🏷 Branded',  chain, chainP, 'chain searches · "Allo Health…"')}
+      </div>
+      ${barHtml}
+      ${verdict ? `<div style="font-size:11px;margin-top:8px;line-height:1.6;">${verdict}</div>` : ''}
+      ${dirsRow}
+    </div>
+  </div>`;
 }
 
 // ── BUILD KPI STRIP ────────────────────────────────────────────────────────
@@ -853,6 +1026,9 @@ function render() {
     <!-- KPI Strip -->
     ${buildKPIStrip()}
 
+    <!-- GMB Search Intent (Discovery vs Direct vs Branded) -->
+    ${buildSearchIntentCard()}
+
     <!-- Main 3-column grid -->
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px;align-items:start;">
       ${buildBeatMissHistory()}
@@ -930,6 +1106,12 @@ async function init() {
     // Load total leads from L0 sheet (non-blocking, shares cache with efficiency tab)
     loadTotalLeads().then(() => {
       if (activeMet === 'total_leads') render();
+    });
+
+    // Load GMB Insights (data_gmb.json — generated by scripts/fetch_gmb.py)
+    // Non-blocking: renders setup prompt until file exists, then shows live data.
+    loadGmbInsights().then(() => {
+      if (GMB_INSIGHTS) render();
     });
 
     // Load GMB leads from demand tracker sheet (non-blocking — kept for backward compat)
