@@ -6,6 +6,7 @@
 <title>Category Analysis · Demand Dashboard</title>
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="sparkzoom.js"></script>
 <style>
 :root{
   --ink:#0f172a;--muted:#64748b;--line:#e2e8f0;
@@ -266,10 +267,14 @@ function miniKpi(label, val, sub, color) {
 }
 
 // ── SVG sparkline ────────────────────────────────────────────────────────────
-function svgSparkline(vals, color, w, h, filled) {
-  w = w||80; h = h||28; if (filled === undefined) filled = true;
+function svgSparkline(vals, color, w, h, filled, opts) {
+  w = w||80; h = h||28; if (filled === undefined) filled = true; opts = opts||{};
+  const safeVals   = JSON.stringify(vals||[]).replace(/'/g,'&#39;');
+  const safeLabels = (opts.labels?JSON.stringify(opts.labels):'null').replace(/'/g,'&#39;');
+  const safeTitle  = (opts.title||'').replace(/"/g,'&quot;');
+  const datAttrs   = `data-sparkvals='${safeVals}' data-sparklabels='${safeLabels}' data-sparkcolor='${color}' data-sparktitle="${safeTitle}" data-sparkfmt='${opts.fmt||''}'`;
   const valid = vals.filter(v => v != null && !isNaN(v) && isFinite(v));
-  if (!valid.length || valid.length < 2) return `<svg width="${w}" height="${h}"></svg>`;
+  if (!valid.length || valid.length < 2) return `<div class="spark-wrap" ${datAttrs}><svg width="${w}" height="${h}"></svg></div>`;
   const mn  = Math.min(...valid);
   const mx  = Math.max(...valid);
   const rng = mx - mn || 1;
@@ -279,15 +284,15 @@ function svgSparkline(vals, color, w, h, filled) {
     const y = h - 3 - ((v - mn) / rng) * (h - 8);
     return [x.toFixed(1), y.toFixed(1)];
   }).filter(Boolean);
-  if (pts.length < 2) return `<svg width="${w}" height="${h}"></svg>`;
+  if (pts.length < 2) return `<div class="spark-wrap" ${datAttrs}><svg width="${w}" height="${h}"></svg></div>`;
   const pStr = pts.map(p => p.join(',')).join(' ');
   const last = pts[pts.length - 1];
   const fill = filled ? `<polygon points="${pts[0][0]},${h} ${pStr} ${last[0]},${h}" fill="${color}22"/>` : '';
-  return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" style="overflow:visible;">
+  return `<div class="spark-wrap" ${datAttrs}><svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" style="overflow:visible;">
     ${fill}
     <polyline points="${pStr}" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
     <circle cx="${last[0]}" cy="${last[1]}" r="2.5" fill="${color}"/>
-  </svg>`;
+  </svg></div>`;
 }
 
 // ── Mini trend box (sparkline + latest + trend indicator) ───────────────────

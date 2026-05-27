@@ -6,6 +6,7 @@
 <title>Overall Demand · Allo Health</title>
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="sparkzoom.js"></script>
 <style>
 :root{
   --ink:#0f172a;--muted:#64748b;--line:#e2e8f0;
@@ -216,9 +217,13 @@ function vsAvgHtml(cur, avgVal, isRate=false) {
 }
 
 // SVG sparkline
-function spark(vals, color='#6366f1', w=80, h=22) {
+function spark(vals, color='#6366f1', w=80, h=22, _fill, opts={}) {
   const v = (vals||[]).filter(x => x != null);
-  if (v.length < 2) return `<svg width="${w}" height="${h}" style="display:block;"></svg>`;
+  const safeVals   = JSON.stringify(vals||[]).replace(/'/g,'&#39;');
+  const safeLabels = (opts.labels?JSON.stringify(opts.labels):'null').replace(/'/g,'&#39;');
+  const safeTitle  = (opts.title||'').replace(/"/g,'&quot;');
+  const datAttrs   = `data-sparkvals='${safeVals}' data-sparklabels='${safeLabels}' data-sparkcolor='${color}' data-sparktitle="${safeTitle}" data-sparkfmt='${opts.fmt||''}'`;
+  if (v.length < 2) return `<div class="spark-wrap" ${datAttrs}><svg width="${w}" height="${h}" style="display:block;"></svg></div>`;
   const mn = Math.min(...v), mx = Math.max(...v);
   const range = mx - mn || 1;
   const n = vals.length;
@@ -229,15 +234,15 @@ function spark(vals, color='#6366f1', w=80, h=22) {
     const y = (h - 2 - ((val - mn) / range) * (h - 4)).toFixed(1);
     pts.push(`${x},${y}`);
   });
-  if (pts.length < 2) return `<svg width="${w}" height="${h}" style="display:block;"></svg>`;
+  if (pts.length < 2) return `<div class="spark-wrap" ${datAttrs}><svg width="${w}" height="${h}" style="display:block;"></svg></div>`;
   const poly = pts.join(' ');
-  const [fx, fy] = pts[0].split(',');
+  const [fx] = pts[0].split(',');
   const [lx, ly] = pts[pts.length - 1].split(',');
-  return `<svg width="${w}" height="${h}" style="display:block;overflow:visible;">
+  return `<div class="spark-wrap" ${datAttrs}><svg width="${w}" height="${h}" style="display:block;overflow:visible;">
     <polygon points="${fx},${h} ${poly} ${lx},${h}" fill="${color}20" stroke="none"/>
     <polyline points="${poly}" stroke="${color}" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
     <circle cx="${lx}" cy="${ly}" r="2.5" fill="${color}"/>
-  </svg>`;
+  </svg></div>`;
 }
 
 // ── DATA ACCESSORS ────────────────────────────────────────────────────────
