@@ -72,6 +72,7 @@ html,body{background:#f8fafc;color:var(--ink);font-family:ui-sans-serif,system-u
     <a href="diagnostic.html" class="nav-link">Diagnostic</a>
     <a href="category.html"   class="nav-link">Category</a>
     <a href="city.html"       class="nav-link">City</a>
+    <a href="clinic.html"     class="nav-link">Clinics</a>
     <a href="efficiency.html" class="nav-link">Efficiency</a>
     <a href="comparison.html" class="nav-link">Comparison →</a>
 
@@ -88,6 +89,12 @@ html,body{background:#f8fafc;color:var(--ink);font-family:ui-sans-serif,system-u
         <button class="toggle-btn active" id="tAll" onclick="setTier('ALL')">All Cities</button>
         <button class="toggle-btn"        id="tT1"  onclick="setTier('T1')">T1</button>
         <button class="toggle-btn"        id="tT2"  onclick="setTier('T2')">T2</button>
+      </div>
+      <!-- Metric -->
+      <div style="display:flex;gap:3px;">
+        <button class="toggle-btn active" id="mCalls"    onclick="setMet('calls_done')">Calls</button>
+        <button class="toggle-btn"        id="mBookings" onclick="setMet('new_bookings')">Bookings</button>
+        <button class="toggle-btn"        id="mLeads"    onclick="setMet('gmb_leads')">Leads</button>
       </div>
       <!-- Week -->
       <select id="weekSel" onchange="setWeek(this.value)"
@@ -125,6 +132,13 @@ const CH_COLORS = {
   Organic:'#10b981', Meta:'#1877F2', Others:'#94a3b8',
 };
 
+// Sheet for GMB Leads (same demand-tracker sheet as diagnostic tab)
+const OV_SHEET_ID   = '1bZWGVKu6b4EFPDt3aKHn21gYjdhN1aT1-LT60BFe8g0';
+const OV_SHEET_URL  = `https://docs.google.com/spreadsheets/d/${OV_SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Booking%20and%20Leads%20trend%20summary`;
+// Week keys matching data.json, newest-first (7 weeks covered by the sheet)
+const OV_SHEET_WEEKS = ['2026-05-18','2026-05-11','2026-05-04','2026-04-27','2026-04-20','2026-04-13','2026-04-06'];
+const OV_GMB_C = 27; // 0-indexed column start for GMB leads (7 weeks newest→oldest)
+
 // ── STATE ─────────────────────────────────────────────────────────────────
 let JDATA      = null;
 let ALL_WEEKS  = []; // newest-first week keys
@@ -132,6 +146,8 @@ let WK_LABELS  = {}; // wkKey → label string
 let dataScope  = 'all';
 let activeTier = 'ALL';
 let activeWkIdx = 0;  // index into ALL_WEEKS (0 = newest)
+let activeMet  = 'calls_done'; // 'calls_done' | 'new_bookings' | 'gmb_leads'
+let GMB_LEADS_BY_CITY = {};    // weekKey → city → total leads (loaded from sheet)
 let charts     = {};
 
 // ── HELPERS ───────────────────────────────────────────────────────────────
@@ -226,6 +242,30 @@ function spark(vals, color='#6366f1', w=80, h=22) {
 
 // ── DATA ACCESSORS ────────────────────────────────────────────────────────
 function funnel(wkKey) {
+  // When a tier is selected (and not online scope), aggregate from per-city data
+  // so KPI cards, beat/miss, and trend chart all reflect the selected tier.
+  if (activeTier !== 'ALL' && dataScope !== 'online') {
+    const tierCities = CITY_TIERS[activeTier] || [];
+    let calls=0, gross=0, noShow=0, newBk=0, n=0;
+    for (const city of tierCities) {
+      const d = JDATA?.[dataScope]?.weekly_city?.[wkKey]?.[city];
+      if (!d) continue;
+      calls  += d.calls_done || 0;
+      gross  += d.gross      || 0;
+      noShow += d.no_show    || 0;
+      newBk  += d.gross      || 0; // weekly_city has no new_bookings; gross ≈ new_bookings (within ~1%)
+      n++;
+    }
+    if (n > 0) return {
+      calls_done:   calls,
+      gross,
+      no_show:      noShow,
+      new_bookings: newBk,
+      b2d_pct:      gross > 0 ? calls / gross * 100 : null,
+      ns_pct:       gross > 0 ? noShow / gross * 100 : null,
+      label: JDATA?.[dataScope]?.weekly_funnel?.[wkKey]?.label,
+    };
+  }
   return JDATA?.[dataScope]?.weekly_funnel?.[wkKey] || {};
 }
 function chanData(wkKey, ch) {
@@ -247,6 +287,64 @@ function chanArr(ch, metric) {
 }
 function cityArr(city, metric) {
   return ALL_WEEKS.map(wk => cityData(wk, city)[metric] ?? null);
+}
+
+// ── GMB LEADS HELPERS ─────────────────────────────────────────────────────
+function parseCSVSimple(text) {
+  const rows = [];
+  for (const line of text.split('\n')) {
+    if (!line.trim()) continue;
+    const row = []; let inQ = false, cell = '';
+    for (const c of line) {
+      if (c === '"') { inQ = !inQ; }
+      else if (c === ',' && !inQ) { row.push(cell.trim()); cell = ''; }
+      else { cell += c; }
+    }
+    row.push(cell.trim());
+    rows.push(row);
+  }
+  return rows;
+}
+function parseGmbLeads(text) {
+  const rows = parseCSVSimple(text);
+  const out = {}; // weekKey → city → total
+  let curCity = '';
+  for (let ri = 3; ri < rows.length; ri++) {
+    const r = rows[ri];
+    if (!r || r.length < OV_GMB_C + 7) continue;
+    const c0 = r[0]||'', c1 = r[1]||'', c2 = r[2]||'', c3 = r[3]||'';
+    if (c1 && !c1.startsWith('<>')) curCity = c1;
+    if (c0 && !c0.startsWith('<>')) curCity = c0;
+    if (!curCity || c2 === '<>All' || c2 === '<>ALL' || c3 === '<>All') continue;
+    if (!c2) continue;
+    for (let wi = 0; wi < OV_SHEET_WEEKS.length; wi++) {
+      const wk = OV_SHEET_WEEKS[wi];
+      const v = parseInt((r[OV_GMB_C+wi]||'').replace(/[^\d]/g,''), 10);
+      if (!isNaN(v) && v > 0) {
+        if (!out[wk]) out[wk] = {};
+        out[wk][curCity] = (out[wk][curCity] || 0) + v;
+      }
+    }
+  }
+  return out;
+}
+function leadsVal(wkKey) {
+  const byCity = GMB_LEADS_BY_CITY[wkKey];
+  if (!byCity) return null;
+  if (activeTier === 'ALL') {
+    const t = Object.values(byCity).reduce((s, v) => s + v, 0);
+    return t || null;
+  }
+  const cities = CITY_TIERS[activeTier] || [];
+  const t = cities.reduce((s, c) => s + (byCity[c] || 0), 0);
+  return t || null;
+}
+function leadsArr() { return ALL_WEEKS.map(wk => leadsVal(wk)); }
+function metLabel(met) {
+  return { calls_done:'Calls Done', new_bookings:'New Bookings', gmb_leads:'GMB Leads' }[met] || met;
+}
+function metArr(met) {
+  return met === 'gmb_leads' ? leadsArr() : funnelArr(met);
 }
 
 // ── BUILD KPI STRIP ────────────────────────────────────────────────────────
@@ -315,11 +413,11 @@ function buildTrendChart() {
     <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px;flex-wrap:wrap;gap:8px;">
       <div>
         <div class="sec-hdr">12-Week Demand Trend</div>
-        <div class="sec-sub">Calls Done &amp; New Bookings · ${dataScope.charAt(0).toUpperCase()+dataScope.slice(1)} · with 8-week average reference</div>
+        <div class="sec-sub">${metLabel(activeMet)} · ${dataScope.charAt(0).toUpperCase()+dataScope.slice(1)} · with 8-week average reference</div>
       </div>
       <div style="display:flex;align-items:center;gap:14px;font-size:11px;">
-        <span style="display:flex;align-items:center;gap:5px;"><span style="width:14px;height:2.5px;background:#6366f1;display:inline-block;border-radius:2px;"></span>Calls Done</span>
-        <span style="display:flex;align-items:center;gap:5px;"><span style="width:14px;height:2.5px;background:#10b981;display:inline-block;border-radius:2px;border-style:dashed;border-width:0 0 2px 0;"></span>New Bookings</span>
+        <span style="display:flex;align-items:center;gap:5px;"><span style="width:14px;height:2.5px;background:#6366f1;display:inline-block;border-radius:2px;"></span>${metLabel(activeMet)}</span>
+        ${activeMet==='calls_done'?`<span style="display:flex;align-items:center;gap:5px;"><span style="width:14px;height:2.5px;background:#10b981;display:inline-block;border-radius:2px;border-style:dashed;border-width:0 0 2px 0;"></span>New Bookings</span>`:''}
         <span style="display:flex;align-items:center;gap:5px;"><span style="width:14px;height:2px;background:#f59e0b;display:inline-block;border-radius:2px;border-style:dashed;"></span>8wk avg</span>
       </div>
     </div>
@@ -337,11 +435,11 @@ function renderTrendChart() {
     const lbl = JDATA?.[dataScope]?.weekly_funnel?.[wk]?.label || wk;
     return lbl.replace(/\s*-\s*/,' – ').split(' – ').map(p => p.trim().replace(/\d{4}/,'').trim()).join('\n');
   });
-  const cdChron  = funnelArr('calls_done').slice().reverse();
-  const nbChron  = funnelArr('new_bookings').slice().reverse();
+  const cdChron  = metArr(activeMet).slice().reverse();
+  const nbChron  = activeMet === 'calls_done' ? funnelArr('new_bookings').slice().reverse() : null;
   const b2dChron = funnelArr('b2d_pct').slice().reverse();
 
-  const avg8val  = avg8(funnelArr('calls_done'), activeWkIdx);
+  const avg8val  = avg8(metArr(activeMet), activeWkIdx);
   const selPos   = ALL_WEEKS.length - 1 - activeWkIdx;
 
   // Point colors: highlight selected week
@@ -354,19 +452,19 @@ function renderTrendChart() {
       labels,
       datasets: [
         {
-          label: 'Calls Done',
+          label: metLabel(activeMet),
           data: cdChron,
           borderColor: '#6366f1', backgroundColor: '#6366f118', fill: true,
           tension: 0.35, borderWidth: 2.5,
           pointRadius: ptSizes, pointBackgroundColor: ptColors, pointBorderColor: ptColors,
         },
-        {
+        nbChron ? {
           label: 'New Bookings',
           data: nbChron,
           borderColor: '#10b981', backgroundColor: 'transparent',
           tension: 0.35, borderWidth: 2, borderDash: [4, 3],
           pointRadius: 2.5, pointBackgroundColor: '#10b981',
-        },
+        } : null,
         avg8val != null ? {
           label: '8wk Avg (Calls Done)',
           data: Array(labels.length).fill(Math.round(avg8val)),
@@ -422,7 +520,7 @@ function renderTrendChart() {
 
 // ── BUILD BEAT/MISS HISTORY ───────────────────────────────────────────────
 function buildBeatMissHistory() {
-  const cdArr    = funnelArr('calls_done');
+  const cdArr    = metArr(activeMet);
   const allValid = cdArr.filter(v => v != null);
   const maxVal   = Math.max(...allValid, 1);
 
@@ -458,7 +556,7 @@ function buildBeatMissHistory() {
 
   return `<div class="card" style="padding:16px 20px;">
     <div class="sec-hdr" style="margin-bottom:2px;">Beat/Miss vs 8wk Avg</div>
-    <div class="sec-sub" style="margin-bottom:12px;">Calls Done · last 9 weeks · highlighted = selected week</div>
+    <div class="sec-sub" style="margin-bottom:12px;">${metLabel(activeMet)} · last 9 weeks · highlighted = selected week</div>
     ${rows}
     <div style="margin-top:10px;font-size:10px;color:#94a3b8;">
       Bar width = relative to max week · beat/miss = ±3% from rolling 8wk average
@@ -741,6 +839,13 @@ function setWeek(val) {
   activeWkIdx = parseInt(val, 10);
   render();
 }
+function setMet(met) {
+  activeMet = met;
+  ['mCalls','mBookings','mLeads'].forEach(id => document.getElementById(id)?.classList.remove('active'));
+  const m = { calls_done:'mCalls', new_bookings:'mBookings', gmb_leads:'mLeads' };
+  document.getElementById(m[met])?.classList.add('active');
+  render();
+}
 
 // ── INIT ──────────────────────────────────────────────────────────────────
 async function init() {
@@ -764,6 +869,18 @@ async function init() {
     });
 
     render();
+
+    // Load GMB leads from demand tracker sheet (non-blocking — page renders immediately above)
+    fetch(OV_SHEET_URL)
+      .then(r => r.ok ? r.text() : null)
+      .then(text => {
+        if (text) {
+          GMB_LEADS_BY_CITY = parseGmbLeads(text);
+          if (activeMet === 'gmb_leads') render(); // re-render if leads tab is active
+        }
+      })
+      .catch(() => {}); // silently ignore if sheet is inaccessible
+
   } catch (err) {
     document.getElementById('root').innerHTML =
       `<div class="loading" style="color:#dc2626;">⚠ ${err.message}<br>Make sure the server is running and data.json is present.</div>`;

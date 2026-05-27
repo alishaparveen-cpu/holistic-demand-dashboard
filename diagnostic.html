@@ -313,14 +313,19 @@ function parseL0Diag(text) {
 // ─── Parse RD_Practo_Leads CSV → PRACTO_DATA ────────────────────────────────
 // Date format in that tab: "DD-MM-YYYY"  (e.g. "02-03-2026")
 function _practoMondayKey(dateStr) {
-  const p = dateStr.split('-');
+  // Handle both DD-MM-YYYY (RD_Practo_Leads) and DD/MM/YYYY (new sheet) formats
+  const p = dateStr.replace(/\//g, '-').split('-');
   if (p.length !== 3) return null;
   const d = new Date(+p[2], +p[1]-1, +p[0]);
   if (isNaN(d)) return null;
   const day = d.getDay(); // 0=Sun 1=Mon … 6=Sat
   const off = (day === 0 ? -6 : 1 - day);
   d.setDate(d.getDate() + off);
-  return d.toISOString().slice(0,10); // YYYY-MM-DD
+  // Use LOCAL date components — toISOString() converts to UTC which shifts IST midnight dates
+  const y   = d.getFullYear();
+  const m   = String(d.getMonth()+1).padStart(2,'0');
+  const dom = String(d.getDate()).padStart(2,'0');
+  return `${y}-${m}-${dom}`;
 }
 function parsePractoLeads(rows) {
   const data = {}; // weekKey → city → count  AND  weekKey → 'city/clinic' → count
