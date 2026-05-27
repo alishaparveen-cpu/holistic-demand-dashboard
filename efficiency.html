@@ -1457,9 +1457,9 @@ function buildKPIStrip(wkIdx) {
     if (newV != null && sanityFn(newV)) return newV;
     return oldV ?? null;
   }
-  // Require new_rev > ₹50K to rule out wrong rows (network weekly revenue should be lakhs range)
-  const newRevCur  = pickVal(o.new_rev?.[wkIdx],  L0.gmb_google?.new_rev?.[wkIdx], v => v > 50000);
-  const newRevPrv  = pickVal(o.new_rev?.[p],       L0.gmb_google?.new_rev?.[p],     v => v > 50000);
+  // Prefer gmb_google section (label-based, reliable) over overall fixed rows for revenue
+  const newRevCur  = (L0.gmb_google?.new_rev?.[wkIdx] ?? o.new_rev?.[wkIdx]) ?? null;
+  const newRevPrv  = (L0.gmb_google?.new_rev?.[p]     ?? o.new_rev?.[p])     ?? null;
   // RoAS: rowArr(35) often returns raw revenue; fall back to rowArr(13) which is tested
   const roasCur    = (o.roas?.[wkIdx] ?? o.roas_1tp?.[wkIdx]) ?? null;
   const roasPrv    = (o.roas?.[p]     ?? o.roas_1tp?.[p])     ?? null;
@@ -1870,13 +1870,10 @@ function buildChartRevTrend() {
   const gg = L0.gmb_google;
   const toL = v => v != null ? +(v/100000).toFixed(2) : null;
   // Prefer overall rows if they look like real revenue (>50K), else fall back to gmb_google section
-  function revSrc(oArr, ggArr) {
-    const hasReal = (oArr||[]).some(v => v != null && v > 50000);
-    return hasReal ? oArr : (ggArr || []);
-  }
-  const revTP  = revArrN(revSrc(o.rev_1st_tp,  gg?.rev_1st_tp)).map(toL);
-  const revCon = revArrN(revSrc(o.consult_rev,  gg?.consult_rev)).map(toL);
-  const revNew = revArrN(revSrc(o.new_rev,       gg?.new_rev)).map(toL);
+  // Prefer gmb_google section (label-based, reliable) for revenue lines
+  const revTP  = revArrN(gg?.rev_1st_tp  || o.rev_1st_tp  || []).map(toL);
+  const revCon = revArrN(gg?.consult_rev || o.consult_rev || []).map(toL);
+  const revNew = revArrN(gg?.new_rev     || o.new_rev     || []).map(toL);
   charts.chartRevTrend = new Chart(document.getElementById('chartRevTrend'), {
     type: 'line',
     data: { labels: revLabelsN(), datasets: [
