@@ -93,7 +93,7 @@ def monday_of(dt: datetime.date) -> str:
     off = dt.weekday()  # 0 = Monday
     return (dt - datetime.timedelta(days=off)).isoformat()
 
-def parse_iso_date(s: str) -> datetime.date | None:
+def parse_iso_date(s: str):
     try:
         return datetime.date.fromisoformat(s[:10])
     except (ValueError, TypeError):
@@ -142,9 +142,18 @@ def get_credentials():
         )
 
     if not creds or not creds.valid:
-        if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-            print('ℹ  Token refreshed.')
+        # If we have a refresh_token (even when token=None), try to refresh first
+        # before falling back to the browser flow.
+        if creds and creds.refresh_token:
+            try:
+                creds.refresh(Request())
+                print('ℹ  Token refreshed via refresh_token.')
+            except Exception as e:
+                print(f'⚠  Token refresh failed: {e}')
+                print('\n🌐  Opening browser for Google auth consent...')
+                flow = InstalledAppFlow.from_client_secrets_file(str(CREDS_FILE), SCOPES)
+                creds = flow.run_local_server(port=0, prompt='consent')
+                print('\n✓  Auth complete.')
         else:
             print('\n🌐  Opening browser for Google auth consent...')
             print('    (If no browser opens, check that port 0 is available.)\n')
@@ -164,119 +173,178 @@ def get_credentials():
 
     return creds
 
-# ── API helpers (raw requests) ─────────────────────────────────────────────────
-# Using requests rather than discovery client to avoid the v4 discovery URL issue.
+# ── New Business Profile API base URLs (v4 mybusiness is fully deprecated) ─────
+ACCT_API = 'https://mybusinessaccountmanagement.googleapis.com/v1'
+INFO_API = 'https://mybusinessbusinessinformation.googleapis.com/v1'
+PERF_API = 'https://businessprofileperformance.googleapis.com/v1'
 
+# New Performance API metric names → dashboard JSON keys
+PERF_METRICS = {
+    'CALL_CLICKS':                  'calls',
+    'BUSINESS_DIRECTION_REQUESTS':  'directions',
+    'BUSINESS_IMPRESSIONS_DESKTOP_SEARCH': 'impressions_desktop_search',
+    'BUSINESS_IMPRESSIONS_MOBILE_SEARCH':  'impressions_mobile_search',
+    'BUSINESS_IMPRESSIONS_DESKTOP_MAPS':   'impressions_desktop_maps',
+    'BUSINESS_IMPRESSIONS_MOBILE_MAPS':    'impressions_mobile_maps',
+}
+# Derived totals built after fetch
+# queries_indirect / queries_direct / queries_chain come from keyword impressions
+
+# ── API helpers ────────────────────────────────────────────────────────────────
 def api_get(session, url, params=None):
     r = session.get(url, params=params)
-    r.raise_for_status()
-    return r.json()
-
-def api_post(session, url, body):
-    r = session.post(url, json=body)
     if not r.ok:
-        print(f'  ⚠  POST {url} → {r.status_code}: {r.text[:300]}')
-    r.raise_for_status()
+        raise Exception(f'{r.status_code} {r.reason} — {r.text[:200]}')
     return r.json()
 
-# ── List GMB accounts ──────────────────────────────────────────────────────────
+# ── List GBP accounts ──────────────────────────────────────────────────────────
 def list_accounts(session):
-    data = api_get(session, 'https://mybusiness.googleapis.com/v4/accounts')
+    data = api_get(session, f'{ACCT_API}/accounts')
     return data.get('accounts', [])
 
 # ── List all locations under an account ───────────────────────────────────────
 def list_locations(session, account_name):
+    """
+    Returns list of location objects with at minimum 'name' and 'title'.
+    account_name format: 'accounts/XXXXXXXXX'
+    location name format: 'locations/XXXXXXXXX'
+    """
     locs, page_token = [], None
     while True:
-        params = {'pageSize': 100}
+        params = {
+            'pageSize':  100,
+            'readMask':  'name,title,storefrontAddress,websiteUri',
+        }
         if page_token:
             params['pageToken'] = page_token
-        data = api_get(session,
-                       f'https://mybusiness.googleapis.com/v4/{account_name}/locations',
-                       params=params)
+        data = api_get(session, f'{INFO_API}/{account_name}/locations', params=params)
         locs.extend(data.get('locations', []))
         page_token = data.get('nextPageToken')
         if not page_token:
             break
     return locs
 
-# ── Fetch Insights for a batch of up to 10 locations ──────────────────────────
-def fetch_insights_batch(session, account_name, location_names):
+# ── Fetch daily metrics for a single location ─────────────────────────────────
+def fetch_daily_metric(session, loc_name, metric):
     """
-    Returns: { location_name → { dash_key → [val_wk0, val_wk1, ...] } }
-    where wk0 = most recent (WEEK_KEYS[0]).
+    Returns { 'YYYY-MM-DD': int, ... } for daily values over the past 10 weeks.
+    loc_name format: 'locations/XXXXXXXXX'
     """
     end_dt   = datetime.date.today()
-    start_dt = end_dt - datetime.timedelta(weeks=10)
-
-    body = {
-        'locationNames': location_names,
-        'basicRequest': {
-            'metricRequests': [
-                {'metric': m} for m in METRIC_MAP
-            ],
-            'timeRange': {
-                'startTime': f'{start_dt.isoformat()}T00:00:00Z',
-                'endTime':   f'{end_dt.isoformat()}T23:59:59Z',
-            },
-        },
+    start_dt = end_dt - datetime.timedelta(weeks=11)
+    params = {
+        'dailyMetric': metric,
+        'dailyRange.startDate.year':  start_dt.year,
+        'dailyRange.startDate.month': start_dt.month,
+        'dailyRange.startDate.day':   start_dt.day,
+        'dailyRange.endDate.year':    end_dt.year,
+        'dailyRange.endDate.month':   end_dt.month,
+        'dailyRange.endDate.day':     end_dt.day,
     }
-
     try:
-        resp = api_post(
-            session,
-            f'https://mybusiness.googleapis.com/v4/{account_name}/locations:reportInsights',
-            body,
-        )
+        resp = api_get(session, f'{PERF_API}/{loc_name}:getDailyMetricsTimeSeries', params=params)
     except Exception as e:
-        print(f'  ⚠  reportInsights batch failed: {e}')
+        return {}
+    daily = {}
+    for entry in resp.get('timeSeries', {}).get('datedValues', []):
+        date_obj = entry.get('date', {})
+        y, m, d = date_obj.get('year'), date_obj.get('month'), date_obj.get('day')
+        if y and m and d:
+            dt = datetime.date(y, m, d)
+            try:
+                daily[dt.isoformat()] = int(entry.get('value', 0) or 0)
+            except (ValueError, TypeError):
+                pass
+    return daily
+
+def daily_to_weekly(daily_dict):
+    """Aggregate daily {YYYY-MM-DD: int} into {monday-YYYY-MM-DD: int} then align to WEEK_KEYS."""
+    weekly = {}
+    for date_str, val in daily_dict.items():
+        dt = parse_iso_date(date_str)
+        if not dt: continue
+        wk = monday_of(dt)
+        weekly[wk] = weekly.get(wk, 0) + (val or 0)
+    return [weekly.get(wk) for wk in WEEK_KEYS]
+
+# ── Fetch keyword impressions and classify discovery vs direct ─────────────────
+def fetch_search_keywords(session, loc_name):
+    """
+    Returns { 'YYYY-MM-DD': {'discovery': int, 'direct': int} } classified by
+    whether the keyword is branded ('allo') or generic.
+    """
+    end_dt   = datetime.date.today()
+    start_dt = end_dt - datetime.timedelta(weeks=11)
+    params = {
+        'dailyRange.startDate.year':  start_dt.year,
+        'dailyRange.startDate.month': start_dt.month,
+        'dailyRange.startDate.day':   start_dt.day,
+        'dailyRange.endDate.year':    end_dt.year,
+        'dailyRange.endDate.month':   end_dt.month,
+        'dailyRange.endDate.day':     end_dt.day,
+    }
+    try:
+        resp = api_get(session,
+            f'{PERF_API}/{loc_name}/searchkeywordimpressions:fetchMultiDailyMetricsTimeSeries',
+            params=params)
+    except Exception as e:
         return {}
 
-    result = {}
-    for loc_insight in resp.get('locationMetrics', []):
-        loc_name = loc_insight['locationName']
-        result[loc_name] = {v: zero_series() for v in METRIC_MAP.values()}
+    # resp = { 'multiDailyMetricTimeSeries': [ { 'searchKeyword': '...', 'dailyMetricTimeSeries': [...] } ] }
+    disc_daily, dir_daily = {}, {}
+    for kw_entry in resp.get('multiDailyMetricTimeSeries', []):
+        kw     = (kw_entry.get('searchKeyword') or '').lower()
+        is_dir = 'allo' in kw   # branded keyword → direct intent
 
-        for mv in loc_insight.get('metricValues', []):
-            api_key  = mv.get('metric')
-            dash_key = METRIC_MAP.get(api_key)
-            if not dash_key:
-                continue
+        for series in kw_entry.get('dailyMetricTimeSeries', []):
+            for dv in series.get('timeSeries', {}).get('datedValues', []):
+                date_obj = dv.get('date', {})
+                y, m, d = date_obj.get('year'), date_obj.get('month'), date_obj.get('day')
+                if not (y and m and d): continue
+                key = datetime.date(y, m, d).isoformat()
+                val = int(dv.get('value', 0) or 0)
+                if is_dir:
+                    dir_daily[key]  = dir_daily.get(key, 0)  + val
+                else:
+                    disc_daily[key] = disc_daily.get(key, 0) + val
 
-            # Build weekly lookup from dimensional values
-            weekly = {}
-            for dv in mv.get('dimensionalValues', []):
-                ts = (dv.get('timeDimension') or {}).get('timeRange', {}).get('startTime', '')
-                if not ts:
-                    # Some responses put the value directly without time dimension
-                    continue
-                dt = parse_iso_date(ts)
-                if not dt:
-                    continue
-                wk = monday_of(dt)
-                # Value may be nested differently across API versions
-                raw_val = (
-                    dv.get('value')
-                    or (dv.get('metricOption') and None)   # guard
-                )
-                if isinstance(raw_val, dict):
-                    raw_val = raw_val.get('value') or raw_val.get('intValue') or 0
-                try:
-                    weekly[wk] = int(str(raw_val).replace(',', ''))
-                except (ValueError, TypeError):
-                    weekly[wk] = 0
+    return {
+        'queries_direct':   daily_to_weekly(dir_daily),
+        'queries_indirect': daily_to_weekly(disc_daily),
+        'queries_chain':    [None] * N_WEEKS,  # chain not distinguishable via keywords
+    }
 
-            # Also check totalValue (some v4 versions use this for weekly rolled-up)
-            tv = mv.get('totalValue')
-            if tv and not weekly:
-                try:
-                    total = int(str(tv.get('value', 0)).replace(',', ''))
-                    # Spread across all weeks (best-effort when granular data absent)
-                    weekly = {wk: total // N_WEEKS for wk in WEEK_KEYS}
-                except (ValueError, TypeError):
-                    pass
+# ── Fetch all metrics for one location ────────────────────────────────────────
+def fetch_location_all(session, loc):
+    """
+    Returns { dash_key → [weekly_values] } for all metrics.
+    loc: dict with 'name' (locations/XXX) and 'title'.
+    """
+    loc_name = loc['name']
+    result   = {}
 
-            result[loc_name][dash_key] = [weekly.get(wk) for wk in WEEK_KEYS]
+    # Performance metrics (one call per metric)
+    for api_key, dash_key in PERF_METRICS.items():
+        daily  = fetch_daily_metric(session, loc_name, api_key)
+        result[dash_key] = daily_to_weekly(daily)
+
+    # Derived: total search impressions
+    search = [
+        (result.get('impressions_desktop_search') or [None]*N_WEEKS),
+        (result.get('impressions_mobile_search')  or [None]*N_WEEKS),
+    ]
+    result['impressions_search'] = [
+        (a or 0) + (b or 0) for a, b in zip(*search)
+    ]
+    result['impressions_maps'] = [
+        ((result.get('impressions_desktop_maps') or [None]*N_WEEKS)[i] or 0) +
+        ((result.get('impressions_mobile_maps')  or [None]*N_WEEKS)[i] or 0)
+        for i in range(N_WEEKS)
+    ]
+
+    # Keyword impressions → discovery / direct split
+    kw = fetch_search_keywords(session, loc_name)
+    result.update(kw)
 
     return result
 
@@ -298,18 +366,33 @@ def main():
     try:
         accounts = list_accounts(session)
     except Exception as e:
-        sys.exit(f'✗  Failed to list accounts: {e}\n'
-                 '   Check that the Google My Business API (v4) is enabled in your Cloud project.')
+        sys.exit(
+            f'\n✗  Failed to list accounts: {e}\n\n'
+            '   If you see 403/404: enable these APIs in Google Cloud Console:\n'
+            '     • Business Profile Account Management API\n'
+            '     • Business Profile Information API\n'
+            '     • Business Profile Performance API\n'
+        )
 
     if not accounts:
-        sys.exit('✗  No GMB accounts found. Check credentials scope and account access.')
+        sys.exit('✗  No GBP accounts found. Check credentials scope and account access.')
     print(f'  Found {len(accounts)} account(s):')
     for i, a in enumerate(accounts):
-        print(f'  [{i}] {a.get("accountName","?")}  ({a["name"]})')
+        # New API uses 'accountName' for the human label and 'name' for the resource path
+        label = a.get('accountName') or a.get('name', '?')
+        print(f'  [{i}] {label}')
 
-    account = accounts[0] if len(accounts) == 1 else accounts[int(input('  Select index: ') or 0)]
-    account_name = account['name']
-    print(f'  → Using: {account.get("accountName","?")}')
+    # Auto-select: prefer account named "Allo Health", fall back to first non-group account
+    def _score(a):
+        n = (a.get('accountName') or '').lower()
+        if 'allo' in n: return 0
+        if 'group' in n or 'location' in n: return 2
+        return 1
+    accounts_sorted = sorted(accounts, key=_score)
+    account      = accounts_sorted[0] if len(accounts) >= 1 else accounts[int(input('  Select index: ') or 0)]
+    account_name = account['name']          # e.g. 'accounts/123456789'
+    label        = account.get('accountName') or account_name
+    print(f'  → Using: {label}  ({account_name})')
 
     # ── Discover locations ─────────────────────────────────────────────────────
     print('\n● Listing locations…')
@@ -319,42 +402,38 @@ def main():
         sys.exit(f'✗  Failed to list locations: {e}')
     print(f'  Found {len(locations)} location(s)')
 
-    # ── Fetch Insights in batches of 10 ───────────────────────────────────────
-    print('\n● Fetching weekly insights (this may take 30–60 s)…')
-    all_insights = {}
-    loc_names = [l['name'] for l in locations]
-    n_batches  = (len(loc_names) + 9) // 10
-
-    for bi in range(n_batches):
-        batch = loc_names[bi*10 : (bi+1)*10]
-        print(f'  Batch {bi+1}/{n_batches}  ({len(batch)} locs)…', end=' ', flush=True)
-        result = fetch_insights_batch(session, account_name, batch)
-        all_insights.update(result)
-        print('done')
+    # ── Fetch metrics per location (new API is per-location only) ─────────────
+    ALL_DASH_KEYS = list(PERF_METRICS.values()) + [
+        'impressions_search', 'impressions_maps',
+        'queries_indirect', 'queries_direct', 'queries_chain',
+    ]
+    print(f'\n● Fetching metrics for {len(locations)} location(s)…')
+    print('  (new Business Profile Performance API — ~2-4 s per location)')
 
     # ── Aggregate ──────────────────────────────────────────────────────────────
-    print('\n● Aggregating by city…')
-    network    = {v: zero_series() for v in METRIC_MAP.values()}
+    network    = {k: zero_series() for k in ALL_DASH_KEYS}
     by_city    = {}
     by_location = {}
 
-    for loc in locations:
-        loc_name    = loc['name']
-        display     = loc.get('locationName', loc_name)
-        city        = city_from_name(display)
-        ins         = all_insights.get(loc_name, {})
+    for i, loc in enumerate(locations):
+        display = loc.get('title', loc.get('locationName', loc['name']))
+        city    = city_from_name(display)
+        print(f'  [{i+1}/{len(locations)}] {display}…', end=' ', flush=True)
 
-        loc_entry   = {'name': display, 'city': city}
+        ins = fetch_location_all(session, loc)
+
         if city not in by_city:
-            by_city[city] = {v: zero_series() for v in METRIC_MAP.values()}
+            by_city[city] = {k: zero_series() for k in ALL_DASH_KEYS}
 
-        for dash_key in METRIC_MAP.values():
-            series = ins.get(dash_key) or zero_series()
-            loc_entry[dash_key]       = series
-            network[dash_key]         = add_series(network[dash_key], series)
-            by_city[city][dash_key]   = add_series(by_city[city][dash_key], series)
+        loc_entry = {'name': display, 'city': city}
+        for dk in ALL_DASH_KEYS:
+            series = ins.get(dk) or zero_series()
+            loc_entry[dk]       = series
+            network[dk]         = add_series(network[dk], series)
+            by_city[city][dk]   = add_series(by_city[city][dk], series)
 
-        by_location[loc_name] = loc_entry
+        by_location[loc['name']] = loc_entry
+        print('✓')
 
     # ── Write output ───────────────────────────────────────────────────────────
     output = {
