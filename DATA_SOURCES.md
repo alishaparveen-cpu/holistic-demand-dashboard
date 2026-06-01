@@ -272,3 +272,32 @@ Rebuilt on the **tracker sheet's own L0 logic** (reconciles to the sheet to the 
 Every clinic is classified **Availability / L2B Conversion / Growing / Stable** via the
 weekend-weighted demand×availability framework, and bucketed New / Maturing / Mature
 (≥25 bookings/wk & ≥8 wks data). Rebuild: `python3 build_diagnosis.py --sheet-xlsx <export>.xlsx --w6-start <Mon>`.
+
+---
+
+## 7. ✅ Verified: Redshift reproduces the sheet's logic (2026-06-01)
+
+The old `fetch_bookings.py` over-counted (no `phone_rank` dedup, bucketed by
+schedule-date, `Source final = utm_source`). **Rewritten** to the sheet's exact
+logic and **verified to the row** for W6 (25–31 May 2026):
+
+| Metric | Redshift (new fetch) | Sheet L0 |
+|--------|---------------------|----------|
+| Total bookings | **1,652** | 1,652 |
+| Online / Offline | 464 / 1,188 | 465 / 1,187 |
+| Practo | **201** | 201 |
+| Other | **122** | 122 |
+| GMB / Google / FB | 509 / 358 / 265 | 518 / 363 / 280 (95–99%) |
+
+**Booking definition (now in fetch_bookings.py):** SC appointments · `phone_rank=1`
+(ROW_NUMBER over the patient's phone ordered by created_at, ranked over full
+history from 2023) · bucketed by **`apt_create_dt`** · online = `mode='online'` ·
+channel = `Source final` waterfall (Practo via CSV → utm/origin) · category via
+`encounter_tags`. Only **Practo needs the sheet CSV**; everything else is Redshift.
+
+The residual ~3% on GMB/Google/FB is the **phone-line attribution** (which Exotel
+number was dialed for the FB/GMB dedicated lines) — needs the call→booking join.
+
+**TODO for `rebuild_data.py`:** bucket **bookings** by `apt_create_dt` and count
+only `phone_rank == 1` rows; keep **Calls Done** by `apt_schedule_dt` + `status=COMPLETED`
+(all ranks). The new CSV already carries `phone_rank`, `apt_create_dt`, `mode`.
