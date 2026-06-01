@@ -252,3 +252,16 @@ https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet={TAB
 ---
 
 *Last updated: 2026-06-01 (v3) — weekly-report.html: "New Bookings" KPI, exec summary, and KEY FINDING banner now use `L0.overall.bookings[wi]` (row 8 of L0 sheet, the team-tracked value ≈ 1652) instead of data.json `new_bookings` (Redshift COMPLETED+NO_SHOW, a different metric ≈ 1970). 8wk avg for bookings also computed from L0 array when available. `add_new_week.py` corrected: `ALL_BOOKINGS = 1652` (was 1794). `L0_CACHE_KEY = 'allo_report_l0_v3'` unchanged.*
+
+---
+
+## 8. ✅ fetch_bookings.py rewritten to sheet logic, verified from Redshift (2026-06-01)
+
+`fetch_bookings.py` now **computes** the sheet's numbers directly from Redshift
+(no manual L0 paste). Booking = SC appointment, `phone_rank=1` (ROW_NUMBER over
+the patient phone ordered by created_at, ranked over full history), bucketed by
+`apt_create_dt`; online = `mode='online'`; channel = `Source final` waterfall
+(Practo via CSV → utm/origin). Verified W6 (25-31 May): total 1,652, online/offline
+464/1,188, Practo 201, Other 122, GMB/Google/FB 95-99%. Only Practo needs the CSV.
+
+`diagnosis.html` + `build_diagnosis.py` add the per-clinic availability-vs-L2B RCA.
