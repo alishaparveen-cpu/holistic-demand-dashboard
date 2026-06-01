@@ -299,6 +299,12 @@ html,body{background:#f8fafc;color:var(--ink);font-family:ui-sans-serif,system-u
 </div>
 
 
+<!-- ── GOOGLE PAID — SEARCH IMPRESSION SHARE (live Google Ads API) ── -->
+<div id="impShareSection" style="margin-bottom:20px;"></div>
+
+<!-- ── GBP BRAND SIGNAL — organic discovery (live Business Profile API) ── -->
+<div id="brandSignalSection" style="margin-bottom:20px;"></div>
+
 <!-- CHANNEL SCORECARDS -->
 <div id="channelScorecards" style="margin-bottom:20px;"></div>
 
@@ -385,6 +391,8 @@ const CITY_KEYS = [
 // ── STATE ─────────────────────────────────────────────────────────────────
 let JDATA        = null;
 let L0           = null;
+let MDATA        = null;   // data_marketing.json — live Google Ads IS + GBP brand signal
+let mCharts      = {};     // chart instances for the marketing-API sections
 let activeWkIdx  = 0;
 let activeScope  = 'all';
 let dataScope    = 'all';
@@ -2906,6 +2914,204 @@ function buildChartStiTrend() {
 // Chart H (Verified Lead %) removed — not shown on page
 
 // ── RENDER ────────────────────────────────────────────────────────────────
+// ── LIVE MARKETING-API SECTIONS ──────────────────────────────────────────────
+function mWeekLabel(wk) {
+  // wk = 'YYYY-MM-DD' (Monday). Render as 'DD Mon'.
+  const d = new Date(wk + 'T00:00:00');
+  return d.toLocaleDateString('en-GB', { day:'2-digit', month:'short' });
+}
+function mNotLoaded(title, why) {
+  return `<div class="card">
+    <div class="sec-title" style="font-size:14px;margin-bottom:2px;">${title}</div>
+    <div style="font-size:12px;color:var(--muted);padding:10px 0;">
+      ⚠ ${why} Run <code style="background:#f1f5f9;padding:1px 5px;border-radius:4px;">python3 fetch_marketing_api.py</code> to refresh <code>data_marketing.json</code>.
+    </div></div>`;
+}
+
+// 1) Google Paid — Search Impression Share -----------------------------------
+function buildImpShareSection() {
+  const el = document.getElementById('impShareSection');
+  if (!el) return;
+  const g = MDATA?.google_ads;
+  if (!g || !g.weeks || !Object.keys(g.weeks).length) {
+    el.innerHTML = mNotLoaded('Google Paid — Search Impression Share',
+      'Live Google Ads data not loaded.'); return;
+  }
+  const wks = Object.keys(g.weeks).sort();          // oldest→newest
+  const latest = wks[wks.length-1], prev = wks[wks.length-2];
+  const L = g.weeks[latest], P = prev ? g.weeks[prev] : null;
+  const isPct = v => (v*100);
+  const wow = (a,b) => (b==null?null:(a-b)*100);     // pp change
+
+  const isW = wow(L.search_is, P?.search_is);
+  const wowStr = isW==null ? '' :
+    `<span style="font-size:12px;color:${isW>=0?'#059669':'#dc2626'};font-weight:700;">${isW>=0?'▲':'▼'}${Math.abs(isW).toFixed(1)}pp WoW</span>`;
+
+  // captured / rank-lost / budget-lost sum ~ 100%
+  const cap = isPct(L.search_is), rank = isPct(L.rank_lost_is), bud = isPct(L.budget_lost_is);
+  const biggerLever = rank >= bud ? 'Ad Rank (quality &amp; bid)' : 'Budget';
+
+  el.innerHTML = `<div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;margin-bottom:4px;">
+      <div>
+        <span class="sec-title" style="font-size:14px;">Google Paid — Search Impression Share</span>
+        <span style="font-size:9px;background:#ecfdf5;color:#047857;border:1px solid #a7f3d0;padding:1px 7px;border-radius:999px;margin-left:6px;vertical-align:middle;">● LIVE · Google Ads API</span>
+      </div>
+      <span style="font-size:10px;color:var(--muted);">Account ${g.account} · ${mWeekLabel(latest)} week</span>
+    </div>
+    <div style="font-size:11px;color:var(--muted);margin-bottom:14px;">
+      Share of available paid-search impressions we actually won. The rest is lost — split into what bidding/quality (rank) vs spend (budget) cost us.
+    </div>
+
+    <div style="display:grid;grid-template-columns:200px 1fr;gap:20px;align-items:center;">
+      <div>
+        <div style="font-size:34px;font-weight:800;line-height:1;color:#1f1b46;">${cap.toFixed(1)}%</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:2px;">impression share captured</div>
+        <div style="margin-top:4px;">${wowStr}</div>
+        <div style="margin-top:12px;font-size:11px;color:#475569;">
+          <div style="display:flex;justify-content:space-between;"><span>Lost to rank</span><strong style="color:#dc2626;">${rank.toFixed(1)}%</strong></div>
+          <div style="display:flex;justify-content:space-between;"><span>Lost to budget</span><strong style="color:#d97706;">${bud.toFixed(1)}%</strong></div>
+          <div style="display:flex;justify-content:space-between;margin-top:3px;border-top:1px solid var(--line);padding-top:3px;"><span>Spend</span><strong>₹${(L.cost/100000).toFixed(2)}L</strong></div>
+        </div>
+      </div>
+      <div>
+        <div style="height:30px;margin-bottom:10px;"><canvas id="isStackBar"></canvas></div>
+        <div style="height:190px;"><canvas id="isTrend"></canvas></div>
+      </div>
+    </div>
+
+    <div style="margin-top:14px;padding:10px 12px;background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;font-size:12px;line-height:1.5;color:#7c2d12;">
+      <strong>Read:</strong> We capture only <strong>${cap.toFixed(0)}%</strong> of available paid-search demand.
+      The bigger lever is <strong>${biggerLever}</strong> — ${rank.toFixed(0)}% of impressions are lost to rank vs ${bud.toFixed(0)}% to budget.
+      ${rank>=bud ? 'Raising budget alone won’t help much; improving Quality Score / bids / landing-page relevance unlocks more.' : 'Budget is the binding constraint — added spend should convert to incremental impressions.'}
+    </div>
+  </div>`;
+
+  // stacked bar (captured / rank-lost / budget-lost = 100%)
+  requestAnimationFrame(() => {
+    if (mCharts.isStack) { try{mCharts.isStack.destroy()}catch(e){} }
+    const sb = document.getElementById('isStackBar');
+    if (sb) mCharts.isStack = new Chart(sb.getContext('2d'), {
+      type:'bar',
+      data:{ labels:[''], datasets:[
+        { label:'Captured', data:[cap], backgroundColor:'#059669', borderRadius:3 },
+        { label:'Lost to rank', data:[rank], backgroundColor:'#dc2626', borderRadius:3 },
+        { label:'Lost to budget', data:[bud], backgroundColor:'#f59e0b', borderRadius:3 },
+      ]},
+      options:{ indexAxis:'y', responsive:true, maintainAspectRatio:false,
+        plugins:{ legend:{ position:'bottom', labels:{ font:{size:10}, boxWidth:10, padding:8 } },
+          tooltip:{ callbacks:{ label:c=>`${c.dataset.label}: ${c.parsed.x.toFixed(1)}%` } } },
+        scales:{ x:{ stacked:true, max:100, display:false }, y:{ stacked:true, display:false } } }
+    });
+
+    if (mCharts.isTrend) { try{mCharts.isTrend.destroy()}catch(e){} }
+    const tr = document.getElementById('isTrend');
+    if (tr) mCharts.isTrend = new Chart(tr.getContext('2d'), {
+      data:{ labels: wks.map(mWeekLabel),
+        datasets:[
+          { type:'line', label:'Impression Share %', yAxisID:'y',
+            data: wks.map(w=>isPct(g.weeks[w].search_is)), borderColor:'#6e42e5',
+            backgroundColor:'rgba(110,66,229,.08)', borderWidth:2, tension:.3, pointRadius:2, fill:true },
+          { type:'line', label:'Lost to rank %', yAxisID:'y',
+            data: wks.map(w=>isPct(g.weeks[w].rank_lost_is)), borderColor:'#dc2626',
+            borderWidth:1.5, borderDash:[4,3], tension:.3, pointRadius:0, fill:false },
+          { type:'bar', label:'Spend (₹L)', yAxisID:'y1',
+            data: wks.map(w=>g.weeks[w].cost/1e5), backgroundColor:'rgba(148,163,184,.35)',
+            borderRadius:2, order:5 },
+        ]},
+      options:{ responsive:true, maintainAspectRatio:false,
+        plugins:{ legend:{ position:'top', labels:{ font:{size:10}, boxWidth:12, padding:8 } } },
+        scales:{
+          x:{ grid:{display:false}, ticks:{ font:{size:9} } },
+          y:{ position:'left', grid:{ color:'#f1f5f9' }, ticks:{ font:{size:9}, callback:v=>v+'%' }, title:{display:true,text:'%',font:{size:9}} },
+          y1:{ position:'right', grid:{ display:false }, ticks:{ font:{size:9}, callback:v=>'₹'+v+'L' } },
+        } }
+    });
+  });
+}
+
+// 2) GBP Brand Signal — organic discovery ------------------------------------
+function buildBrandSignalSection() {
+  const el = document.getElementById('brandSignalSection');
+  if (!el) return;
+  const gb = MDATA?.gbp;
+  if (!gb || !gb.weeks || !Object.keys(gb.weeks).length) {
+    el.innerHTML = mNotLoaded('GBP Brand Signal — organic discovery',
+      'Live Google Business Profile data not loaded.'); return;
+  }
+  const wks = Object.keys(gb.weeks).sort();
+  const latest = wks[wks.length-1], prev = wks[wks.length-2];
+  const L = gb.weeks[latest], P = prev ? gb.weeks[prev] : null;
+  const wowN = (a,b) => (b==null||b===0?null:((a-b)/b*100));
+  const iw = wowN(L.impressions_total, P?.impressions_total);
+  const iwStr = iw==null ? '' :
+    `<span style="font-size:12px;color:${iw>=0?'#059669':'#dc2626'};font-weight:700;">${iw>=0?'▲':'▼'}${Math.abs(iw).toFixed(0)}% WoW</span>`;
+  const searchShare = L.impressions_total ? (L.search_total/L.impressions_total*100) : 0;
+
+  const actionBox = (lbl, v, color) => `<div style="flex:1;text-align:center;padding:8px 4px;border-right:1px solid var(--line);">
+    <div style="font-size:18px;font-weight:800;color:${color};">${(v||0).toLocaleString()}</div>
+    <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.03em;">${lbl}</div></div>`;
+
+  el.innerHTML = `<div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;margin-bottom:4px;">
+      <div>
+        <span class="sec-title" style="font-size:14px;">GBP Brand Signal — organic discovery</span>
+        <span style="font-size:9px;background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe;padding:1px 7px;border-radius:999px;margin-left:6px;vertical-align:middle;">● LIVE · Business Profile API</span>
+      </div>
+      <span style="font-size:10px;color:var(--muted);">${gb.locations} clinic listings · ${mWeekLabel(latest)} week</span>
+    </div>
+    <div style="font-size:11px;color:var(--muted);margin-bottom:14px;">
+      How patients discover Allo on Google before they ever call — the organic top-of-funnel that GMB bookings ride on. Impressions split Search (broad discovery) vs Maps (navigational/branded intent).
+    </div>
+
+    <div style="display:grid;grid-template-columns:200px 1fr;gap:20px;align-items:center;">
+      <div>
+        <div style="font-size:32px;font-weight:800;line-height:1;color:#1f1b46;">${(L.impressions_total||0).toLocaleString()}</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:2px;">profile impressions</div>
+        <div style="margin-top:4px;">${iwStr}</div>
+        <div style="margin-top:12px;font-size:11px;color:#475569;">
+          <div style="display:flex;justify-content:space-between;"><span>Search</span><strong>${(L.search_total||0).toLocaleString()} (${searchShare.toFixed(0)}%)</strong></div>
+          <div style="display:flex;justify-content:space-between;"><span>Maps</span><strong>${(L.maps_total||0).toLocaleString()} (${(100-searchShare).toFixed(0)}%)</strong></div>
+        </div>
+      </div>
+      <div style="height:210px;"><canvas id="bsTrend"></canvas></div>
+    </div>
+
+    <div style="margin-top:12px;display:flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;">
+      ${actionBox('Calls', L.calls, '#059669')}
+      ${actionBox('Website', L.website, '#6e42e5')}
+      ${actionBox('Directions', L.directions, '#0ea5e9')}
+      <div style="flex:1;text-align:center;padding:8px 4px;">
+        <div style="font-size:18px;font-weight:800;color:#d97706;">${(L.actions_total||0).toLocaleString()}</div>
+        <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.03em;">Total actions</div></div>
+    </div>
+    <div style="margin-top:8px;font-size:10px;color:#94a3b8;">Note: Business Profile metrics lag 2–7 days; the latest week may be partial. Google deprecated the old direct/discovery query split — Search vs Maps is the closest current proxy.</div>
+  </div>`;
+
+  requestAnimationFrame(() => {
+    if (mCharts.bsTrend) { try{mCharts.bsTrend.destroy()}catch(e){} }
+    const c = document.getElementById('bsTrend');
+    if (c) mCharts.bsTrend = new Chart(c.getContext('2d'), {
+      data:{ labels: wks.map(mWeekLabel),
+        datasets:[
+          { type:'bar', label:'Search impressions', data: wks.map(w=>gb.weeks[w].search_total),
+            backgroundColor:'#93c5fd', stack:'imp', borderRadius:2 },
+          { type:'bar', label:'Maps impressions', data: wks.map(w=>gb.weeks[w].maps_total),
+            backgroundColor:'#1d4ed8', stack:'imp', borderRadius:2 },
+          { type:'line', label:'Total actions', yAxisID:'y1', data: wks.map(w=>gb.weeks[w].actions_total),
+            borderColor:'#059669', backgroundColor:'rgba(5,150,105,.1)', borderWidth:2, tension:.3, pointRadius:2, fill:false },
+        ]},
+      options:{ responsive:true, maintainAspectRatio:false,
+        plugins:{ legend:{ position:'top', labels:{ font:{size:10}, boxWidth:12, padding:8 } } },
+        scales:{
+          x:{ stacked:true, grid:{display:false}, ticks:{ font:{size:9} } },
+          y:{ stacked:true, position:'left', grid:{ color:'#f1f5f9' }, ticks:{ font:{size:9}, callback:v=>v>=1000?(v/1000).toFixed(0)+'k':v }, title:{display:true,text:'impressions',font:{size:9}} },
+          y1:{ position:'right', grid:{ display:false }, ticks:{ font:{size:9} }, title:{display:true,text:'actions',font:{size:9}} },
+        } }
+    });
+  });
+}
+
 function render() {
   if (!L0) return;
   const wkI = viewMode==='monthly' ? activeWkIdxForMonth() : activeWkIdx;
@@ -2926,6 +3132,10 @@ function render() {
   buildB2DTrend();
   buildChartCTR();
   buildChartRevRoas();
+
+  // Live marketing-API sections (Google Ads Impression Share + GBP brand signal)
+  buildImpShareSection();
+  buildBrandSignalSection();
 
   document.getElementById('channelScorecards').innerHTML = buildChannelScorecards(wkI);
 
@@ -3057,6 +3267,12 @@ async function init() {
       const jsonRes = await fetch('data.json');
       if (jsonRes.ok) JDATA = await jsonRes.json();
     } catch (e) { /* ok — B2D% will show as — */ }
+
+    // Live marketing-platform data (Google Ads Impression Share + GBP brand signal)
+    try {
+      const mRes = await fetch('data_marketing.json');
+      if (mRes.ok) MDATA = await mRes.json();
+    } catch (e) { /* ok — sections show a 'not loaded' note */ }
 
     // L0 from cache or network (primary data source)
     const l0Text = await fetchL0Cached();
