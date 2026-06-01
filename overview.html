@@ -60,6 +60,39 @@ html,body{background:#f8fafc;color:var(--ink);font-family:ui-sans-serif,system-u
 .loading{text-align:center;padding:60px;color:var(--muted);}
 /* Category dot */
 .cat-dot{width:10px;height:10px;border-radius:2px;display:inline-block;flex-shrink:0;}
+/* ── Insight layer ── */
+.brief-card{border-radius:14px;padding:18px 22px;margin-bottom:20px;border:2px solid;}
+.brief-card.ok   {background:#ecfdf5;border-color:#10b981;}
+.brief-card.warn {background:#fffbeb;border-color:#f59e0b;}
+.brief-card.bad  {background:#fef2f2;border-color:#ef4444;}
+.brief-row{display:flex;align-items:flex-start;gap:10px;padding:7px 0;border-bottom:1px solid rgba(0,0,0,.05);}
+.brief-row:last-child{border-bottom:none;padding-bottom:0;}
+.brief-icon{font-size:16px;flex-shrink:0;margin-top:1px;}
+.brief-text{font-size:12px;line-height:1.5;flex:1;}
+.brief-text strong{color:#0f172a;}
+.insight-bar{border-radius:8px;padding:9px 14px;margin-bottom:14px;font-size:12px;line-height:1.6;display:flex;align-items:flex-start;gap:8px;}
+.insight-bar.ok   {background:#ecfdf5;color:#065f46;border-left:3px solid #10b981;}
+.insight-bar.warn {background:#fffbeb;color:#92400e;border-left:3px solid #f59e0b;}
+.insight-bar.bad  {background:#fef2f2;color:#991b1b;border-left:3px solid #ef4444;}
+.insight-bar.gray {background:#f8fafc;color:#475569;border-left:3px solid #e2e8f0;}
+.insight-icon{font-size:15px;flex-shrink:0;margin-top:1px;}
+/* ── 3-week chips & pulse card ──────────────────────── */
+.chip3{display:flex;gap:3px;flex-wrap:nowrap;}
+.chip3-item{border-radius:6px;padding:3px 7px;text-align:center;min-width:48px;flex-shrink:0;}
+.chip3-item .c-lbl{font-size:8px;color:#94a3b8;white-space:nowrap;margin-bottom:1px;}
+.chip3-item .c-val{font-size:11px;font-weight:700;white-space:nowrap;}
+.pulse-card{border-radius:14px;padding:20px 24px;margin-bottom:20px;border:2px solid;}
+.pulse-card.ok  {background:linear-gradient(135deg,#ecfdf5,#f0fdf4);border-color:#10b981;}
+.pulse-card.warn{background:linear-gradient(135deg,#fffbeb,#fef9ec);border-color:#f59e0b;}
+.pulse-card.bad {background:linear-gradient(135deg,#fef2f2,#fef1f1);border-color:#ef4444;}
+.pulse-card.gray{background:#f8fafc;border-color:#e2e8f0;}
+.pulse-kpi{background:#fff;border-radius:12px;padding:14px 16px;box-shadow:0 1px 3px rgba(15,23,42,.06);}
+/* root-cause signal cards */
+.rc-card{border-radius:12px;padding:14px 16px;border:1px solid;}
+.rc-card.ok  {background:#f0fdf4;border-color:#bbf7d0;}
+.rc-card.warn{background:#fffbeb;border-color:#fde68a;}
+.rc-card.bad {background:#fef2f2;border-color:#fecaca;}
+.rc-card.gray{background:#f8fafc;border-color:#e2e8f0;}
 </style>
 </head>
 <body>
@@ -79,6 +112,7 @@ html,body{background:#f8fafc;color:var(--ink);font-family:ui-sans-serif,system-u
     <a href="channel.html"    class="nav-link">Channel</a>
     <a href="efficiency.html" class="nav-link">Efficiency</a>
     <a href="comparison.html" class="nav-link">Comparison →</a>
+  <a href="weekly-report.html" class="nav-link">Weekly Report</a>
 
     <!-- controls on the right -->
     <div style="margin-left:auto;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
@@ -94,9 +128,15 @@ html,body{background:#f8fafc;color:var(--ink);font-family:ui-sans-serif,system-u
         <button class="toggle-btn"        id="tT1"  onclick="setTier('T1')">T1</button>
         <button class="toggle-btn"        id="tT2"  onclick="setTier('T2')">T2</button>
       </div>
+      <!-- City filter -->
+      <select id="citySel" onchange="setCity(this.value)"
+        style="padding:5px 9px;border:1px solid var(--line);border-radius:7px;font-size:12px;background:#fff;cursor:pointer;max-width:140px;">
+        <option value="ALL">All Cities</option>
+      </select>
       <!-- Metric -->
       <div style="display:flex;gap:3px;">
-        <button class="toggle-btn active" id="mCalls"    onclick="setMet('calls_done')">Calls</button>
+        <button class="toggle-btn active" id="mAll"      onclick="setMet('all')">All</button>
+        <button class="toggle-btn"        id="mCalls"    onclick="setMet('calls_done')">Calls</button>
         <button class="toggle-btn"        id="mBookings" onclick="setMet('new_bookings')">Bookings</button>
         <button class="toggle-btn"        id="mLeads"    onclick="setMet('total_leads')">Leads</button>
       </div>
@@ -139,17 +179,17 @@ const CH_COLORS = {
 // Sheet for GMB Leads (same demand-tracker sheet as diagnostic tab)
 const OV_SHEET_ID   = '1bZWGVKu6b4EFPDt3aKHn21gYjdhN1aT1-LT60BFe8g0';
 const OV_SHEET_URL  = `https://docs.google.com/spreadsheets/d/${OV_SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Booking%20and%20Leads%20trend%20summary`;
-// Week keys matching data.json, newest-first (7 weeks covered by the sheet)
-const OV_SHEET_WEEKS = ['2026-05-18','2026-05-11','2026-05-04','2026-04-27','2026-04-20','2026-04-13','2026-04-06'];
+// Week keys matching data.json, newest-first (7 weeks covered by the GMB section cols 27-33)
+const OV_SHEET_WEEKS = ['2026-05-25','2026-05-18','2026-05-11','2026-05-04','2026-04-27','2026-04-20','2026-04-13'];
 const OV_GMB_C = 27; // 0-indexed column start for GMB leads (7 weeks newest→oldest)
 
 // L0 sheet — for total leads (shared cache with efficiency tab)
 const L0_ID        = '1jyyFYpd7gfYyAQ3U7E56c7OA3OuQQAVgJrAGyQr90XM';
 const L0_CSV_URL   = `https://docs.google.com/spreadsheets/d/${L0_ID}/gviz/tq?tqx=out:csv&sheet=L0`;
-const L0_CACHE_KEY = 'allo_eff_l0_v2';
+const L0_CACHE_KEY = 'allo_eff_l0_v3'; // bumped 2026-06-01: col 2 = W-1 (May 25-31)
 const L0_CACHE_TTL = 45 * 60 * 1000;
-const L0_WK_KEYS   = ['2026-05-18','2026-05-11','2026-05-04','2026-04-27','2026-04-20','2026-04-13','2026-04-06'];
-const L0_WK_COLS   = [3,4,5,6,7,8,9]; // 0-indexed columns in L0 CSV
+const L0_WK_KEYS   = ['2026-05-25','2026-05-18','2026-05-11','2026-05-04','2026-04-27','2026-04-20','2026-04-13'];
+const L0_WK_COLS   = [2,3,4,5,6,7,8]; // col 2 = W-1 (25–31 May); shift +1 each new week
 
 // ── STATE ─────────────────────────────────────────────────────────────────
 let JDATA      = null;
@@ -157,12 +197,26 @@ let ALL_WEEKS  = []; // newest-first week keys
 let WK_LABELS  = {}; // wkKey → label string
 let dataScope  = 'all';
 let activeTier = 'ALL';
+let activeCity = 'ALL'; // specific city filter — 'ALL' = no city filter
 let activeWkIdx = 0;  // index into ALL_WEEKS (0 = newest)
-let activeMet  = 'calls_done'; // 'calls_done' | 'new_bookings' | 'total_leads'
+let activeMet  = 'all'; // 'all' | 'calls_done' | 'new_bookings' | 'total_leads'
 let GMB_LEADS_BY_CITY = {};    // weekKey → city → GMB leads (loaded from OV sheet)
 let TOTAL_LEADS_WK    = {};    // weekKey → total leads (loaded from L0 sheet)
+let OV_SDATA         = {};     // city → { avail:[7], allBk:[7] }  (newest-first, from same sheet)
+let OV_SDATA_CLINICS = {};     // city → { clinic → { avail:[7], allBk:[7] } }
 let charts     = {};
 let GMB_INSIGHTS = null;  // loaded from data_gmb.json (null if not yet generated)
+
+// ── COMPARISON PANEL STATE ─────────────────────────────────────────────────
+const CMP_OV_METRICS = [
+  { key:'new_bookings', lbl:'New Bookings', type:'count' },
+  { key:'calls_done',   lbl:'Calls Done',   type:'count' },
+  { key:'slot_booked',  lbl:'Leads (Slots)',type:'count' },
+  { key:'b2d_pct',      lbl:'B2D %',        type:'pct'   },
+  { key:'ns_pct',       lbl:'No-Show %',    type:'pct'   },
+  { key:'gross',        lbl:'Gross Bookings',type:'count' },
+];
+let cmpA_ov = 'calls_done', cmpB_ov = 'b2d_pct', cmpSeg_ov = 'all';
 
 // ── HELPERS ───────────────────────────────────────────────────────────────
 function fmtN(v) {
@@ -260,6 +314,19 @@ function spark(vals, color='#6366f1', w=80, h=22, _fill, opts={}) {
 
 // ── DATA ACCESSORS ────────────────────────────────────────────────────────
 function funnel(wkKey) {
+  // City filter takes precedence — pull single city from weekly_city
+  if (activeCity !== 'ALL' && dataScope !== 'online') {
+    const d = JDATA?.[dataScope]?.weekly_city?.[wkKey]?.[activeCity] || {};
+    return {
+      calls_done:   d.calls_done || 0,
+      gross:        d.gross      || 0,
+      no_show:      d.no_show    || 0,
+      new_bookings: d.gross      || 0,
+      b2d_pct:      (d.gross > 0) ? (d.calls_done || 0) / d.gross * 100 : null,
+      ns_pct:       (d.gross > 0) ? (d.no_show    || 0) / d.gross * 100 : null,
+      label: JDATA?.[dataScope]?.weekly_funnel?.[wkKey]?.label,
+    };
+  }
   // When a tier is selected (and not online scope), aggregate from per-city data
   // so KPI cards, beat/miss, and trend chart all reflect the selected tier.
   if (activeTier !== 'ALL' && dataScope !== 'online') {
@@ -318,7 +385,7 @@ async function loadTotalLeads() {
       if (Date.now() - ts < L0_CACHE_TTL) text = t;
     }
     if (!text) {
-      const res = await fetch(L0_CSV_URL);
+      const res = await fetch(L0_CSV_URL).catch(() => ({ ok: false }));
       if (!res.ok) return;
       text = await res.text();
       try { localStorage.setItem(L0_CACHE_KEY, JSON.stringify({ ts: Date.now(), text })); } catch(e) {}
@@ -399,12 +466,416 @@ function leadsVal(wkKey) {
 }
 function leadsArr() { return ALL_WEEKS.map(wk => leadsVal(wk)); }
 function metLabel(met) {
-  return { calls_done:'Calls Done', new_bookings:'New Bookings', total_leads:'Total Leads', gmb_leads:'GMB Leads' }[met] || met;
+  return { all:'All Metrics', calls_done:'Calls Done', new_bookings:'New Bookings', total_leads:'Total Leads', gmb_leads:'GMB Leads' }[met] || met;
 }
 function metArr(met) {
+  if (met === 'all')         return funnelArr('calls_done'); // 'all' view uses calls_done as primary
   if (met === 'total_leads') return ALL_WEEKS.map(wk => TOTAL_LEADS_WK[wk] ?? null);
   if (met === 'gmb_leads')   return leadsArr();
   return funnelArr(met);
+}
+
+// ── AVAILABILITY DATA PARSER ──────────────────────────────────────────────
+// Reads from same sheet as GMB leads (cols 4-10 = avail "wd|we", cols 20-26 = allBk)
+// Returns: city → { avail:[7], allBk:[7] }  (index 0 = newest week)
+const OV_AVAIL_C = 4, OV_ALLBK_C = 20;
+function pnOv(s) {
+  const n = parseInt((s||'').replace(/[^\d.-]/g,''), 10);
+  return isNaN(n) ? 0 : n;
+}
+function pAvailOv(s) {
+  // format is "wd|we" (e.g. "5|2") — sum weekday + weekend days
+  if (!s || s.trim() === '' || s === '-') return 0;
+  return s.trim().split('|').reduce((acc, p) => acc + (parseInt(p.trim()) || 0), 0);
+}
+function parseAvailData(text) {
+  const rows     = parseCSVSimple(text);
+  const byCity   = {};  // city → { avail:[7], allBk:[7] }
+  const byClinic = {};  // city → { clinicName → { avail:[7], allBk:[7] } }
+  let curCity = '';
+  for (let ri = 3; ri < rows.length; ri++) {
+    const r  = rows[ri];
+    if (!r || r.length < OV_ALLBK_C + 7) continue;
+    const c0=r[0]||'', c1=r[1]||'', c2=r[2]||'';
+    if (c1 && !c1.startsWith('<>')) curCity = c1;
+    if (c0 && !c0.startsWith('<>')) curCity = c0;
+    if (!curCity || c2 === '<>All' || c2 === '<>ALL') continue;
+    if (!c2) continue;
+    // City-level accumulation
+    if (!byCity[curCity]) byCity[curCity] = { avail: Array(7).fill(0), allBk: Array(7).fill(0) };
+    // Clinic-level capture
+    if (!byClinic[curCity]) byClinic[curCity] = {};
+    const clinicKey = c2.trim();
+    if (!byClinic[curCity][clinicKey]) byClinic[curCity][clinicKey] = { avail: Array(7).fill(0), allBk: Array(7).fill(0) };
+    for (let i = 0; i < 7; i++) {
+      const av = pAvailOv(r[OV_AVAIL_C + i]);
+      const bk = pnOv(r[OV_ALLBK_C + i]);
+      byCity[curCity].avail[i]                     += av;
+      byCity[curCity].allBk[i]                     += bk;
+      byClinic[curCity][clinicKey].avail[i]         += av;
+      byClinic[curCity][clinicKey].allBk[i]         += bk;
+    }
+  }
+  return { byCity, byClinic };
+}
+
+// ── 3-WEEK CHIP HELPER ────────────────────────────────────────────────────
+// arr = newest-first array aligned with ALL_WEEKS.
+// fromIdx = current selected week index. Renders 3 chips: W, W-1, W-2.
+// Shows the 3 weeks PRIOR to fromIdx (W-1, W-2, W-3).
+// Each chip is colored based on how that week compared to the week before it (its own WoW).
+function wkChips(arr, fromIdx, fmtFn, isRate=false) {
+  const chips = [];
+  for (let i = fromIdx + 1; i < Math.min(fromIdx + 4, arr.length); i++) {
+    const val  = arr[i];
+    const prev = arr[i + 1];
+    const w    = isRate ? wowPp(val, prev) : wowPct(val, prev);
+    const rawLbl = (JDATA?.[dataScope]?.weekly_funnel?.[ALL_WEEKS[i]]?.label || ALL_WEEKS[i] || '');
+    const match  = rawLbl.match(/([A-Z][a-z]+ \d+)/);
+    const shortLbl = match ? match[1] : (ALL_WEEKS[i]||'').slice(5);
+    const valStr = val != null ? fmtFn(val) : '—';
+    let bg, col;
+    if (w == null)                    { bg='#f8fafc'; col='#94a3b8'; }
+    else if (w >= (isRate ? 1 : 3))   { bg='#f0fdf4'; col='#16a34a'; }
+    else if (w >= (isRate ? -1 : -5)) { bg='#fefce8'; col='#ca8a04'; }
+    else                              { bg='#fef2f2'; col='#dc2626'; }
+    chips.push(`<div class="chip3-item" style="background:${bg};">
+      <div class="c-lbl">${shortLbl}</div>
+      <div class="c-val" style="color:${col};">${valStr}</div>
+    </div>`);
+  }
+  return `<div class="chip3">${chips.join('')}</div>`;
+}
+
+// ── DEMAND HEALTH PULSE ───────────────────────────────────────────────────
+// Top-of-page card: 4 KPIs each with 3-week chips + overall RAG health signal
+function buildDemandHealthPulse() {
+  const wk  = ALL_WEEKS[activeWkIdx];
+  const wkP = ALL_WEEKS[activeWkIdx + 1];
+  if (!wk) return '';
+
+  const f  = funnel(wk);
+  const fP = wkP ? funnel(wkP) : {};
+  const lbl = f.label || wk;
+
+  const ldArr  = ALL_WEEKS.map(w => TOTAL_LEADS_WK[w] ?? slotBookedTotal(w));
+  const bkArr  = funnelArr('new_bookings');
+  const cdArr  = funnelArr('calls_done');
+  const b2dArr = funnelArr('b2d_pct');
+
+  const ldW  = wowPct(ldArr[activeWkIdx], ldArr[activeWkIdx+1]);
+  const bkW  = wowPct(bkArr[activeWkIdx], bkArr[activeWkIdx+1]);
+  const cdW  = wowPct(cdArr[activeWkIdx], cdArr[activeWkIdx+1]);
+  const b2dW = wowPp(b2dArr[activeWkIdx],  b2dArr[activeWkIdx+1]);
+
+  // Overall = worst signal
+  const sevOrder = ['bad','warn','ok','gray'];
+  const severities = [wowSev(ldW), wowSev(bkW), wowSev(cdW), ppSev(b2dW)];
+  const overallSev = severities.reduce((worst, s) =>
+    sevOrder.indexOf(s) < sevOrder.indexOf(worst) ? s : worst, 'gray');
+
+  const statusIcon = {ok:'🟢', warn:'🟡', bad:'🔴', gray:'⚪'}[overallSev];
+  const statusText = {
+    ok:   'Healthy demand signal',
+    warn: 'Watch — some metrics softening',
+    bad:  'Action needed — demand breaking',
+    gray: 'Tracking — no strong signal',
+  }[overallSev];
+
+  function kpiBox(label, arr, fmtFn, isRate=false, subLbl='') {
+    const cur  = arr[activeWkIdx];
+    const prev = arr[activeWkIdx+1];
+    const w    = isRate ? wowPp(cur, prev) : wowPct(cur, prev);
+    const wCol = w == null ? '#94a3b8'
+               : isRate  ? (w >  1.5 ? '#059669' : w < -1.5 ? '#dc2626' : '#d97706')
+                          : (w >  5   ? '#059669' : w < -5   ? '#dc2626' : '#d97706');
+    const wStr = w != null
+      ? `<span style="font-weight:700;color:${wCol};">${w>=0?'▲':'▼'}${Math.abs(w).toFixed(isRate?1:0)}${isRate?'pp':'%'} WoW</span>`
+      : `<span style="color:#94a3b8;">—</span>`;
+    return `<div class="pulse-kpi">
+      <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:#94a3b8;margin-bottom:6px;">${label}</div>
+      <div style="font-size:26px;font-weight:800;color:#0f172a;line-height:1;">${cur != null ? fmtFn(cur) : '—'}</div>
+      <div style="font-size:11px;margin-top:4px;">${wStr}</div>
+      <div style="margin-top:9px;">${wkChips(arr, activeWkIdx, fmtFn, isRate)}</div>
+      ${subLbl ? `<div style="font-size:9px;color:#94a3b8;margin-top:4px;">${subLbl}</div>` : ''}
+    </div>`;
+  }
+
+  const ldSub = ldArr[activeWkIdx] != null && TOTAL_LEADS_WK[wk] == null ? 'slot booked proxy' : '';
+  const summaryParts = [];
+  if (cdW != null)  summaryParts.push(`Calls ${cdW>=0?'▲':'▼'}${Math.abs(cdW).toFixed(0)}%`);
+  if (bkW != null)  summaryParts.push(`Bookings ${bkW>=0?'▲':'▼'}${Math.abs(bkW).toFixed(0)}%`);
+  if (ldW != null && ldArr[activeWkIdx] != null) summaryParts.push(`Leads ${ldW>=0?'▲':'▼'}${Math.abs(ldW).toFixed(0)}%`);
+  if (b2dW != null) summaryParts.push(`B2D ${b2dW>=0?'+':''}${b2dW.toFixed(1)}pp`);
+
+  return `<div class="pulse-card ${overallSev}">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:8px;">
+      <div>
+        <div style="font-size:16px;font-weight:800;color:#0f172a;">${statusIcon} Demand Health Pulse</div>
+        <div style="font-size:11px;color:#64748b;margin-top:2px;">${statusText} · ${lbl} · chips = W-1, W-2, W-3</div>
+      </div>
+      ${summaryParts.length ? `<div style="font-size:11px;color:#475569;background:rgba(255,255,255,.7);padding:5px 12px;border-radius:8px;font-weight:600;">${summaryParts.join(' · ')}</div>` : ''}
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;">
+      ${kpiBox('Total Leads',  ldArr,  fmtN, false, ldSub)}
+      ${kpiBox('New Bookings', bkArr,  fmtN)}
+      ${kpiBox('Calls Done',   cdArr,  fmtN)}
+      ${kpiBox('B2D %', b2dArr, v => v != null ? v.toFixed(1)+'%' : '—', true)}
+    </div>
+  </div>`;
+}
+
+// ── DEMAND STORY (merged pulse + funnel + diagnosis) ─────────────────────
+// Replaces buildDemandHealthPulse + buildFunnelAnalysis + buildSituationBriefing + buildRootCauseBoard
+// One card: header status → signal badges → KPI boxes → funnel with sparklines → auto-diagnosis
+function buildDemandStory() {
+  const wk  = ALL_WEEKS[activeWkIdx];
+  const wkP = ALL_WEEKS[activeWkIdx + 1];
+  if (!wk) return '';
+
+  const f  = funnel(wk);
+  const fP = wkP ? funnel(wkP) : {};
+  const lbl = f.label || wk;
+
+  // ── Arrays ──────────────────────────────────────────────────────────────
+  const ldArr  = ALL_WEEKS.map(w => TOTAL_LEADS_WK[w] ?? slotBookedTotal(w));
+  const bkArr  = funnelArr('new_bookings');
+  const cdArr  = funnelArr('calls_done');
+  const b2dArr = funnelArr('b2d_pct');
+
+  const ldCur  = ldArr[activeWkIdx];  const ldPrev = ldArr[activeWkIdx+1];
+  const bkCur  = bkArr[activeWkIdx];  const bkPrev = bkArr[activeWkIdx+1];
+  const cdCur  = cdArr[activeWkIdx];  const cdPrev = cdArr[activeWkIdx+1];
+  const b2dCur = b2dArr[activeWkIdx]; const b2dPrev = b2dArr[activeWkIdx+1];
+
+  const ldW  = wowPct(ldCur,  ldPrev);
+  const bkW  = wowPct(bkCur,  bkPrev);
+  const cdW  = wowPct(cdCur,  cdPrev);
+  const b2dW = wowPp(b2dCur, b2dPrev);
+
+  // ── Overall severity (worst of 4 signals) ──────────────────────────────
+  const sevOrder = ['bad','warn','ok','gray'];
+  const severities = [wowSev(ldW), wowSev(bkW), wowSev(cdW), ppSev(b2dW)];
+  const overallSev = severities.reduce((worst, s) =>
+    sevOrder.indexOf(s) < sevOrder.indexOf(worst) ? s : worst, 'gray');
+
+  const statusIcon = {ok:'🟢', warn:'🟡', bad:'🔴', gray:'⚪'}[overallSev];
+  const statusText = {
+    ok:   'Demand healthy — all stages on track',
+    warn: 'Watch — some stages softening',
+    bad:  'Action needed — funnel breaking',
+    gray: 'Tracking — no strong signal',
+  }[overallSev];
+
+  // ── Compact signal badges (5 quick checks replacing root cause) ─────────
+  function signalBadge(icon, label, sev) {
+    const s = {
+      ok:   { bg:'#ecfdf5', col:'#059669', border:'#bbf7d0' },
+      warn: { bg:'#fffbeb', col:'#d97706', border:'#fde68a' },
+      bad:  { bg:'#fef2f2', col:'#dc2626', border:'#fecaca' },
+      gray: { bg:'#f8fafc', col:'#64748b', border:'#e2e8f0' },
+    }[sev] || { bg:'#f8fafc', col:'#64748b', border:'#e2e8f0' };
+    return `<span style="font-size:10px;padding:3px 9px;border-radius:999px;font-weight:600;
+        background:${s.bg};color:${s.col};border:1px solid ${s.border};
+        white-space:nowrap;display:inline-flex;align-items:center;gap:3px;">${icon} ${label}</span>`;
+  }
+
+  const l2bCur  = ldCur  && bkCur  ? bkCur  / ldCur  * 100 : null;
+  const l2bPrev = ldPrev && bkPrev ? bkPrev / ldPrev * 100 : null;
+  const l2bW    = wowPp(l2bCur, l2bPrev);
+
+  const ldBadge  = ldCur != null
+    ? signalBadge('🎯', ldW != null ? `Leads ${ldW>=0?'▲':'▼'}${Math.abs(ldW).toFixed(0)}%` : `Leads ${fmtN(ldCur)}`, wowSev(ldW))
+    : signalBadge('🎯', 'Leads: no data', 'gray');
+  const l2bBadge = l2bCur != null
+    ? signalBadge('📅', `L→B ${l2bCur.toFixed(0)}%`, l2bCur >= 25 ? 'ok' : l2bCur >= 15 ? 'warn' : 'bad')
+    : signalBadge('📅', 'L→B: —', 'gray');
+  const b2dBadge = signalBadge('📞',
+    `B2D ${b2dCur != null ? b2dCur.toFixed(0)+'%' : '—'}`,
+    b2dCur == null ? 'gray' : b2dCur >= 70 ? 'ok' : b2dCur >= 60 ? 'warn' : 'bad');
+
+  // Worst city WoW
+  let worstCity = null, worstCityWow = null;
+  if (dataScope !== 'online') {
+    const cityObj  = JDATA?.[dataScope]?.weekly_city?.[wk]  || {};
+    const cityObjP = JDATA?.[dataScope]?.weekly_city?.[wkP] || {};
+    for (const [city, d] of Object.entries(cityObj)) {
+      if (!city || city === 'Online') continue;
+      const w = wowPct(d.calls_done, cityObjP[city]?.calls_done);
+      if (w != null && (worstCityWow == null || w < worstCityWow)) { worstCityWow = w; worstCity = city; }
+    }
+  }
+  const cityBadge = worstCity
+    ? signalBadge('🏙️', `${worstCity} ${worstCityWow!=null?(worstCityWow>=0?'▲':'▼')+Math.abs(worstCityWow).toFixed(0)+'%':''}`,
+        worstCityWow != null ? (worstCityWow < -15 ? 'bad' : worstCityWow < -5 ? 'warn' : 'ok') : 'gray')
+    : signalBadge('🏙️', 'Cities OK', 'gray');
+
+  // Worst channel WoW
+  let topDropCh = null, topDropW = Infinity;
+  const chNow = JDATA?.[dataScope]?.weekly_channel?.[wk];
+  if (chNow && wkP) {
+    const chPrev = JDATA?.[dataScope]?.weekly_channel?.[wkP] || {};
+    for (const [ch, d] of Object.entries(chNow)) {
+      const w = wowPct(d.calls_done, chPrev[ch]?.calls_done);
+      if (w != null && w < topDropW) { topDropW = w; topDropCh = ch; }
+    }
+  }
+  const chBadge = topDropCh
+    ? signalBadge('📡', `${topDropCh} ${topDropW>=0?'▲':'▼'}${Math.abs(topDropW).toFixed(0)}%`,
+        topDropW < -15 ? 'bad' : topDropW < -5 ? 'warn' : 'ok')
+    : signalBadge('📡', 'Channels OK', 'gray');
+
+  // ── KPI boxes ────────────────────────────────────────────────────────────
+  function kpiBox(label, arr, fmtFn, isRate=false, subLbl='') {
+    const cur  = arr[activeWkIdx];
+    const prev = arr[activeWkIdx+1];
+    const w    = isRate ? wowPp(cur, prev) : wowPct(cur, prev);
+    const wCol = w == null ? '#94a3b8'
+               : isRate  ? (w >  1.5 ? '#059669' : w < -1.5 ? '#dc2626' : '#d97706')
+                          : (w >  5   ? '#059669' : w < -5   ? '#dc2626' : '#d97706');
+    const wStr = w != null
+      ? `<span style="font-weight:700;color:${wCol};">${w>=0?'▲':'▼'}${Math.abs(w).toFixed(isRate?1:0)}${isRate?'pp':'%'} WoW</span>`
+      : `<span style="color:#94a3b8;">—</span>`;
+    return `<div class="pulse-kpi">
+      <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:#94a3b8;margin-bottom:6px;">${label}</div>
+      <div style="font-size:24px;font-weight:800;color:#0f172a;line-height:1;">${cur != null ? fmtFn(cur) : '—'}</div>
+      <div style="font-size:11px;margin-top:4px;">${wStr}</div>
+      <div style="margin-top:8px;">${wkChips(arr, activeWkIdx, fmtFn, isRate)}</div>
+      ${subLbl ? `<div style="font-size:9px;color:#94a3b8;margin-top:3px;">${subLbl}</div>` : ''}
+    </div>`;
+  }
+
+  const ldSub = ldArr[activeWkIdx] != null && TOTAL_LEADS_WK[wk] == null ? 'slot booked proxy' : '';
+  const ldIsProxy = TOTAL_LEADS_WK[wk] == null && ldCur != null;
+  const hasLeads = ldCur != null;
+
+  // ── Funnel stages with inline sparklines ────────────────────────────────
+  const avg8ld = avg8(ALL_WEEKS.map(w => TOTAL_LEADS_WK[w] ?? slotBookedTotal(w)), activeWkIdx);
+  const avg8bk = avg8(bkArr, activeWkIdx);
+  const avg8cd = avg8(cdArr, activeWkIdx);
+
+  function funnelStage(label, val, wow, sparkArr, icon, avgVal) {
+    const col      = wow == null ? '#6366f1' : wow >= 5 ? '#10b981' : wow >= -5 ? '#f59e0b' : '#ef4444';
+    const wowColor = wow == null ? '#94a3b8' : wow >= 5 ? '#059669' : wow >= -5 ? '#d97706' : '#dc2626';
+    const wowTxt   = wow != null
+      ? `<span style="font-weight:700;color:${wowColor};">${wow>=0?'▲':'▼'}${Math.abs(wow).toFixed(1)}% WoW</span>`
+      : `<span style="color:#94a3b8;font-size:10px;">—</span>`;
+    let vsAvg = '';
+    if (val != null && avgVal != null && avgVal > 0) {
+      const diff = (val - avgVal) / avgVal * 100;
+      const aC = diff > 3 ? '#059669' : diff < -3 ? '#dc2626' : '#94a3b8';
+      const aBg = diff > 3 ? '#ecfdf5' : diff < -3 ? '#fef2f2' : '#f1f5f9';
+      vsAvg = `<span style="font-size:9px;font-weight:600;color:${aC};background:${aBg};padding:1px 6px;border-radius:999px;">${diff>=0?'+':''}${diff.toFixed(0)}% vs avg</span>`;
+    }
+    const spk = sparkArr ? spark(sparkArr.slice(0,9).reverse(), col, 88, 20) : '';
+    return `<div style="border:2px solid ${col}40;background:${col}06;border-radius:12px;padding:14px 10px;text-align:center;">
+      <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#64748b;margin-bottom:6px;">${icon}&nbsp;${label}</div>
+      <div style="font-size:22px;font-weight:800;color:#0f172a;line-height:1;margin-bottom:4px;">${val!=null?fmtN(val):'—'}</div>
+      <div style="font-size:11px;">${wowTxt}</div>
+      <div style="margin-top:4px;">${vsAvg}</div>
+      <div style="margin-top:8px;display:flex;justify-content:center;">${spk}</div>
+    </div>`;
+  }
+
+  function convArrow(rateLabel, rate, rateWow) {
+    if (rate == null) return `<div style="display:flex;align-items:center;justify-content:center;font-size:22px;color:#e2e8f0;padding:0 2px;">→</div>`;
+    const rc = rate >= 60 ? '#059669' : rate >= 35 ? '#d97706' : '#dc2626';
+    const pc = rateWow == null ? '#94a3b8' : rateWow >= 0 ? '#059669' : '#dc2626';
+    const ppStr = rateWow != null ? `<div style="font-size:10px;font-weight:600;color:${pc};">${rateWow>=0?'+':''}${rateWow.toFixed(1)}pp</div>` : '';
+    return `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;padding:0 4px;min-width:54px;">
+      <div style="font-size:14px;font-weight:800;color:${rc};">${rate.toFixed(0)}%</div>
+      <div style="font-size:20px;color:#cbd5e1;line-height:1;">→</div>
+      ${ppStr}
+      <div style="font-size:8px;color:#94a3b8;text-align:center;line-height:1.4;max-width:52px;">${rateLabel}</div>
+    </div>`;
+  }
+
+  // ── Auto-diagnosis ────────────────────────────────────────────────────────
+  const T = -5;
+  const ldSig = ldW != null && ldW < T;
+  const bkSig = bkW != null && bkW < T;
+  const cdSig = cdW != null && cdW < T;
+  let diag;
+  if (!hasLeads) {
+    if      (cdSig && !bkSig)             diag = {sev:'warn', icon:'📞', title:'Execution gap',
+      text:`Bookings stable (${bkW!=null?(bkW>=0?'▲':'▼')+Math.abs(bkW).toFixed(0)+'%':'—'} WoW) but calls dropped <strong>${Math.abs(cdW).toFixed(1)}%</strong>. Ops-side issue — no-shows or cancellations, not a demand problem.`};
+    else if (bkSig && cdSig)              diag = {sev:'bad',  icon:'📉', title:'Bookings & calls both falling',
+      text:`Bookings <strong>▼${Math.abs(bkW).toFixed(0)}%</strong> · Calls <strong>▼${Math.abs(cdW).toFixed(0)}%</strong> WoW. Top-funnel likely affected — open Efficiency tab to load L0 lead data.`};
+    else if ((bkW??0)>=3 && (cdW??0)>=3) diag = {sev:'ok',   icon:'📈', title:'Both stages growing — healthy momentum',
+      text:`Bookings ▲${(bkW??0).toFixed(0)}% · Calls ▲${(cdW??0).toFixed(0)}% WoW. Funnel executing well.`};
+    else                                  diag = {sev:'gray', icon:'📊', title:'Within normal variance',
+      text:`Bookings ${bkW!=null?(bkW>=0?'▲':'▼')+Math.abs(bkW).toFixed(0)+'%':'—'} · Calls ${cdW!=null?(cdW>=0?'▲':'▼')+Math.abs(cdW).toFixed(0)+'%':'—'} WoW. No significant break detected.`};
+  } else {
+    if      (ldSig && bkSig && cdSig)    diag = {sev:'bad',  icon:'🔴', title:'Full-funnel collapse',
+      text:`All 3 stages falling — Leads <strong>▼${Math.abs(ldW).toFixed(0)}%</strong> · Bookings <strong>▼${Math.abs(bkW).toFixed(0)}%</strong> · Calls <strong>▼${Math.abs(cdW).toFixed(0)}%</strong>. Top-of-funnel demand problem. Check ad spend, GMB impressions and organic.`};
+    else if (ldSig && bkSig && !cdSig)   diag = {sev:'bad',  icon:'📉', title:'Demand thinning — calls at risk',
+      text:`Leads ▼${Math.abs(ldW).toFixed(0)}% and bookings ▼${Math.abs(bkW).toFixed(0)}% — pipeline depleting. <strong>Expect calls to drop next week</strong> if leads don't recover.`};
+    else if (ldSig && !bkSig)            diag = {sev:'warn', icon:'⚡', title:'Leads fell but bookings held',
+      text:`Leads ▼${Math.abs(ldW).toFixed(1)}% but bookings held (${bkW!=null?(bkW>=0?'▲':'▼')+Math.abs(bkW).toFixed(0)+'%':'stable'}). Watch the L→B rate — if leads stay suppressed, bookings will follow.`};
+    else if (!ldSig && bkSig && !cdSig)  diag = {sev:'warn', icon:'📅', title:'Lead→Booking conversion broke',
+      text:`Leads ${ldW!=null&&ldW>0?'grew':'held'} but bookings dropped <strong>▼${Math.abs(bkW).toFixed(0)}%</strong>. Break at <strong>scheduling stage</strong> — check slot availability and response time.`};
+    else if (!ldSig && !bkSig && cdSig)  diag = {sev:'warn', icon:'📞', title:'Execution gap — ops issue',
+      text:`Leads & bookings healthy, but calls dropped <strong>▼${Math.abs(cdW).toFixed(0)}%</strong>. Problem is ops — high no-shows or cancellations. B2D: ${b2dCur!=null?b2dCur.toFixed(1)+'%':'—'}.`};
+    else if ((ldW??0)>=3 && (bkW??0)>=3 && (cdW??0)>=3) diag = {sev:'ok', icon:'🚀', title:'Full-funnel growth — all stages up',
+      text:`Leads ▲${(ldW??0).toFixed(0)}% → Bookings ▲${(bkW??0).toFixed(0)}% → Calls ▲${(cdW??0).toFixed(0)}%. Strong demand momentum across the board.`};
+    else                                  diag = {sev:'gray', icon:'✅', title:'All stages within normal variance',
+      text:`Leads ${ldW!=null?(ldW>=0?'▲':'▼')+Math.abs(ldW).toFixed(0)+'%':'—'} · Bookings ${bkW!=null?(bkW>=0?'▲':'▼')+Math.abs(bkW).toFixed(0)+'%':'—'} · Calls ${cdW!=null?(cdW>=0?'▲':'▼')+Math.abs(cdW).toFixed(0)+'%':'—'} WoW. B2D: ${b2dCur!=null?b2dCur.toFixed(1)+'%':'—'} (target 70%).`};
+  }
+
+  const gcols  = hasLeads ? '1fr auto 1fr auto 1fr' : '1fr auto 1fr';
+  const stages = hasLeads ? `
+    ${funnelStage('Total Leads',  ldCur, ldW,  ALL_WEEKS.map(w=>TOTAL_LEADS_WK[w]??slotBookedTotal(w)), '🎯', avg8ld)}
+    ${convArrow('L→B rate', l2bCur, l2bW)}
+    ${funnelStage('New Bookings', bkCur, bkW,  bkArr, '📅', avg8bk)}
+    ${convArrow('B→D (B2D)', b2dCur, b2dW)}
+    ${funnelStage('Calls Done',   cdCur, cdW,  cdArr, '📞', avg8cd)}
+  ` : `
+    ${funnelStage('New Bookings', bkCur, bkW, bkArr, '📅', avg8bk)}
+    ${convArrow('B→D (B2D)', b2dCur, b2dW)}
+    ${funnelStage('Calls Done',   cdCur, cdW, cdArr, '📞', avg8cd)}
+    <div style="grid-column:1/-1;font-size:10px;color:#94a3b8;text-align:center;padding-top:4px;">
+      ℹ️ Open <a href="efficiency.html" style="color:#6366f1;">Efficiency tab</a> once to load L0 lead counts
+    </div>
+  `;
+
+  return `<div class="pulse-card ${overallSev}" style="margin-bottom:20px;">
+    <!-- Header row -->
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:10px;">
+      <div>
+        <div style="font-size:17px;font-weight:800;color:#0f172a;line-height:1.25;">${statusIcon} ${statusText}</div>
+        <div style="font-size:11px;color:#64748b;margin-top:3px;">${lbl} · ${dataScope} · chips = W-1, W-2, W-3</div>
+      </div>
+      <!-- Compact signal badges (replacing root cause / situation briefing) -->
+      <div style="display:flex;flex-wrap:wrap;gap:5px;align-items:center;">
+        ${ldBadge}${l2bBadge}${b2dBadge}${cityBadge}${chBadge}
+      </div>
+    </div>
+
+    <!-- KPI boxes -->
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px;">
+      ${kpiBox('Total Leads',  ldArr,  fmtN, false, ldSub)}
+      ${kpiBox('New Bookings', bkArr,  fmtN)}
+      ${kpiBox('Calls Done',   cdArr,  fmtN)}
+      ${kpiBox('B2D %', b2dArr, v => v != null ? v.toFixed(1)+'%' : '—', true)}
+    </div>
+
+    <!-- Funnel stages with sparklines -->
+    <div style="background:rgba(255,255,255,.6);border-radius:12px;padding:16px;margin-bottom:12px;">
+      <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.09em;color:#64748b;margin-bottom:12px;">
+        WHERE IS THE BREAK? &mdash; trace leads → bookings → calls done
+      </div>
+      <div style="display:grid;grid-template-columns:${gcols};gap:8px;align-items:center;">
+        ${stages}
+      </div>
+      ${ldIsProxy ? `<div style="font-size:10px;color:#94a3b8;text-align:center;margin-top:6px;">🎯 Leads = Slot Booked proxy · open <a href="efficiency.html" style="color:#6366f1;">Efficiency tab</a> once to load exact L0 lead count</div>` : ''}
+    </div>
+
+    <!-- Auto-diagnosis -->
+    <div class="insight-bar ${diag.sev}" style="margin-bottom:0;">
+      <span class="insight-icon">${diag.icon}</span>
+      <span><strong>${diag.title}</strong> — ${diag.text}</span>
+    </div>
+  </div>`;
 }
 
 // ── GMB INSIGHTS LOADER ────────────────────────────────────────────────────
@@ -579,6 +1050,1219 @@ function buildSearchIntentCard() {
   </div>`;
 }
 
+// ══════════════════════════════════════════════════════════════
+// INSIGHT ENGINE — plain-English verdicts for every chart
+// ══════════════════════════════════════════════════════════════
+
+// Classify WoW % change → severity
+function wowSev(pct, inverted=false) {
+  if (pct == null) return 'gray';
+  const bad = inverted ? pct > 5 : pct < -10;
+  const warn = inverted ? pct > 2 : pct < -5;
+  const good = inverted ? pct < -2 : pct > 5;
+  return bad ? 'bad' : warn ? 'warn' : good ? 'ok' : 'gray';
+}
+function ppSev(pp, inverted=false) {
+  if (pp == null) return 'gray';
+  const bad = inverted ? pp > 5 : pp < -3;
+  const warn = inverted ? pp > 1.5 : pp < -1.5;
+  const good = inverted ? pp < -1.5 : pp > 1.5;
+  return bad ? 'bad' : warn ? 'warn' : good ? 'ok' : 'gray';
+}
+
+// Count consecutive beats/misses/above-avg/below-avg
+function streak(arr, fromIdx, compareFn) {
+  let count = 0;
+  for (let i = fromIdx; i < arr.length - 1; i++) {
+    if (compareFn(arr[i])) count++;
+    else break;
+  }
+  return count;
+}
+
+// Arrow + number string
+function arrow(val, unit='%', dec=1) {
+  if (val == null) return '—';
+  return (val >= 0 ? '▲' : '▼') + ' ' + Math.abs(val).toFixed(dec) + unit;
+}
+
+// One-liner insight bar
+function insightBar(icon, text, sev='gray') {
+  return `<div class="insight-bar ${sev}">
+    <span class="insight-icon">${icon}</span>
+    <span>${text}</span>
+  </div>`;
+}
+
+// ── SITUATION BRIEFING ────────────────────────────────────────
+// The "2-minute founder card" — generated entirely from data
+function buildSituationBriefing() {
+  const wk   = ALL_WEEKS[activeWkIdx];
+  const wkP  = ALL_WEEKS[activeWkIdx + 1];
+  if (!wk || !wkP) return '';
+
+  const f   = funnel(wk);
+  const fP  = funnel(wkP);
+  const lbl = f.label || wk;
+
+  const cdCur  = f.calls_done;    const cdPrev  = fP.calls_done;
+  const bkCur  = f.new_bookings;  const bkPrev  = fP.new_bookings;
+  const grCur  = f.gross;         const grPrev  = fP.gross;
+  const b2Cur  = f.b2d_pct;       const b2Prev  = fP.b2d_pct;
+  const nsCur  = f.ns_pct;        const nsPrev  = fP.ns_pct;
+
+  const cdW  = wowPct(cdCur,  cdPrev);
+  const bkW  = wowPct(bkCur,  bkPrev);
+  const grW  = wowPct(grCur,  grPrev);
+  const b2W  = wowPp(b2Cur,   b2Prev);
+  const nsW  = wowPp(nsCur,   nsPrev);
+
+  // 8wk averages
+  const cdArr = funnelArr('calls_done');
+  const b2Arr = funnelArr('b2d_pct');
+  const bkArr = funnelArr('new_bookings');
+  const avg8cd = avg8(cdArr, activeWkIdx);
+  const avg8b2 = avg8(b2Arr, activeWkIdx);
+  const avg8bk = avg8(bkArr, activeWkIdx);
+
+  // Streaks
+  const cdAboveAvg = streak(cdArr, activeWkIdx, (v) => avg8cd != null && v != null && v > avg8cd);
+  const cdBelowAvg = streak(cdArr, activeWkIdx, (v) => avg8cd != null && v != null && v < avg8cd);
+  const b2BelowTgt = streak(b2Arr, activeWkIdx, (v) => v != null && v < 70);
+
+  // Worst city for calls this week
+  let worstCity = null, worstCityWow = null;
+  if (dataScope !== 'online') {
+    const cityObj = JDATA?.[dataScope]?.weekly_city?.[wk] || {};
+    const cityPObj = JDATA?.[dataScope]?.weekly_city?.[wkP] || {};
+    for (const [city, d] of Object.entries(cityObj)) {
+      if (!city || city === 'Online') continue;
+      const w = wowPct(d.calls_done, cityPObj[city]?.calls_done);
+      if (w != null && (worstCityWow == null || w < worstCityWow)) {
+        worstCityWow = w; worstCity = city;
+      }
+    }
+  }
+
+  // Root-cause chain
+  let rootCause = null;
+  if (cdW != null && cdW < -5) {
+    if (bkW != null && bkW < -5) {
+      if (grW != null && grW < -5) {
+        rootCause = { label: 'Top-funnel demand drop', detail: 'Gross bookings and calls both declining — leads or conversion to booking is the source.', sev:'bad', icon:'📉' };
+      } else {
+        rootCause = { label: 'New bookings falling (Gross stable)', detail: 'Gross bookings held but new bookings dropped — possible slot/scheduling issue.', sev:'warn', icon:'📅' };
+      }
+    } else {
+      rootCause = { label: 'B2D execution gap', detail: 'Bookings were created but calls didn\'t complete — ops or no-show issue, not a demand problem.', sev:'warn', icon:'📞' };
+    }
+  }
+
+  // Overall health
+  const overallSev = cdW == null ? 'gray'
+    : cdW < -10 ? 'bad' : cdW < -3 ? 'warn' : cdW >= 5 ? 'ok' : 'gray';
+
+  // Build rows
+  const rows = [];
+
+  // Row 1: Calls Done headline
+  const cdStreakTxt = cdAboveAvg >= 3 ? ` · on a ${cdAboveAvg}-week beat streak 🔥`
+                    : cdBelowAvg >= 2 ? ` · below 8wk avg for ${cdBelowAvg} weeks`
+                    : avg8cd ? ` · 8wk avg: ${fmtN(avg8cd)}` : '';
+  const cdSev = wowSev(cdW);
+  const cdIcon = cdW == null ? '📊' : cdW >= 5 ? '📈' : cdW <= -10 ? '🔴' : cdW <= -3 ? '⚠️' : '✅';
+  rows.push({ icon: cdIcon, sev: cdSev,
+    text: `<strong>Calls Done: ${fmtN(cdCur)}</strong> &nbsp;${cdW!=null?`<strong>${arrow(cdW)} WoW</strong>`:''}${cdStreakTxt}` });
+
+  // Row 2: Bookings
+  const bkSev = wowSev(bkW);
+  const bkIcon = bkW == null ? '📅' : bkW >= 5 ? '📈' : bkW <= -5 ? '⬇️' : '📅';
+  const bkAvgTxt = avg8bk ? ` · 8wk avg ${fmtN(avg8bk)}` : '';
+  rows.push({ icon: bkIcon, sev: bkSev,
+    text: `<strong>New Bookings: ${fmtN(bkCur)}</strong> &nbsp;${bkW!=null?`<strong>${arrow(bkW)} WoW</strong>`:''}${bkAvgTxt}` });
+
+  // Row 3: B2D%
+  const b2Icon = b2Cur == null ? '🎯' : b2Cur >= 70 ? '✅' : b2Cur >= 60 ? '⚠️' : '🔴';
+  const b2SevCls = b2Cur == null ? 'gray' : b2Cur >= 70 ? 'ok' : b2Cur >= 60 ? 'warn' : 'bad';
+  const b2TgtGap = b2Cur != null ? ` · ${b2Cur >= 70 ? `${(b2Cur-70).toFixed(1)}pp above target` : `${(70-b2Cur).toFixed(1)}pp below 70% target`}` : '';
+  const b2StreakTxt = b2BelowTgt >= 3 ? ` · below target for ${b2BelowTgt} weeks in a row` : '';
+  const noShowTxt = nsCur != null ? ` · No-show: ${nsCur.toFixed(1)}%` : '';
+  rows.push({ icon: b2Icon, sev: b2SevCls,
+    text: `<strong>B2D%: ${b2Cur!=null?b2Cur.toFixed(1)+'%':'—'}</strong> &nbsp;${b2W!=null?`<strong>${arrow(b2W,'pp')} WoW</strong>`:''}${b2TgtGap}${b2StreakTxt}${noShowTxt}` });
+
+  // Row 4: Root cause or city signal
+  if (rootCause) {
+    rows.push({ icon: rootCause.icon, sev: rootCause.sev,
+      text: `<strong>Likely cause: ${rootCause.label}</strong> — ${rootCause.detail}` });
+  } else if (worstCity && worstCityWow != null && worstCityWow < -10) {
+    rows.push({ icon: '📍', sev: 'warn',
+      text: `<strong>Watch: ${worstCity}</strong> — calls down <strong>${Math.abs(worstCityWow).toFixed(1)}%</strong> WoW. Biggest single-city drag on network.` });
+  } else if (cdW != null && cdW >= 5) {
+    rows.push({ icon: '🎯', sev: 'ok',
+      text: `<strong>Healthy demand signal.</strong> No immediate action needed. Monitor B2D% (target: 70%).` });
+  }
+
+  const rowsHtml = rows.map(r => `
+    <div class="brief-row">
+      <span class="brief-icon">${r.icon}</span>
+      <span class="brief-text">${r.text}</span>
+      ${r.sev !== 'gray' ? `<span style="width:6px;height:6px;border-radius:50%;flex-shrink:0;margin-top:6px;background:${r.sev==='bad'?'#ef4444':r.sev==='warn'?'#f59e0b':'#10b981'};"></span>` : ''}
+    </div>`).join('');
+
+  return `<div class="brief-card ${overallSev}" style="margin-bottom:20px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px;">
+      <div>
+        <span style="font-size:15px;font-weight:800;color:#0f172a;">Situation Briefing</span>
+        <span style="font-size:11px;color:#94a3b8;margin-left:8px;">${lbl} · ${dataScope} · auto-generated from data</span>
+      </div>
+      <span style="font-size:10px;color:#94a3b8;font-style:italic;">2-min read</span>
+    </div>
+    ${rowsHtml}
+  </div>`;
+}
+
+// ── TREND CHART INSIGHT ───────────────────────────────────────
+function buildTrendInsight() {
+  const wk  = ALL_WEEKS[activeWkIdx];
+  const wkP = ALL_WEEKS[activeWkIdx + 1];
+  if (!wk || !wkP) return '';
+
+  const f  = funnel(wk);
+  const fP = funnel(wkP);
+  const cdCur = f.calls_done,  cdPrev = fP.calls_done;
+  const bkCur = f.new_bookings, bkPrev = fP.new_bookings;
+  const b2Cur = f.b2d_pct,     b2Prev = fP.b2d_pct;
+
+  const cdW = wowPct(cdCur, cdPrev);
+  const bkW = wowPct(bkCur, bkPrev);
+  const b2W = wowPp(b2Cur, b2Prev);
+
+  const cdArr = funnelArr('calls_done');
+  const avg8cd = avg8(cdArr, activeWkIdx);
+  const vsAvg = avg8cd && cdCur ? (cdCur - avg8cd)/avg8cd*100 : null;
+
+  const metCur  = metArr(activeMet)[activeWkIdx];
+  const metPrev = metArr(activeMet)[activeWkIdx + 1];
+  const metW    = wowPct(metCur, metPrev);
+  const sev     = wowSev(metW);
+
+  let text = '', icon = '📊';
+  if (activeMet === 'calls_done' || activeMet === 'all') {
+    if (cdW == null) { text = 'No prior week to compare.'; }
+    else if (cdW >= 10) { icon='📈'; text = `Calls Done up <strong>${cdW.toFixed(1)}%</strong> WoW (${fmtN(cdPrev)} → ${fmtN(cdCur)})${vsAvg!=null?' · '+Math.abs(vsAvg).toFixed(0)+'% '+(vsAvg>0?'above':'below')+' 8wk avg':''}.`; }
+    else if (cdW <= -10) { icon='🔴'; text = `Calls Done dropped <strong>${Math.abs(cdW).toFixed(1)}%</strong> WoW (${fmtN(cdPrev)} → ${fmtN(cdCur)}). ${bkW!=null&&bkW<-5?'Bookings also fell — top-funnel issue.':'Bookings held — B2D execution gap.'}`; }
+    else if (cdW <= -3)  { icon='⚠️'; text = `Calls Done softened <strong>${Math.abs(cdW).toFixed(1)}%</strong> WoW. New Bookings: ${bkW!=null?arrow(bkW):'—'}. B2D%: ${b2Cur!=null?b2Cur.toFixed(1)+'%':'—'} (${b2W!=null?(b2W>=0?'+':'')+b2W.toFixed(1)+'pp WoW':''}).`; }
+    else { icon='✅'; text = `Calls Done stable${cdW!=null?' ('+arrow(cdW)+' WoW)':''}. Bookings: ${bkW!=null?arrow(bkW):'—'} · B2D%: ${b2Cur!=null?b2Cur.toFixed(1)+'%':'—'}.`; }
+  } else if (activeMet === 'new_bookings') {
+    icon = metW == null ? '📅' : metW >= 5 ? '📈' : metW <= -5 ? '⬇️' : '📅';
+    text = metW != null
+      ? `New Bookings ${metW>=0?'up':'down'} <strong>${Math.abs(metW).toFixed(1)}%</strong> WoW (${fmtN(metPrev)} → ${fmtN(metCur)}).`
+      : `New Bookings: ${fmtN(metCur)} this week.`;
+  } else {
+    icon = '📊';
+    text = metW != null
+      ? `${metLabel(activeMet)} ${metW>=0?'up':'down'} <strong>${Math.abs(metW).toFixed(1)}%</strong> WoW.`
+      : `${metLabel(activeMet)}: ${fmtN(metCur)} this week.`;
+  }
+
+  // B2D insight for the lower chart
+  const b2Icon = b2Cur==null?'🎯':b2Cur>=70?'✅':b2Cur>=60?'⚠️':'🔴';
+  const b2Sev  = b2Cur==null?'gray':b2Cur>=70?'ok':b2Cur>=60?'warn':'bad';
+  const b2StreakArr = funnelArr('b2d_pct');
+  const b2Below = streak(b2StreakArr, activeWkIdx, v => v!=null && v<70);
+  const noShowCur = f.ns_pct;
+  const b2Extra = b2Below >= 2 ? ` · below 70% target for ${b2Below} weeks` : '';
+  const nsExtra = noShowCur != null ? ` · ${noShowCur.toFixed(1)}% no-show rate` : '';
+
+  return insightBar(icon, text, sev)
+       + insightBar(b2Icon, `B2D%: <strong>${b2Cur!=null?b2Cur.toFixed(1)+'%':'—'}</strong>${b2W!=null?' ('+arrow(b2W,'pp')+(b2W>=0?' WoW':' WoW')+')':`${b2Extra}${nsExtra}`}`, b2Sev);
+}
+
+// ── BEAT/MISS INSIGHT ─────────────────────────────────────────
+function buildBeatMissInsight() {
+  const arr  = metArr(activeMet);
+  const cur  = arr[activeWkIdx];
+  const avg8v = avg8(arr, activeWkIdx);
+  if (cur == null || avg8v == null) return '';
+
+  const beatCnt = streak(arr, activeWkIdx, v => v!=null && v > avg8v);
+  const missCnt = streak(arr, activeWkIdx, v => v!=null && v < avg8v);
+
+  let icon, sev, text;
+  if (beatCnt >= 4) {
+    icon='🔥'; sev='ok';
+    text = `On a <strong>${beatCnt}-week beat streak</strong> above 8wk avg — sustained demand growth.`;
+  } else if (beatCnt >= 2) {
+    icon='📈'; sev='ok';
+    text = `<strong>${beatCnt} consecutive weeks</strong> above 8wk avg (${fmtN(Math.round(avg8v))}).`;
+  } else if (missCnt >= 3) {
+    icon='⚠️'; sev='bad';
+    text = `<strong>${missCnt} consecutive weeks</strong> below 8wk avg — demand is in a sustained dip, not just noise.`;
+  } else if (missCnt >= 2) {
+    icon='⬇️'; sev='warn';
+    text = `<strong>${missCnt} weeks</strong> below 8wk avg in a row. If next week also misses, escalate.`;
+  } else {
+    const diff = (cur - avg8v) / avg8v * 100;
+    icon = diff > 0 ? '✅' : diff < -3 ? '⚠️' : '→';
+    sev  = diff > 3 ? 'ok' : diff < -3 ? 'warn' : 'gray';
+    text = diff > 2 ? `<strong>${diff.toFixed(1)}% above</strong> 8wk avg this week.`
+         : diff < -2 ? `<strong>${Math.abs(diff).toFixed(1)}% below</strong> 8wk avg this week.`
+         : `Tracking in line with 8wk average (${fmtN(Math.round(avg8v))}).`;
+  }
+  return insightBar(icon, text, sev);
+}
+
+// ── CATEGORY INSIGHT ─────────────────────────────────────────
+function buildCategoryInsight() {
+  const wk  = ALL_WEEKS[activeWkIdx];
+  const wkP = ALL_WEEKS[activeWkIdx + 1];
+  if (!wk || !wkP) return '';
+  const cats  = catData(wk);
+  const catsP = catData(wkP);
+  const total  = Object.values(cats).reduce((a,b)=>a+b,0);
+  const totalP = Object.values(catsP).reduce((a,b)=>a+b,0);
+
+  // Biggest mover WoW
+  let biggestMoverCat = null, biggestMoverW = 0;
+  for (const [cat, cnt] of Object.entries(cats)) {
+    const prev = catsP[cat] ?? 0;
+    if (!prev) continue;
+    const w = (cnt - prev) / prev * 100;
+    if (Math.abs(w) > Math.abs(biggestMoverW)) { biggestMoverW = w; biggestMoverCat = cat; }
+  }
+  // Top cat by volume
+  const topCat = Object.entries(cats).sort((a,b)=>b[1]-a[1])[0];
+  const topCatPct = topCat && total ? (topCat[1]/total*100) : 0;
+
+  const overallW = wowPct(total, totalP);
+  const sev = wowSev(overallW);
+
+  let text = '';
+  if (topCat) text += `<strong>${CAT_LABELS[topCat[0]]||topCat[0]}</strong> is the biggest category at ${topCatPct.toFixed(0)}% of volume.`;
+  if (biggestMoverCat) text += ` Biggest WoW mover: <strong>${CAT_LABELS[biggestMoverCat]||biggestMoverCat}</strong> ${arrow(biggestMoverW)}.`;
+  if (overallW != null) text += ` Total category volume ${overallW>=0?'up':'down'} <strong>${Math.abs(overallW).toFixed(1)}%</strong> WoW.`;
+
+  const icon = overallW==null?'📊':overallW>=5?'📈':overallW<=-5?'📉':'📊';
+  return insightBar(icon, text || 'Category data loaded.', sev);
+}
+
+// ── CHANNEL INSIGHT ───────────────────────────────────────────
+function buildChannelInsight() {
+  const wk  = ALL_WEEKS[activeWkIdx];
+  const wkP = ALL_WEEKS[activeWkIdx + 1];
+  if (!wk || !wkP) return '';
+  const chanMetricKey = activeMet === 'new_bookings' ? 'gross' : activeMet === 'total_leads' ? 'slot_booked' : 'calls_done';
+  const chs = Object.keys(JDATA?.[dataScope]?.weekly_channel?.[wk] || {});
+  if (!chs.length) return '';
+
+  let topGainerCh=null, topGainerW=-Infinity;
+  let topDropCh=null, topDropW=Infinity;
+
+  for (const ch of chs) {
+    const cur  = JDATA[dataScope].weekly_channel[wk]?.[ch]?.[chanMetricKey] ?? null;
+    const prev = JDATA[dataScope].weekly_channel[wkP]?.[ch]?.[chanMetricKey] ?? null;
+    const w = wowPct(cur, prev);
+    if (w == null) continue;
+    if (w > topGainerW) { topGainerW = w; topGainerCh = ch; }
+    if (w < topDropW)   { topDropW   = w; topDropCh   = ch; }
+  }
+
+  let text = '';
+  if (topGainerCh && topGainerW > 3) text += `<strong>${topGainerCh}</strong> leading: ${arrow(topGainerW)} WoW.`;
+  if (topDropCh && topDropW < -5) text += ` <strong>${topDropCh}</strong> weakest: ${arrow(topDropW)} WoW — investigate.`;
+  if (!text) text = 'All channels tracking within normal variance this week.';
+
+  const sev = topDropW < -10 ? 'bad' : topDropW < -5 ? 'warn' : 'ok';
+  const icon = topDropW < -10 ? '⚠️' : topGainerW > 10 ? '📈' : '📊';
+  return insightBar(icon, text, sev);
+}
+
+// ── CITY INSIGHT ─────────────────────────────────────────────
+function buildCityInsight() {
+  const wk  = ALL_WEEKS[activeWkIdx];
+  const wkP = ALL_WEEKS[activeWkIdx + 1];
+  if (!wk || !wkP || dataScope === 'online') return '';
+  const cityMetricKey = activeMet === 'new_bookings' ? 'gross' : activeMet === 'total_leads' ? 'slot_booked' : 'calls_done';
+
+  const cityNow  = JDATA?.[dataScope]?.weekly_city?.[wk]  || {};
+  const cityPrev = JDATA?.[dataScope]?.weekly_city?.[wkP] || {};
+
+  let topDropCity=null, topDropW=Infinity;
+  let topGainCity=null, topGainW=-Infinity;
+  let redCount = 0;
+
+  for (const [city, d] of Object.entries(cityNow)) {
+    if (!city || city==='Online') continue;
+    if (activeTier !== 'ALL' && cityTier(city) !== activeTier) continue;
+    const cur  = d[cityMetricKey] ?? null;
+    const prev = cityPrev[city]?.[cityMetricKey] ?? null;
+    const w = wowPct(cur, prev);
+    if (w == null) continue;
+    if (w < -10) redCount++;
+    if (w < topDropW)   { topDropW = w;   topDropCity = city; }
+    if (w > topGainW)   { topGainW = w;   topGainCity = city; }
+  }
+
+  let text = '';
+  if (redCount >= 3) { text += `<strong>${redCount} cities</strong> down >10% WoW — broad network decline, not city-specific.`; }
+  if (topDropCity && topDropW < -5) text += ` Biggest drag: <strong>${topDropCity}</strong> ${arrow(topDropW)} WoW.`;
+  if (topGainCity && topGainW > 5)  text += ` Best performer: <strong>${topGainCity}</strong> ${arrow(topGainW)} WoW.`;
+  if (!text) text = 'All cities tracking within normal variance.';
+
+  const sev = topDropW < -15 ? 'bad' : topDropW < -5 || redCount >= 3 ? 'warn' : 'ok';
+  const icon = redCount >= 3 ? '🔴' : topDropW < -15 ? '📍' : topGainW > 10 ? '🌟' : '📍';
+  return insightBar(icon, text, sev);
+}
+
+// ── AVAILABILITY-INDEXED BOOKINGS ────────────────────────────────────────
+// Formula:
+//   avg_booking_rate = Σ(allBk[past 6 wks]) / Σ(avail[past 6 wks])
+//   expected_bk      = avg_booking_rate × avail_this_week
+//   gap%             = (actual / expected − 1) × 100
+//
+// Answers: "Did bookings drop because fewer doctors were available, or
+//           because demand/conversion truly fell?"
+function buildAvailabilityIndex() {
+  const sdataIdx = activeWkIdx;
+  if (sdataIdx >= 7) return ''; // outside SDATA window
+  if (Object.keys(OV_SDATA).length === 0)
+    return `<div class="card" style="margin-bottom:20px;padding:14px 20px;display:flex;align-items:center;gap:10px;opacity:.65;border-left:3px solid #e2e8f0;">
+      <span style="font-size:18px;">📐</span>
+      <div><div style="font-weight:700;font-size:12px;">Availability-Indexed Bookings</div>
+      <div style="font-size:11px;color:#94a3b8;margin-top:2px;">Loading availability data from demand tracker sheet…</div></div>
+    </div>`;
+
+  // ── Network totals per SDATA week ──────────────────────────────────────
+  const totAvail = Array(7).fill(0);
+  const totBk    = Array(7).fill(0);
+  for (const d of Object.values(OV_SDATA)) {
+    for (let i = 0; i < 7; i++) {
+      totAvail[i] += d.avail[i] || 0;
+      totBk[i]    += d.allBk[i] || 0;
+    }
+  }
+
+  const availNow  = totAvail[sdataIdx];
+  const bkNow     = totBk[sdataIdx];
+  const availPrev = totAvail[sdataIdx + 1] || 0;
+
+  // Past weeks for rate (all weeks after sdataIdx, up to index 6)
+  let pastAvail = 0, pastBk = 0, wksUsed = 0;
+  for (let i = sdataIdx + 1; i < 7; i++) {
+    if (totAvail[i] > 10) { pastAvail += totAvail[i]; pastBk += totBk[i]; wksUsed++; }
+  }
+  if (wksUsed < 2 || availNow === 0 || pastAvail === 0) return '';
+
+  const avgRate    = pastBk / pastAvail;           // bookings per doctor-day (historic avg)
+  const expectedBk = Math.round(avgRate * availNow);
+  const gapPct     = (bkNow / expectedBk - 1) * 100;
+
+  // Availability WoW
+  const availWow  = availPrev > 0 ? (availNow - availPrev) / availPrev * 100 : null;
+
+  // ── Diagnosis ──────────────────────────────────────────────────────────
+  let sev, icon, dTitle, dText;
+  if (gapPct >= -5) {
+    sev='ok'; icon='✅'; dTitle='Availability explains the booking level';
+    dText=`Actual bookings (${fmtN(bkNow)}) are within 5% of the availability-adjusted expectation (${fmtN(expectedBk)}). The shortfall is an <strong>availability constraint</strong> — the network had fewer doctor-days this week, so proportionally fewer bookings. This is <em>not</em> a demand problem.`;
+  } else if (gapPct >= -20) {
+    sev='warn'; icon='⚠️'; dTitle='Partial availability effect — but a real demand gap remains';
+    dText=`Actual (${fmtN(bkNow)}) is <strong>${Math.abs(gapPct).toFixed(0)}% below</strong> the availability-adjusted expectation (${fmtN(expectedBk)}). Availability accounts for some of the booking shortfall, but there is also a genuine demand or lead→booking conversion gap to investigate.`;
+  } else {
+    sev='bad'; icon='🔴'; dTitle='Demand gap — availability doesn\'t explain the drop';
+    dText=`Actual (${fmtN(bkNow)}) is <strong>${Math.abs(gapPct).toFixed(0)}% below</strong> what availability alone would predict (${fmtN(expectedBk)}). Even if more slots were available, bookings would still underperform — the problem is in demand acquisition or lead→booking conversion, not capacity.`;
+  }
+
+  // ── Summary metrics row ───────────────────────────────────────────────
+  function metBox(label, val, sub, color='#0f172a') {
+    return `<div style="text-align:center;flex:1;min-width:90px;">
+      <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:#94a3b8;margin-bottom:4px;">${label}</div>
+      <div style="font-size:20px;font-weight:800;color:${color};line-height:1;">${val}</div>
+      <div style="font-size:10px;color:#64748b;margin-top:2px;">${sub}</div>
+    </div>`;
+  }
+  function divider() {
+    return `<div style="width:1px;background:#e2e8f0;margin:0 4px;flex-shrink:0;"></div>`;
+  }
+  const availWowStr = availWow!=null
+    ? `<span style="color:${availWow>=0?'#059669':'#dc2626'};font-weight:700;">${availWow>=0?'▲':'▼'}${Math.abs(availWow).toFixed(0)}%</span> WoW`
+    : '';
+  const gapColor = gapPct >= -5 ? '#059669' : gapPct >= -20 ? '#d97706' : '#dc2626';
+  const gapStr = (gapPct >= 0 ? '+' : '') + gapPct.toFixed(0) + '%';
+
+  const summaryHtml = `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:14px;padding:14px;background:#f8fafc;border-radius:10px;">
+    ${metBox('Avail this week', fmtN(availNow), `doctor-days &nbsp;${availWowStr}`)}
+    ${divider()}
+    ${metBox('Avg booking rate', avgRate.toFixed(1), `bk/doctor-day · ${wksUsed}wk avg`)}
+    ${divider()}
+    ${metBox('Expected bookings', fmtN(expectedBk), `if demand held constant`)}
+    ${divider()}
+    ${metBox('Actual bookings', fmtN(bkNow), `this week (${ALL_WEEKS[sdataIdx]||''})`)}
+    ${divider()}
+    ${metBox('Demand gap', gapStr, `actual vs expected`, gapColor)}
+  </div>`;
+
+  // ── Per-city breakdown ─────────────────────────────────────────────────
+  const cityRows = Object.entries(OV_SDATA)
+    .filter(([city]) => city && city !== 'Online' && (activeCity === 'ALL' || city === activeCity))
+    .filter(([_, d]) => {
+      // must have avail data for current week and at least 2 past weeks
+      if (d.avail[sdataIdx] < 1) return false;
+      let n=0; for (let i=sdataIdx+1;i<7;i++) if (d.avail[i]>0) n++;
+      return n >= 2;
+    })
+    .map(([city, d]) => {
+      const cAvailNow = d.avail[sdataIdx];
+      const cBkNow    = d.allBk[sdataIdx];
+      let cPastAvail=0, cPastBk=0;
+      for (let i=sdataIdx+1;i<7;i++) {
+        if (d.avail[i]>0) { cPastAvail+=d.avail[i]; cPastBk+=d.allBk[i]; }
+      }
+      if (cPastAvail === 0) return null;
+      const cRate = cPastBk / cPastAvail;
+      const cExp  = Math.round(cRate * cAvailNow);
+      const cGap  = cExp > 0 ? (cBkNow / cExp - 1) * 100 : null;
+      const tier  = cityTier(city);
+      return { city, cAvailNow, cBkNow, cExp, cGap, cRate, tier };
+    })
+    .filter(Boolean)
+    .sort((a, b) => (a.cGap??0) - (b.cGap??0)); // worst gap first
+
+  const cityTableRows = cityRows.map(r => {
+    const gapCol = r.cGap == null ? '#94a3b8'
+                 : r.cGap >= -5 ? '#059669' : r.cGap >= -20 ? '#d97706' : '#dc2626';
+    const gapBg  = r.cGap == null ? '#f1f5f9'
+                 : r.cGap >= -5 ? '#ecfdf5' : r.cGap >= -20 ? '#fffbeb' : '#fef2f2';
+    const gapStr = r.cGap != null ? (r.cGap>=0?'+':'')+r.cGap.toFixed(0)+'%' : '—';
+    const tierBadge = r.tier === 'T1' ? `<span class="t1b">T1</span>` : r.tier === 'T2' ? `<span class="t2b">T2</span>` : '';
+    const diagStr = r.cGap == null ? '—'
+                  : r.cGap >= -5 ? '✅ Avail-driven' : r.cGap >= -20 ? '⚠️ Mixed' : '🔴 Demand gap';
+    return `<tr>
+      <td style="font-weight:600;">${r.city} ${tierBadge}</td>
+      <td class="cell-r">${fmtN(r.cAvailNow)}</td>
+      <td class="cell-r">${r.cRate.toFixed(1)}</td>
+      <td class="cell-r">${fmtN(r.cExp)}</td>
+      <td class="cell-r">${fmtN(r.cBkNow)}</td>
+      <td class="cell-r">
+        <span style="font-size:11px;font-weight:700;color:${gapCol};background:${gapBg};padding:2px 8px;border-radius:999px;">${gapStr}</span>
+      </td>
+      <td style="font-size:11px;color:#64748b;padding-right:12px;">${diagStr}</td>
+    </tr>`;
+  }).join('');
+
+  // ── Per-clinic breakdown (uses OV_SDATA_CLINICS populated by parseAvailData) ──
+  let clinicSectionHtml = '';
+  if (Object.keys(OV_SDATA_CLINICS).length > 0) {
+    const clinicCityBlocks = Object.entries(OV_SDATA_CLINICS)
+      .filter(([city]) => city && city !== 'Online' && (activeCity === 'ALL' || city === activeCity))
+      .map(([city, clinics]) => {
+        const clinicRows = Object.entries(clinics)
+          .map(([clinic, d]) => {
+            const cAvailNow = d.avail[sdataIdx] || 0;
+            if (cAvailNow < 1) return null;
+            const cBkNow = d.allBk[sdataIdx] || 0;
+            let cPastAvail = 0, cPastBk = 0;
+            for (let i = sdataIdx + 1; i < 7; i++) {
+              if (d.avail[i] > 0) { cPastAvail += d.avail[i]; cPastBk += d.allBk[i]; }
+            }
+            if (cPastAvail === 0) return null;
+            const cRate = cPastBk / cPastAvail;
+            const cExp  = Math.round(cRate * cAvailNow);
+            const cGap  = cExp > 0 ? (cBkNow / cExp - 1) * 100 : null;
+            return { clinic, cAvailNow, cBkNow, cExp, cGap, cRate };
+          })
+          .filter(Boolean)
+          .sort((a, b) => (a.cGap ?? 0) - (b.cGap ?? 0)); // worst first
+        if (!clinicRows.length) return '';
+        const clRows = clinicRows.map(r => {
+          const gapCol = r.cGap == null ? '#94a3b8'
+                       : r.cGap >= -5 ? '#059669' : r.cGap >= -20 ? '#d97706' : '#dc2626';
+          const gapBg  = r.cGap == null ? '#f1f5f9'
+                       : r.cGap >= -5 ? '#ecfdf5' : r.cGap >= -20 ? '#fffbeb' : '#fef2f2';
+          const gapStr = r.cGap != null ? (r.cGap >= 0 ? '+' : '') + r.cGap.toFixed(0) + '%' : '—';
+          const sig    = r.cGap == null ? '—'
+                       : r.cGap >= -5 ? '✅ Avail' : r.cGap >= -20 ? '⚠️ Mixed' : '🔴 Demand gap';
+          return `<tr>
+            <td style="font-weight:600;font-size:12px;white-space:nowrap;">${r.clinic}</td>
+            <td class="cell-r">${fmtN(r.cAvailNow)}</td>
+            <td class="cell-r">${r.cRate.toFixed(1)}</td>
+            <td class="cell-r">${fmtN(r.cExp)}</td>
+            <td class="cell-r">${fmtN(r.cBkNow)}</td>
+            <td class="cell-r">
+              <span style="font-size:11px;font-weight:700;color:${gapCol};background:${gapBg};padding:2px 7px;border-radius:999px;">${gapStr}</span>
+            </td>
+            <td style="font-size:11px;color:#64748b;">${sig}</td>
+          </tr>`;
+        }).join('');
+        const tierBadge = ` <span class="${cityTier(city)==='T1'?'t1b':'t2b'}">${cityTier(city)}</span>`;
+        return `<details style="margin-bottom:4px;">
+          <summary style="cursor:pointer;font-size:12px;font-weight:600;color:#0f172a;padding:7px 10px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;list-style:none;display:flex;align-items:center;gap:6px;user-select:none;">
+            <span>▶</span> 🏥 ${city}${tierBadge}
+            <span style="margin-left:auto;font-size:10px;font-weight:400;color:#94a3b8;">${clinicRows.length} clinic${clinicRows.length > 1 ? 's' : ''}</span>
+          </summary>
+          <div style="overflow-x:auto;margin-top:4px;border:1px solid #e2e8f0;border-radius:8px;">
+          <table class="tbl">
+            <thead><tr>
+              <th>Clinic</th>
+              <th class="r">Avail (days)</th>
+              <th class="r">Rate (bk/day)</th>
+              <th class="r">Expected Bk</th>
+              <th class="r">Actual Bk</th>
+              <th class="r">Gap %</th>
+              <th>Signal</th>
+            </tr></thead>
+            <tbody>${clRows}</tbody>
+          </table>
+          </div>
+        </details>`;
+      })
+      .filter(Boolean)
+      .join('');
+
+    if (clinicCityBlocks) {
+      clinicSectionHtml = `
+        <div style="margin-top:16px;">
+          <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:#94a3b8;margin-bottom:8px;">
+            🏥 PER-CLINIC BREAKDOWN — click a city to expand
+          </div>
+          ${clinicCityBlocks}
+        </div>`;
+    }
+  }
+
+  // ── Channel note ────────────────────────────────────────────────────────
+  const channelNoteHtml = `<div style="margin-top:14px;padding:10px 14px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;font-size:11px;color:#1e40af;line-height:1.6;">
+    📡 <strong>Channel availability:</strong> Slot availability is tracked per clinic/doctor (supply-side), not per channel — so channel-level availability indexing isn't applicable.
+    To diagnose channel-level demand health, use the <strong>Full Funnel by Channel</strong> table above: it shows Leads → Bookings → Calls Done with WoW arrows and conversion rates per channel.
+  </div>`;
+
+  return `<div class="card" style="margin-bottom:20px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px;">
+      <div>
+        <div class="sec-hdr">📐 Availability-Indexed Bookings</div>
+        <div class="sec-sub">Were low bookings a capacity issue or a demand issue? Expected = avg rate × this week's availability</div>
+      </div>
+      <span style="font-size:10px;background:#eff6ff;color:#1e40af;border:1px solid #bfdbfe;padding:3px 10px;border-radius:999px;font-weight:600;">avail-adjusted</span>
+    </div>
+    ${summaryHtml}
+    <div class="insight-bar ${sev}" style="margin-bottom:${cityTableRows ? '14px' : '0'};">
+      <span class="insight-icon">${icon}</span>
+      <span><strong>${dTitle}</strong> — ${dText}</span>
+    </div>
+
+    ${cityTableRows ? `
+    <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:#94a3b8;margin-bottom:6px;">
+      🏙️ PER-CITY BREAKDOWN (${cityRows.length} cities · sorted worst gap first)
+    </div>
+    <div style="overflow-x:auto;margin-bottom:4px;">
+    <table class="tbl">
+      <thead><tr>
+        <th>City</th>
+        <th class="r">Avail (days)</th>
+        <th class="r">Rate (bk/day)</th>
+        <th class="r">Expected Bk</th>
+        <th class="r">Actual Bk</th>
+        <th class="r">Gap %</th>
+        <th>Signal</th>
+      </tr></thead>
+      <tbody>${cityTableRows}</tbody>
+    </table>
+    </div>` : ''}
+
+    ${clinicSectionHtml}
+    ${channelNoteHtml}
+  </div>`;
+}
+
+// ── GROWTH DECOMPOSITION ─────────────────────────────────────────────────
+// Clinic maturity: weeks with doctor avail data
+//   Mature  (5-7 wks) = established same-store clinics
+//   Ramping (3-4 wks) = recently opened, building demand
+//   New     (1-2 wks) = just launched this quarter
+function buildGrowthDecomposition() {
+  const sdataIdx = activeWkIdx;
+  if (sdataIdx >= 7 || Object.keys(OV_SDATA_CLINICS).length === 0) return '';
+
+  const clinics = [];
+  for (const [city, cityMap] of Object.entries(OV_SDATA_CLINICS)) {
+    for (const [clinic, d] of Object.entries(cityMap)) {
+      const weeksWithData = d.avail.filter((v, i) => v > 0).length;
+      if (weeksWithData === 0) continue;
+      const bkNow  = d.allBk[sdataIdx] ?? 0;
+      const bkPrev = sdataIdx + 1 < 7 ? (d.allBk[sdataIdx + 1] ?? null) : null;
+      const tier   = weeksWithData >= 5 ? 'mature' : weeksWithData >= 3 ? 'ramping' : 'new';
+      clinics.push({ city, clinic, bkNow, bkPrev, tier, weeksWithData });
+    }
+  }
+  if (!clinics.length) return '';
+
+  const mature  = clinics.filter(c => c.tier === 'mature');
+  const ramping = clinics.filter(c => c.tier === 'ramping');
+  const newCl   = clinics.filter(c => c.tier === 'new');
+
+  function tierSum(list, key) { return list.reduce((s, c) => s + (c[key] ?? 0), 0); }
+  const mNow  = tierSum(mature,  'bkNow');
+  const rNow  = tierSum(ramping, 'bkNow');
+  const nNow  = tierSum(newCl,   'bkNow');
+  const totalNow = mNow + rNow + nNow;
+  const total    = totalNow || 1;
+
+  const mPrev = mature.reduce((s, c)  => s + (c.bkPrev ?? 0), 0);
+  const rPrev = ramping.reduce((s, c) => s + (c.bkPrev ?? 0), 0);
+  const mWow  = mPrev > 0 ? (mNow - mPrev) / mPrev * 100 : null;
+  const rWow  = rPrev > 0 ? (rNow - rPrev) / rPrev * 100 : null;
+
+  // Diagnosis
+  let insight, insightSev, insightIcon;
+  if (mWow != null && rWow != null) {
+    if (mWow >= 3 && rWow >= 3) {
+      insightIcon = '📈'; insightSev = 'ok';
+      insight = `<strong>Broad-based growth.</strong> Mature clinics ▲${mWow.toFixed(0)}% and ramping clinics ▲${rWow.toFixed(0)}% WoW — growth isn't just from new openings.`;
+    } else if (mWow < -5 && nNow > 0) {
+      insightIcon = '⚠️'; insightSev = 'warn';
+      insight = `<strong>Same-store decline masked by new clinic openings.</strong> Established clinics ▼${Math.abs(mWow).toFixed(0)}% WoW while new clinics contributed ${fmtN(nNow)} bookings. Network total may look flat/up but underlying demand at mature clinics is falling.`;
+    } else if (mWow < -5 && nNow === 0) {
+      insightIcon = '🔴'; insightSev = 'bad';
+      insight = `<strong>Mature clinic demand declining.</strong> Same-store bookings fell ${Math.abs(mWow).toFixed(0)}% with no new clinics to offset. Investigate demand generation at established locations — competition, campaign coverage, or ops.`;
+    } else if (mWow >= 0 && rWow != null && rWow < -10) {
+      insightIcon = '⚠️'; insightSev = 'warn';
+      insight = `<strong>New clinic ramp-up issue.</strong> Mature clinics holding (${mWow>=0?'▲':'▼'}${Math.abs(mWow).toFixed(0)}%) but ramping clinics ▼${Math.abs(rWow).toFixed(0)}% WoW. Newly opened markets aren't building demand as expected — check lead generation and GMB coverage in those cities.`;
+    } else {
+      insightIcon = '📊'; insightSev = 'gray';
+      insight = `Mature: <strong>${mWow>=0?'▲':'▼'}${Math.abs(mWow).toFixed(0)}%</strong> WoW · Ramping: <strong>${rWow>=0?'▲':'▼'}${Math.abs(rWow).toFixed(0)}%</strong> WoW. Within normal variance.`;
+    }
+  } else {
+    insightIcon = '📊'; insightSev = 'gray';
+    insight = `Tracking ${mature.length} mature, ${ramping.length} ramping, ${newCl.length} new clinics this week.`;
+  }
+
+  function tierBox(label, count, bkNow, bkPrev, wow, color, desc) {
+    const share = Math.round(bkNow / total * 100);
+    const wowStr = wow != null
+      ? `<span style="color:${wow>=0?'#059669':'#dc2626'};font-weight:700;">${wow>=0?'▲':'▼'}${Math.abs(wow).toFixed(0)}% WoW</span>`
+      : `<span style="color:#94a3b8;">no prior data</span>`;
+    // Build 3-week booking sparkline for this tier
+    const tierClinics = clinics.filter(c => c.tier === label.toLowerCase().split(' ')[0]);
+    const tierChips = [sdataIdx, sdataIdx+1, sdataIdx+2].map(i => {
+      if (i >= 7) return null;
+      const bk = tierClinics.reduce((s, c) => s + (c.tier === label.toLowerCase().split(' ')[0] ? 0 : 0), 0); // placeholder
+      return null; // simplified — just show aggregate
+    });
+    return `<div style="background:#fff;border-radius:12px;padding:16px;border:1px solid #e2e8f0;">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
+        <div style="width:10px;height:10px;border-radius:2px;background:${color};flex-shrink:0;"></div>
+        <div style="font-weight:700;font-size:12px;color:#0f172a;">${label}</div>
+        <div style="font-size:10px;color:#94a3b8;margin-left:auto;">${count} clinic${count!==1?'s':''}</div>
+      </div>
+      <div style="font-size:10px;color:#94a3b8;margin-bottom:8px;">${desc}</div>
+      <div style="font-size:24px;font-weight:800;color:#0f172a;line-height:1;">${fmtN(bkNow)}</div>
+      <div style="font-size:11px;color:#64748b;margin-top:2px;">bookings this week</div>
+      <div style="font-size:11px;margin-top:4px;">${wowStr}</div>
+      <div style="margin-top:10px;height:6px;background:#f1f5f9;border-radius:3px;overflow:hidden;">
+        <div style="height:100%;width:${share}%;background:${color};border-radius:3px;transition:width .4s;"></div>
+      </div>
+      <div style="font-size:10px;color:#94a3b8;margin-top:3px;">${share}% of total bookings this week</div>
+    </div>`;
+  }
+
+  return `<div class="card" style="margin-bottom:20px;">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px;flex-wrap:wrap;gap:8px;">
+      <div>
+        <div class="sec-hdr">📊 Growth Decomposition — Same-Store vs New</div>
+        <div class="sec-sub">Did growth come from existing clinics improving or from opening new ones?</div>
+      </div>
+      <span style="font-size:10px;background:#f0f9ff;color:#0369a1;border:1px solid #bae6fd;padding:3px 10px;border-radius:999px;font-weight:600;">clinic maturity</span>
+    </div>
+    <div class="insight-bar ${insightSev}" style="margin-bottom:14px;">
+      <span class="insight-icon">${insightIcon}</span>
+      <span>${insight}</span>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;">
+      ${tierBox('Mature Clinics',  mature.length,  mNow, mPrev, mWow,  '#6366f1', '5–7 wks active · established same-store')}
+      ${tierBox('Ramping Clinics', ramping.length, rNow, rPrev, rWow,  '#f59e0b', '3–4 wks active · recently opened')}
+      ${tierBox('New Clinics',     newCl.length,   nNow, 0,     null,  '#10b981', '1–2 wks active · just launched')}
+    </div>
+    <div style="margin-top:10px;font-size:10px;color:#94a3b8;">
+      Maturity = weeks with doctor availability · ${clinics.length} clinics tracked · availability data from demand tracker sheet
+    </div>
+  </div>`;
+}
+
+// ── ROOT CAUSE SIGNAL BOARD ───────────────────────────────────────────────
+// 5 diagnostic signals answering "why is demand up/down?"
+function buildRootCauseBoard() {
+  const wk  = ALL_WEEKS[activeWkIdx];
+  const wkP = ALL_WEEKS[activeWkIdx + 1];
+  if (!wk) return '';
+
+  const f  = funnel(wk);
+  const fP = wkP ? funnel(wkP) : {};
+
+  const ldArr  = ALL_WEEKS.map(w => TOTAL_LEADS_WK[w] ?? slotBookedTotal(w));
+  const ldCur  = ldArr[activeWkIdx];
+  const ldPrev = ldArr[activeWkIdx + 1];
+  const bkCur  = f.new_bookings;
+  const bkPrev = fP.new_bookings;
+  const cdCur  = f.calls_done;
+  const b2dCur = f.b2d_pct;
+  const nsCur  = f.ns_pct;
+
+  const ldW  = wowPct(ldCur,  ldPrev);
+  const b2dArr  = funnelArr('b2d_pct');
+  const l2bCur  = (ldCur  && bkCur)  ? bkCur  / ldCur  * 100 : null;
+  const l2bPrev = (ldPrev && bkPrev) ? bkPrev / ldPrev * 100 : null;
+  const l2bW    = wowPp(l2bCur, l2bPrev);
+
+  function rcCard(icon, title, sev, body, action) {
+    const pillBg = {ok:'#059669', warn:'#d97706', bad:'#dc2626', gray:'#94a3b8'}[sev];
+    const pillTxt= {ok:'✓ OK', warn:'WATCH', bad:'ACT NOW', gray:'—'}[sev];
+    return `<div class="rc-card ${sev}">
+      <div style="display:flex;align-items:flex-start;gap:10px;">
+        <span style="font-size:18px;flex-shrink:0;margin-top:1px;">${icon}</span>
+        <div style="flex:1;min-width:0;">
+          <div style="font-weight:700;font-size:12px;color:#0f172a;margin-bottom:4px;display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+            ${title}
+            <span style="font-size:9px;font-weight:700;color:#fff;background:${pillBg};padding:1px 7px;border-radius:999px;">${pillTxt}</span>
+          </div>
+          <div style="font-size:11px;color:#475569;line-height:1.55;">${body}</div>
+          ${action ? `<div style="font-size:10px;color:#6366f1;margin-top:5px;font-weight:600;">→ ${action}</div>` : ''}
+        </div>
+      </div>
+    </div>`;
+  }
+
+  // ── Signal 1: Top-of-funnel leads ───────────────────────────────────────
+  let s1, s1a;
+  if (ldCur == null) {
+    s1 = {sev:'gray', body:'Lead data not loaded — visit the <a href="efficiency.html" style="color:#6366f1;">Efficiency tab</a> once to cache L0 lead counts.', action:''};
+  } else if (ldW == null) {
+    s1 = {sev:'gray', body:`Total leads this week: <strong>${fmtN(ldCur)}</strong>. No prior week to compare.`, action:''};
+  } else if (ldW < -10) {
+    s1 = {sev:'bad',  body:`Leads dropped <strong>${Math.abs(ldW).toFixed(0)}%</strong> WoW (${fmtN(ldPrev)} → ${fmtN(ldCur)}). Top-of-funnel is weakening — check campaign spend, GMB impressions, and organic traffic.`, action:'Open Efficiency tab → Channel CPL & impressions'};
+  } else if (ldW < -5) {
+    s1 = {sev:'warn', body:`Leads softened <strong>${Math.abs(ldW).toFixed(0)}%</strong> WoW (${fmtN(ldPrev)} → ${fmtN(ldCur)}). Not critical yet — verify ad budgets didn't run out mid-week.`, action:''};
+  } else if (ldW >= 5) {
+    s1 = {sev:'ok',   body:`Leads healthy at <strong>${fmtN(ldCur)}</strong> (▲${ldW.toFixed(0)}% WoW). Top-of-funnel pipeline is strong.`, action:''};
+  } else {
+    s1 = {sev:'gray', body:`Leads stable at <strong>${fmtN(ldCur)}</strong> (${ldW>=0?'▲':'▼'}${Math.abs(ldW).toFixed(0)}% WoW). No top-funnel issue detected.`, action:''};
+  }
+
+  // ── Signal 2: Lead → Booking conversion ────────────────────────────────
+  let s2;
+  if (l2bCur == null) {
+    s2 = {sev:'gray', body:'L→B conversion rate not computable — leads or bookings data missing.', action:''};
+  } else if (l2bCur < 15) {
+    s2 = {sev:'bad',  body:`L→B rate critically low at <strong>${l2bCur.toFixed(0)}%</strong>${l2bW!=null?' ('+(l2bW>=0?'+':'')+l2bW.toFixed(1)+'pp WoW)':''}. Most leads aren't converting to bookings — check slot availability and response time.`, action:'See Availability-Indexed Bookings below'};
+  } else if (l2bCur < 25) {
+    s2 = {sev:'warn', body:`L→B rate at <strong>${l2bCur.toFixed(0)}%</strong> — below healthy range (>25%).${l2bW!=null?(l2bW<0?' Worsening: '+l2bW.toFixed(1)+'pp WoW.':' Holding.'):''}`, action:''};
+  } else {
+    s2 = {sev:'ok',   body:`L→B conversion healthy at <strong>${l2bCur.toFixed(0)}%</strong>${l2bW!=null?' ('+(l2bW>=0?'+':'')+l2bW.toFixed(1)+'pp WoW)':''}.`, action:''};
+  }
+
+  // ── Signal 3: B2D execution ────────────────────────────────────────────
+  let s3;
+  const b2dBelow = streak(b2dArr, activeWkIdx, v => v != null && v < 70);
+  if (b2dCur == null) {
+    s3 = {sev:'gray', body:'B2D% not available for this scope/week.', action:''};
+  } else if (b2dCur < 60) {
+    s3 = {sev:'bad', body:`B2D% critically low at <strong>${b2dCur.toFixed(1)}%</strong> (target: 70%).${nsCur!=null?' No-show rate: '+nsCur.toFixed(1)+'%.':''} Bookings aren't completing as calls — ops execution bottleneck.`, action:'Escalate to ops: no-show and cancellation analysis'};
+  } else if (b2dCur < 70) {
+    s3 = {sev:'warn', body:`B2D% at <strong>${b2dCur.toFixed(1)}%</strong> — ${(70-b2dCur).toFixed(1)}pp below 70% target.${b2dBelow>=2?` Below target for <strong>${b2dBelow} consecutive weeks</strong>.`:''} ${nsCur!=null?'No-show: '+nsCur.toFixed(1)+'%.':''}`, action:''};
+  } else {
+    s3 = {sev:'ok',  body:`B2D% healthy at <strong>${b2dCur.toFixed(1)}%</strong> — ${(b2dCur-70).toFixed(1)}pp above target. Ops executing well.${nsCur!=null?' No-show: '+nsCur.toFixed(1)+'%.':''}`, action:''};
+  }
+
+  // ── Signal 4: New market traction ─────────────────────────────────────
+  let s4;
+  if (dataScope === 'online') {
+    s4 = {sev:'gray', body:'New city analysis not available in online scope.', action:''};
+  } else {
+    const cityNewness = {};
+    for (const [city, clinics] of Object.entries(OV_SDATA_CLINICS)) {
+      const wks = Object.values(clinics).map(d => d.avail.filter(v => v > 0).length);
+      cityNewness[city] = wks.length ? wks.reduce((a,b)=>a+b,0)/wks.length : 0;
+    }
+    const newCities    = Object.entries(cityNewness).filter(([_, w]) => w < 3).map(([c]) => c);
+    const matureCities = Object.entries(cityNewness).filter(([_, w]) => w >= 5).map(([c]) => c);
+
+    if (newCities.length === 0) {
+      s4 = {sev:'gray', body:`No new markets this week. ${matureCities.length} mature markets active.`, action:''};
+    } else {
+      const newBk    = newCities.reduce((s,c) => s+(OV_SDATA[c]?.allBk[activeWkIdx]||0), 0);
+      const newAvail = newCities.reduce((s,c) => s+(OV_SDATA[c]?.avail[activeWkIdx]||0), 0);
+      const matAvail = matureCities.reduce((s,c) => s+(OV_SDATA[c]?.avail[activeWkIdx]||0), 0);
+      const matBk    = matureCities.reduce((s,c) => s+(OV_SDATA[c]?.allBk[activeWkIdx]||0), 0);
+      const newRate  = newAvail > 0 ? newBk / newAvail : null;
+      const matRate  = matAvail > 0 ? matBk / matAvail : null;
+      const rateGap  = newRate!=null&&matRate!=null&&matRate>0 ? (newRate/matRate - 1)*100 : null;
+      const cityList = newCities.slice(0,4).join(', ')+(newCities.length>4?'…':'');
+      if (rateGap != null && rateGap < -30) {
+        s4 = {sev:'warn', body:`<strong>${newCities.length} new market${newCities.length>1?'s':''}</strong> (${cityList}) booking at ${newRate.toFixed(1)} bk/day vs ${matRate.toFixed(1)} in mature markets — <strong>${Math.abs(rateGap).toFixed(0)}% below mature rate</strong>. New markets underperforming.`, action:'Check lead gen and GMB coverage in new cities'};
+      } else if (rateGap != null && rateGap >= -15) {
+        s4 = {sev:'ok',  body:`<strong>${newCities.length} new market${newCities.length>1?'s':''}</strong> (${cityList}) ramping at ${newRate.toFixed(1)} bk/day — within ${Math.abs(rateGap??0).toFixed(0)}% of mature market rate. Healthy expansion.`, action:''};
+      } else {
+        s4 = {sev:'gray', body:`<strong>${newCities.length} new market${newCities.length>1?'s':''}</strong>: ${cityList}. Not enough data vs mature markets yet.`, action:''};
+      }
+    }
+  }
+
+  // ── Signal 5: Channel concentration risk ──────────────────────────────
+  let s5;
+  const chNow = JDATA?.[dataScope]?.weekly_channel?.[wk];
+  if (!chNow) {
+    s5 = {sev:'gray', body:'Channel data not available for this scope/week.', action:''};
+  } else {
+    const byCD = Object.entries(chNow)
+      .map(([ch, d]) => ({ ch, cd: d.calls_done || 0 }))
+      .sort((a,b) => b.cd - a.cd);
+    const totalCd  = byCD.reduce((s,c) => s+c.cd, 0) || 1;
+    const top      = byCD[0];
+    const topShare = top ? top.cd/totalCd*100 : 0;
+    const activeCount = byCD.filter(c=>c.cd>0).length;
+    if (topShare > 55) {
+      s5 = {sev:'warn', body:`<strong>${top?.ch}</strong> drives <strong>${topShare.toFixed(0)}%</strong> of all calls — high channel concentration. If this channel weakens, overall demand drops fast.`, action:'Diversify: see Channel Efficiency tab'};
+    } else if (activeCount >= 3) {
+      s5 = {sev:'ok',  body:`Channel mix healthy — top channel (<strong>${top?.ch}</strong> at ${topShare.toFixed(0)}%) well-distributed across <strong>${activeCount} active channels</strong>.`, action:''};
+    } else {
+      s5 = {sev:'gray', body:`${activeCount} active channel${activeCount!==1?'s':''} this week. Distribution data limited.`, action:''};
+    }
+  }
+
+  return `<div class="card" style="margin-bottom:20px;">
+    <div style="margin-bottom:14px;">
+      <div class="sec-hdr">🔎 Root Cause Signals</div>
+      <div class="sec-sub">What's driving demand up or down? 5 diagnostic checks</div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+      ${rcCard('🎯', '1. Top-of-Funnel Leads',            s1.sev, s1.body, s1.action)}
+      ${rcCard('📅', '2. Lead → Booking Conversion',       s2.sev, s2.body, s2.action)}
+      ${rcCard('📞', '3. Booking → Call Execution (B2D)',  s3.sev, s3.body, s3.action)}
+      ${rcCard('🏙️', '4. New Market Expansion Traction',   s4.sev, s4.body, s4.action)}
+      ${rcCard('📡', '5. Channel Concentration Risk',      s5.sev, s5.body, s5.action)}
+    </div>
+  </div>`;
+}
+
+// ── FULL FUNNEL TABLE (channel or city) ──────────────────────────────────
+// "All" mode: shows Leads* → L2B% → Bookings → B2D% → Calls Done per entity
+// with WoW arrows and a 3-dot funnel health indicator per row
+function buildFullFunnelTable(scope) {
+  const wk  = ALL_WEEKS[activeWkIdx];
+  const wkP = ALL_WEEKS[activeWkIdx + 1];
+  if (!wk) return '';
+  if (scope === 'city' && dataScope === 'online')
+    return `<div class="card" style="margin-bottom:20px;padding:16px 20px;color:#94a3b8;font-size:12px;">City data not available in Online scope.</div>`;
+
+  // ── Collect rows ──────────────────────────────────────────────────────
+  let rows = [];
+  if (scope === 'channel') {
+    const now  = JDATA?.[dataScope]?.weekly_channel?.[wk]  || {};
+    const prev = JDATA?.[dataScope]?.weekly_channel?.[wkP] || {};
+    rows = Object.keys(now).map(ch => ({
+      name:ch, color:CH_COLORS[ch]||'#94a3b8',
+      ld:now[ch]?.slot_booked??null,  ldP:prev[ch]?.slot_booked??null,
+      bk:now[ch]?.gross??null,        bkP:prev[ch]?.gross??null,
+      cd:now[ch]?.calls_done??null,   cdP:prev[ch]?.calls_done??null,
+      b2d:now[ch]?.b2d_pct??null,    b2dP:prev[ch]?.b2d_pct??null,
+    }));
+  } else {
+    const now  = JDATA?.[dataScope]?.weekly_city?.[wk]  || {};
+    const prev = JDATA?.[dataScope]?.weekly_city?.[wkP] || {};
+    rows = Object.keys(now)
+      .filter(c => c && c !== 'Online')
+      .filter(c => activeCity !== 'ALL' ? c === activeCity : (activeTier === 'ALL' || cityTier(c) === activeTier))
+      .map(city => ({
+        name:city, tier:cityTier(city), color:'#6366f1',
+        ld:now[city]?.slot_booked??null,  ldP:prev[city]?.slot_booked??null,
+        bk:now[city]?.gross??null,        bkP:prev[city]?.gross??null,
+        cd:now[city]?.calls_done??null,   cdP:prev[city]?.calls_done??null,
+        b2d:now[city]?.b2d_pct??null,    b2dP:prev[city]?.b2d_pct??null,
+      }));
+  }
+  if (!rows.length) return '';
+  rows.sort((a, b) => (b.cd||0) - (a.cd||0));
+
+  // ── Helpers ───────────────────────────────────────────────────────────
+  function wowTag(cur, prev, isRate=false) {
+    const w = isRate ? wowPp(cur, prev) : wowPct(cur, prev);
+    if (w == null) return '';
+    const c = isRate ? (w>=0?'#059669':'#dc2626')
+                     : (w>=5?'#059669': w>=-5?'#d97706':'#dc2626');
+    return `<div style="font-size:9px;color:${c};font-weight:600;margin-top:1px;">${w>=0?'▲':'▼'}${Math.abs(w).toFixed(isRate?1:0)}${isRate?'pp':'%'}</div>`;
+  }
+  function convBadge(num, den) {
+    if (!num || !den) return `<td style="text-align:center;color:#e2e8f0;padding:0 6px;font-size:14px;">→</td>`;
+    const r = num/den*100;
+    const [col,bg] = r>=65?['#059669','#ecfdf5']:r>=40?['#d97706','#fffbeb']:['#dc2626','#fef2f2'];
+    return `<td style="text-align:center;padding:4px 6px;">
+      <span style="font-size:11px;font-weight:700;color:${col};background:${bg};padding:2px 8px;border-radius:999px;white-space:nowrap;">${r.toFixed(0)}%</span>
+    </td>`;
+  }
+  // 3-dot funnel health: Leads(WoW) → Bookings(WoW) → Calls(WoW)
+  // Arrow colors = conversion rates
+  function healthDots(r) {
+    const ldW=wowPct(r.ld,r.ldP), bkW=wowPct(r.bk,r.bkP), cdW=wowPct(r.cd,r.cdP);
+    const l2b = r.ld&&r.bk ? r.bk/r.ld*100 : null;
+    function dc(w) { return w==null?'#d1d5db':w>=-3?'#22c55e':w>=-12?'#f59e0b':'#ef4444'; }
+    const ac = l2b==null?'#d1d5db':l2b>=45?'#22c55e':l2b>=22?'#f59e0b':'#ef4444';
+    const bc = r.b2d==null?'#d1d5db':r.b2d>=68?'#22c55e':r.b2d>=55?'#f59e0b':'#ef4444';
+    return `<div style="display:inline-flex;align-items:center;gap:3px;">
+      <div title="Leads WoW${ldW!=null?': '+(ldW>=0?'+':'')+ldW.toFixed(1)+'%':': no data'}" style="width:10px;height:10px;border-radius:50%;background:${dc(ldW)};"></div>
+      <div style="font-size:9px;font-weight:900;color:${ac};">→</div>
+      <div title="Bookings WoW${bkW!=null?': '+(bkW>=0?'+':'')+bkW.toFixed(1)+'%':': no data'}" style="width:10px;height:10px;border-radius:50%;background:${dc(bkW)};"></div>
+      <div style="font-size:9px;font-weight:900;color:${bc};">→</div>
+      <div title="Calls WoW${cdW!=null?': '+(cdW>=0?'+':'')+cdW.toFixed(1)+'%':': no data'}" style="width:10px;height:10px;border-radius:50%;background:${dc(cdW)};"></div>
+    </div>`;
+  }
+
+  // ── Table rows ────────────────────────────────────────────────────────
+  const tableRows = rows.map(r => {
+    const nameCell = scope === 'city'
+      ? `<td style="font-weight:600;white-space:nowrap;">${r.name}${r.tier?` <span class="${r.tier==='T1'?'t1b':'t2b'}">${r.tier}</span>`:''}</td>`
+      : `<td style="font-weight:600;white-space:nowrap;"><span style="width:8px;height:8px;border-radius:2px;background:${r.color};display:inline-block;margin-right:6px;vertical-align:middle;"></span>${r.name}</td>`;
+    return `<tr>
+      ${nameCell}
+      <td class="cell-r"><span style="font-weight:600;">${r.ld!=null?fmtN(r.ld):'—'}</span>${wowTag(r.ld,r.ldP)}</td>
+      ${convBadge(r.bk, r.ld)}
+      <td class="cell-r"><span style="font-weight:600;">${r.bk!=null?fmtN(r.bk):'—'}</span>${wowTag(r.bk,r.bkP)}</td>
+      ${convBadge(r.cd, r.bk)}
+      <td class="cell-r"><span style="font-weight:600;">${r.cd!=null?fmtN(r.cd):'—'}</span>${wowTag(r.cd,r.cdP)}</td>
+      <td style="text-align:center;padding:8px 12px;">${healthDots(r)}</td>
+    </tr>`;
+  }).join('');
+
+  const icon  = scope === 'channel' ? '📡' : '🏙️';
+  const title = scope === 'channel' ? 'By Channel — Full Funnel' : 'By City — Full Funnel';
+  const sub   = scope === 'channel'
+    ? `${dataScope} · slot booked → bookings → calls done · WoW arrows`
+    : `${dataScope} · ${activeTier==='ALL'?'All tiers':activeTier} · WoW arrows · hover dots for detail`;
+
+  return `<div class="card" style="margin-bottom:20px;padding:0;overflow:hidden;">
+    <div style="padding:12px 20px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+      <span style="font-size:15px;">${icon}</span>
+      <span class="sec-hdr">${title}</span>
+      <span class="sec-sub">${sub}</span>
+      <span style="margin-left:auto;font-size:10px;color:#94a3b8;display:flex;align-items:center;gap:6px;">
+        <span style="display:inline-flex;align-items:center;gap:3px;"><span style="width:8px;height:8px;border-radius:50%;background:#22c55e;display:inline-block;"></span>healthy</span>
+        <span style="display:inline-flex;align-items:center;gap:3px;"><span style="width:8px;height:8px;border-radius:50%;background:#f59e0b;display:inline-block;"></span>watch</span>
+        <span style="display:inline-flex;align-items:center;gap:3px;"><span style="width:8px;height:8px;border-radius:50%;background:#ef4444;display:inline-block;"></span>investigate</span>
+      </span>
+    </div>
+    <div style="overflow-x:auto;">
+    <table class="tbl">
+      <thead><tr>
+        <th>${scope==='channel'?'Channel':'City'}</th>
+        <th class="r" style="min-width:70px;">Leads*</th>
+        <th style="text-align:center;min-width:54px;font-size:9px;letter-spacing:.04em;">L→B%</th>
+        <th class="r" style="min-width:80px;">Bookings</th>
+        <th style="text-align:center;min-width:54px;font-size:9px;letter-spacing:.04em;">B→D%</th>
+        <th class="r" style="min-width:80px;">Calls Done</th>
+        <th style="text-align:center;min-width:70px;font-size:9px;">Funnel</th>
+      </tr></thead>
+      <tbody>${tableRows}</tbody>
+    </table>
+    </div>
+    <div style="padding:8px 20px;font-size:10px;color:#94a3b8;border-top:1px solid var(--line);">
+      * Leads = Slot Booked (JDATA proxy for per-${scope} leads) · Arrow colors in Funnel = conversion rate health
+    </div>
+  </div>`;
+}
+
+// ── SLOT-BOOKED TOTAL (proxy for total leads when L0 not loaded) ──────────
+// Sums slot_booked across all channels for a given week key.
+// Used as fallback when TOTAL_LEADS_WK (from L0 sheet) is not yet loaded.
+function slotBookedTotal(wk) {
+  const ch = JDATA?.[dataScope]?.weekly_channel?.[wk];
+  if (!ch) return null;
+  let tot = 0, cnt = 0;
+  for (const v of Object.values(ch)) {
+    if (v?.slot_booked != null) { tot += v.slot_booked; cnt++; }
+  }
+  return cnt > 0 ? tot : null;
+}
+
+// ── FUNNEL ANALYSIS ──────────────────────────────────────────────────────
+// Visual 3-stage funnel: Leads → Bookings → Calls Done with auto-diagnosis
+function buildFunnelAnalysis() {
+  const wk  = ALL_WEEKS[activeWkIdx];
+  const wkP = ALL_WEEKS[activeWkIdx + 1];
+  if (!wk) return '';
+
+  const f  = funnel(wk);
+  const fP = wkP ? funnel(wkP) : {};
+
+  // Stage values — leads: prefer L0 sheet, fall back to slot_booked sum
+  const ldCur      = TOTAL_LEADS_WK[wk]  ?? slotBookedTotal(wk);
+  const ldPrev     = wkP ? (TOTAL_LEADS_WK[wkP] ?? slotBookedTotal(wkP)) : null;
+  const ldIsProxy  = TOTAL_LEADS_WK[wk] == null && ldCur != null; // true = using slot_booked
+  const bkCur  = f.new_bookings ?? null;
+  const bkPrev = fP.new_bookings ?? null;
+  const cdCur  = f.calls_done   ?? null;
+  const cdPrev = fP.calls_done  ?? null;
+  const b2dCur  = f.b2d_pct  ?? null;
+  const b2dPrev = fP.b2d_pct ?? null;
+
+  // WoW changes
+  const ldW  = wowPct(ldCur,  ldPrev);
+  const bkW  = wowPct(bkCur,  bkPrev);
+  const cdW  = wowPct(cdCur,  cdPrev);
+  const b2dW = wowPp(b2dCur, b2dPrev);
+
+  // Conversion rates
+  const l2bCur  = (ldCur  && bkCur)  ? bkCur  / ldCur  * 100 : null;
+  const l2bPrev = (ldPrev && bkPrev) ? bkPrev / ldPrev * 100 : null;
+  const l2bW    = wowPp(l2bCur, l2bPrev);
+
+  const hasLeads = ldCur != null;
+
+  // Sparklines (newest-first stored → reverse for chrono display)
+  // For leads sparkline use L0 when available, slot_booked proxy otherwise
+  const ldSparkArr = ALL_WEEKS.map(w => TOTAL_LEADS_WK[w] ?? slotBookedTotal(w));
+  const bkSparkArr = funnelArr('new_bookings');
+  const cdSparkArr = funnelArr('calls_done');
+
+  // 8-week rolling averages for vs-avg chips
+  const avg8ld = avg8(ldSparkArr, activeWkIdx);
+  const avg8bk = avg8(bkSparkArr, activeWkIdx);
+  const avg8cd = avg8(cdSparkArr, activeWkIdx);
+
+  function stageBorderColor(wow) {
+    if (wow == null) return '#6366f1';
+    return wow >= 5 ? '#10b981' : wow >= -5 ? '#f59e0b' : '#ef4444';
+  }
+
+  function stageBlock(label, val, prevVal, wow, sparkArr, icon, avgVal, subLabel='') {
+    const col      = stageBorderColor(wow);
+    const wowColor = wow == null ? '#94a3b8' : wow >= 5 ? '#059669' : wow >= -5 ? '#d97706' : '#dc2626';
+    const wowTxt   = wow != null
+      ? `<span style="font-weight:700;color:${wowColor};">${wow>=0?'▲':'▼'}${Math.abs(wow).toFixed(1)}% WoW</span>`
+      : `<span style="color:#94a3b8;font-size:10px;">no prior week</span>`;
+    // vs 8wk avg chip
+    let vsAvgHtml = '';
+    if (val != null && avgVal != null && avgVal > 0) {
+      const diff = (val - avgVal) / avgVal * 100;
+      const aColor = diff > 3 ? '#059669' : diff < -3 ? '#dc2626' : '#94a3b8';
+      const aBg    = diff > 3 ? '#ecfdf5' : diff < -3 ? '#fef2f2' : '#f1f5f9';
+      const sign   = diff >= 0 ? '+' : '';
+      vsAvgHtml = `<div style="margin-top:5px;">
+        <span style="font-size:10px;font-weight:600;color:${aColor};background:${aBg};padding:2px 7px;border-radius:999px;">${sign}${diff.toFixed(0)}% vs 8wk avg</span>
+      </div>`;
+    }
+    const subLabelHtml = subLabel
+      ? `<div style="font-size:9px;color:#94a3b8;margin-top:3px;font-style:italic;">${subLabel}</div>` : '';
+    const spk = sparkArr ? spark(sparkArr.slice(0,9).reverse(), col, 100, 22) : '';
+    return `<div style="border:2px solid ${col}50;background:${col}08;border-radius:12px;padding:14px 10px;text-align:center;">
+      <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#64748b;margin-bottom:8px;">${icon}&nbsp;${label}</div>
+      <div style="font-size:24px;font-weight:800;color:#0f172a;line-height:1;margin-bottom:5px;">${val!=null?fmtN(val):'—'}</div>
+      <div style="font-size:11px;">${wowTxt}</div>
+      ${vsAvgHtml}
+      ${subLabelHtml}
+      <div style="margin-top:8px;display:flex;justify-content:center;">${spk}</div>
+    </div>`;
+  }
+
+  function convArrow(rateLabel, rate, rateWow) {
+    if (rate == null) return `<div style="display:flex;align-items:center;justify-content:center;font-size:22px;color:#e2e8f0;padding:0 2px;">→</div>`;
+    const rc = rate >= 60 ? '#059669' : rate >= 35 ? '#d97706' : '#dc2626';
+    const pc = rateWow == null ? '#94a3b8' : rateWow >= 0 ? '#059669' : '#dc2626';
+    const ppStr = rateWow != null
+      ? `<div style="font-size:10px;font-weight:600;color:${pc};">${rateWow>=0?'+':''}${rateWow.toFixed(1)}pp</div>` : '';
+    return `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;padding:0 4px;min-width:64px;">
+      <div style="font-size:15px;font-weight:800;color:${rc};">${rate.toFixed(0)}%</div>
+      <div style="font-size:22px;color:#cbd5e1;line-height:1;">→</div>
+      ${ppStr}
+      <div style="font-size:8px;color:#94a3b8;text-align:center;line-height:1.4;max-width:60px;">${rateLabel}</div>
+    </div>`;
+  }
+
+  // ── Auto-diagnosis ────────────────────────────────────────────
+  const T    = -5; // significant-drop threshold (%)
+  const ldSig = ldW != null && ldW < T;
+  const bkSig = bkW != null && bkW < T;
+  const cdSig = cdW != null && cdW < T;
+  let diag;
+
+  if (!hasLeads) {
+    // 2-stage analysis only
+    if (cdW != null && bkW != null) {
+      if      (cdSig && !bkSig)
+        diag = {sev:'warn', icon:'📞', title:'Execution gap',
+          text:`Bookings are stable (${bkW!=null?arrow(bkW):'—'} WoW) but calls done dropped <strong>${Math.abs(cdW).toFixed(1)}%</strong>. Issue is ops-side — no-shows, cancellations, or clinic schedule — not a demand problem. Connect L0 data to see full lead funnel.`};
+      else if (bkSig && cdSig)
+        diag = {sev:'bad',  icon:'📉', title:'Bookings & calls both falling',
+          text:`Bookings <strong>${arrow(bkW)}</strong> · Calls <strong>${arrow(cdW)}</strong> WoW. Top-funnel likely affected too — connect L0 data to confirm lead drop.`};
+      else if (!bkSig && !cdSig && (bkW??0) >= 3 && (cdW??0) >= 3)
+        diag = {sev:'ok',   icon:'📈', title:'Both stages growing — healthy momentum',
+          text:`Bookings <strong>${arrow(bkW)}</strong> · Calls <strong>${arrow(cdW)}</strong> WoW. Funnel executing well.`};
+      else
+        diag = {sev:'gray', icon:'📊', title:'Within normal variance',
+          text:`Bookings ${bkW!=null?arrow(bkW):'—'} · Calls ${cdW!=null?arrow(cdW):'—'} WoW. No significant break detected. Connect L0 for lead-level analysis.`};
+    } else {
+      diag = {sev:'gray', icon:'📊', title:'No comparison data', text:'Select a week with a prior week available.'};
+    }
+  } else {
+    // Full 3-stage analysis
+    if (ldSig && bkSig && cdSig)
+      diag = {sev:'bad',  icon:'🔴', title:'Full-funnel collapse',
+        text:`All 3 stages falling — Leads <strong>${arrow(ldW)}</strong> · Bookings <strong>${arrow(bkW)}</strong> · Calls <strong>${arrow(cdW)}</strong>. This is a top-of-funnel demand problem. Check ad spend, GMB impressions, and organic traffic.`};
+    else if (ldSig && bkSig && !cdSig)
+      diag = {sev:'bad',  icon:'📉', title:'Demand softening — pipeline thinning',
+        text:`Leads <strong>${arrow(ldW)}</strong> and bookings <strong>${arrow(bkW)}</strong> both fell. Calls held this week on last week's pipeline — <strong>expect calls to drop next week</strong> if leads don't recover.`};
+    else if (ldSig && !bkSig)
+      diag = {sev:'warn', icon:'⚡', title:'Leads fell but bookings held',
+        text:`Leads dropped <strong>${Math.abs(ldW).toFixed(1)}%</strong> but bookings held (${arrow(bkW)}). Ops is converting efficiently right now. If leads stay suppressed, bookings will follow — watch the L→B rate.`};
+    else if (!ldSig && bkSig && !cdSig)
+      diag = {sev:'warn', icon:'📅', title:'Lead→Booking conversion broke',
+        text:`Leads ${ldW!=null&&ldW>0?'grew':'held'} (${ldW!=null?arrow(ldW):'stable'}) but bookings dropped <strong>${Math.abs(bkW).toFixed(1)}%</strong>. The break is at the <strong>scheduling stage</strong> — check slot availability, call-to-booking response time, and drop-off in the booking flow.`};
+    else if (!ldSig && !bkSig && cdSig)
+      diag = {sev:'warn', icon:'📞', title:'Execution gap — bookings not completing as calls',
+        text:`Leads and bookings are healthy, but calls done dropped <strong>${Math.abs(cdW).toFixed(1)}%</strong>. Problem is in ops — high no-shows or cancellations. B2D: ${b2dCur!=null?b2dCur.toFixed(1)+'%':'—'}${b2dW!=null?' ('+( b2dW>=0?'+':'')+b2dW.toFixed(1)+'pp WoW)':''}.`};
+    else if ((ldW??0)>=3 && (bkW??0)>=3 && (cdW??0)>=3)
+      diag = {sev:'ok',   icon:'🚀', title:'Full-funnel growth — all stages up',
+        text:`Leads <strong>${arrow(ldW)}</strong> → Bookings <strong>${arrow(bkW)}</strong> → Calls <strong>${arrow(cdW)}</strong>. Strong demand momentum across the board.`};
+    else
+      diag = {sev:'gray', icon:'✅', title:'All stages within normal variance',
+        text:`Leads ${ldW!=null?arrow(ldW):'—'} · Bookings ${bkW!=null?arrow(bkW):'—'} · Calls ${cdW!=null?arrow(cdW):'—'} WoW. No significant break. B2D: ${b2dCur!=null?b2dCur.toFixed(1)+'%':'—'} (target 70%).`};
+  }
+
+  const gcols  = '1fr auto 1fr auto 1fr';
+  const ldSubLabel = ldIsProxy ? 'slot booked proxy' : (ldCur != null ? 'from L0 sheet' : '');
+  const stages = hasLeads ? `
+    ${stageBlock('Total Leads',  ldCur, ldPrev, ldW,  ldSparkArr, '🎯', avg8ld, ldSubLabel)}
+    ${convArrow('Lead → Booking rate', l2bCur, l2bW)}
+    ${stageBlock('New Bookings', bkCur, bkPrev, bkW,  bkSparkArr, '📅', avg8bk)}
+    ${convArrow('Booking → Done (B2D)', b2dCur, b2dW)}
+    ${stageBlock('Calls Done',   cdCur, cdPrev, cdW,  cdSparkArr, '📞', avg8cd)}
+    ${ldIsProxy ? `<div style="grid-column:1/-1;font-size:10px;color:#94a3b8;text-align:center;padding-top:2px;">
+      🎯 Leads = Slot Booked (JDATA proxy) · open <a href="efficiency.html" style="color:#6366f1;">Efficiency tab</a> once to load exact L0 lead count
+    </div>` : ''}
+  ` : `
+    ${stageBlock('New Bookings', bkCur, bkPrev, bkW, bkSparkArr, '📅', avg8bk)}
+    ${convArrow('Booking → Done (B2D)', b2dCur, b2dW)}
+    ${stageBlock('Calls Done',   cdCur, cdPrev, cdW, cdSparkArr, '📞', avg8cd)}
+    <div style="grid-column:1/-1;font-size:11px;color:#94a3b8;text-align:center;padding-top:4px;">
+      ℹ️ Leads data not available — no JDATA channel info or L0 cache found
+    </div>
+  `;
+
+  return `<div class="card" style="margin-bottom:20px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px;">
+      <div>
+        <div class="sec-hdr">Demand Funnel Analysis</div>
+        <div class="sec-sub">Where is the break? Trace Leads → Bookings → Calls Done</div>
+      </div>
+      <span style="font-size:10px;background:#f0fdf4;color:#16a34a;border:1px solid #bbf7d0;padding:3px 10px;border-radius:999px;font-weight:600;">auto-diagnosed</span>
+    </div>
+    <div style="display:grid;grid-template-columns:${gcols};gap:8px;align-items:center;margin-bottom:14px;">
+      ${stages}
+    </div>
+    <div class="insight-bar ${diag.sev}" style="margin-bottom:0;">
+      <span class="insight-icon">${diag.icon}</span>
+      <span><strong>${diag.title}</strong> — ${diag.text}</span>
+    </div>
+  </div>`;
+}
+
 // ── BUILD KPI STRIP ────────────────────────────────────────────────────────
 function buildKPIStrip() {
   const wk    = ALL_WEEKS[activeWkIdx];
@@ -641,18 +2325,27 @@ function buildTrendChart() {
   // Highlight selected week (convert activeWkIdx from newest-first to oldest-first position)
   const selPosInChron = ALL_WEEKS.length - 1 - activeWkIdx;
 
-  return `<div class="card" style="margin-bottom:20px;">
-    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px;flex-wrap:wrap;gap:8px;">
-      <div>
-        <div class="sec-hdr">12-Week Demand Trend</div>
-        <div class="sec-sub">${metLabel(activeMet)} · ${dataScope.charAt(0).toUpperCase()+dataScope.slice(1)} · with 8-week average reference</div>
-      </div>
-      <div style="display:flex;align-items:center;gap:14px;font-size:11px;">
+  const isAll = activeMet === 'all';
+  const trendLegend = isAll
+    ? `<div style="display:flex;align-items:center;gap:12px;font-size:11px;flex-wrap:wrap;">
+        <span style="display:flex;align-items:center;gap:5px;"><span style="width:10px;height:10px;border-radius:50%;background:#6366f1;display:inline-block;"></span>Calls Done</span>
+        <span style="display:flex;align-items:center;gap:5px;"><span style="width:10px;height:10px;border-radius:50%;background:#10b981;display:inline-block;"></span>New Bookings</span>
+        <span style="display:flex;align-items:center;gap:5px;"><span style="width:10px;height:10px;border-radius:50%;background:#3b82f6;display:inline-block;opacity:.8;"></span>Leads (if loaded)</span>
+      </div>`
+    : `<div style="display:flex;align-items:center;gap:14px;font-size:11px;">
         <span style="display:flex;align-items:center;gap:5px;"><span style="width:14px;height:2.5px;background:#6366f1;display:inline-block;border-radius:2px;"></span>${metLabel(activeMet)}</span>
         ${activeMet==='calls_done'?`<span style="display:flex;align-items:center;gap:5px;"><span style="width:14px;height:2.5px;background:#10b981;display:inline-block;border-radius:2px;border-style:dashed;border-width:0 0 2px 0;"></span>New Bookings</span>`:''}
         <span style="display:flex;align-items:center;gap:5px;"><span style="width:14px;height:2px;background:#f59e0b;display:inline-block;border-radius:2px;border-style:dashed;"></span>8wk avg</span>
+      </div>`;
+  return `<div class="card" style="margin-bottom:20px;">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px;flex-wrap:wrap;gap:8px;">
+      <div>
+        <div class="sec-hdr">${isAll ? '12-Week Trend — All Metrics' : '12-Week Demand Trend'}</div>
+        <div class="sec-sub">${isAll ? 'Calls Done · New Bookings · Leads (if loaded) — see which stage moved' : `${metLabel(activeMet)} · ${dataScope.charAt(0).toUpperCase()+dataScope.slice(1)} · with 8-week average`}</div>
       </div>
+      ${trendLegend}
     </div>
+    ${buildTrendInsight()}
     <div style="height:250px;"><canvas id="trendChart"></canvas></div>
     <div style="height:150px;margin-top:12px;"><canvas id="b2dChart"></canvas></div>
   </div>`;
@@ -663,63 +2356,91 @@ function renderTrendChart() {
   if (charts.b2d)   { charts.b2d.destroy();   delete charts.b2d;   }
   if (!JDATA) return;
 
-  const labels   = [...ALL_WEEKS].reverse().map(wk => {
+  const labels = [...ALL_WEEKS].reverse().map(wk => {
     const lbl = JDATA?.[dataScope]?.weekly_funnel?.[wk]?.label || wk;
     return lbl.replace(/\s*-\s*/,' – ').split(' – ').map(p => p.trim().replace(/\d{4}/,'').trim()).join('\n');
   });
-  const cdChron  = metArr(activeMet).slice().reverse();
-  const nbChron  = activeMet === 'calls_done' ? funnelArr('new_bookings').slice().reverse() : null;
   const b2dChron = funnelArr('b2d_pct').slice().reverse();
-
-  const avg8val  = avg8(metArr(activeMet), activeWkIdx);
   const selPos   = ALL_WEEKS.length - 1 - activeWkIdx;
 
-  // Point colors: highlight selected week
-  const ptColors = cdChron.map((_, i) => i === selPos ? '#0f172a' : '#6366f1');
-  const ptSizes  = cdChron.map((_, i) => i === selPos ? 6 : 3);
+  if (activeMet === 'all') {
+    // ── All mode: 3 lines — Calls Done, New Bookings, Total Leads ─────────
+    const cdChron = funnelArr('calls_done').slice().reverse();
+    const nbChron = funnelArr('new_bookings').slice().reverse();
+    const ldChron = ALL_WEEKS.map(w => TOTAL_LEADS_WK[w] ?? null).reverse();
+    const hasLeads = ldChron.some(v => v != null);
 
-  charts.trend = new Chart(document.getElementById('trendChart'), {
-    type: 'line',
-    data: {
-      labels,
-      datasets: [
-        {
-          label: metLabel(activeMet),
-          data: cdChron,
-          borderColor: '#6366f1', backgroundColor: '#6366f118', fill: true,
-          tension: 0.35, borderWidth: 2.5,
-          pointRadius: ptSizes, pointBackgroundColor: ptColors, pointBorderColor: ptColors,
-        },
-        nbChron ? {
-          label: 'New Bookings',
-          data: nbChron,
-          borderColor: '#10b981', backgroundColor: 'transparent',
-          tension: 0.35, borderWidth: 2, borderDash: [4, 3],
-          pointRadius: 2.5, pointBackgroundColor: '#10b981',
-        } : null,
-        avg8val != null ? {
-          label: '8wk Avg (Calls Done)',
-          data: Array(labels.length).fill(Math.round(avg8val)),
-          borderColor: '#f59e0b', borderWidth: 1.5, borderDash: [6, 4],
-          backgroundColor: 'transparent', pointRadius: 0, tension: 0,
-        } : null,
-      ].filter(Boolean),
-    },
-    options: {
-      responsive: true, maintainAspectRatio: false,
-      scales: {
-        x: { grid: { display: false }, ticks: { font: { size: 10 }, maxRotation: 45 } },
-        y: { grid: { color: '#f1f5f9' }, ticks: { callback: v => v.toLocaleString() }, beginAtZero: false },
-      },
-      plugins: {
-        legend: { display: false },
-        tooltip: {
-          mode: 'index',
-          callbacks: { label: ctx => `${ctx.dataset.label}: ${ctx.raw?.toLocaleString()}` }
-        },
-      },
+    function pts(arr, col) {
+      return { r: arr.map((_,i) => i===selPos?6:3), bg: arr.map((_,i) => i===selPos?'#0f172a':col) };
     }
-  });
+    const cdPts = pts(cdChron,'#6366f1'), nbPts = pts(nbChron,'#10b981'), ldPts = pts(ldChron,'#3b82f6');
+
+    charts.trend = new Chart(document.getElementById('trendChart'), {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [
+          { label:'Calls Done',   data:cdChron, borderColor:'#6366f1', backgroundColor:'#6366f115', fill:true,
+            tension:0.35, borderWidth:2.5, pointRadius:cdPts.r, pointBackgroundColor:cdPts.bg, pointBorderColor:cdPts.bg },
+          { label:'New Bookings', data:nbChron, borderColor:'#10b981', backgroundColor:'transparent',
+            tension:0.35, borderWidth:2.5, pointRadius:nbPts.r, pointBackgroundColor:nbPts.bg, pointBorderColor:nbPts.bg },
+          hasLeads ? { label:'Total Leads', data:ldChron, borderColor:'#3b82f6', backgroundColor:'transparent',
+            borderDash:[5,3], tension:0.35, borderWidth:2,
+            pointRadius:ldPts.r, pointBackgroundColor:ldPts.bg, pointBorderColor:ldPts.bg } : null,
+        ].filter(Boolean),
+      },
+      options: {
+        responsive:true, maintainAspectRatio:false,
+        scales: {
+          x: { grid:{display:false}, ticks:{font:{size:10}, maxRotation:45} },
+          y: { grid:{color:'#f1f5f9'}, ticks:{callback:v=>v.toLocaleString()}, beginAtZero:false },
+        },
+        plugins: {
+          legend: { display:true, position:'top', labels:{boxWidth:10, font:{size:10}} },
+          tooltip: { mode:'index', callbacks:{label:ctx=>`${ctx.dataset.label}: ${ctx.raw?.toLocaleString()??'—'}`} },
+        },
+      }
+    });
+  } else {
+    // ── Single metric mode ─────────────────────────────────────────────────
+    const cdChron  = metArr(activeMet).slice().reverse();
+    const nbChron  = activeMet === 'calls_done' ? funnelArr('new_bookings').slice().reverse() : null;
+    const avg8val  = avg8(metArr(activeMet), activeWkIdx);
+    const ptColors = cdChron.map((_, i) => i === selPos ? '#0f172a' : '#6366f1');
+    const ptSizes  = cdChron.map((_, i) => i === selPos ? 6 : 3);
+
+    charts.trend = new Chart(document.getElementById('trendChart'), {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [
+          { label:metLabel(activeMet), data:cdChron,
+            borderColor:'#6366f1', backgroundColor:'#6366f118', fill:true,
+            tension:0.35, borderWidth:2.5,
+            pointRadius:ptSizes, pointBackgroundColor:ptColors, pointBorderColor:ptColors },
+          nbChron ? { label:'New Bookings', data:nbChron,
+            borderColor:'#10b981', backgroundColor:'transparent',
+            tension:0.35, borderWidth:2, borderDash:[4,3],
+            pointRadius:2.5, pointBackgroundColor:'#10b981' } : null,
+          avg8val != null ? { label:'8wk Avg',
+            data:Array(labels.length).fill(Math.round(avg8val)),
+            borderColor:'#f59e0b', borderWidth:1.5, borderDash:[6,4],
+            backgroundColor:'transparent', pointRadius:0, tension:0 } : null,
+        ].filter(Boolean),
+      },
+      options: {
+        responsive:true, maintainAspectRatio:false,
+        scales: {
+          x: { grid:{display:false}, ticks:{font:{size:10}, maxRotation:45} },
+          y: { grid:{color:'#f1f5f9'}, ticks:{callback:v=>v.toLocaleString()}, beginAtZero:false },
+        },
+        plugins: {
+          legend:{display:false},
+          tooltip:{ mode:'index', callbacks:{label:ctx=>`${ctx.dataset.label}: ${ctx.raw?.toLocaleString()}`} },
+        },
+      }
+    });
+  }
 
   charts.b2d = new Chart(document.getElementById('b2dChart'), {
     type: 'bar',
@@ -748,6 +2469,110 @@ function renderTrendChart() {
       },
     }
   });
+}
+
+// ── COMPARISON PANEL ──────────────────────────────────────────────────────
+function cmpArr_ov(metricKey) {
+  const weeks = [...ALL_WEEKS].reverse(); // oldest → newest for chart
+  if (cmpSeg_ov === 'all') {
+    return weeks.map(wk => JDATA?.[dataScope]?.weekly_funnel?.[wk]?.[metricKey] ?? null);
+  }
+  const colonIdx = cmpSeg_ov.indexOf(':');
+  const seg = cmpSeg_ov.slice(0, colonIdx);
+  const val = cmpSeg_ov.slice(colonIdx + 1);
+  if (seg === 'city') {
+    return weeks.map(wk => JDATA?.[dataScope]?.weekly_city?.[wk]?.[val]?.[metricKey] ?? null);
+  }
+  if (seg === 'channel') {
+    return weeks.map(wk => JDATA?.[dataScope]?.weekly_channel?.[wk]?.[val]?.[metricKey] ?? null);
+  }
+  return weeks.map(() => null);
+}
+
+function renderCmpChart_ov() {
+  if (charts.cmpOv) { charts.cmpOv.destroy(); delete charts.cmpOv; }
+  if (!JDATA) return;
+  const el = document.getElementById('cmpCanvas_ov');
+  if (!el) return;
+  const weeks = [...ALL_WEEKS].reverse();
+  const labels = weeks.map(wk => {
+    const lbl = JDATA?.[dataScope]?.weekly_funnel?.[wk]?.label || wk;
+    return lbl.replace(/\s*-\s*/,' – ').split(' – ').map(p => p.trim().replace(/\d{4}/,'').trim()).join('\n');
+  });
+  const mA = CMP_OV_METRICS.find(m => m.key === cmpA_ov);
+  const mB = CMP_OV_METRICS.find(m => m.key === cmpB_ov);
+  if (!mA || !mB) return;
+  const dataA = cmpArr_ov(cmpA_ov);
+  const dataB = cmpArr_ov(cmpB_ov);
+  const useDual = mA.type !== mB.type;
+  const fmtA = mA.type === 'pct' ? v => v.toFixed(1)+'%' : v => Math.round(v).toLocaleString();
+  const fmtB = mB.type === 'pct' ? v => v.toFixed(1)+'%' : v => Math.round(v).toLocaleString();
+  const colonIdx = cmpSeg_ov.indexOf(':');
+  const segLabel = cmpSeg_ov === 'all' ? '' : ' · ' + cmpSeg_ov.slice(colonIdx + 1);
+  charts.cmpOv = new Chart(el, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        { label: mA.lbl + segLabel, data: dataA,
+          borderColor:'#6366f1', backgroundColor:'#6366f115', fill:true,
+          tension:0.3, borderWidth:2.5, pointRadius:3, pointBackgroundColor:'#6366f1',
+          spanGaps:true, yAxisID:'yA' },
+        { label: mB.lbl + segLabel, data: dataB,
+          borderColor:'#f59e0b', backgroundColor:'transparent',
+          tension:0.3, borderWidth:2.5, pointRadius:3, pointBackgroundColor:'#f59e0b',
+          spanGaps:true, yAxisID: useDual ? 'yB' : 'yA' },
+      ]
+    },
+    options: {
+      responsive:true, maintainAspectRatio:false,
+      scales: {
+        x:  { grid:{display:false}, ticks:{font:{size:9},maxRotation:45} },
+        yA: { position:'left',  grid:{color:'#f1f5f9'}, ticks:{callback:fmtA,font:{size:9}} },
+        ...(useDual ? { yB:{ position:'right', grid:{display:false}, ticks:{callback:fmtB,font:{size:9}} } } : {})
+      },
+      plugins: {
+        legend:  { position:'top', labels:{font:{size:10},boxWidth:10,padding:8} },
+        tooltip: { mode:'index', intersect:false,
+          callbacks:{ label: ctx => `${ctx.dataset.label}: ${ctx.datasetIndex===0 ? fmtA(ctx.raw??0) : fmtB(ctx.raw??0)}` }
+        }
+      }
+    }
+  });
+}
+
+function buildComparePanel_ov() {
+  if (!JDATA) return '';
+  const segOpts = ['<option value="all">All (overall)</option>'];
+  const cities = (JDATA?.offline?.cities || []).filter(c => c && c !== 'Online').sort();
+  cities.forEach(c => segOpts.push(`<option value="city:${c}"${cmpSeg_ov==='city:'+c?' selected':''}>📍 ${c}</option>`));
+  const channels = Object.keys(JDATA?.[dataScope]?.weekly_channel?.[ALL_WEEKS[0]] || {});
+  channels.forEach(c => segOpts.push(`<option value="channel:${c}"${cmpSeg_ov==='channel:'+c?' selected':''}>📡 ${c}</option>`));
+  const metOptsA = CMP_OV_METRICS.map(m => `<option value="${m.key}"${m.key===cmpA_ov?' selected':''}>${m.lbl}</option>`).join('');
+  const metOptsB = CMP_OV_METRICS.map(m => `<option value="${m.key}"${m.key===cmpB_ov?' selected':''}>${m.lbl}</option>`).join('');
+  return `
+  <div class="card" style="margin-bottom:20px;">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap;">
+      <span class="sec-hdr">📊 Compare Parameters</span>
+      <span class="sec-sub">any two metrics over all available weeks</span>
+      <div style="margin-left:auto;display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+        <select onchange="cmpSeg_ov=this.value;renderCmpChart_ov()"
+          style="padding:4px 8px;border:1px solid var(--line);border-radius:6px;font-size:11px;background:#fff;">
+          ${segOpts.join('')}
+        </select>
+        <select onchange="cmpA_ov=this.value;renderCmpChart_ov()"
+          style="padding:4px 8px;border:1px solid var(--line);border-radius:6px;font-size:11px;background:#fff;color:#6366f1;border-color:#c7d2fe;font-weight:600;">
+          ${metOptsA}
+        </select>
+        <span style="font-size:11px;color:#94a3b8;font-weight:600;">vs</span>
+        <select onchange="cmpB_ov=this.value;renderCmpChart_ov()"
+          style="padding:4px 8px;border:1px solid var(--line);border-radius:6px;font-size:11px;background:#fff;color:#d97706;border-color:#fde68a;font-weight:600;">
+          ${metOptsB}
+        </select>
+      </div>
+    </div>
+    <div style="height:220px;position:relative;"><canvas id="cmpCanvas_ov"></canvas></div>
+  </div>`;
 }
 
 // ── BUILD BEAT/MISS HISTORY ───────────────────────────────────────────────
@@ -789,6 +2614,7 @@ function buildBeatMissHistory() {
   return `<div class="card" style="padding:16px 20px;">
     <div class="sec-hdr" style="margin-bottom:2px;">Beat/Miss vs 8wk Avg</div>
     <div class="sec-sub" style="margin-bottom:12px;">${metLabel(activeMet)} · last 9 weeks · highlighted = selected week</div>
+    ${buildBeatMissInsight()}
     ${rows}
     <div style="margin-top:10px;font-size:10px;color:#94a3b8;">
       Bar width = relative to max week · beat/miss = ±3% from rolling 8wk average
@@ -839,6 +2665,7 @@ function buildCategoryMix() {
   return `<div class="card">
     <div class="sec-hdr" style="margin-bottom:2px;">Category Mix</div>
     <div class="sec-sub" style="margin-bottom:12px;">All scope · Calls Done · selected week</div>
+    ${buildCategoryInsight()}
     <table class="tbl">
       <thead><tr>
         <th>Category</th><th class="r">Count</th><th class="r">Share</th><th class="r">WoW</th>
@@ -889,6 +2716,7 @@ function buildChannelTable() {
       <td class="cell-r">
         <span class="val-main">${fmtN(cur)}</span>
         <span class="val-sub">${wowStr != null ? wowHtml(wowStr) : ''}</span>
+        <div style="margin-top:5px;">${wkChips(arr, activeWkIdx, fmtN)}</div>
       </td>
       <td class="cell-r">${vsAvgStr} <span style="font-size:10px;color:#94a3b8;">${avgV != null ? fmtN(avgV) + ' avg' : ''}</span></td>
       <td class="cell-r">
@@ -910,6 +2738,7 @@ function buildChannelTable() {
       <span class="sec-sub">${metLbl} · ${dataScope} · with 8-week rolling average</span>
       ${noteHtml}
     </div>
+    <div style="padding:0 14px 2px;">${buildChannelInsight()}</div>
     <div style="overflow-x:auto;">
     <table class="tbl">
       <thead><tr>
@@ -939,8 +2768,9 @@ function buildCityTable() {
   const cityObj = JDATA?.[dataScope]?.weekly_city?.[wk] || {};
   const cities  = Object.keys(cityObj).filter(c => c && c !== 'Online');
 
-  // Filter by tier
+  // Filter by city (takes precedence) or tier
   const filtered = cities.filter(c => {
+    if (activeCity !== 'ALL') return c === activeCity;
     if (activeTier === 'ALL') return true;
     return cityTier(c) === activeTier;
   });
@@ -992,6 +2822,7 @@ function buildCityTable() {
       <td class="cell-r">
         <span class="val-main">${fmtN(cur)}</span>
         <span class="val-sub">${wowStr != null ? wowHtml(wowStr) : ''}</span>
+        <div style="margin-top:5px;">${wkChips(arr, activeWkIdx, fmtN)}</div>
       </td>
       <td class="cell-r">${vsAvgHtml(cur, avgV)} <span style="font-size:10px;color:#94a3b8;">${avgV != null ? fmtN(Math.round(avgV)) + ' avg' : ''}</span></td>
       <td class="cell-r">
@@ -1010,6 +2841,7 @@ function buildCityTable() {
       <span class="sec-sub">${metLbl} · ${dataScope} · ${activeTier === 'ALL' ? 'All tiers' : activeTier} · with 8wk avg</span>
       ${cityNoteHtml}
     </div>
+    <div style="padding:0 14px 2px;">${buildCityInsight()}</div>
     <div style="overflow-x:auto;max-height:480px;overflow-y:auto;">
     <table class="tbl">
       <thead><tr>
@@ -1028,8 +2860,9 @@ function buildCityTable() {
 // ── RENDER ────────────────────────────────────────────────────────────────
 function render() {
   if (!JDATA) return;
-  const wk = ALL_WEEKS[activeWkIdx];
+  const wk  = ALL_WEEKS[activeWkIdx];
   const lbl = JDATA?.[dataScope]?.weekly_funnel?.[wk]?.label || wk;
+  const isAll = activeMet === 'all';
 
   document.getElementById('root').innerHTML = `
     <!-- Page title -->
@@ -1038,39 +2871,70 @@ function render() {
       <p style="color:var(--muted);font-size:12px;margin:0;">
         Week of <strong>${lbl}</strong> ·
         Scope: <strong>${dataScope.charAt(0).toUpperCase()+dataScope.slice(1)}</strong> ·
-        ${activeTier === 'ALL' ? 'All Cities' : activeTier + ' Cities'} ·
-        All metrics vs 8-week rolling average
+        ${activeCity !== 'ALL' ? `<span style="color:#6366f1;font-weight:600;">📍 ${activeCity}</span>` : activeTier === 'ALL' ? 'All Cities' : activeTier + ' Cities'}
+        ${activeCity !== 'ALL' ? `<button onclick="setCity('ALL')" style="margin-left:6px;font-size:10px;color:#94a3b8;border:1px solid #e2e8f0;border-radius:4px;padding:1px 7px;background:#fff;cursor:pointer;">✕ Clear</button>` : ''}
       </p>
     </div>
 
-    <!-- KPI Strip -->
-    ${buildKPIStrip()}
+    <!-- ① DEMAND STORY: Pulse + Funnel + Diagnosis merged in one card -->
+    ${buildDemandStory()}
 
-    <!-- GMB Search Intent (Discovery vs Direct vs Branded) -->
-    ${buildSearchIntentCard()}
-
-    <!-- Main 3-column grid -->
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px;align-items:start;">
-      ${buildBeatMissHistory()}
-      ${buildCategoryMix()}
-    </div>
-
-    <!-- Trend chart -->
+    <!-- ② 12-WEEK TREND (moved up for immediate visibility) -->
     ${buildTrendChart()}
 
-    <!-- Channel + City tables -->
-    ${buildChannelTable()}
-    ${buildCityTable()}
+    <!-- ③ GROWTH DECOMPOSITION — same-store vs new clinic -->
+    ${buildGrowthDecomposition()}
+
+    ${isAll ? `
+      <!-- ═══ ALL MODE ═══ -->
+
+      <!-- ④ Full funnel by channel -->
+      ${buildFullFunnelTable('channel')}
+
+      <!-- ⑤ City section: funnel + availability (clinics inside city) -->
+      <div style="margin-bottom:8px;display:flex;align-items:center;gap:10px;">
+        <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.09em;color:#94a3b8;white-space:nowrap;">🏙️ City &amp; Clinic View${activeCity !== 'ALL' ? ' · <span style="color:#6366f1;">'+activeCity+'</span>' : ''}</span>
+        <div style="flex:1;height:1px;background:#e2e8f0;"></div>
+      </div>
+      ${buildFullFunnelTable('city')}
+      ${buildAvailabilityIndex()}
+
+      <!-- ⑥ Beat/Miss + Category Mix -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px;align-items:start;">
+        ${buildBeatMissHistory()}
+        ${buildCategoryMix()}
+      </div>
+    ` : `
+      <!-- ═══ SINGLE-METRIC MODE ═══ -->
+
+      <!-- ④ Beat/Miss + Category Mix -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px;align-items:start;">
+        ${buildBeatMissHistory()}
+        ${buildCategoryMix()}
+      </div>
+
+      <!-- ⑤ Channel table -->
+      ${buildChannelTable()}
+
+      <!-- ⑥ City section with availability (clinics inside city) -->
+      <div style="margin-bottom:8px;display:flex;align-items:center;gap:10px;">
+        <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.09em;color:#94a3b8;white-space:nowrap;">🏙️ City &amp; Clinic View${activeCity !== 'ALL' ? ' · <span style="color:#6366f1;">'+activeCity+'</span>' : ''}</span>
+        <div style="flex:1;height:1px;background:#e2e8f0;"></div>
+      </div>
+      ${buildCityTable()}
+      ${buildAvailabilityIndex()}
+    `}
+
+    <!-- 📊 COMPARISON PANEL -->
+    ${buildComparePanel_ov()}
 
     <div style="text-align:center;color:#94a3b8;font-size:11px;margin:20px 0 40px;">
-      Data: appointments CSV (calls done, bookings, B2D%) ·
-      Category mix: all scopes combined ·
-      8wk avg = rolling average of 8 weeks preceding selected week
+      Data: appointments CSV · Category mix: all scopes · 8wk avg = 8 weeks preceding selected week ·
+      chips show W, W-1, W-2
     </div>
   `;
 
-  // Render charts after DOM is ready
-  requestAnimationFrame(() => renderTrendChart());
+  requestAnimationFrame(() => { renderTrendChart(); renderCmpChart_ov(); });
 }
 
 // ── CONTROLS ──────────────────────────────────────────────────────────────
@@ -1083,9 +2947,18 @@ function setScope(scope) {
 }
 function setTier(tier) {
   activeTier = tier;
+  activeCity = 'ALL'; // reset city filter when tier changes
+  const sel = document.getElementById('citySel');
+  if (sel) sel.value = 'ALL';
   ['tAll','tT1','tT2'].forEach(id => document.getElementById(id)?.classList.remove('active'));
   const m = { ALL:'tAll', T1:'tT1', T2:'tT2' };
   document.getElementById(m[tier])?.classList.add('active');
+  render();
+}
+function setCity(city) {
+  activeCity = city;
+  // When a specific city is selected, clear tier filter to avoid confusion
+  if (city !== 'ALL') { activeTier = 'ALL'; ['tAll','tT1','tT2'].forEach(id => document.getElementById(id)?.classList.remove('active')); document.getElementById('tAll')?.classList.add('active'); }
   render();
 }
 function setWeek(val) {
@@ -1094,8 +2967,8 @@ function setWeek(val) {
 }
 function setMet(met) {
   activeMet = met;
-  ['mCalls','mBookings','mLeads'].forEach(id => document.getElementById(id)?.classList.remove('active'));
-  const m = { calls_done:'mCalls', new_bookings:'mBookings', total_leads:'mLeads', gmb_leads:'mLeads' };
+  ['mAll','mCalls','mBookings','mLeads'].forEach(id => document.getElementById(id)?.classList.remove('active'));
+  const m = { all:'mAll', calls_done:'mCalls', new_bookings:'mBookings', total_leads:'mLeads', gmb_leads:'mLeads' };
   document.getElementById(m[met])?.classList.add('active');
   render();
 }
@@ -1109,6 +2982,17 @@ async function init() {
 
     // Build ALL_WEEKS newest-first (data.json weeks are oldest-first)
     ALL_WEEKS = [...(JDATA.weeks || [])].reverse();
+
+    // Build city selector
+    const citySel = document.getElementById('citySel');
+    if (citySel) {
+      const cities = (JDATA?.offline?.cities || []).filter(c => c && c !== 'Online').sort();
+      cities.forEach(city => {
+        const opt = document.createElement('option');
+        opt.value = city; opt.textContent = city;
+        citySel.appendChild(opt);
+      });
+    }
 
     // Build week selector
     const sel = document.getElementById('weekSel');
@@ -1134,13 +3018,16 @@ async function init() {
       if (GMB_INSIGHTS) render();
     });
 
-    // Load GMB leads from demand tracker sheet (non-blocking — kept for backward compat)
+    // Load GMB leads + availability data from demand tracker sheet (non-blocking)
     fetch(OV_SHEET_URL)
       .then(r => r.ok ? r.text() : null)
       .then(text => {
         if (text) {
           GMB_LEADS_BY_CITY = parseGmbLeads(text);
-          if (activeMet === 'gmb_leads') render();
+          const _parsed     = parseAvailData(text);  // avail + allBk per city & clinic
+          OV_SDATA          = _parsed.byCity;
+          OV_SDATA_CLINICS  = _parsed.byClinic;
+          if (activeMet === 'gmb_leads' || activeMet === 'all') render();
         }
       })
       .catch(() => {});

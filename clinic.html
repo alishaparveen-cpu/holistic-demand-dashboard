@@ -55,6 +55,13 @@ html,body{background:#f8fafc;color:var(--ink);font-family:ui-sans-serif,system-u
 /* Sort icon */
 .sort-btn{cursor:pointer;user-select:none;}
 .sort-btn:hover{color:#0f172a;}
+/* Clinic cards */
+.clinic-card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:16px 18px;box-shadow:0 1px 3px rgba(15,23,42,.05);transition:box-shadow .15s;}
+.clinic-card:hover{box-shadow:0 4px 14px rgba(15,23,42,.09);}
+.clinic-card .spark-wrap{display:flex;justify-content:center;}
+/* Channel bar */
+.ch-bar-wrap{height:5px;background:#f1f5f9;border-radius:3px;overflow:hidden;margin-top:2px;}
+.ch-bar-fill{height:100%;border-radius:3px;transition:width .3s;}
 </style>
 </head>
 <body>
@@ -73,6 +80,7 @@ html,body{background:#f8fafc;color:var(--ink);font-family:ui-sans-serif,system-u
     <span class="nav-link active">Clinics</span>
     <a href="efficiency.html" class="nav-link">Efficiency</a>
     <a href="comparison.html" class="nav-link">Comparison →</a>
+  <a href="weekly-report.html" class="nav-link">Weekly Report</a>
 
     <!-- controls on the right -->
     <div style="margin-left:auto;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
@@ -81,6 +89,13 @@ html,body{background:#f8fafc;color:var(--ink);font-family:ui-sans-serif,system-u
         <button class="toggle-btn active" id="tAll" onclick="setTier('ALL')">All Cities</button>
         <button class="toggle-btn"        id="tT1"  onclick="setTier('T1')">T1</button>
         <button class="toggle-btn"        id="tT2"  onclick="setTier('T2')">T2</button>
+      </div>
+      <!-- Maturity filter -->
+      <div style="display:flex;gap:3px;">
+        <button class="toggle-btn active" id="mAll"      onclick="setMaturity('ALL')">All</button>
+        <button class="toggle-btn"        id="mMatured"  onclick="setMaturity('matured')" title="Avg calls ≥20 · established">Matured</button>
+        <button class="toggle-btn"        id="mMaturing" onclick="setMaturity('maturing')" title="Avg calls 8–20 · growing">Maturing</button>
+        <button class="toggle-btn"        id="mNew"      onclick="setMaturity('new')" title="Avg calls &lt;8 · new clinic">New</button>
       </div>
       <!-- Clinic search -->
       <input id="clinicSearch" type="text" placeholder="🔍 Search clinic…"
@@ -119,16 +134,28 @@ function cityTier(c) {
 }
 
 // ── STATE ─────────────────────────────────────────────────────────────────
-let JDATA         = null;
-let ALL_WEEKS     = []; // newest-first
-let activeTier    = 'ALL';
-let activeCity    = 'ALL';
-let activeWkIdx   = 0;
-let sortCol       = 'calls_done';
-let sortAsc       = false;
-let heatmapMetric  = 'calls_done';
-let bubbleChart    = null;
-let clinicSearch   = '';  // text filter for clinic name/city
+let JDATA          = null;
+let CDATA          = null;   // data_clinic.json
+let ALL_WEEKS      = [];     // newest-first
+let activeTier     = 'ALL';
+let activeCity     = 'ALL';
+let activeWkIdx    = 0;
+let sortCol        = 'calls_done';
+let sortAsc        = false;
+let clinicSearch   = '';
+let cardViewMode   = 'cards';     // 'cards' only now
+let expandedCards  = new Set();   // clinic keys with channel breakdown open
+let activeMaturity = 'ALL';       // 'ALL' | 'matured' | 'maturing' | 'new'
+
+// ── COMPARISON PANEL STATE ─────────────────────────────────────────────────
+const CMP_CL_METRICS = [
+  { key:'calls_done',  lbl:'Calls Done',   type:'count' },
+  { key:'gross',       lbl:'Bookings',     type:'count' },
+  { key:'slot_booked', lbl:'Slots',        type:'count' },
+  { key:'b2d_pct',     lbl:'B2D %',        type:'pct'   },
+];
+let cmpA_cl = 'calls_done', cmpB_cl = 'b2d_pct', cmpClinic_cl = 'ALL';
+let cmpChartCl = null;
 
 // ── HELPERS ───────────────────────────────────────────────────────────────
 function fmtN(v)  { if (v == null) return '—'; return Math.round(v).toLocaleString(); }
@@ -214,6 +241,28 @@ function clinicArr(clinic, metric) {
 function clinicKey_city(key) { return key.split('_')[0]; }
 function clinicKey_name(key) { return key.split('_').slice(1).join(' '); }
 
+// ── CLINIC MATURITY ───────────────────────────────────────────────────────
+// Matured: ≥6 weeks with data AND avg calls_done ≥20
+// Maturing: ≥3 weeks with data AND avg calls_done 8-20
+// New: <3 weeks data OR avg calls_done <8
+function clinicMaturity(key) {
+  const arr = clinicArr(key, 'calls_done');
+  const valid = arr.filter(v => v != null && v >= 0);
+  if (valid.length < 3) return 'new';
+  const avg = valid.reduce((a, b) => a + b, 0) / valid.length;
+  if (avg >= 20 && valid.length >= 6) return 'matured';
+  if (avg >= 8) return 'maturing';
+  return 'new';
+}
+
+// Lookup clinic in data_clinic.json by data.json key
+function getClinicAnalysis(key) {
+  if (!CDATA?.clinics) return null;
+  const city = clinicKey_city(key);
+  const name = clinicKey_name(key);
+  return CDATA.clinics.find(c => c.city === city && c.clinic === name) || null;
+}
+
 // ── GET FILTERED CLINIC LIST ──────────────────────────────────────────────
 function getFilteredClinics() {
   const wk = ALL_WEEKS[activeWkIdx];
@@ -224,6 +273,7 @@ function getFilteredClinics() {
     const name = clinicKey_name(key);
     if (activeCity !== 'ALL' && city !== activeCity) return false;
     if (activeTier !== 'ALL' && cityTier(city) !== activeTier) return false;
+    if (activeMaturity !== 'ALL' && clinicMaturity(key) !== activeMaturity) return false;
     if (searchQ && !name.toLowerCase().includes(searchQ) && !city.toLowerCase().includes(searchQ)) return false;
     return true;
   });
@@ -235,7 +285,6 @@ function buildKPIStrip() {
   const wkPrv = ALL_WEEKS[activeWkIdx + 1];
   const clinics = getFilteredClinics();
 
-  // Aggregate metrics across filtered clinics
   function aggMetric(wkKey, metric) {
     let s = 0, n = 0;
     for (const c of clinics) {
@@ -249,19 +298,19 @@ function buildKPIStrip() {
   const prvCalls = aggMetric(wkPrv, 'calls_done');
   const curGross = aggMetric(wk,    'gross');
   const prvGross = aggMetric(wkPrv, 'gross');
-  const curNoSh  = aggMetric(wk,    'no_show');
-  const prvNoSh  = aggMetric(wkPrv, 'no_show');
+  const curSlots = aggMetric(wk,    'slot_booked');
+  const prvSlots = aggMetric(wkPrv, 'slot_booked');
   const curB2d   = curGross > 0 ? curCalls / curGross * 100 : null;
   const prvB2d   = prvGross > 0 ? prvCalls / prvGross * 100 : null;
-  const curNsPct = curGross > 0 ? curNoSh / curGross * 100 : null;
-  const prvNsPct = prvGross > 0 ? prvNoSh / prvGross * 100 : null;
+  const slotConv = curSlots > 0 ? curGross / curSlots * 100 : null;
+  const slotConvP = prvSlots > 0 ? prvGross / prvSlots * 100 : null;
 
-  // 8-week averages (aggregate across clinics for each past week)
   function aggArr(metric) {
     return ALL_WEEKS.map(wkKey => aggMetric(wkKey, metric));
   }
   const cdArr = aggArr('calls_done');
   const grArr = aggArr('gross');
+  const slArr = aggArr('slot_booked');
 
   function avgB2d(fromIdx) {
     let s=0, n=0;
@@ -272,12 +321,12 @@ function buildKPIStrip() {
     }
     return n ? s/n : null;
   }
-  function avgNsPct(fromIdx) {
+  function avgSlotConv(fromIdx) {
     let s=0, n=0;
     for (let i=fromIdx+1; i<=Math.min(fromIdx+8, ALL_WEEKS.length-1); i++) {
-      const ns = aggMetric(ALL_WEEKS[i], 'no_show');
+      const sl = aggMetric(ALL_WEEKS[i], 'slot_booked');
       const g  = aggMetric(ALL_WEEKS[i], 'gross');
-      if (ns != null && g > 0) { s += ns/g*100; n++; }
+      if (sl != null && sl > 0) { s += g/sl*100; n++; }
     }
     return n ? s/n : null;
   }
@@ -301,20 +350,301 @@ function buildKPIStrip() {
   }
 
   const clinicCount = clinics.length;
-  return `<div style="margin-bottom:6px;font-size:11px;color:#64748b;">
-    Showing <strong>${clinicCount}</strong> clinic${clinicCount!==1?'s':''} ·
+
+  // Count status breakdown from CDATA
+  let dropCount = 0, recoverCount = 0, okCount = 0;
+  if (CDATA?.clinics) {
+    for (const key of clinics) {
+      const a = getClinicAnalysis(key);
+      if (!a) continue;
+      if (a.cat === 'Drop Both Week' || a.cat === 'Drop this week') dropCount++;
+      else if (a.cat === 'Recovering') recoverCount++;
+      else if (a.cat === 'Okay') okCount++;
+    }
+  }
+
+  const statusBadges = CDATA ? `
+    <span style="font-size:10px;padding:2px 8px;border-radius:4px;background:#fef2f2;color:#991b1b;font-weight:600;margin-left:4px;">${dropCount} dropping</span>
+    <span style="font-size:10px;padding:2px 8px;border-radius:4px;background:#fefce8;color:#a16207;font-weight:600;">${recoverCount} recovering</span>
+    <span style="font-size:10px;padding:2px 8px;border-radius:4px;background:#f0fdf4;color:#166534;font-weight:600;">${okCount} okay</span>
+  ` : '';
+
+  const maturityLabel = activeMaturity !== 'ALL' ? ` · <strong>${activeMaturity}</strong> clinics` : '';
+
+  return `<div style="margin-bottom:6px;font-size:11px;color:#64748b;display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+    <strong>${clinicCount}</strong> clinic${clinicCount!==1?'s':''} ·
     ${activeCity !== 'ALL' ? activeCity : activeTier !== 'ALL' ? activeTier + ' cities' : 'all cities'}
+    ${maturityLabel}
+    ${statusBadges}
   </div>
   <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:20px;">
     ${kpiCard('Calls Done',     curCalls, prvCalls, avg8(cdArr, activeWkIdx), fmtN)}
     ${kpiCard('Gross Bookings', curGross, prvGross, avg8(grArr, activeWkIdx), fmtN)}
     ${kpiCard('B2D %',          curB2d,   prvB2d,   avgB2d(activeWkIdx),     fmtPct, true)}
-    ${kpiCard('No Show',        curNoSh,  prvNoSh,  null,                    fmtN)}
-    ${kpiCard('No Show % <small style="font-weight:400;color:#94a3b8;font-size:9px;">target &lt;${NS_TARGET}%</small>', curNsPct, prvNsPct, avgNsPct(activeWkIdx), fmtPct, true, true)}
+    ${kpiCard('Slots Booked',   curSlots, prvSlots, avg8(slArr, activeWkIdx), fmtN)}
+    ${kpiCard('Slot→Booking % <small style="font-weight:400;color:#94a3b8;font-size:9px;">slot conv.</small>', slotConv, slotConvP, avgSlotConv(activeWkIdx), fmtPct, true)}
   </div>`;
 }
 
-// ── BUILD CLINIC TABLE ────────────────────────────────────────────────────
+// ── BUILD CLINIC CARDS ────────────────────────────────────────────────────
+const CAT_ORDER = { 'Drop Both Week': 0, 'Drop this week': 1, 'Recovering': 2, 'Okay': 3, 'Insufficient Data': 4 };
+const STATUS_STYLE = {
+  'Drop Both Week':    { bg:'#fef2f2', color:'#991b1b', border:'#fecaca', dot:'#ef4444', label:'Drop Both Weeks' },
+  'Drop this week':    { bg:'#fff7ed', color:'#c2410c', border:'#fed7aa', dot:'#f97316', label:'Dropping Now' },
+  'Recovering':        { bg:'#fefce8', color:'#a16207', border:'#fde68a', dot:'#eab308', label:'Recovering' },
+  'Okay':              { bg:'#f0fdf4', color:'#166534', border:'#bbf7d0', dot:'#10b981', label:'Okay' },
+  'Insufficient Data': { bg:'#f8fafc', color:'#64748b', border:'#e2e8f0', dot:'#94a3b8', label:'Low Data' },
+};
+const BORDER_COLOR = {
+  'Drop Both Week': '#ef4444', 'Drop this week': '#f97316',
+  'Recovering': '#eab308', 'Okay': '#10b981', 'Insufficient Data': '#cbd5e1',
+};
+
+function buildClinicCards() {
+  const clinics = getFilteredClinics();
+  if (!clinics.length) {
+    return `<div class="card" style="padding:20px;color:var(--muted);">No clinics found for the selected filter.</div>`;
+  }
+
+  // Sort: drops first, then by calls done
+  const sorted = [...clinics].sort((a, b) => {
+    const ca = getClinicAnalysis(a);
+    const cb = getClinicAnalysis(b);
+    const oa = ca ? (CAT_ORDER[ca.cat] ?? 5) : 5;
+    const ob = cb ? (CAT_ORDER[cb.cat] ?? 5) : 5;
+    if (oa !== ob) return oa - ob;
+    const av = clinicData(ALL_WEEKS[activeWkIdx], a).calls_done || 0;
+    const bv = clinicData(ALL_WEEKS[activeWkIdx], b).calls_done || 0;
+    return bv - av;
+  });
+
+  const cards = sorted.map(key => buildClinicCard(key)).join('');
+
+  return `<div style="margin-bottom:10px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px;">
+    <div>
+      <span style="font-size:14px;font-weight:700;color:#0f172a;">📋 Clinic Performance</span>
+      <span style="font-size:11px;color:#64748b;margin-left:8px;">4-week trends · click any sparkline to zoom · ▼ to see channel breakdown</span>
+    </div>
+    <div style="display:flex;gap:10px;align-items:center;font-size:11px;color:#64748b;">
+      <span style="display:flex;align-items:center;gap:4px;"><span style="width:8px;height:8px;border-radius:2px;background:#ef4444;display:inline-block;"></span> Drop</span>
+      <span style="display:flex;align-items:center;gap:4px;"><span style="width:8px;height:8px;border-radius:2px;background:#eab308;display:inline-block;"></span> Recovering</span>
+      <span style="display:flex;align-items:center;gap:4px;"><span style="width:8px;height:8px;border-radius:2px;background:#10b981;display:inline-block;"></span> Okay</span>
+    </div>
+  </div>
+  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(310px,1fr));gap:14px;">
+    ${cards}
+  </div>`;
+}
+
+function buildClinicCard(key) {
+  const city = clinicKey_city(key);
+  const name = clinicKey_name(key);
+  const tier = cityTier(city);
+  const tierBadge = tier === 'T1' ? `<span class="t1b">T1</span>` : `<span class="t2b">T2</span>`;
+
+  const analysis = getClinicAnalysis(key);
+  const cat = analysis?.cat || null;
+  const st  = cat ? (STATUS_STYLE[cat] || STATUS_STYLE['Insufficient Data']) : null;
+  const bColor = BORDER_COLOR[cat] || '#e2e8f0';
+
+  // 4-week data (newest first → reverse for sparkline left=oldest)
+  const n4     = ALL_WEEKS.slice(0, Math.min(4, ALL_WEEKS.length));
+  const wkLbls = n4.map(wk => JDATA?.offline?.weekly_funnel?.[wk]?.label || wk.slice(5)).reverse();
+
+  const calls4 = n4.map(wk => clinicData(wk, key).calls_done ?? null).reverse();
+  const gross4 = n4.map(wk => clinicData(wk, key).gross ?? null).reverse();
+  const slots4 = n4.map(wk => clinicData(wk, key).slot_booked ?? null).reverse();
+  const b2d4   = n4.map(wk => {
+    const d = clinicData(wk, key);
+    return d.b2d_pct ?? (d.gross > 0 ? (d.calls_done || 0) / d.gross * 100 : null);
+  }).reverse();
+
+  const curCalls = calls4[calls4.length - 1];
+  const prvCalls = calls4[calls4.length - 2] ?? null;
+  const curGross = gross4[gross4.length - 1];
+  const prvGross = gross4[gross4.length - 2] ?? null;
+  const curSlots = slots4[slots4.length - 1];
+  const prvSlots = slots4[slots4.length - 2] ?? null;
+  const curB2d   = b2d4[b2d4.length - 1];
+  const prvB2d   = b2d4[b2d4.length - 2] ?? null;
+
+  // 8-week avg for calls
+  const callsFullArr = clinicArr(key, 'calls_done');
+  const avg8Calls = avg8(callsFullArr, activeWkIdx);
+
+  // vs expected badge from data_clinic.json w6
+  const w6Gap = analysis?.w6?.gap_pct;
+  const gapBadge = w6Gap != null
+    ? `<span style="font-size:9px;padding:2px 6px;border-radius:4px;font-weight:700;background:${w6Gap <= -20 ? '#fef2f2' : w6Gap <= -5 ? '#fff7ed' : w6Gap >= 10 ? '#f0fdf4' : '#f8fafc'};color:${w6Gap <= -20 ? '#dc2626' : w6Gap <= -5 ? '#c2410c' : w6Gap >= 10 ? '#059669' : '#64748b'};">${w6Gap > 0 ? '+' : ''}${w6Gap.toFixed(0)}% vs exp</span>`
+    : '';
+
+  const isExpanded = expandedCards.has(key);
+
+  // Inline sparkline builder for cards (compact, 80×30)
+  function cardSpark(vals, color, title, fmt) {
+    const safeVals   = JSON.stringify(vals || []).replace(/'/g, '&#39;');
+    const safeLabels = JSON.stringify(wkLbls).replace(/'/g, '&#39;');
+    const safeTitle  = (title || '').replace(/"/g, '&quot;');
+    const datAttrs   = `data-sparkvals='${safeVals}' data-sparklabels='${safeLabels}' data-sparkcolor='${color}' data-sparktitle="${safeTitle}" data-sparkfmt='${fmt || ''}'`;
+    const v = (vals || []).filter(x => x != null);
+    if (v.length < 2) return `<div class="spark-wrap" ${datAttrs} style="display:flex;justify-content:center;"><svg width="80" height="30" style="display:block;"></svg></div>`;
+    const w = 80, h = 30;
+    const mn = Math.min(...v), mx = Math.max(...v), range = mx - mn || 1;
+    const n = vals.length;
+    const pts = [];
+    vals.forEach((val, i) => {
+      if (val == null) return;
+      const x = ((i / (n - 1)) * (w - 6) + 3).toFixed(1);
+      const y = (h - 3 - ((val - mn) / range) * (h - 8)).toFixed(1);
+      pts.push(`${x},${y}`);
+    });
+    if (pts.length < 2) return `<div class="spark-wrap" ${datAttrs} style="display:flex;justify-content:center;"><svg width="${w}" height="${h}" style="display:block;"></svg></div>`;
+    const poly = pts.join(' ');
+    const [fx] = pts[0].split(',');
+    const [lx, ly] = pts[pts.length - 1].split(',');
+    return `<div class="spark-wrap" ${datAttrs} style="display:flex;justify-content:center;cursor:zoom-in;">
+      <svg width="${w}" height="${h}" style="display:block;overflow:visible;">
+        <polygon points="${fx},${h} ${poly} ${lx},${h}" fill="${color}18" stroke="none"/>
+        <polyline points="${poly}" stroke="${color}" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+        <circle cx="${lx}" cy="${ly}" r="2.8" fill="${color}"/>
+      </svg>
+    </div>`;
+  }
+
+  const b2dColor = curB2d >= 70 ? '#059669' : curB2d >= 60 ? '#d97706' : curB2d ? '#dc2626' : '#94a3b8';
+  const slotColor = '#0ea5e9';
+
+  // Channel breakdown (expanded)
+  const channelSection = isExpanded && analysis
+    ? buildChannelBreakdown(analysis)
+    : '';
+
+  // Expand button (only if data_clinic.json has this clinic)
+  const expandBtn = analysis
+    ? `<button onclick="toggleCard('${key.replace(/\\/g,'\\\\').replace(/'/g,"\\'")}')"
+         style="margin-top:10px;width:100%;padding:5px 10px;border:1px solid #e2e8f0;border-radius:7px;background:#f8fafc;cursor:pointer;font-size:11px;color:#475569;display:flex;justify-content:space-between;align-items:center;font-weight:600;">
+        <span>📊 Channel Breakdown (W5→W6)</span>
+        <span style="font-size:10px;">${isExpanded ? '▲ Hide' : '▼ Show'}</span>
+      </button>
+      ${channelSection}`
+    : `<div style="margin-top:8px;font-size:10px;color:#cbd5e1;text-align:center;">No recent channel data</div>`;
+
+  return `<div class="clinic-card" style="border-left:3px solid ${bColor};">
+    <!-- Header -->
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;">
+      <div>
+        <div style="font-size:13px;font-weight:700;color:#0f172a;line-height:1.3;">${name}</div>
+        <div style="font-size:11px;color:#64748b;margin-top:2px;">${city} ${tierBadge}</div>
+      </div>
+      <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;">
+        ${st ? `<span style="font-size:9px;font-weight:700;padding:2px 7px;border-radius:5px;background:${st.bg};color:${st.color};border:1px solid ${st.border};white-space:nowrap;"><span style="color:${st.dot};">●</span> ${st.label}</span>` : ''}
+        ${gapBadge}
+      </div>
+    </div>
+
+    <!-- 4-week sparklines grid -->
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:6px;margin-bottom:4px;">
+      <!-- Calls Done -->
+      <div style="text-align:center;">
+        <div style="font-size:9px;text-transform:uppercase;letter-spacing:.05em;color:#94a3b8;margin-bottom:2px;line-height:1.2;">Calls</div>
+        ${cardSpark(calls4, '#6366f1', name + ' — Calls Done', '')}
+        <div style="font-size:13px;font-weight:700;color:#0f172a;margin-top:2px;">${fmtN(curCalls)}</div>
+        <div style="font-size:10px;line-height:1.4;">${wowHtml(wowPct(curCalls, prvCalls))}</div>
+      </div>
+      <!-- Gross Bookings -->
+      <div style="text-align:center;">
+        <div style="font-size:9px;text-transform:uppercase;letter-spacing:.05em;color:#94a3b8;margin-bottom:2px;line-height:1.2;">Bookings</div>
+        ${cardSpark(gross4, '#0ea5e9', name + ' — Gross Bookings', '')}
+        <div style="font-size:13px;font-weight:700;color:#0f172a;margin-top:2px;">${fmtN(curGross)}</div>
+        <div style="font-size:10px;line-height:1.4;">${wowHtml(wowPct(curGross, prvGross))}</div>
+      </div>
+      <!-- B2D % -->
+      <div style="text-align:center;">
+        <div style="font-size:9px;text-transform:uppercase;letter-spacing:.05em;color:#94a3b8;margin-bottom:2px;line-height:1.2;">B2D %</div>
+        ${cardSpark(b2d4, '#10b981', name + ' — B2D %', 'pct')}
+        <div style="font-size:13px;font-weight:700;color:${b2dColor};margin-top:2px;">${curB2d != null ? curB2d.toFixed(1) + '%' : '—'}</div>
+        <div style="font-size:10px;line-height:1.4;">${ppHtml(wowPp(curB2d, prvB2d))}</div>
+      </div>
+      <!-- Slots (Leads / slot_booked) -->
+      <div style="text-align:center;">
+        <div style="font-size:9px;text-transform:uppercase;letter-spacing:.05em;color:#94a3b8;margin-bottom:2px;line-height:1.2;">Slots</div>
+        ${cardSpark(slots4, slotColor, name + ' — Slots Booked', '')}
+        <div style="font-size:13px;font-weight:700;color:${slotColor};margin-top:2px;">${fmtN(curSlots)}</div>
+        <div style="font-size:10px;line-height:1.4;">${wowHtml(wowPct(curSlots, prvSlots))}</div>
+      </div>
+    </div>
+
+    <!-- Channel drill-down -->
+    ${expandBtn}
+  </div>`;
+}
+
+// ── CHANNEL BREAKDOWN ─────────────────────────────────────────────────────
+function buildChannelBreakdown(analysis) {
+  if (!analysis?.sources) return '';
+
+  const sources    = CDATA?.source_order  || ['gmb','google','organic','fb','practo','directwalkin','other'];
+  const srcNames   = CDATA?.source_names  || {};
+
+  // Filter to sources with meaningful data
+  const active = sources.filter(s => {
+    const d = analysis.sources[s];
+    return d && (d.avg >= 0.5 || d.w6 > 0);
+  });
+
+  // Max for bar scaling
+  const maxExp = Math.max(...active.map(s => analysis.sources[s]?.exp_w6 || 0), 1);
+
+  // Sort: worst gap first
+  const sorted = [...active].sort((a, b) => {
+    const ga = (analysis.sources[a]?.w6 || 0) - (analysis.sources[a]?.exp_w6 || 0);
+    const gb = (analysis.sources[b]?.w6 || 0) - (analysis.sources[b]?.exp_w6 || 0);
+    return ga - gb;
+  });
+
+  const rows = sorted.map((src, idx) => {
+    const d = analysis.sources[src];
+    if (!d) return '';
+    const act  = d.w6  ?? 0;
+    const exp  = d.exp_w6 ?? 0;
+    const actW5 = d.w5 ?? 0;
+    const gap  = act - exp;
+    const gapPct = exp > 0 ? gap / exp * 100 : 0;
+    const actBar = Math.min(100, Math.round(act / maxExp * 100));
+    const expBar = Math.min(100, Math.round(exp / maxExp * 100));
+    const isWorst = idx === 0 && gap < -1;
+    const barColor = gapPct <= -30 ? '#ef4444' : gapPct <= -10 ? '#f97316' : gapPct <= -5 ? '#f59e0b' : gapPct >= 10 ? '#10b981' : '#6366f1';
+    const wowDir = act > actW5 ? '▲' : act < actW5 ? '▼' : '→';
+    const wowClr = act > actW5 ? '#059669' : act < actW5 ? '#dc2626' : '#94a3b8';
+
+    return `<div style="margin-bottom:7px;${isWorst ? 'padding:4px 6px;border-radius:7px;background:#fef2f208;border:1px solid #fecaca40;' : ''}">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px;">
+        <span style="font-size:11px;font-weight:700;color:${isWorst ? '#dc2626' : '#374151'};">${srcNames[src] || src}${isWorst ? ' ⚠' : ''}</span>
+        <div style="display:flex;align-items:center;gap:6px;">
+          <span style="font-size:10px;color:${wowClr};font-weight:600;">${wowDir} W5: ${actW5}</span>
+          <span style="font-size:10px;color:${gapPct <= -10 ? '#dc2626' : gapPct >= 10 ? '#059669' : '#64748b'};font-weight:600;">${act} / ${exp.toFixed(0)} (${gapPct > 0 ? '+' : ''}${gapPct.toFixed(0)}%)</span>
+        </div>
+      </div>
+      <div style="position:relative;height:5px;background:#f1f5f9;border-radius:3px;overflow:hidden;">
+        <div style="position:absolute;left:0;top:0;height:100%;width:${expBar}%;background:#e2e8f0;border-radius:3px;"></div>
+        <div style="position:absolute;left:0;top:0;height:100%;width:${actBar}%;background:${barColor};border-radius:3px;"></div>
+      </div>
+    </div>`;
+  }).join('');
+
+  const remark = analysis.remark || '';
+  const remarkSnip = remark.length > 90 ? remark.slice(0, 90) + '…' : remark;
+
+  return `<div style="margin-top:8px;padding:10px 12px;background:#f8fafc;border-radius:9px;border:1px solid #e2e8f0;">
+    <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#94a3b8;margin-bottom:6px;">
+      W6 Actual vs Expected · bar = actual / dashed = expected
+    </div>
+    ${rows}
+    ${remark ? `<div style="font-size:10px;color:#475569;margin-top:6px;line-height:1.5;border-top:1px solid #e2e8f0;padding-top:6px;">💬 ${remarkSnip}</div>` : ''}
+  </div>`;
+}
+
+// ── BUILD CLINIC TABLE (compact, sortable — shown when table mode is active) ─
 function buildClinicTable() {
   const wk   = ALL_WEEKS[activeWkIdx];
   const wkP  = ALL_WEEKS[activeWkIdx + 1];
@@ -323,7 +653,6 @@ function buildClinicTable() {
     return `<div class="card" style="padding:20px;color:var(--muted);">No clinics found for the selected filter.</div>`;
   }
 
-  // Build row data
   const rows = clinics.map(key => {
     const city   = clinicKey_city(key);
     const name   = clinicKey_name(key);
@@ -333,27 +662,26 @@ function buildClinicTable() {
     const nsArr  = clinicArr(key, 'no_show');
     const nsPArr = clinicArr(key, 'ns_pct');
 
-    const cur    = arr[activeWkIdx];
-    const prev   = arr[activeWkIdx + 1];
-    const avgV   = avg8(arr, activeWkIdx);
+    const cur     = arr[activeWkIdx];
+    const prev    = arr[activeWkIdx + 1];
+    const avgV    = avg8(arr, activeWkIdx);
     const curGross = grArr[activeWkIdx];
     const prvGross = grArr[activeWkIdx + 1];
-    const b2dCur = b2dArr[activeWkIdx];
-    const b2dAvg = avg8(b2dArr, activeWkIdx);
-    const nsCur  = nsArr[activeWkIdx];
-    const nsPCur = nsPArr[activeWkIdx];
+    const b2dCur  = b2dArr[activeWkIdx];
+    const b2dAvg  = avg8(b2dArr, activeWkIdx);
+    const nsCur   = nsArr[activeWkIdx];
+    const nsPCur  = nsPArr[activeWkIdx];
 
     return { key, city, name, cur, prev, avgV, curGross, prvGross, b2dCur, b2dAvg, nsCur, nsPCur, arr, b2dArr };
   });
 
-  // Sort
   const sortFn = {
-    calls_done:  (a,b) => (b.cur||0) - (a.cur||0),
-    gross:       (a,b) => (b.curGross||0) - (a.curGross||0),
-    b2d_pct:     (a,b) => (b.b2dCur||0) - (a.b2dCur||0),
-    no_show:     (a,b) => (b.nsCur||0) - (a.nsCur||0),
-    city:        (a,b) => a.city.localeCompare(b.city),
-    clinic:      (a,b) => a.name.localeCompare(b.name),
+    calls_done: (a,b) => (b.cur||0) - (a.cur||0),
+    gross:      (a,b) => (b.curGross||0) - (a.curGross||0),
+    b2d_pct:    (a,b) => (b.b2dCur||0) - (a.b2dCur||0),
+    no_show:    (a,b) => (b.nsCur||0) - (a.nsCur||0),
+    city:       (a,b) => a.city.localeCompare(b.city),
+    clinic:     (a,b) => a.name.localeCompare(b.name),
   }[sortCol] || ((a,b) => (b.cur||0) - (a.cur||0));
   const sorted = [...rows].sort(sortFn);
   if (sortAsc) sorted.reverse();
@@ -367,17 +695,20 @@ function buildClinicTable() {
   }
 
   const tableRows = sorted.map(({ key, city, name, cur, prev, avgV, curGross, prvGross, b2dCur, b2dAvg, nsCur, nsPCur, arr, b2dArr }) => {
-    const tier    = cityTier(city);
-    const tierB   = tier === 'T1' ? `<span class="t1b">T1</span>` : tier === 'T2' ? `<span class="t2b">T2</span>` : '';
-    const wowStr  = wowPct(cur, prev);
-    const barW    = Math.round((cur || 0) / maxCalls * 100);
-    const color   = avgV != null && cur != null
+    const tier   = cityTier(city);
+    const tierB  = tier === 'T1' ? `<span class="t1b">T1</span>` : tier === 'T2' ? `<span class="t2b">T2</span>` : '';
+    const wowStr = wowPct(cur, prev);
+    const barW   = Math.round((cur || 0) / maxCalls * 100);
+    const color  = avgV != null && cur != null
       ? (cur > avgV * 1.03 ? '#10b981' : cur < avgV * 0.97 ? '#ef4444' : '#6366f1')
       : '#6366f1';
     const b2dColor = b2dCur >= 70 ? '#059669' : b2dCur >= 60 ? '#d97706' : b2dCur ? '#dc2626' : '#94a3b8';
     const sparkVals = arr.slice(0, 9).reverse();
+    const analysis = getClinicAnalysis(key);
+    const cat = analysis?.cat;
+    const bColor = BORDER_COLOR[cat] || 'transparent';
 
-    return `<tr>
+    return `<tr style="border-left:3px solid ${bColor};">
       <td style="min-width:140px;">
         <div style="font-weight:600;">${name}</div>
         <div style="font-size:10px;color:#94a3b8;margin-top:1px;">${city} ${tierB}</div>
@@ -429,20 +760,18 @@ function buildClinicTable() {
 
 // ── BUILD CITY SUMMARY ────────────────────────────────────────────────────
 function buildCitySummary() {
-  // If a specific city is selected, skip the city summary
   if (activeCity !== 'ALL') return '';
 
   const wk  = ALL_WEEKS[activeWkIdx];
   const wkP = ALL_WEEKS[activeWkIdx + 1];
 
-  // Group clinics by city
   const allClinics = Object.keys(JDATA?.offline?.weekly_clinic?.[wk] || {});
   const cityMap = {};
   for (const key of allClinics) {
     const city = clinicKey_city(key);
     const tier = cityTier(city);
     if (activeTier !== 'ALL' && tier !== activeTier) continue;
-    if (!cityMap[city]) cityMap[city] = { calls: 0, callsPrv: 0, gross: 0, grossPrv: 0, count: 0 };
+    if (!cityMap[city]) cityMap[city] = { calls: 0, callsPrv: 0, gross: 0, grossPrv: 0, count: 0, drops: 0, recovering: 0 };
     const d  = clinicData(wk,  key);
     const dP = clinicData(wkP, key);
     cityMap[city].calls    += d.calls_done || 0;
@@ -450,6 +779,9 @@ function buildCitySummary() {
     cityMap[city].gross    += d.gross || 0;
     cityMap[city].grossPrv += dP.gross || 0;
     cityMap[city].count++;
+    const a = getClinicAnalysis(key);
+    if (a?.cat === 'Drop Both Week' || a?.cat === 'Drop this week') cityMap[city].drops++;
+    else if (a?.cat === 'Recovering') cityMap[city].recovering++;
   }
 
   const cityArr2 = Object.entries(cityMap).sort((a,b) => b[1].calls - a[1].calls);
@@ -463,12 +795,13 @@ function buildCitySummary() {
     const wow = wowPct(v.calls, v.callsPrv);
     const b2d = v.gross > 0 ? v.calls / v.gross * 100 : null;
     const barW = Math.round(v.calls / maxCalls * 100);
-    const color = '#6366f1';
+    const statusHtml = v.drops > 0 ? `<span style="font-size:9px;padding:1px 5px;border-radius:3px;background:#fef2f2;color:#991b1b;font-weight:600;margin-left:4px;">${v.drops}▼</span>` :
+      v.recovering > 0 ? `<span style="font-size:9px;padding:1px 5px;border-radius:3px;background:#fefce8;color:#a16207;font-weight:600;margin-left:4px;">${v.recovering}↗</span>` : '';
 
     return `<tr style="cursor:pointer;" onclick="setCity('${city}');document.getElementById('citySel').value='${city}';">
       <td style="font-weight:600;">
-        ${city} ${tierB}
-        <div style="height:3px;width:${barW}%;background:${color}66;border-radius:2px;margin-top:4px;max-width:80px;"></div>
+        ${city} ${tierB} ${statusHtml}
+        <div style="height:3px;width:${barW}%;background:#6366f166;border-radius:2px;margin-top:4px;max-width:80px;"></div>
       </td>
       <td class="cell-r" style="font-size:11px;color:#64748b;">${v.count} clinic${v.count!==1?'s':''}</td>
       <td class="cell-r">
@@ -483,7 +816,7 @@ function buildCitySummary() {
   return `<div class="card" style="margin-bottom:20px;padding:0;overflow:hidden;">
     <div style="padding:14px 20px;border-bottom:1px solid var(--line);">
       <span class="sec-hdr">City Summary</span>
-      <span class="sec-sub" style="margin-left:8px;">Click a city row to drill down · ${activeTier !== 'ALL' ? activeTier : 'All Cities'}</span>
+      <span class="sec-sub" style="margin-left:8px;">Click a city row to drill down · ${activeTier !== 'ALL' ? activeTier : 'All Cities'} · badge = dropping clinics ▼ or recovering ↗</span>
     </div>
     <div style="overflow-x:auto;">
     <table class="tbl">
@@ -497,177 +830,111 @@ function buildCitySummary() {
   </div>`;
 }
 
-// ── BUBBLE CHART SECTION HTML ─────────────────────────────────────────────
-function buildBubbleChartSection() {
-  return `<div class="card" style="margin-bottom:20px;">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;flex-wrap:wrap;gap:8px;">
-      <div>
-        <span class="sec-hdr">Clinic Performance Matrix</span>
-        <span class="sec-sub" style="margin-left:8px;">X = Calls Done · Y = B2D% · bubble size = No Show%</span>
-      </div>
-      <div style="display:flex;gap:10px;align-items:center;font-size:11px;color:#64748b;">
-        <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#7c3aed;opacity:.7;margin-right:4px;vertical-align:middle;"></span>T1 Cities</span>
-        <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#0369a1;opacity:.7;margin-right:4px;vertical-align:middle;"></span>T2 Cities</span>
-        <span style="color:#94a3b8;">Larger = higher no-show%</span>
-      </div>
-    </div>
-    <div style="height:320px;position:relative;"><canvas id="bubbleChart"></canvas></div>
-  </div>`;
+// ── COMPARISON PANEL ──────────────────────────────────────────────────────
+function cmpArr_cl(metricKey) {
+  const weeks = [...ALL_WEEKS].reverse(); // oldest → newest for chart
+  if (cmpClinic_cl === 'ALL') {
+    const filtered = getFilteredClinics();
+    return weeks.map(wk => {
+      let total = 0, pctSum = 0, count = 0;
+      for (const key of filtered) {
+        const v = clinicData(wk, key)[metricKey];
+        if (v != null) {
+          if (metricKey === 'b2d_pct') { pctSum += v; count++; }
+          else { total += v; count++; }
+        }
+      }
+      if (!count) return null;
+      return metricKey === 'b2d_pct' ? pctSum / count : total;
+    });
+  }
+  return weeks.map(wk => clinicData(wk, cmpClinic_cl)[metricKey] ?? null);
 }
 
-// ── BUILD BUBBLE CHART (Chart.js) ─────────────────────────────────────────
-function buildBubble() {
-  if (bubbleChart) { try { bubbleChart.destroy(); } catch(e) {} bubbleChart = null; }
-  const canvas = document.getElementById('bubbleChart');
-  if (!canvas || typeof Chart === 'undefined') return;
-
-  const wk = ALL_WEEKS[activeWkIdx];
-  const clinics = getFilteredClinics();
-  const t1Data = [], t2Data = [];
-
-  for (const key of clinics) {
-    const d  = clinicData(wk, key);
-    const x  = d.calls_done;
-    const y  = d.b2d_pct;
-    const ns = d.ns_pct;
-    if (x == null || y == null) continue;
-    const r     = ns != null ? Math.max(5, Math.min(22, ns / 2.5)) : 6;
-    const tier  = cityTier(clinicKey_city(key));
-    const point = { x, y, r, _ns: ns, _label: `${clinicKey_name(key)} (${clinicKey_city(key)})` };
-    if (tier === 'T1') t1Data.push(point); else t2Data.push(point);
-  }
-
-  bubbleChart = new Chart(canvas, {
-    type: 'bubble',
+function renderCmpChart_cl() {
+  if (cmpChartCl) { cmpChartCl.destroy(); cmpChartCl = null; }
+  if (!JDATA) return;
+  const el = document.getElementById('cmpCanvas_cl');
+  if (!el) return;
+  const weeks = [...ALL_WEEKS].reverse();
+  const labels = weeks.map(wk =>
+    JDATA?.offline?.weekly_funnel?.[wk]?.label || JDATA?.all?.weekly_funnel?.[wk]?.label || wk);
+  const mA = CMP_CL_METRICS.find(m => m.key === cmpA_cl);
+  const mB = CMP_CL_METRICS.find(m => m.key === cmpB_cl);
+  if (!mA || !mB) return;
+  const dataA = cmpArr_cl(cmpA_cl);
+  const dataB = cmpArr_cl(cmpB_cl);
+  const useDual = mA.type !== mB.type;
+  const fmtA = mA.type === 'pct' ? v => v.toFixed(1)+'%' : v => Math.round(v).toLocaleString();
+  const fmtB = mB.type === 'pct' ? v => v.toFixed(1)+'%' : v => Math.round(v).toLocaleString();
+  const segLabel = cmpClinic_cl === 'ALL'
+    ? ' (all filtered)' : ` · ${clinicKey_name(cmpClinic_cl)} (${clinicKey_city(cmpClinic_cl)})`;
+  cmpChartCl = new Chart(el, {
+    type: 'line',
     data: {
+      labels,
       datasets: [
-        { label:'T1 Clinics', data:t1Data, backgroundColor:'rgba(124,58,237,.55)', borderColor:'#7c3aed', borderWidth:1.5 },
-        { label:'T2 Clinics', data:t2Data, backgroundColor:'rgba(3,105,161,.5)',   borderColor:'#0369a1', borderWidth:1.5 },
+        { label: mA.lbl + segLabel, data: dataA,
+          borderColor:'#6366f1', backgroundColor:'#6366f115', fill:true,
+          tension:0.3, borderWidth:2.5, pointRadius:3, pointBackgroundColor:'#6366f1',
+          spanGaps:true, yAxisID:'yA' },
+        { label: mB.lbl + segLabel, data: dataB,
+          borderColor:'#f59e0b', backgroundColor:'transparent',
+          tension:0.3, borderWidth:2.5, pointRadius:3, pointBackgroundColor:'#f59e0b',
+          spanGaps:true, yAxisID: useDual ? 'yB' : 'yA' },
       ]
     },
     options: {
       responsive:true, maintainAspectRatio:false,
-      plugins: {
-        legend: { display:false },
-        tooltip: {
-          backgroundColor:'#0f172a', titleColor:'#94a3b8', bodyColor:'#f8fafc', padding:12,
-          callbacks: {
-            title: ctx => ctx[0]?.raw?._label || '',
-            label: ctx => {
-              const r = ctx.raw;
-              return [`  Calls Done: ${r.x}`, `  B2D%: ${r.y?.toFixed(1)}%`, `  No Show%: ${r._ns!=null?r._ns.toFixed(1)+'%':'—'}`];
-            }
-          }
-        }
-      },
       scales: {
-        x: { title:{display:true,text:'Calls Done',font:{size:11}}, beginAtZero:true, grid:{color:'#f1f5f9'},
-             ticks:{font:{size:10},callback:v=>v.toLocaleString()} },
-        y: { title:{display:true,text:'B2D %',font:{size:11}}, ticks:{callback:v=>v+'%',font:{size:10}},
-             grid:{color:'#f1f5f9'}, min:0 }
+        x:  { grid:{display:false}, ticks:{font:{size:9},maxRotation:45} },
+        yA: { position:'left',  grid:{color:'#f1f5f9'}, ticks:{callback:fmtA,font:{size:9}} },
+        ...(useDual ? { yB:{ position:'right', grid:{display:false}, ticks:{callback:fmtB,font:{size:9}} } } : {})
+      },
+      plugins: {
+        legend:  { position:'top', labels:{font:{size:10},boxWidth:10,padding:8} },
+        tooltip: { mode:'index', intersect:false,
+          callbacks:{ label: ctx => `${ctx.dataset.label}: ${ctx.datasetIndex===0 ? fmtA(ctx.raw??0) : fmtB(ctx.raw??0)}` }
+        }
       }
     }
   });
 }
 
-// ── HEATMAP SECTION ────────────────────────────────────────────────────────
-function buildHeatmapSection() {
-  const clinics  = getFilteredClinics();
-  const wkCount  = Math.min(8, ALL_WEEKS.length);
-  const isInv    = heatmapMetric === 'no_show_pct'; // lower is better for no-show
-  const fmtCell  = heatmapMetric === 'calls_done'
-    ? v => Math.round(v).toLocaleString()
-    : v => v.toFixed(1) + '%';
-
-  // Week headers (newest left)
-  const wkHdrs = Array.from({length: wkCount}, (_, i) => {
-    const lbl = JDATA?.offline?.weekly_funnel?.[ALL_WEEKS[i]]?.label || ALL_WEEKS[i].slice(5);
-    return `<th style="padding:5px 8px;text-align:center;font-size:10px;text-transform:uppercase;letter-spacing:.04em;color:#94a3b8;background:#f8fafc;border-bottom:1px solid #e2e8f0;white-space:nowrap;${i===0?'border-left:2px solid #6366f1;':''}">${lbl}</th>`;
-  }).join('');
-
-  // Rows (limit to 40 for readability)
-  const rows = clinics.slice(0, 40).map(key => {
+function buildComparePanel_cl() {
+  if (!JDATA) return '';
+  const filtered = getFilteredClinics();
+  const clinicOpts = ['<option value="ALL">All filtered clinics</option>'];
+  filtered.slice(0, 60).forEach(key => {
     const city = clinicKey_city(key);
     const name = clinicKey_name(key);
-    const tier = cityTier(city);
-    const tierBadge = tier==='T1'?`<span class="t1b">T1</span>`:`<span class="t2b">T2</span>`;
-
-    const vals = Array.from({length: wkCount}, (_, i) => {
-      const d = clinicData(ALL_WEEKS[i], key);
-      if (heatmapMetric === 'calls_done')  return d.calls_done ?? null;
-      if (heatmapMetric === 'b2d_pct')     return d.b2d_pct   ?? null;
-      if (heatmapMetric === 'no_show_pct') return d.ns_pct    ?? null;
-      return null;
-    });
-
-    const nonNull = vals.filter(v => v != null);
-    const avg = nonNull.length ? nonNull.reduce((a,b)=>a+b,0)/nonNull.length : null;
-
-    const cells = vals.map((v, i) => {
-      if (v == null || avg == null) return `<td style="text-align:center;padding:5px 8px;color:#94a3b8;font-size:11px;${i===0?'border-left:2px solid #6366f140;':''}">—</td>`;
-      const rel = avg > 0 ? (v - avg) / avg * 100 : 0;
-      const good = isInv ? rel < -8 : rel > 8;
-      const bad  = isInv ? rel > 8  : rel < -8;
-      const intens = Math.min(1, Math.abs(rel) / 35);
-      let bg='', textClr='#0f172a';
-      if (good)      { bg=`rgba(16,185,129,${0.1+intens*.3})`; textClr='#065f46'; }
-      else if (bad)  { bg=`rgba(239,68,68,${0.1+intens*.3})`;  textClr='#991b1b'; }
-      return `<td style="text-align:center;padding:5px 8px;background:${bg};font-size:11px;font-weight:${i===0?'700':'500'};color:${textClr};${i===0?'border-left:2px solid #6366f180;':''}">${fmtCell(v)}</td>`;
-    }).join('');
-
-    return `<tr style="border-bottom:1px solid #f9fafb;">
-      <td style="padding:5px 10px;white-space:nowrap;min-width:140px;font-size:11px;">
-        <span style="font-weight:600;">${name}</span>
-        <span style="font-size:9px;color:#94a3b8;margin-left:4px;">${city} ${tierBadge}</span>
-      </td>
-      <td style="text-align:center;padding:5px 8px;font-size:10px;color:#94a3b8;">${avg!=null?fmtCell(avg):'—'}</td>
-      ${cells}
-    </tr>`;
-  }).join('');
-
-  function tBtn(m, label) {
-    const active = heatmapMetric === m;
-    return `<button class="toggle-btn${active?' active':''}" onclick="setHeatmapMetric('${m}')" style="font-size:11px;padding:3px 10px;">${label}</button>`;
-  }
-
-  return `<div class="card" style="margin-bottom:20px;">
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
-      <span class="sec-hdr">Performance Heatmap</span>
-      <span class="sec-sub" style="margin-left:8px;">Color = relative to each clinic's own avg · latest week highlighted</span>
-      <div style="margin-left:auto;display:flex;gap:4px;">
-        ${tBtn('calls_done','Calls Done')}
-        ${tBtn('b2d_pct','B2D %')}
-        ${tBtn('no_show_pct','No Show %')}
+    clinicOpts.push(`<option value="${key}"${key===cmpClinic_cl?' selected':''}>${name} (${city})</option>`);
+  });
+  const metOptsA = CMP_CL_METRICS.map(m => `<option value="${m.key}"${m.key===cmpA_cl?' selected':''}>${m.lbl}</option>`).join('');
+  const metOptsB = CMP_CL_METRICS.map(m => `<option value="${m.key}"${m.key===cmpB_cl?' selected':''}>${m.lbl}</option>`).join('');
+  return `
+  <div class="card" style="margin-bottom:20px;">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap;">
+      <span style="font-size:13px;font-weight:700;color:var(--ink);">📊 Compare Parameters</span>
+      <span class="sec-sub">any two metrics over all weeks</span>
+      <div style="margin-left:auto;display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+        <select onchange="cmpClinic_cl=this.value;renderCmpChart_cl()"
+          style="padding:4px 8px;border:1px solid var(--line);border-radius:6px;font-size:11px;background:#fff;max-width:200px;">
+          ${clinicOpts.join('')}
+        </select>
+        <select onchange="cmpA_cl=this.value;renderCmpChart_cl()"
+          style="padding:4px 8px;border:1px solid var(--line);border-radius:6px;font-size:11px;background:#fff;color:#6366f1;border-color:#c7d2fe;font-weight:600;">
+          ${metOptsA}
+        </select>
+        <span style="font-size:11px;color:#94a3b8;font-weight:600;">vs</span>
+        <select onchange="cmpB_cl=this.value;renderCmpChart_cl()"
+          style="padding:4px 8px;border:1px solid var(--line);border-radius:6px;font-size:11px;background:#fff;color:#d97706;border-color:#fde68a;font-weight:600;">
+          ${metOptsB}
+        </select>
       </div>
     </div>
-    <div style="display:flex;align-items:center;gap:14px;margin-bottom:10px;font-size:11px;color:#64748b;">
-      <span style="display:flex;align-items:center;gap:4px;"><span style="width:10px;height:10px;border-radius:2px;background:rgba(16,185,129,.4);display:inline-block;"></span> Above avg</span>
-      <span style="display:flex;align-items:center;gap:4px;"><span style="width:10px;height:10px;border-radius:2px;background:rgba(239,68,68,.4);display:inline-block;"></span> Below avg</span>
-      <span style="color:#94a3b8;">${clinics.length > 40 ? `Showing 40 of ${clinics.length} clinics` : ''}</span>
-    </div>
-    <div style="overflow-x:auto;max-height:480px;overflow-y:auto;">
-    <table style="width:100%;border-collapse:collapse;">
-      <thead style="position:sticky;top:0;z-index:2;">
-        <tr style="border-bottom:2px solid #e2e8f0;">
-          <th style="padding:5px 10px;text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:#94a3b8;background:#f8fafc;border-bottom:1px solid #e2e8f0;white-space:nowrap;">Clinic</th>
-          <th style="padding:5px 8px;text-align:center;font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:#94a3b8;background:#f8fafc;border-bottom:1px solid #e2e8f0;">8wk Avg</th>
-          ${wkHdrs}
-        </tr>
-      </thead>
-      <tbody>${rows}</tbody>
-    </table>
-    </div>
+    <div style="height:220px;position:relative;"><canvas id="cmpCanvas_cl"></canvas></div>
   </div>`;
-}
-
-// ── HEATMAP METRIC TOGGLE ─────────────────────────────────────────────────
-function setHeatmapMetric(m) {
-  heatmapMetric = m;
-  render();
-}
-function setClinicSearch(val) {
-  clinicSearch = val;
-  render();
 }
 
 // ── RENDER ────────────────────────────────────────────────────────────────
@@ -676,28 +943,33 @@ function render() {
   const wk  = ALL_WEEKS[activeWkIdx];
   const lbl = JDATA?.offline?.weekly_funnel?.[wk]?.label || wk;
 
+  const cityLabel = activeCity !== 'ALL'
+    ? `<strong>${activeCity}</strong> <a href="#" onclick="setCity('ALL');document.getElementById('citySel').value='ALL';return false;" style="font-size:10px;color:#94a3b8;text-decoration:none;margin-left:4px;">✕ Clear</a>`
+    : activeTier !== 'ALL' ? `<strong>${activeTier}</strong> cities` : 'All cities';
+
   document.getElementById('root').innerHTML = `
-    <div style="margin-bottom:16px;">
-      <h1 style="font-size:22px;font-weight:700;margin:0 0 4px;">Clinic Analysis</h1>
-      <p style="color:var(--muted);font-size:12px;margin:0;">
-        Week of <strong>${lbl}</strong> ·
-        ${activeCity !== 'ALL' ? '<strong>'+activeCity+'</strong>' : activeTier !== 'ALL' ? '<strong>'+activeTier+'</strong> cities' : 'All cities'} ·
-        Offline only · Calls Done with 8-week rolling average
-      </p>
+    <div style="margin-bottom:16px;display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:8px;">
+      <div>
+        <h1 style="font-size:22px;font-weight:700;margin:0 0 4px;">Clinic Analysis</h1>
+        <p style="color:var(--muted);font-size:12px;margin:0;">
+          Week of <strong>${lbl}</strong> · ${cityLabel} · Offline only · 4-week trends per clinic
+        </p>
+      </div>
     </div>
 
     ${buildKPIStrip()}
-    ${buildBubbleChartSection()}
-    ${buildHeatmapSection()}
-    ${buildCitySummary()}
-    ${buildClinicTable()}
+    ${buildClinicCards()}
+
+    <!-- 📊 COMPARISON PANEL -->
+    ${buildComparePanel_cl()}
 
     <div style="text-align:center;color:#94a3b8;font-size:11px;margin:20px 0 40px;">
-      Data: appointments CSV (calls done, gross bookings, B2D%, no-show) ·
-      Offline scope only · 8wk avg = rolling average of 8 weeks preceding selected week
+      Data: appointments CSV (calls done, gross bookings, B2D%, no-show) · Offline scope only ·
+      Channel breakdown from recent 2-week analysis · 8wk avg = rolling average
     </div>
   `;
-  setTimeout(buildBubble, 0);
+
+  requestAnimationFrame(() => renderCmpChart_cl());
 }
 
 // ── CONTROLS ──────────────────────────────────────────────────────────────
@@ -712,15 +984,11 @@ function setTier(tier) {
 }
 function setCity(city) {
   activeCity = city;
-  // Sync tier toggle if a city is chosen
-  if (city !== 'ALL') {
-    const tier = cityTier(city);
-    // Don't change tier filter, just re-render
-  }
   render();
 }
 function setWeek(val) {
   activeWkIdx = parseInt(val, 10);
+  expandedCards.clear(); // close all expanded cards on week change
   render();
 }
 function setSort(col) {
@@ -728,18 +996,41 @@ function setSort(col) {
   else { sortCol = col; sortAsc = false; }
   render();
 }
+function setClinicSearch(val) {
+  clinicSearch = val;
+  render();
+}
+function setMaturity(m) {
+  activeMaturity = m;
+  ['mAll','mMatured','mMaturing','mNew'].forEach(id => document.getElementById(id)?.classList.remove('active'));
+  const map = { ALL:'mAll', matured:'mMatured', maturing:'mMaturing', new:'mNew' };
+  document.getElementById(map[m])?.classList.add('active');
+  render();
+}
+function toggleCard(key) {
+  if (expandedCards.has(key)) expandedCards.delete(key);
+  else expandedCards.add(key);
+  render();
+}
 
 // ── INIT ──────────────────────────────────────────────────────────────────
 async function init() {
   try {
-    const res = await fetch('data.json');
+    // Fetch both data files in parallel
+    const [res, cRes] = await Promise.all([
+      fetch('data.json'),
+      fetch('data_clinic.json').catch(() => null),
+    ]);
     if (!res.ok) throw new Error('data.json not found');
     JDATA = await res.json();
+    if (cRes?.ok) {
+      try { CDATA = await cRes.json(); } catch(e) { CDATA = null; }
+    }
 
     // Build ALL_WEEKS newest-first
     ALL_WEEKS = [...(JDATA.weeks || [])].reverse();
 
-    // Build city dropdown from all clinic keys across all weeks
+    // Build city dropdown
     const citySet = new Set();
     for (const wk of ALL_WEEKS) {
       for (const key of Object.keys(JDATA?.offline?.weekly_clinic?.[wk] || {})) {

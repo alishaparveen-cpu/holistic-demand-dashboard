@@ -62,6 +62,7 @@ canvas{display:block;}
     <a href="channel.html"    class="nav-link">Channel</a>
     <a href="efficiency.html" class="nav-link">Efficiency</a>
     <a href="comparison.html" class="nav-link">Comparison →</a>
+  <a href="weekly-report.html" class="nav-link">Weekly Report</a>
     <div>
       <div class="font-bold text-base">Category Analysis</div>
       <div class="text-xs text-slate-400">In-depth category performance across channels, cities &amp; clinics</div>
@@ -280,6 +281,7 @@ function svgSparkline(vals, color, w, h, filled, opts) {
   const safeLabels = (opts.labels?JSON.stringify(opts.labels):'null').replace(/'/g,'&#39;');
   const safeTitle  = (opts.title||'').replace(/"/g,'&quot;');
   const datAttrs   = `data-sparkvals='${safeVals}' data-sparklabels='${safeLabels}' data-sparkcolor='${color}' data-sparktitle="${safeTitle}" data-sparkfmt='${opts.fmt||''}'`;
+  if (!vals || !Array.isArray(vals)) return `<div class="spark-wrap" ${datAttrs}><svg width="${w}" height="${h}"></svg></div>`;
   const valid = vals.filter(v => v != null && !isNaN(v) && isFinite(v));
   if (!valid.length || valid.length < 2) return `<div class="spark-wrap" ${datAttrs}><svg width="${w}" height="${h}"></svg></div>`;
   const mn  = Math.min(...valid);
@@ -651,6 +653,10 @@ function render() {
     ? `<span style="font-size:11px;color:#7c3aed;font-weight:600;">Filtered: ${activeChannel!=='ALL'?activeChannel+' channel':activeCity+' city'}</span>
        <button onclick="clearFilters();" style="font-size:10px;color:#94a3b8;border:1px solid #e2e8f0;border-radius:4px;padding:1px 7px;background:#fff;cursor:pointer;margin-left:4px;">✕ Clear</button>` : '';
 
+  // ── Clinic category section (computed before innerHTML) ──
+  let clinicCatSection = '';
+  try { clinicCatSection = buildClinicCatSection(weeks, cat, m, wkLabels, n4); } catch(e) { console.error('buildClinicCatSection error:', e); }
+
   // ── Assemble all HTML ──
   document.getElementById('mainContent').innerHTML = `
     <div class="card" style="padding:10px 16px;">
@@ -684,11 +690,27 @@ function render() {
     </div>
 
     <div class="card">
+      <div style="font-size:14px;font-weight:700;margin-bottom:2px;">${catLabel} vs Total — Weekly Breakdown</div>
+      <div style="font-size:11px;color:var(--muted);margin-bottom:12px;">
+        Stacked bars: <span style="color:${m.color};font-weight:600;">${catLabel} calls</span> + <span style="color:#94a3b8;font-weight:600;">non-${catLabel}</span> = total.
+        Orange line = ${catLabel} rate % (right axis) · ${activeScope} scope${activeChannel!=='ALL'?' · filtered: '+activeChannel:''}
+      </div>
+      <div style="height:240px;"><canvas id="dualTrendChart"></canvas></div>
+    </div>
+
+    <div class="card">
       <div style="font-size:14px;font-weight:700;margin-bottom:2px;">
-        Growth index — ${catLabel} growing ${catGrowth>totGrowth?'faster than':'at pace with'} total
+        Growth Index — ${catLabel} ${catGrowth>totGrowth?'outpacing':'at pace with'} total demand
         <span style="font-size:11px;font-weight:400;color:var(--muted);">(${(DATA.week_labels?.[weeks[0]]||weeks[0]).split(' - ')[0]} = 100)</span>
       </div>
-      <div style="font-size:11px;color:var(--muted);margin-bottom:12px;">Indexed to first week = 100 · ${activeScope} scope${activeChannel!=='ALL'?' · filtered: '+activeChannel:''}</div>
+      <div style="font-size:11px;color:var(--muted);margin-bottom:10px;">Indexed to first week = 100 · ${activeScope} scope${activeChannel!=='ALL'?' · filtered: '+activeChannel:''}</div>
+      <div style="padding:10px 14px;background:#f0f9ff;border-left:3px solid #0ea5e9;border-radius:8px;margin-bottom:12px;font-size:12px;line-height:1.75;color:#0c4a6e;">
+        📖 <strong style="color:#0369a1;">How to read this chart:</strong>
+        All 3 lines start at <strong>100</strong> in Week 1. A value of <strong>120 = grew 20% since Week 1</strong>. A value of <strong>80 = declined 20%</strong>.
+        <br>• When the <span style="color:${m.color};font-weight:600;">${catLabel}</span> line is <em>above</em> Total → category is outpacing overall demand growth
+        <br>• When <em>below</em> Total → category growing slower than total (or declining while total grows)
+        <br>• Non-${catLabel} shows how the rest of your demand is moving — useful to see if overall growth is coming from OTHER categories
+      </div>
       <div style="height:220px;"><canvas id="growthIndexChart"></canvas></div>
     </div>
 
@@ -699,6 +721,8 @@ function render() {
     </div>
 
     ${citySection}
+
+    ${clinicCatSection}
 
     <div class="card">
       <div style="font-size:14px;font-weight:700;margin-bottom:2px;">Weekly Trend — ${catDisplayLabel(cat)}</div>
@@ -735,6 +759,7 @@ function render() {
   Object.values(charts).forEach(c => { try { c.destroy(); } catch(e){} });
   charts = {};
   buildGrowthIndexChart(weeks, cat, m, wkLabels, allWeekData);
+  buildDualTrendChart(weeks, cat, m, wkLabels, allWeekData);
   buildTrendChart(weeks, cat, m);
   buildCatMixChart(weeks, cat, m);
   buildCatSplitChart(weeks, cat, m);
@@ -850,6 +875,280 @@ function buildTrendChart(weeks, cat, m) {
       scales:{ x:{grid:{display:false},ticks:{font:{size:10},maxRotation:30}}, y:{beginAtZero:true, ticks:{font:{size:11},callback:v=>viewMode==='share'?v.toFixed(1)+'%':fmt(v)}, grid:{color:'#f1f5f9'}} }
     }
   });
+}
+
+// ── Dual trend chart (stacked: category + non-category, with rate line) ──────
+function buildDualTrendChart(weeks, cat, m, wkLabels, allWeekData) {
+  const ctx = document.getElementById('dualTrendChart');
+  if (!ctx) return;
+  const catVals  = allWeekData.map(d => d.catVal);
+  const nonVals  = allWeekData.map(d => Math.max(d.total - d.catVal, 0));
+  const rateVals = allWeekData.map(d => d.total > 0 ? d.catVal / d.total * 100 : 0);
+  const maxRate  = Math.max(...rateVals, 10);
+
+  charts.dualTrend = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: wkLabels,
+      datasets: [
+        { label: m.label + ' calls', data: catVals, backgroundColor: m.color + 'BB',
+          borderColor: m.color, borderWidth: 1, stack: 's', order: 2 },
+        { label: 'Non-' + m.label, data: nonVals, backgroundColor: '#cbd5e1BB',
+          borderColor: '#94a3b8', borderWidth: 1, stack: 's', order: 3 },
+        { label: m.label + ' % (right)', data: rateVals, type: 'line',
+          borderColor: '#f59e0b', backgroundColor: 'transparent', borderWidth: 2.5,
+          pointRadius: 3, pointBackgroundColor: '#f59e0b', yAxisID: 'yRate',
+          order: 1, tension: 0.3, spanGaps: true }
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { position: 'top', labels: { font: { size: 11 }, boxWidth: 14, padding: 12 } },
+        tooltip: { mode: 'index', callbacks: {
+          label: ctx => {
+            if (ctx.dataset.yAxisID === 'yRate')
+              return `${m.label} rate: ${(ctx.raw || 0).toFixed(1)}%`;
+            return `${ctx.dataset.label}: ${Math.round(ctx.raw || 0).toLocaleString()}`;
+          }
+        }}
+      },
+      scales: {
+        x:     { stacked: true, grid: { display: false }, ticks: { font: { size: 10 } } },
+        y:     { stacked: true, beginAtZero: true, grid: { color: '#f1f5f9' },
+                 ticks: { font: { size: 10 }, callback: v => fmt(v) } },
+        yRate: { position: 'right', grid: { display: false }, suggestedMin: 0,
+                 suggestedMax: Math.ceil(maxRate * 1.4),
+                 ticks: { font: { size: 10 }, callback: v => v.toFixed(0) + '%' } }
+      }
+    }
+  });
+}
+
+// ── Clinic-level category section ─────────────────────────────────────────────
+function buildClinicCatSection(weeks, cat, m, wkLabels, n4) {
+  if (activeScope === 'online') return '';
+  const scope = S();
+
+  // Build per-clinic weekly series
+  const series = {};
+  weeks.forEach((wk, i) => {
+    for (const [key, d] of Object.entries(scope.weekly_clinic?.[wk] || {})) {
+      if (!series[key]) series[key] = { catW: new Array(weeks.length).fill(0), totW: new Array(weeks.length).fill(0) };
+      series[key].catW[i] = cat === 'SH' ? getSHVal(d) : cat === 'ALL' ? (d.total || 0) : (d[cat] || 0);
+      series[key].totW[i] = d.total || 0;
+    }
+  });
+
+  const clinics = Object.entries(series).map(([key, s]) => {
+    const sep  = key.indexOf('_');
+    const city = sep > -1 ? key.slice(0, sep) : key;
+    const name = sep > -1 ? key.slice(sep + 1) : key;
+
+    if (activeTier !== 'ALL' && cityTier(city) !== activeTier) return null;
+    if (activeCity !== 'ALL' && city !== activeCity) return null;
+
+    const totalAll = s.totW.reduce((a, b) => a + b, 0);
+    if (totalAll < 5) return null;
+
+    const earlyAvgTot = s.totW.slice(0, n4).reduce((a, b) => a + b, 0) / n4;
+    const lateAvgTot  = s.totW.slice(-n4).reduce((a, b) => a + b, 0) / n4;
+    const earlyAvgCat = s.catW.slice(0, n4).reduce((a, b) => a + b, 0) / n4;
+    const lateAvgCat  = s.catW.slice(-n4).reduce((a, b) => a + b, 0) / n4;
+
+    // Maturity: was this clinic active in the first n4 weeks?
+    const maturity = earlyAvgTot > 2 ? 'mature' : (lateAvgTot > 2 ? 'new' : null);
+    if (!maturity) return null;
+
+    const totGrowthPct = earlyAvgTot > 1   ? (lateAvgTot - earlyAvgTot) / earlyAvgTot * 100 : null;
+    const catGrowthPct = earlyAvgCat > 0.5 ? (lateAvgCat - earlyAvgCat) / earlyAvgCat * 100 : null;
+
+    // Category trend classification
+    let catTrend;
+    if (maturity === 'new') {
+      const lateTotSum = s.totW.slice(-n4).reduce((a, b) => a + b, 0);
+      const lateCatSum = s.catW.slice(-n4).reduce((a, b) => a + b, 0);
+      catTrend = lateTotSum > 0 && lateCatSum / lateTotSum * 100 >= 5 ? 'contributing' : 'not-contributing';
+    } else if (catGrowthPct === null) {
+      catTrend = 'maintained';
+    } else {
+      catTrend = catGrowthPct > 15 ? 'growing' : catGrowthPct < -15 ? 'declining' : 'maintained';
+    }
+
+    // New bookings diagnostic (mature clinics only)
+    let diagnosis = null;
+    if (maturity === 'mature' && totGrowthPct !== null && catGrowthPct !== null) {
+      if      (totGrowthPct > 10  && catGrowthPct > 10)   diagnosis = 'cat-driving';
+      else if (totGrowthPct > 10  && catGrowthPct < -10)  diagnosis = 'tot-up-cat-down';
+      else if (totGrowthPct > 10)                          diagnosis = 'tot-up-cat-flat';
+      else if (totGrowthPct < -10 && catGrowthPct > 10)   diagnosis = 'cat-holding';
+      else if (totGrowthPct < -10 && catGrowthPct < -10)  diagnosis = 'both-down';
+      else                                                 diagnosis = 'stable';
+    }
+
+    const totalCat = s.catW.reduce((a, b) => a + b, 0);
+    const rate     = totalAll > 0 ? totalCat / totalAll * 100 : 0;
+
+    return { city, name, catW: s.catW, totW: s.totW, totalCat, totalAll, maturity,
+             earlyAvgCat, lateAvgCat, earlyAvgTot, lateAvgTot,
+             catGrowthPct, totGrowthPct, catTrend, rate, diagnosis };
+  }).filter(Boolean);
+
+  if (!clinics.length) return '';
+
+  // Sort: declining / problematic first, then maintained, then growing
+  clinics.sort((a, b) => {
+    const rank = t => (t === 'declining' || t === 'not-contributing' || t === 'both-down') ? 0
+                    : (t === 'maintained' || t === 'stable' || t === 'tot-up-cat-flat') ? 1 : 2;
+    const ra = rank(a.catTrend), rb = rank(b.catTrend);
+    return ra !== rb ? ra - rb : (b.lateAvgCat || 0) - (a.lateAvgCat || 0);
+  });
+
+  const mature = clinics.filter(c => c.maturity === 'mature');
+  const newC   = clinics.filter(c => c.maturity === 'new');
+  const cnt = {
+    growing:    mature.filter(c => c.catTrend === 'growing').length,
+    maintained: mature.filter(c => c.catTrend === 'maintained').length,
+    declining:  mature.filter(c => c.catTrend === 'declining').length,
+    newContrib: newC.filter(c => c.catTrend === 'contributing').length,
+    newNo:      newC.filter(c => c.catTrend === 'not-contributing').length,
+  };
+
+  function matBadge(mat) {
+    return mat === 'new'
+      ? `<span style="padding:1px 6px;border-radius:4px;font-size:9px;font-weight:700;background:#ede9fe;color:#6d28d9;white-space:nowrap;">New</span>`
+      : `<span style="padding:1px 6px;border-radius:4px;font-size:9px;font-weight:700;background:#dbeafe;color:#1e40af;white-space:nowrap;">Mature</span>`;
+  }
+
+  function trendBadge(trend, mat) {
+    if (mat === 'new') return trend === 'contributing'
+      ? `<span style="padding:2px 8px;border-radius:999px;font-size:10px;font-weight:700;background:#ecfdf5;color:#065f46;border:1px solid #6ee7b7;">✓ Contributing</span>`
+      : `<span style="padding:2px 8px;border-radius:999px;font-size:10px;font-weight:700;background:#fff7ed;color:#9a3412;border:1px solid #fed7aa;">Not yet</span>`;
+    if (trend === 'growing')   return `<span style="padding:2px 8px;border-radius:999px;font-size:10px;font-weight:700;background:#ecfdf5;color:#065f46;border:1px solid #6ee7b7;">▲ Growing</span>`;
+    if (trend === 'declining') return `<span style="padding:2px 8px;border-radius:999px;font-size:10px;font-weight:700;background:#fef2f2;color:#991b1b;border:1px solid #fca5a5;">▼ Declining</span>`;
+    return `<span style="padding:2px 8px;border-radius:999px;font-size:10px;font-weight:700;background:#f1f5f9;color:#475569;border:1px solid #e2e8f0;">→ Maintained</span>`;
+  }
+
+  function diagCell(diag, tg, cg) {
+    if (!diag) return `<span style="font-size:10px;color:#94a3b8;">—</span>`;
+    const map = {
+      'cat-driving':     ['✅', 'Cat driving growth',        '#ecfdf5', '#065f46'],
+      'tot-up-cat-down': ['⚠️', 'Total ↑, cat losing share', '#fff7ed', '#9a3412'],
+      'tot-up-cat-flat': ['🔵', 'Total ↑, cat flat',          '#eff6ff', '#1e40af'],
+      'cat-holding':     ['💪', 'Cat holding vs decline',    '#eff6ff', '#1e40af'],
+      'both-down':       ['❌', 'Both declining',            '#fef2f2', '#991b1b'],
+      'stable':          ['—',  'Stable',                    '#f8fafc', '#475569'],
+    };
+    const [ico, txt, bg, col] = map[diag] || ['?', diag, '#f8fafc', '#475569'];
+    const tStr = tg !== null ? ` T:${tg > 0 ? '+' : ''}${Math.round(tg)}%` : '';
+    const cStr = cg !== null ? ` C:${cg > 0 ? '+' : ''}${Math.round(cg)}%` : '';
+    return `<div style="font-size:10px;font-weight:600;padding:2px 7px;border-radius:5px;background:${bg};color:${col};white-space:nowrap;">${ico} ${txt}</div>
+            <div style="font-size:9px;color:#94a3b8;margin-top:1px;">${tStr}${cStr}</div>`;
+  }
+
+  const rows = clinics.map(c => {
+    // Dual sparkline: category (colored solid) + total calls (gray dashed) — both visible in zoom
+    const catSparkBase = svgSparkline(c.catW, m.color, 90, 28, true, {
+      labels: wkLabels,
+      title: c.name + ' — ' + m.label + ' calls',
+    });
+    const safe2 = JSON.stringify(c.totW || []).replace(/'/g, '&#39;');
+    const dualSpark = catSparkBase
+      ? catSparkBase.replace(
+          'class="spark-wrap"',
+          `class="spark-wrap" data-sparkvals2='${safe2}' data-sparkcolor2='#94a3b8' data-sparklabel2='Total calls'`
+        )
+      : '';
+
+    // Category growth string (first4 → last4 avg)
+    const catGrowStr = c.catGrowthPct !== null
+      ? `<span style="font-weight:700;color:${c.catGrowthPct > 15 ? '#059669' : c.catGrowthPct < -15 ? '#dc2626' : '#64748b'};">${c.catGrowthPct > 0 ? '+' : ''}${Math.round(c.catGrowthPct)}%</span>`
+      : `<span style="font-size:10px;color:#94a3b8;">new</span>`;
+    // Total growth string
+    const totGrowStr = c.totGrowthPct !== null
+      ? `<span style="font-weight:700;color:${c.totGrowthPct > 10 ? '#059669' : c.totGrowthPct < -10 ? '#dc2626' : '#64748b'};">${c.totGrowthPct > 0 ? '+' : ''}${Math.round(c.totGrowthPct)}%</span>`
+      : `<span style="font-size:10px;color:#94a3b8;">new</span>`;
+
+    // Proportion bar (cat share of total, recent period)
+    const shareRatio = c.lateAvgTot > 0 ? Math.min(c.lateAvgCat / c.lateAvgTot * 100, 100) : 0;
+    const shareColor = shareRatio > 22 ? '#dc2626' : shareRatio > 15 ? '#d97706' : '#10b981';
+    const propBar = `<div style="display:flex;align-items:center;gap:4px;margin-top:3px;">
+      <div style="flex:1;height:4px;background:#f1f5f9;border-radius:2px;min-width:40px;">
+        <div style="width:${shareRatio.toFixed(1)}%;height:4px;background:${shareColor};border-radius:2px;"></div>
+      </div>
+      <span style="font-size:9px;color:${shareColor};font-weight:700;min-width:28px;">${shareRatio.toFixed(0)}%</span>
+    </div>`;
+
+    return `<tr>
+      <td><div style="font-weight:600;">${c.name}</div><div style="font-size:10px;color:var(--muted);">${c.city}</div></td>
+      <td>${matBadge(c.maturity)}</td>
+      <td style="text-align:right;">
+        <div style="font-weight:700;color:${m.color};">${Math.round(c.lateAvgCat)}<span style="font-size:10px;color:#94a3b8;font-weight:400;"> ${m.label}</span></div>
+        <div style="font-size:11px;color:#64748b;margin-top:1px;">${Math.round(c.lateAvgTot)} total</div>
+        ${propBar}
+      </td>
+      <td>${trendBadge(c.catTrend, c.maturity)}</td>
+      <td>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <span style="font-size:9px;color:${m.color};font-weight:700;min-width:28px;">${m.label}</span>${catGrowStr}
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;margin-top:2px;">
+          <span style="font-size:9px;color:#64748b;min-width:28px;">Total</span>${totGrowStr}
+        </div>
+      </td>
+      <td>${diagCell(c.diagnosis, c.totGrowthPct, c.catGrowthPct)}</td>
+      <td title="Click to zoom — shows ${m.label} calls (solid) vs Total calls (dashed)">${dualSpark}</td>
+    </tr>`;
+  }).join('');
+
+  return `<div class="card">
+    <div style="font-size:15px;font-weight:700;margin-bottom:2px;">Clinic-Level — ${m.label} Trend &amp; New Bookings Diagnostic</div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:14px;">First ${n4}-wk avg vs last ${n4}-wk avg · ${clinics.length} active clinics · ${activeScope}</div>
+
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;">
+      <div style="padding:10px 16px;background:#f8fafc;border:1px solid var(--line);border-radius:12px;">
+        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#94a3b8;margin-bottom:6px;">Mature clinics</div>
+        <div style="display:flex;gap:16px;">
+          <div><div style="font-size:22px;font-weight:700;color:#059669;line-height:1.1;">${cnt.growing}</div><div style="font-size:10px;color:#64748b;">Growing</div></div>
+          <div><div style="font-size:22px;font-weight:700;color:#64748b;line-height:1.1;">${cnt.maintained}</div><div style="font-size:10px;color:#64748b;">Maintained</div></div>
+          <div style="border-left:2px solid #fca5a5;padding-left:16px;"><div style="font-size:22px;font-weight:700;color:#dc2626;line-height:1.1;">${cnt.declining}</div><div style="font-size:10px;color:#dc2626;">Declining ⚠</div></div>
+        </div>
+      </div>
+      <div style="padding:10px 16px;background:#f8fafc;border:1px solid var(--line);border-radius:12px;">
+        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#94a3b8;margin-bottom:6px;">New clinics</div>
+        <div style="display:flex;gap:16px;">
+          <div><div style="font-size:22px;font-weight:700;color:#059669;line-height:1.1;">${cnt.newContrib}</div><div style="font-size:10px;color:#64748b;">${m.label} contributing ✓</div></div>
+          <div><div style="font-size:22px;font-weight:700;color:#d97706;line-height:1.1;">${cnt.newNo}</div><div style="font-size:10px;color:#64748b;">Not yet</div></div>
+        </div>
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px;">
+      <div style="padding:10px 14px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;font-size:11px;line-height:1.6;color:#1e40af;">
+        <strong>Mature clinics:</strong> ${m.label} should grow or at minimum be maintained. Degrowth = concern. Check: has volume or capacity changed? Is ${m.label} being displaced by another category?
+      </div>
+      <div style="padding:10px 14px;background:#f5f3ff;border:1px solid #ddd6fe;border-radius:10px;font-size:11px;line-height:1.6;color:#6d28d9;">
+        <strong>New clinics:</strong> Want new bookings AND ${m.label} contributing (≥5% rate). If total is growing but ${m.label}% ≈ 0 → category not being established at this clinic.
+      </div>
+    </div>
+
+    <div style="overflow-x:auto;">
+      <table class="tbl">
+        <thead>
+          <tr>
+            <th>Clinic / City</th>
+            <th>Type</th>
+            <th style="text-align:right;">${m.label}/wk · Total/wk<br><span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:9px;">recent ${n4}-wk avg · bar = cat share</span></th>
+            <th>${m.label} Trend</th>
+            <th>Growth (${m.label} · Total)<br><span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:9px;">first ${n4}wk avg → last ${n4}wk avg</span></th>
+            <th>New Bkgs Diagnostic</th>
+            <th>${weeks.length}-wk Sparkline<br><span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:9px;">click: ${m.label} vs Total</span></th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+  </div>`;
 }
 
 async function init() {

@@ -55,6 +55,7 @@ canvas{display:block;}
     <span class="nav-link active">Channel</span>
     <a href="efficiency.html" class="nav-link">Efficiency</a>
     <a href="comparison.html" class="nav-link">Comparison →</a>
+  <a href="weekly-report.html" class="nav-link">Weekly Report</a>
 
     <div class="flex items-center gap-3 ml-auto flex-wrap">
       <!-- Scope -->
@@ -68,6 +69,10 @@ canvas{display:block;}
         <button class="toggle-btn active" id="modeAbs"   onclick="setMode('abs')">Calls Done</button>
         <button class="toggle-btn"        id="modeShare" onclick="setMode('share')">Share %</button>
       </div>
+      <!-- Week selector -->
+      <select id="weekSel" onchange="setWkIdx(+this.value)"
+        style="padding:5px 9px;border:1px solid var(--line);border-radius:8px;font-size:12px;background:#fff;cursor:pointer;min-width:175px;">
+      </select>
     </div>
   </div>
 </div>
@@ -103,6 +108,7 @@ let DATA        = null;
 let activeScope = 'offline';
 let activeCh    = 'ALL';
 let viewMode    = 'abs';
+let activeWkIdx = 0;   // 0 = newest week; counts back from end of weeks array
 let charts      = {};
 
 function S() { return DATA[activeScope]; }
@@ -233,11 +239,14 @@ function getInsight(sig, st) {
 }
 
 // ── BUILD CHANNEL STATS ────────────────────────────────────────────────────
-function buildChStats(weeks) {
+function buildChStats(weeks, wkIdx) {
+  if (wkIdx === undefined) wkIdx = activeWkIdx;
   const channels = DATA.channels || ['GMB','Google','Practo','Organic','Meta','Others'];
   const netTotals = weeks.map(wk => S().weekly_funnel?.[wk]?.calls_done || 0);
   const avgNetTotal = netTotals.reduce((a,b)=>a+b,0)/netTotals.length || 1;
   const n4 = Math.min(4, Math.floor(weeks.length/2));
+  // selectedIdx = index inside oldest-first arrays that corresponds to chosen week
+  const selectedIdx = Math.max(0, Math.min(weeks.length-1, weeks.length-1-wkIdx));
 
   return channels.map(ch => {
     const callsArr = weeks.map(wk => S().weekly_channel?.[wk]?.[ch]?.calls_done || 0);
@@ -250,12 +259,14 @@ function buildChStats(weeks) {
     const volShare  = avgNetTotal ? avgCalls/avgNetTotal*100 : 0;
     const validB2d  = b2dArr.filter(v=>v!=null);
     const avgB2d    = validB2d.length ? validB2d.reduce((a,b)=>a+b,0)/validB2d.length : null;
-    const latestB2d = [...b2dArr].reverse().find(v=>v!=null) ?? null;
-    const latestCalls = callsArr[callsArr.length-1];
-    const latestNet   = netTotals[netTotals.length-1];
+
+    // Point-in-time metrics use the selected week
+    const latestB2d      = b2dArr[selectedIdx] ?? null;
+    const latestCalls    = callsArr[selectedIdx];
+    const latestNet      = netTotals[selectedIdx];
     const latestVolShare = latestNet ? latestCalls/latestNet*100 : 0;
 
-    // trends (first n4 avg vs last n4 avg)
+    // Trends still computed over full history (first n4 vs last n4 of the full array)
     const earlyVol  = callsArr.slice(0,n4).reduce((a,b)=>a+b,0)/n4 || 1;
     const recentVol = callsArr.slice(-n4).reduce((a,b)=>a+b,0)/n4;
     const volTrend  = (recentVol-earlyVol)/earlyVol*100;
@@ -265,12 +276,12 @@ function buildChStats(weeks) {
     const recentB2dA= recentB2d.length ? recentB2d.reduce((a,b)=>a+b,0)/recentB2d.length : avgB2d;
     const b2dTrend  = (recentB2dA??0) - (earlyB2dA??0);
 
-    // WoW
-    const wowCalls = callsArr.length>=2 && callsArr[callsArr.length-2] > 0
-      ? (callsArr[callsArr.length-1]-callsArr[callsArr.length-2])/callsArr[callsArr.length-2]*100 : null;
+    // WoW for the selected week vs the week before it
+    const wowCalls = selectedIdx > 0 && callsArr[selectedIdx-1] > 0
+      ? (callsArr[selectedIdx]-callsArr[selectedIdx-1])/callsArr[selectedIdx-1]*100 : null;
 
-    // Category mix (latest week)
-    const latestWk = weeks[weeks.length-1];
+    // Category mix for the selected week
+    const latestWk = weeks[selectedIdx];
     const catData  = S().weekly_channel?.[latestWk]?.[ch] || {};
     const catTotal = CAT_KEYS.reduce((s,k)=>s+(catData[k]||0),0) || 1;
     const catMix   = CAT_KEYS.map(k => ({ k, v: catData[k]||0, pct: (catData[k]||0)/catTotal*100 }));
@@ -283,7 +294,8 @@ function buildChStats(weeks) {
 // ── RENDER ALL-CHANNELS VIEW ───────────────────────────────────────────────
 function renderAllChannels(weeks, wkLabels) {
   const stats = buildChStats(weeks);
-  const lastWk = weeks[weeks.length-1];
+  const lastWk = weeks[weeks.length-1-activeWkIdx];
+  const prevWk = activeWkIdx < weeks.length-1 ? weeks[weeks.length-2-activeWkIdx] : null;
   const netCalls = S().weekly_funnel?.[lastWk]?.calls_done || 1;
   const netGross = S().weekly_funnel?.[lastWk]?.gross || 1;
   const netB2d   = S().weekly_funnel?.[lastWk]?.b2d_pct;
@@ -291,12 +303,12 @@ function renderAllChannels(weeks, wkLabels) {
   const netCallsAll = weeks.reduce((s,wk)=>s+(S().weekly_funnel?.[wk]?.calls_done||0),0);
 
   // KPI strip
-  const lastWkLbl = (DATA.week_labels?.[lastWk]||lastWk).split(' - ').pop();
+  const lastWkLbl = DATA.week_labels?.[lastWk] || lastWk;
   const kpis = `<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px;">
-    ${kpiCard('Total Calls Done', fmtN(netCalls), 'latest week · all channels', '#0f172a')}
-    ${kpiCard('Gross Bookings',   fmtN(netGross), 'latest week · all channels', '#0f172a')}
-    ${kpiCard('Network B2D %',    fmtPct(netB2d), 'latest week benchmark',      netB2d>=70?'#059669':netB2d>=60?'#d97706':'#dc2626')}
-    ${kpiCard('No Show %',        fmtPct(netNs),  'latest week benchmark',      netNs<=30?'#059669':netNs<=40?'#d97706':'#dc2626')}
+    ${kpiCard('Total Calls Done', fmtN(netCalls), lastWkLbl+' · all channels', '#0f172a')}
+    ${kpiCard('Gross Bookings',   fmtN(netGross), lastWkLbl+' · all channels', '#0f172a')}
+    ${kpiCard('Network B2D %',    fmtPct(netB2d), lastWkLbl+' benchmark',      netB2d>=70?'#059669':netB2d>=60?'#d97706':'#dc2626')}
+    ${kpiCard('No Show %',        fmtPct(netNs),  lastWkLbl+' benchmark',      netNs<=30?'#059669':netNs<=40?'#d97706':'#dc2626')}
     ${kpiCard('Channels Active',  DATA.channels?.length || 6, weeks.length+' weeks of data', '#0f172a')}
   </div>`;
 
@@ -361,7 +373,7 @@ function renderAllChannels(weeks, wkLabels) {
           ${miniBox('avg calls/wk', fmt(st.avgCalls), st.latestVolShare.toFixed(1)+'% of total', m.color, svgSpark(st.callsArr, m.color, 56, 22))}
           ${miniBox('avg gross/wk', fmt(st.avgGross), 'bookings', '#64748b', '')}
           ${miniBox('B2D% avg',   fmtPct(st.avgB2d),   b2dTrendStr, b2dColor(st.avgB2d), svgSpark(st.b2dArr.map(v=>v??null), b2dColor(st.avgB2d), 56, 22, false))}
-          ${miniBox('No Show% avg',fmtPct(S().weekly_channel?.[lastWk]?.[st.ch]?.ns_pct), 'latest week', nsColor(S().weekly_channel?.[lastWk]?.[st.ch]?.ns_pct), '')}
+          ${miniBox('No Show%',fmtPct(S().weekly_channel?.[lastWk]?.[st.ch]?.ns_pct), lastWkLbl, nsColor(S().weekly_channel?.[lastWk]?.[st.ch]?.ns_pct), '')}
         </div>
 
         <!-- Vol share + B2D bars -->
@@ -439,15 +451,15 @@ function renderAllChannels(weeks, wkLabels) {
     ${kpis}
 
     <div class="card" style="padding:16px 20px;">
-      <div style="font-size:14px;font-weight:700;margin-bottom:12px;">Channel Volume Share · Latest Week</div>
-      <div style="font-size:11px;color:var(--muted);margin-bottom:14px;">${(DATA.week_labels?.[lastWk]||lastWk)} · ${activeScope} scope</div>
+      <div style="font-size:14px;font-weight:700;margin-bottom:12px;">Channel Volume Share · ${lastWkLbl}</div>
+      <div style="font-size:11px;color:var(--muted);margin-bottom:14px;">${activeScope} scope${activeWkIdx>0?' · '+activeWkIdx+' week(s) back':''}</div>
       ${compBars}
     </div>
 
     <div class="card" style="padding:0;overflow:hidden;">
       <div style="padding:14px 20px;border-bottom:1px solid var(--line);">
         <div style="font-size:14px;font-weight:700;">Channel Comparison — All Metrics</div>
-        <div style="font-size:11px;color:var(--muted);margin-top:2px;">Latest week · sortable · ${activeScope} scope</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:2px;">${lastWkLbl} · sortable · ${activeScope} scope</div>
       </div>
       <div style="overflow-x:auto;">
       <table class="tbl">
@@ -515,15 +527,16 @@ function renderSingleChannel(ch, weeks, wkLabels) {
   const stats  = buildChStats(weeks).find(s=>s.ch===ch);
   if (!stats) return;
 
-  const lastWk     = weeks[weeks.length-1];
-  const prevWk     = weeks[weeks.length-2];
+  const lastWk     = weeks[weeks.length-1-activeWkIdx];
+  const prevWk     = activeWkIdx < weeks.length-1 ? weeks[weeks.length-2-activeWkIdx] : null;
+  const wkLabel    = DATA.week_labels?.[lastWk] || lastWk;
   const netTotals  = weeks.map(wk => S().weekly_funnel?.[wk]?.calls_done||0);
   const netB2d     = weeks.map(wk => S().weekly_funnel?.[wk]?.b2d_pct??null);
   const n4 = Math.min(4, Math.floor(weeks.length/2));
   const sig = getSignal(stats);
 
   const latestData  = S().weekly_channel?.[lastWk]?.[ch] || {};
-  const prevData    = S().weekly_channel?.[prevWk]?.[ch] || {};
+  const prevData    = prevWk ? (S().weekly_channel?.[prevWk]?.[ch] || {}) : {};
   const latestNet   = S().weekly_funnel?.[lastWk]?.calls_done || 1;
 
   // KPI strip
@@ -540,7 +553,7 @@ function renderSingleChannel(ch, weeks, wkLabels) {
   const earlyVol  = stats.callsArr.slice(0,n4).reduce((a,b)=>a+b,0)/n4||1;
   const recentVol = stats.callsArr.slice(-n4).reduce((a,b)=>a+b,0)/n4;
 
-  // Category breakdown in this channel (latest week vs network)
+  // Category breakdown in this channel (selected week vs network)
   const netCatData = S().weekly_total?.[lastWk]?.by_cat || {};
   const netTotal   = S().weekly_total?.[lastWk]?.total || 1;
   const chTotal    = latestData.calls_done || latestData.total || 1;
@@ -582,7 +595,7 @@ function renderSingleChannel(ch, weeks, wkLabels) {
     </tr>`;
   }).join('');
 
-  // All-channel B2D comparison (latest week)
+  // All-channel B2D comparison (selected week)
   const allStats = buildChStats(weeks);
   const b2dCompRows = allStats
     .sort((a,b)=>(b.latestB2d||0)-(a.latestB2d||0))
@@ -617,9 +630,9 @@ function renderSingleChannel(ch, weeks, wkLabels) {
 
     <!-- KPI Strip -->
     <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px;">
-      ${kpiCard2('Calls Done', fmtN(latestData.calls_done), 'latest week', m.color, wowHtml(latestData.calls_done, prevData.calls_done))}
+      ${kpiCard2('Calls Done', fmtN(latestData.calls_done), wkLabel, m.color, wowHtml(latestData.calls_done, prevData.calls_done))}
       ${kpiCard2('Vol Share',  latestData.calls_done ? (latestData.calls_done/latestNet*100).toFixed(1)+'%' : '—', 'of total calls', m.color, '')}
-      ${kpiCard2('Gross Bkgs', fmtN(latestData.gross), 'latest week', '#64748b', wowHtml(latestData.gross, prevData.gross))}
+      ${kpiCard2('Gross Bkgs', fmtN(latestData.gross), wkLabel, '#64748b', wowHtml(latestData.gross, prevData.gross))}
       ${kpiCard2('B2D %',      fmtPct(latestData.b2d_pct), 'booking-to-done', b2dColor(latestData.b2d_pct), wowHtml(latestData.b2d_pct, prevData.b2d_pct, true))}
       ${kpiCard2('No Show %',  fmtPct(latestData.ns_pct), 'of gross bookings', latestData.ns_pct<=30?'#059669':latestData.ns_pct<=40?'#d97706':'#dc2626', wowHtml(latestData.ns_pct, prevData.ns_pct, true))}
     </div>
@@ -650,7 +663,7 @@ function renderSingleChannel(ch, weeks, wkLabels) {
     <!-- Category mix in this channel -->
     <div class="card">
       <div style="font-size:14px;font-weight:700;margin-bottom:2px;">Category Mix within ${m.label}</div>
-      <div style="font-size:11px;color:var(--muted);margin-bottom:12px;">Latest week · vs network average · delta = over/under-indexing · ${activeScope} scope</div>
+      <div style="font-size:11px;color:var(--muted);margin-bottom:12px;">${wkLabel} · vs network average · delta = over/under-indexing · ${activeScope} scope</div>
       <table class="tbl">
         <thead><tr>
           <th>Category</th>
@@ -678,7 +691,7 @@ function renderSingleChannel(ch, weeks, wkLabels) {
     <div class="card" style="padding:0;overflow:hidden;">
       <div style="padding:14px 20px;border-bottom:1px solid var(--line);">
         <div style="font-size:14px;font-weight:700;">B2D% Comparison — All Channels</div>
-        <div style="font-size:11px;color:var(--muted);margin-top:2px;">How does ${m.label} compare on quality? · Latest week · ${m.label} highlighted</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:2px;">How does ${m.label} compare on quality? · ${wkLabel} · ${m.label} highlighted</div>
       </div>
       <div style="overflow-x:auto;">
       <table class="tbl">
@@ -813,9 +826,24 @@ function render() {
   } else {
     renderSingleChannel(activeCh, weeks, wkLabels);
   }
+  populateWeekSel();
 }
 
 // ── CONTROLS ──────────────────────────────────────────────────────────────
+function populateWeekSel() {
+  const allWks = (S()?.weeks || DATA.weeks || []).slice().reverse(); // newest first
+  const sel = document.getElementById('weekSel');
+  if (!sel || !allWks.length) return;
+  sel.innerHTML = allWks.map((wk, i) => {
+    const lbl = DATA.week_labels?.[wk] || wk;
+    return `<option value="${i}"${i===activeWkIdx?' selected':''}>${lbl}</option>`;
+  }).join('');
+}
+function setWkIdx(i) {
+  activeWkIdx = i;
+  render();
+  window.scrollTo({ top:0, behavior:'smooth' });
+}
 function setCh(ch) {
   activeCh = ch;
   render();
@@ -823,6 +851,7 @@ function setCh(ch) {
 }
 function setScope(s) {
   activeScope = s;
+  activeWkIdx = 0;  // reset to newest week when scope changes
   ['scopeOffline','scopeAll','scopeOnline'].forEach(id =>
     document.getElementById(id)?.classList.toggle('active', id.replace('scope','').toLowerCase() === s)
   );

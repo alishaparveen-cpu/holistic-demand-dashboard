@@ -96,6 +96,7 @@ html,body{background:#f8fafc;color:var(--ink);font-family:ui-sans-serif,system-u
   <a href="channel.html"    class="nav-link">Channel</a>
   <span class="nav-link active">Efficiency</span>
   <a href="comparison.html" class="nav-link">Comparison →</a>
+  <a href="weekly-report.html" class="nav-link">Weekly Report</a>
 </div>
 
 <!-- ═══ HEADER ═══ -->
@@ -119,7 +120,7 @@ html,body{background:#f8fafc;color:var(--ink);font-family:ui-sans-serif,system-u
       <button class="toggle-btn"        id="dsBtnOnline"  onclick="setDataScope('online')">Online</button>
       <button class="toggle-btn"        id="dsBtnOffline" onclick="setDataScope('offline')">Offline</button>
     </div>
-    <div style="display:flex;align-items:center;gap:5px;">
+    <div id="weeklyControls" style="display:flex;align-items:center;gap:5px;">
       <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#94a3b8;">Range:</span>
       <select id="weekRangeSel" onchange="setWeekRange(this.value)"
         style="padding:5px 9px;border:1px solid var(--line);border-radius:8px;font-size:12px;background:#fff;cursor:pointer;">
@@ -128,10 +129,10 @@ html,body{background:#f8fafc;color:var(--ink);font-family:ui-sans-serif,system-u
         <option value="12">Last 12 wks</option>
         <option value="all">All weeks</option>
       </select>
+      <select id="weekSel" onchange="setWeek(+this.value)"
+        style="padding:6px 10px;border:1px solid var(--line);border-radius:8px;font-size:12px;background:#fff;cursor:pointer;min-width:180px;">
+      </select>
     </div>
-    <select id="weekSel" onchange="setWeek(+this.value)"
-      style="padding:6px 10px;border:1px solid var(--line);border-radius:8px;font-size:12px;background:#fff;cursor:pointer;min-width:180px;">
-    </select>
   </div>
 </div>
 
@@ -140,20 +141,23 @@ html,body{background:#f8fafc;color:var(--ink);font-family:ui-sans-serif,system-u
   <button class="ch-tab active" id="chtAll"          onclick="setChView('all')">
     <span style="font-size:13px;">📊</span> All Channels
   </button>
-  <button class="ch-tab" id="chtGoogle"      onclick="setChView('Google')">
-    <span class="ch-dot-sm" style="background:#4285F4;"></span> Google
+  <button class="ch-tab" id="chtGmbGoogle"     onclick="setChView('GmbGoogle')">
+    <span class="ch-dot-sm" style="background:#4285F4;"></span> Google + GMB
   </button>
-  <button class="ch-tab" id="chtMeta"        onclick="setChView('Meta')">
-    <span class="ch-dot-sm" style="background:#1877F2;"></span> Meta / FB
-  </button>
-  <button class="ch-tab" id="chtPracto"      onclick="setChView('Practo')">
-    <span class="ch-dot-sm" style="background:#6B4EFF;"></span> Practo
-  </button>
-  <button class="ch-tab" id="chtGMB"         onclick="setChView('GMB')">
+  <button class="ch-tab" id="chtGMB"          onclick="setChView('GMB')">
     <span class="ch-dot-sm" style="background:#34A853;"></span> GMB
   </button>
+  <button class="ch-tab" id="chtGoogleSearch" onclick="setChView('GoogleSearch')">
+    <span class="ch-dot-sm" style="background:#DB4437;"></span> Google Search
+  </button>
+  <button class="ch-tab" id="chtMeta"          onclick="setChView('Meta')">
+    <span class="ch-dot-sm" style="background:#E1306C;"></span> Meta / FB
+  </button>
+  <button class="ch-tab" id="chtPracto"      onclick="setChView('Practo')">
+    <span class="ch-dot-sm" style="background:#7C3AED;"></span> Practo
+  </button>
   <button class="ch-tab" id="chtOrganic"     onclick="setChView('Organic')">
-    <span class="ch-dot-sm" style="background:#10b981;"></span> Organic
+    <span class="ch-dot-sm" style="background:#F97316;"></span> Organic
   </button>
 </div>
 
@@ -161,6 +165,15 @@ html,body{background:#f8fafc;color:var(--ink);font-family:ui-sans-serif,system-u
      ALL CHANNELS VIEW
 ═══════════════════════════════════════════════ -->
 <div id="allView">
+
+<!-- ══ MARKETING CONTROL BOARD (injected by JS) ══ -->
+<div id="marketingBoard" style="margin-bottom:20px;"></div>
+
+<!-- ══ COST TREND PULSE (injected by JS) ══ -->
+<div id="costTrendPulse" style="margin-bottom:20px;"></div>
+
+<!-- ══ FUNNEL BREAK ANALYZER (injected by JS) ══ -->
+<div id="funnelBreakAnalyzer" style="margin-bottom:20px;"></div>
 
 <!-- KPI STRIP (4 cards) -->
 <div id="kpiStrip" style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:20px;">
@@ -232,7 +245,7 @@ html,body{background:#f8fafc;color:var(--ink);font-family:ui-sans-serif,system-u
   <div id="deepDiveContent"></div>
 </div>
 
-<!-- CHARTS ROW 1 -->
+<!-- ── ROW 1: Spend Allocation + Spend vs Output ── -->
 <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px;">
   <div class="card">
     <div class="sec-title" style="font-size:14px;margin-bottom:2px;">Spend Allocation</div>
@@ -240,73 +253,48 @@ html,body{background:#f8fafc;color:var(--ink);font-family:ui-sans-serif,system-u
     <div style="height:230px;position:relative;"><canvas id="spendPie"></canvas></div>
   </div>
   <div class="card">
-    <div class="sec-title" style="font-size:14px;margin-bottom:2px;">Estimated CPD by Channel</div>
-    <div style="font-size:11px;color:var(--muted);margin-bottom:12px;">Est. spend ÷ calls done · paid channels</div>
-    <div style="height:230px;"><canvas id="cpdBar"></canvas></div>
+    <div class="sec-title" style="font-size:14px;margin-bottom:4px;">Spend vs Output — Channel Comparison</div>
+    <div style="font-size:11px;color:var(--muted);margin-bottom:12px;">Spend% vs Bookings% vs Done% · are you getting back what you put in?</div>
+    <div style="height:230px;"><canvas id="chartSpendOutput"></canvas></div>
   </div>
 </div>
 
+<!-- ── ROW 2: Bookings by channel trend ── -->
 <div class="card" style="margin-bottom:20px;">
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-    <div><span class="sec-title" style="font-size:14px;">Overall CPL &amp; CPD Trend</span><span class="sec-sub">7-week · lower is better</span></div>
+    <div>
+      <span class="sec-title" style="font-size:14px;">Bookings by Channel — Trend</span>
+      <span class="sec-sub">stacked bars · which channel is driving volume?</span>
+    </div>
   </div>
-  <div style="height:230px;"><canvas id="cplCpdTrend"></canvas></div>
+  <div style="height:230px;"><canvas id="chartBookingsTrend"></canvas></div>
 </div>
 
-<!-- ── CHART A: Full Funnel Step-Down ── -->
-<div class="card" style="margin-bottom:20px;">
-  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
-    <div><span class="sec-title" style="font-size:14px;">Full Funnel — Leads to Calls Done</span><span class="sec-sub">selected week · drop-off at each stage</span></div>
-  </div>
-  <div style="height:200px;"><canvas id="chartFunnel"></canvas></div>
-</div>
-
-<!-- ── CHARTS B + C: Revenue + RoAS ── -->
+<!-- ── ROW 3: CPL + B2D% trends ── -->
 <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px;">
   <div class="card">
-    <div class="sec-title" style="font-size:14px;margin-bottom:2px;">Revenue Trend</div>
-    <div style="font-size:11px;color:var(--muted);margin-bottom:12px;">1st TP Rev · Consult Rev · New Rev (₹L)</div>
-    <div style="height:220px;"><canvas id="chartRevTrend"></canvas></div>
+    <div class="sec-title" style="font-size:14px;margin-bottom:2px;">CPL Trend by Channel</div>
+    <div style="font-size:11px;color:var(--muted);margin-bottom:12px;">Paid channels · lower is better</div>
+    <div style="height:220px;"><canvas id="cplChannelTrend"></canvas></div>
   </div>
   <div class="card">
-    <div class="sec-title" style="font-size:14px;margin-bottom:2px;">1st TP RoAS Trend</div>
-    <div style="font-size:11px;color:var(--muted);margin-bottom:12px;">100% = breakeven · red shade below</div>
-    <div style="height:220px;"><canvas id="chartRoasTrend"></canvas></div>
+    <div class="sec-title" style="font-size:14px;margin-bottom:2px;">B2D% Trend by Channel</div>
+    <div style="font-size:11px;color:var(--muted);margin-bottom:12px;">Booking-to-Done · higher is better · drop = no-show / ops issue</div>
+    <div style="height:220px;"><canvas id="b2dTrend"></canvas></div>
   </div>
 </div>
 
-<!-- ── CHART D: Online vs Offline Split ── -->
-<div class="card" style="margin-bottom:20px;">
-  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-    <div><span class="sec-title" style="font-size:14px;">Online vs Offline Split</span><span class="sec-sub">Calls Done &amp; Bookings · weekly</span></div>
-  </div>
-  <div style="height:230px;"><canvas id="chartOnlineOffline"></canvas></div>
-</div>
-
-<!-- ── CHART E: CPM / CPC / CTR Channel Comparison ── -->
-<div class="card" style="margin-bottom:20px;">
-  <div style="margin-bottom:14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
-    <span class="sec-title" style="font-size:14px;">Ad Platform — CPM / CPC / CTR by Channel</span>
-    <span class="sec-sub">Google vs Meta/FB vs Overall · weekly trend</span>
-  </div>
-  <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;">
-    <div><div style="font-size:11px;color:#64748b;margin-bottom:6px;font-weight:600;">CPM (₹) — Cost per 1,000 Impressions</div><div style="height:160px;"><canvas id="chartCPM"></canvas></div></div>
-    <div><div style="font-size:11px;color:#64748b;margin-bottom:6px;font-weight:600;">CPC (₹) — Cost per Click</div><div style="height:160px;"><canvas id="chartCPC"></canvas></div></div>
-    <div><div style="font-size:11px;color:#64748b;margin-bottom:6px;font-weight:600;">CTR (%) — Click-Through Rate</div><div style="height:160px;"><canvas id="chartCTR"></canvas></div></div>
-  </div>
-</div>
-
-<!-- ── CHARTS F + G: RPC + STI ── -->
+<!-- ── ROW 4: Ad Platform (CTR + CPL) + Revenue ── -->
 <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px;">
   <div class="card">
-    <div class="sec-title" style="font-size:14px;margin-bottom:2px;">RPC Trend by Channel</div>
-    <div style="font-size:11px;color:var(--muted);margin-bottom:12px;">Overall · GMB+Google · Organic (₹)</div>
-    <div style="height:220px;"><canvas id="chartRpcTrend"></canvas></div>
+    <div class="sec-title" style="font-size:14px;margin-bottom:2px;">CTR Trend — Paid Channels</div>
+    <div style="font-size:11px;color:var(--muted);margin-bottom:12px;">Click-through rate · ≥3% healthy · drop = ad/audience fatigue</div>
+    <div style="height:220px;"><canvas id="chartCTR"></canvas></div>
   </div>
   <div class="card">
-    <div class="sec-title" style="font-size:14px;margin-bottom:2px;">STI Contribution Trend</div>
-    <div style="font-size:11px;color:var(--muted);margin-bottom:12px;">20% target · online/offline sub-lines</div>
-    <div style="height:220px;"><canvas id="chartStiTrend"></canvas></div>
+    <div class="sec-title" style="font-size:14px;margin-bottom:2px;">RoAS &amp; Revenue</div>
+    <div style="font-size:11px;color:var(--muted);margin-bottom:12px;">1st TP RoAS (%) · New Rev (₹L) · 100% = breakeven</div>
+    <div style="height:220px;"><canvas id="chartRevRoas"></canvas></div>
   </div>
 </div>
 
@@ -314,23 +302,8 @@ html,body{background:#f8fafc;color:var(--ink);font-family:ui-sans-serif,system-u
 <!-- CHANNEL SCORECARDS -->
 <div id="channelScorecards" style="margin-bottom:20px;"></div>
 
-<!-- FUNNEL CONVERSION TABLE -->
-<div id="funnelConvTable" style="margin-bottom:20px;"></div>
-
-<!-- CPL TREND BY CHANNEL -->
-<div class="card" style="margin-bottom:20px;">
-  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-    <div><span class="sec-title" style="font-size:14px;">CPL Trend by Channel</span><span class="sec-sub">7-week · paid channels · lower is better</span></div>
-  </div>
-  <div style="height:240px;"><canvas id="cplChannelTrend"></canvas></div>
-</div>
-
-<div class="card" style="margin-bottom:40px;">
-  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-    <div><span class="sec-title" style="font-size:14px;">Booking-to-Done % by Channel</span><span class="sec-sub">7-week · higher is better</span></div>
-  </div>
-  <div style="height:240px;"><canvas id="b2dTrend"></canvas></div>
-</div>
+<!-- COMPARISON PANEL -->
+<div id="cmpPanelEff" style="margin-bottom:20px;"></div>
 
 </div><!-- /allView -->
 
@@ -371,22 +344,28 @@ html,body{background:#f8fafc;color:var(--ink);font-family:ui-sans-serif,system-u
 // ── CONFIG ────────────────────────────────────────────────────────────────
 const L0_SHEET_ID = '1jyyFYpd7gfYyAQ3U7E56c7OA3OuQQAVgJrAGyQr90XM';
 const L0_URL      = `https://docs.google.com/spreadsheets/d/${L0_SHEET_ID}/gviz/tq?tqx=out:csv&sheet=L0`;
-const L0_CACHE_KEY = 'allo_eff_l0_v4';
+const L0_CACHE_KEY = 'allo_eff_l0_v5';   // bumped 2026-06-01: force fresh fetch after col shift
 const L0_CACHE_TTL = 45 * 60 * 1000; // 45 min
 
-const L0_WEEK_COLS = [3, 4, 5, 6, 7, 8, 9];
+const L0_WEEK_COLS = [2, 3, 4, 5, 6, 7, 8];   // col 2 = W-1 (25–31 May); shift +1 each week
+// Monday start-of-week keys matching data.json (newest first, parallel to L0_WEEK_COLS)
 const JSON_WEEK_KEYS = [
-  '2026-05-24','2026-05-17','2026-05-10','2026-05-03',
-  '2026-04-26','2026-04-19','2026-04-12'
+  '2026-05-25','2026-05-18','2026-05-11','2026-05-04',
+  '2026-04-27','2026-04-20','2026-04-13'
 ];
 
+// gmb_google = combined "GMB+Google" section (full ad data).
+// gmb        = standalone GMB section (may have subset of metrics).
+// google     = standalone "Google Search" section (may be sparse).
+// All three are available as tab drill-downs.
 const CHANNELS = [
-  { key:'Google',  label:'Google Search', section:'Google Search', type:'paid', color:'#4285F4' },
-  { key:'Meta',    label:'Meta / FB',     section:'FB',            type:'paid', color:'#1877F2' },
-  { key:'Practo',  label:'Practo',        section:'Practo',        type:'paid', color:'#6B4EFF' },
-  { key:'GMB',     label:'GMB',           section:'GMB',           type:'free', color:'#34A853' },
-  { key:'Organic', label:'Organic',       section:'<>Organic',     type:'free', color:'#10b981' },
-  { key:'Others',  label:'Others',        section:null,            type:'free', color:'#94a3b8' },
+  { key:'GmbGoogle',    label:'Google + GMB',  type:'paid', color:'#4285F4', l0key:'gmb_google' },
+  { key:'GMB',          label:'GMB',            type:'paid', color:'#34A853', l0key:'gmb'        },
+  { key:'GoogleSearch', label:'Google Search',  type:'paid', color:'#DB4437', l0key:'google'     },
+  { key:'Meta',         label:'Meta / FB',      type:'paid', color:'#E1306C', l0key:'meta'       },
+  { key:'Practo',       label:'Practo',         type:'paid', color:'#7C3AED', l0key:'practo'     },
+  { key:'Organic',      label:'Organic',        type:'free', color:'#F97316', l0key:'organic'    },
+  { key:'Others',       label:'Others',         type:'free', color:'#64748b', l0key:null          },
 ];
 
 // ALL section labels that appear as headers in the sheet — used for section boundary detection.
@@ -416,6 +395,46 @@ let activeDDKey  = null;
 let activeChView = 'all';
 let chTrendChart = null;
 let weekRange    = 8;   // default: last 8 weeks
+let viewMode     = 'weekly';   // 'weekly' | 'monthly'
+let activeMonth  = null;       // e.g. '2026-05' when in monthly mode
+
+// ── COMPARISON PANEL STATE ─────────────────────────────────────────────────
+const CMP_EFF_SEGMENTS = [
+  { key:'overall',    lbl:'Overall' },
+  { key:'gmb_google', lbl:'GMB + Google' },
+  { key:'gmb',        lbl:'GMB' },
+  { key:'google',     lbl:'Google Search' },
+  { key:'meta',       lbl:'Meta/FB' },
+  { key:'practo',     lbl:'Practo' },
+  { key:'organic',    lbl:'Organic' },
+];
+const CMP_EFF_METRICS = [
+  { key:'leads',    lbl:'Leads',        type:'count', getArr: s => s==='overall' ? (L0?.overall?.leads       ||[]) : (L0?.[s]?.leads_num     ||[]) },
+  { key:'spends',   lbl:'Spend (₹)',    type:'inr',   getArr: s => s==='overall' ? (L0?.overall?.spends      ||[]) : (L0?.[s]?.spends        ||[]) },
+  { key:'cpl',      lbl:'CPL (₹)',      type:'inr',   getArr: s => s==='overall' ? (L0?.overall?.cpl         ||[]) : (L0?.[s]?.cpl           ||[]) },
+  { key:'bookings', lbl:'Bookings',     type:'count', getArr: s => s==='overall' ? (L0?.overall?.bookings    ||[]) : (L0?.[s]?.bookings      ||[]) },
+  { key:'calls',    lbl:'Calls Done',   type:'count', getArr: s => s==='overall' ? (L0?.overall?.calls_done  ||[]) : (L0?.[s]?.calls_done_l0 ||[]) },
+  { key:'b2d',      lbl:'B2D %',        type:'pct',   getArr: s => {
+    if (s === 'overall' && JDATA) {
+      // L0 and JDATA use different week key formats but same order (newest-first).
+      // Map positionally: L0 index 0 = JDATA's newest week, etc.
+      const jdWeeks = [...(JDATA.weeks || [])].reverse(); // newest first
+      const fromJData = L0_WEEK_COLS.map((_, i) =>
+        JDATA?.[dataScope]?.weekly_funnel?.[jdWeeks[i]]?.b2d_pct ?? null
+      );
+      if (fromJData.some(v => v != null)) return fromJData;
+    }
+    // Per-channel (or overall fallback): compute from calls / bookings
+    const cd = s==='overall' ? (L0?.overall?.calls_done||[]) : (L0?.[s]?.calls_done_l0||[]);
+    const bk = s==='overall' ? (L0?.overall?.bookings||[])   : (L0?.[s]?.bookings||[]);
+    return cd.map((c,i) => (c!=null&&bk[i]!=null&&bk[i]>0) ? c/bk[i]*100 : null);
+  }},
+  { key:'new_rev',  lbl:'Revenue (₹L)', type:'rev',   getArr: s => s==='overall' ? (L0?.overall?.new_rev     ||[]) : (L0?.[s]?.new_rev       ||[]) },
+  { key:'cpb',      lbl:'CPB (₹)',      type:'inr',   getArr: s => s==='overall' ? (L0?.overall?.cpb         ||[]) : (L0?.[s]?.cpb           ||[]) },
+  { key:'roas',     lbl:'ROAS',         type:'ratio', getArr: s => s==='overall' ? (L0?.overall?.roas_1tp    ||[]) : (L0?.[s]?.roas          ||[]) },
+];
+let cmpA_eff = 'leads', cmpB_eff = 'b2d', cmpSeg_eff = 'overall';
+let cmpChartEff = null;
 
 // ── CACHE ─────────────────────────────────────────────────────────────────
 async function fetchL0Cached() {
@@ -654,12 +673,8 @@ function parseL0(text) {
 
 // ── HELPERS ───────────────────────────────────────────────────────────────
 function getChannelL0(ch) {
-  if (!L0) return null;
-  const map = {
-    Google:'google', Meta:'meta', Practo:'practo',
-    GMB:'gmb', Organic:'organic'
-  };
-  return map[ch.key] ? L0[map[ch.key]] : null;
+  if (!L0 || !ch.l0key) return null;
+  return L0[ch.l0key] || null;
 }
 
 // Week-range-aware helpers
@@ -707,6 +722,87 @@ function wowHtml(pct, inverted=false) {
 }
 function revArr(arr) { return arr ? [...arr].reverse() : []; }
 const revLabels = () => L0 ? revArr(L0.endLabels) : JSON_WEEK_KEYS.map(w=>w.slice(5)).reverse();
+
+// ── MONTHLY HELPERS ───────────────────────────────────────────────────────
+function getMonthGroups() {
+  // Returns array [{key:'2026-05', label:'May 26', indices:[0,1,2,3]}, ...]
+  // most-recent month first, derived from JSON_WEEK_KEYS
+  const map = {};
+  const order = [];
+  JSON_WEEK_KEYS.forEach((wk, i) => {
+    const d = new Date(wk);
+    const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+    if (!map[key]) {
+      const label = d.toLocaleString('en-IN', { month:'short', year:'2-digit' });
+      map[key] = { key, label, indices:[] };
+      order.push(key);
+    }
+    map[key].indices.push(i);
+  });
+  return order.map(k => map[k]);
+}
+
+// Aggregate an L0 array over a set of indices.
+// mode: 'sum' for absolute values, 'avg' for rates/percentages
+function monthlyAgg(arr, indices, mode='sum') {
+  if (!arr) return null;
+  const vals = indices.map(i => arr[i]).filter(v => v != null);
+  if (!vals.length) return null;
+  if (mode === 'sum') return vals.reduce((a,b)=>a+b, 0);
+  return vals.reduce((a,b)=>a+b, 0) / vals.length;
+}
+
+// Get the effective week index for point-in-time metrics in monthly mode
+// (use the most recent week index in the month group)
+function activeWkIdxForMonth() {
+  if (viewMode !== 'monthly' || !activeMonth) return activeWkIdx;
+  const grp = getMonthGroups().find(g => g.key === activeMonth);
+  return grp ? Math.min(...grp.indices) : activeWkIdx; // smallest idx = most recent
+}
+
+// For trend charts in monthly mode: returns { labels, getArr }
+// getArr(arr, mode) → monthly-aggregated reversed array
+function monthlyTrendData(arr, mode='sum') {
+  const groups = getMonthGroups().slice().reverse(); // chronological
+  const labels = groups.map(g => g.label);
+  const data   = groups.map(g => monthlyAgg(arr, g.indices, mode));
+  return { labels, data };
+}
+
+// Universal: get trend labels + reversed array for a metric
+function trendLabels() {
+  if (viewMode === 'monthly') return getMonthGroups().slice().reverse().map(g=>g.label);
+  return revLabelsN();
+}
+function trendArr(arr, mode='sum') {
+  if (viewMode === 'monthly') return monthlyTrendData(arr, mode).data;
+  return revArrN(arr);
+}
+// For rate metrics (CPL, CTR, etc.) use avg in monthly mode
+function trendRate(arr) { return trendArr(arr, 'avg'); }
+
+// setViewMode / setMonth
+function setViewMode(mode) {
+  viewMode = mode;
+  ['viewBtnWeekly','viewBtnMonthly'].forEach(id => document.getElementById(id)?.classList.remove('active'));
+  document.getElementById(mode==='weekly'?'viewBtnWeekly':'viewBtnMonthly')?.classList.add('active');
+  document.getElementById('weeklyControls').style.display  = mode==='weekly'  ? 'flex' : 'none';
+  document.getElementById('monthlyControls').style.display = mode==='monthly' ? 'flex' : 'none';
+  if (mode === 'monthly') buildMonthSelector();
+  render();
+}
+function setMonth(key) {
+  activeMonth = key;
+  render();
+}
+function buildMonthSelector() {
+  const sel = document.getElementById('monthSel');
+  if (!sel) return;
+  const groups = getMonthGroups();
+  sel.innerHTML = groups.map(g => `<option value="${g.key}">${g.label}</option>`).join('');
+  if (!activeMonth || !groups.find(g=>g.key===activeMonth)) activeMonth = groups[0]?.key;
+  sel.value = activeMonth;
+}
 
 // ── SPARKLINE (with zoom data attrs) ──────────────────────────────────────
 function spark(vals, color='#6366f1', w=84, h=22, fill=true, opts={}) {
@@ -775,6 +871,693 @@ function ddSection(icon, title, cardsHtml) {
 }
 function hasAny(arr) { return (arr||[]).some(v => v != null); }
 
+// ── MARKETING CONTROL BOARD ──────────────────────────────────────────────
+function buildMarketingControlBoard(wkIdx) {
+  if (!L0) return '';
+  const prev = wkIdx + 1;
+
+  // RAG colour helper
+  const ragC = s => s==='green' ? {bg:'#ecfdf5',bd:'#6ee7b7',tx:'#065f46'}
+                  : s==='amber' ? {bg:'#fffbeb',bd:'#fcd34d',tx:'#92400e'}
+                  : s==='red'   ? {bg:'#fef2f2',bd:'#fca5a5',tx:'#991b1b'}
+                  :               {bg:'#f8fafc',bd:'#e2e8f0',tx:'#94a3b8'};
+
+  function cell(sig, val, sub) {
+    const c = ragC(sig);
+    return `<td style="padding:5px 6px;text-align:center;">
+      <div style="background:${c.bg};border:1px solid ${c.bd};border-radius:7px;padding:6px 8px;min-width:70px;">
+        <div style="font-size:11px;font-weight:700;color:${c.tx};line-height:1.2;">${val||'—'}</div>
+        ${sub?`<div style="font-size:8.5px;color:${c.tx};opacity:.8;margin-top:1px;white-space:nowrap;">${sub}</div>`:''}
+      </div>
+    </td>`;
+  }
+
+  function wowCalc(cur, prv) {
+    if (cur==null||prv==null||prv===0) return null;
+    const p = (cur-prv)/Math.abs(prv)*100;
+    return { pct: p, str: (p>0?'▲':'▼')+Math.abs(p).toFixed(0)+'%' };
+  }
+
+  // GmbGoogle already maps to L0.gmb_google via l0key — no special-casing needed
+  function getBoardData(ch) {
+    return getChannelL0(ch);
+  }
+
+  const rows = CHANNELS.filter(c=>c.key!=='Others').map(ch => {
+    const d   = getBoardData(ch);
+    const p   = prev;
+    const ip  = ch.type === 'paid';
+
+    // ── SPEND ──
+    const sc  = d?.spends?.[wkIdx] ?? (d?.spend_contr?.[wkIdx]!=null ? (L0.overall.spends[wkIdx]??0)*d.spend_contr[wkIdx]/100 : null);
+    const sp  = d?.spends?.[p]     ?? (d?.spend_contr?.[p]!=null     ? (L0.overall.spends[p]??0)    *d.spend_contr[p]/100     : null);
+    const swow = wowCalc(sc, sp);
+    const spContrN = d?.spend_contr?.[wkIdx]??null;
+    const dnContrN = d?.done_contr?.[wkIdx]??null;
+    let spSig='na', spVal=ip?(sc!=null?fmtINR(sc):'—'):'Free ✓', spSub='';
+    if (ip && sc!=null) {
+      if (spContrN!=null && dnContrN!=null) {
+        const gap = spContrN - dnContrN;
+        if (gap > 20)      { spSig='red';   spSub='overspend'; }
+        else if (gap > 10) { spSig='amber'; spSub='watch ratio'; }
+        else               { spSig='green'; spSub=swow?swow.str+' WoW':'stable'; }
+      } else {
+        spSig = swow ? (swow.pct > 25 ? 'amber' : 'green') : 'amber';
+        spSub = swow ? swow.str+' WoW' : '';
+      }
+    } else if (!ip) { spSig='green'; }
+
+    // ── IMPRESSIONS ──
+    const ic = d?.impressions?.[wkIdx]??null;
+    const ip2= d?.impressions?.[p]??null;
+    const iwow = wowCalc(ic, ip2);
+    let imSig='na', imVal='—', imSub='';
+    if (!ip) { imSig='na'; imVal='n/a'; }
+    else if (ic!=null) {
+      imVal = ic>=1000 ? (ic/1000).toFixed(1)+'M' : ic.toFixed(0)+'K';
+      imSig = iwow ? (iwow.pct>5?'green':iwow.pct<-15?'red':'amber') : 'amber';
+      if (iwow) imSub = iwow.str+' WoW';
+    }
+
+    // ── CTR ──
+    const cc = d?.ctr?.[wkIdx]??null;
+    const cwow = wowCalc(cc, d?.ctr?.[p]??null);
+    let ctSig='na', ctVal='—', ctSub='';
+    if (!ip) { ctSig='na'; ctVal='n/a'; }
+    else if (cc!=null) {
+      ctVal = cc.toFixed(2)+'%';
+      ctSig = cc>=3?'green':cc>=1.5?'amber':'red';
+      if (cwow) ctSub = cwow.str+' WoW';
+    }
+
+    // ── LEADS ──
+    const lc = d?.leads_num?.[wkIdx]??null;
+    const lwow = wowCalc(lc, d?.leads_num?.[p]??null);
+    let ldSig='na', ldVal='—', ldSub='';
+    if (lc!=null) {
+      ldVal = Math.round(lc).toLocaleString();
+      ldSig = lwow ? (lwow.pct>5?'green':lwow.pct<-10?'red':'amber') : 'amber';
+      if (lwow) ldSub = lwow.str+' WoW';
+    }
+
+    // ── CPL ──
+    const cplc = d?.cpl?.[wkIdx]??null;
+    const cplwow = wowCalc(cplc, d?.cpl?.[p]??null);
+    let clSig='na', clVal='—', clSub='';
+    if (!ip) { clSig='green'; clVal='Free'; }
+    else if (cplc!=null) {
+      clVal = '₹'+Math.round(cplc).toLocaleString();
+      const abS = cplc<80?'green':cplc<150?'amber':'red';
+      const woS = cplwow ? (cplwow.pct>15?'red':cplwow.pct>5?'amber':'green') : 'na';
+      clSig = (woS==='red'||abS==='red')?'red':(woS==='amber'||abS==='amber')?'amber':'green';
+      if (cplwow) clSub = cplwow.str+' WoW';
+    }
+
+    // ── LEAD → BOOKING % ──
+    const lbc = d?.lead_pct?.[wkIdx]??null;
+    const lbwow = wowCalc(lbc, d?.lead_pct?.[p]??null);
+    let lbSig='na', lbVal='—', lbSub='';
+    if (lbc!=null) {
+      lbVal = lbc.toFixed(1)+'%';
+      const abS = lbc>=25?'green':lbc>=18?'amber':'red';
+      const woS = lbwow ? (lbwow.pct<-10?'red':lbwow.pct<-3?'amber':'green') : 'na';
+      lbSig = (woS==='red'||abS==='red')?'red':(woS==='amber'||abS==='amber')?'amber':'green';
+      if (lbwow) lbSub = lbwow.str+' WoW';
+    }
+
+    // ── B2D % ──
+    const cdl  = d?.calls_done_l0?.[wkIdx]??null, bkl  = d?.bookings?.[wkIdx]??null;
+    const cdlP = d?.calls_done_l0?.[p]??null,     bklP = d?.bookings?.[p]??null;
+    const b2c  = (cdl!=null&&bkl!=null&&bkl>0)  ? cdl/bkl*100   : null;
+    const b2pv = (cdlP!=null&&bklP!=null&&bklP>0)? cdlP/bklP*100 : null;
+    const b2wow = wowCalc(b2c, b2pv);
+    let bdSig='na', bdVal='—', bdSub='';
+    if (b2c!=null) {
+      bdVal = b2c.toFixed(1)+'%';
+      bdSig = b2c>=75?'green':b2c>=60?'amber':'red';
+      if (b2wow) bdSub = b2wow.str+' WoW';
+    }
+
+    // ── ROAS ──
+    const rc  = d?.roas?.[wkIdx]??null;
+    const rwow = wowCalc(rc, d?.roas?.[p]??null);
+    let rrSig='na', rrVal='—', rrSub='';
+    if (!ip) { rrSig='na'; rrVal='n/a'; }
+    else if (rc!=null) {
+      rrVal = Math.round(rc)+'%';
+      rrSig = rc>=300?'green':rc>=150?'amber':'red';
+      if (rwow) rrSub = rwow.str+' WoW';
+    }
+
+    // ── OVERALL SIGNAL ──
+    const sigs = [spSig,imSig,ctSig,ldSig,clSig,lbSig,bdSig,rrSig].filter(s=>s!=='na');
+    const redN = sigs.filter(s=>s==='red').length;
+    const ambN = sigs.filter(s=>s==='amber').length;
+    const ovSig = redN>=2?'red':redN===1||ambN>=3?'amber':'green';
+    const ovLabel = ovSig==='green' ? '✓ Healthy'
+      : ovSig==='amber' ? (redN>0 ? `⚠ ${redN} issue${redN>1?'s':''}` : `⚠ ${ambN} watch`)
+      : `🚨 ${redN} issue${redN>1?'s':''}`;
+    const ovc = ragC(ovSig);
+
+    return `<tr style="border-bottom:1px solid #f1f5f9;">
+      <td style="padding:9px 10px;white-space:nowrap;">
+        <div style="display:flex;align-items:center;gap:6px;">
+          <span class="ch-dot-sm" style="background:${ch.color};"></span>
+          <span style="font-weight:700;font-size:12px;">${ch.label}</span>
+          <span class="badge ${ch.type}" style="font-size:8.5px;padding:1px 5px;">${ip?'P':'F'}</span>
+        </div>
+      </td>
+      ${cell(spSig,spVal,spSub)}
+      ${cell(imSig,imVal,imSub)}
+      ${cell(ctSig,ctVal,ctSub)}
+      ${cell(ldSig,ldVal,ldSub)}
+      ${cell(clSig,clVal,clSub)}
+      ${cell(lbSig,lbVal,lbSub)}
+      ${cell(bdSig,bdVal,bdSub)}
+      ${cell(rrSig,rrVal,rrSub)}
+      <td style="padding:9px 10px;text-align:center;">
+        <div style="display:inline-flex;align-items:center;gap:5px;background:${ovc.bg};border:1px solid ${ovc.bd};border-radius:7px;padding:5px 10px;font-size:11px;font-weight:700;color:${ovc.tx};">${ovLabel}</div>
+      </td>
+    </tr>`;
+  }).join('');
+
+  const thSt = 'padding:7px 8px;font-size:9.5px;text-transform:uppercase;letter-spacing:.05em;color:#94a3b8;text-align:center;background:#f8fafc;border-bottom:1px solid #e2e8f0;white-space:nowrap;';
+  return `<div class="card" style="margin-bottom:20px;border-left:4px solid #6366f1;">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;flex-wrap:wrap;">
+      <span style="font-size:18px;">📡</span>
+      <span class="sec-title" style="font-size:15px;">Marketing Control Board</span>
+      <span class="sec-sub">All channels · 🟢 On track · 🟡 Watch · 🔴 Action needed · n/a = not applicable for channel type</span>
+    </div>
+    <div style="font-size:11px;color:#64748b;margin-bottom:12px;padding:8px 12px;background:#f8fafc;border-radius:8px;line-height:1.75;">
+      <strong>How to read:</strong>&nbsp;
+      <strong>Spend</strong> — is spend% far above done%? (overspend signal) &nbsp;·&nbsp;
+      <strong>CTR</strong> ≥3% 🟢 &nbsp;·&nbsp;
+      <strong>CPL</strong> &lt;₹80 🟢 / &lt;₹150 🟡 / &gt;₹150 🔴 &nbsp;·&nbsp;
+      <strong>L→Bkg%</strong> ≥25% 🟢 / ≥18% 🟡 / &lt;18% 🔴 &nbsp;·&nbsp;
+      <strong>B2D%</strong> ≥75% 🟢 / ≥60% 🟡 / &lt;60% 🔴 &nbsp;·&nbsp;
+      <strong>RoAS</strong> ≥300% 🟢 / ≥150% 🟡 / &lt;150% 🔴 &nbsp;·&nbsp;
+      WoW = change vs previous week
+    </div>
+    <div style="overflow-x:auto;">
+    <table style="width:100%;border-collapse:collapse;min-width:760px;">
+      <thead><tr style="border-bottom:2px solid #e2e8f0;">
+        <th style="${thSt}text-align:left;min-width:110px;">Channel</th>
+        <th style="${thSt}" title="Spend amount · red = spend% far above done% (inefficient)">Spend</th>
+        <th style="${thSt}" title="Impressions volume and WoW direction">Impress.</th>
+        <th style="${thSt}" title="Click-through rate — too low = ad/audience problem">CTR</th>
+        <th style="${thSt}" title="Lead volume and WoW direction">Leads</th>
+        <th style="${thSt}" title="Cost per verified lead — rising CPL = funnel getting expensive">CPL</th>
+        <th style="${thSt}" title="Lead to Booking conversion — drop = CRM or ops issue">L→Bkg%</th>
+        <th style="${thSt}" title="Booking to Calls Done — drop = no-show / ops issue">B2D%</th>
+        <th style="${thSt}" title="Return on Ad Spend (1st TP Rev ÷ Spend) — below 150% = revenue concern">RoAS</th>
+        <th style="${thSt}min-width:105px;">Overall</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    </div>
+    <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding:8px 10px;background:#f8fafc;border-radius:8px;margin-top:10px;font-size:10.5px;">
+      <span style="color:#64748b;font-weight:600;">Legend:</span>
+      <span style="background:#ecfdf5;border:1px solid #6ee7b7;padding:2px 9px;border-radius:6px;color:#065f46;font-weight:600;">🟢 On Track</span>
+      <span style="background:#fffbeb;border:1px solid #fcd34d;padding:2px 9px;border-radius:6px;color:#92400e;font-weight:600;">🟡 Watch</span>
+      <span style="background:#fef2f2;border:1px solid #fca5a5;padding:2px 9px;border-radius:6px;color:#991b1b;font-weight:600;">🔴 Action Needed</span>
+      <span style="color:#94a3b8;font-size:9.5px;">· Thresholds are indicative; context always matters</span>
+    </div>
+  </div>`;
+}
+
+// ── FUNNEL BREAK ANALYZER ─────────────────────────────────────────────────
+function buildFunnelBreakAnalyzer(wkIdx) {
+  if (!L0) return '';
+
+  const maxWk = L0_WEEK_COLS.length;
+  // W-1 = wkIdx, W-2 = wkIdx+1, W-3 = wkIdx+2 (up to available history)
+  const wkIndices = [wkIdx, wkIdx + 1, wkIdx + 2].filter(i => i < maxWk);
+
+  function cColor(sig) {
+    return sig==='green'?'#10b981':sig==='amber'?'#f59e0b':'#ef4444';
+  }
+  function wkColLabel(wi) {
+    if (wi === wkIdx) return 'W-1';
+    if (wi === wkIdx + 1) return 'W-2';
+    return 'W-3';
+  }
+  function wkDateLabel(wi) {
+    const s = L0.startLabels?.[wi] || '';
+    const e = L0.endLabels?.[wi] || '';
+    return s ? `${s}–${e}` : e || '';
+  }
+
+  // Build funnel stages for a given week index and channel
+  function buildStages(d, wi, ch) {
+    const isPaid = ch.type === 'paid';
+    const impressions = d?.impressions?.[wi]??null;
+    const clicks      = d?.clicks?.[wi]??null;
+    const c2l         = d?.c2l?.[wi]??null;
+    const ctr         = d?.ctr?.[wi]??null;
+    const leadsRaw    = d?.leads_num?.[wi]??null;
+    const leadsEst    = (leadsRaw==null && clicks!=null && c2l!=null) ? Math.round(clicks*c2l/100) : null;
+    const leads       = leadsRaw ?? leadsEst;
+    const leadsIsEst  = leadsRaw==null && leadsEst!=null;
+    // bookings: direct or estimate from spend/CPB
+    let bookings = d?.bookings?.[wi] ?? null;
+    let bkgIsEst = false;
+    if (bookings == null) {
+      const sp = d?.spends?.[wi], cpb = d?.cpb?.[wi];
+      if (sp != null && cpb != null && cpb > 0) { bookings = Math.round(sp / cpb); bkgIsEst = true; }
+    }
+    const callsDone   = d?.calls_done_l0?.[wi]??null;
+    const l2bRaw      = d?.lead_pct?.[wi]??null;
+    const l2b         = l2bRaw ?? (leads!=null && leads>0 && bookings!=null ? bookings/leads*100 : null);
+    const b2d         = (callsDone!=null&&bookings!=null&&bookings>0) ? callsDone/bookings*100 : null;
+
+    const stages = [];
+    if (isPaid && impressions!=null)
+      stages.push({ label:'Impr.', val: impressions>=1000?(impressions/1000).toFixed(1)+'K':Math.round(impressions).toString(), conv:null, convLabel:'', sig:'na' });
+    if (isPaid && ctr!=null) {
+      const sig = ctr>=3?'green':ctr>=1.5?'amber':'red';
+      stages.push({ label:'Clicks', val: clicks!=null?(clicks>=1000?(clicks/1000).toFixed(1)+'K':Math.round(clicks).toString()):'—', conv:ctr, convLabel:`CTR ${ctr.toFixed(1)}%`, sig });
+    }
+    if (leads!=null) {
+      const sig = (isPaid&&c2l!=null) ? (c2l>=8?'green':c2l>=3?'amber':'red') : 'na';
+      stages.push({ label:'Leads', val:Math.round(leads).toLocaleString()+(leadsIsEst?' ~':''), conv:c2l, convLabel:c2l!=null?`C2L ${c2l.toFixed(1)}%`:'', sig });
+    }
+    if (bookings!=null) {
+      const sig = l2b!=null ? (l2b>=25?'green':l2b>=18?'amber':'red') : 'na';
+      stages.push({ label:'Bkgs', val:Math.round(bookings).toLocaleString()+(bkgIsEst?' ~':''), conv:l2b, convLabel:l2b!=null?`L→B ${l2b.toFixed(1)}%`:'', sig });
+    }
+    if (callsDone!=null) {
+      const sig = b2d!=null ? (b2d>=75?'green':b2d>=60?'amber':'red') : 'na';
+      stages.push({ label:'Done', val:Math.round(callsDone).toLocaleString(), conv:b2d, convLabel:b2d!=null?`B2D ${b2d.toFixed(1)}%`:'', sig });
+    }
+    return stages;
+  }
+
+  // Build one mini-funnel column HTML
+  function buildFunnelCol(stages, ch, isLatest) {
+    if (stages.length < 2) return '<div style="color:#94a3b8;font-size:10px;text-align:center;padding:10px 0;">No data</div>';
+    const badStages  = stages.filter(s=>s.sig==='red');
+    const warnStages = stages.filter(s=>s.sig==='amber');
+    const worstStage = badStages[0] || warnStages[0] || null;
+
+    return stages.map((st, i) => {
+      const isWorst = isLatest && worstStage && st.label === worstStage.label && worstStage.sig !== 'na';
+      const connHtml = (i>0 && st.conv!=null)
+        ? `<div style="display:flex;align-items:center;justify-content:center;gap:3px;padding:1px 0;">
+            <div style="width:1.5px;height:10px;background:${cColor(st.sig)};border-radius:1px;flex-shrink:0;"></div>
+            <span style="font-size:7.5px;font-weight:700;color:${cColor(st.sig)};white-space:nowrap;">${st.convLabel}</span>
+           </div>`
+        : (i>0 ? `<div style="width:1.5px;height:10px;background:#e2e8f0;margin:1px auto;border-radius:1px;"></div>` : '');
+      return `${connHtml}
+        <div style="background:${isWorst?'#fef2f2':ch.color+'0d'};border:${isWorst?'2':'1'}px solid ${isWorst?'#fca5a5':ch.color+'28'};border-radius:6px;padding:5px 7px;text-align:center;">
+          <div style="font-size:7.5px;text-transform:uppercase;letter-spacing:.03em;color:#64748b;margin-bottom:1px;">${st.label}</div>
+          <div style="font-size:11.5px;font-weight:700;color:#0f172a;">${st.val}</div>
+        </div>`;
+    }).join('');
+  }
+
+  const panels = CHANNELS.filter(c=>c.key!=='Others').map(ch => {
+    const d = getChannelL0(ch);
+    // Build stages for each week
+    const allWeekStages = wkIndices.map(wi => ({ wi, stages: buildStages(d, wi, ch) }));
+    // Skip channel if no data in the selected week
+    if (allWeekStages[0].stages.length < 2) return '';
+
+    // Determine worst stage in selected week for header badge
+    const latestStages = allWeekStages[0].stages;
+    const badLatest  = latestStages.filter(s=>s.sig==='red');
+    const warnLatest = latestStages.filter(s=>s.sig==='amber');
+    const worstLatest = badLatest[0] || warnLatest[0] || null;
+
+    // Build columns
+    const colsHtml = allWeekStages.map(({ wi, stages }, colIdx) => {
+      const dateLabel = wkDateLabel(wi);
+      const wkTag = wkColLabel(wi);
+      const isLatest = colIdx === 0;
+      const bgCol = isLatest ? '#f8fafc' : '#fff';
+      const borderCol = isLatest ? `2px solid ${ch.color}50` : '1px solid #f1f5f9';
+      return `<div style="flex:1;min-width:0;background:${bgCol};border:${borderCol};border-radius:9px;padding:9px 8px;">
+        <div style="text-align:center;margin-bottom:7px;padding-bottom:6px;border-bottom:1px solid #f1f5f9;">
+          <div style="font-size:9px;font-weight:700;color:${isLatest?ch.color:'#94a3b8'};text-transform:uppercase;letter-spacing:.05em;">${wkTag}</div>
+          ${dateLabel ? `<div style="font-size:8px;color:#94a3b8;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${dateLabel}</div>` : ''}
+        </div>
+        ${buildFunnelCol(stages, ch, isLatest)}
+      </div>`;
+    }).join('');
+
+    return `<div style="background:#fff;border:1px solid #e2e8f0;border-top:3px solid ${ch.color};border-radius:12px;padding:14px 16px;">
+      <div style="display:flex;align-items:center;gap:7px;margin-bottom:10px;flex-wrap:wrap;">
+        <span class="ch-dot-sm" style="background:${ch.color};"></span>
+        <span style="font-size:12px;font-weight:700;">${ch.label}</span>
+        ${worstLatest&&worstLatest.sig==='red'
+          ?`<span style="margin-left:auto;font-size:8px;background:#fef2f2;border:1px solid #fca5a5;color:#991b1b;padding:2px 6px;border-radius:4px;font-weight:700;">⚡ Break: ${worstLatest.label}</span>`
+          :worstLatest&&worstLatest.sig==='amber'
+          ?`<span style="margin-left:auto;font-size:8px;background:#fffbeb;border:1px solid #fcd34d;color:#92400e;padding:2px 6px;border-radius:4px;font-weight:700;">⚠ Watch: ${worstLatest.label}</span>`:''}
+      </div>
+      <div style="display:flex;gap:6px;align-items:flex-start;">${colsHtml}</div>
+    </div>`;
+  }).filter(Boolean).join('');
+
+  if (!panels.trim()) return '';
+
+  const selectedWkLabel = L0.startLabels?.[wkIdx]
+    ? `${L0.startLabels[wkIdx]} – ${L0.endLabels?.[wkIdx]||''}`
+    : (L0.endLabels?.[wkIdx] || `Week ${wkIdx+1}`);
+
+  return `<div class="card" style="margin-bottom:20px;">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px;flex-wrap:wrap;">
+      <span style="font-size:18px;">🔍</span>
+      <span class="sec-title" style="font-size:15px;">Funnel Break Analyzer</span>
+      <span style="font-size:10px;background:#eff6ff;border:1px solid #bfdbfe;color:#1e40af;padding:2px 8px;border-radius:999px;font-weight:700;">W-1: ${selectedWkLabel}</span>
+      <span class="sec-sub" style="margin-left:4px;">W-1 = selected week · W-2/W-3 = previous 2 weeks · red outline = biggest drop-off</span>
+    </div>
+    <div style="margin-bottom:12px;font-size:10.5px;color:#94a3b8;">
+      Showing ${wkIndices.length} week${wkIndices.length>1?'s':''} side-by-side. Use the week selector above to shift the window.
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px;">
+      ${panels}
+    </div>
+    <div style="margin-top:12px;padding:8px 12px;background:#f8fafc;border-radius:8px;font-size:10.5px;color:#64748b;line-height:1.7;">
+      <strong>Conversion thresholds:</strong>
+      CTR ≥3% 🟢 / ≥1.5% 🟡 / &lt;1.5% 🔴 &nbsp;·&nbsp;
+      C2L ≥8% 🟢 / ≥3% 🟡 / &lt;3% 🔴 &nbsp;·&nbsp;
+      Lead→Bkg% ≥25% 🟢 / ≥18% 🟡 / &lt;18% 🔴 &nbsp;·&nbsp;
+      B2D% ≥75% 🟢 / ≥60% 🟡 / &lt;60% 🔴
+    </div>
+  </div>`;
+}
+
+// ── PER-METRIC TREND CHARTS ───────────────────────────────────────────────
+// paidChData: simple alias now that GmbGoogle → L0.gmb_google via l0key
+function paidChData(ch) {
+  return getChannelL0(ch);
+}
+// Derive L→B% from bookings/leads when lead_pct row is absent
+function derivedL2B(d, i) {
+  const direct = d?.lead_pct?.[i];
+  if (direct != null) return direct;
+  const bkg  = d?.bookings?.[i];
+  const cl   = d?.clicks?.[i];
+  const c2l  = d?.c2l?.[i];
+  const leads = d?.leads_num?.[i] ?? (cl!=null&&c2l!=null ? cl*c2l/100 : null);
+  if (bkg!=null && leads!=null && leads>0) return bkg/leads*100;
+  return null;
+}
+
+// ── NEW ALL-VIEW CHART BUILDERS ───────────────────────────────────────────
+// Shared line-chart factory
+function makeLineChart(canvasId, chartKey, labels, datasets, yFmt, opts={}) {
+  destroyChart(chartKey);
+  const el = document.getElementById(canvasId);
+  if (!el || !datasets.filter(d=>d.data.some(v=>v!=null)).length) return;
+  charts[chartKey] = new Chart(el, {
+    type:'line',
+    data:{ labels, datasets: datasets.filter(d=>d.data.some(v=>v!=null)) },
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      interaction:{ mode:'index', intersect:false },
+      scales:{
+        x:{ grid:{display:false}, ticks:{font:{size:10}} },
+        y:{ grid:{color:'#f1f5f9'}, ticks:{callback:yFmt, font:{size:10}}, beginAtZero: opts.beginAtZero??false }
+      },
+      plugins:{
+        legend:{ position:'top', labels:{font:{size:11},boxWidth:11,padding:9} },
+        tooltip:{ backgroundColor:'#0f172a', titleColor:'#94a3b8', bodyColor:'#f8fafc', padding:10,
+          callbacks:{ label:ctx=>`${ctx.dataset.label}: ${yFmt(ctx.raw??0)}` } }
+      }
+    }
+  });
+}
+
+function lineDs(label, data, color) {
+  return { label, data, borderColor:color, backgroundColor:'transparent',
+    tension:0.35, borderWidth:2.5, pointRadius:4, pointHoverRadius:6,
+    pointBackgroundColor:color, spanGaps:true };
+}
+
+// Spend vs Output: grouped bars (spend% / bookings% / done%)
+function buildChartSpendOutput(wkIdx) {
+  destroyChart('chartSpendOutput');
+  if (!L0) return;
+  const chs = CHANNELS.filter(c=>c.key!=='Others');
+  const wkI = viewMode==='monthly' ? activeWkIdxForMonth() : wkIdx;
+  const spends=[], bkgs=[], dones=[];
+  chs.forEach(ch => {
+    const d = getChannelL0(ch);
+    spends.push(d?.spend_contr?.[wkI] ?? null);
+    bkgs.push(d?.booking_contr?.[wkI] ?? null);
+    dones.push(d?.done_contr?.[wkI] ?? null);
+  });
+  charts.chartSpendOutput = new Chart(document.getElementById('chartSpendOutput'), {
+    type:'bar',
+    data:{ labels:chs.map(c=>c.label), datasets:[
+      { label:'Spend%',    data:spends, backgroundColor:chs.map(c=>c.color+'99'), borderColor:chs.map(c=>c.color), borderWidth:1.5, borderRadius:4 },
+      { label:'Bookings%', data:bkgs,   backgroundColor:chs.map(c=>c.color+'44'), borderColor:chs.map(c=>c.color), borderWidth:1.5, borderRadius:4, borderDash:[3,2] },
+      { label:'Done%',     data:dones,  backgroundColor:chs.map(c=>c.color+'22'), borderColor:chs.map(c=>c.color), borderWidth:1, borderRadius:4 },
+    ]},
+    options:{ responsive:true, maintainAspectRatio:false,
+      scales:{ x:{grid:{display:false},ticks:{font:{size:10}}}, y:{grid:{color:'#f1f5f9'},ticks:{callback:v=>v+'%',font:{size:10}}} },
+      plugins:{ legend:{position:'top',labels:{font:{size:11},boxWidth:11,padding:8}},
+        tooltip:{mode:'index',callbacks:{label:ctx=>`${ctx.dataset.label}: ${(ctx.raw??0).toFixed(1)}%`}} } }
+  });
+}
+
+// Bookings stacked bars by channel
+function buildChartBookingsTrend() {
+  destroyChart('chartBookingsTrend');
+  if (!L0) return;
+  const chs = CHANNELS.filter(c=>c.key!=='Others');
+  const labels = trendLabels();
+  const datasets = chs.map(ch => {
+    const d = getChannelL0(ch);
+    const raw = L0_WEEK_COLS.map((_,i) => {
+      const bkg = d?.bookings?.[i] ?? null;
+      if (bkg != null) return bkg;
+      // estimate from spends/CPB if available
+      const sp = d?.spends?.[i], cpb = d?.cpb?.[i];
+      return (sp!=null&&cpb!=null&&cpb>0) ? Math.round(sp/cpb) : null;
+    });
+    const data = viewMode==='monthly'
+      ? getMonthGroups().slice().reverse().map(g=>monthlyAgg(raw,g.indices,'sum'))
+      : revArrN(raw);
+    return { label:ch.label, data, backgroundColor:ch.color+'CC', borderColor:ch.color, borderWidth:1, borderRadius:3, stack:'bkg' };
+  });
+  charts.chartBookingsTrend = new Chart(document.getElementById('chartBookingsTrend'), {
+    type:'bar', data:{labels, datasets},
+    options:{ responsive:true, maintainAspectRatio:false,
+      scales:{ x:{stacked:true,grid:{display:false},ticks:{font:{size:10}}}, y:{stacked:true,grid:{color:'#f1f5f9'},ticks:{callback:v=>v.toLocaleString(),font:{size:10}}} },
+      plugins:{ legend:{position:'top',labels:{font:{size:11},boxWidth:11,padding:8}},
+        tooltip:{mode:'index',callbacks:{label:ctx=>`${ctx.dataset.label}: ${(ctx.raw??0).toLocaleString()}`}} } }
+  });
+}
+
+// CTR trend — paid channels
+function buildChartCTR() {
+  if (!L0) return;
+  const paid = CHANNELS.filter(c=>c.type==='paid');
+  const labels = trendLabels();
+  const datasets = paid.map(ch => {
+    const d = paidChData(ch);
+    const raw = L0_WEEK_COLS.map((_,i)=>d?.ctr?.[i]??null);
+    return lineDs(ch.label, trendRate(raw), ch.color);
+  });
+  makeLineChart('chartCTR','chartCTR', labels, datasets, v=>(v??0).toFixed(2)+'%');
+}
+
+// Rev + RoAS dual-axis
+function buildChartRevRoas() {
+  destroyChart('chartRevRoas');
+  if (!L0) return;
+  const o = L0.overall;
+  const labels  = trendLabels();
+  const roasData = trendRate(o.roas_1tp);
+  const revData  = viewMode==='monthly'
+    ? getMonthGroups().slice().reverse().map(g=>monthlyAgg(o.new_rev,g.indices,'sum'))
+    : revArrN(o.new_rev);
+  charts.chartRevRoas = new Chart(document.getElementById('chartRevRoas'), {
+    type:'line',
+    data:{ labels, datasets:[
+      { label:'1st TP RoAS (%)', data:roasData, borderColor:'#6366f1', backgroundColor:'#6366f115', fill:true, tension:0.35, borderWidth:2.5, pointRadius:4, pointBackgroundColor:'#6366f1', spanGaps:true, yAxisID:'yr' },
+      { label:'New Rev (₹L)',    data:revData,  borderColor:'#10b981', backgroundColor:'transparent', tension:0.35, borderWidth:2, pointRadius:3, pointBackgroundColor:'#10b981', spanGaps:true, yAxisID:'yv' },
+    ]},
+    options:{ responsive:true, maintainAspectRatio:false, interaction:{mode:'index',intersect:false},
+      scales:{
+        x:{ grid:{display:false} },
+        yr:{ position:'left',  grid:{color:'#f1f5f9'}, ticks:{callback:v=>v+'%',font:{size:10}}, title:{display:true,text:'RoAS%',font:{size:9},color:'#6366f1'} },
+        yv:{ position:'right', grid:{display:false},   ticks:{callback:v=>'₹'+v+'L',font:{size:10}}, title:{display:true,text:'Rev ₹L',font:{size:9},color:'#10b981'} },
+      },
+      plugins:{ legend:{position:'top',labels:{font:{size:11},boxWidth:11,padding:8}},
+        tooltip:{ backgroundColor:'#0f172a', titleColor:'#94a3b8', bodyColor:'#f8fafc', padding:10,
+          callbacks:{ label:ctx => ctx.dataset.yAxisID==='yr'
+            ? `RoAS: ${(ctx.raw??0).toFixed(0)}%`
+            : `Rev: ₹${(ctx.raw??0).toFixed(1)}L` } } }
+    },
+    plugins:[{ id:'breakevenLine', afterDraw(chart) {
+      const { ctx, chartArea, scales } = chart;
+      if (!chartArea||!scales.yr) return;
+      const y100 = scales.yr.getPixelForValue(100);
+      if (y100<chartArea.top||y100>chartArea.bottom) return;
+      ctx.save();
+      ctx.fillStyle='#ef444410'; ctx.fillRect(chartArea.left,y100,chartArea.width,chartArea.bottom-y100);
+      ctx.strokeStyle='#ef4444'; ctx.lineWidth=1.5; ctx.setLineDash([5,4]);
+      ctx.beginPath(); ctx.moveTo(chartArea.left,y100); ctx.lineTo(chartArea.right,y100); ctx.stroke();
+      ctx.fillStyle='#ef4444'; ctx.font='bold 9px ui-sans-serif'; ctx.setLineDash([]);
+      ctx.fillText('100% breakeven', chartArea.left+4, y100-3);
+      ctx.restore();
+    }}]
+  });
+}
+
+// ── COST & VOLUME TREND WATCH ────────────────────────────────────────────
+function buildCostTrendPulse() {
+  if (!L0) return '';
+
+  const N4 = Math.min(4, effectiveN());
+  const lbls = L0.endLabels.slice(0, N4).reverse(); // oldest → newest for display
+
+  const paidChs = CHANNELS.filter(c => c.type === 'paid' && c.key !== 'Others');
+
+  // Direction = (latest - earliest) / |earliest| × 100
+  function trendDir(arr, n) {
+    const a = (arr || []).slice(0, n);
+    const vals = a.filter(v => v != null);
+    if (vals.length < 2) return { dir: 0, pct: null };
+    const latest = a.find(v => v != null);           // arr[0] = most recent
+    const oldest = [...a].reverse().find(v => v != null); // arr[n-1] = oldest
+    if (oldest === 0) return { dir: 0, pct: null };
+    const pct = (latest - oldest) / Math.abs(oldest) * 100;
+    return { dir: pct > 1 ? 1 : pct < -1 ? -1 : 0, pct };
+  }
+
+  // Mini sparkline (no fill, just line+dot, clickable via sparkzoom)
+  function miniSpark(arr, n, color, title, fmt) {
+    const rev = (arr || []).slice(0, n).reverse();   // oldest first
+    const safeVals   = JSON.stringify(rev).replace(/'/g, '&#39;');
+    const safeLabels = JSON.stringify(lbls).replace(/'/g, '&#39;');
+    const safeTitle  = title.replace(/"/g, '&quot;');
+    const datAttrs   = `data-sparkvals='${safeVals}' data-sparklabels='${safeLabels}' data-sparkcolor='${color}' data-sparktitle="${safeTitle}" data-sparkfmt='${fmt||''}'`;
+    const v = rev.filter(x => x != null);
+    const W = 68, H = 24;
+    if (v.length < 2) return `<div class="spark-wrap" ${datAttrs}><svg width="${W}" height="${H}" style="display:block;"></svg></div>`;
+    const mn = Math.min(...v), mx = Math.max(...v), range = mx - mn || 1;
+    const nn = rev.length;
+    const pts = [];
+    rev.forEach((val, i) => {
+      if (val == null) return;
+      const x = ((i / (nn - 1)) * (W - 6) + 3).toFixed(1);
+      const y = (H - 3 - ((val - mn) / range) * (H - 8)).toFixed(1);
+      pts.push(`${x},${y}`);
+    });
+    if (pts.length < 2) return `<div class="spark-wrap" ${datAttrs}><svg width="${W}" height="${H}" style="display:block;"></svg></div>`;
+    const poly = pts.join(' ');
+    const [lx, ly] = pts[pts.length - 1].split(',');
+    return `<div class="spark-wrap" ${datAttrs} style="cursor:zoom-in;">
+      <svg width="${W}" height="${H}" style="display:block;overflow:visible;">
+        <polyline points="${poly}" stroke="${color}" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+        <circle cx="${lx}" cy="${ly}" r="2.5" fill="${color}"/>
+      </svg>
+    </div>`;
+  }
+
+  // Metric cell: sparkline + current value + trend badge
+  function metCell(arr, n, color, title, fmt, inverted=false) {
+    const rev = (arr || []).slice(0, n).reverse();
+    const cur = rev[rev.length - 1]; // latest value
+    const { dir, pct } = trendDir(arr, n);
+    const isGood = inverted ? dir < 0 : dir > 0;
+    const isFlat = dir === 0;
+    const tColor = pct == null || isFlat ? '#94a3b8' : isGood ? '#059669' : '#dc2626';
+    const tArrow = isFlat || pct == null ? '→' : dir > 0 ? '▲' : '▼';
+    const tText  = pct != null ? `${tArrow} ${Math.abs(pct).toFixed(0)}%` : '—';
+    return `<td style="padding:8px 10px;border-bottom:1px solid #f1f5f9;text-align:center;vertical-align:middle;min-width:90px;">
+      <div style="display:flex;flex-direction:column;align-items:center;gap:1px;">
+        ${miniSpark(arr, n, color, title, fmt)}
+        <div style="font-size:11px;font-weight:700;color:#0f172a;margin-top:1px;">${cur != null ? (typeof fmt === 'function' ? fmt(cur) : cur) : '—'}</div>
+        <div style="font-size:10px;font-weight:600;color:${tColor};">${tText}</div>
+      </div>
+    </td>`;
+  }
+
+  // Compute a "net signal" for the channel
+  function channelSignal(ch) {
+    const d = getChannelL0(ch);
+    if (!d) return 'na';
+    const { dir: cplDir } = trendDir(d.cpl, N4);
+    const { dir: ctrDir } = trendDir(d.ctr, N4);
+    const { dir: callDir } = trendDir(d.calls_done_l0, N4);
+    const score = (cplDir === 1 ? -1 : cplDir === -1 ? 1 : 0)   // CPL up = bad
+                + (ctrDir === 1 ? 1  : ctrDir === -1 ? -1 : 0)  // CTR up = good
+                + (callDir === 1 ? 1 : callDir === -1 ? -1 : 0); // Calls up = good
+    return score >= 2 ? 'green' : score <= -2 ? 'red' : 'amber';
+  }
+
+  const tableRows = paidChs.map(ch => {
+    const d = getChannelL0(ch);
+    if (!d) return '';
+    const hasAnyData = (d.cpl || []).some(v => v != null) || (d.calls_done_l0 || []).some(v => v != null);
+    if (!hasAnyData) return '';
+
+    const sig = channelSignal(ch);
+    const sigStyle = sig === 'green' ? 'background:#ecfdf5;color:#065f46;border:1px solid #6ee7b7;'
+                   : sig === 'red'   ? 'background:#fef2f2;color:#991b1b;border:1px solid #fca5a5;'
+                   :                   'background:#fffbeb;color:#92400e;border:1px solid #fcd34d;';
+    const sigLabel = sig === 'green' ? '✓ Good' : sig === 'red' ? '⚠ Watch' : '~ Mixed';
+
+    const cplFmt = v => '₹' + Math.round(v).toLocaleString();
+    const cpbFmt = v => '₹' + Math.round(v).toLocaleString();
+    const ctrFmt = v => v.toFixed(1) + '%';
+    const nFmt   = v => Math.round(v).toLocaleString();
+    const spFmt  = v => fmtINR(v);
+
+    return `<tr>
+      <td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;white-space:nowrap;min-width:130px;">
+        <div style="display:flex;align-items:center;gap:7px;">
+          <span style="width:10px;height:10px;border-radius:50%;background:${ch.color};display:inline-block;flex-shrink:0;"></span>
+          <span style="font-size:12px;font-weight:600;color:#0f172a;">${ch.label}</span>
+        </div>
+        <div style="margin-top:4px;">
+          <span style="font-size:9px;font-weight:700;padding:2px 6px;border-radius:4px;${sigStyle}">${sigLabel}</span>
+        </div>
+      </td>
+      ${metCell(d.spends,        N4, ch.color,  ch.label + ' Spend',      spFmt,  false)}
+      ${metCell(d.cpl,           N4, '#6366f1', ch.label + ' CPL',        cplFmt, true)}
+      ${metCell(d.cpb,           N4, '#0ea5e9', ch.label + ' CPB',        cpbFmt, true)}
+      ${metCell(d.ctr,           N4, '#10b981', ch.label + ' CTR',        ctrFmt, false)}
+      ${metCell(d.calls_done_l0, N4, ch.color,  ch.label + ' Calls Done', nFmt,   false)}
+    </tr>`;
+  }).join('');
+
+  if (!tableRows.trim()) return '';
+
+  return `<div class="card" style="margin-bottom:20px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px;">
+      <div>
+        <span class="sec-title" style="font-size:14px;">📈 Cost &amp; Volume Trend Watch</span>
+        <span class="sec-sub">Last ${N4} weeks · sparkline oldest→newest · click to zoom · ▲ CPL/CPB = rising cost ⚠</span>
+      </div>
+      <div style="display:flex;gap:12px;font-size:10px;color:#64748b;">
+        <span><span style="color:#6366f1;font-weight:700;">CPL</span> ↑ rising = ⚠ red</span>
+        <span><span style="color:#10b981;font-weight:700;">CTR</span> ↓ falling = ⚠ red</span>
+        <span><span style="color:#94a3b8;font-weight:700;">Calls</span> ↑ rising = ✓ green</span>
+      </div>
+    </div>
+    <div style="overflow-x:auto;">
+      <table style="width:100%;border-collapse:collapse;">
+        <thead>
+          <tr style="background:#f8fafc;">
+            <th style="padding:7px 12px;text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:#94a3b8;border-bottom:1px solid #e2e8f0;white-space:nowrap;">Channel</th>
+            <th style="padding:7px 12px;text-align:center;font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:#94a3b8;border-bottom:1px solid #e2e8f0;white-space:nowrap;">Spend</th>
+            <th style="padding:7px 12px;text-align:center;font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:#6366f1;border-bottom:1px solid #e2e8f0;white-space:nowrap;">CPL <small style="font-weight:400;color:#94a3b8;">↑=⚠</small></th>
+            <th style="padding:7px 12px;text-align:center;font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:#0ea5e9;border-bottom:1px solid #e2e8f0;white-space:nowrap;">CPB <small style="font-weight:400;color:#94a3b8;">↑=⚠</small></th>
+            <th style="padding:7px 12px;text-align:center;font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:#10b981;border-bottom:1px solid #e2e8f0;white-space:nowrap;">CTR <small style="font-weight:400;color:#94a3b8;">↓=⚠</small></th>
+            <th style="padding:7px 12px;text-align:center;font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:#94a3b8;border-bottom:1px solid #e2e8f0;white-space:nowrap;">Calls Done</th>
+          </tr>
+        </thead>
+        <tbody>${tableRows}</tbody>
+      </table>
+    </div>
+  </div>`;
+}
+
 // ── CHANNEL SCORECARDS ────────────────────────────────────────────────────
 function buildChannelScorecards(wkIdx) {
   if (!L0) return '';
@@ -782,7 +1565,6 @@ function buildChannelScorecards(wkIdx) {
 
   const cards = chs.map(ch => {
     const d  = getChannelL0(ch);
-    const j  = getChannelJSON(ch, wkIdx);
     const spContr = d?.spend_contr?.[wkIdx]  ?? null;
     const ldContr = d?.lead_contr?.[wkIdx]   ?? null;
     const bkContr = d?.booking_contr?.[wkIdx]?? null;
@@ -790,17 +1572,55 @@ function buildChannelScorecards(wkIdx) {
     const cplV    = d?.cpl?.[wkIdx]  ?? null;
     const cpbV    = d?.cpb?.[wkIdx]  ?? null;
     const roasV   = d?.roas?.[wkIdx] ?? null;
-    const callsDone = j?.calls_done  ?? null;
-    const b2d       = j?.b2d_pct    ?? null;
-    const callsArr  = JSON_WEEK_KEYS.map(wk => JDATA?.[dataScope]?.weekly_channel?.[wk]?.[ch.key]?.calls_done ?? null);
+    // Use L0 calls_done_l0 (no longer depends on data.json which uses old channel keys)
+    const callsDone = d?.calls_done_l0?.[wkIdx] ?? null;
+    const bkV       = d?.bookings?.[wkIdx] ?? null;
+    const b2d       = (callsDone!=null&&bkV!=null&&bkV>0) ? callsDone/bkV*100 : null;
+    const callsArr   = L0_WEEK_COLS.map((_,i) => d?.calls_done_l0?.[i] ?? null);
+    const cplArr     = L0_WEEK_COLS.map((_,i) => d?.cpl?.[i] ?? null);
+    const cpbArr     = L0_WEEK_COLS.map((_,i) => d?.cpb?.[i] ?? null);
+    const roasArr    = L0_WEEK_COLS.map((_,i) => d?.roas?.[i] ?? null);
     const weekLabels = L0 ? [...L0.endLabels].reverse() : null;
-    const sparkSvg  = spark(revArr(callsArr), ch.color, 80, 22, true, { title: ch.label + ' Calls Done', labels: weekLabels });
-    const b2dColor  = b2d >= 70 ? '#059669' : b2d >= 60 ? '#d97706' : b2d > 0 ? '#dc2626' : '#94a3b8';
+    const sparkSvg   = spark(revArr(callsArr), ch.color, 80, 20, true, { title: ch.label + ' Calls Done', labels: weekLabels });
+    const b2dColor   = b2d!=null ? (b2d >= 70 ? '#059669' : b2d >= 60 ? '#d97706' : '#dc2626') : '#94a3b8';
 
-    function m(label, val, accent=false) {
+    // Trend direction: (most recent - previous) / |previous| × 100
+    function wkTrend(arr) {
+      const cur = arr[wkIdx], prv = arr[wkIdx + 1];
+      if (cur == null || prv == null || prv === 0) return { dir: 0, pct: null };
+      const p = (cur - prv) / Math.abs(prv) * 100;
+      return { dir: p > 1 ? 1 : p < -1 ? -1 : 0, pct: p };
+    }
+    function trendBadge(arr, inverted=false) {
+      const { dir, pct } = wkTrend(arr);
+      if (pct === null) return '<span style="font-size:9px;color:#94a3b8;">n/a</span>';
+      const isGood = inverted ? dir < 0 : dir > 0;
+      const isFlat = Math.abs(pct) < 1;
+      const clr = isFlat ? '#94a3b8' : isGood ? '#059669' : '#dc2626';
+      const arrow = isFlat ? '→' : dir > 0 ? '▲' : '▼';
+      return `<span style="font-size:9px;font-weight:600;color:${clr};">${arrow}${Math.abs(pct).toFixed(0)}%</span>`;
+    }
+    // Mini sparkline inline (no fill, tiny)
+    function tinySpk(arr, color, title) {
+      const rv = revArr(arr);
+      return spark(rv, color, 64, 18, false, { title, labels: weekLabels });
+    }
+
+    function mTrend(label, val, arr, color, inverted=false) {
+      return `<div style="text-align:center;">
+        <div style="font-size:9px;color:#94a3b8;text-transform:uppercase;letter-spacing:.04em;margin-bottom:1px;">${label}</div>
+        <div style="font-size:14px;font-weight:700;color:${color};">${val}</div>
+        <div style="display:flex;justify-content:center;align-items:center;gap:4px;margin-top:2px;">
+          ${tinySpk(arr, color, label)}
+          ${trendBadge(arr, inverted)}
+        </div>
+      </div>`;
+    }
+
+    function m(label, val) {
       return `<div style="text-align:center;">
         <div style="font-size:9px;color:#94a3b8;text-transform:uppercase;letter-spacing:.04em;margin-bottom:2px;">${label}</div>
-        <div style="font-size:${accent?'15px':'13px'};font-weight:${accent?'700':'600'};color:${accent?ch.color:'#0f172a'};">${val}</div>
+        <div style="font-size:13px;font-weight:600;color:#0f172a;">${val}</div>
       </div>`;
     }
 
@@ -816,10 +1636,11 @@ function buildChannelScorecards(wkIdx) {
         ${m('Bkg%',   bkContr!=null?bkContr.toFixed(0)+'%':'—')}
         ${m('Done%',  dnContr!=null?dnContr.toFixed(0)+'%':'—')}
       </div>
+      <!-- Cost metrics row with trend sparklines -->
       <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid #f1f5f9;">
-        ${m('CPL',  cplV!=null?'₹'+Math.round(cplV).toLocaleString():ch.type==='free'?'Free':'—', true)}
-        ${m('CPB',  cpbV!=null?'₹'+Math.round(cpbV).toLocaleString():ch.type==='free'?'Free':'—', true)}
-        ${m('RoAS', roasV!=null?Math.round(roasV)+'%':'—', true)}
+        ${mTrend('CPL',  cplV!=null?'₹'+Math.round(cplV).toLocaleString():ch.type==='free'?'Free':'—',  cplArr,  '#6366f1', true)}
+        ${mTrend('CPB',  cpbV!=null?'₹'+Math.round(cpbV).toLocaleString():ch.type==='free'?'Free':'—',  cpbArr,  '#0ea5e9', true)}
+        ${mTrend('RoAS', roasV!=null?Math.round(roasV)+'%':'—', roasArr, ch.color, false)}
       </div>
       <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
         <div>
@@ -848,7 +1669,7 @@ function buildChannelScorecards(wkIdx) {
 
 // ── FUNNEL CONVERSION TABLE ────────────────────────────────────────────────
 function buildFunnelConvTable(wkIdx) {
-  if (!L0 || !JDATA) return '';
+  if (!L0) return '';
   const chs = CHANNELS.filter(c => c.key !== 'Others');
 
   function cell(val, bold=false, goodBad=null) {
@@ -861,7 +1682,6 @@ function buildFunnelConvTable(wkIdx) {
 
   const rows = chs.map(ch => {
     const d = getChannelL0(ch);
-    const j = getChannelJSON(ch, wkIdx);
     const leads    = d?.leads_num?.[wkIdx]     ?? null;
     const ctr      = d?.ctr?.[wkIdx]           ?? null;
     const c2l      = d?.c2l?.[wkIdx]           ?? null;
@@ -869,8 +1689,10 @@ function buildFunnelConvTable(wkIdx) {
     const bkgPct   = d?.lead_pct?.[wkIdx]      ?? null;
     const cplV     = d?.cpl?.[wkIdx]           ?? null;
     const cpbV     = d?.cpb?.[wkIdx]           ?? null;
-    const callsDone= j?.calls_done             ?? null;
-    const b2d      = j?.b2d_pct               ?? null;
+    const callsDoneRaw = d?.calls_done_l0?.[wkIdx] ?? null;
+    const callsDone    = callsDoneRaw;
+    const bkgForB2d    = bookings ?? null;
+    const b2d          = (callsDone!=null&&bkgForB2d!=null&&bkgForB2d>0) ? callsDone/bkgForB2d*100 : null;
     const roasV    = d?.roas?.[wkIdx]          ?? null;
     const b2dGood  = b2d!=null ? (b2d>=70?'good':b2d<55?'bad':null) : null;
     const ctrGood  = ctr!=null ? (ctr>=5?'good':ctr<2?'bad':null) : null;
@@ -927,31 +1749,13 @@ function buildCPLChannelTrend() {
   destroyChart('cplChannelTrend');
   if (!L0) return;
   const paid = CHANNELS.filter(c => c.type === 'paid');
+  const labels = trendLabels();
   const datasets = paid.map(ch => {
-    const d    = getChannelL0(ch);
-    const vals = L0_WEEK_COLS.map((_, i) => d?.cpl?.[i] ?? null);
-    return {
-      label: ch.label,
-      data: revArrN(vals),
-      borderColor: ch.color, backgroundColor:'transparent',
-      tension: 0.3, borderWidth:2.5, pointRadius:4,
-      pointBackgroundColor: ch.color, spanGaps:true
-    };
-  });
-  charts.cplChannelTrend = new Chart(document.getElementById('cplChannelTrend'), {
-    type:'line', data:{ labels:revLabelsN(), datasets },
-    options:{
-      responsive:true, maintainAspectRatio:false,
-      scales:{
-        x:{ grid:{display:false} },
-        y:{ grid:{color:'#f1f5f9'}, ticks:{callback:v=>'₹'+v.toLocaleString()}, beginAtZero:false }
-      },
-      plugins:{
-        legend:{position:'top',labels:{font:{size:11},boxWidth:12,padding:10}},
-        tooltip:{mode:'index',callbacks:{label:ctx=>`${ctx.dataset.label}: ₹${(ctx.raw||0).toFixed(0)}`}}
-      }
-    }
-  });
+    const d   = getChannelL0(ch);
+    const raw = L0_WEEK_COLS.map((_,i) => d?.cpl?.[i] ?? null);
+    return lineDs(ch.label, trendRate(raw), ch.color);
+  }).filter(ds => ds.data.some(v=>v!=null));
+  makeLineChart('cplChannelTrend','cplChannelTrend', labels, datasets, v=>'₹'+(v??0).toFixed(0));
 }
 
 // ── CHANNEL FUNNEL (single-channel visual funnel) ─────────────────────────
@@ -992,12 +1796,7 @@ function buildChannelFunnel(chKey, wkIdx) {
     </div>`;
   }
 
-  const s1 = stage('📊','Channel Contribution',
-    sCard('Spend Contr.',  fPct(d.spend_contr[wkIdx])) +
-    sCard('Lead Contr.',   fPct(d.lead_contr[wkIdx])) +
-    sCard('Bkg Contr.',    fPct(d.booking_contr[wkIdx])) +
-    sCard('Done Contr.',   fPct(d.done_contr[wkIdx]))
-  );
+  // s1 (contribution %) removed — already shown in channel table above
 
   let s2='', ctrConn='';
   if (ch.type==='paid' && (hasAny(d.impressions)||hasAny(d.spends))) {
@@ -1122,8 +1921,7 @@ function buildChannelFunnel(chKey, wkIdx) {
     sCard('Bkg Offline', fN(d.phone_bookings_offline[wkIdx]))
   );
 
-  return s1 +
-    (s2 ? conn('→ Paid Campaign') + s2 + ctrConn : '') +
+  return (s2 ? conn('→ Paid Campaign') + s2 + ctrConn : '') +
     s3 + l2bConn + s4 + b2dConn + s5 + citySection +
     (s6 ? conn('→ Post-Call Analysis') + s6 + revConn : conn('→ Revenue Generated')) +
     s7 + s8;
@@ -1284,8 +2082,8 @@ function buildChannelDeepDive(chKey, wkIdx) {
 
 // ── CHANNEL VIEW ──────────────────────────────────────────────────────────
 const CH_TAB_ID_MAP = {
-  all:'chtAll', Google:'chtGoogle', Meta:'chtMeta', Practo:'chtPracto',
-  GMB:'chtGMB', Organic:'chtOrganic',
+  all:'chtAll', GmbGoogle:'chtGmbGoogle', GMB:'chtGMB', GoogleSearch:'chtGoogleSearch',
+  Meta:'chtMeta', Practo:'chtPracto', Organic:'chtOrganic',
 };
 function setChView(chKey) {
   activeChView = chKey;
@@ -1301,24 +2099,23 @@ function renderChannelView(chKey, wkIdx) {
   const ch = CHANNELS.find(c => c.key === chKey);
   if (!ch) return;
   const l0   = getChannelL0(ch);
-  const jCur = getChannelJSON(ch, wkIdx);
-  const jPrv = getChannelJSON(ch, wkIdx + 1);
 
-  const totalSpend = L0?.overall.spends[wkIdx] || 0;
-  const spendContr = l0?.spend_contr?.[wkIdx]  ?? null;
-  const leadContr  = l0?.lead_contr?.[wkIdx]   ?? null;
-  const doneContr  = l0?.done_contr?.[wkIdx]   ?? null;
-  const estSpend   = spendContr != null ? totalSpend * spendContr / 100 : null;
-  const callsDone  = jCur?.calls_done ?? 0;
-  const prevDone   = jPrv?.calls_done ?? 0;
-  const b2dPct     = jCur?.b2d_pct    ?? 0;
-  const prevB2d    = jPrv?.b2d_pct    ?? 0;
-  const cplVal     = l0?.cpl?.[wkIdx]  ?? null;
-  const cpdVal     = l0?.cpd?.[wkIdx]  ?? null;
-  const doneWow    = prevDone > 0 ? (callsDone - prevDone) / prevDone * 100 : null;
-  const b2dWow     = prevB2d > 0  ? b2dPct - prevB2d : null;
-
+  const totalSpend  = L0?.overall.spends[wkIdx] || 0;
+  const spendContr  = l0?.spend_contr?.[wkIdx]  ?? null;
+  const leadContr   = l0?.lead_contr?.[wkIdx]   ?? null;
+  const doneContr   = l0?.done_contr?.[wkIdx]   ?? null;
+  const estSpend    = spendContr != null ? totalSpend * spendContr / 100 : (l0?.spends?.[wkIdx] ?? null);
+  const callsDone   = l0?.calls_done_l0?.[wkIdx] ?? 0;
+  const prevDone    = l0?.calls_done_l0?.[wkIdx+1] ?? 0;
   const bookingsVal = l0?.bookings?.[wkIdx] ?? null;
+  const b2dPct      = (callsDone>0&&bookingsVal!=null&&bookingsVal>0) ? callsDone/bookingsVal*100 : 0;
+  const prevBkgs    = l0?.bookings?.[wkIdx+1] ?? null;
+  const prevCd      = l0?.calls_done_l0?.[wkIdx+1] ?? null;
+  const prevB2d     = (prevCd!=null&&prevBkgs!=null&&prevBkgs>0) ? prevCd/prevBkgs*100 : 0;
+  const cplVal      = l0?.cpl?.[wkIdx]  ?? null;
+  const cpdVal      = l0?.cpd?.[wkIdx]  ?? null;
+  const doneWow     = prevDone > 0 ? (callsDone - prevDone) / prevDone * 100 : null;
+  const b2dWow      = prevB2d > 0  ? b2dPct - prevB2d : null;
   const cpbVal      = l0?.cpb?.[wkIdx]      ?? null;
   const roasVal     = l0?.roas?.[wkIdx]     ?? null;
 
@@ -1371,8 +2168,15 @@ function buildChTrendChart(chKey) {
   const canvas = document.getElementById('chTrendCanvas');
   if (!ch || !canvas) return;
 
-  const callsData = revArrN(JSON_WEEK_KEYS.map(wk => JDATA?.[dataScope]?.weekly_channel?.[wk]?.[chKey]?.calls_done ?? null));
-  const b2dData   = revArrN(JSON_WEEK_KEYS.map(wk => JDATA?.[dataScope]?.weekly_channel?.[wk]?.[chKey]?.b2d_pct   ?? null));
+  // Use L0 calls_done_l0 and derived B2D% instead of JDATA
+  const chL0    = getChannelL0(ch);
+  const rawCd   = L0_WEEK_COLS.map((_,i) => chL0?.calls_done_l0?.[i] ?? null);
+  const rawB2d  = L0_WEEK_COLS.map((_,i) => {
+    const cd = chL0?.calls_done_l0?.[i]??null, bk = chL0?.bookings?.[i]??null;
+    return (cd!=null&&bk!=null&&bk>0) ? cd/bk*100 : null;
+  });
+  const callsData = revArrN(rawCd);
+  const b2dData   = revArrN(rawB2d);
 
   chTrendChart = new Chart(canvas, {
     type: 'bar',
@@ -1682,19 +2486,25 @@ function buildStackedTrend(canvasId, metricKey, chartKey) {
 
 function buildB2DTrend() {
   destroyChart('b2dTrend');
-  if (!JDATA) return;
-  const chs = CHANNELS.filter(c => c.key!=='Others');
-  const datasets = chs.map(ch => ({
-    label:ch.label,
-    data:revArrN(JSON_WEEK_KEYS.map(wk=>JDATA?.[dataScope]?.weekly_channel?.[wk]?.[ch.key]?.b2d_pct??null)),
-    borderColor:ch.color, backgroundColor:'transparent', tension:0.3, borderWidth:2, pointRadius:3, pointBackgroundColor:ch.color, spanGaps:true,
-  }));
+  if (!L0) return;
+  const chs = CHANNELS.filter(c=>c.key!=='Others');
+  const labels = trendLabels();
+  const datasets = chs.map(ch => {
+    const d = getChannelL0(ch);
+    const raw = L0_WEEK_COLS.map((_,i) => {
+      const cd = d?.calls_done_l0?.[i]??null, bk = d?.bookings?.[i]??null;
+      return (cd!=null&&bk!=null&&bk>0) ? cd/bk*100 : null;
+    });
+    return lineDs(ch.label, trendRate(raw), ch.color);
+  }).filter(ds=>ds.data.some(v=>v!=null));
+  if (!datasets.length) return;
   charts.b2dTrend = new Chart(document.getElementById('b2dTrend'), {
-    type:'line', data:{labels:revLabelsN(),datasets},
-    options:{ responsive:true, maintainAspectRatio:false,
-      scales:{ x:{grid:{display:false}}, y:{grid:{color:'#f1f5f9'},ticks:{callback:v=>v+'%'},min:0} },
-      plugins:{ legend:{position:'top',labels:{font:{size:11},boxWidth:12,padding:10}},
-        tooltip:{mode:'index',callbacks:{label:ctx=>`${ctx.dataset.label}: ${(ctx.raw||0).toFixed(1)}%`}} }
+    type:'line', data:{labels, datasets},
+    options:{ responsive:true, maintainAspectRatio:false, interaction:{mode:'index',intersect:false},
+      scales:{ x:{grid:{display:false}}, y:{grid:{color:'#f1f5f9'},ticks:{callback:v=>v.toFixed(0)+'%',font:{size:10}},min:0} },
+      plugins:{ legend:{position:'top',labels:{font:{size:11},boxWidth:11,padding:8}},
+        tooltip:{backgroundColor:'#0f172a',titleColor:'#94a3b8',bodyColor:'#f8fafc',padding:10,
+          callbacks:{label:ctx=>`${ctx.dataset.label}: ${(ctx.raw??0).toFixed(1)}%`}} }
     }
   });
 }
@@ -2092,26 +2902,31 @@ function buildChartStiTrend() {
 // ── RENDER ────────────────────────────────────────────────────────────────
 function render() {
   if (!L0) return;
-  document.getElementById('kpiStrip').innerHTML    = buildKPIStrip(activeWkIdx);
-  document.getElementById('chanTblBody').innerHTML = buildTableRows(activeWkIdx);
+  const wkI = viewMode==='monthly' ? activeWkIdxForMonth() : activeWkIdx;
+
+  // Marketing control board + trend pulse + funnel break (top of allView)
+  document.getElementById('marketingBoard').innerHTML      = buildMarketingControlBoard(wkI);
+  document.getElementById('costTrendPulse').innerHTML      = buildCostTrendPulse();
+  document.getElementById('funnelBreakAnalyzer').innerHTML = buildFunnelBreakAnalyzer(wkI);
+  document.getElementById('kpiStrip').innerHTML    = buildKPIStrip(wkI);
+  document.getElementById('chanTblBody').innerHTML = buildTableRows(wkI);
   updateSortIndicators();
-  buildSpendPie(activeWkIdx);
-  buildCPDBar(activeWkIdx);
-  buildCPLCPDTrend();
-  // New charts A–H
-  buildChartFunnel(activeWkIdx);
-  buildChartRevTrend();
-  buildChartRoasTrend();
-  buildChartOnlineOffline();
-  buildChartAdPlatform();
-  buildChartRpcTrend();
-  buildChartStiTrend();
-  document.getElementById('channelScorecards').innerHTML = buildChannelScorecards(activeWkIdx);
-  if (JDATA) {
-    buildB2DTrend();
-    document.getElementById('funnelConvTable').innerHTML   = buildFunnelConvTable(activeWkIdx);
-    buildCPLChannelTrend();
-  }
+
+  // ── All-view charts (new focused set) ──
+  buildSpendPie(wkI);
+  buildChartSpendOutput(wkI);
+  buildChartBookingsTrend();
+  buildCPLChannelTrend();
+  buildB2DTrend();
+  buildChartCTR();
+  buildChartRevRoas();
+
+  document.getElementById('channelScorecards').innerHTML = buildChannelScorecards(wkI);
+
+  // Comparison panel
+  document.getElementById('cmpPanelEff').innerHTML = buildComparePanel_eff();
+  requestAnimationFrame(() => renderCmpChart_eff());
+
   // Refresh timestamp
   const stamp = document.getElementById('l0RefreshStamp');
   if (stamp) {
@@ -2135,6 +2950,97 @@ function buildWeekSelector() {
   }).join('');
   sel.value = Math.min(activeWkIdx, n - 1);
   activeWkIdx = +sel.value;
+}
+
+// ── COMPARISON PANEL ──────────────────────────────────────────────────────
+function cmpFmtEff(type) {
+  if (type === 'pct')   return v => v == null ? '—' : v.toFixed(1)+'%';
+  if (type === 'inr')   return v => v == null ? '—' : fmtINR(v);
+  if (type === 'rev')   return v => v == null ? '—' : '₹'+Number(v).toFixed(1)+'L';
+  if (type === 'ratio') return v => v == null ? '—' : Number(v).toFixed(1)+'x';
+  return v => v == null ? '—' : Math.round(v).toLocaleString();
+}
+
+function renderCmpChart_eff() {
+  if (cmpChartEff) { cmpChartEff.destroy(); cmpChartEff = null; }
+  if (!L0) return;
+  const el = document.getElementById('cmpCanvas_eff');
+  if (!el) return;
+  const mA = CMP_EFF_METRICS.find(m => m.key === cmpA_eff);
+  const mB = CMP_EFF_METRICS.find(m => m.key === cmpB_eff);
+  if (!mA || !mB) return;
+  const rawA = mA.getArr(cmpSeg_eff);
+  const rawB = mB.getArr(cmpSeg_eff);
+  const dataA = revArrN(rawA);
+  const dataB = revArrN(rawB);
+  const labels = revLabelsN();
+  const useDual = mA.type !== mB.type;
+  const fmtA = cmpFmtEff(mA.type);
+  const fmtB = cmpFmtEff(mB.type);
+  const segLbl = CMP_EFF_SEGMENTS.find(s => s.key === cmpSeg_eff)?.lbl || '';
+  cmpChartEff = new Chart(el, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        { label: mA.lbl + ` (${segLbl})`, data: dataA,
+          borderColor:'#6366f1', backgroundColor:'#6366f115', fill:true,
+          tension:0.3, borderWidth:2.5, pointRadius:3, pointBackgroundColor:'#6366f1',
+          spanGaps:true, yAxisID:'yA' },
+        { label: mB.lbl + ` (${segLbl})`, data: dataB,
+          borderColor:'#f59e0b', backgroundColor:'transparent',
+          tension:0.3, borderWidth:2.5, pointRadius:3, pointBackgroundColor:'#f59e0b',
+          spanGaps:true, yAxisID: useDual ? 'yB' : 'yA' },
+      ]
+    },
+    options: {
+      responsive:true, maintainAspectRatio:false,
+      scales: {
+        x:  { grid:{display:false}, ticks:{font:{size:9}} },
+        yA: { position:'left',  grid:{color:'#f1f5f9'}, ticks:{callback:fmtA,font:{size:9}} },
+        ...(useDual ? { yB:{ position:'right', grid:{display:false}, ticks:{callback:fmtB,font:{size:9}} } } : {})
+      },
+      plugins: {
+        legend:  { position:'top', labels:{font:{size:10},boxWidth:10,padding:8} },
+        tooltip: { mode:'index', intersect:false,
+          callbacks:{ label: ctx => `${ctx.dataset.label}: ${ctx.datasetIndex===0 ? fmtA(ctx.raw??0) : fmtB(ctx.raw??0)}` }
+        }
+      }
+    }
+  });
+}
+
+function buildComparePanel_eff() {
+  if (!L0) return '<div class="card" style="opacity:.5;padding:16px;">📊 Comparison panel — loading L0 data…</div>';
+  const segOpts = CMP_EFF_SEGMENTS.map(s =>
+    `<option value="${s.key}"${s.key===cmpSeg_eff?' selected':''}>${s.lbl}</option>`).join('');
+  const metOptsA = CMP_EFF_METRICS.map(m =>
+    `<option value="${m.key}"${m.key===cmpA_eff?' selected':''}>${m.lbl}</option>`).join('');
+  const metOptsB = CMP_EFF_METRICS.map(m =>
+    `<option value="${m.key}"${m.key===cmpB_eff?' selected':''}>${m.lbl}</option>`).join('');
+  return `
+  <div class="card">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap;">
+      <span style="font-size:13px;font-weight:700;">📊 Compare Parameters</span>
+      <span style="font-size:11px;color:var(--muted);">any two metrics over all weeks</span>
+      <div style="margin-left:auto;display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+        <select onchange="cmpSeg_eff=this.value;renderCmpChart_eff()"
+          style="padding:4px 8px;border:1px solid var(--line);border-radius:6px;font-size:11px;background:#fff;">
+          ${segOpts}
+        </select>
+        <select onchange="cmpA_eff=this.value;renderCmpChart_eff()"
+          style="padding:4px 8px;border:1px solid var(--line);border-radius:6px;font-size:11px;background:#fff;color:#6366f1;border-color:#c7d2fe;font-weight:600;">
+          ${metOptsA}
+        </select>
+        <span style="font-size:11px;color:#94a3b8;font-weight:600;">vs</span>
+        <select onchange="cmpB_eff=this.value;renderCmpChart_eff()"
+          style="padding:4px 8px;border:1px solid var(--line);border-radius:6px;font-size:11px;background:#fff;color:#d97706;border-color:#fde68a;font-weight:600;">
+          ${metOptsB}
+        </select>
+      </div>
+    </div>
+    <div style="height:240px;position:relative;"><canvas id="cmpCanvas_eff"></canvas></div>
+  </div>`;
 }
 
 // ── INIT ──────────────────────────────────────────────────────────────────

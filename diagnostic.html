@@ -155,6 +155,7 @@ html,body{background:#f8fafc;color:var(--ink);font-family:ui-sans-serif,system-u
     <a href="channel.html"    class="nav-link">Channel</a>
     <a href="efficiency.html" class="nav-link">Efficiency</a>
     <a href="comparison.html" class="nav-link">Comparison →</a>
+  <a href="weekly-report.html" class="nav-link">Weekly Report</a>
     <div>
       <div class="font-bold text-base">Demand Diagnostic</div>
       <div class="text-xs text-slate-400">Full funnel: Leads → Bookings → Calls Done — where is it breaking?</div>
@@ -257,7 +258,7 @@ const PRACTO_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?t
 // L0 sheet for ad-platform signals (impressions, clicks, CTR)
 const L0_ID  = '1jyyFYpd7gfYyAQ3U7E56c7OA3OuQQAVgJrAGyQr90XM';
 const L0_URL = `https://docs.google.com/spreadsheets/d/${L0_ID}/gviz/tq?tqx=out:csv&sheet=L0`;
-const L0_WEEK_COLS = [3, 4, 5, 6, 7, 8, 9]; // 0-indexed, most-recent first
+const L0_WEEK_COLS = [2, 3, 4, 5, 6, 7, 8]; // 0-indexed, most-recent first (col 2 = W-1 after May 25-31 added)
 
 // City tier definitions — Tier 1 = high-volume metros, Tier 2 = smaller cities
 const CITY_TIERS = {
@@ -281,6 +282,7 @@ function tierBadge(c) {
 // Sheet dates are Sunday-ending; data.json keys are the matching Monday start.
 // Both sources cover the same Mon–Sun week — exact match, no offset.
 const WEEKS = [
+  { sheet:'31/05/2026', json:'2026-05-25', label:'25–31 May' },
   { sheet:'24/05/2026', json:'2026-05-18', label:'18–24 May' },
   { sheet:'17/05/2026', json:'2026-05-11', label:'11–17 May' },
   { sheet:'10/05/2026', json:'2026-05-04', label:'4–10 May'  },
@@ -311,6 +313,7 @@ let activeCityF = 'ALL';
 let activeTier  = 'ALL'; // 'ALL' | 'T1' | 'T2'
 let sortBy = 'leads_drop';
 let expandedCities = new Set();
+let tableMode = 'city'; // 'city' | 'clinic'
 
 // ─── CSV Parser ─────────────────────────────────────────────────────────────
 function parseCSV(text) {
@@ -635,10 +638,17 @@ function diagnose(row) {
   } else if (bkDownHard || (leadsWow !== null && leadsWow < -10) || (callsWow !== null && callsWow < -10)) {
     state='watch'; stateLabel='⚠ Watch'; stateCls='state-watch'; sev='P2';
   } else {
-    const bkMildDrop = bkWow !== null && bkWow < -5;
+    const bkMildDrop    = bkWow !== null && bkWow < -5;
+    const callsRecov    = callsWow !== null && callsWow >= 25;
+    const bkRecov       = bkWow   !== null && bkWow   >= 20;
     state='ok';
-    stateLabel = bkMildDrop ? 'Slight ↓' : '✓ OK';
-    stateCls   = bkMildDrop ? 'diag-drop' : 'diag-ok';
+    if (callsRecov || bkRecov) {
+      stateLabel = '↑ Recovering';
+      stateCls   = 'diag-ok'; // green — recovery is good news
+    } else {
+      stateLabel = bkMildDrop ? 'Slight ↓' : '✓ OK';
+      stateCls   = bkMildDrop ? 'diag-drop' : 'diag-ok';
+    }
     sev = null;
   }
 
@@ -724,6 +734,26 @@ function metricCell(cur, prev, isRate=false, inverted=false, suffix='') {
     <span class="metric-val">${dispVal}${suffix}</span>
     <span class="metric-wow">${wowBadge(cur, prev, isRate)}</span>
   </td>`;
+}
+
+// Dual metric cell: W-1 value on top, W-2 value as sub-line
+function dualMetricCell(c1, p1, c2, p2, isRate=false, inv=false, sfx='') {
+  const bg  = cellClass(c1, p1, isRate, inv);
+  const v1  = isRate ? c1.toFixed(1)+'%'+sfx : fmt(c1)+sfx;
+  const v2  = (c2 != null) ? (isRate ? c2.toFixed(1)+'%'+sfx : fmt(c2)+sfx) : '–';
+  const wb2 = (c2 != null && p2 != null) ? wowBadge(c2, p2, isRate) : '<span class="wow-gray">–</span>';
+  return `<td class="metric-cell ${bg}">
+    <span class="metric-val">${v1}</span>
+    <span class="metric-wow">${wowBadge(c1, p1, isRate)}</span>
+    <span style="font-size:9px;color:#94a3b8;display:block;margin-top:3px;border-top:1px dashed #f1f5f9;padding-top:2px;">
+      W-2: ${v2} ${wb2}
+    </span>
+  </td>`;
+}
+
+function setTableMode(mode) {
+  tableMode = mode;
+  render();
 }
 
 // ─── TL;DR Summary ───────────────────────────────────────────────────────────
@@ -1512,6 +1542,34 @@ function buildAlertPanel(cityRows) {
   </div>`;
 }
 
+// ─── Shared table header ──────────────────────────────────────────────────────
+function tableHeader() {
+  return `<tr>
+    <th>Location</th>
+    <th class="right" title="Doctor availability slots — Offline only (Demand Tracker sheet)">
+      <span style="color:#7c3aed">📊</span> Avail<br><span style="font-weight:400;text-transform:none;letter-spacing:0;color:#a78bfa">offline</span>
+    </th>
+    <th class="right" title="GMB+Google leads only — NOT total leads. Can be less than Bookings because bookings also come from Meta, Organic, Practo, walk-ins etc.">
+      <span style="color:#7c3aed">📊</span> GMB Leads<br><span style="font-weight:400;text-transform:none;letter-spacing:0;color:#a78bfa">GMB+Google only</span>
+    </th>
+    <th class="right" title="ALL offline bookings from all channels (GMB+Google+Meta+Practo+Organic+walk-in). Will always be ≥ GMB Leads since bookings come from all sources.">
+      <span style="color:#7c3aed">📊</span> Bookings<br>
+      <span style="font-weight:400;text-transform:none;letter-spacing:0;color:#a78bfa">all channels · W-1</span>
+    </th>
+    <th class="right" title="Calls Done = Completed appointments — W-1 + W-2 for trend context">
+      <span style="color:#0ea5e9">📋</span> Calls Done<br>
+      <span style="font-weight:400;text-transform:none;letter-spacing:0;">W-1 · W-2 sub</span>
+    </th>
+    <th class="right" title="B2D% = Calls Done ÷ Gross Bookings">
+      <span style="color:#0ea5e9">📋</span> B2D %
+    </th>
+    <th class="right" title="No Shows">
+      <span style="color:#0ea5e9">📋</span> No Shows
+    </th>
+    <th>Diagnosis</th>
+  </tr>`;
+}
+
 // ─── Main diagnostic table ────────────────────────────────────────────────────
 function buildTable() {
   // Collect all cities with data
@@ -1527,7 +1585,7 @@ function buildTable() {
     return true;
   });
 
-  // Build city rows
+  // Build city rows (always needed for alert panel)
   const cityRows = filteredCities.map(city => {
     const row = buildRow(
       wi => getSheetCity(city, wi),
@@ -1536,17 +1594,82 @@ function buildTable() {
     );
     return { city, row, diag: diagnose(row) };
   });
-
-  // Sort
   cityRows.sort((a, b) => sortVal(a.row) - sortVal(b.row));
 
   const alertHtml = buildAlertPanel(cityRows);
 
+  // ── Flat Clinic view ────────────────────────────────────────────────────────
+  if (tableMode === 'clinic') {
+    const flatClinics = [];
+    for (const city of filteredCities) {
+      // Use SDATA clinic names (locality-only format, same as inline expansion)
+      const clinicNames = Object.keys(SDATA[city] || {}).filter(k => k !== '_total');
+      // Also include any data.json clinics not in the sheet for this city
+      const jWk = WEEKS[activeWkIdx]?.json;
+      const jsonOnlyKeys = Object.keys(JDATA?.offline?.weekly_clinic?.[jWk] || {})
+        .filter(k => k.startsWith(city + '_'))
+        .map(k => k.slice(city.length + 1)) // strip "City_" prefix to get locality
+        .filter(loc => !clinicNames.includes(loc));
+      const allClinics = [...clinicNames, ...jsonOnlyKeys];
+
+      for (const clinic of allClinics) {
+        const cr   = buildRow(wi=>getSheetClinic(city,clinic,wi), wi=>getJsonClinic(city,clinic,wi), activeWkIdx);
+        const crW2 = buildRow(wi=>getSheetClinic(city,clinic,wi), wi=>getJsonClinic(city,clinic,wi), activeWkIdx+1);
+        flatClinics.push({ city, clinic, row: cr, rowW2: crW2, diag: diagnose(cr) });
+      }
+    }
+    flatClinics.sort((a,b) => sortVal(a.row) - sortVal(b.row));
+
+    let tBody = '';
+    for (const { city, clinic, row: cr, rowW2: cr2, diag: cd } of flatClinics) {
+      const crShut    = cr.doctorCount > 0 && cr.unavailCount >= cr.doctorCount;
+      const crPartial = cr.doctorCount > 0 && cr.unavailCount > 0 && cr.unavailCount < cr.doctorCount;
+      const crSignal  = crShut    ? `<span style="font-size:9px;color:#7c3aed;font-weight:700;display:block;">🔴 Shut</span>`
+                      : crPartial ? `<span style="font-size:9px;color:#d97706;font-weight:700;display:block;">🟡 Partial avail</span>`
+                      : '';
+      tBody += `<tr class="clinic-row" style="background:#fff;">
+        <td style="font-size:12px;color:#334155;">
+          <span style="font-weight:700;color:#0f172a;">${clinic}</span>
+          <span style="font-size:10px;color:#94a3b8;margin-left:4px;">${city}</span>
+        </td>
+        <td class="metric-cell">
+          <span class="metric-val" style="font-size:12px;">${cr.avail}</span>
+          <span class="metric-wow">${wowBadge(cr.avail, cr.availP)}</span>
+          ${crSignal}
+        </td>
+        ${metricCell(cr.gmbLeads, cr.gmbLeadsP)}
+        ${dualMetricCell(cr.allBk, cr.allBkP, cr2.allBk, cr2.allBkP)}
+        ${dualMetricCell(cr.callsDone, cr.callsDoneP, cr2.callsDone, cr2.callsDoneP)}
+        ${dualMetricCell(cr.b2dPct, cr.b2dPctP, cr2.b2dPct, cr2.b2dPctP, true)}
+        ${metricCell(cr.noShow, cr.noShowP, false, true)}
+        <td>
+          ${cd.sev ? `<span class="badge sev-${cd.sev.toLowerCase()}" style="font-size:9px;margin-right:3px;">${cd.sev}</span>` : ''}
+          <span class="diag ${cd.cls}" style="font-size:9px;">${cd.label}</span>
+          ${cd.issues?.length ? `<div style="font-size:9px;color:#94a3b8;margin-top:2px;">${cd.issues.slice(0,2).join(' · ')}</div>` : ''}
+        </td>
+      </tr>`;
+    }
+
+    return { alertHtml, cityRows, tableHtml: `
+      <table class="dtbl">
+        <thead>${tableHeader()}</thead>
+        <tbody>${tBody || '<tr><td colspan="8" style="text-align:center;color:#94a3b8;padding:20px;">No clinic data available for this selection</td></tr>'}</tbody>
+      </table>` };
+  }
+
+  // ── City view (default) ──────────────────────────────────────────────────────
   let tBody = '';
   for (const { city, row, diag } of cityRows) {
     const isExp = expandedCities.has(city);
     const expIcon = isExp ? '▾' : '▸';
     const hasClinicData = Object.keys(SDATA[city] || {}).filter(k=>k!=='_total').length > 0;
+
+    // W-2 row (for sub-line display: W-2 vs W-3)
+    const rowW2 = buildRow(
+      wi => getSheetCity(city, wi),
+      wi => getJsonCity(city, wi),
+      activeWkIdx + 1
+    );
 
     // Availability signal
     const availShut    = row.doctorCount > 0 && row.unavailCount >= row.doctorCount;
@@ -1577,6 +1700,9 @@ function buildTable() {
           ${vs4wkHtml(row.allBk, bkAvg4)}
         </div>
         ${sparkSvg(bkSparkVals)}
+        <span style="font-size:9px;color:#94a3b8;display:block;margin-top:3px;border-top:1px dashed #f1f5f9;padding-top:2px;">
+          W-2: ${fmt(rowW2.allBk)} ${wowBadge(rowW2.allBk, rowW2.allBkP)}
+        </span>
       </td>
       <td class="metric-cell ${cellClass(row.callsDone, row.callsDoneP)}">
         <span class="metric-val">${fmt(row.callsDone)}</span>
@@ -1584,9 +1710,12 @@ function buildTable() {
           <span class="metric-wow">${wowBadge(row.callsDone, row.callsDoneP)}</span>
           ${vs4wkHtml(row.callsDone, callsAvg4)}
         </div>
+        <span style="font-size:9px;color:#94a3b8;display:block;margin-top:3px;border-top:1px dashed #f1f5f9;padding-top:2px;">
+          W-2: ${fmt(rowW2.callsDone)} ${wowBadge(rowW2.callsDone, rowW2.callsDoneP)}
+        </span>
       </td>
-      ${metricCell(row.b2dPct,  row.b2dPctP, true)}
-      ${metricCell(row.noShow,  row.noShowP,  false, true)}
+      ${dualMetricCell(row.b2dPct, row.b2dPctP, rowW2.b2dPct, rowW2.b2dPctP, true)}
+      ${metricCell(row.noShow, row.noShowP, false, true)}
       <td>
         ${diag.sev ? `<span class="badge sev-${diag.sev.toLowerCase()}" style="font-size:9px;margin-right:3px;">${diag.sev}</span>` : ''}
         <span class="diag ${diag.cls}">${diag.label}</span>
@@ -1595,19 +1724,16 @@ function buildTable() {
     </tr>`;
 
     if (isExp && hasClinicData) {
-      // Clinic rows
+      // Expanded clinic sub-rows
       const clinicNames = Object.keys(SDATA[city] || {}).filter(k => k !== '_total');
       const clinicRows = clinicNames.map(clinic => {
-        const cr = buildRow(
-          wi => getSheetClinic(city, clinic, wi),
-          wi => getJsonClinic(city, clinic, wi),
-          activeWkIdx
-        );
-        return { clinic, row: cr, diag: diagnose(cr) };
+        const cr   = buildRow(wi=>getSheetClinic(city,clinic,wi), wi=>getJsonClinic(city,clinic,wi), activeWkIdx);
+        const crW2 = buildRow(wi=>getSheetClinic(city,clinic,wi), wi=>getJsonClinic(city,clinic,wi), activeWkIdx+1);
+        return { clinic, row: cr, rowW2: crW2, diag: diagnose(cr) };
       });
       clinicRows.sort((a,b) => sortVal(a.row) - sortVal(b.row));
 
-      for (const { clinic, row: cr, diag: cd } of clinicRows) {
+      for (const { clinic, row: cr, rowW2: cr2, diag: cd } of clinicRows) {
         const crShut    = cr.doctorCount > 0 && cr.unavailCount >= cr.doctorCount;
         const crPartial = cr.doctorCount > 0 && cr.unavailCount > 0 && cr.unavailCount < cr.doctorCount;
         const crSignal  = crShut    ? `<span style="font-size:9px;color:#7c3aed;font-weight:700;display:block;">🔴 Shut (${cr.unavailCount}/${cr.doctorCount})</span>`
@@ -1622,11 +1748,11 @@ function buildTable() {
             <span class="metric-wow">${wowBadge(cr.avail, cr.availP)}</span>
             ${crSignal}
           </td>
-          ${metricCell(cr.gmbLeads,  cr.gmbLeadsP)}
-          ${metricCell(cr.allBk,     cr.allBkP)}
-          ${metricCell(cr.callsDone, cr.callsDoneP)}
-          ${metricCell(cr.b2dPct,    cr.b2dPctP, true)}
-          ${metricCell(cr.noShow,    cr.noShowP, false, true)}
+          ${metricCell(cr.gmbLeads, cr.gmbLeadsP)}
+          ${dualMetricCell(cr.allBk, cr.allBkP, cr2.allBk, cr2.allBkP)}
+          ${dualMetricCell(cr.callsDone, cr.callsDoneP, cr2.callsDone, cr2.callsDoneP)}
+          ${dualMetricCell(cr.b2dPct, cr.b2dPctP, cr2.b2dPct, cr2.b2dPctP, true)}
+          ${metricCell(cr.noShow, cr.noShowP, false, true)}
           <td>
             ${cd.sev ? `<span class="badge sev-${cd.sev.toLowerCase()}" style="font-size:9px;margin-right:3px;">${cd.sev}</span>` : ''}
             <span class="diag ${cd.cls}" style="font-size:9px;">${cd.label}</span>
@@ -1639,30 +1765,7 @@ function buildTable() {
 
   return { alertHtml, cityRows, tableHtml: `
     <table class="dtbl">
-      <thead>
-        <tr>
-          <th>Location</th>
-          <th class="right" title="Doctor availability slots — Offline only (Demand Tracker sheet)">
-            <span style="color:#7c3aed">📊</span> Avail<br><span style="font-weight:400;text-transform:none;letter-spacing:0;color:#a78bfa">offline</span>
-          </th>
-          <th class="right" title="GMB+Google leads — Offline clinics only (Demand Tracker sheet)">
-            <span style="color:#7c3aed">📊</span> GMB+Google<br><span style="font-weight:400;text-transform:none;letter-spacing:0;color:#a78bfa">leads · offline</span>
-          </th>
-          <th class="right" title="New offline bookings created this week — Offline clinics only (Demand Tracker sheet)">
-            <span style="color:#7c3aed">📊</span> New Bookings<br><span style="font-weight:400;text-transform:none;letter-spacing:0;color:#a78bfa">offline only</span>
-          </th>
-          <th class="right" title="Calls Done = Completed appointments — from raw appointment data">
-            <span style="color:#0ea5e9">📋</span> Calls Done<br><span style="font-weight:400;text-transform:none;letter-spacing:0;">completed appts</span>
-          </th>
-          <th class="right" title="B2D% = Calls Done ÷ Gross Bookings — from raw appointment data">
-            <span style="color:#0ea5e9">📋</span> B2D %
-          </th>
-          <th class="right" title="No Shows — from raw appointment data">
-            <span style="color:#0ea5e9">📋</span> No Shows
-          </th>
-          <th>Diagnosis</th>
-        </tr>
-      </thead>
+      <thead>${tableHeader()}</thead>
       <tbody>${tBody}</tbody>
     </table>` };
 }
@@ -1713,9 +1816,27 @@ function render() {
         ${alertHtml}
       </div>
       <div class="lg:col-span-2 card" style="padding:0;overflow:hidden;">
-        <div style="padding:12px 16px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-          <span style="font-weight:700;font-size:13px;">City / Clinic Funnel</span>
-          <span style="font-size:11px;color:#94a3b8;">Click a city row to expand clinics · Sorted by biggest ${sortBy.replace('_drop','')} drop</span>
+        <div style="padding:10px 16px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+          <span style="font-weight:700;font-size:13px;">${tableMode==='clinic' ? '🏥 Flat Clinic View' : '🏙 City / Clinic Funnel'}</span>
+          <span style="font-size:11px;color:#94a3b8;">
+            ${tableMode==='clinic'
+              ? 'All clinics · W-2 sub-line shows previous week · Sorted by biggest '+sortBy.replace('_drop','')+' drop'
+              : 'Click a city row to expand clinics · W-2 sub-line inside Bookings & Calls cells · Sorted by '+sortBy.replace('_drop','')+' drop'}
+          </span>
+          <div style="margin-left:auto;display:flex;gap:4px;background:#f1f5f9;border-radius:8px;padding:2px;">
+            <button onclick="setTableMode('city')"
+              style="padding:3px 10px;font-size:11px;font-weight:600;border-radius:6px;border:none;cursor:pointer;
+                background:${tableMode==='city'?'#0f172a':'transparent'};
+                color:${tableMode==='city'?'#fff':'#64748b'};">
+              City
+            </button>
+            <button onclick="setTableMode('clinic')"
+              style="padding:3px 10px;font-size:11px;font-weight:600;border-radius:6px;border:none;cursor:pointer;
+                background:${tableMode==='clinic'?'#0f172a':'transparent'};
+                color:${tableMode==='clinic'?'#fff':'#64748b'};">
+              Clinics ↓
+            </button>
+          </div>
         </div>
         <div style="overflow-x:auto;max-height:600px;overflow-y:auto;">
           ${tableHtml}
@@ -1740,11 +1861,12 @@ function render() {
 async function init() {
   try {
     // Fetch all four sources in parallel
+    const safeFetch = url => fetch(url).catch(() => ({ ok: false }));
     const [jsonRes, csvRes, practoRes, l0Res] = await Promise.all([
       fetch('data.json'),
-      fetch(SHEET_URL),
-      fetch(PRACTO_URL),
-      fetch(L0_URL),
+      safeFetch(SHEET_URL),
+      safeFetch(PRACTO_URL),
+      safeFetch(L0_URL),
     ]);
 
     if (!jsonRes.ok) throw new Error('data.json not found');
