@@ -14,6 +14,16 @@
 }
 html,body{background:#f8fafc;color:var(--ink);font-family:ui-sans-serif,system-ui,sans-serif;}
 .card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:20px;box-shadow:0 1px 3px rgba(15,23,42,.05);}
+.sect{background:#fff;border:1px solid var(--line);border-radius:14px;box-shadow:0 1px 3px rgba(15,23,42,.05);margin-bottom:16px;overflow:hidden;}
+.sect>summary{list-style:none;cursor:pointer;padding:13px 18px;display:flex;align-items:center;gap:12px;user-select:none;}
+.sect>summary::-webkit-details-marker{display:none;}
+.sect>summary:hover{background:#fafaff;}
+.sect>summary .sect-t{font-size:13px;font-weight:700;color:var(--ink);white-space:nowrap;}
+.sect>summary .sect-s{font-size:11.5px;color:var(--muted);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.sect>summary .sect-cv{margin-left:auto;color:#94a3b8;font-size:11px;transition:transform .15s;flex-shrink:0;}
+.sect[open]>summary .sect-cv{transform:rotate(90deg);}
+.sect[open]>summary{border-bottom:1px solid var(--line);}
+.sect-body{padding:16px 18px;}
 .chip{display:inline-flex;align-items:center;gap:5px;padding:5px 13px;border:1.5px solid var(--line);border-radius:999px;font-size:12px;font-weight:600;cursor:pointer;transition:all .15s;background:#fff;}
 .chip:hover{border-color:#94a3b8;}
 .chip.active{color:#fff;border-color:transparent;}
@@ -414,12 +424,9 @@ function renderAllChannels(weeks, wkLabels) {
       </div>`;
     }).join('');
 
-  // Stacked area chart (use canvas)
-  const stackedHtml = `<div class="card">
-    <div style="font-size:14px;font-weight:700;margin-bottom:2px;">12-Week Volume by Channel</div>
-    <div style="font-size:11px;color:var(--muted);margin-bottom:12px;">Calls Done stacked by channel · ${activeScope} scope</div>
-    <div style="height:250px;"><canvas id="stackedChart"></canvas></div>
-  </div>`;
+  // Stacked area chart (use canvas) — frame/title supplied by the collapsible section
+  const stackedHtml = `<div style="font-size:11px;color:var(--muted);margin-bottom:12px;">Calls Done stacked by channel · ${activeScope} scope</div>
+    <div style="height:250px;"><canvas id="stackedChart"></canvas></div>`;
 
   // B2D comparison table
   const sortVal = (st) => {
@@ -498,13 +505,17 @@ function renderAllChannels(weeks, wkLabels) {
       </div>
     </div>
 
-    <div>
-      <div style="font-size:16px;font-weight:700;margin-bottom:4px;">Channel Deep-Dive Cards</div>
-      <div style="font-size:12px;color:var(--muted);margin-bottom:14px;">Click any card to see 12-week trend, category mix & more · ${activeScope} · ${weeks.length} weeks</div>
-      <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:14px;">${chCards}</div>
-    </div>
+    <details class="sect">
+      <summary><span class="sect-t">🗂️ Channel Deep-Dive Cards</span><span class="sect-s">Per-channel KPIs, mini-trends, category mix &amp; signal · click a card to drill into one channel</span><span class="sect-cv">▶</span></summary>
+      <div class="sect-body">
+        <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:14px;">${chCards}</div>
+      </div>
+    </details>
 
-    ${stackedHtml}
+    <details class="sect">
+      <summary><span class="sect-t">📊 ${weeks.length}-Week Volume by Channel</span><span class="sect-s">Stacked Calls Done over time — which channel is driving the trend</span><span class="sect-cv">▶</span></summary>
+      <div class="sect-body">${stackedHtml}</div>
+    </details>
   `;
 
   // Stacked area chart
@@ -904,6 +915,15 @@ async function init() {
       `<div class="loading" style="color:#dc2626;">⚠ ${err.message}</div>`;
   }
 }
+
+// Resize charts when a collapsed <details class="sect"> is opened
+document.addEventListener('toggle', e => {
+  const d = e.target;
+  if (d.tagName !== 'DETAILS' || !d.classList.contains('sect') || !d.open) return;
+  requestAnimationFrame(() => d.querySelectorAll('canvas').forEach(cv => {
+    try { const c = window.Chart && Chart.getChart(cv); if (c) c.resize(); } catch(_) {}
+  }));
+}, true);
 
 document.addEventListener('DOMContentLoaded', init);
 </script>
