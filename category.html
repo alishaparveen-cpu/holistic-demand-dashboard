@@ -15,6 +15,17 @@
 }
 html,body{background:#f8fafc;color:var(--ink);font-family:ui-sans-serif,system-ui,sans-serif;}
 .card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:20px;box-shadow:0 1px 3px rgba(15,23,42,.05);}
+.sect{background:#fff;border:1px solid var(--line);border-radius:14px;box-shadow:0 1px 3px rgba(15,23,42,.05);margin-bottom:16px;overflow:hidden;}
+.sect>summary{list-style:none;cursor:pointer;padding:13px 18px;display:flex;align-items:center;gap:12px;user-select:none;}
+.sect>summary::-webkit-details-marker{display:none;}
+.sect>summary:hover{background:#fafaff;}
+.sect>summary .sect-t{font-size:13px;font-weight:700;color:var(--ink);white-space:nowrap;}
+.sect>summary .sect-s{font-size:11.5px;color:var(--muted);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.sect>summary .sect-cv{margin-left:auto;color:#94a3b8;font-size:11px;transition:transform .15s;flex-shrink:0;}
+.sect[open]>summary .sect-cv{transform:rotate(90deg);}
+.sect[open]>summary{border-bottom:1px solid var(--line);}
+.sect-body{padding:16px 18px;}
+.sect-body>.card{box-shadow:none;border:none;padding:0;margin-bottom:0;}
 .chip{display:inline-flex;align-items:center;gap:5px;padding:5px 13px;border:1.5px solid var(--line);border-radius:999px;font-size:12px;font-weight:600;cursor:pointer;transition:all .15s;background:#fff;}
 .chip:hover{border-color:#94a3b8;}
 .chip.active{color:#fff;border-color:transparent;}
@@ -714,32 +725,25 @@ function render() {
       <div style="height:220px;"><canvas id="growthIndexChart"></canvas></div>
     </div>
 
-    <div>
-      <div style="font-size:16px;font-weight:700;margin-bottom:4px;">Channel Analysis — ${catDisplayLabel(cat)}</div>
-      <div style="font-size:12px;color:var(--muted);margin-bottom:14px;">Per-channel ${catLabel} rate, volume trend &amp; health signal · ${activeScope} · ${weeks.length} weeks · network-wide</div>
-      <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:14px;">${channelCardsHTML}</div>
-    </div>
+    ${sect('🔀 Channel Analysis — ' + catDisplayLabel(cat),
+      'Per-channel ' + catLabel + ' rate, volume trend &amp; health signal · network-wide',
+      `<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:14px;">${channelCardsHTML}</div>`)}
 
-    ${citySection}
+    ${citySection ? sect('🏙️ City &amp; Clinic — ' + catDisplayLabel(cat),
+      'How this category splits across cities and clinics',
+      citySection + clinicCatSection) : ''}
 
-    ${clinicCatSection}
-
-    <div class="card">
-      <div style="font-size:14px;font-weight:700;margin-bottom:2px;">Weekly Trend — ${catDisplayLabel(cat)}</div>
-      <div style="font-size:11px;color:var(--muted);margin-bottom:12px;">
+    ${sect('📈 Weekly Trend — ' + catDisplayLabel(cat),
+      (viewMode==='share'?'% of Calls Done':'Calls Done') + ' per week vs 8-wk rolling average',
+      `<div style="font-size:11px;color:var(--muted);margin-bottom:12px;">
         Showing: <strong>${viewMode==='share'?'% of Calls Done':'Calls Done'} · ${activeScope}</strong>${activeChannel!=='ALL'?' · '+activeChannel+' channel':activeCity!=='ALL'?' · '+activeCity:''}
         · Bars = week · Dashed = 8-wk rolling avg
       </div>
-      <div style="height:240px;"><canvas id="trendChart"></canvas></div>
-    </div>
+      <div style="height:240px;"><canvas id="trendChart"></canvas></div>`)}
 
-    <div class="card" style="border-color:${m.color}44;">
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
-        <span style="width:10px;height:10px;border-radius:50%;background:${m.color};display:inline-block;"></span>
-        <span style="font-size:14px;font-weight:700;">Deep Dive — ${catDisplayLabel(cat)}</span>
-      </div>
-      <div style="font-size:11px;color:var(--muted);margin-bottom:12px;">Channel mix within category · online vs offline split · channel share trend (100% stacked) · network-wide</div>
-      ${activeTier!=='ALL'||activeCity!=='ALL'?`<div style="display:inline-flex;align-items:center;gap:6px;padding:5px 10px;background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;font-size:11px;color:#92400e;margin-bottom:12px;">⚠️ Channel breakdown is network-wide — city/tier filter does not apply here.</div>`:''}
+    ${sect('🔬 Deep Dive — ' + catDisplayLabel(cat),
+      'Channel mix within category · online vs offline split · channel share trend (100% stacked) · network-wide',
+      `${activeTier!=='ALL'||activeCity!=='ALL'?`<div style="display:inline-flex;align-items:center;gap:6px;padding:5px 10px;background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;font-size:11px;color:#92400e;margin-bottom:12px;">⚠️ Channel breakdown is network-wide — city/tier filter does not apply here.</div>`:''}
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">
         <div>
           <div style="font-size:13px;font-weight:600;margin-bottom:8px;">Which channels drive ${catDisplayLabel(cat)}?</div>
@@ -753,8 +757,7 @@ function render() {
       <div>
         <div style="font-size:13px;font-weight:600;margin-bottom:8px;">Channel share trend — ${catDisplayLabel(cat)} (100% stacked)</div>
         <div style="height:220px;"><canvas id="catChShareTrend"></canvas></div>
-      </div>
-    </div>`;
+      </div>`)}`;
 
   Object.values(charts).forEach(c => { try { c.destroy(); } catch(e){} });
   charts = {};
@@ -1203,6 +1206,18 @@ function makeChip(container, cat) {
   };
   container.appendChild(btn);
 }
+
+// Collapsible section helper + resize-on-open
+function sect(title, summary, html) {
+  return `<details class="sect"><summary><span class="sect-t">${title}</span><span class="sect-s">${summary||''}</span><span class="sect-cv">▶</span></summary><div class="sect-body">${html}</div></details>`;
+}
+document.addEventListener('toggle', e => {
+  const d = e.target;
+  if (d.tagName !== 'DETAILS' || !d.classList.contains('sect') || !d.open) return;
+  requestAnimationFrame(() => d.querySelectorAll('canvas').forEach(cv => {
+    try { const c = window.Chart && Chart.getChart(cv); if (c) c.resize(); } catch(_) {}
+  }));
+}, true);
 
 init();
 </script>
