@@ -274,7 +274,7 @@ html,body{background:#f8fafc;color:var(--ink);font-family:ui-sans-serif,system-u
 <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px;">
   <div class="card">
     <div class="sec-title" style="font-size:14px;margin-bottom:2px;">CPL Trend by Channel</div>
-    <div style="font-size:11px;color:var(--muted);margin-bottom:12px;">Paid channels · lower is better</div>
+    <div style="font-size:11px;color:var(--muted);margin-bottom:12px;">Paid channels · CPL = cost per verified lead (read in context of lead quality)</div>
     <div style="height:220px;"><canvas id="cplChannelTrend"></canvas></div>
   </div>
   <div class="card">
@@ -319,7 +319,7 @@ html,body{background:#f8fafc;color:var(--ink);font-family:ui-sans-serif,system-u
   <div class="card" style="margin-bottom:20px;">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
       <div>
-        <span class="sec-title" id="chTrendTitle" style="font-size:14px;">7-Week Performance</span>
+        <span class="sec-title" id="chTrendTitle" style="font-size:14px;">Weekly Performance</span>
         <span class="sec-sub">Calls Done (bars) · B2D% (line)</span>
       </div>
     </div>
@@ -2147,7 +2147,7 @@ function renderChannelView(chKey, wkIdx) {
     </div>`;
   }).join('');
 
-  document.getElementById('chTrendTitle').textContent = `${ch.label} — 7-Week Trend`;
+  document.getElementById('chTrendTitle').textContent = `${ch.label} — Weekly Trend`;
 
   // Deep dive content (all sections)
   const wL = L0 ? `${L0.startLabels[wkIdx]} – ${L0.endLabels[wkIdx]}` : JSON_WEEK_KEYS[wkIdx];
@@ -2415,12 +2415,18 @@ function buildSpendPie(wkIdx) {
   const total = L0.overall.spends[wkIdx] || 1;
   const paid  = CHANNELS.filter(c => c.type==='paid');
   const data  = paid.map(ch => { const l0=getChannelL0(ch); const pct=l0?.spend_contr?.[wkIdx]||0; return Math.round(total*pct/100); });
+  // Horizontal stacked bar (one bar, all paid channels) — clearer than a pie for 6 channels
+  const datasets = paid.map((ch, i) => ({
+    label: ch.label, data: [data[i]], backgroundColor: ch.color, borderWidth: 1, borderColor: '#fff'
+  }));
   charts.spendPie = new Chart(document.getElementById('spendPie'), {
-    type:'doughnut',
-    data:{ labels:paid.map(c=>c.label), datasets:[{ data, backgroundColor:paid.map(c=>c.color), borderWidth:2, borderColor:'#fff' }] },
-    options:{ responsive:true, maintainAspectRatio:false,
-      plugins:{ legend:{position:'right',labels:{font:{size:11},boxWidth:12,padding:10}},
-        tooltip:{callbacks:{label:ctx=>{const pct=(ctx.raw/total*100).toFixed(0);return `${ctx.label}: ${fmtINR(ctx.raw)} (${pct}%)`;}}}}
+    type:'bar',
+    data:{ labels:['This week'], datasets },
+    options:{ indexAxis:'y', responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{position:'bottom',labels:{font:{size:10},boxWidth:10,padding:8}},
+        tooltip:{callbacks:{label:ctx=>{const pct=(ctx.raw/total*100).toFixed(0);return `${ctx.dataset.label}: ${fmtINR(ctx.raw)} (${pct}%)`;}}}},
+      scales:{ x:{stacked:true,grid:{color:'#f1f5f9'},ticks:{callback:v=>'₹'+(v/100000).toFixed(1)+'L'}},
+               y:{stacked:true,grid:{display:false}} }
     }
   });
 }
