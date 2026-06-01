@@ -76,6 +76,19 @@ html,body{background:#f8fafc;color:var(--ink);font-family:ui-sans-serif,system-u
 .insight-bar.bad  {background:#fef2f2;color:#991b1b;border-left:3px solid #ef4444;}
 .insight-bar.gray {background:#f8fafc;color:#475569;border-left:3px solid #e2e8f0;}
 .insight-icon{font-size:15px;flex-shrink:0;margin-top:1px;}
+/* ── progressive-disclosure section (exec read on top, detail one click away) ── */
+.sect{background:#fff;border:1px solid var(--line);border-radius:14px;box-shadow:0 1px 3px rgba(15,23,42,.05);margin-bottom:14px;overflow:hidden;}
+.sect>summary{list-style:none;cursor:pointer;padding:13px 18px;display:flex;align-items:center;gap:12px;user-select:none;}
+.sect>summary::-webkit-details-marker{display:none;}
+.sect>summary:hover{background:#fafaff;}
+.sect>summary .sect-t{font-size:13px;font-weight:700;color:var(--ink);white-space:nowrap;}
+.sect>summary .sect-s{font-size:11.5px;color:#64748b;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.sect>summary .sect-cv{margin-left:auto;color:#94a3b8;font-size:11px;transition:transform .15s;flex-shrink:0;}
+.sect[open]>summary .sect-cv{transform:rotate(90deg);}
+.sect[open]>summary{border-bottom:1px solid var(--line);}
+.sect-body{padding:16px 18px;}
+.sect-body .card{box-shadow:none;border:none;padding:0;}
+.sect-body>div[style*="margin-bottom:20px"]{margin-bottom:0!important;}
 /* ── 3-week chips & pulse card ──────────────────────── */
 .chip3{display:flex;gap:3px;flex-wrap:nowrap;}
 .chip3-item{border-radius:6px;padding:3px 7px;text-align:center;min-width:48px;flex-shrink:0;}
@@ -2852,6 +2865,30 @@ function buildCityTable() {
 }
 
 // ── RENDER ────────────────────────────────────────────────────────────────
+// Collapsible section wrapper — title + one-line story summary; collapsed = exec read, open = detail.
+function sect(title, summary, html, open) {
+  return `<details class="sect"${open ? ' open' : ''}>
+    <summary><span class="sect-t">${title}</span><span class="sect-s">${summary || ''}</span><span class="sect-cv">▶</span></summary>
+    <div class="sect-body">${html}</div>
+  </details>`;
+}
+// When a collapsed section is opened, resize any Chart.js charts inside it (they
+// render at 0px while hidden). Runs once, delegated on #root.
+function wireSectResize() {
+  const root = document.getElementById('root');
+  if (!root || root._sectWired) return;
+  root._sectWired = true;
+  root.addEventListener('toggle', e => {
+    const d = e.target;
+    if (d.tagName === 'DETAILS' && d.open) {
+      requestAnimationFrame(() => {
+        try { for (const k in (window.Chart?.instances || {})) { const c = Chart.instances[k];
+          if (c && d.contains(c.canvas)) c.resize(); } } catch(_) {}
+      });
+    }
+  }, true);
+}
+
 function render() {
   if (!JDATA) return;
   const wk  = ALL_WEEKS[activeWkIdx];
@@ -2870,57 +2907,53 @@ function render() {
       </p>
     </div>
 
+    <!-- ═══ EXEC READ (always open): the story + the trend ═══ -->
     <!-- ① DEMAND STORY: Pulse + Funnel + Diagnosis merged in one card -->
     ${buildDemandStory()}
 
     <!-- ② 12-WEEK TREND (moved up for immediate visibility) -->
     ${buildTrendChart()}
 
-    <!-- ③ GROWTH DECOMPOSITION — same-store vs new clinic -->
-    ${buildGrowthDecomposition()}
+    <!-- ═══ DEEP DETAIL (collapsed by default — click to drill) ═══ -->
+    <div style="margin:18px 0 8px;display:flex;align-items:center;gap:10px;">
+      <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.09em;color:#94a3b8;white-space:nowrap;">Drill down</span>
+      <div style="flex:1;height:1px;background:#e2e8f0;"></div>
+      <span style="font-size:10px;color:#cbd5e1;">click any section to expand</span>
+    </div>
+
+    ${sect('📊 Growth Decomposition',
+      'Same-store vs new clinics — is growth from existing sites improving or from new openings?',
+      buildGrowthDecomposition())}
 
     ${isAll ? `
-      <!-- ═══ ALL MODE ═══ -->
+      ${sect('🔀 Funnel by Channel',
+        'Leads → calls → bookings → done, split by acquisition channel',
+        buildFullFunnelTable('channel'))}
 
-      <!-- ④ Full funnel by channel -->
-      ${buildFullFunnelTable('channel')}
+      ${sect('🏙️ City &amp; Clinic View' + (activeCity !== 'ALL' ? ' · ' + activeCity : ''),
+        'Which cities and clinics are driving or dragging demand, indexed to availability',
+        buildFullFunnelTable('city') + buildAvailabilityIndex())}
 
-      <!-- ⑤ City section: funnel + availability (clinics inside city) -->
-      <div style="margin-bottom:8px;display:flex;align-items:center;gap:10px;">
-        <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.09em;color:#94a3b8;white-space:nowrap;">🏙️ City &amp; Clinic View${activeCity !== 'ALL' ? ' · <span style="color:#6366f1;">'+activeCity+'</span>' : ''}</span>
-        <div style="flex:1;height:1px;background:#e2e8f0;"></div>
-      </div>
-      ${buildFullFunnelTable('city')}
-      ${buildAvailabilityIndex()}
-
-      <!-- ⑥ Beat/Miss + Category Mix -->
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px;align-items:start;">
-        ${buildBeatMissHistory()}
-        ${buildCategoryMix()}
-      </div>
+      ${sect('🎯 Beat/Miss &amp; Category Mix',
+        'Weekly beat/miss vs 8-wk average, and the ED / PE / STI category split',
+        `<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start;">${buildBeatMissHistory()}${buildCategoryMix()}</div>`)}
     ` : `
-      <!-- ═══ SINGLE-METRIC MODE ═══ -->
+      ${sect('🎯 Beat/Miss &amp; Category Mix',
+        'Weekly beat/miss vs 8-wk average, and the ED / PE / STI category split',
+        `<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start;">${buildBeatMissHistory()}${buildCategoryMix()}</div>`)}
 
-      <!-- ④ Beat/Miss + Category Mix -->
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px;align-items:start;">
-        ${buildBeatMissHistory()}
-        ${buildCategoryMix()}
-      </div>
+      ${sect('🔀 Channel Breakdown',
+        'How this metric splits across acquisition channels',
+        buildChannelTable())}
 
-      <!-- ⑤ Channel table -->
-      ${buildChannelTable()}
-
-      <!-- ⑥ City section with availability (clinics inside city) -->
-      <div style="margin-bottom:8px;display:flex;align-items:center;gap:10px;">
-        <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.09em;color:#94a3b8;white-space:nowrap;">🏙️ City &amp; Clinic View${activeCity !== 'ALL' ? ' · <span style="color:#6366f1;">'+activeCity+'</span>' : ''}</span>
-        <div style="flex:1;height:1px;background:#e2e8f0;"></div>
-      </div>
-      ${buildCityTable()}
-      ${buildAvailabilityIndex()}
+      ${sect('🏙️ City &amp; Clinic View' + (activeCity !== 'ALL' ? ' · ' + activeCity : ''),
+        'Which cities and clinics are driving or dragging demand, indexed to availability',
+        buildCityTable() + buildAvailabilityIndex())}
     `}
 
-    <!-- 📊 COMPARISON PANEL -->
-    ${buildComparePanel_ov()}
+    ${sect('📊 Compare Parameters',
+      'Build your own multi-week comparison across cities, clinics or channels',
+      buildComparePanel_ov())}
 
     <div style="text-align:center;color:#94a3b8;font-size:11px;margin:20px 0 40px;">
       Data: appointments CSV · Category mix: all scopes · 8wk avg = 8 weeks preceding selected week ·
@@ -2929,6 +2962,7 @@ function render() {
   `;
 
   requestAnimationFrame(() => { renderTrendChart(); renderCmpChart_ov(); });
+  wireSectResize();
 }
 
 // ── CONTROLS ──────────────────────────────────────────────────────────────
