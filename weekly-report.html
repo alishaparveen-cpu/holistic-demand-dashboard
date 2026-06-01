@@ -79,6 +79,10 @@ html,body{background:#f8fafc;color:var(--ink);font-family:ui-sans-serif,system-u
 .rca-gray{background:#f8fafc;border-left:3px solid #e2e8f0;}
 .rca-title{font-size:12px;font-weight:700;color:#0f172a;margin-bottom:3px;}
 .rca-body{font-size:11.5px;color:#475569;line-height:1.6;}
+.cat-wk-btn{padding:3px 9px;font-size:11px;font-weight:700;border:1px solid #e2e8f0;background:#fff;color:#64748b;
+  border-radius:6px;cursor:pointer;transition:all .12s;}
+.cat-wk-btn.active{background:#6366f1;color:#fff;border-color:#6366f1;}
+.cat-wk-btn:hover:not(.active){background:#f1f5f9;color:#0f172a;}
 @media print{
   .no-print{display:none!important;}
   .tab-bar{display:none!important;}
@@ -233,12 +237,23 @@ html,body{background:#f8fafc;color:var(--ink);font-family:ui-sans-serif,system-u
       <div id="channelFunnelComparison"></div>
     </div>
 
-    <!-- Category Breakdown -->
+    <!-- Category Breakdown — Market Share Trend -->
     <div class="section-card">
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;flex-wrap:wrap;">
         <span style="font-size:16px;">🏷</span>
-        <span class="sec-title">Category Breakdown</span>
-        <span class="sec-sub">STI · ED+ · PE+ · ED+PE+ · NSSD · Others — which category drove the change?</span>
+        <span class="sec-title">Category Breakdown — Market Share Trend</span>
+        <span class="sec-sub">STI · ED+ · PE+ · NSSD · Others — track mix shift over time to see campaign impact</span>
+        <div style="margin-left:auto;display:flex;gap:4px;align-items:center;">
+          <span style="font-size:10px;color:#94a3b8;margin-right:2px;">Show:</span>
+          <button class="cat-wk-btn" id="cwb4"  onclick="renderCatBreakdown(4)">4w</button>
+          <button class="cat-wk-btn active" id="cwb8"  onclick="renderCatBreakdown(8)">8w</button>
+          <button class="cat-wk-btn" id="cwb12" onclick="renderCatBreakdown(12)">12w</button>
+          <button class="cat-wk-btn" id="cwbAll" onclick="renderCatBreakdown(999)">All</button>
+        </div>
+      </div>
+      <!-- Share % trend chart -->
+      <div style="height:180px;position:relative;margin-bottom:14px;">
+        <canvas id="chartCatShare"></canvas>
       </div>
       <div id="categoryBreakdown"></div>
     </div>
@@ -467,7 +482,7 @@ const CH_CFG = [
 const CHANNEL_COLORS = { GMB:'#34A853', Google:'#DB4437', Practo:'#7C3AED', Organic:'#F97316', Meta:'#E1306C', Others:'#64748b' };
 
 // ── STATE ──────────────────────────────────────────────────────────────────
-let JDATA = null, L0 = null, AVAIL_DATA = null, reportWkIdx = 0, charts = {};
+let JDATA = null, L0 = null, AVAIL_DATA = null, reportWkIdx = 0, catNWeeks = 8, charts = {};
 
 // ── UTILS ──────────────────────────────────────────────────────────────────
 const wow    = (c,p) => (c==null||p==null||p===0) ? null : (c-p)/p*100;
@@ -2121,71 +2136,206 @@ function buildChannelFunnelComparison(wi) {
 
 // ── CATEGORY BREAKDOWN ─────────────────────────────────────────────────────
 // STI / ED+ / PE+ / ED+PE+ / NSSD / oth — WoW + mix shift
-function buildCategoryBreakdown(wi) {
+// ── CATEGORY BREAKDOWN — MARKET SHARE TREND ────────────────────────────────
+// nWeeks = how many weeks to show (4/8/12/all)
+// Shows calls + share% per week so you can see if campaigns shifted category mix
+function buildCategoryBreakdown(wi, nWeeks) {
+  nWeeks = nWeeks || catNWeeks;
   const weeks  = getWeeks();
-  const wkKey  = weeks[wi], wkKey2 = weeks[wi+1];
-  const getCat = w => JDATA?.all?.weekly_total?.by_cat?.[w] || {};
-  const catC   = getCat(wkKey), catP = getCat(wkKey2);
+  const cats   = ['STI','ED+','PE+','ED+PE+','NSSD','oth'];
+  const names  = {STI:'STI','ED+':'ED+','PE+':'PE+','ED+PE+':'ED+PE+',NSSD:'NSSD',oth:'Others'};
+  const colors = {STI:'#0ea5e9','ED+':'#8b5cf6','PE+':'#10b981','ED+PE+':'#f59e0b',NSSD:'#ef4444',oth:'#64748b'};
 
-  const cats  = ['STI','ED+','PE+','ED+PE+','NSSD','oth'];
-  const names = {STI:'STI (Infections)', 'ED+':'ED+', 'PE+':'PE+', 'ED+PE+':'ED+PE+', NSSD:'NSSD', oth:'Others'};
-  const colors= {STI:'#0ea5e9','ED+':'#8b5cf6','PE+':'#10b981','ED+PE+':'#f59e0b',NSSD:'#ef4444',oth:'#64748b'};
+  // Window: wi = current week (index 0 = newest). Take nWeeks from wi onwards.
+  const endIdx   = Math.min(wi + nWeeks, weeks.length);
+  const wkWindow = weeks.slice(wi, endIdx);           // newest first
 
-  const hasData = cats.some(c => catC[c] != null);
+  // Build per-week data
+  const wkData = wkWindow.map(w => {
+    const c   = JDATA?.all?.weekly_total?.by_cat?.[w] || {};
+    const tot = cats.reduce((s,cat) => s + (c[cat]||0), 0);
+    const lbl = (JDATA?.week_labels?.[w] || w);
+    const m   = lbl.match(/(\d+\s+\w{3})/);
+    return { wk:w, tot, cats: c, shortLbl: m ? m[1] : w.slice(5) };
+  });
+
+  const hasData = wkData.some(d => d.tot > 0);
   if (!hasData) return '<div style="color:#94a3b8;font-size:12px;padding:8px;">Category data not available — check if data.json has weekly_total.by_cat populated.</div>';
 
-  const totC  = cats.reduce((s,c)=>s+(catC[c]||0),0);
-  const totP  = cats.reduce((s,c)=>s+(catP[c]||0),0);
+  // WoW change for the most recent two weeks (wi, wi+1)
+  const cur0 = wkData[0]?.cats || {}, cur1 = wkData[1]?.cats || {};
+  const tot0 = wkData[0]?.tot  || 0,  tot1 = wkData[1]?.tot  || 0;
 
-  // Find biggest absolute contributor to total change
-  const contributors = cats.map(c => ({c, delta:(catC[c]||0)-(catP[c]||0)}))
-    .filter(x => x.delta !== 0).sort((a,b)=>Math.abs(b.delta)-Math.abs(a.delta));
+  // Top mover WoW
+  const contributors = cats.map(c => ({c, delta:(cur0[c]||0)-(cur1[c]||0)}))
+    .filter(x=>x.delta!==0).sort((a,b)=>Math.abs(b.delta)-Math.abs(a.delta));
   const topContrib = contributors[0];
 
-  const summaryLine = topContrib
-    ? `<div style="margin-bottom:12px;padding:8px 12px;background:#f8fafc;border-radius:8px;font-size:12px;color:#475569;line-height:1.6;">
-        <strong>Category driving change:</strong> <span style="color:${colors[topContrib.c]||'#64748b'};font-weight:700;">${names[topContrib.c]||topContrib.c}</span>
-        — ${topContrib.delta>0?'added':'lost'} <strong>${Math.abs(topContrib.delta)} calls</strong> WoW
-        ${contributors.length>1?`&nbsp;·&nbsp; Also notable: ${contributors.slice(1,3).map(x=>`<span style="color:${colors[x.c]||'#64748b'};font-weight:600;">${names[x.c]||x.c}</span> (${x.delta>0?'+':''}${x.delta})`).join(', ')}`:''}.
-      </div>` : '';
+  // Period share trend per category (share[0] = newest, share[last] = oldest in window)
+  const catStats = cats.map(cat => {
+    const shares = wkData.map(d => d.tot>0 ? (d.cats[cat]||0)/d.tot*100 : null);
+    const validShares = shares.filter(s=>s!=null);
+    const avgShare = validShares.length ? validShares.reduce((a,b)=>a+b,0)/validShares.length : null;
+    // Trend: newest share - oldest share in window
+    const first = shares[0], last = shares.findLast(s=>s!=null);
+    const trendPp = (first!=null && last!=null && shares.length>1) ? first - last : null;
+    return { cat, shares, avgShare, trendPp };
+  });
 
-  return summaryLine + `<table class="tbl"><thead><tr>
-    <th>Category</th>
-    <th class="right">W-1</th><th class="right">W-1 Share</th>
-    <th class="right">W-2</th><th class="right">W-2 Share</th>
-    <th class="right">WoW</th><th class="right">Absolute Δ</th><th class="right">Mix Δ</th>
-  </tr></thead><tbody>
-  ${cats.map(c=>{
-    const cur=catC[c]||0, prev=catP[c]||0;
-    const shareC = totC>0?cur/totC*100:0, shareP = totP>0?prev/totP*100:0;
-    const shareChg = shareC-shareP;
-    const callsW = cur&&prev?wow(cur,prev):null;
-    const delta = cur-prev;
-    const cls = callsW==null?'wow-flat':callsW<-10?'wow-dn':callsW>10?'wow-up':'wow-flat';
-    const scls= shareChg<-2?'wow-dn':shareChg>2?'wow-up':'wow-flat';
+  // Summary line
+  const summaryLine = topContrib ? `<div style="margin-bottom:10px;padding:8px 12px;background:#f8fafc;border-radius:8px;font-size:12px;color:#475569;line-height:1.6;">
+    <strong>WoW change driver:</strong>
+    <span style="color:${colors[topContrib.c]};font-weight:700;">${names[topContrib.c]}</span>
+    ${topContrib.delta>0?'added':'lost'} <strong>${Math.abs(topContrib.delta)} calls</strong>
+    ${contributors.length>1?' · Also: '+contributors.slice(1,3).map(x=>`<span style="color:${colors[x.c]};font-weight:600;">${names[x.c]}</span> (${x.delta>0?'+':''}${x.delta})`).join(', '):''}
+    &nbsp;·&nbsp;
+    <strong>Period gainers:</strong>
+    ${catStats.filter(x=>x.trendPp!=null&&x.trendPp>1).map(x=>`<span style="color:${colors[x.cat]};font-weight:600;">${names[x.cat]}</span> <span style="color:#059669;">▲${x.trendPp.toFixed(1)}pp</span>`).join(' · ')||'none'}
+    &nbsp;
+    <strong>Losers:</strong>
+    ${catStats.filter(x=>x.trendPp!=null&&x.trendPp<-1).map(x=>`<span style="color:${colors[x.cat]};font-weight:600;">${names[x.cat]}</span> <span style="color:#dc2626;">▼${Math.abs(x.trendPp).toFixed(1)}pp</span>`).join(' · ')||'none'}
+  </div>` : '';
+
+  // Table: rows = categories (calls row + share% row), columns = weeks newest→oldest
+  const colHdrs = wkData.map((d,i) =>
+    `<th class="right" style="font-size:10.5px;${i===0?'font-weight:800;color:#0f172a;':'color:#94a3b8;'}">${d.shortLbl}</th>`
+  ).join('');
+
+  const catRows = catStats.map(({cat, shares, avgShare, trendPp}) => {
+    const callsCells = wkData.map((d,i) => {
+      const v = d.cats[cat]||0;
+      return `<td class="right" style="font-size:11.5px;font-weight:${i===0?'700':'400'};color:${i===0?'#0f172a':'#b0bec5'};">${v||'—'}</td>`;
+    }).join('');
+
+    const shareCells = shares.map((s,i) => {
+      const hiLo = (s!=null && avgShare!=null && avgShare>0) ? s - avgShare : null;
+      const bg   = hiLo==null ? '' : hiLo>2 ? 'background:#ecfdf5;' : hiLo<-2 ? 'background:#fef2f2;' : '';
+      return `<td class="right" style="font-size:10.5px;color:${i===0?'#475569':'#b0bec5'};padding-bottom:5px;${bg}">${s!=null?s.toFixed(1)+'%':'—'}</td>`;
+    }).join('');
+
+    const trendCell = trendPp!=null
+      ? `<td rowspan="2" class="right" style="vertical-align:middle;">
+          <div style="font-size:13px;font-weight:800;color:${trendPp>2?'#059669':trendPp<-2?'#dc2626':'#d97706'};">${trendPp>=0?'▲':'▼'}${Math.abs(trendPp).toFixed(1)}pp</div>
+          <div style="font-size:9px;color:#94a3b8;margin-top:2px;">${trendPp>1?'gaining share':trendPp<-1?'losing share':'stable'}</div>
+        </td>`
+      : `<td rowspan="2"></td>`;
+
     return `<tr>
-      <td><span style="display:inline-flex;align-items:center;gap:7px;">
-        <span style="width:10px;height:10px;border-radius:3px;background:${colors[c]||'#64748b'};display:inline-block;flex-shrink:0;"></span>
-        <strong>${names[c]||c}</strong>
-      </span></td>
-      <td class="right" style="font-weight:700;">${cur||'—'}</td>
-      <td class="right" style="color:#64748b;font-size:11px;">${cur?shareC.toFixed(1)+'%':'—'}</td>
-      <td class="right" style="color:#94a3b8;">${prev||'—'}</td>
-      <td class="right" style="color:#94a3b8;font-size:11px;">${prev?shareP.toFixed(1)+'%':'—'}</td>
-      <td class="right">${callsW!=null?`<span class="${cls}" style="font-size:11px;font-weight:700;">${callsW>0?'+':''}${callsW.toFixed(1)}%</span>`:'—'}</td>
-      <td class="right"><span style="font-size:12px;font-weight:700;color:${delta<0?'#dc2626':delta>0?'#059669':'#94a3b8'};">${delta>0?'+':''}${delta}</span></td>
-      <td class="right"><span class="${scls}" style="font-size:11px;">${cur?(shareChg>0?'+':'')+shareChg.toFixed(1)+'pp':'—'}</span></td>
-    </tr>`;
-  }).join('')}
-  <tr style="background:#f8fafc;font-weight:700;">
-    <td>Total</td>
-    <td class="right">${totC}</td><td class="right" style="color:#64748b;font-size:11px;">100%</td>
-    <td class="right" style="color:#94a3b8;">${totP}</td><td class="right" style="color:#94a3b8;font-size:11px;">100%</td>
-    <td class="right">${wowBadge(wow(totC,totP))}</td>
-    <td class="right"><span style="font-weight:700;color:${(totC-totP)<0?'#dc2626':(totC-totP)>0?'#059669':'#94a3b8'};">${totC-totP>0?'+':''}${totC-totP}</span></td>
-    <td></td>
-  </tr>
-  </tbody></table>`;
+        <td rowspan="2" style="padding:4px 10px 0;vertical-align:middle;">
+          <span style="display:inline-flex;align-items:center;gap:6px;">
+            <span style="width:10px;height:10px;border-radius:3px;background:${colors[cat]};display:inline-block;flex-shrink:0;"></span>
+            <strong style="font-size:12px;">${names[cat]}</strong>
+          </span>
+        </td>
+        ${callsCells}
+        ${trendCell}
+      </tr>
+      <tr>${shareCells}</tr>`;
+  }).join('');
+
+  // Totals row
+  const totRow = `<tr style="background:#f8fafc;border-top:2px solid #e2e8f0;">
+    <td style="font-weight:700;padding:5px 10px;font-size:12px;">Total</td>
+    ${wkData.map((d,i)=>`<td class="right" style="font-weight:${i===0?'800':'400'};font-size:11.5px;color:${i===0?'#0f172a':'#94a3b8'};">${d.tot||'—'}</td>`).join('')}
+    <td class="right">${wkData.length>=2&&wkData[0].tot&&wkData[1].tot ? wowBadge(wow(wkData[0].tot,wkData[1].tot)) : ''}</td>
+  </tr>`;
+
+  const table = `<div style="overflow-x:auto;">
+    <table class="tbl"><thead><tr>
+      <th style="min-width:85px;">Category</th>${colHdrs}
+      <th class="right" style="min-width:70px;">Period<br>trend</th>
+    </tr></thead><tbody>
+    ${catRows}
+    ${totRow}
+    </tbody></table>
+  </div>
+  <div style="font-size:10px;color:#94a3b8;margin-top:5px;">Calls (top row) · Share% (bottom row) · Green cell = above avg, red = below avg for the period · Period trend = newest share − oldest share</div>`;
+
+  return summaryLine + table;
+}
+
+// ── CATEGORY SHARE TREND CHART ─────────────────────────────────────────────
+// Line chart: x = weeks oldest→newest, y = share%, one line per category
+function buildCatShareChart(wi, nWeeks) {
+  nWeeks = nWeeks || catNWeeks;
+  const weeks  = getWeeks();
+  const cats   = ['STI','ED+','PE+','ED+PE+','NSSD','oth'];
+  const names  = {STI:'STI','ED+':'ED+','PE+':'PE+','ED+PE+':'ED+PE+',NSSD:'NSSD',oth:'Others'};
+  const colors = {STI:'#0ea5e9','ED+':'#8b5cf6','PE+':'#10b981','ED+PE+':'#f59e0b',NSSD:'#ef4444',oth:'#64748b'};
+
+  const wkWindow = weeks.slice(wi, Math.min(wi + nWeeks, weeks.length)).reverse(); // oldest first
+
+  const labels = wkWindow.map(w => {
+    const lbl = (JDATA?.week_labels?.[w] || w);
+    const m = lbl.match(/(\d+\s+\w{3})/);
+    return m ? m[1] : w.slice(5);
+  });
+
+  const datasets = cats.map(cat => {
+    const data = wkWindow.map(w => {
+      const c   = JDATA?.all?.weekly_total?.by_cat?.[w] || {};
+      const tot = cats.reduce((s,x) => s+(c[x]||0), 0);
+      return tot > 0 ? parseFloat(((c[cat]||0)/tot*100).toFixed(2)) : null;
+    });
+    return {
+      label: names[cat],
+      data,
+      borderColor: colors[cat],
+      backgroundColor: colors[cat] + '18',
+      pointRadius: 3,
+      pointHoverRadius: 5,
+      tension: 0.35,
+      fill: false,
+      borderWidth: 2,
+    };
+  });
+
+  if (charts.catShare) { try { charts.catShare.destroy(); } catch(e) {} delete charts.catShare; }
+  const canvas = document.getElementById('chartCatShare');
+  if (!canvas) return;
+
+  charts.catShare = new Chart(canvas, {
+    type: 'line',
+    data: { labels, datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode:'index', intersect:false },
+      plugins: {
+        legend: {
+          position:'right',
+          labels:{ font:{size:10}, boxWidth:12, padding:8 }
+        },
+        tooltip: {
+          callbacks: {
+            label: ctx => ` ${ctx.dataset.label}: ${ctx.parsed.y!=null?ctx.parsed.y.toFixed(1)+'%':'—'}`
+          }
+        }
+      },
+      scales: {
+        y: {
+          title:{ display:true, text:'Market share %', font:{size:10} },
+          ticks:{ callback:v=>v+'%', font:{size:10} },
+          min: 0,
+          grid:{ color:'#f1f5f9' }
+        },
+        x: { ticks:{ font:{size:9.5} }, grid:{ display:false } }
+      }
+    }
+  });
+}
+
+// ── CATEGORY BREAKDOWN INTERACTIVE RE-RENDER ──────────────────────────────
+// Called by week-range buttons; updates only the category section
+function renderCatBreakdown(n) {
+  catNWeeks = n;
+  // Update button active states
+  [4, 8, 12, 999].forEach(k => {
+    const btn = document.getElementById('cwb' + (k === 999 ? 'All' : k));
+    if (btn) btn.classList.toggle('active', k === n);
+  });
+  document.getElementById('categoryBreakdown').innerHTML = buildCategoryBreakdown(reportWkIdx, n);
+  buildCatShareChart(reportWkIdx, n);
 }
 
 // ── OFFLINE FUNNEL STAGE DETAIL ─────────────────────────────────────────────
@@ -2701,7 +2851,8 @@ function renderReport() {
   // Full funnel waterfall + channel funnel + category breakdown
   document.getElementById('funnelWaterfall').innerHTML = buildFunnelWaterfall(allCur, allPrev, l0BkCur, l0BkPrev, wi);
   document.getElementById('channelFunnelComparison').innerHTML = buildChannelFunnelComparison(wi);
-  document.getElementById('categoryBreakdown').innerHTML = buildCategoryBreakdown(wi);
+  document.getElementById('categoryBreakdown').innerHTML = buildCategoryBreakdown(wi, catNWeeks);
+  buildCatShareChart(wi, catNWeeks);
 
   // Root cause matrix (all dimensions — overview in Overall tab)
   document.getElementById('rootCauseMatrix').innerHTML = buildRootCauseMatrix(allCur, allPrev, offCur, offPrev, onCur, onPrev, curCh, prevCh);
