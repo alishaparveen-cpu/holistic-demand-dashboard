@@ -149,6 +149,7 @@ html,body{background:#f8fafc;color:var(--ink);font-family:ui-sans-serif,system-u
 </div>
 
 <!-- ═══ MAIN ═══ -->
+<div id="p0banner" style="max-width:1280px;margin:16px auto 0;padding:0 20px;"></div>
 <div style="max-width:1280px;margin:0 auto;padding:20px;" id="root">
   <div class="loading">Loading demand data…</div>
 </div>
@@ -2973,6 +2974,38 @@ function setMet(met) {
   render();
 }
 
+// ── P0 RISK BANNER (auto-surfaces the most urgent WoW issue) ────────────────
+function renderP0Banner() {
+  const el = document.getElementById('p0banner');
+  if (!el || !JDATA) return;
+  const wf = JDATA.all?.weekly_funnel || {};
+  const cur = wf[ALL_WEEKS[0]] || {}, prev = wf[ALL_WEEKS[1]] || {};
+  const checks = [
+    { name: 'Calls Done', c: cur.calls_done,  p: prev.calls_done,  pct: true },
+    { name: 'Bookings',   c: cur.new_bookings, p: prev.new_bookings, pct: true },
+    { name: 'B2D%',       c: cur.b2d_pct,      p: prev.b2d_pct,      pct: false },
+  ];
+  let worst = null;
+  checks.forEach(k => {
+    if (k.c == null || k.p == null || !k.p) return;
+    const d = k.pct ? (k.c - k.p) / k.p * 100 : (k.c - k.p);
+    if (worst === null || d < worst.d) worst = { ...k, d };
+  });
+  const lbl = cur.label || ALL_WEEKS[0];
+  if (!worst) { el.innerHTML = ''; return; }
+  const sev = worst.pct ? (worst.d <= -15 ? 'P0' : worst.d <= -10 ? 'P1' : worst.d <= -5 ? 'WATCH' : 'OK')
+                        : (worst.d <= -3 ? 'P1' : worst.d <= -1.5 ? 'WATCH' : 'OK');
+  if (sev === 'OK') {
+    el.innerHTML = `<div style="background:#ecfdf5;border:1px solid #6ee7b7;border-radius:10px;padding:10px 16px;font-size:13px;color:#065f46;">✓ Demand healthy this week (${lbl}). All key metrics within normal range vs last week.</div>`;
+    return;
+  }
+  const C = { P0:['#fef2f2','#fca5a5','#991b1b','⚠️ P0'], P1:['#fffbeb','#fcd34d','#92400e','⚠️ P1'], WATCH:['#fffbeb','#fde68a','#92400e','• Watch'] }[sev];
+  const dtxt = worst.pct ? `${worst.d.toFixed(0)}% WoW` : `${worst.d.toFixed(1)}pp WoW`;
+  el.innerHTML = `<div style="background:${C[0]};border:1px solid ${C[1]};border-radius:10px;padding:11px 16px;font-size:13px;color:${C[2]};display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+    <b>${C[3]} this week (${lbl}):</b> ${worst.name} ${worst.d < 0 ? 'fell' : 'changed'} ${dtxt}.
+    <a href="diagnostic.html" style="margin-left:auto;color:${C[2]};font-weight:600;text-decoration:underline;">See full diagnostic →</a></div>`;
+}
+
 // ── INIT ──────────────────────────────────────────────────────────────────
 async function init() {
   try {
@@ -3006,6 +3039,7 @@ async function init() {
     });
 
     render();
+    renderP0Banner();
 
     // Load total leads from L0 sheet (non-blocking, shares cache with efficiency tab)
     loadTotalLeads().then(() => {
