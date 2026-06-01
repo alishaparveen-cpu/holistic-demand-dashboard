@@ -110,6 +110,8 @@ let activeCh    = 'ALL';
 let viewMode    = 'abs';
 let activeWkIdx = 0;   // 0 = newest week; counts back from end of weeks array
 let charts      = {};
+let sortKey     = 'b2d';   // comparison table sort column
+let sortDir     = -1;      // 1 = asc, -1 = desc
 
 function S() { return DATA[activeScope]; }
 
@@ -420,8 +422,25 @@ function renderAllChannels(weeks, wkLabels) {
   </div>`;
 
   // B2D comparison table
+  const sortVal = (st) => {
+    switch (sortKey) {
+      case 'name':  return st.ch;
+      case 'calls': return st.latestCalls||0;
+      case 'wow':   return st.wowCalls==null?-Infinity:st.wowCalls;
+      case 'share': return st.latestVolShare||0;
+      case 'b2d':   return st.latestB2d==null?-Infinity:st.latestB2d;
+      case 'b2dt':  return st.b2dTrend==null?-Infinity:st.b2dTrend;
+      case 'volt':  return st.volTrend==null?-Infinity:st.volTrend;
+      default:      return st.latestB2d||0;
+    }
+  };
   const b2dRows = stats
-    .sort((a,b)=>(b.latestB2d||0)-(a.latestB2d||0))
+    .slice()
+    .sort((a,b)=>{
+      const va = sortVal(a), vb = sortVal(b);
+      if (typeof va === 'string') return sortDir * va.localeCompare(vb);
+      return sortDir * (va - vb);
+    })
     .map(st => {
       const m   = CH_META[st.ch]||CH_META.Others;
       const sig = getSignal(st);
@@ -459,18 +478,18 @@ function renderAllChannels(weeks, wkLabels) {
     <div class="card" style="padding:0;overflow:hidden;">
       <div style="padding:14px 20px;border-bottom:1px solid var(--line);">
         <div style="font-size:14px;font-weight:700;">Channel Comparison — All Metrics</div>
-        <div style="font-size:11px;color:var(--muted);margin-top:2px;">${lastWkLbl} · sortable · ${activeScope} scope</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:2px;">${lastWkLbl} · ${activeScope} scope · click a column to sort (${sortDir<0?'high→low':'low→high'})</div>
       </div>
       <div style="overflow-x:auto;">
       <table class="tbl">
         <thead><tr>
-          <th>Channel</th>
-          <th class="r">Calls Done</th>
-          <th class="r">WoW</th>
-          <th class="r">Vol Share</th>
-          <th class="r">B2D %</th>
-          <th class="r">B2D Trend</th>
-          <th class="r">Vol Growth</th>
+          <th onclick="setSort('name')" style="cursor:pointer;">Channel${sortArrow('name')}</th>
+          <th class="r" onclick="setSort('calls')" style="cursor:pointer;">Calls Done${sortArrow('calls')}</th>
+          <th class="r" onclick="setSort('wow')" style="cursor:pointer;">WoW${sortArrow('wow')}</th>
+          <th class="r" onclick="setSort('share')" style="cursor:pointer;">Vol Share${sortArrow('share')}</th>
+          <th class="r" onclick="setSort('b2d')" style="cursor:pointer;">B2D %${sortArrow('b2d')}</th>
+          <th class="r" onclick="setSort('b2dt')" style="cursor:pointer;">B2D Trend${sortArrow('b2dt')}</th>
+          <th class="r" onclick="setSort('volt')" style="cursor:pointer;">Vol Growth${sortArrow('volt')}</th>
           <th class="r">Signal</th>
           <th>${weeks.length}wk Trend</th>
         </tr></thead>
@@ -861,6 +880,15 @@ function setMode(m) {
   viewMode = m;
   document.getElementById('modeAbs').classList.toggle('active', m==='abs');
   document.getElementById('modeShare').classList.toggle('active', m==='share');
+  render();
+}
+function sortArrow(key) {
+  if (sortKey !== key) return '<span style="color:#cbd5e1;font-size:9px;"> ⇅</span>';
+  return `<span style="color:#6366f1;font-size:10px;"> ${sortDir<0?'▼':'▲'}</span>`;
+}
+function setSort(key) {
+  if (sortKey === key) { sortDir = -sortDir; }
+  else { sortKey = key; sortDir = (key === 'name') ? 1 : -1; }
   render();
 }
 
