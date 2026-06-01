@@ -156,6 +156,9 @@ html,body{background:#f8fafc;color:var(--ink);font-family:ui-sans-serif,system-u
       <div class="kpi-card" id="kpiCPL"></div>
     </div>
 
+    <!-- Availability-Indexed Bookings — first lens -->
+    <div id="overallAvailPanel"></div>
+
     <!-- Executive Summary -->
     <div class="section-card" id="execSummaryCard">
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
@@ -273,6 +276,9 @@ html,body{background:#f8fafc;color:var(--ink);font-family:ui-sans-serif,system-u
       <div class="kpi-card" id="kpiOfflineNS"></div>
     </div>
 
+    <!-- Availability-Indexed Bookings — offline first lens -->
+    <div id="offlineAvailPanel"></div>
+
     <!-- Offline key finding -->
     <div id="offlineKeyFinding"></div>
 
@@ -368,6 +374,9 @@ html,body{background:#f8fafc;color:var(--ink);font-family:ui-sans-serif,system-u
       <div class="kpi-card" id="kpiOnlineNS"></div>
     </div>
 
+    <!-- Availability-Indexed Bookings — online first lens -->
+    <div id="onlineAvailPanel"></div>
+
     <!-- Online key finding -->
     <div id="onlineKeyFinding"></div>
 
@@ -435,6 +444,14 @@ const L0_CACHE_KEY = 'allo_report_l0_v3';  // bumped: GMB derive fallback + lowe
 const L0_CACHE_TTL = 45 * 60 * 1000;
 const L0_WEEK_COLS = [2, 3, 4, 5, 6, 7, 8];  // col 2 = W-1 (May 25-31)
 
+// Booking & Leads trend summary sheet — availability (cols 4-10) + all bookings (cols 20-26)
+const AVAIL_SHEET_ID   = '1bZWGVKu6b4EFPDt3aKHn21gYjdhN1aT1-LT60BFe8g0';
+const AVAIL_SHEET_URL  = `https://docs.google.com/spreadsheets/d/${AVAIL_SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Booking%20and%20Leads%20trend%20summary`;
+// Newest-first week keys matching the sheet's W-1…W-7 columns (update when new week added)
+const AVAIL_SHEET_WEEKS = ['2026-05-25','2026-05-18','2026-05-11','2026-05-04','2026-04-27','2026-04-20','2026-04-13'];
+const AVAIL_CACHE_KEY  = 'allo_report_avail_v1';
+const AVAIL_CACHE_TTL  = 45 * 60 * 1000;
+
 // Section labels in L0 sheet (order matters for boundary detection)
 const L0_SECTIONS = ['<>Organic','GMB+Google','GMB','Google Search','Practo','FB','Justdial','Clinicspots','Others'];
 
@@ -450,7 +467,7 @@ const CH_CFG = [
 const CHANNEL_COLORS = { GMB:'#34A853', Google:'#DB4437', Practo:'#7C3AED', Organic:'#F97316', Meta:'#E1306C', Others:'#64748b' };
 
 // ── STATE ──────────────────────────────────────────────────────────────────
-let JDATA = null, L0 = null, reportWkIdx = 0, charts = {};
+let JDATA = null, L0 = null, AVAIL_DATA = null, reportWkIdx = 0, charts = {};
 
 // ── UTILS ──────────────────────────────────────────────────────────────────
 const wow    = (c,p) => (c==null||p==null||p===0) ? null : (c-p)/p*100;
@@ -516,6 +533,20 @@ async function fetchL0() {
   } catch(e) { return null; }
 }
 
+async function fetchAvailData() {
+  try {
+    const cached = localStorage.getItem(AVAIL_CACHE_KEY);
+    if (cached) { const {ts,text}=JSON.parse(cached); if(Date.now()-ts<AVAIL_CACHE_TTL) return text; }
+  } catch(e) {}
+  try {
+    const r = await fetch(AVAIL_SHEET_URL);
+    if (!r.ok) return null;
+    const text = await r.text();
+    try { localStorage.setItem(AVAIL_CACHE_KEY, JSON.stringify({ts:Date.now(),text})); } catch(e) {}
+    return text;
+  } catch(e) { return null; }
+}
+
 // ── CSV PARSER ─────────────────────────────────────────────────────────────
 function parseCSV(text) {
   const rows = [];
@@ -531,6 +562,44 @@ function parseCSV(text) {
     row.push(cur.trim()); rows.push(row);
   }
   return rows;
+}
+
+// ── AVAILABILITY SHEET PARSER ──────────────────────────────────────────────
+// Cols 4-10 = "wd|we" doctor-days per clinic (weekday | weekend), newest-first
+// Cols 20-26 = SC Offline Booked All (all booking counts), newest-first
+// Returns { totals:{wd,we,allBk each [7]}, byCity:{city:{wd,we,allBk each [7]}} }
+function parseAvailSheet(text) {
+  if (!text) return null;
+  const rows = parseCSV(text);
+  const byCity  = {};
+  const totals  = { wd: Array(7).fill(0), we: Array(7).fill(0), allBk: Array(7).fill(0) };
+  let curCity = '';
+  for (let ri = 3; ri < rows.length; ri++) {
+    const r  = rows[ri];
+    if (!r || r.length < 27) continue;
+    const c0=(r[0]||'').trim(), c1=(r[1]||'').trim(), c2=(r[2]||'').trim();
+    // Track current city
+    if (c1 && !c1.startsWith('<>')) curCity = c1;
+    if (c0 && !c0.startsWith('<>')) curCity = c0;
+    // Skip city-aggregate rows and blank clinic names
+    if (!curCity || c2 === '<>All' || c2 === '<>ALL' || !c2) continue;
+    if (!byCity[curCity]) byCity[curCity] = { wd: Array(7).fill(0), we: Array(7).fill(0), allBk: Array(7).fill(0) };
+    for (let i = 0; i < 7; i++) {
+      const raw   = (r[4 + i]  || '').trim();   // availability: "wd|we"
+      const parts = raw.split('|');
+      const wd    = parseInt(parts[0]) || 0;
+      const we    = parseInt(parts[1]) || 0;
+      const bkRaw = (r[20 + i] || '').replace(/[^\d]/g, '');
+      const bk    = parseInt(bkRaw) || 0;
+      byCity[curCity].wd[i]    += wd;
+      byCity[curCity].we[i]    += we;
+      byCity[curCity].allBk[i] += bk;
+      totals.wd[i]    += wd;
+      totals.we[i]    += we;
+      totals.allBk[i] += bk;
+    }
+  }
+  return { totals, byCity };
 }
 
 // ── L0 FULL PARSER ─────────────────────────────────────────────────────────
@@ -1571,6 +1640,198 @@ function buildRecommendations(allCur, allPrev, offCur, offPrev, onCur, onPrev, c
 }
 
 // ── TAB SWITCHING ──────────────────────────────────────────────────────────
+// ── AVAILABILITY-INDEXED BOOKINGS PANEL ────────────────────────────────────
+// Answers "did bookings drop because of fewer doctor-slots, or despite normal availability?"
+// scope = 'offline' | 'all'  → physical doctor-days from Booking & Leads sheet
+// scope = 'online'            → online-specific context (leads as demand proxy)
+function buildAvailabilityPanel(wi, scope) {
+  const wkKey  = getWeeks()[wi];
+  const wkKey2 = getWeeks()[wi + 1];
+
+  // Shared metric box builder
+  function mBox(label, val, sub, color) {
+    return `<div style="text-align:center;flex:1;min-width:88px;padding:8px 6px;">
+      <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:#94a3b8;margin-bottom:4px;">${label}</div>
+      <div style="font-size:18px;font-weight:800;color:${color||'#0f172a'};line-height:1;">${val}</div>
+      <div style="font-size:10px;color:#64748b;margin-top:3px;line-height:1.4;">${sub||''}</div>
+    </div>`;
+  }
+  const div1 = `<div style="width:1px;background:#e2e8f0;align-self:stretch;margin:4px 0;flex-shrink:0;"></div>`;
+
+  function wowSpan(v) {
+    if (v == null) return '';
+    const c = Math.abs(v)<=5?'#059669':Math.abs(v)<=15?'#d97706':'#dc2626';
+    return `<span style="color:${c};font-weight:700;">${v>=0?'▲':'▼'}${Math.abs(v).toFixed(0)}%</span>`;
+  }
+  function vsSpan(v) {
+    if (v == null) return '';
+    const c = v>=-5?'#059669':v>=-15?'#d97706':'#dc2626';
+    return `<span style="color:${c};font-weight:700;">${v>=0?'+':''}${v.toFixed(0)}%</span> vs avg`;
+  }
+  function N(v) { return v!=null ? Math.round(v).toLocaleString('en-IN') : '—'; }
+
+  // ── ONLINE SCOPE: Leads as the availability/demand proxy ─────────────────
+  if (scope === 'online') {
+    const onCur  = getFunnel('online', wkKey);
+    const onPrev = getFunnel('online', wkKey2) || {};
+    const leads  = L0?.overall?.leads?.[wi], leadsP = L0?.overall?.leads?.[wi+1];
+    const bk = onCur.new_bookings, bkP = onPrev.new_bookings;
+    const l2b  = leads&&bk   ? bk/leads*100   : null;
+    const l2bP = leadsP&&bkP ? bkP/leadsP*100 : null;
+    const l2bChg  = l2b!=null&&l2bP!=null ? l2b-l2bP : null;
+    const leadsWow = wow(leads, leadsP), bkWow = wow(bk, bkP);
+
+    // 8wk avg for leads
+    const leadsHist = L0?.overall?.leads ? L0.overall.leads.slice(wi+1).filter(v=>v!=null&&v>0) : [];
+    const leadsAvg8 = leadsHist.length>=2 ? leadsHist.reduce((a,b)=>a+b,0)/leadsHist.length : null;
+    const leadsVsAvg = leadsAvg8&&leads ? (leads/leadsAvg8-1)*100 : null;
+
+    // Diagnosis
+    let dTitle, dText, bg, border;
+    if (!L0) {
+      dTitle='⚠️ L0 sheet not loaded — connect for lead data';
+      dText='Online availability context requires the L0 sheet. B2D% and NS% are available from data.json.';
+      bg='#fffbeb'; border='#fde68a';
+    } else if (leadsVsAvg!=null && leadsVsAvg >= -5) {
+      dTitle='✅ Online lead volume normal — check L2B% and B2D%';
+      dText=`Leads (${N(leads)}) are within 5% of the 8wk avg (${N(leadsAvg8)}). The issue is not demand volume — investigate lead→booking conversion (L2B%) or booking→done (B2D%).`;
+      bg='#f0fdf4'; border='#bbf7d0';
+    } else if (leadsVsAvg!=null && leadsVsAvg >= -20) {
+      dTitle='⚠️ Online leads soft — check Practo / online channels';
+      dText=`Leads (${N(leads)}) are ${Math.abs(leadsVsAvg).toFixed(0)}% below the 8wk avg (${N(leadsAvg8)}). Partial demand softness — also check L2B% and B2D%.`;
+      bg='#fffbeb'; border='#fde68a';
+    } else {
+      dTitle='🔴 Online leads down significantly — demand acquisition issue';
+      dText=`Leads (${N(leads)}) are well below the 8wk avg (${N(leadsAvg8)}${leadsVsAvg!=null?', '+Math.abs(leadsVsAvg).toFixed(0)+'% below':''}). Check Practo listing visibility, Google online campaigns, and organic presence.`;
+      bg='#fef2f2'; border='#fca5a5';
+    }
+
+    const l2bColor = l2b==null?'#94a3b8':l2b>=50?'#059669':l2b>=35?'#d97706':'#dc2626';
+    const l2bChgColor = l2bChg==null?'#94a3b8':l2bChg>=-2?'#059669':l2bChg>=-5?'#d97706':'#dc2626';
+
+    return `<div style="background:${bg};border:1px solid ${border};border-radius:12px;padding:14px 16px;margin-bottom:16px;">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
+        <span style="font-size:15px;">📋</span>
+        <span style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:#1e293b;">Online Demand Context — Leads → L2B → Bookings</span>
+      </div>
+      <div style="display:flex;flex-wrap:wrap;align-items:stretch;gap:0;background:#fff;border-radius:10px;border:1px solid #e2e8f0;overflow:hidden;margin-bottom:10px;">
+        ${mBox('Online Leads',  N(leads),  `${wowSpan(leadsWow)} WoW · avg ${N(leadsAvg8)}`, leadsWow!=null&&leadsWow<-10?'#dc2626':'#0f172a')}
+        ${div1}
+        ${mBox('vs 8wk avg', leadsVsAvg!=null?(leadsVsAvg>=0?'+':'')+leadsVsAvg.toFixed(0)+'%':'—', 'lead volume vs baseline', leadsVsAvg!=null?(leadsVsAvg>=-5?'#059669':leadsVsAvg>=-15?'#d97706':'#dc2626'):'#94a3b8')}
+        ${div1}
+        ${mBox('L2B %', l2b!=null?l2b.toFixed(1)+'%':'—', l2bChg!=null?`<span style="color:${l2bChgColor};font-weight:700;">${l2bChg>=0?'+':''}${l2bChg.toFixed(1)}pp</span> vs prev`:'—', l2bColor)}
+        ${div1}
+        ${mBox('Online Bookings', N(bk), `${wowSpan(bkWow)} WoW`, bkWow!=null&&bkWow<-8?'#dc2626':'#0f172a')}
+      </div>
+      <div style="background:${bg==='#f0fdf4'?'#dcfce7':bg==='#fffbeb'?'#fef9c3':'#fee2e2'};border-radius:8px;padding:10px 14px;">
+        <div style="font-size:12px;font-weight:700;color:#1e293b;margin-bottom:4px;">${dTitle}</div>
+        <div style="font-size:11.5px;color:#374151;line-height:1.7;">${dText}</div>
+      </div>
+    </div>`;
+  }
+
+  // ── OFFLINE / ALL SCOPE: physical doctor-day slots ────────────────────────
+  const sdataIdx = AVAIL_SHEET_WEEKS.indexOf(wkKey);
+
+  if (!AVAIL_DATA || sdataIdx === -1) {
+    return `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:14px 16px;margin-bottom:16px;display:flex;align-items:center;gap:10px;opacity:.75;">
+      <span style="font-size:18px;">📐</span>
+      <div>
+        <div style="font-weight:700;font-size:12px;color:#374151;">Availability-Indexed Bookings</div>
+        <div style="font-size:11px;color:#94a3b8;margin-top:2px;">${!AVAIL_DATA?'Loading availability data from demand tracker sheet…':'Availability data not in window for this week.'}</div>
+      </div>
+    </div>`;
+  }
+
+  const tots = AVAIL_DATA.totals;
+  const wdNow  = tots.wd[sdataIdx],    weNow  = tots.we[sdataIdx];
+  const totalNow = wdNow + weNow;
+  const bkNow    = tots.allBk[sdataIdx];
+
+  // Build 8wk baseline from past weeks in the sheet window
+  let sumWd=0, sumWe=0, sumBk=0, nWks=0;
+  for (let i = sdataIdx+1; i < 7; i++) {
+    const t = tots.wd[i] + tots.we[i];
+    if (t > 0) { sumWd += tots.wd[i]; sumWe += tots.we[i]; sumBk += tots.allBk[i]; nWks++; }
+  }
+
+  if (nWks < 2 || totalNow === 0) {
+    return `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:12px 16px;margin-bottom:16px;">
+      <div style="font-size:11.5px;color:#94a3b8;">Availability panel needs ≥2 weeks of history in the sheet window.</div>
+    </div>`;
+  }
+
+  const avgWd    = sumWd / nWks;
+  const avgWe    = sumWe / nWks;
+  const avgTotal = avgWd + avgWe;
+  const avgRate  = sumBk / (sumWd + sumWe);      // bookings per doctor-day, historical
+  const expectedBk = Math.round(avgRate * totalNow);
+  const gapPct     = expectedBk > 0 ? (bkNow / expectedBk - 1) * 100 : null;
+
+  // WoW and vs-baseline
+  const wdPrev    = sdataIdx+1<7 ? tots.wd[sdataIdx+1]    : 0;
+  const wePrev    = sdataIdx+1<7 ? tots.we[sdataIdx+1]    : 0;
+  const totalPrev = wdPrev + wePrev;
+  const availWow   = totalPrev>0 ? (totalNow-totalPrev)/totalPrev*100 : null;
+  const wdVsAvg    = avgWd   >0  ? (wdNow  -avgWd)  /avgWd  *100 : null;
+  const weVsAvg    = avgWe   >0  ? (weNow  -avgWe)  /avgWe  *100 : null;
+  const totVsAvg   = avgTotal>0  ? (totalNow-avgTotal)/avgTotal*100 : null;
+  const bkWow      = wow(bkNow, tots.allBk[sdataIdx+1]);
+
+  // Verdict
+  let bg, border, diagTitle, diagText, diagBg;
+  if (gapPct == null)   {
+    bg='#f8fafc'; border='#e2e8f0';
+    diagTitle='Insufficient data'; diagText=''; diagBg='#f1f5f9';
+  } else if (gapPct >= -5) {
+    bg='#f0fdf4'; border='#bbf7d0'; diagBg='#dcfce7';
+    diagTitle='✅ Availability explains the booking level — not a demand problem';
+    diagText=`Actual bookings (<strong>${N(bkNow)}</strong>) are within 5% of the availability-adjusted expectation (<strong>${N(expectedBk)}</strong>). The network had ${totalNow < avgTotal ? 'fewer' : 'similar'} doctor-slots this week${totalNow < avgTotal ? `, proportionally reducing expected bookings` : ''}. Check leads and L2B% for secondary confirmation.`;
+  } else if (gapPct >= -20) {
+    bg='#fffbeb'; border='#fde68a'; diagBg='#fef9c3';
+    diagTitle='⚠️ Partial supply effect — but a genuine demand gap also exists';
+    diagText=`Actual (<strong>${N(bkNow)}</strong>) is <strong>${Math.abs(gapPct).toFixed(0)}% below</strong> the availability-adjusted expectation (<strong>${N(expectedBk)}</strong>). Availability partially explains the gap, but demand acquisition or lead→booking conversion also needs investigation. Scroll down to leads and L2B% analysis.`;
+  } else {
+    bg='#fef2f2'; border='#fca5a5'; diagBg='#fee2e2';
+    diagTitle='🔴 Demand/conversion gap — availability alone doesn\'t explain the booking shortfall';
+    diagText=`Actual (<strong>${N(bkNow)}</strong>) is <strong>${Math.abs(gapPct).toFixed(0)}% below</strong> what the slot count alone would predict (<strong>${N(expectedBk)}</strong>). Even accounting for availability changes, bookings are underperforming. The issue is in demand acquisition, leads, or lead→booking conversion — not supply.`;
+  }
+
+  const gapColor = gapPct==null?'#94a3b8':gapPct>=-5?'#059669':gapPct>=-20?'#d97706':'#dc2626';
+  const gapLabel = gapPct!=null ? (gapPct>=0?'+':'')+gapPct.toFixed(0)+'%' : '—';
+
+  return `<div style="background:${bg};border:1px solid ${border};border-radius:12px;padding:14px 16px;margin-bottom:16px;">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
+      <span style="font-size:15px;">📐</span>
+      <span style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:#1e293b;">Availability-Indexed Bookings</span>
+      <span style="font-size:10px;color:#64748b;font-weight:500;">· weekday &amp; weekend doctor-slots vs ${nWks}-week baseline</span>
+      <span style="margin-left:auto;padding:3px 10px;border-radius:999px;font-size:11px;font-weight:800;background:${border};color:${gapColor};">${gapLabel} vs expected</span>
+    </div>
+
+    <div style="display:flex;flex-wrap:wrap;align-items:stretch;gap:0;background:#fff;border-radius:10px;border:1px solid #e2e8f0;overflow:hidden;margin-bottom:10px;">
+      ${mBox('Weekday slots',   wdNow.toString(),   `avg ${Math.round(avgWd)} &nbsp;·&nbsp; ${vsSpan(wdVsAvg)}`, wdVsAvg!=null&&wdVsAvg<-10?'#dc2626':'#0f172a')}
+      ${div1}
+      ${mBox('Weekend slots',   weNow.toString(),   `avg ${Math.round(avgWe)} &nbsp;·&nbsp; ${vsSpan(weVsAvg)}`, weVsAvg!=null&&weVsAvg<-10?'#dc2626':'#0f172a')}
+      ${div1}
+      ${mBox('Total slots',     totalNow.toString(),`avg ${Math.round(avgTotal)} &nbsp;·&nbsp; ${wowSpan(availWow)} WoW`,
+        totalNow<avgTotal*0.9?'#dc2626':totalNow>avgTotal*1.1?'#059669':'#0f172a')}
+      ${div1}
+      ${mBox('Bk/slot rate',    avgRate.toFixed(2), `${nWks}-wk avg rate`)}
+      ${div1}
+      ${mBox('Expected bkgs',   N(expectedBk),      'at baseline rate × slots')}
+      ${div1}
+      ${mBox('Actual bkgs',     N(bkNow),           `${wowSpan(bkWow)} WoW`, bkNow<expectedBk*0.8?'#dc2626':bkNow<expectedBk*0.95?'#d97706':'#0f172a')}
+      ${div1}
+      ${mBox('Demand gap',      gapLabel,           'actual vs expected',     gapColor)}
+    </div>
+
+    <div style="background:${diagBg};border-radius:8px;padding:10px 14px;">
+      <div style="font-size:12px;font-weight:700;color:#1e293b;margin-bottom:4px;">${diagTitle}</div>
+      <div style="font-size:11.5px;color:#374151;line-height:1.7;">${diagText}</div>
+    </div>
+  </div>`;
+}
+
 function switchTab(tab) {
   ['overall','offline','online'].forEach(t => {
     document.getElementById('tab-'+t).style.display = t===tab ? 'block' : 'none';
@@ -2349,6 +2610,11 @@ function renderReport() {
   // Key finding banner
   document.getElementById('keyFindingBanner').innerHTML = buildKeyFinding(allCur, allPrev, offCur, offPrev, allAvg8, offAvg8, l0BkCur, l0BkPrev);
 
+  // ── Availability-Indexed Bookings panels (first lens for each tab) ────────
+  document.getElementById('overallAvailPanel').innerHTML  = buildAvailabilityPanel(wi, 'all');
+  document.getElementById('offlineAvailPanel').innerHTML  = buildAvailabilityPanel(wi, 'offline');
+  document.getElementById('onlineAvailPanel').innerHTML   = buildAvailabilityPanel(wi, 'online');
+
   // ── Overall tab KPIs ─────────────────────────────────────────────────────
   renderKpi('kpiTotalCalls',   'Total Calls Done', allCur.calls_done,   allPrev.calls_done, false,'',0,null, allAvg8);
   renderKpi('kpiNewBookings',  'New Bookings',     l0BkCur,             l0BkPrev,           false,'',0,null, bkAvg8);
@@ -2467,8 +2733,16 @@ async function init() {
     }
   });
 
+  // Load Booking & Leads sheet for availability data — re-render when ready
+  fetchAvailData().then(text => {
+    if (text) {
+      AVAIL_DATA = parseAvailSheet(text);
+      if (JDATA) renderReport();
+    }
+  });
+
   buildWeekSelector();
-  renderReport();  // First render (L0 may arrive after)
+  renderReport();  // First render (L0/AVAIL may arrive after)
 }
 
 init();
