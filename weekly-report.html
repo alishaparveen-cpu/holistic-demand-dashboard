@@ -82,7 +82,10 @@ html,body{background:#f8fafc;color:var(--ink);font-family:ui-sans-serif,system-u
 .cat-wk-btn{padding:3px 9px;font-size:11px;font-weight:700;border:1px solid #e2e8f0;background:#fff;color:#64748b;
   border-radius:6px;cursor:pointer;transition:all .12s;}
 .cat-wk-btn.active{background:#6366f1;color:#fff;border-color:#6366f1;}
-.cat-wk-btn:hover:not(.active){background:#f1f5f9;color:#0f172a;}
+.cat-wk-btn:hover:not(.active):not(:disabled){background:#f1f5f9;color:#0f172a;}
+.cat-wk-btn:disabled{opacity:.35;cursor:not-allowed;}
+.cat-wk-select{font-size:11px;padding:3px 22px 3px 7px;border:1px solid #e2e8f0;border-radius:6px;
+  color:#0f172a;background:#fff;cursor:pointer;font-weight:600;max-width:160px;}
 @media print{
   .no-print{display:none!important;}
   .tab-bar{display:none!important;}
@@ -239,17 +242,24 @@ html,body{background:#f8fafc;color:var(--ink);font-family:ui-sans-serif,system-u
 
     <!-- Category Breakdown — Market Share Trend -->
     <div class="section-card">
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;flex-wrap:wrap;">
+      <!-- Title row -->
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
         <span style="font-size:16px;">🏷</span>
         <span class="sec-title">Category Breakdown — Market Share Trend</span>
-        <span class="sec-sub">STI · ED+ · PE+ · NSSD · Others — track mix shift over time to see campaign impact</span>
-        <div style="margin-left:auto;display:flex;gap:4px;align-items:center;">
-          <span style="font-size:10px;color:#94a3b8;margin-right:2px;">Show:</span>
-          <button class="cat-wk-btn" id="cwb4"  onclick="renderCatBreakdown(4)">4w</button>
-          <button class="cat-wk-btn active" id="cwb8"  onclick="renderCatBreakdown(8)">8w</button>
-          <button class="cat-wk-btn" id="cwb12" onclick="renderCatBreakdown(12)">12w</button>
-          <button class="cat-wk-btn" id="cwbAll" onclick="renderCatBreakdown(999)">All</button>
-        </div>
+        <span class="sec-sub">STI · ED+ · PE+ · NSSD · Others — track mix shift to see campaign impact</span>
+      </div>
+      <!-- Controls row: week navigator (left) + window length (right) -->
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:14px;flex-wrap:wrap;">
+        <span style="font-size:10px;color:#94a3b8;white-space:nowrap;">Period ending:</span>
+        <button class="cat-wk-btn" id="catNavNewer" onclick="navCatWeek(-1)">← Newer</button>
+        <select id="catWkSelect" class="cat-wk-select" onchange="setCatWeek(+this.value)"></select>
+        <button class="cat-wk-btn" id="catNavOlder" onclick="navCatWeek(1)">Older →</button>
+        <div style="width:1px;height:18px;background:#e2e8f0;margin:0 4px;"></div>
+        <span style="font-size:10px;color:#94a3b8;white-space:nowrap;">Show:</span>
+        <button class="cat-wk-btn" id="cwb4"  onclick="renderCatBreakdown(4)">4w</button>
+        <button class="cat-wk-btn active" id="cwb8"  onclick="renderCatBreakdown(8)">8w</button>
+        <button class="cat-wk-btn" id="cwb12" onclick="renderCatBreakdown(12)">12w</button>
+        <button class="cat-wk-btn" id="cwbAll" onclick="renderCatBreakdown(999)">All</button>
       </div>
       <!-- Share % trend chart -->
       <div style="height:180px;position:relative;margin-bottom:14px;">
@@ -482,7 +492,8 @@ const CH_CFG = [
 const CHANNEL_COLORS = { GMB:'#34A853', Google:'#DB4437', Practo:'#7C3AED', Organic:'#F97316', Meta:'#E1306C', Others:'#64748b' };
 
 // ── STATE ──────────────────────────────────────────────────────────────────
-let JDATA = null, L0 = null, AVAIL_DATA = null, reportWkIdx = 0, catNWeeks = 8, charts = {};
+let JDATA = null, L0 = null, AVAIL_DATA = null, reportWkIdx = 0, catNWeeks = 8, catStartWi = null, charts = {};
+// catStartWi: null = follows reportWkIdx; number = pinned to that week index
 
 // ── UTILS ──────────────────────────────────────────────────────────────────
 const wow    = (c,p) => (c==null||p==null||p===0) ? null : (c-p)/p*100;
@@ -2325,17 +2336,56 @@ function buildCatShareChart(wi, nWeeks) {
   });
 }
 
+// ── CATEGORY WEEK NAVIGATION HELPERS ─────────────────────────────────────
+// catStartWi = null → follows reportWkIdx; number = pinned
+function getCatWi() { return catStartWi ?? reportWkIdx; }
+
+// Populate the week dropdown and update nav button disabled states
+function populateCatWkSelect() {
+  if (!JDATA) return;
+  const weeks = getWeeks();
+  const cur   = getCatWi();
+  const sel   = document.getElementById('catWkSelect');
+  if (sel) {
+    sel.innerHTML = weeks.map((w, i) => {
+      const lbl = (JDATA.week_labels?.[w] || w);
+      return `<option value="${i}"${i===cur?' selected':''}>${lbl}</option>`;
+    }).join('');
+  }
+  // Disable newer → if at most-recent week; disable older ← if at oldest
+  const nb = document.getElementById('catNavNewer');
+  const ob = document.getElementById('catNavOlder');
+  if (nb) nb.disabled = cur <= 0;
+  if (ob) ob.disabled = cur >= weeks.length - 1;
+}
+
+// Navigate the category anchor week by delta (−1 = newer, +1 = older)
+function navCatWeek(delta) {
+  if (!JDATA) return;
+  const weeks = getWeeks();
+  catStartWi  = Math.max(0, Math.min(weeks.length - 1, getCatWi() + delta));
+  renderCatBreakdown(catNWeeks);
+}
+
+// Called by week dropdown onChange
+function setCatWeek(wi) {
+  catStartWi = +wi;
+  renderCatBreakdown(catNWeeks);
+}
+
 // ── CATEGORY BREAKDOWN INTERACTIVE RE-RENDER ──────────────────────────────
 // Called by week-range buttons; updates only the category section
 function renderCatBreakdown(n) {
   catNWeeks = n;
-  // Update button active states
+  // Update window-length button active states
   [4, 8, 12, 999].forEach(k => {
     const btn = document.getElementById('cwb' + (k === 999 ? 'All' : k));
     if (btn) btn.classList.toggle('active', k === n);
   });
-  document.getElementById('categoryBreakdown').innerHTML = buildCategoryBreakdown(reportWkIdx, n);
-  buildCatShareChart(reportWkIdx, n);
+  const wi = getCatWi();
+  document.getElementById('categoryBreakdown').innerHTML = buildCategoryBreakdown(wi, n);
+  buildCatShareChart(wi, n);
+  populateCatWkSelect();
 }
 
 // ── OFFLINE FUNNEL STAGE DETAIL ─────────────────────────────────────────────
@@ -2851,8 +2901,10 @@ function renderReport() {
   // Full funnel waterfall + channel funnel + category breakdown
   document.getElementById('funnelWaterfall').innerHTML = buildFunnelWaterfall(allCur, allPrev, l0BkCur, l0BkPrev, wi);
   document.getElementById('channelFunnelComparison').innerHTML = buildChannelFunnelComparison(wi);
-  document.getElementById('categoryBreakdown').innerHTML = buildCategoryBreakdown(wi, catNWeeks);
-  buildCatShareChart(wi, catNWeeks);
+  const catWi = getCatWi();
+  document.getElementById('categoryBreakdown').innerHTML = buildCategoryBreakdown(catWi, catNWeeks);
+  buildCatShareChart(catWi, catNWeeks);
+  populateCatWkSelect();    // fill dropdown + set disabled states
 
   // Root cause matrix (all dimensions — overview in Overall tab)
   document.getElementById('rootCauseMatrix').innerHTML = buildRootCauseMatrix(allCur, allPrev, offCur, offPrev, onCur, onPrev, curCh, prevCh);
