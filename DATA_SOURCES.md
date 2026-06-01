@@ -252,3 +252,23 @@ https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet={TAB
 ---
 
 *Last updated: 2026-06-01 (v3) — weekly-report.html: "New Bookings" KPI, exec summary, and KEY FINDING banner now use `L0.overall.bookings[wi]` (row 8 of L0 sheet, the team-tracked value ≈ 1652) instead of data.json `new_bookings` (Redshift COMPLETED+NO_SHOW, a different metric ≈ 1970). 8wk avg for bookings also computed from L0 array when available. `add_new_week.py` corrected: `ALL_BOOKINGS = 1652` (was 1794). `L0_CACHE_KEY = 'allo_report_l0_v3'` unchanged.*
+
+---
+
+## 6. diagnosis.json — sheet-exact weekly RCA (Diagnosis page)
+
+```
+demand tracker .xlsx (Book2Done_Raw_Data, Leads_Raw)  +  Redshift roster_slots
+   └─ build_diagnosis.py  → diagnosis.json  → diagnosis.html
+```
+
+Rebuilt on the **tracker sheet's own L0 logic** (reconciles to the sheet to the row):
+- **Bookings** = `Book2Done_Raw_Data` where `apt_create_dt` in week **AND `phone_rank = 1`** (new-patient dedup, no status filter)
+- **Channel** = `Source final` (sheet's phone-line waterfall: Practo → Google Ad-Mapping → FB lines → GMB → Organic)
+- **Online/Offline** = `locality = 'Online'`; **Category** = `diag_cat`
+- **Leads** = `Leads_Raw` by `created_on_date`, channel via `Source Final` (rolling ~6-wk window → 5-wk baseline)
+- **Availability** (active-days) = Redshift `roster_slots` (≥60 min realized/bookable SC) — the only non-sheet input
+
+Every clinic is classified **Availability / L2B Conversion / Growing / Stable** via the
+weekend-weighted demand×availability framework, and bucketed New / Maturing / Mature
+(≥25 bookings/wk & ≥8 wks data). Rebuild: `python3 build_diagnosis.py --sheet-xlsx <export>.xlsx --w6-start <Mon>`.
