@@ -258,6 +258,7 @@ let activeCity   = 'ALL';
 let activeTier   = 'ALL';
 let chWin        = 8;     // Channel Analysis time window (periods), or 'all'
 let chWeekIdx    = -1;    // Channel Analysis end week (-1 = latest)
+let chTier       = 'ALL'; // Channel Analysis tier filter: 'ALL' | 'T1' | 'T2' (T1/T2 from offline geo)
 let cityFromIdx  = 0;     // City section date range (period indices)
 let cityToIdx    = -1;
 let charts       = {};
@@ -267,6 +268,7 @@ let _pcmData     = null;   // {labels, series, channels} stashed for post-render
 function setPcm(k,v){ if(k==='metric')pcmMetric=v; else pcmMode=v; render(); }
 function setChWin(v){ chWin = v; render(); }
 function setChWeek(i){ chWeekIdx = +i; render(); }
+function setChTier(t){ chTier = t; render(); }
 function setCityFrom(i){ cityFromIdx = +i; if(cityToIdx>=0 && cityToIdx<cityFromIdx) cityToIdx=cityFromIdx; render(); }
 function setCityTo(i){ cityToIdx = +i; if(cityToIdx<cityFromIdx) cityFromIdx=cityToIdx; render(); }
 
@@ -827,9 +829,26 @@ function render() {
   const chStart = (chWin==='all') ? 0 : Math.max(0, chEnd - chWin + 1);
   const chPeriods = periods.slice(chStart, chEnd+1);
   const chN4 = Math.min(4, Math.floor(chPeriods.length/2)) || 1;
+  // Per-channel weekly record honouring the Channel-Analysis tier filter.
+  // ALL → all-scope weekly_channel (data.json). T1/T2 → sum CHDATA.offline.city
+  // over the tier's cities (offline calls done; online isn't geo-tagged).
+  const chTierActive = chTier!=='ALL' && CHDATA && CHDATA.offline && CHDATA.offline.city;
+  const _catKeys = DATA.categories || [];
+  const chRec = (wk, ch) => {
+    if(!chTierActive) return scope.weekly_channel?.[wk]?.[ch] || {};
+    const out={total:0}; _catKeys.forEach(c=>out[c]=0);
+    const cityNode = CHDATA.offline.city;
+    for(const city in cityNode){ if(cityTier(city)!==chTier) continue;
+      const rr=cityNode[city]?.[wk]?.[ch]; if(!rr) continue;
+      out.total += rr.total||0; _catKeys.forEach(c=>out[c]+=rr[c]||0); }
+    return out;
+  };
+  const netTotW = wk => chTierActive ? channels.reduce((s,ch)=>s+(chRec(wk,ch).total||0),0) : (scope.weekly_total?.[wk]?.total||0);
+  const netCatW = wk => { if(!chTierActive){ const wt=scope.weekly_total?.[wk]?.by_cat||{}; return cat==='SH'?getSHVal(wt):cat==='ALL'?(scope.weekly_total?.[wk]?.total||0):(wt[cat]||0); }
+    return channels.reduce((s,ch)=>{ const d=chRec(wk,ch); return s+(cat==='SH'?getSHVal(d):cat==='ALL'?(d.total||0):(d[cat]||0)); },0); };
   const channelStats = channels.map(ch => {
-    const totVals = chPeriods.map(p => p.weeks.reduce((s,wk) => s + (scope.weekly_channel?.[wk]?.[ch]?.total||0), 0));
-    const catVals = chPeriods.map(p => p.weeks.reduce((s,wk) => { const d = scope.weekly_channel?.[wk]?.[ch]||{}; return s + (cat==='SH'?getSHVal(d):cat==='ALL'?(d.total||0):(d[cat]||0)); }, 0));
+    const totVals = chPeriods.map(p => p.weeks.reduce((s,wk) => s + (chRec(wk,ch).total||0), 0));
+    const catVals = chPeriods.map(p => p.weeks.reduce((s,wk) => { const d = chRec(wk,ch); return s + (cat==='SH'?getSHVal(d):cat==='ALL'?(d.total||0):(d[cat]||0)); }, 0));
     const rates      = totVals.map((t,i) => t ? catVals[i]/t*100 : null);
     const validR     = rates.filter(v => v != null);
     const avgRate    = validR.length ? validR.reduce((a,b)=>a+b,0)/validR.length : 0;
@@ -841,8 +860,8 @@ function render() {
     const trend      = recentAvg - earlyAvg;
     const avgVol     = totVals.reduce((a,b)=>a+b,0) / totVals.length;
     const avgCat     = catVals.reduce((a,b)=>a+b,0) / catVals.length;
-    const netTots    = chPeriods.map(p => p.weeks.reduce((s,wk) => s + (scope.weekly_total?.[wk]?.total||0), 0));
-    const netCatTots = chPeriods.map(p => p.weeks.reduce((s,wk) => { const wt = scope.weekly_total?.[wk]?.by_cat||{}; return s + (cat==='SH'?getSHVal(wt):cat==='ALL'?(scope.weekly_total?.[wk]?.total||0):(wt[cat]||0)); }, 0));
+    const netTots    = chPeriods.map(p => p.weeks.reduce((s,wk) => s + netTotW(wk), 0));
+    const netCatTots = chPeriods.map(p => p.weeks.reduce((s,wk) => s + netCatW(wk), 0));
     const avgNetVol  = netTots.reduce((a,b)=>a+b,0)    / netTots.length    || 1;
     const avgNetCat  = netCatTots.reduce((a,b)=>a+b,0) / netCatTots.length || 1;
     const volShare   = avgNetVol ? avgVol / avgNetVol * 100 : 0;
@@ -1041,8 +1060,10 @@ function render() {
     ${sect('🔀 Channel Analysis — ' + catDisplayLabel(cat),
       'Per-channel ' + catLabel + ' rate &amp; volume trend · network-wide',
       `<div class="ch-winbar"><span class="tb-lbl">Window</span>${[['1',1],['2',2],['4',4],['8',8],['12',12],['All','all']].map(([l,v])=>`<button class="ch-winpill${(chWin===v||(v==='all'&&chWin==='all'))?' on':''}" onclick="setChWin(${v==='all'?"'all'":v})">${l}${v==='all'?'':' '+pWord}</button>`).join('')}
+        <span class="tb-lbl" style="margin-left:10px;">Tier</span>${[['All','ALL'],['T1','T1'],['T2','T2']].map(([l,v])=>`<button class="ch-winpill${chTier===v?' on':''}" onclick="setChTier('${v}')">${l}</button>`).join('')}
         <span class="tb-lbl" style="margin-left:10px;">End ${pWord}</span><select class="tb-sel" style="padding:3px 7px;" onchange="setChWeek(+this.value)">${periods.map((p,i)=>`<option value="${i}" ${i===chEnd?'selected':''}>${p.label}${i===periods.length-1?' (latest)':''}</option>`).join('')}</select>
         <span style="margin-left:auto;font-size:11px;color:var(--muted);">${periods[chStart].label} → ${periods[chEnd].label} · ${chPeriods.length} ${pWord} · trends &amp; shares reflect this window</span></div>
+       ${chTier!=='ALL' ? `<div style="font-size:11px;color:#4338ca;background:#eef2ff;border-radius:8px;padding:7px 11px;margin-bottom:10px;">Showing <b>${chTier==='T1'?'Tier 1':'Tier 2'}</b> offline cities only — calls done in ${chTier} clinics (online calls aren't geo-tagged, so they're excluded from this view).</div>` : ''}
        <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:14px;">${channelCardsHTML}</div>`)}
 
     ${(()=>{ // ── Channel mix & trends — stacked channel composition over the window ──
