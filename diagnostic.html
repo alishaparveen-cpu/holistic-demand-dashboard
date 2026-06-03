@@ -108,7 +108,8 @@ const MIXCOL='#be185d';
 
 // ═══════════════ STATE ═══════════════
 let JDATA=null, SDATA={}, L0=null, PRACTO={}, ROSTER={};   // PRACTO['City|Clinic'] = [7 weekly counts aligned to WEEKS]; ROSTER['City|Clinic']={hrs:[7],we_hrs:[7]} scheduled bookable hours
-function rosterArr(city,clinic){ return ROSTER[city+'|'+clinic] || {hrs:Array(WEEKS.length).fill(null), we_hrs:Array(WEEKS.length).fill(null), dow:Array(WEEKS.length).fill(null).map(()=>Array(7).fill(0))}; }
+const HOD_HOURS=[9,10,11,12,13,14,15,16,17,18,19,20,21];   // hour-of-day buckets in data_roster.json
+function rosterArr(city,clinic){ return ROSTER[city+'|'+clinic] || {hrs:Array(WEEKS.length).fill(null), we_hrs:Array(WEEKS.length).fill(null), dow:Array(WEEKS.length).fill(null).map(()=>Array(7).fill(0)), hod:Array(WEEKS.length).fill(null).map(()=>Array(HOD_HOURS.length).fill(0))}; }
 let scope='offline';      // 'offline' | 'online'
 let wkIdx=0;              // selected week index (0 = latest)
 let baseMode='peak';      // which baseline "Expected" is measured against (see BASE_OPTS)
@@ -696,6 +697,27 @@ function dayBarsChart(wk, norm){
     </div>`;
   }).join('')}</div>`;
 }
+// Hour-of-day coverage for the selected week: how many days each clock-hour was
+// bookable (0–7). Reveals the actual open window (e.g. only 5–7pm) — far more
+// granular than "active days". hodWk is aligned to HOD_HOURS (9am→9pm).
+function hourCoverageChart(hodWk){
+  const track=46, maxD=7, fmtH=h=>h===12?'12p':h>12?(h-12)+'p':h+'a';
+  const openHrs=HOD_HOURS.filter((h,i)=>(hodWk[i]||0)>0);
+  const span=openHrs.length?`${fmtH(openHrs[0])}–${fmtH(openHrs[openHrs.length-1]+1)}`:'—';
+  return `<div>
+    <div style="display:flex;gap:3px;align-items:flex-end;">${HOD_HOURS.map((h,i)=>{
+      const d=hodWk[i]||0, frac=d/maxD, on=d>0;
+      const col = !on?'#f1f5f9' : d>=5?'#7c3aed' : d>=3?'#a78bfa' : '#ddd6fe';
+      return `<div style="flex:1;text-align:center;" title="${fmtH(h)}: covered ${d} day${d===1?'':'s'} this week">
+        <div style="height:${track}px;display:flex;flex-direction:column;justify-content:flex-end;">
+          <div style="height:${Math.max(on?3:0,Math.round(frac*track))}px;background:${col};border-radius:2px;"></div>
+        </div>
+        <div style="font-size:7.5px;color:${on?'#6d28d9':'#cbd5e1'};font-weight:${on?700:400};margin-top:2px;">${fmtH(h)}</div>
+      </div>`;
+    }).join('')}</div>
+    <div style="font-size:10.5px;color:#475569;margin-top:6px;">Open window this week: <b>${span}</b> · darker bar = more days that hour was covered (max 7). Hours left white were never bookable.</div>
+  </div>`;
+}
 // ── chart zoom: each trend cell registers its content; ⛶ opens a large modal ──
 let _zoomCharts={}, _zoomSeq=0;
 function zoomTrend(id){
@@ -743,13 +765,21 @@ function renderDeepDive(r){
   const dowNorm = ros.dow ? [0,1,2,3,4,5,6].map(di=>avg(ros.dow.slice(wkIdx+1,wkIdx+6).map(wd=>(wd&&wd[di])||0))) : null;
   const hasDow = dowWk && dowWk.some(x=>x>0);
   const zeroDays = hasDow ? ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].filter((d,i)=>(dowWk[i]||0)===0 && (dowNorm[i]||0)>=0.5) : [];
+  // hour-of-day coverage for the selected week
+  const hodWk = (ros.hod && ros.hod[wkIdx]) ? ros.hod[wkIdx] : null;
+  const hasHod = hodWk && hodWk.some(x=>x>0);
   const dayBlock = hasDow ? `
     <div style="margin-top:10px;">
       <div style="font-size:11px;font-weight:700;color:#0f172a;margin-bottom:1px;">This week, day by day <span style="font-weight:500;color:#94a3b8;">— scheduled bookable hours</span></div>
       <div style="font-size:10px;color:#94a3b8;margin-bottom:7px;">Each bar = hours the doctor was bookable that day · dashed line = that day's recent norm.</div>
       ${dayBarsChart(dowWk, dowNorm)}
       ${zeroDays.length?`<div style="font-size:10.5px;color:#dc2626;margin-top:7px;"><b>No cover on ${zeroDays.join(', ')}</b> this week — ${zeroDays.length>1?'days':'a day'} the clinic normally sits. That's where the lost slots are.</div>`:'<div style="font-size:10.5px;color:#059669;margin-top:7px;">Every usual day had some cover this week.</div>'}
-    </div>` : '';
+    </div>
+    ${hasHod?`<div style="margin-top:12px;">
+      <div style="font-size:11px;font-weight:700;color:#0f172a;margin-bottom:1px;">By hour of day <span style="font-weight:500;color:#94a3b8;">— when was the clinic actually open?</span></div>
+      <div style="font-size:10px;color:#94a3b8;margin-bottom:7px;">Which clock-hours had bookable slots this week (and on how many days).</div>
+      ${hourCoverageChart(hodWk)}
+    </div>`:''}` : '';
   const rosBlock = hasRoster ? `
     <div style="margin-top:12px;border-top:1px dashed var(--line);padding-top:11px;">
       <div style="font-size:12px;font-weight:700;color:#0f172a;margin-bottom:2px;">🗓️ Scheduled bookable hours <span style="font-weight:500;color:#94a3b8;">(roster · Redshift)</span></div>
