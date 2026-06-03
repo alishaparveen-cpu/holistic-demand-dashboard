@@ -160,8 +160,10 @@ let matF='all';           // 'all' | 'New' | 'Maturing' | 'Mature'
 let tierF='all';          // 'all' | 'T1' | 'T2'
 let selClinic='';         // "City|Clinic" — single-clinic deep-dive (empty = network)
 let leadsAvg=false;       // leads chart: show per-series average lines (toggle)
+let leadsGran=false;      // leads chart: granular sources (GMB/Google Ad/Organic/FB/Justdial) vs grouped
 let trendWin='all';       // trend window: number of most-recent weeks to show, or 'all'
 function toggleLeadsAvg(){ leadsAvg=!leadsAvg; render(); }
+function toggleLeadsGran(){ leadsGran=!leadsGran; render(); }
 function setTrendWin(n){ trendWin=n; render(); }
 
 // ═══════════════ PARSERS ═══════════════
@@ -256,9 +258,17 @@ function deltaTag(v,suf,inv){ const c=dCol(v,inv); return `<b style="color:${c}"
 //   bookings measured vs recent PEAK; leads & availability vs prior-5-week avg.
 function rcaClinic(city, clinic){
   const W=wkIdx, d=SDATA[city][clinic]._total;
-  const bk=d.allBk, gmb=d.gmbLeads, av=d.avail, we=d.weekend;
-  const pr=practoArr(city,clinic);                       // Practo leads per week
-  const ld=gmb.map((g,i)=>g+(pr[i]||0));                 // total inbound leads = GMB+Google + Practo
+  const bk=d.allBk, av=d.avail, we=d.weekend;
+  const pr=practoArr(city,clinic);                       // Practo leads per week (external sheet)
+  // ── leads: prefer Redshift (data_leads.json) over the sheet, so the chart, the
+  //    RCA and the lead-loss drill all use ONE source. gmb = GMB+Google Ad. ──
+  const _rl=LEADS[city+'|'+clinic], _slc=a=>(a||[]).slice(0,WEEKS.length);
+  const useRedshift=!!_rl;
+  const gmbOnly=_slc(_rl&&_rl.gmb), gAd=_slc(_rl&&_rl.google_ad), org=_slc(_rl&&_rl.organic), fbA=_slc(_rl&&_rl.fb), jdA=_slc(_rl&&_rl.justdial), othA=_slc(_rl&&_rl.others);
+  const gmb = useRedshift ? gmbOnly.map((g,i)=>(g||0)+(gAd[i]||0)) : d.gmbLeads;   // GMB + Google Ad (Redshift) or sheet GMB+Google
+  const orgArr = useRedshift ? org : Array(WEEKS.length).fill(0);
+  const othLeads = useRedshift ? fbA.map((f,i)=>(f||0)+(jdA[i]||0)+(othA[i]||0)) : Array(WEEKS.length).fill(0);
+  const ld = gmb.map((g,i)=>(g||0) + (orgArr[i]||0) + (othLeads[i]||0) + (pr[i]||0));  // total inbound leads
   const wd=av.map((a,i)=>a-(we[i]||0));                  // weekday active-days = total − weekend
   const sl=a=>dimSlice(a,W);
   const bk_w=bk[W], bk_peak=Math.max(bk[W+1]||0, bk[W+2]||0), bk_avg=avg(sl(bk));
@@ -317,7 +327,8 @@ function rcaClinic(city, clinic){
           gmb_w,gmb_avg,pr_w,pr_avg,wd_w,wd_avg,
           leadsBroke,actBroke,weBroke,availBroke,cause,mixWith,comp,L,mat,note,
           bkPerDay,weLost,wdLost,leadsLoss_gmb,leadsLoss_pr,expectedIfFull,
-          bkArr:bk,ldArr:ld,avArr:av,weArr:we,gmbArr:gmb,prArr:pr,wdArr:wd};
+          bkArr:bk,ldArr:ld,avArr:av,weArr:we,gmbArr:gmb,prArr:pr,wdArr:wd,
+          orgArr:orgArr, gmbOnlyArr:gmbOnly, gAdArr:gAd, fbArr:fbA, jdArr:jdA, othArr:othA, useRedshiftLeads:useRedshift};
 }
 function allClinicRCA(){
   const out=[];
@@ -993,11 +1004,22 @@ function renderDeepDive(r){
     ${winBar}
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,1fr));gap:14px;">
       ${trend('📅 Bookings', spark(rev(r.bkArr),'#4f46e5',hi,null,r.bkBase), 'new-patient SC bookings/week · dashed = expected')}
-      ${trend('🔎 Leads — where the gap is', sparkMulti([
-          {vals:rev(r.ldArr), color:'#0ea5e9', label:'Total', width:2.5},
-          {vals:rev(r.gmbArr), color:'#6366f1', label:'GMB+Google'},
-          {vals:rev(r.prArr), color:'#f59e0b', label:'Practo'}], hi, leadsAvg),
-        'one total line + the two sources, so you see which channel moved · <span onclick="event.stopPropagation();toggleLeadsAvg()" style="cursor:pointer;color:'+(leadsAvg?'#4f46e5':'#94a3b8')+';font-weight:700;border:1px solid '+(leadsAvg?'#4f46e5':'var(--line)')+';border-radius:6px;padding:1px 7px;">'+(leadsAvg?'✓ ':'+ ')+'avg line</span>')}
+      ${trend('🔎 Leads — where the gap is', sparkMulti(
+          leadsGran ? [
+            {vals:rev(r.gmbOnlyArr), color:'#6366f1', label:'GMB', width:2},
+            {vals:rev(r.gAdArr), color:'#DB4437', label:'Google Ad'},
+            {vals:rev(r.orgArr), color:'#10b981', label:'Organic'},
+            {vals:rev(r.fbArr), color:'#E1306C', label:'FB'},
+            {vals:rev(r.jdArr), color:'#64748b', label:'Justdial'},
+            {vals:rev(r.prArr), color:'#f59e0b', label:'Practo'}]
+          : [
+            {vals:rev(r.ldArr), color:'#0ea5e9', label:'Total', width:2.5},
+            {vals:rev(r.gmbArr), color:'#6366f1', label:'GMB+Google Ad'},
+            {vals:rev(r.orgArr), color:'#10b981', label:'Organic'},
+            {vals:rev(r.prArr), color:'#f59e0b', label:'Practo'}], hi, leadsAvg),
+        (r.useRedshiftLeads?'Redshift':'sheet')+' leads · GMB+Google Ad, Organic, Practo'
+        +' · <span onclick="event.stopPropagation();toggleLeadsGran()" style="cursor:pointer;color:'+(leadsGran?'#4f46e5':'#94a3b8')+';font-weight:700;border:1px solid '+(leadsGran?'#4f46e5':'var(--line)')+';border-radius:6px;padding:1px 7px;">'+(leadsGran?'✓ ':'+ ')+'split sources</span>'
+        +' <span onclick="event.stopPropagation();toggleLeadsAvg()" style="cursor:pointer;color:'+(leadsAvg?'#4f46e5':'#94a3b8')+';font-weight:700;border:1px solid '+(leadsAvg?'#4f46e5':'var(--line)')+';border-radius:6px;padding:1px 7px;">'+(leadsAvg?'✓ ':'+ ')+'avg line</span>')}
       ${trend('🩺 Availability — weekday vs weekend', availSplitChart(rev(r.wdArr), rev(r.weArr), hi, r.av_avg),
         'each bar = bookable doctor-days that week, split weekday (dark) + weekend (light) · number on top = total · dashed = norm')}
       ${hasRoster?trend('🗓️ Scheduled hrs', spark(rev(ros.hrs.map(x=>x==null?0:x)),'#0891b2',hi,null,rh_avg), 'roster bookable hours/week (planned)'):''}
