@@ -621,7 +621,7 @@ function spark(vals, color, hiIdx, fmt, refVal){
 // Multi-line sparkline — e.g. Total / GMB+Google / Practo leads on one chart so
 // you can see WHERE a lead gap came from. series=[{vals,color,label,width}].
 function sparkMulti(series, hiIdx){
-  const w=340,h=72,pad=10;
+  const w=340,h=92,pad=12;
   const all=series.flatMap(s=>s.vals.map(x=>x==null?0:x));
   const mn=Math.min(0,...all), mx=Math.max(1,...all), rng=(mx-mn)||1;
   const n=series[0].vals.length;
@@ -632,42 +632,43 @@ function sparkMulti(series, hiIdx){
     const dots=a.map((v,i)=>`<circle cx="${X(i).toFixed(1)}" cy="${Y(v).toFixed(1)}" r="${i===hiIdx?3.4:1.9}" fill="${s.color}"/>`).join('');
     // value label at every point; stagger by series (Total above, others below) so
     // the three lines' numbers don't collide where the lines cross. White halo for legibility.
-    const dy = si===0?-6 : si===1?10:19;
-    const labs=a.map((v,i)=>`<text x="${X(i).toFixed(1)}" y="${(Y(v)+dy).toFixed(1)}" font-size="8" fill="${s.color}" text-anchor="middle" font-weight="${i===hiIdx?800:600}" style="paint-order:stroke;stroke:#fff;stroke-width:2.4px;stroke-linejoin:round;">${v}</text>`).join('');
+    const dy = si===0?-7 : si===1?12:23;
+    const labs=a.map((v,i)=>`<text x="${X(i).toFixed(1)}" y="${(Y(v)+dy).toFixed(1)}" font-size="7.5" fill="${s.color}" text-anchor="middle" font-weight="${i===hiIdx?800:600}" style="paint-order:stroke;stroke:#fff;stroke-width:2.4px;stroke-linejoin:round;">${v}</text>`).join('');
     return `<path d="${path}" fill="none" stroke="${s.color}" stroke-width="${s.width||1.7}" stroke-linejoin="round"/>${dots}${labs}`;
   }).join('');
   const legend=series.map(s=>{ const a=s.vals.map(x=>x==null?0:x);
     return `<span style="font-size:10px;color:#475569;font-weight:600;margin-right:11px;white-space:nowrap;"><span style="display:inline-block;width:11px;height:3px;background:${s.color};vertical-align:middle;border-radius:2px;margin-right:4px;"></span>${s.label} <b style="color:${s.color};">${a[hiIdx]}</b></span>`; }).join('');
   return `<div style="margin-bottom:3px;">${legend}</div><svg width="100%" viewBox="0 0 ${w} ${h+4}" style="overflow:visible;">${lines}</svg>`;
 }
-// Availability split (weekday vs weekend doctor-days, stacked) with the bookings
-// line overlaid — makes the weekday/weekend supply story and the booking-rate
-// relationship visible at a glance. wd/we/bk are display-ordered (oldest→newest).
-function availSplitChart(wd, we, bk, hi){
-  const w=340,h=104,pad=14,padB=14;
+// Availability split — a clean stacked bar per week: weekday doctor-days (dark)
+// + weekend doctor-days (light). Each segment and the weekly total are labelled,
+// and a dashed line marks the recent norm. wd/we are display-ordered (old→new).
+function availSplitChart(wd, we, hi, normTot){
+  const w=340,h=112,padX=8,padB=15,padT=15;
   const n=wd.length;
   const tot=wd.map((d,i)=>(d||0)+(we[i]||0));
-  const maxDays=Math.max(1,...tot), maxBk=Math.max(1,...bk);
-  const bw=(w-2*pad)/n*0.56;
-  const X=i=>pad+(i+0.5)/n*(w-2*pad);
+  const mx=Math.max(1,...tot, normTot||0)*1.14;
+  const bw=(w-2*padX)/n*0.6;
+  const X=i=>padX+(i+0.5)/n*(w-2*padX);
   const base=h-padB;
-  const Yd=v=>base-(v/maxDays)*(base-pad);
-  const Yb=v=>base-(v/maxBk)*(base-pad);
-  const bars=tot.map((t,i)=>{ const x=(X(i)-bw/2).toFixed(1); const wdTop=Yd(wd[i]||0), weTop=Yd(t), hl=i===hi;
-    return `<rect x="${x}" y="${wdTop.toFixed(1)}" width="${bw.toFixed(1)}" height="${(base-wdTop).toFixed(1)}" fill="#7c3aed" opacity="${hl?1:.78}" rx="1.5"/>`+
-           `<rect x="${x}" y="${weTop.toFixed(1)}" width="${bw.toFixed(1)}" height="${(wdTop-weTop).toFixed(1)}" fill="#d8b4fe" opacity="${hl?1:.8}" rx="1.5"/>`;
+  const Y=v=>base-(v/mx)*(base-padT);
+  const normY=(normTot&&normTot>0)?Y(normTot):null;
+  const norm=normY!=null?`<line x1="${padX}" y1="${normY.toFixed(1)}" x2="${w-padX}" y2="${normY.toFixed(1)}" stroke="#94a3b8" stroke-width="1" stroke-dasharray="3 3"/><text x="${w-padX}" y="${(normY-3).toFixed(1)}" font-size="8" fill="#94a3b8" text-anchor="end">norm ${r1(normTot)}</text>`:'';
+  const bars=tot.map((t,i)=>{
+    const x=X(i)-bw/2, wdv=wd[i]||0, wev=we[i]||0, hl=i===hi;
+    const wdTop=Y(wdv), totTop=Y(t), wdH=base-wdTop, weH=wdTop-totTop;
+    let s='';
+    if(wdv>0) s+=`<rect x="${x.toFixed(1)}" y="${wdTop.toFixed(1)}" width="${bw.toFixed(1)}" height="${wdH.toFixed(1)}" fill="#7c3aed" opacity="${hl?1:.82}" rx="2"/>`;
+    if(wev>0) s+=`<rect x="${x.toFixed(1)}" y="${totTop.toFixed(1)}" width="${bw.toFixed(1)}" height="${weH.toFixed(1)}" fill="#c4b5fd" opacity="${hl?1:.88}" rx="2"/>`;
+    if(wdv>0 && wdH>=11) s+=`<text x="${X(i).toFixed(1)}" y="${(base-wdH/2+3).toFixed(1)}" font-size="8.5" fill="#fff" text-anchor="middle" font-weight="700">${r1(wdv)}</text>`;
+    if(wev>0 && weH>=11) s+=`<text x="${X(i).toFixed(1)}" y="${(totTop+weH/2+3).toFixed(1)}" font-size="8.5" fill="#5b21b6" text-anchor="middle" font-weight="700">${r1(wev)}</text>`;
+    s+=`<text x="${X(i).toFixed(1)}" y="${(totTop-4).toFixed(1)}" font-size="9.5" fill="${hl?'#4c1d95':'#334155'}" text-anchor="middle" font-weight="800">${r1(t)}</text>`;
+    return s;
   }).join('');
-  // total active-days label on top of each bar (purple)
-  const dayLabs=tot.map((t,i)=>`<text x="${X(i).toFixed(1)}" y="${(Yd(t)-3).toFixed(1)}" font-size="8" fill="#6d28d9" text-anchor="middle" font-weight="700" style="paint-order:stroke;stroke:#fff;stroke-width:2.4px;stroke-linejoin:round;">${r1(t)}</text>`).join('');
-  const bkPath=bk.map((v,i)=>(i?'L':'M')+X(i).toFixed(1)+' '+Yb(v).toFixed(1)).join(' ');
-  const bkDots=bk.map((v,i)=>`<circle cx="${X(i).toFixed(1)}" cy="${Yb(v).toFixed(1)}" r="${i===hi?3.6:2.1}" fill="#4f46e5" stroke="#fff" stroke-width="1"/>`).join('');
-  // bookings value at every point (indigo, white halo)
-  const bkLab=bk.map((v,i)=>`<text x="${X(i).toFixed(1)}" y="${(Yb(v)+12).toFixed(1)}" font-size="8.5" fill="#4f46e5" text-anchor="middle" font-weight="${i===hi?800:600}" style="paint-order:stroke;stroke:#fff;stroke-width:2.6px;stroke-linejoin:round;">${v}</text>`).join('');
-  const legend=`<div style="margin-bottom:3px;font-size:10px;color:#475569;font-weight:600;">
-    <span style="margin-right:10px;"><span style="display:inline-block;width:9px;height:9px;background:#7c3aed;border-radius:2px;vertical-align:middle;margin-right:4px;"></span>Weekday days</span>
-    <span style="margin-right:10px;"><span style="display:inline-block;width:9px;height:9px;background:#d8b4fe;border-radius:2px;vertical-align:middle;margin-right:4px;"></span>Weekend days</span>
-    <span><span style="display:inline-block;width:11px;height:3px;background:#4f46e5;border-radius:2px;vertical-align:middle;margin-right:4px;"></span>Bookings</span></div>`;
-  return `${legend}<svg width="100%" viewBox="0 0 ${w} ${h+2}" style="overflow:visible;">${bars}<path d="${bkPath}" fill="none" stroke="#4f46e5" stroke-width="2"/>${bkDots}${bkLab}</svg>`;
+  const legend=`<div style="margin-bottom:4px;font-size:10px;color:#475569;font-weight:600;">
+    <span style="margin-right:12px;"><span style="display:inline-block;width:10px;height:10px;background:#7c3aed;border-radius:2px;vertical-align:middle;margin-right:4px;"></span>Weekday days</span>
+    <span><span style="display:inline-block;width:10px;height:10px;background:#c4b5fd;border-radius:2px;vertical-align:middle;margin-right:4px;"></span>Weekend days</span></div>`;
+  return `${legend}<svg width="100%" viewBox="0 0 ${w} ${h+2}" style="overflow:visible;">${norm}${bars}</svg>`;
 }
 // Per-day-of-week scheduled-hours bars for the selected week. Each day is a bar
 // filled to its actual scheduled hours; the dashed marker is that day's recent
@@ -758,8 +759,12 @@ function renderDeepDive(r){
     ${dayRow('Weekday days', r.wd_avg, r.wd_w, '#7c3aed')}
     ${dayRow('Weekend days', r.we_avg, r.we_w, '#a855f7')}
     <div style="font-size:11.5px;color:#475569;margin-top:8px;line-height:1.55;">
-      Total active-days <b>${r1(r.av_avg)} → ${r1(r.av_w)}</b> (${signed(r1(r.dAct))}). Days lost: <b style="color:#7c3aed">${r1(r.wdLost)} weekday</b> + <b style="color:#a855f7">${r1(r.weLost)} weekend</b>.
-      ${r.weLost>r.wdLost?'The loss is <b>weekend-weighted</b> — the costliest window.':r.wdLost>0.3?'The loss is <b>mid-week</b>.':'Availability broadly held.'}
+      Total active-days <b>${r1(r.av_avg)} → ${r1(r.av_w)}</b> (${signed(r1(r.dAct))}).
+      ${r.availBroke
+        ? `Days lost: <b style="color:#7c3aed">${r1(r.wdLost)} weekday</b> + <b style="color:#a855f7">${r1(r.weLost)} weekend</b>. ${r.weLost>r.wdLost?'The loss is <b>weekend-weighted</b> — the costliest window.':'The loss is <b>mid-week</b>.'}`
+        : (r.weLost>0.3||r.wdLost>0.3)
+          ? `A slight dip (${[r.wdLost>0.3?r1(r.wdLost)+' weekday':'',r.weLost>0.3?r1(r.weLost)+' weekend':''].filter(Boolean).join(' + ')} day) but <b>within normal week-to-week wobble</b> — too small to count as a real availability loss, so it's not blamed below.`
+          : '<b>Availability held</b> — essentially flat vs norm.'}
     </div>
     ${rosBlock}
   </div>`;
@@ -830,8 +835,8 @@ function renderDeepDive(r){
           {vals:rev(r.gmbArr), color:'#6366f1', label:'GMB+Google'},
           {vals:rev(r.prArr), color:'#f59e0b', label:'Practo'}], hi),
         'one total line + the two sources, so you see which channel moved')}
-      ${trend('🩺 Availability split & bookings', availSplitChart(rev(r.wdArr), rev(r.weArr), rev(r.bkArr), hi),
-        'doctor-days split weekday vs weekend (bars) with bookings (line) — booking rate '+r1(rate_w)+' vs norm '+r1(rate_n)+' per doctor-day')}
+      ${trend('🩺 Availability — weekday vs weekend', availSplitChart(rev(r.wdArr), rev(r.weArr), hi, r.av_avg),
+        'each bar = bookable doctor-days that week, split weekday (dark) + weekend (light) · number on top = total · dashed = norm')}
       ${trend('🩺 Active-days', spark(rev(r.avArr),'#7c3aed',hi,null,r.av_avg), 'total bookable doctor-days/week')}
       ${trend('🗓️ Weekend days', spark(rev(r.weArr),'#a855f7',hi,null,r.we_avg), 'weekend bookable days/week')}
       ${hasRoster?trend('🗓️ Scheduled hrs', spark(rev(ros.hrs.map(x=>x==null?0:x)),'#0891b2',hi,null,rh_avg), 'roster bookable hours/week (planned)'):''}
