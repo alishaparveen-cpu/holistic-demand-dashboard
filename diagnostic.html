@@ -1072,7 +1072,7 @@ function renderDeepDive(r){
   const dayBlock = hasDow ? `
     <div style="margin-top:10px;">
       <div style="font-size:11px;font-weight:700;color:#0f172a;margin-bottom:1px;">This week, day by day <span style="font-weight:500;color:#94a3b8;">— scheduled bookable hours</span></div>
-      <div style="font-size:10px;color:#94a3b8;margin-bottom:7px;">Each bar = hours the doctor was bookable that day · dashed line = that day's recent norm.</div>
+      <div style="font-size:10px;color:#94a3b8;margin-bottom:7px;"><b>Why this matters:</b> demand isn't flat across the week — losing a day patients want (often weekends) costs more bookings than a quiet day. Each bar = hours the doctor was bookable that day · dashed line = that day's recent norm.</div>
       ${dayBarsChart(dowWk, dowNorm)}
       ${zeroDays.length?`<div style="font-size:10.5px;color:#dc2626;margin-top:7px;"><b>No cover on ${zeroDays.join(', ')}</b> this week — ${zeroDays.length>1?'days':'a day'} the clinic normally sits. That's where the lost slots are.</div>`:'<div style="font-size:10.5px;color:#059669;margin-top:7px;">Every usual day had some cover this week.</div>'}
     </div>
@@ -1093,13 +1093,18 @@ function renderDeepDive(r){
   const shrBlock = hasShr ? `
     <div style="margin-top:12px;border-top:1px dashed var(--line);padding-top:11px;">
       <div style="font-size:12px;font-weight:700;color:#0f172a;margin-bottom:2px;">✂️ Slots &amp; shrinkage <span style="font-weight:500;color:#94a3b8;">(Screening-Call · doctor-blocked)</span></div>
-      <div style="font-size:10.5px;color:#94a3b8;margin-bottom:8px;">Scheduled slots the doctor then <b>blocked</b> (appointment_blocks) so patients couldn't book them.</div>
+      <div style="font-size:10.5px;color:#94a3b8;margin-bottom:6px;">The roster opens bookable slots; the doctor then <b>blocks</b> some (appointment_blocks) so patients can't book them. The chain for <b>${wl}</b>:</div>
+      <div style="font-size:11px;color:#334155;background:#f8fafc;border-radius:8px;padding:7px 11px;margin-bottom:8px;line-height:1.5;">
+        Roster opened <b>${rh_w==null?'—':r1(rh_w)}h</b> → <b>${sc_w}</b> scheduled slots → doctor blocked <b style="color:#ef4444">${sh_w}</b> (${Math.round(shrPct_w)}%) → <b style="color:#7c3aed">${av_w}</b> slots actually bookable.
+      </div>
       <div style="display:flex;gap:9px;margin-bottom:9px;">
         <div style="flex:1;background:#fff;border:1px solid var(--line);border-radius:9px;padding:8px 10px;"><div style="font-size:9px;text-transform:uppercase;color:#94a3b8;font-weight:700;">Scheduled</div><div style="font-size:18px;font-weight:800;color:#0f172a;">${sc_w}</div><div style="font-size:9px;color:#cbd5e1;">slots</div></div>
         <div style="flex:1;background:#fff;border:1px solid var(--line);border-radius:9px;padding:8px 10px;"><div style="font-size:9px;text-transform:uppercase;color:#94a3b8;font-weight:700;">Shrinkage</div><div style="font-size:18px;font-weight:800;color:${shrColor};">${Math.round(shrPct_w)}%</div><div style="font-size:9px;color:#cbd5e1;">${sh_w} blocked${shrPct_n>0?' · norm '+Math.round(shrPct_n)+'%':''}</div></div>
         <div style="flex:1;background:#fff;border:1px solid var(--line);border-radius:9px;padding:8px 10px;"><div style="font-size:9px;text-transform:uppercase;color:#94a3b8;font-weight:700;">Bookable</div><div style="font-size:18px;font-weight:800;color:#7c3aed;">${av_w}</div><div style="font-size:9px;color:#cbd5e1;">slots left</div></div>
       </div>
+      <div style="font-size:10px;color:#94a3b8;margin:2px 0 3px;">Each bar = <b>one week</b> (last ${winN}) · purple = bookable slots, red = doctor-blocked · number on top = % blocked that week.</div>
       ${shrinkChart(rev(shr.sched), rev(shr.shrunk), rev(shr.avail), hi)}
+      <div style="display:flex;justify-content:space-between;font-size:8.5px;color:#cbd5e1;margin-top:2px;">${weeksRow}</div>
       <div style="font-size:11px;color:#475569;margin-top:7px;line-height:1.5;">
         ${shrPct_w>=40?`<b style="color:#dc2626">Heavy shrinkage</b> — the doctor blocked <b>${Math.round(shrPct_w)}%</b> of scheduled slots (${sh_w} of ${sc_w}), leaving only <b>${av_w}</b> bookable. ${shrPct_w-shrPct_n>10?'Well above its '+Math.round(shrPct_n)+'% norm — a real availability hit this week.':''}`
          : shrPct_w>=20?`Moderate shrinkage — <b style="color:#d97706">${Math.round(shrPct_w)}%</b> of slots blocked (norm ${Math.round(shrPct_n)}%).`
@@ -1119,7 +1124,11 @@ function renderDeepDive(r){
       </div>
     </div>` : `<div style="margin-top:12px;font-size:10.5px;color:#cbd5e1;border-top:1px dashed var(--line);padding-top:9px;">No roster coverage for this clinic in the pull.</div>`;
   const availCard = `<div class="card"><div class="sec-h"><span class="sec-num">🩺</span>Availability — weekday vs weekend</div>
-    <div class="sec-sub">Average bookable doctor-days, split into weekday & weekend (the high-demand window). Faint bar = 5-wk norm, solid = ${wl}.</div>
+    <div class="sec-sub">Bookable doctor-days the clinic was open, split weekday vs weekend.</div>
+    <div style="font-size:10px;color:#94a3b8;margin:-2px 0 8px;display:flex;gap:14px;flex-wrap:wrap;">
+      <span><span style="display:inline-block;width:18px;height:9px;background:#7c3aed33;border-radius:2px;vertical-align:middle;margin-right:4px;"></span>5-week norm</span>
+      <span><span style="display:inline-block;width:18px;height:9px;background:#7c3aed;border-radius:2px;vertical-align:middle;margin-right:4px;"></span>this week (${wl})</span>
+    </div>
     ${dayRow('Weekday days', r.wd_avg, r.wd_w, '#7c3aed')}
     ${dayRow('Weekend days', r.we_avg, r.we_w, '#a855f7')}
     <div style="font-size:11.5px;color:#475569;margin-top:8px;line-height:1.55;">
@@ -1203,21 +1212,16 @@ function renderDeepDive(r){
     ${winBar}
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,1fr));gap:14px;">
       ${trend('📅 Bookings', spark(rev(r.bkArr),'#4f46e5',hi,null,r.bkBase), 'new-patient SC bookings/week · dashed = expected')}
-      ${trend('🔎 Leads — where the gap is', sparkMulti(
+      ${trend('🔎 Leads — total, then where the gap is', sparkMulti(
           leadsGran ? [
-            {vals:rev(r.gmbOnlyArr), color:'#6366f1', label:'GMB', width:2},
-            {vals:rev(r.gAdArr), color:'#DB4437', label:'Google Ad'},
-            {vals:rev(r.orgArr), color:'#10b981', label:'Organic'},
-            {vals:rev(r.fbArr), color:'#E1306C', label:'FB'},
-            {vals:rev(r.jdArr), color:'#64748b', label:'Justdial'},
-            {vals:rev(r.prArr), color:'#f59e0b', label:'Practo'}]
-          : [
             {vals:rev(r.ldArr), color:'#0ea5e9', label:'Total', width:2.5},
             {vals:rev(r.gmbArr), color:'#6366f1', label:'GMB+Google Ad'},
             {vals:rev(r.orgArr), color:'#10b981', label:'Organic'},
             {vals:rev(r.prArr), color:'#f59e0b', label:'Practo'},
-            {vals:rev(r.fbArr.map((f,i)=>(f||0)+(r.jdArr[i]||0)+(r.othArr[i]||0))), color:'#94a3b8', label:'Others (FB/JD/…)'}], hi, leadsAvg),
-        (r.useRedshiftLeads?'Redshift':'sheet')+' leads · Total = GMB+Google Ad + Organic + Practo + Others'
+            {vals:rev(r.fbArr.map((f,i)=>(f||0)+(r.jdArr[i]||0)+(r.othArr[i]||0))), color:'#94a3b8', label:'Others (FB/JD/…)'}]
+          : [
+            {vals:rev(r.ldArr), color:'#0ea5e9', label:'Total', width:2.5}], hi, leadsAvg),
+        (r.useRedshiftLeads?'Redshift':'sheet')+' leads · '+(leadsGran?'Total = GMB+Google Ad + Organic + Practo + Others':'total inbound leads — open the breakdown to see by source')
         +' · <span onclick="event.stopPropagation();toggleLeadsGran()" style="cursor:pointer;color:'+(leadsGran?'#4f46e5':'#94a3b8')+';font-weight:700;border:1px solid '+(leadsGran?'#4f46e5':'var(--line)')+';border-radius:6px;padding:1px 7px;">'+(leadsGran?'✓ ':'+ ')+'split sources</span>'
         +' <span onclick="event.stopPropagation();toggleLeadsAvg()" style="cursor:pointer;color:'+(leadsAvg?'#4f46e5':'#94a3b8')+';font-weight:700;border:1px solid '+(leadsAvg?'#4f46e5':'var(--line)')+';border-radius:6px;padding:1px 7px;">'+(leadsAvg?'✓ ':'+ ')+'avg line</span>')}
       ${trend('🩺 Availability — weekday vs weekend', availSplitChart(rev(r.wdArr), rev(r.weArr), hi, r.av_avg),
