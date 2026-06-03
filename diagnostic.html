@@ -618,6 +618,50 @@ function spark(vals, color, hiIdx, fmt, refVal){
         `<text x="${w-pad}" y="${(+ry-3).toFixed(1)}" font-size="8" fill="#94a3b8" text-anchor="end">norm ${fmt?fmt(refVal):r1(refVal)}</text>`; }
   return `<svg width="100%" viewBox="0 0 ${w} ${h+4}" style="overflow:visible;">${ref}<path d="${path}" fill="none" stroke="${color}" stroke-width="2"/>${dots}${labs}</svg>`;
 }
+// Multi-line sparkline — e.g. Total / GMB+Google / Practo leads on one chart so
+// you can see WHERE a lead gap came from. series=[{vals,color,label,width}].
+function sparkMulti(series, hiIdx){
+  const w=340,h=72,pad=10;
+  const all=series.flatMap(s=>s.vals.map(x=>x==null?0:x));
+  const mn=Math.min(0,...all), mx=Math.max(1,...all), rng=(mx-mn)||1;
+  const n=series[0].vals.length;
+  const X=i=>pad+i/(n-1)*(w-2*pad), Y=v=>h-pad-(v-mn)/rng*(h-2*pad);
+  const lines=series.map(s=>{
+    const a=s.vals.map(x=>x==null?0:x);
+    const path=a.map((v,i)=>(i?'L':'M')+X(i).toFixed(1)+' '+Y(v).toFixed(1)).join(' ');
+    const hd=`<circle cx="${X(hiIdx).toFixed(1)}" cy="${Y(a[hiIdx]).toFixed(1)}" r="3.4" fill="${s.color}"/>`;
+    return `<path d="${path}" fill="none" stroke="${s.color}" stroke-width="${s.width||1.7}" stroke-linejoin="round"/>${hd}`;
+  }).join('');
+  const legend=series.map(s=>{ const a=s.vals.map(x=>x==null?0:x);
+    return `<span style="font-size:10px;color:#475569;font-weight:600;margin-right:11px;white-space:nowrap;"><span style="display:inline-block;width:11px;height:3px;background:${s.color};vertical-align:middle;border-radius:2px;margin-right:4px;"></span>${s.label} <b style="color:${s.color};">${a[hiIdx]}</b></span>`; }).join('');
+  return `<div style="margin-bottom:3px;">${legend}</div><svg width="100%" viewBox="0 0 ${w} ${h+4}" style="overflow:visible;">${lines}</svg>`;
+}
+// Availability split (weekday vs weekend doctor-days, stacked) with the bookings
+// line overlaid — makes the weekday/weekend supply story and the booking-rate
+// relationship visible at a glance. wd/we/bk are display-ordered (oldest→newest).
+function availSplitChart(wd, we, bk, hi){
+  const w=340,h=96,pad=10,padB=14;
+  const n=wd.length;
+  const tot=wd.map((d,i)=>(d||0)+(we[i]||0));
+  const maxDays=Math.max(1,...tot), maxBk=Math.max(1,...bk);
+  const bw=(w-2*pad)/n*0.56;
+  const X=i=>pad+(i+0.5)/n*(w-2*pad);
+  const base=h-padB;
+  const Yd=v=>base-(v/maxDays)*(base-pad);
+  const Yb=v=>base-(v/maxBk)*(base-pad);
+  const bars=tot.map((t,i)=>{ const x=(X(i)-bw/2).toFixed(1); const wdTop=Yd(wd[i]||0), weTop=Yd(t), hl=i===hi;
+    return `<rect x="${x}" y="${wdTop.toFixed(1)}" width="${bw.toFixed(1)}" height="${(base-wdTop).toFixed(1)}" fill="#7c3aed" opacity="${hl?1:.78}" rx="1.5"/>`+
+           `<rect x="${x}" y="${weTop.toFixed(1)}" width="${bw.toFixed(1)}" height="${(wdTop-weTop).toFixed(1)}" fill="#d8b4fe" opacity="${hl?1:.8}" rx="1.5"/>`;
+  }).join('');
+  const bkPath=bk.map((v,i)=>(i?'L':'M')+X(i).toFixed(1)+' '+Yb(v).toFixed(1)).join(' ');
+  const bkDots=bk.map((v,i)=>`<circle cx="${X(i).toFixed(1)}" cy="${Yb(v).toFixed(1)}" r="${i===hi?3.6:2.1}" fill="#4f46e5" stroke="#fff" stroke-width="1"/>`).join('');
+  const bkLab=`<text x="${X(hi).toFixed(1)}" y="${(Yb(bk[hi])-6).toFixed(1)}" font-size="9.5" fill="#4f46e5" text-anchor="middle" font-weight="800">${bk[hi]}</text>`;
+  const legend=`<div style="margin-bottom:3px;font-size:10px;color:#475569;font-weight:600;">
+    <span style="margin-right:10px;"><span style="display:inline-block;width:9px;height:9px;background:#7c3aed;border-radius:2px;vertical-align:middle;margin-right:4px;"></span>Weekday days</span>
+    <span style="margin-right:10px;"><span style="display:inline-block;width:9px;height:9px;background:#d8b4fe;border-radius:2px;vertical-align:middle;margin-right:4px;"></span>Weekend days</span>
+    <span><span style="display:inline-block;width:11px;height:3px;background:#4f46e5;border-radius:2px;vertical-align:middle;margin-right:4px;"></span>Bookings</span></div>`;
+  return `${legend}<svg width="100%" viewBox="0 0 ${w} ${h+2}" style="overflow:visible;">${bars}<path d="${bkPath}" fill="none" stroke="#4f46e5" stroke-width="2"/>${bkDots}${bkLab}</svg>`;
+}
 function renderDeepDive(r){
   const wl=WEEKS[wkIdx].label;
   const m=CAUSE[r.cause]||{label:(r.cause==='grew'?'Growing':'Stable'),col:'#059669',bg:'#ecfdf5',owner:'—',desc:'no material booking loss this week'};
@@ -712,25 +756,20 @@ function renderDeepDive(r){
     <div style="font-size:12.5px;color:#334155;line-height:1.65;">${storyLine}</div>
   </div>`;
 
-  return `<div class="card">
-    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
-      <button onclick="setSelClinic('')" style="font-size:12px;padding:5px 12px;background:#f1f5f9;border:1px solid var(--line);border-radius:8px;cursor:pointer;">← Back to network RCA</button>
-      <div><div style="font-size:18px;font-weight:800;">${r.clinic}</div><div style="font-size:11px;color:#94a3b8;">${r.city} · ${cityTier(r.city)} · ${r.mat} · ${wl}</div></div>
-      <div style="margin-left:auto;text-align:right;">${causePill(r.cause, r.mixWith)}<div style="font-size:11px;color:${r.mixWith?MIXCOL:m.col};margin-top:4px;max-width:280px;">${r.note||m.desc}</div></div>
-    </div>
-  </div>
-  ${storyCard}
-  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px;margin-bottom:16px;">
-    ${kpi('Bookings · '+wl, r.bk_w, 'vs '+baseShort()+' '+Math.round(r.bkBase)+' = '+signed(r.dBk), dCol(r.dBk))}
-    ${kpi('Total leads', r.ld_w, 'GMB+G '+r.gmb_w+' · Practo '+r.pr_w+' · '+signed(Math.round(r.dLeadPct),'%')+' vs avg', dCol(r.dLeadPct))}
-    ${kpi('Active doctor-days', r1(r.av_w), 'wd '+r1(r.wd_w)+' · we '+r1(r.we_w)+' · '+signed(r1(r.dAct))+' vs avg', dCol(r.dAct))}
-  </div>
-  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:16px;">${availCard}${attribCard}</div>
-  <div class="card"><div class="sec-h"><span class="sec-num">▦</span>${r.clinic} — trends over time</div>
-    <div class="sec-sub">Each trend over the last ${WEEKS.length} weeks; highlighted point = <b>${wl}</b> · dashed line = recent norm.</div>
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(270px,1fr));gap:14px;">
+  // booking-rate (bookings per active doctor-day) — this week vs its norm
+  const rate_w = r.av_w>0 ? r.bk_w/r.av_w : 0;
+  const rate_n = r.av_avg>0 ? r.bk_avg/r.av_avg : 0;
+  const trendsCard=`<div class="card"><div class="sec-h"><span class="sec-num">📈</span>${r.clinic} — trends over time</div>
+    <div class="sec-sub">Last ${WEEKS.length} weeks · highlighted point = <b>${wl}</b> · dashed line = recent norm.</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;">
       ${trend('📅 Bookings', spark(rev(r.bkArr),'#4f46e5',hi,null,r.bkBase), 'new-patient SC bookings/week · dashed = expected')}
-      ${trend('🔎 Total leads', spark(rev(r.ldArr),'#0ea5e9',hi,null,r.ld_avg), 'GMB+Google + Practo / week')}
+      ${trend('🔎 Leads — where the gap is', sparkMulti([
+          {vals:rev(r.ldArr), color:'#0ea5e9', label:'Total', width:2.5},
+          {vals:rev(r.gmbArr), color:'#6366f1', label:'GMB+Google'},
+          {vals:rev(r.prArr), color:'#f59e0b', label:'Practo'}], hi),
+        'one total line + the two sources, so you see which channel moved')}
+      ${trend('🩺 Availability split & bookings', availSplitChart(rev(r.wdArr), rev(r.weArr), rev(r.bkArr), hi),
+        'doctor-days split weekday vs weekend (bars) with bookings (line) — booking rate '+r1(rate_w)+' vs norm '+r1(rate_n)+' per doctor-day')}
       ${trend('🩺 Active-days', spark(rev(r.avArr),'#7c3aed',hi,null,r.av_avg), 'total bookable doctor-days/week')}
       ${trend('🗓️ Weekend days', spark(rev(r.weArr),'#a855f7',hi,null,r.we_avg), 'weekend bookable days/week')}
       ${hasRoster?trend('🗓️ Scheduled hrs', spark(rev(ros.hrs.map(x=>x==null?0:x)),'#0891b2',hi,null,rh_avg), 'roster bookable hours/week (planned)'):''}
@@ -741,6 +780,22 @@ function renderDeepDive(r){
       Owner: <b>${r.mixWith?CAUSE[r.cause].owner+' + '+CAUSE[r.mixWith].owner:m.owner}</b>.
     </div>
   </div>`;
+
+  return `<div class="card">
+    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+      <button onclick="setSelClinic('')" style="font-size:12px;padding:5px 12px;background:#f1f5f9;border:1px solid var(--line);border-radius:8px;cursor:pointer;">← Back to network RCA</button>
+      <div><div style="font-size:18px;font-weight:800;">${r.clinic}</div><div style="font-size:11px;color:#94a3b8;">${r.city} · ${cityTier(r.city)} · ${r.mat} · ${wl}</div></div>
+      <div style="margin-left:auto;text-align:right;">${causePill(r.cause, r.mixWith)}<div style="font-size:11px;color:${r.mixWith?MIXCOL:m.col};margin-top:4px;max-width:280px;">${r.note||m.desc}</div></div>
+    </div>
+  </div>
+  ${storyCard}
+  ${trendsCard}
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px;margin-bottom:16px;">
+    ${kpi('Bookings · '+wl, r.bk_w, 'vs '+baseShort()+' '+Math.round(r.bkBase)+' = '+signed(r.dBk), dCol(r.dBk))}
+    ${kpi('Total leads', r.ld_w, 'GMB+G '+r.gmb_w+' · Practo '+r.pr_w+' · '+signed(Math.round(r.dLeadPct),'%')+' vs avg', dCol(r.dLeadPct))}
+    ${kpi('Active doctor-days', r1(r.av_w), 'wd '+r1(r.wd_w)+' · we '+r1(r.we_w)+' · '+signed(r1(r.dAct))+' vs avg', dCol(r.dAct))}
+  </div>
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:16px;">${availCard}${attribCard}</div>`;
 }
 function renderOnline(){
   if(!JDATA.online) return '<div class="card">No online scope in data.json.</div>';
