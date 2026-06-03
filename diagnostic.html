@@ -626,19 +626,26 @@ function sparkMulti(series, hiIdx){
   const mn=Math.min(0,...all), mx=Math.max(1,...all), rng=(mx-mn)||1;
   const n=series[0].vals.length;
   const X=i=>pad+i/(n-1)*(w-2*pad), Y=v=>h-pad-(v-mn)/rng*(h-2*pad);
-  const lines=series.map((s,si)=>{
+  // lines + dots
+  const lines=series.map(s=>{
     const a=s.vals.map(x=>x==null?0:x);
     const path=a.map((v,i)=>(i?'L':'M')+X(i).toFixed(1)+' '+Y(v).toFixed(1)).join(' ');
     const dots=a.map((v,i)=>`<circle cx="${X(i).toFixed(1)}" cy="${Y(v).toFixed(1)}" r="${i===hiIdx?3.4:1.9}" fill="${s.color}"/>`).join('');
-    // value label at every point; stagger by series (Total above, others below) so
-    // the three lines' numbers don't collide where the lines cross. White halo for legibility.
-    const dy = si===0?-7 : si===1?12:23;
-    const labs=a.map((v,i)=>`<text x="${X(i).toFixed(1)}" y="${(Y(v)+dy).toFixed(1)}" font-size="7.5" fill="${s.color}" text-anchor="middle" font-weight="${i===hiIdx?800:600}" style="paint-order:stroke;stroke:#fff;stroke-width:2.4px;stroke-linejoin:round;">${v}</text>`).join('');
-    return `<path d="${path}" fill="none" stroke="${s.color}" stroke-width="${s.width||1.7}" stroke-linejoin="round"/>${dots}${labs}`;
+    return `<path d="${path}" fill="none" stroke="${s.color}" stroke-width="${s.width||1.7}" stroke-linejoin="round"/>${dots}`;
   }).join('');
+  // value labels — per-column collision resolution so the 3 numbers never overlap:
+  // within each week, sort points top→bottom and stack labels with a min vertical gap.
+  const minGap=9; let labels='';
+  for(let i=0;i<n;i++){
+    const items=series.map(s=>{ const v=s.vals[i]==null?0:s.vals[i]; return {color:s.color, v, y:Y(v), hi:i===hiIdx}; })
+                      .sort((a,b)=>a.y-b.y);
+    let prev=-1e9;
+    items.forEach(it=>{ let ly=it.y-4; if(ly<prev+minGap) ly=prev+minGap; prev=ly;
+      labels+=`<text x="${X(i).toFixed(1)}" y="${ly.toFixed(1)}" font-size="8" fill="${it.color}" text-anchor="middle" font-weight="${it.hi?800:600}" style="paint-order:stroke;stroke:#fff;stroke-width:2.6px;stroke-linejoin:round;">${it.v}</text>`; });
+  }
   const legend=series.map(s=>{ const a=s.vals.map(x=>x==null?0:x);
     return `<span style="font-size:10px;color:#475569;font-weight:600;margin-right:11px;white-space:nowrap;"><span style="display:inline-block;width:11px;height:3px;background:${s.color};vertical-align:middle;border-radius:2px;margin-right:4px;"></span>${s.label} <b style="color:${s.color};">${a[hiIdx]}</b></span>`; }).join('');
-  return `<div style="margin-bottom:3px;">${legend}</div><svg width="100%" viewBox="0 0 ${w} ${h+4}" style="overflow:visible;">${lines}</svg>`;
+  return `<div style="margin-bottom:3px;">${legend}</div><svg width="100%" viewBox="0 0 ${w} ${h+4}" style="overflow:visible;">${lines}${labels}</svg>`;
 }
 // Availability split — a clean stacked bar per week: weekday doctor-days (dark)
 // + weekend doctor-days (light). Each segment and the weekly total are labelled,
