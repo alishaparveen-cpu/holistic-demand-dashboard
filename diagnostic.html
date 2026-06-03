@@ -111,7 +111,35 @@ let JDATA=null, SDATA={}, L0=null, PRACTO={}, ROSTER={};   // PRACTO['City|Clini
 function rosterArr(city,clinic){ return ROSTER[city+'|'+clinic] || {hrs:Array(WEEKS.length).fill(null), we_hrs:Array(WEEKS.length).fill(null)}; }
 let scope='offline';      // 'offline' | 'online'
 let wkIdx=0;              // selected week index (0 = latest)
-let baseMode='peak';      // 'peak' | 'avg'  — which baseline the give-back is measured against
+let baseMode='peak';      // which baseline "Expected" is measured against (see BASE_OPTS)
+// Baseline options for the comparison dropdown. Each defines how "Expected" is
+// computed from the prior weeks (newest-first arrays, W = selected week index)
+// and the window used for the leads/availability dimension baselines.
+const BASE_OPTS=[
+  ['peak','Recent peak','vs its highest of the last 2 weeks'],
+  ['avg8','8-week average','vs its trailing ~8-week mean'],
+  ['avg4','4-week average','vs its trailing 4-week mean'],
+  ['prev','Last week','vs the immediately preceding week'],
+  ['best','Best week','vs its best week on record'],
+];
+function baseLabel(){ const o=BASE_OPTS.find(x=>x[0]===baseMode); return o?o[1]:'baseline'; }
+function baseShort(){ return baseMode==='peak'?'recent peak':baseMode==='avg4'?'4-wk avg':baseMode==='prev'?'last week':baseMode==='best'?'best week':'8-wk avg'; }
+// dimension baseline window (leads/availability) — follows the chosen avg window
+function dimSlice(arr, W){
+  if(baseMode==='avg4') return arr.slice(W+1, W+5);
+  if(baseMode==='prev') return arr.slice(W+1, W+2);
+  return arr.slice(W+1, W+6);   // peak / avg8 / best → ~6-wk trailing
+}
+// "Expected" value for a booking-style series under the current baseMode
+function expectedOf(arr, W){
+  switch(baseMode){
+    case 'best': return Math.max(0, ...arr.slice(W+1));
+    case 'prev': return arr[W+1]||0;
+    case 'avg4': return avg(arr.slice(W+1, W+5));
+    case 'avg8': case 'avg': return avg(arr.slice(W+1, W+6));
+    case 'peak': default: return Math.max(arr[W+1]||0, arr[W+2]||0);
+  }
+}
 let causeF='all';         // 'all' | 'avail' | 'l2b' | 'leads' | 'mixed'
 let matF='all';           // 'all' | 'New' | 'Maturing' | 'Mature'
 let tierF='all';          // 'all' | 'T1' | 'T2'
@@ -213,13 +241,12 @@ function rcaClinic(city, clinic){
   const pr=practoArr(city,clinic);                       // Practo leads per week
   const ld=gmb.map((g,i)=>g+(pr[i]||0));                 // total inbound leads = GMB+Google + Practo
   const wd=av.map((a,i)=>a-(we[i]||0));                  // weekday active-days = total − weekend
-  const sl=a=>a.slice(W+1,W+6);
+  const sl=a=>dimSlice(a,W);
   const bk_w=bk[W], bk_peak=Math.max(bk[W+1]||0, bk[W+2]||0), bk_avg=avg(sl(bk));
   const ld_w=ld[W], ld_avg=avg(sl(ld)), av_w=av[W], av_avg=avg(sl(av)), we_w=we[W], we_avg=avg(sl(we)), wd_w=wd[W], wd_avg=avg(sl(wd));
   const gmb_w=gmb[W], gmb_avg=avg(sl(gmb)), pr_w=pr[W], pr_avg=avg(sl(pr));
-  const dBkPeak=bk_w-bk_peak, dBkAvg=bk_w-bk_avg;
-  const dBk = baseMode==='avg'?dBkAvg:dBkPeak;            // active baseline (peak or 8-wk avg)
-  const bkBase = baseMode==='avg'?bk_avg:bk_peak;
+  const bkBase = expectedOf(bk, W);                      // "Expected" under the chosen baseline
+  const dBk = bk_w - bkBase;
   const dLeadPct=ld_avg? (ld_w-ld_avg)/ld_avg*100 : 0;
   const dAct=av_w-av_avg, dWe=we_w-we_avg;
   const leadsBroke = dLeadPct<=-25;
@@ -267,7 +294,7 @@ function rcaClinic(city, clinic){
     else if(cause==='leads'){ const src = gmbDrop>=prDrop?'GMB+Google':'Practo'; note = `Inbound leads ${Math.round(dLeadPct)}% — mainly ${src}`; }
     else if(cause==='l2b')  note = 'Leads & doctor-days held — conversion / call-handling gap';
   }
-  return {city,clinic,bk_w,bk_peak,bk_avg,bkBase,dBkPeak,dBkAvg,dBk,ld_w,ld_avg,dLeadPct,av_w,av_avg,dAct,we_w,we_avg,dWe,
+  return {city,clinic,bk_w,bk_peak,bk_avg,bkBase,dBk,ld_w,ld_avg,dLeadPct,av_w,av_avg,dAct,we_w,we_avg,dWe,
           gmb_w,gmb_avg,pr_w,pr_avg,wd_w,wd_avg,
           leadsBroke,actBroke,weBroke,availBroke,cause,mixWith,comp,L,mat,note,
           bkPerDay,weLost,wdLost,leadsLoss_gmb,leadsLoss_pr,expectedIfFull,
@@ -303,7 +330,7 @@ function rcaOffline(){
   const A=aggCauses(rows);
   const series=netSeries(), W=wkIdx;
   const netW=series[W], netPeak=Math.max(...series.slice(W+1,W+3)), netAvg=avg(series.slice(W+1,W+6));
-  const netBase = baseMode==='avg'?netAvg:netPeak;
+  const netBase = expectedOf(series, W);
   const mat={New:{g:0,l:0},Maturing:{g:0,l:0},Mature:{g:0,l:0}};
   for(const r of rows){ const b=mat[r.mat]; if(r.dBk>0)b.g+=r.dBk; else b.l+=r.dBk; }
   const watch=rows.filter(r=>r.dLeadPct<=-25 && r.dBk>-3).sort((a,b)=>a.dLeadPct-b.dLeadPct);
@@ -342,11 +369,17 @@ function passF(r){ // does a clinic row pass the tier + maturity filters?
 }
 function ctrlBar(R){
   const seg=(label,opts,cur,fn)=>`<div style="display:flex;align-items:center;gap:6px;"><span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#94a3b8;">${label}</span><div class="toggle" style="padding:2px;">${opts.map(([l,v])=>`<button class="${cur===v?'on':''}" style="padding:3px 9px;font-size:11px;" onclick="${fn}('${v}')">${l}</button>`).join('')}</div></div>`;
+  // baseline dropdown — compare "Expected" against peak / 8-wk / 4-wk / last week / best
+  const baseSel=`<div style="display:flex;align-items:center;gap:6px;">
+    <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#94a3b8;">Compare vs</span>
+    <select onchange="setBase(this.value)" title="${BASE_OPTS.find(o=>o[0]===baseMode)?.[2]||''}" style="font-size:12px;border:1.5px solid #4f46e5;border-radius:7px;padding:4px 9px;background:#fff;cursor:pointer;font-weight:600;color:#4338ca;">
+      ${BASE_OPTS.map(([v,l])=>`<option value="${v}" ${baseMode===v?'selected':''}>${l}</option>`).join('')}
+    </select></div>`;
   // clinic dropdown (all clinics with bookings, filtered by tier/mat)
   const clinicOpts=R.rows.filter(passF).sort((a,b)=>a.city.localeCompare(b.city)||a.clinic.localeCompare(b.clinic))
     .map(r=>`<option value="${r.city}|${r.clinic}" ${selClinic===r.city+'|'+r.clinic?'selected':''}>${r.city} › ${r.clinic}</option>`).join('');
   return `<div class="card" style="position:sticky;top:54px;z-index:10;padding:11px 16px;display:flex;align-items:center;gap:16px;flex-wrap:wrap;">
-    ${seg('Baseline',[['vs Peak','peak'],['vs 8-wk avg','avg']],baseMode,'setBase')}
+    ${baseSel}
     ${seg('Tier',[['All','all'],['T1','T1'],['T2','T2']],tierF,'setTierF')}
     ${seg('Maturity',[['All','all'],['Mature','Mature'],['Maturing','Maturing'],['New','New']],matF,'setMatF')}
     ${seg('Cause',[['All','all'],['Avail','avail'],['L2B','l2b'],['Leads','leads'],['Mixed','mixed']],causeF,'setCauseF')}
@@ -382,7 +415,7 @@ function scopeRCA(R){   // apply Tier + Maturity filters and recompute the whole
   const mat={New:{g:0,l:0},Maturing:{g:0,l:0},Mature:{g:0,l:0}};
   for(const r of rows){ const b=mat[r.mat]; if(r.dBk>0)b.g+=r.dBk; else b.l+=r.dBk; }
   const watch=rows.filter(r=>r.dLeadPct<=-25 && r.dBk>-3).sort((a,b)=>a.dLeadPct-b.dLeadPct);
-  return {rows,...A,netW,netPeak,netAvg,netBase:baseMode==='avg'?netAvg:netPeak,mat,watch,filtered:true};
+  return {rows,...A,netW,netPeak,netAvg,netBase:rows.reduce((s,r)=>s+r.bkBase,0),mat,watch,filtered:true};
 }
 // Plain-English "ruling-out" proof: what we checked, what held, what broke, why.
 function whyText(r){
@@ -426,7 +459,7 @@ function miniClinicCard(r){
       ${causePill(r.cause,r.mixWith)}
     </div>
     <div style="display:flex;gap:4px;margin-top:10px;background:#f8fafc;border-radius:9px;padding:8px 6px;">
-      ${tile('Expected',exp,'#475569',baseMode==='avg'?'8-wk avg':'recent peak')}${tile('Actual',r.bk_w,col,'booked')}${tile('Gap',signed(r.dBk),dCol(r.dBk),'vs expected')}
+      ${tile('Expected',exp,'#475569',baseShort())}${tile('Actual',r.bk_w,col,'booked')}${tile('Gap',signed(r.dBk),dCol(r.dBk),'vs expected')}
     </div>
     <div style="font-size:11px;color:#334155;line-height:1.5;margin:10px 0 4px;background:${r.mixWith?MIXCOL+'10':(m.bg||'#f8fafc')};border-radius:8px;padding:8px 10px;">${whyText(r)}</div>
     ${spark(r.bkArr.slice(0,WEEKS.length).reverse(),col,hi,null,r.bkBase)}
@@ -444,7 +477,7 @@ function renderOffline(){
   const R=scopeRCA(Rall), wl=WEEKS[wkIdx].label;
   const fNote=(tierF!=='all'||matF!=='all')?`<div style="font-size:11px;color:#4338ca;margin-bottom:10px;">Scoped to <b>${[tierF!=='all'?tierF:'',matF!=='all'?matF:''].filter(Boolean).join(' · ')}</b> clinics (${R.rows.length}). Clear filters above for the full network.</div>`:'';
   const dPeak=R.netW-R.netPeak, dAvg=R.netW-R.netAvg;
-  const baseLbl=baseMode==='avg'?'8-wk avg':'peak';
+  const baseLbl=baseShort();
   const order=['avail','l2b','leads'];
 
   // ── 1. Headline ──
@@ -473,7 +506,7 @@ function renderOffline(){
     ${bar('Growth · '+(matF==='all'?'new &amp; ramping':matF+' clinics'),R.growth,'#059669')}
     <div style="border-top:1px dashed var(--line);margin-top:8px;padding-top:8px;font-size:11.5px;color:#475569;line-height:1.5;">
       Across named clinics: <b style="color:#dc2626;">${R.totalLost}</b> in losses (split into ${signed(R.causeTotals.avail)} availability · ${signed(R.causeTotals.l2b)} conversion · ${signed(R.causeTotals.leads)} leads), <b style="color:#059669;">+${R.growth}</b> in growth.
-      <span style="color:#94a3b8;">Each clinic is measured vs its <b>own</b> ${baseMode==='avg'?'8-wk avg':'peak'}, so these sum larger than the network give-back of <b>${signed(R.netW-R.netBase)}</b> — the point is <b>where the losses concentrate</b>.</span>
+      <span style="color:#94a3b8;">Each clinic is measured vs its <b>own</b> ${baseShort()}, so these sum larger than the network give-back of <b>${signed(R.netW-Math.round(R.netBase))}</b> — the point is <b>where the losses concentrate</b>.</span>
     </div>
   </div>`;
 
@@ -503,7 +536,7 @@ function renderOffline(){
     <div class="sec-sub">Each card is one clinic that booked fewer new-patient screening calls than expected. <b>Click a card to open its full deep-dive.</b></div>
     <div style="font-size:11.5px;color:#475569;line-height:1.7;background:#f8fafc;border:1px solid var(--line);border-radius:10px;padding:11px 14px;margin:4px 0 14px;">
       <b>How to read a card:</b>
-      <b>Expected</b> = what the clinic <i>should</i> have booked, set to its own ${baseMode==='avg'?'<b>8-week average</b>':'<b>recent peak</b>'} (toggle <i>Baseline</i> up top) ·
+      <b>Expected</b> = what the clinic <i>should</i> have booked, set to its own <b>${baseLabel().toLowerCase()}</b> (change the <i>Baseline</i> dropdown up top) ·
       <b>Actual</b> = what it booked this week · <b>Gap</b> = the shortfall.
       Then we ask <b>why</b> by checking the only three things that move bookings —
       <span style="color:${CAUSE.leads.col};font-weight:700;">leads</span> (enough enquiries?),
@@ -672,7 +705,7 @@ function renderDeepDive(r){
   const storyCard=`<div class="card" style="border-left:4px solid ${storyCol};">
     <div class="sec-h"><span class="sec-num">📖</span>The story — ${r.clinic}, ${wl}</div>
     <div style="display:flex;gap:11px;flex-wrap:wrap;margin:4px 0 12px;">
-      ${bigTile('Expected', exp, '#475569', baseMode==='avg'?'8-wk run-rate':'recent peak')}
+      ${bigTile('Expected', exp, '#475569', baseShort())}
       ${bigTile('Actual', act, grew?'#059669':m.col, 'booked this week')}
       ${bigTile('Gap', signed(gap), grew?'#059669':dCol(gap), signed(gapPct,'%')+' vs expected')}
     </div>
@@ -688,7 +721,7 @@ function renderDeepDive(r){
   </div>
   ${storyCard}
   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px;margin-bottom:16px;">
-    ${kpi('Bookings · '+wl, r.bk_w, 'vs '+ (baseMode==='avg'?'8-wk avg '+Math.round(r.bk_avg):'peak '+r.bk_peak)+' = '+signed(r.dBk), dCol(r.dBk))}
+    ${kpi('Bookings · '+wl, r.bk_w, 'vs '+baseShort()+' '+Math.round(r.bkBase)+' = '+signed(r.dBk), dCol(r.dBk))}
     ${kpi('Total leads', r.ld_w, 'GMB+G '+r.gmb_w+' · Practo '+r.pr_w+' · '+signed(Math.round(r.dLeadPct),'%')+' vs avg', dCol(r.dLeadPct))}
     ${kpi('Active doctor-days', r1(r.av_w), 'wd '+r1(r.wd_w)+' · we '+r1(r.we_w)+' · '+signed(r1(r.dAct))+' vs avg', dCol(r.dAct))}
   </div>
