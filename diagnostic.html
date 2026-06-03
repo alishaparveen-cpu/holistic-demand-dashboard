@@ -211,6 +211,28 @@ function parseSheet(rows){
   }
   return out;
 }
+// ── Build SDATA from data_diagnostic.json (Redshift cutover, replaces the Google Sheet).
+//    allBk = distinct (patient,provider) SC-offline bookings/week; avail = post-shrinkage
+//    active doctor-days; weekend = Sat/Sun of those. Arrays are newest-first (aligned to WEEKS). ──
+function buildSDataFromDiag(diag){
+  const W=WEEKS.length, slc=a=>{ const b=(a||[]).slice(0,W); while(b.length<W) b.push(0); return b.map(x=>x==null?0:x); };
+  const out={};
+  for(const key of Object.keys(diag)){
+    if(key==='_meta') continue;
+    const bar=key.indexOf('|'); if(bar<0) continue;
+    const city=key.slice(0,bar), clinic=key.slice(bar+1);
+    if(!city||!clinic||/online/i.test(clinic)) continue;
+    const o=diag[key];
+    (out[city]=out[city]||{})[clinic]={_total:{ allBk:slc(o.allBk), gmbLeads:slc(o.gmbLeads), avail:slc(o.avail), weekend:slc(o.weekend), docDays:slc(o.docDays) }};
+  }
+  for(const city of Object.keys(out)){
+    const agg={allBk:Array(W).fill(0),gmbLeads:Array(W).fill(0),avail:Array(W).fill(0),weekend:Array(W).fill(0),docDays:Array(W).fill(0)};
+    for(const clinic of Object.keys(out[city])){ const t=out[city][clinic]._total;
+      for(let i=0;i<W;i++){ agg.allBk[i]+=t.allBk[i]; agg.avail[i]+=t.avail[i]; agg.weekend[i]+=t.weekend[i]; agg.docDays[i]+=t.docDays[i]; } }
+    out[city]._total=agg;
+  }
+  return out;
+}
 
 function parseL0(text){
   const rows=parseCSV(text);
@@ -1220,10 +1242,13 @@ function renderOnline(){
 async function init(){
   try{
     const safe=u=>fetch(u,{cache:'no-store'}).catch(()=>({ok:false}));
-    const [jr,sr,lr,pr,rr,ld,rv,mk,bt]=await Promise.all([ fetch('data.json',{cache:'no-store'}), safe(SHEET_URL), safe(L0_URL), safe(PRACTO_URL), safe('data_roster.json'), safe('data_leads.json'), safe('data_reviews.json'), safe('data_marketing.json'), safe('data_booktype.json') ]);
+    const [jr,sr,lr,pr,rr,ld,rv,mk,bt,dg]=await Promise.all([ fetch('data.json',{cache:'no-store'}), safe(SHEET_URL), safe(L0_URL), safe(PRACTO_URL), safe('data_roster.json'), safe('data_leads.json'), safe('data_reviews.json'), safe('data_marketing.json'), safe('data_booktype.json'), safe('data_diagnostic.json') ]);
     if(!jr.ok) throw new Error('data.json not found');
     JDATA=await jr.json();
-    if(sr.ok){ SDATA=parseSheet(parseCSV(await sr.text())); } else { console.warn('demand-tracker sheet failed'); }
+    // SDATA now comes from Redshift (data_diagnostic.json); the Google Sheet is a fallback only.
+    let diagOk=false;
+    if(dg.ok){ try{ SDATA=buildSDataFromDiag(await dg.json()); diagOk=Object.keys(SDATA).length>0; }catch(e){ console.warn('data_diagnostic.json parse failed',e); } }
+    if(!diagOk){ if(sr.ok){ SDATA=parseSheet(parseCSV(await sr.text())); console.warn('fell back to demand-tracker sheet'); } else { console.warn('no SDATA source available'); } }
     if(lr.ok){ L0=parseL0(await lr.text()); } else { console.warn('L0 sheet failed'); }
     if(pr.ok){ PRACTO=parsePracto(parseCSV(await pr.text())); } else { console.warn('Practo sheet failed'); }
     if(rr.ok){ try{ ROSTER=await rr.json(); }catch(_){ console.warn('roster parse failed'); } } else { console.warn('data_roster.json failed'); }
