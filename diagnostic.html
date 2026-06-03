@@ -112,6 +112,12 @@ const MIXCOL='#be185d';
 
 // ═══════════════ STATE ═══════════════
 let JDATA=null, SDATA={}, L0=null, PRACTO={}, ROSTER={};   // PRACTO['City|Clinic'] = [7 weekly counts aligned to WEEKS]; ROSTER['City|Clinic']={hrs:[7],we_hrs:[7]} scheduled bookable hours
+let LEADS={}, REVIEWS={}, MKT=null;   // Redshift leads-by-source · GMB review velocity · Google Ads impression-share (for the lead-loss drill)
+// align a 12-week newest-first data array (LEADS/REVIEWS) to the diagnostic's WEEKS (also newest-first) → length WEEKS.length
+function leadArr(city,clinic,bucket){ const o=LEADS[city+'|'+clinic]; return o&&o[bucket] ? o[bucket].slice(0,WEEKS.length) : Array(WEEKS.length).fill(0); }
+function reviewArr(city,clinic,field){ const o=REVIEWS[city+'|'+clinic]; return o&&o[field] ? o[field].slice(0,WEEKS.length) : Array(WEEKS.length).fill(field==='rating'?null:0); }
+function mktArr(field){ return MKT&&MKT.google_ads ? WEEKS.map(w=>MKT.google_ads.weeks?.[w.json]?.[field] ?? null) : Array(WEEKS.length).fill(null); }
+function hasLeadDrill(city,clinic){ return !!LEADS[city+'|'+clinic]; }
 const HOD_HOURS=[9,10,11,12,13,14,15,16,17,18,19,20,21];   // hour-of-day buckets in data_roster.json
 function rosterArr(city,clinic){ return ROSTER[city+'|'+clinic] || {hrs:Array(WEEKS.length).fill(null), we_hrs:Array(WEEKS.length).fill(null), dow:Array(WEEKS.length).fill(null).map(()=>Array(7).fill(0)), hod:Array(WEEKS.length).fill(null).map(()=>Array(HOD_HOURS.length).fill(0)), shr:{sched:Array(WEEKS.length).fill(0),shrunk:Array(WEEKS.length).fill(0),avail:Array(WEEKS.length).fill(0)}}; }
 let scope='offline';      // 'offline' | 'online'
@@ -772,6 +778,55 @@ function zoomTrend(id){
 }
 function closeZoom(){ const ov=document.getElementById('zoomOverlay'); if(ov) ov.style.display='none'; }
 document.addEventListener('keydown',e=>{ if(e.key==='Escape') closeZoom(); });
+// ── Lead-loss drill: GMB profile (reviews/rank) vs Google Ads (impression share) ──
+function leadLossDrill(r){
+  if(!hasLeadDrill(r.city,r.clinic)) return '';
+  const W=wkIdx, rev=a=>a.slice(0,WEEKS.length).reverse(), hi=(WEEKS.length-1)-W, sl=a=>a.slice(W+1,W+5);
+  const gmb=leadArr(r.city,r.clinic,'gmb'), gads=leadArr(r.city,r.clinic,'google_ad'), org=leadArr(r.city,r.clinic,'organic');
+  const gmb_w=gmb[W], gmb_n=avg(sl(gmb)), gads_w=gads[W], gads_n=avg(sl(gads));
+  const dGmbP=gmb_n?Math.round((gmb_w-gmb_n)/gmb_n*100):0, dGadsP=gads_n?Math.round((gads_w-gads_n)/gads_n*100):0;
+  const rvN=reviewArr(r.city,r.clinic,'n'), rvNeg=reviewArr(r.city,r.clinic,'neg'), rvRate=reviewArr(r.city,r.clinic,'rating');
+  const vel_w=rvN[W]||0, vel_n=avg(sl(rvN)), recentNeg=(rvNeg[W]||0)+(rvNeg[W+1]||0), lastRating=rvRate.slice(W).find(x=>x!=null);
+  const isPct=mktArr('search_is').map(x=>x==null?null:x*100), rlPct=mktArr('rank_lost_is').map(x=>x==null?null:x*100);
+  const clicks=mktArr('clicks'), impr=mktArr('impressions');
+  const is_w=isPct[W], is_n=avg(sl(isPct).filter(x=>x!=null));
+  const gmbWorse = dGmbP <= dGadsP;
+  const rl_w=rlPct[W], rl_n=avg(sl(rlPct).filter(x=>x!=null));
+  // "likely driver" bits must match whichever channel fell more
+  const bits=[];
+  if(gmbWorse){
+    if(vel_n>0.5 && vel_w<vel_n-0.5) bits.push(`review velocity <b>${r1(vel_n)}→${vel_w}/wk</b>`);
+    if(recentNeg>0) bits.push(`<b style="color:#dc2626">${recentNeg} recent negative review${recentNeg>1?'s':''}</b>`);
+    if(lastRating!=null && lastRating<4) bits.push(`rating slipped to <b>${lastRating}★</b>`);
+  } else {
+    if(is_w!=null && is_n!=null && is_w<is_n-1) bits.push(`impression-share <b>${Math.round(is_n)}%→${Math.round(is_w)}%</b>`);
+    if(rl_w!=null && rl_n!=null && rl_w>rl_n+1) bits.push(`rank-lost IS rose <b>${Math.round(rl_n)}%→${Math.round(rl_w)}%</b> (low Ad Rank / keyword)`);
+  }
+  const drop = dGmbP<=-10 || dGadsP<=-10;
+  const verdict = drop
+    ? `${gmbWorse?'<b style="color:#6366f1">GMB profile</b>':'<b style="color:#DB4437">Google Ads</b>'} fell more (${gmbWorse?signed(dGmbP,'%'):signed(dGadsP,'%')} vs avg).${bits.length?` Likely driver: ${bits.join(', ')}.`:' No obvious review/impression-share cause — check spend/budget.'}`
+    : 'GMB and Google Ads leads broadly held this week — lead loss (if any) is elsewhere.';
+  const mini=(label,col,sub,svg)=>`<div style="margin-bottom:9px;"><div style="font-size:11.5px;font-weight:700;color:${col};">${label}</div><div style="font-size:9.5px;color:#94a3b8;margin-bottom:2px;">${sub}</div>${svg}</div>`;
+  const pctF=v=>Math.round(v)+'%';
+  return `<div class="card"><div class="sec-h"><span class="sec-num">🔎</span>Lead-loss drill — GMB vs Google Ads</div>
+    <div class="sec-sub">When inbound leads break, is it the <b>GMB profile</b> (reviews → rank) or <b>Google Ads</b> (impression share / spend)? · leads from Redshift · ${WEEKS[wkIdx].label}</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;">
+      <div style="background:#eef2ff;border-radius:11px;padding:12px 14px;">
+        <div style="font-size:13px;font-weight:800;color:#4338ca;margin-bottom:8px;">📍 GMB profile</div>
+        ${mini('GMB leads · '+gmb_w+' ('+signed(dGmbP,'%')+')', '#6366f1', 'profile clicks + inbound calls · dashed = 4-wk avg', spark(rev(gmb),'#6366f1',hi,null,gmb_n))}
+        ${mini('Review velocity · '+vel_w+'/wk', '#0891b2', 'reviews/week — a primary GMB-rank driver', spark(rev(rvN),'#0891b2',hi,null,vel_n))}
+        <div style="font-size:10.5px;color:#475569;">Rating ${lastRating!=null?'<b>'+lastRating+'★</b>':'—'}${recentNeg>0?` · <b style="color:#dc2626">${recentNeg} recent negative</b>`:''} · ${vel_n>0.5&&vel_w<vel_n-0.5?'<b style="color:#dc2626">velocity dropping → rank risk</b>':'velocity steady'}.</div>
+      </div>
+      <div style="background:#fef7f6;border-radius:11px;padding:12px 14px;">
+        <div style="font-size:13px;font-weight:800;color:#DB4437;margin-bottom:8px;">🔍 Google Ads <span style="font-weight:500;color:#94a3b8;font-size:10px;">(network)</span></div>
+        ${mini('Ads leads · '+gads_w+' ('+signed(dGadsP,'%')+')', '#DB4437', 'paid Google Ads leads · dashed = 4-wk avg', spark(rev(gads),'#DB4437',hi,null,gads_n))}
+        ${mini('Impression share', '#f59e0b', 'how often our ad showed — higher is better', spark(rev(isPct),'#f59e0b',hi,pctF))}
+        ${mini('Rank-lost impression share', '#dc2626', 'lost to low Ad Rank (keyword/quality) — lower is better', spark(rev(rlPct),'#dc2626',hi,pctF))}
+      </div>
+    </div>
+    <div style="margin-top:12px;font-size:11.5px;background:#f8fafc;border-radius:9px;padding:10px 13px;line-height:1.6;color:#475569;">${verdict}</div>
+  </div>`;
+}
 function renderDeepDive(r){
   const wl=WEEKS[wkIdx].label;
   const m=CAUSE[r.cause]||{label:(r.cause==='grew'?'Growing':'Stable'),col:'#059669',bg:'#ecfdf5',owner:'—',desc:'no material booking loss this week'};
@@ -963,7 +1018,8 @@ function renderDeepDive(r){
   </div>
   ${storyCard}
   ${trendsCard}
-  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:16px;">${availCard}${attribCard}</div>`;
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:16px;">${availCard}${attribCard}</div>
+  ${leadLossDrill(r)}`;
 }
 function renderOnline(){
   if(!JDATA.online) return '<div class="card">No online scope in data.json.</div>';
@@ -1006,13 +1062,16 @@ function renderOnline(){
 async function init(){
   try{
     const safe=u=>fetch(u,{cache:'no-store'}).catch(()=>({ok:false}));
-    const [jr,sr,lr,pr,rr]=await Promise.all([ fetch('data.json',{cache:'no-store'}), safe(SHEET_URL), safe(L0_URL), safe(PRACTO_URL), safe('data_roster.json') ]);
+    const [jr,sr,lr,pr,rr,ld,rv,mk]=await Promise.all([ fetch('data.json',{cache:'no-store'}), safe(SHEET_URL), safe(L0_URL), safe(PRACTO_URL), safe('data_roster.json'), safe('data_leads.json'), safe('data_reviews.json'), safe('data_marketing.json') ]);
     if(!jr.ok) throw new Error('data.json not found');
     JDATA=await jr.json();
     if(sr.ok){ SDATA=parseSheet(parseCSV(await sr.text())); } else { console.warn('demand-tracker sheet failed'); }
     if(lr.ok){ L0=parseL0(await lr.text()); } else { console.warn('L0 sheet failed'); }
     if(pr.ok){ PRACTO=parsePracto(parseCSV(await pr.text())); } else { console.warn('Practo sheet failed'); }
     if(rr.ok){ try{ ROSTER=await rr.json(); }catch(_){ console.warn('roster parse failed'); } } else { console.warn('data_roster.json failed'); }
+    if(ld.ok){ try{ LEADS=await ld.json(); }catch(_){ } }
+    if(rv.ok){ try{ REVIEWS=await rv.json(); }catch(_){ } }
+    if(mk.ok){ try{ MKT=await mk.json(); }catch(_){ } }
     const wSel=document.getElementById('weekSelect');
     WEEKS.forEach((w,i)=>{ const o=document.createElement('option'); o.value=i; o.textContent=w.label+(i===0?' (latest)':''); if(i===0)o.selected=true; wSel.appendChild(o); });
     render();
