@@ -178,11 +178,15 @@ details[open]>.dl-gsum .dl-cv{transform:rotate(90deg);}
       <div class="text-xs mt-0.5 flex items-center gap-1.5" id="dataNote"></div>
     </div>
     <div class="flex items-center gap-2 ml-auto flex-wrap" id="catChips"></div>
-    <!-- Tier filter (only relevant to Data / Snapshot — hidden in Charts where each section owns its filters) -->
+    <!-- Geo filters (offline): tier · city · clinic — drive all sections from the top -->
     <div class="flex gap-1 border rounded-lg p-0.5" style="border-color:var(--line);" id="tierToggleWrap">
       <button class="toggle-btn active" id="tierAllCat" onclick="setTierCat('ALL')">All Cities</button>
       <button class="toggle-btn"        id="tierT1Cat"  onclick="setTierCat('T1')">Tier 1</button>
       <button class="toggle-btn"        id="tierT2Cat"  onclick="setTierCat('T2')">Tier 2</button>
+    </div>
+    <div class="flex items-center gap-1" id="geoSelWrap">
+      <select id="citySel" onchange="setCityCat(this.value)" title="City" style="font-size:12px;border:1px solid var(--line);border-radius:8px;padding:5px 8px;background:#fff;cursor:pointer;max-width:140px;"><option value="ALL">All cities</option></select>
+      <select id="clinicSel" onchange="setClinicCat(this.value)" title="Clinic" style="font-size:12px;border:1px solid var(--line);border-radius:8px;padding:5px 8px;background:#fff;cursor:pointer;max-width:150px;"><option value="ALL">All clinics</option></select>
     </div>
     <!-- Display: Charts / Data snapshot -->
     <div class="flex gap-1 border rounded-lg p-0.5" style="border-color:var(--line);">
@@ -255,6 +259,7 @@ let viewMode     = 'abs';
 let activeScope  = 'offline';
 let activeChannel= 'ALL';
 let activeCity   = 'ALL';
+let activeClinic = 'ALL';
 let activeTier   = 'ALL';
 let chWin        = 8;     // Channel Analysis time window (periods), or 'all'
 let chWeekIdx    = -1;    // Channel Analysis end week (-1 = latest)
@@ -421,15 +426,40 @@ function setDataMode(m){ dataMode = m; document.getElementById('displayCharts')?
 // Tier (T1/T2 city filter) is geographic, so show it for offline/all in every
 // display mode — it now drives the Charts sections too (Channel Analysis etc.),
 // not just Data/Snapshot. Hidden only for the online scope.
-function syncHeaderFilters(){ const tw=document.getElementById('tierToggleWrap'); if(tw) tw.style.display = (activeScope==='online') ? 'none' : ''; }
+function syncHeaderFilters(){ const off = activeScope!=='online';
+  const tw=document.getElementById('tierToggleWrap'); if(tw) tw.style.display = off ? '' : 'none';
+  const gw=document.getElementById('geoSelWrap'); if(gw) gw.style.display = off ? '' : 'none';
+  populateGeoSel(); }
 function setSnapFrom(i){ snapFromIdx = +i; if(snapToIdx>=0 && snapToIdx<snapFromIdx) snapToIdx=snapFromIdx; render(); }
 function setSnapTo(i){ snapToIdx = +i; if(snapToIdx<snapFromIdx) snapFromIdx=snapToIdx; render(); }
 
 function setTierCat(t) {
-  activeTier = t; activeCity = 'ALL'; activeChannel = 'ALL';
+  activeTier = t; activeCity = 'ALL'; activeClinic = 'ALL'; activeChannel = 'ALL';
   ['tierAllCat','tierT1Cat','tierT2Cat'].forEach(id => document.getElementById(id)?.classList.remove('active'));
   document.getElementById(t==='ALL'?'tierAllCat':t==='T1'?'tierT1Cat':'tierT2Cat')?.classList.add('active');
   render();
+}
+// City / Clinic top filters — drive every chart section (offline geo via CHDATA).
+function setCityCat(c){ activeCity = c; activeClinic = 'ALL'; activeTier = 'ALL'; activeChannel='ALL';
+  ['tierAllCat','tierT1Cat','tierT2Cat'].forEach(id=>document.getElementById(id)?.classList.toggle('active', id==='tierAllCat'));
+  render(); }
+function setClinicCat(cl){ activeClinic = cl; render(); }
+// Populate the city + clinic dropdowns from the offline geo (CHDATA), honouring tier.
+function populateGeoSel(){
+  const citySel=document.getElementById('citySel'), clinicSel=document.getElementById('clinicSel');
+  if(!citySel||!clinicSel) return;
+  const cityNode = (CHDATA&&CHDATA.offline&&CHDATA.offline.city) ? CHDATA.offline.city : {};
+  let cities = Object.keys(cityNode).sort();
+  if(activeTier!=='ALL') cities = cities.filter(c=>cityTier(c)===activeTier);
+  citySel.innerHTML = '<option value="ALL">All cities</option>' + cities.map(c=>`<option value="${c}" ${activeCity===c?'selected':''}>${c}</option>`).join('');
+  // clinics for the selected city
+  let clinics=[];
+  if(activeCity!=='ALL' && CHDATA&&CHDATA.offline&&CHDATA.offline.clinic){
+    clinics = Object.keys(CHDATA.offline.clinic).filter(k=>k.startsWith(activeCity+'_')).map(k=>k.slice(activeCity.length+1)).sort();
+  }
+  clinicSel.disabled = (activeCity==='ALL');
+  clinicSel.innerHTML = '<option value="ALL">All clinics</option>' + clinics.map(cl=>`<option value="${cl}" ${activeClinic===cl?'selected':''}>${cl}</option>`).join('');
+  clinicSel.style.opacity = activeCity==='ALL' ? .5 : 1;
 }
 
 function getTierTotal(weekKey) {
@@ -836,17 +866,26 @@ function render() {
   // Per-channel weekly record honouring the Channel-Analysis tier filter.
   // ALL → all-scope weekly_channel (data.json). T1/T2 → sum CHDATA.offline.city
   // over the tier's cities (offline calls done; online isn't geo-tagged).
-  const chTierActive = activeTier!=='ALL' && CHDATA && CHDATA.offline && CHDATA.offline.city;
+  // Geo filter active when any of tier / city / clinic is set (offline CHDATA).
   const _catKeys = DATA.categories || [];
+  const geoActive = (activeTier!=='ALL' || activeCity!=='ALL' || activeClinic!=='ALL') && CHDATA && CHDATA.offline;
   const chRec = (wk, ch) => {
-    if(!chTierActive) return scope.weekly_channel?.[wk]?.[ch] || {};
+    if(!geoActive) return scope.weekly_channel?.[wk]?.[ch] || {};
     const out={total:0}; _catKeys.forEach(c=>out[c]=0);
-    const cityNode = CHDATA.offline.city;
-    for(const city in cityNode){ if(cityTier(city)!==activeTier) continue;
+    if(activeClinic!=='ALL'){
+      const rr = CHDATA.offline.clinic?.[activeCity+'_'+activeClinic]?.[wk]?.[ch];
+      if(rr){ out.total+=rr.total||0; _catKeys.forEach(c=>out[c]+=rr[c]||0); }
+      return out;
+    }
+    const cityNode = CHDATA.offline.city || {};
+    for(const city in cityNode){
+      if(activeCity!=='ALL' && city!==activeCity) continue;
+      if(activeTier!=='ALL' && cityTier(city)!==activeTier) continue;
       const rr=cityNode[city]?.[wk]?.[ch]; if(!rr) continue;
       out.total += rr.total||0; _catKeys.forEach(c=>out[c]+=rr[c]||0); }
     return out;
   };
+  const chTierActive = geoActive;   // (kept for netTotW/netCatW below)
   const netTotW = wk => chTierActive ? channels.reduce((s,ch)=>s+(chRec(wk,ch).total||0),0) : (scope.weekly_total?.[wk]?.total||0);
   const netCatW = wk => { if(!chTierActive){ const wt=scope.weekly_total?.[wk]?.by_cat||{}; return cat==='SH'?getSHVal(wt):cat==='ALL'?(scope.weekly_total?.[wk]?.total||0):(wt[cat]||0); }
     return channels.reduce((s,ch)=>{ const d=chRec(wk,ch); return s+(cat==='SH'?getSHVal(d):cat==='ALL'?(d.total||0):(d[cat]||0)); },0); };
@@ -1072,7 +1111,7 @@ function render() {
     ${(()=>{ // ── Channel mix & trends — stacked channel composition over the window ──
       const pcmCats=v=>cat==='SH'?getSHVal(v):cat==='ALL'?(v.total||0):(v[cat]||0);
       const series=chPeriods.map(p=>{ const row={label:p.label,_tot:0}; channels.forEach(ch=>row[ch]=0);
-        for(const wk of p.weeks){ for(const ch of channels){ const d=scope.weekly_channel?.[wk]?.[ch]||{}; const val=pcmMetric==='total'?(d.total||0):pcmCats(d); row[ch]+=val; row._tot+=val; } } return row; });
+        for(const wk of p.weeks){ for(const ch of channels){ const d=chRec(wk,ch); const val=pcmMetric==='total'?(d.total||0):pcmCats(d); row[ch]+=val; row._tot+=val; } } return row; });
       _pcmData={labels:chLabels, series, channels};
       const last=series[series.length-1]||{_tot:0};
       const ranked=channels.map(ch=>[ch,last[ch]||0]).sort((a,b)=>b[1]-a[1]).filter(x=>x[1]>0);
