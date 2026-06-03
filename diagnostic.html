@@ -112,7 +112,9 @@ const MIXCOL='#be185d';
 
 // ═══════════════ STATE ═══════════════
 let JDATA=null, SDATA={}, L0=null, PRACTO={}, ROSTER={};   // PRACTO['City|Clinic'] = [7 weekly counts aligned to WEEKS]; ROSTER['City|Clinic']={hrs:[7],we_hrs:[7]} scheduled bookable hours
-let LEADS={}, REVIEWS={}, MKT=null;   // Redshift leads-by-source · GMB review velocity · Google Ads impression-share (for the lead-loss drill)
+let LEADS={}, REVIEWS={}, MKT=null, BOOKTYPE={};   // Redshift leads-by-source · GMB review velocity · Google Ads impression-share · booking-type split
+function bookTypeArr(city,clinic,field){ const o=BOOKTYPE[city+'|'+clinic]; return o&&o[field] ? o[field].slice(0,WEEKS.length) : Array(WEEKS.length).fill(0); }
+function hasBookType(city,clinic){ return !!BOOKTYPE[city+'|'+clinic]; }
 // align a 12-week newest-first data array (LEADS/REVIEWS) to the diagnostic's WEEKS (also newest-first) → length WEEKS.length
 function leadArr(city,clinic,bucket){ const o=LEADS[city+'|'+clinic]; return o&&o[bucket] ? o[bucket].slice(0,WEEKS.length) : Array(WEEKS.length).fill(0); }
 function reviewArr(city,clinic,field){ const o=REVIEWS[city+'|'+clinic]; return o&&o[field] ? o[field].slice(0,WEEKS.length) : Array(WEEKS.length).fill(field==='rating'?null:0); }
@@ -789,6 +791,27 @@ function zoomTrend(id){
 }
 function closeZoom(){ const ov=document.getElementById('zoomOverlay'); if(ov) ov.style.display='none'; }
 document.addEventListener('keydown',e=>{ if(e.key==='Escape') closeZoom(); });
+// ── Booking mix: new (first-time, leads-driven) vs repeat (retention) ──
+function bookTypeMix(r){
+  if(!hasBookType(r.city,r.clinic)) return '';
+  const W=wkIdx, rev=a=>a.slice(0,WEEKS.length).reverse(), hi=(WEEKS.length-1)-W, sl=a=>a.slice(W+1,W+5);
+  const nw=bookTypeArr(r.city,r.clinic,'new'), rp=bookTypeArr(r.city,r.clinic,'repeat');
+  const nw_w=nw[W], nw_n=avg(sl(nw)), rp_w=rp[W], rp_n=avg(sl(rp));
+  const dNw=nw_w-nw_n, dRp=rp_w-rp_n;
+  const newWorse = dNw<=dRp;
+  const mini=(label,col,sub,svg)=>`<div><div style="font-size:12px;font-weight:700;color:${col};">${label}</div><div style="font-size:10px;color:#94a3b8;margin-bottom:3px;">${sub}</div>${svg}</div>`;
+  const verdict = (dNw<-1||dRp<-1)
+    ? `The drop is mostly <b>${newWorse?'<span style="color:#4f46e5">new (first-time) bookings</span> — a leads / demand problem (look at the lead-loss drill below)':'<span style="color:#0891b2">repeat bookings</span> — a retention / follow-up problem, not leads'}</b>. New ${nw_w} vs norm ${r1(nw_n)} (${signed(r1(dNw))}) · repeat ${rp_w} vs ${r1(rp_n)} (${signed(r1(dRp))}).`
+    : `New ${nw_w} (${signed(r1(dNw))}) and repeat ${rp_w} (${signed(r1(dRp))}) both broadly held.`;
+  return `<div class="card"><div class="sec-h"><span class="sec-num">📋</span>Booking mix — new vs repeat</div>
+    <div class="sec-sub">First-time bookings move with <b>leads/demand</b>; repeat bookings move with <b>retention/follow-up</b> — so the split tells you whether to blame leads. · Redshift · ${WEEKS[wkIdx].label}</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px;">
+      ${mini('🆕 New (first-time) · '+nw_w+' ('+signed(r1(dNw))+')','#4f46e5','leads-driven · dashed = 4-wk avg',spark(rev(nw),'#4f46e5',hi,null,nw_n))}
+      ${mini('🔁 Repeat (returning) · '+rp_w+' ('+signed(r1(dRp))+')','#0891b2','retention / follow-up',spark(rev(rp),'#0891b2',hi,null,rp_n))}
+    </div>
+    <div style="margin-top:12px;font-size:11.5px;background:#f8fafc;border-radius:9px;padding:10px 13px;line-height:1.6;color:#475569;">${verdict}</div>
+  </div>`;
+}
 // ── Lead-loss drill: GMB profile (reviews/rank) vs Google Ads (impression share) ──
 function leadLossDrill(r){
   if(!hasLeadDrill(r.city,r.clinic)) return '';
@@ -1041,6 +1064,7 @@ function renderDeepDive(r){
   ${storyCard}
   ${trendsCard}
   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:16px;">${availCard}${attribCard}</div>
+  ${bookTypeMix(r)}
   ${leadLossDrill(r)}`;
 }
 function renderOnline(){
@@ -1084,7 +1108,7 @@ function renderOnline(){
 async function init(){
   try{
     const safe=u=>fetch(u,{cache:'no-store'}).catch(()=>({ok:false}));
-    const [jr,sr,lr,pr,rr,ld,rv,mk]=await Promise.all([ fetch('data.json',{cache:'no-store'}), safe(SHEET_URL), safe(L0_URL), safe(PRACTO_URL), safe('data_roster.json'), safe('data_leads.json'), safe('data_reviews.json'), safe('data_marketing.json') ]);
+    const [jr,sr,lr,pr,rr,ld,rv,mk,bt]=await Promise.all([ fetch('data.json',{cache:'no-store'}), safe(SHEET_URL), safe(L0_URL), safe(PRACTO_URL), safe('data_roster.json'), safe('data_leads.json'), safe('data_reviews.json'), safe('data_marketing.json'), safe('data_booktype.json') ]);
     if(!jr.ok) throw new Error('data.json not found');
     JDATA=await jr.json();
     if(sr.ok){ SDATA=parseSheet(parseCSV(await sr.text())); } else { console.warn('demand-tracker sheet failed'); }
@@ -1094,6 +1118,7 @@ async function init(){
     if(ld.ok){ try{ LEADS=await ld.json(); }catch(_){ } }
     if(rv.ok){ try{ REVIEWS=await rv.json(); }catch(_){ } }
     if(mk.ok){ try{ MKT=await mk.json(); }catch(_){ } }
+    if(bt.ok){ try{ BOOKTYPE=await bt.json(); }catch(_){ } }
     const wSel=document.getElementById('weekSelect');
     WEEKS.forEach((w,i)=>{ const o=document.createElement('option'); o.value=i; o.textContent=w.label+(i===0?' (latest)':''); if(i===0)o.selected=true; wSel.appendChild(o); });
     render();
