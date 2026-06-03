@@ -48,7 +48,10 @@
             <div id="szTitle" style="font-size:15px;font-weight:700;color:#0f172a;line-height:1.3;"></div>
             <div id="szSub"   style="font-size:11px;color:#64748b;margin-top:2px;"></div>
           </div>
-          <button id="szClose" style="flex-shrink:0;border:none;background:#f1f5f9;border-radius:9px;width:32px;height:32px;cursor:pointer;font-size:15px;color:#64748b;display:flex;align-items:center;justify-content:center;margin-left:12px;">✕</button>
+          <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;margin-left:12px;">
+            <button id="szAvg" style="border:1px solid #e2e8f0;background:#fff;border-radius:9px;height:32px;padding:0 12px;cursor:pointer;font-size:12px;font-weight:600;color:#475569;white-space:nowrap;">x̄ Avg line</button>
+            <button id="szClose" style="border:none;background:#f1f5f9;border-radius:9px;width:32px;height:32px;cursor:pointer;font-size:15px;color:#64748b;display:flex;align-items:center;justify-content:center;">✕</button>
+          </div>
         </div>
         <!-- Axis label row: y-label left, x-label right -->
         <div style="display:flex;justify-content:space-between;align-items:center;padding:0 4px;margin-bottom:4px;">
@@ -64,9 +67,23 @@
     document.body.appendChild(div);
     div.addEventListener('click', e => { if (e.target === div) closeZoom(); });
     document.getElementById('szClose').addEventListener('click', closeZoom);
+    document.getElementById('szAvg').addEventListener('click', toggleAvg);
   }
 
   let _chart = null;
+  let _avgOn = false, _meanIdx = -1, _mean = 0, _meanFmt = '';
+  function updateAvgBtn() {
+    const b = document.getElementById('szAvg'); if (!b) return;
+    b.textContent = _avgOn ? ('x̄ Avg: ' + fmtVal(_mean, _meanFmt)) : 'x̄ Avg line';
+    b.style.background = _avgOn ? '#eef2ff' : '#fff';
+    b.style.borderColor = _avgOn ? '#6366f1' : '#e2e8f0';
+    b.style.color = _avgOn ? '#4338ca' : '#475569';
+  }
+  function toggleAvg() {
+    _avgOn = !_avgOn;
+    if (_chart && _meanIdx >= 0) { try { _chart.setDatasetVisibility(_meanIdx, _avgOn); _chart.update(); } catch (e) {} }
+    updateAvgBtn();
+  }
 
   function fmtVal(v, fmt) {
     if (v == null) return '—';
@@ -150,11 +167,23 @@
       order: 1,
     });
 
+    // Average reference line for the primary series (toggled via the Avg button)
+    const validV = vals.filter(v => v != null && isFinite(v));
+    _mean = validV.length ? validV.reduce((a, b) => a + b, 0) / validV.length : 0;
+    _meanFmt = fmt;
+    datasets.push({
+      label: 'Average', data: labels.map(() => _mean),
+      borderColor: color, borderDash: [6, 5], borderWidth: 1.5,
+      pointRadius: 0, pointHoverRadius: 0, fill: false, hidden: !_avgOn, order: 0,
+    });
+    _meanIdx = datasets.length - 1;
+
     const ctx = document.getElementById('szCanvas').getContext('2d');
     _chart = new Chart(ctx, {
       type: 'line',
       data: { labels, datasets },
       options: {
+        animation: false,
         responsive: true,
         maintainAspectRatio: false,
         interaction: { mode: 'index', intersect: false },
@@ -259,6 +288,7 @@
         </table>
       </div>`;
 
+    updateAvgBtn();
     document.getElementById(MODAL_ID).classList.add('open');
   }
 
