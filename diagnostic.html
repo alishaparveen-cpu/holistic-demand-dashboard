@@ -88,6 +88,10 @@ const L0_ID  = '1jyyFYpd7gfYyAQ3U7E56c7OA3OuQQAVgJrAGyQr90XM';
 const L0_URL = `https://docs.google.com/spreadsheets/d/${L0_ID}/gviz/tq?tqx=out:csv&sheet=L0`;
 const L0_WEEK_COLS = [2,3,4,5,6,7,8];
 
+// Core leads/availability/bookings come from the demand-tracker sheet, which keeps
+// a rolling 7-week window (Availability block has 7 columns). Roster hours/shrinkage
+// (data_roster.json) carry 12 weeks, but we cap WEEKS to the sheet so every metric
+// is real (no false zeros for older weeks).
 const WEEKS = [
   { sheet:'31/05/2026', json:'2026-05-25', label:'25–31 May' },
   { sheet:'24/05/2026', json:'2026-05-18', label:'18–24 May' },
@@ -767,9 +771,11 @@ document.addEventListener('keydown',e=>{ if(e.key==='Escape') closeZoom(); });
 function renderDeepDive(r){
   const wl=WEEKS[wkIdx].label;
   const m=CAUSE[r.cause]||{label:(r.cause==='grew'?'Growing':'Stable'),col:'#059669',bg:'#ecfdf5',owner:'—',desc:'no material booking loss this week'};
-  const hi=(WEEKS.length-1)-wkIdx;
-  const rev=a=>a.slice(0,WEEKS.length).reverse();
-  const wkS=WEEKS.map(w=>w.label.replace(/ \d{4}/,'')).slice(0,WEEKS.length).reverse();
+  // trend display window — how many of the most-recent weeks the charts show (RCA itself is unaffected)
+  const winN = trendWin==='all' ? WEEKS.length : Math.min(+trendWin, WEEKS.length);
+  const hi = (winN-1) - wkIdx;   // highlight index within the window (<0 ⇒ selected week is older than the window)
+  const rev=a=>a.slice(0,WEEKS.length).reverse().slice(-winN);
+  const wkS=WEEKS.map(w=>w.label.replace(/ \d{4}/,'')).slice(0,WEEKS.length).reverse().slice(-winN);
   const kpi=(l,v,s,c)=>`<div class="kpi"><div class="kpi-l">${l}</div><div class="kpi-v" style="color:${c||'#0f172a'};font-size:26px;">${v}</div><div class="kpi-s">${s}</div></div>`;
   _zoomCharts={}; _zoomSeq=0;
   const weeksRow=wkS.map((l,i)=>`<span style="${i===hi?'color:#475569;font-weight:700;':''}">${l}</span>`).join('');
@@ -824,7 +830,7 @@ function renderDeepDive(r){
         <div style="flex:1;background:#fff;border:1px solid var(--line);border-radius:9px;padding:8px 10px;"><div style="font-size:9px;text-transform:uppercase;color:#94a3b8;font-weight:700;">Shrinkage</div><div style="font-size:18px;font-weight:800;color:${shrColor};">${Math.round(shrPct_w)}%</div><div style="font-size:9px;color:#cbd5e1;">${sh_w} blocked${shrPct_n>0?' · norm '+Math.round(shrPct_n)+'%':''}</div></div>
         <div style="flex:1;background:#fff;border:1px solid var(--line);border-radius:9px;padding:8px 10px;"><div style="font-size:9px;text-transform:uppercase;color:#94a3b8;font-weight:700;">Bookable</div><div style="font-size:18px;font-weight:800;color:#7c3aed;">${av_w}</div><div style="font-size:9px;color:#cbd5e1;">slots left</div></div>
       </div>
-      ${shrinkChart(rev(shr.sched), rev(shr.shrunk), rev(shr.avail), (WEEKS.length-1)-wkIdx)}
+      ${shrinkChart(rev(shr.sched), rev(shr.shrunk), rev(shr.avail), hi)}
       <div style="font-size:11px;color:#475569;margin-top:7px;line-height:1.5;">
         ${shrPct_w>=40?`<b style="color:#dc2626">Heavy shrinkage</b> — the doctor blocked <b>${Math.round(shrPct_w)}%</b> of scheduled slots (${sh_w} of ${sc_w}), leaving only <b>${av_w}</b> bookable. ${shrPct_w-shrPct_n>10?'Well above its '+Math.round(shrPct_n)+'% norm — a real availability hit this week.':''}`
          : shrPct_w>=20?`Moderate shrinkage — <b style="color:#d97706">${Math.round(shrPct_w)}%</b> of slots blocked (norm ${Math.round(shrPct_n)}%).`
@@ -917,8 +923,15 @@ function renderDeepDive(r){
   // booking-rate (bookings per active doctor-day) — this week vs its norm
   const rate_w = r.av_w>0 ? r.bk_w/r.av_w : 0;
   const rate_n = r.av_avg>0 ? r.bk_avg/r.av_avg : 0;
+  const winOpts=[['4w',4],['8w',8],['12w',12],['All',WEEKS.length]].filter(o=>o[1]<=WEEKS.length||o[0]==='All');
+  const winBar=`<div style="display:flex;align-items:center;gap:6px;margin:2px 0 4px;flex-wrap:wrap;">
+    <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#94a3b8;">Window</span>
+    ${winOpts.map(([l,v])=>{ const on=(trendWin==='all'&&v===WEEKS.length)||(+trendWin===v); return `<button onclick="setTrendWin(${v===WEEKS.length?"'all'":v})" style="font-size:11px;padding:3px 10px;border-radius:7px;border:1.5px solid ${on?'#4f46e5':'var(--line)'};background:${on?'#eef2ff':'#fff'};color:${on?'#4338ca':'#475569'};font-weight:${on?700:500};cursor:pointer;">${l}</button>`; }).join('')}
+    <span style="font-size:10px;color:#cbd5e1;margin-left:4px;">${WEEKS.length} weeks of history available</span>
+  </div>`;
   const trendsCard=`<div class="card"><div class="sec-h"><span class="sec-num">📈</span>${r.clinic} — trends over time</div>
-    <div class="sec-sub">Last ${WEEKS.length} weeks · highlighted point = <b>${wl}</b> · dashed line = recent norm.</div>
+    <div class="sec-sub">Showing the last <b>${winN}</b> week${winN>1?'s':''} · highlighted point = <b>${wl}</b> · dashed line = recent norm.</div>
+    ${winBar}
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,1fr));gap:14px;">
       ${trend('📅 Bookings', spark(rev(r.bkArr),'#4f46e5',hi,null,r.bkBase), 'new-patient SC bookings/week · dashed = expected')}
       ${trend('🔎 Leads — where the gap is', sparkMulti([

@@ -10,5 +10,5 @@ WITH hrs AS (
     AND COALESCE(loc.locality,loc.name,'') <> '' AND LOWER(COALESCE(loc.locality,loc.name,'')) <> 'online'
   GROUP BY 1,2,3,4,5
 )
-SELECT city, clinic, wk, dow, COUNT(*) hrs
-FROM hrs GROUP BY 1,2,3,4 ORDER BY 1,2,3,4
+SELECT city, clinic, wk, COUNT(*) hrs, SUM(CASE WHEN dow IN (0,6) THEN 1 ELSE 0 END) we_hrs
+FROM hrs GROUP BY 1,2,3
