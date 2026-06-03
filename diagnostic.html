@@ -384,6 +384,35 @@ function scopeRCA(R){   // apply Tier + Maturity filters and recompute the whole
   const watch=rows.filter(r=>r.dLeadPct<=-25 && r.dBk>-3).sort((a,b)=>a.dLeadPct-b.dLeadPct);
   return {rows,...A,netW,netPeak,netAvg,netBase:baseMode==='avg'?netAvg:netPeak,mat,watch,filtered:true};
 }
+// Compact per-clinic card (mirrors the deep-dive "story") for the proof grid.
+function miniClinicCard(r){
+  const m=CAUSE[r.cause]||{col:'#64748b',label:'',short:''};
+  const col=r.mixWith?MIXCOL:m.col;
+  const exp=Math.round(r.bkBase);
+  const hi=(WEEKS.length-1)-wkIdx;
+  const tile=(l,v,c)=>`<div style="flex:1;text-align:center;"><div style="font-size:9px;text-transform:uppercase;letter-spacing:.03em;color:#94a3b8;font-weight:700;">${l}</div><div style="font-size:18px;font-weight:800;color:${c};line-height:1.15;">${v}</div></div>`;
+  const dim=(lbl,broke,val,suf)=>`<span style="white-space:nowrap;">${lbl} ${dimCell(broke,val,suf||'')}</span>`;
+  return `<div class="card mini-clinic" onclick="setSelClinic('${r.city}|${r.clinic}')"
+      style="cursor:pointer;border-left:4px solid ${col};margin-bottom:0;padding:13px 15px;transition:box-shadow .15s,transform .1s;"
+      onmouseover="this.style.boxShadow='0 5px 16px rgba(0,0,0,.10)';this.style.transform='translateY(-1px)';"
+      onmouseout="this.style.boxShadow='';this.style.transform='';">
+    <div style="display:flex;align-items:flex-start;gap:8px;">
+      <div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:800;line-height:1.15;">${r.clinic}</div>
+        <div style="font-size:10px;color:#94a3b8;">${r.city} · ${cityTier(r.city)} · ${r.mat}</div></div>
+      ${causePill(r.cause,r.mixWith)}
+    </div>
+    <div style="display:flex;gap:4px;margin-top:10px;background:#f8fafc;border-radius:9px;padding:8px 6px;">
+      ${tile('Expected',exp,'#475569')}${tile('Actual',r.bk_w,col)}${tile('Gap',signed(r.dBk),dCol(r.dBk))}
+    </div>
+    <div style="display:flex;gap:9px;flex-wrap:wrap;font-size:10.5px;margin:9px 0 4px;color:#475569;">
+      ${dim('Leads',r.leadsBroke,Math.round(r.dLeadPct),'%')}
+      ${dim('Active-days',r.actBroke,r1(r.dAct))}
+      ${dim('Weekend',r.weBroke,r1(r.dWe))}
+    </div>
+    ${spark(r.bkArr.slice(0,WEEKS.length).reverse(),col,hi,null,r.bkBase)}
+    <div style="font-size:10.5px;color:#64748b;margin-top:6px;line-height:1.45;">${r.note||''}</div>
+  </div>`;
+}
 function renderOffline(){
   if(!Object.keys(SDATA).length) return '<div class="card">Demand-tracker sheet didn\'t load (leads & availability unavailable). Check the sheet is published.</div>';
   const Rall=rcaOffline();
@@ -425,23 +454,32 @@ function renderOffline(){
     </div>
   </div>`;
 
-  // ── 3. 3-D proof matrix ──
-  const named=R.rows.filter(r=>['avail','l2b','leads'].includes(r.cause) && (causeF==='all'||r.cause===causeF)).sort((a,b)=>a.dBk-b.dBk);
-  const matrixRows=named.map(r=>`<tr style="cursor:pointer;" onclick="setSelClinic('${r.city}|${r.clinic}')" title="Deep-dive ${r.clinic}">
-    <td><b>${r.clinic}</b><div style="font-size:10px;color:#94a3b8;">${r.city} · ${r.mat}</div></td>
-    <td class="c">${dimCell(r.leadsBroke, Math.round(r.dLeadPct), '%')}</td>
-    <td class="c">${dimCell(r.actBroke, r1(r.dAct))}</td>
-    <td class="c">${dimCell(r.weBroke, r1(r.dWe))}</td>
-    <td class="r"><b style="color:#dc2626">${r.dBk}</b><div style="font-size:10px;color:#94a3b8;">${Math.round(r.bkBase)}→${r.bk_w}</div></td>
-    <td>${causePill(r.cause, r.mixWith)}</td>
-    <td style="font-size:10.5px;color:#64748b;max-width:200px;">${r.note}</td></tr>`).join('');
+  // ── 3. 3-D proof — per-clinic card grid (mirrors the deep-dive story) ──
+  const named0=R.rows.filter(r=>['avail','l2b','leads'].includes(r.cause)).sort((a,b)=>a.dBk-b.dBk);
+  const passCause=r=>causeF==='all'?true:(causeF==='mixed'?!!r.mixWith:r.cause===causeF);
+  const named=named0.filter(passCause);
+  const cnt={ all:named0.length, mixed:named0.filter(r=>r.mixWith).length,
+              avail:named0.filter(r=>r.cause==='avail').length,
+              leads:named0.filter(r=>r.cause==='leads').length,
+              l2b:named0.filter(r=>r.cause==='l2b').length };
+  const chip=(v,l,c)=>{ const on=causeF===v; const k=v==='all'?'all':v; const n=cnt[k]??0;
+    return `<button onclick="setCauseF('${v}')" style="font-size:11.5px;padding:5px 13px;border-radius:20px;border:1.5px solid ${on?(c||'#4f46e5'):'var(--line)'};background:${on?(c||'#4f46e5')+'15':'#fff'};color:${on?(c||'#4f46e5'):'#475569'};font-weight:${on?700:500};cursor:pointer;display:inline-flex;align-items:center;gap:5px;">${l} <span style="opacity:.55;font-weight:600;">${n}</span></button>`; };
+  const chips=`<div style="display:flex;gap:7px;flex-wrap:wrap;align-items:center;margin-bottom:14px;">
+    <span style="font-size:11px;color:#94a3b8;font-weight:700;text-transform:uppercase;letter-spacing:.04em;margin-right:2px;">View clinics by issue:</span>
+    ${chip('all','All issues',null)}
+    ${chip('avail','Availability',CAUSE.avail.col)}
+    ${chip('leads','Leads',CAUSE.leads.col)}
+    ${chip('l2b','Conversion',CAUSE.l2b.col)}
+    ${chip('mixed','Mix',MIXCOL)}
+  </div>`;
+  const grid=named.length
+    ? `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:13px;">${named.map(miniClinicCard).join('')}</div>`
+    : `<div style="text-align:center;color:#94a3b8;padding:26px;">No clinics match this filter 🎉</div>`;
   const matrix=`<div class="card">
     <div class="sec-h"><span class="sec-num">3</span>The 3-dimension proof — leads × availability × conversion</div>
-    <div class="sec-sub">For every clinic that lost bookings (vs ${baseLbl}), the three dimensions show which one <span class="dim-bad">⚠ broke</span> while the others <span class="dim-ok">✓ held</span>. The cause is whatever broke. <b>Click a row to deep-dive that clinic.</b></div>
-    <div style="overflow:auto;"><table class="rca">
-      <thead><tr><th>Clinic</th><th class="c">Leads Δ</th><th class="c">Active-days Δ</th><th class="c">Weekend Δ</th><th class="r">Bookings ${baseLbl}→wk</th><th>Cause</th><th>Note</th></tr></thead>
-      <tbody>${matrixRows||'<tr><td colspan="7" style="text-align:center;color:#94a3b8;padding:18px;">No booking losses matching this filter 🎉</td></tr>'}</tbody>
-    </table></div>
+    <div class="sec-sub">Every clinic that lost bookings (vs ${baseLbl}), shown as its own story card: <b>expected → actual → gap</b>, which dimension <span class="dim-bad">⚠ broke</span> vs <span class="dim-ok">✓ held</span>, and the booking trend vs its norm. <b>Click any card to deep-dive.</b> Filter by the issue below.</div>
+    ${chips}
+    ${grid}
   </div>`;
 
   // ── 4. Per-cause detail ──
@@ -492,7 +530,7 @@ function renderOffline(){
     <table class="rca"><thead><tr><th>Cause</th><th class="r">Bookings</th><th>Owner</th><th>Where to start</th></tr></thead><tbody>${bl}</tbody></table>
   </div>`;
 
-  return ctrl+fNote+headline+decomp+matrix+detail+maturity+bottom;
+  return ctrl+fNote+headline+decomp+matrix+maturity+bottom;
 }
 
 // inline SVG trend sparkline with value labels; hiIdx = highlighted (selected) point.
