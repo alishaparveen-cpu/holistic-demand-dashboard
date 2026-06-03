@@ -109,7 +109,7 @@ const MIXCOL='#be185d';
 // ═══════════════ STATE ═══════════════
 let JDATA=null, SDATA={}, L0=null, PRACTO={}, ROSTER={};   // PRACTO['City|Clinic'] = [7 weekly counts aligned to WEEKS]; ROSTER['City|Clinic']={hrs:[7],we_hrs:[7]} scheduled bookable hours
 const HOD_HOURS=[9,10,11,12,13,14,15,16,17,18,19,20,21];   // hour-of-day buckets in data_roster.json
-function rosterArr(city,clinic){ return ROSTER[city+'|'+clinic] || {hrs:Array(WEEKS.length).fill(null), we_hrs:Array(WEEKS.length).fill(null), dow:Array(WEEKS.length).fill(null).map(()=>Array(7).fill(0)), hod:Array(WEEKS.length).fill(null).map(()=>Array(HOD_HOURS.length).fill(0))}; }
+function rosterArr(city,clinic){ return ROSTER[city+'|'+clinic] || {hrs:Array(WEEKS.length).fill(null), we_hrs:Array(WEEKS.length).fill(null), dow:Array(WEEKS.length).fill(null).map(()=>Array(7).fill(0)), hod:Array(WEEKS.length).fill(null).map(()=>Array(HOD_HOURS.length).fill(0)), shr:{sched:Array(WEEKS.length).fill(0),shrunk:Array(WEEKS.length).fill(0),avail:Array(WEEKS.length).fill(0)}}; }
 let scope='offline';      // 'offline' | 'online'
 let wkIdx=0;              // selected week index (0 = latest)
 let baseMode='peak';      // which baseline "Expected" is measured against (see BASE_OPTS)
@@ -718,6 +718,24 @@ function hourCoverageChart(hodWk){
     <div style="font-size:10.5px;color:#475569;margin-top:6px;">Open window this week: <b>${span}</b> · darker bar = more days that hour was covered (max 7). Hours left white were never bookable.</div>
   </div>`;
 }
+// Slots & shrinkage stacked bars: available (purple) + shrunk-by-doctor (red) =
+// scheduled, per week. shrinkage = doctor blocked the slot (appointment_blocks).
+function shrinkChart(sched, shrunk, avail, hi){
+  const w=340,h=92,padX=8,padB=22,padT=12, n=sched.length;
+  const mx=Math.max(1,...sched);
+  const bw=(w-2*padX)/n*0.6, X=i=>padX+(i+0.5)/n*(w-2*padX), base=h-padB, Y=v=>base-(v/mx)*(base-padT);
+  const bars=sched.map((s,i)=>{ if(!s) return ''; const x=X(i)-bw/2, av=avail[i]||0, sh=shrunk[i]||0, hl=i===hi;
+    const avTop=Y(av), shTop=Y(av+sh);
+    let r=`<rect x="${x.toFixed(1)}" y="${avTop.toFixed(1)}" width="${bw.toFixed(1)}" height="${(base-avTop).toFixed(1)}" fill="#7c3aed" opacity="${hl?1:.82}" rx="2"/>`;
+    if(sh>0) r+=`<rect x="${x.toFixed(1)}" y="${shTop.toFixed(1)}" width="${bw.toFixed(1)}" height="${(avTop-shTop).toFixed(1)}" fill="#ef4444" opacity="${hl?1:.85}" rx="2"/>`;
+    const pct=s?Math.round(sh/s*100):0;
+    r+=`<text x="${X(i).toFixed(1)}" y="${(shTop-3).toFixed(1)}" font-size="8.5" fill="${pct>0?'#dc2626':'#94a3b8'}" text-anchor="middle" font-weight="700">${pct>0?pct+'%':'0'}</text>`;
+    return r; }).join('');
+  const legend=`<div style="margin-bottom:4px;font-size:10px;color:#475569;font-weight:600;">
+    <span style="margin-right:12px;"><span style="display:inline-block;width:10px;height:10px;background:#7c3aed;border-radius:2px;vertical-align:middle;margin-right:4px;"></span>Available slots</span>
+    <span><span style="display:inline-block;width:10px;height:10px;background:#ef4444;border-radius:2px;vertical-align:middle;margin-right:4px;"></span>Shrunk (doctor blocked)</span></div>`;
+  return `${legend}<svg width="100%" viewBox="0 0 ${w} ${h+2}" style="overflow:visible;">${bars}</svg>`;
+}
 // ── chart zoom: each trend cell registers its content; ⛶ opens a large modal ──
 let _zoomCharts={}, _zoomSeq=0;
 function zoomTrend(id){
@@ -780,12 +798,38 @@ function renderDeepDive(r){
       <div style="font-size:10px;color:#94a3b8;margin-bottom:7px;">Which clock-hours had bookable slots this week (and on how many days).</div>
       ${hourCoverageChart(hodWk)}
     </div>`:''}` : '';
+  // ── slots & shrinkage (doctor-blocked slots — appointment_blocks model) ──
+  const shr = ros.shr || {sched:[],shrunk:[],avail:[]};
+  const sc_w=shr.sched[wkIdx]||0, sh_w=shr.shrunk[wkIdx]||0, av_w=shr.avail[wkIdx]||0;
+  const hasShr = shr.sched.some(x=>x>0);
+  const shrPct_w = sc_w? sh_w/sc_w*100 : 0;
+  const priorSc=shr.sched.slice(wkIdx+1,wkIdx+6), priorSh=shr.shrunk.slice(wkIdx+1,wkIdx+6);
+  const scN=priorSc.reduce((a,b)=>a+b,0), shN=priorSh.reduce((a,b)=>a+b,0);
+  const shrPct_n = scN? shN/scN*100 : 0;
+  const shrColor = shrPct_w>=40?'#dc2626':shrPct_w>=20?'#d97706':'#059669';
+  const shrBlock = hasShr ? `
+    <div style="margin-top:12px;border-top:1px dashed var(--line);padding-top:11px;">
+      <div style="font-size:12px;font-weight:700;color:#0f172a;margin-bottom:2px;">✂️ Slots &amp; shrinkage <span style="font-weight:500;color:#94a3b8;">(Screening-Call · doctor-blocked)</span></div>
+      <div style="font-size:10.5px;color:#94a3b8;margin-bottom:8px;">Scheduled slots the doctor then <b>blocked</b> (appointment_blocks) so patients couldn't book them.</div>
+      <div style="display:flex;gap:9px;margin-bottom:9px;">
+        <div style="flex:1;background:#fff;border:1px solid var(--line);border-radius:9px;padding:8px 10px;"><div style="font-size:9px;text-transform:uppercase;color:#94a3b8;font-weight:700;">Scheduled</div><div style="font-size:18px;font-weight:800;color:#0f172a;">${sc_w}</div><div style="font-size:9px;color:#cbd5e1;">slots</div></div>
+        <div style="flex:1;background:#fff;border:1px solid var(--line);border-radius:9px;padding:8px 10px;"><div style="font-size:9px;text-transform:uppercase;color:#94a3b8;font-weight:700;">Shrinkage</div><div style="font-size:18px;font-weight:800;color:${shrColor};">${Math.round(shrPct_w)}%</div><div style="font-size:9px;color:#cbd5e1;">${sh_w} blocked${shrPct_n>0?' · norm '+Math.round(shrPct_n)+'%':''}</div></div>
+        <div style="flex:1;background:#fff;border:1px solid var(--line);border-radius:9px;padding:8px 10px;"><div style="font-size:9px;text-transform:uppercase;color:#94a3b8;font-weight:700;">Bookable</div><div style="font-size:18px;font-weight:800;color:#7c3aed;">${av_w}</div><div style="font-size:9px;color:#cbd5e1;">slots left</div></div>
+      </div>
+      ${shrinkChart(rev(shr.sched), rev(shr.shrunk), rev(shr.avail), (WEEKS.length-1)-wkIdx)}
+      <div style="font-size:11px;color:#475569;margin-top:7px;line-height:1.5;">
+        ${shrPct_w>=40?`<b style="color:#dc2626">Heavy shrinkage</b> — the doctor blocked <b>${Math.round(shrPct_w)}%</b> of scheduled slots (${sh_w} of ${sc_w}), leaving only <b>${av_w}</b> bookable. ${shrPct_w-shrPct_n>10?'Well above its '+Math.round(shrPct_n)+'% norm — a real availability hit this week.':''}`
+         : shrPct_w>=20?`Moderate shrinkage — <b style="color:#d97706">${Math.round(shrPct_w)}%</b> of slots blocked (norm ${Math.round(shrPct_n)}%).`
+         : `Low shrinkage — <b style="color:#059669">${Math.round(shrPct_w)}%</b> blocked; most scheduled slots stayed bookable.`}
+      </div>
+    </div>` : '';
   const rosBlock = hasRoster ? `
     <div style="margin-top:12px;border-top:1px dashed var(--line);padding-top:11px;">
       <div style="font-size:12px;font-weight:700;color:#0f172a;margin-bottom:2px;">🗓️ Scheduled bookable hours <span style="font-weight:500;color:#94a3b8;">(roster · Redshift)</span></div>
       <div style="font-size:10.5px;color:#94a3b8;margin-bottom:8px;">What the roster planned — before doctors shrink slots. Faint = 5-wk norm, solid = ${wl}.</div>
       ${dayRow('Total scheduled hrs', rh_avg, rh_w==null?0:rh_w, '#0891b2')}
       ${dayRow('Weekend scheduled hrs', rwe_avg, rwe_w==null?0:rwe_w, '#06b6d4')}
+      ${shrBlock}
       ${dayBlock}
       <div style="font-size:11.5px;color:#475569;margin-top:8px;line-height:1.55;">
         Roster scheduled <b>${rh_w==null?'—':r1(rh_w)}h</b> this week (norm <b>${r1(rh_avg)}h</b>${rh_avg>0&&rh_w!=null?', '+signed(Math.round((rh_w-rh_avg)/rh_avg*100),'%')+' vs norm':''}). ${rh_w!=null&&rh_avg-rh_w>2?`<b style="color:#dc2626">~${r1(rh_avg-rh_w)}h fewer hours were even put on the roster</b> — a supply/roster planning gap.`:'Roster supply held — any realized-day shortfall is doctor shrinkage of scheduled slots, not a planning gap.'}
