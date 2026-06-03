@@ -418,7 +418,10 @@ let snapFromIdx = 0, snapToIdx = -1;   // snapshot date range (period indices)
 function setDataMode(m){ dataMode = m; document.getElementById('displayCharts')?.classList.toggle('active', m==='charts'); document.getElementById('displayData')?.classList.toggle('active', m==='snapshot'); document.getElementById('displayKpi')?.classList.toggle('active', m==='kpi'); syncHeaderFilters(); render(); }
 // Show only header filters that actually drive the active view.
 // Tier (city-tier quick filter) drives Data/Snapshot; in Charts each section owns its filters, so hide it.
-function syncHeaderFilters(){ const tw=document.getElementById('tierToggleWrap'); if(tw) tw.style.display = (dataMode==='charts') ? 'none' : ''; }
+// Tier (T1/T2 city filter) is geographic, so show it for offline/all in every
+// display mode — it now drives the Charts sections too (Channel Analysis etc.),
+// not just Data/Snapshot. Hidden only for the online scope.
+function syncHeaderFilters(){ const tw=document.getElementById('tierToggleWrap'); if(tw) tw.style.display = (activeScope==='online') ? 'none' : ''; }
 function setSnapFrom(i){ snapFromIdx = +i; if(snapToIdx>=0 && snapToIdx<snapFromIdx) snapToIdx=snapFromIdx; render(); }
 function setSnapTo(i){ snapToIdx = +i; if(snapToIdx<snapFromIdx) snapFromIdx=snapToIdx; render(); }
 
@@ -448,6 +451,7 @@ function setScope(s) {
     document.getElementById('scope' + k.charAt(0).toUpperCase() + k.slice(1))
       ?.classList.toggle('active', k === s);
   });
+  syncHeaderFilters();
   const noteEl = document.getElementById('dataNote');
   if (noteEl) {
     const lbl = s==='offline'?'Offline clinics':s==='online'?'Online / remote':'All appointments';
@@ -832,13 +836,13 @@ function render() {
   // Per-channel weekly record honouring the Channel-Analysis tier filter.
   // ALL → all-scope weekly_channel (data.json). T1/T2 → sum CHDATA.offline.city
   // over the tier's cities (offline calls done; online isn't geo-tagged).
-  const chTierActive = chTier!=='ALL' && CHDATA && CHDATA.offline && CHDATA.offline.city;
+  const chTierActive = activeTier!=='ALL' && CHDATA && CHDATA.offline && CHDATA.offline.city;
   const _catKeys = DATA.categories || [];
   const chRec = (wk, ch) => {
     if(!chTierActive) return scope.weekly_channel?.[wk]?.[ch] || {};
     const out={total:0}; _catKeys.forEach(c=>out[c]=0);
     const cityNode = CHDATA.offline.city;
-    for(const city in cityNode){ if(cityTier(city)!==chTier) continue;
+    for(const city in cityNode){ if(cityTier(city)!==activeTier) continue;
       const rr=cityNode[city]?.[wk]?.[ch]; if(!rr) continue;
       out.total += rr.total||0; _catKeys.forEach(c=>out[c]+=rr[c]||0); }
     return out;
@@ -1060,10 +1064,9 @@ function render() {
       'Per-channel ' + catLabel + ' rate &amp; volume trend · network-wide',
       `<div class="ch-winbar"><span class="tb-lbl">View</span><button class="ch-winpill${tGran==='week'?' on':''}" onclick="setGran('week')">Weekly</button><button class="ch-winpill${tGran==='month'?' on':''}" onclick="setGran('month')">Monthly</button>
         <span class="tb-lbl" style="margin-left:10px;">Window</span>${[['1',1],['2',2],['4',4],['8',8],['12',12],['All','all']].map(([l,v])=>`<button class="ch-winpill${(chWin===v||(v==='all'&&chWin==='all'))?' on':''}" onclick="setChWin(${v==='all'?"'all'":v})">${l}${v==='all'?'':' '+pWord}</button>`).join('')}
-        <span class="tb-lbl" style="margin-left:10px;">Tier</span>${[['All','ALL'],['T1','T1'],['T2','T2']].map(([l,v])=>`<button class="ch-winpill${chTier===v?' on':''}" onclick="setChTier('${v}')">${l}</button>`).join('')}
         <span class="tb-lbl" style="margin-left:10px;">End ${pWord}</span><select class="tb-sel" style="padding:3px 7px;" onchange="setChWeek(+this.value)">${periods.map((p,i)=>`<option value="${i}" ${i===chEnd?'selected':''}>${p.label}${i===periods.length-1?' (latest)':''}</option>`).join('')}</select>
         <span style="margin-left:auto;font-size:11px;color:var(--muted);">${periods[chStart].label} → ${periods[chEnd].label} · ${chPeriods.length} ${pWord} · trends &amp; shares reflect this window</span></div>
-       ${chTier!=='ALL' ? `<div style="font-size:11px;color:#4338ca;background:#eef2ff;border-radius:8px;padding:7px 11px;margin-bottom:10px;">Showing <b>${chTier==='T1'?'Tier 1':'Tier 2'}</b> offline cities only — calls done in ${chTier} clinics (online calls aren't geo-tagged, so they're excluded from this view).</div>` : ''}
+       ${activeTier!=='ALL' ? `<div style="font-size:11px;color:#4338ca;background:#eef2ff;border-radius:8px;padding:7px 11px;margin-bottom:10px;">Filtered to <b>${activeTier==='T1'?'Tier 1':'Tier 2'}</b> cities (from the top filter) — offline calls done in ${activeTier} clinics.</div>` : ''}
        <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:14px;">${channelCardsHTML}</div>`)}
 
     ${(()=>{ // ── Channel mix & trends — stacked channel composition over the window ──
