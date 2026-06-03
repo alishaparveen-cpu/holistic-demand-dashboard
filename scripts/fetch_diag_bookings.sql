@@ -13,5 +13,7 @@ WITH sc AS (
 )
 SELECT city, locality,
   TO_CHAR(DATE_TRUNC('week', start_time + INTERVAL '5.5 hours'),'YYYY-MM-DD') AS wk,
-  COUNT(DISTINCT patient_id || '-' || provider_id) AS allbk
+  COUNT(DISTINCT patient_id || '-' || provider_id) AS allbk,
+  COUNT(DISTINCT CASE WHEN EXTRACT(DOW FROM start_time + INTERVAL '5.5 hours') IN (0,6)
+        THEN patient_id || '-' || provider_id END) AS we_allbk
 FROM sc GROUP BY 1,2,3 ORDER BY 1,2,3 DESC

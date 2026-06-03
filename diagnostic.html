@@ -223,12 +223,12 @@ function buildSDataFromDiag(diag){
     const city=key.slice(0,bar), clinic=key.slice(bar+1);
     if(!city||!clinic||/online/i.test(clinic)) continue;
     const o=diag[key];
-    (out[city]=out[city]||{})[clinic]={_total:{ allBk:slc(o.allBk), gmbLeads:slc(o.gmbLeads), avail:slc(o.avail), weekend:slc(o.weekend), docDays:slc(o.docDays) }};
+    (out[city]=out[city]||{})[clinic]={_total:{ allBk:slc(o.allBk), bkWe:slc(o.bkWe), gmbLeads:slc(o.gmbLeads), avail:slc(o.avail), weekend:slc(o.weekend), docDays:slc(o.docDays) }};
   }
   for(const city of Object.keys(out)){
-    const agg={allBk:Array(W).fill(0),gmbLeads:Array(W).fill(0),avail:Array(W).fill(0),weekend:Array(W).fill(0),docDays:Array(W).fill(0)};
+    const agg={allBk:Array(W).fill(0),bkWe:Array(W).fill(0),gmbLeads:Array(W).fill(0),avail:Array(W).fill(0),weekend:Array(W).fill(0),docDays:Array(W).fill(0)};
     for(const clinic of Object.keys(out[city])){ const t=out[city][clinic]._total;
-      for(let i=0;i<W;i++){ agg.allBk[i]+=t.allBk[i]; agg.avail[i]+=t.avail[i]; agg.weekend[i]+=t.weekend[i]; agg.docDays[i]+=t.docDays[i]; } }
+      for(let i=0;i<W;i++){ agg.allBk[i]+=t.allBk[i]; agg.bkWe[i]+=t.bkWe[i]; agg.avail[i]+=t.avail[i]; agg.weekend[i]+=t.weekend[i]; agg.docDays[i]+=t.docDays[i]; } }
     out[city]._total=agg;
   }
   return out;
@@ -283,6 +283,7 @@ function deltaTag(v,suf,inv){ const c=dCol(v,inv); return `<b style="color:${c}"
 function rcaClinic(city, clinic){
   const W=wkIdx, d=SDATA[city][clinic]._total;
   const bk=d.allBk, av=d.avail, we=d.weekend;
+  const bkWe=d.bkWe||Array(WEEKS.length).fill(0);   // weekend (Sat/Sun) bookings subset
   const pr=practoArr(city,clinic);                       // Practo leads per week (external sheet)
   // ── leads: prefer Redshift (data_leads.json) over the sheet, so the chart, the
   //    RCA and the lead-loss drill all use ONE source. gmb = GMB+Google Ad. ──
@@ -351,7 +352,7 @@ function rcaClinic(city, clinic){
           gmb_w,gmb_avg,pr_w,pr_avg,wd_w,wd_avg,
           leadsBroke,actBroke,weBroke,availBroke,cause,mixWith,comp,L,mat,note,
           bkPerDay,weLost,wdLost,leadsLoss_gmb,leadsLoss_pr,expectedIfFull,
-          bkArr:bk,ldArr:ld,avArr:av,weArr:we,gmbArr:gmb,prArr:pr,wdArr:wd,
+          bkArr:bk,bkWeArr:bkWe,ldArr:ld,avArr:av,weArr:we,gmbArr:gmb,prArr:pr,wdArr:wd,
           orgArr:orgArr, gmbOnlyArr:gmbOnly, gAdArr:gAd, fbArr:fbA, jdArr:jdA, othArr:othA, useRedshiftLeads:useRedshift};
 }
 function allClinicRCA(){
@@ -793,6 +794,49 @@ function shrinkChart(sched, shrunk, avail, hi){
     <span><span style="display:inline-block;width:10px;height:10px;background:#ef4444;border-radius:2px;vertical-align:middle;margin-right:4px;"></span>Shrunk (doctor blocked)</span></div>`;
   return `${legend}<svg width="100%" viewBox="0 0 ${w} ${h+2}" style="overflow:visible;">${bars}</svg>`;
 }
+// ═══════════════ BOOKING-RATE / EXPECTED MODEL ═══════════════
+// This clinic's own bookings-per-open-day, split weekday vs weekend, over the prior weeks.
+// Lets us separate "how many days were open" (availability) from "how well each open day
+// converted" (demand / conversion). Expected = wd_rate·weekday-days-open + we_rate·weekend-days-open.
+function bookingRateCard(r){
+  const W=wkIdx, sl=a=>a.slice(W+1,W+6);
+  const bkP=sl(r.bkArr), weBkP=sl(r.bkWeArr||[]), avP=sl(r.avArr), weP=sl(r.weArr);
+  let wdBk=0,weBk=0,wdDay=0,weDay=0,nW=0;
+  for(let i=0;i<bkP.length;i++){ const a=avP[i]||0; if(a<=0) continue;   // skip closed weeks
+    const w=weP[i]||0, b=bkP[i]||0, wb=weBkP[i]||0;
+    wdBk+=(b-wb); weBk+=wb; wdDay+=(a-w); weDay+=w; nW++; }
+  if(nW<2) return '';                                   // not enough history for a stable rate
+  const wkBk=wdBk+weBk, wkDay=wdDay+weDay;
+  const wdRate=wdDay>0?wdBk/wdDay:0, weRate=weDay>0?weBk/weDay:0, wkRate=wkDay>0?wkBk/wkDay:0;
+  const wdOpen=Math.max(0,(r.av_w||0)-(r.we_w||0)), weOpen=r.we_w||0;
+  const expDays=wdRate*wdOpen+weRate*weOpen;            // expected at THIS week's days-open
+  const bkNorm=wkBk/nW;                                 // normal weekly bookings (rate × normal days)
+  const daysEffect=expDays-bkNorm;                      // gap explained by days-open differing from normal
+  const rateEffect=r.bk_w-expDays;                      // gap explained by bookings-per-day differing
+  const gap=r.bk_w-bkNorm;
+  const weHotter=weRate>wdRate*1.15;
+  const tile=(lbl,val,unit,col,sub)=>`<div style="flex:1;min-width:96px;background:#fff;border:1px solid var(--line);border-radius:10px;padding:9px 11px;"><div style="font-size:9.5px;text-transform:uppercase;letter-spacing:.04em;color:#94a3b8;font-weight:700;">${lbl}</div><div style="font-size:21px;font-weight:800;color:${col};line-height:1.15;">${val}<span style="font-size:10px;font-weight:600;color:#94a3b8;">${unit}</span></div><div style="font-size:9.5px;color:#94a3b8;">${sub||''}</div></div>`;
+  const driver = Math.abs(daysEffect)>=Math.abs(rateEffect)
+    ? `<b style="color:#7c3aed">fewer days open (availability)</b>` : `<b style="color:#d97706">lower bookings per open day (demand / conversion)</b>`;
+  const verdict = Math.abs(gap)<1.5
+    ? `Bookings landed about where this clinic's rate × days-open predicts (${r1(expDays)}).`
+    : `At its normal rates the clinic should book ~<b>${r1(expDays)}</b> on the <b>${wdOpen} weekday + ${weOpen} weekend</b> days it opened this week; it booked <b>${r.bk_w}</b> (${signed(r1(gap))} vs its ${r1(bkNorm)} norm). Of that gap, ≈<b style="color:#7c3aed">${signed(r1(daysEffect))}</b> is days-open and ≈<b style="color:#d97706">${signed(r1(rateEffect))}</b> is rate-per-day → mostly ${driver}.`;
+  return `<div class="card"><div class="sec-h"><span class="sec-num">📊</span>Booking rate — per day open</div>
+    <div class="sec-sub">This clinic's own bookings per <b>open day</b>, weekday vs weekend, over the prior ${nW} weeks. Separates <b>how many days were open</b> from <b>how well each day converted</b>. · ${WEEKS[wkIdx].label}</div>
+    <div style="display:flex;gap:9px;flex-wrap:wrap;margin-bottom:10px;">
+      ${tile('Weekday rate',r1(wdRate),'/day','#7c3aed','bookings per weekday open')}
+      ${tile('Weekend rate',r1(weRate),'/day',weHotter?'#db2777':'#a855f7',weHotter?'busier — high-demand window':'bookings per weekend open')}
+      ${tile('Overall rate',r1(wkRate),'/day','#475569','blended per open day')}
+    </div>
+    <div style="display:flex;gap:9px;flex-wrap:wrap;margin-bottom:10px;">
+      ${tile('Open this week',wdOpen+' + '+weOpen,' d','#0f172a','weekday + weekend days')}
+      ${tile('Expected',r1(expDays),'','#475569','rate × days open')}
+      ${tile('Actual',r.bk_w,'',gap>=0?'#059669':'#dc2626','booked this week')}
+    </div>
+    ${weHotter?`<div style="font-size:10.5px;color:#be185d;background:#fdf2f8;border-radius:8px;padding:7px 11px;margin-bottom:9px;">Weekends convert <b>${r1(weRate/Math.max(0.01,wdRate))}×</b> a weekday here — losing a weekend day costs the most.</div>`:''}
+    <div style="font-size:11.5px;background:#f8fafc;border-radius:9px;padding:10px 13px;line-height:1.6;color:#475569;">${verdict}</div>
+  </div>`;
+}
 // ── chart zoom: each trend cell registers its content; ⛶ opens a large modal ──
 let _zoomCharts={}, _zoomSeq=0;
 function zoomTrend(id){
@@ -1195,6 +1239,7 @@ function renderDeepDive(r){
     </div>
   </div>
   ${storyCard}
+  ${bookingRateCard(r)}
   ${trendsCard}
   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:16px;">${availCard}${attribCard}</div>
   ${regCard(r)}
