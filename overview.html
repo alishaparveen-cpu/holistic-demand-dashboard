@@ -146,12 +146,31 @@ html,body{background:#f8fafc;color:var(--ink);font-family:ui-sans-serif,system-u
         style="padding:5px 9px;border:1px solid var(--line);border-radius:7px;font-size:12px;background:#fff;cursor:pointer;max-width:140px;">
         <option value="ALL">All Cities</option>
       </select>
+      <!-- Maturity -->
+      <div style="display:flex;gap:3px;">
+        <button class="toggle-btn active" id="matAll" onclick="setMat('ALL')">All mat.</button>
+        <button class="toggle-btn"        id="matMatured" onclick="setMat('Matured')">Matured</button>
+        <button class="toggle-btn"        id="matMaturing" onclick="setMat('Maturing')">Maturing</button>
+        <button class="toggle-btn"        id="matNew" onclick="setMat('New')">New</button>
+      </div>
+      <!-- Channel -->
+      <select id="chanSel" onchange="setChannel(this.value)"
+        style="padding:5px 9px;border:1px solid var(--line);border-radius:7px;font-size:12px;background:#fff;cursor:pointer;">
+        <option value="ALL">All channels</option>
+        <option>GMB</option><option>Google</option><option>Practo</option><option>Organic</option><option>Meta</option><option>Others</option>
+      </select>
       <!-- Metric -->
       <div style="display:flex;gap:3px;">
         <button class="toggle-btn active" id="mAll"      onclick="setMet('all')">All</button>
         <button class="toggle-btn"        id="mCalls"    onclick="setMet('calls_done')">Calls</button>
         <button class="toggle-btn"        id="mBookings" onclick="setMet('new_bookings')">Bookings</button>
         <button class="toggle-btn"        id="mLeads"    onclick="setMet('total_leads')">Leads</button>
+      </div>
+      <!-- Display: Charts / Data / Snapshot -->
+      <div style="display:flex;gap:3px;border:1px solid var(--line);border-radius:9px;padding:2px;">
+        <button class="toggle-btn" id="dCharts" onclick="setDisplay('charts')">📊 Charts</button>
+        <button class="toggle-btn" id="dData" onclick="setDisplay('data')">▦ Data</button>
+        <button class="toggle-btn active" id="dSnap" onclick="setDisplay('snapshot')">⚡ Snapshot</button>
       </div>
       <!-- Week -->
       <select id="weekSel" onchange="setWeek(this.value)"
@@ -212,6 +231,10 @@ let WK_LABELS  = {}; // wkKey → label string
 let dataScope  = 'all';
 let activeTier = 'ALL';
 let activeCity = 'ALL'; // specific city filter — 'ALL' = no city filter
+let activeMat  = 'ALL'; // 'ALL' | 'Matured' | 'Maturing' | 'New'
+let activeChannel = 'ALL';
+let displayMode = 'snapshot'; // 'charts' | 'data' | 'snapshot'
+const CLINIC_MAT = {};  // 'City_Clinic' → maturity bucket (seeded from data.json week-count)
 let activeWkIdx = 0;  // index into ALL_WEEKS (0 = newest)
 let activeMet  = 'all'; // 'all' | 'calls_done' | 'new_bookings' | 'total_leads'
 let GMB_LEADS_BY_CITY = {};    // weekKey → city → GMB leads (loaded from OV sheet)
@@ -2889,8 +2912,108 @@ function wireSectResize() {
   }, true);
 }
 
+// ── Reimagined controls + Snapshot/Data views ──────────────────────────────
+function setMat(m){ activeMat=m; ['matAll','matMatured','matMaturing','matNew'].forEach(id=>document.getElementById(id)?.classList.remove('active')); document.getElementById({ALL:'matAll',Matured:'matMatured',Maturing:'matMaturing',New:'matNew'}[m])?.classList.add('active'); render(); }
+function setChannel(c){ activeChannel=c; render(); }
+function setDisplay(d){ displayMode=d; ['dCharts','dData','dSnap'].forEach(id=>document.getElementById(id)?.classList.remove('active')); document.getElementById({charts:'dCharts',data:'dData',snapshot:'dSnap'}[d])?.classList.add('active'); render(); }
+function seedMat(){
+  if(Object.keys(CLINIC_MAT).length) return;
+  const cnt={}; const wks=JDATA.weeks||ALL_WEEKS;
+  for(const wk of wks){ const wc=JDATA?.offline?.weekly_clinic?.[wk]||{}; for(const k in wc){ if((wc[k].gross||wc[k].calls_done||0)>0) cnt[k]=(cnt[k]||0)+1; } }
+  for(const k in cnt){ const n=cnt[k]; CLINIC_MAT[k]= n>=11?'Matured': n>=5?'Maturing':'New'; }
+}
+const ovAvg=a=>{ const v=a.filter(x=>x!=null&&!isNaN(x)); return v.length? v.reduce((x,y)=>x+y,0)/v.length:0; };
+function clinCityOf(k){ const i=k.indexOf('_'); return i>-1?k.slice(0,i):k; }
+function effClinics(){
+  const keys=new Set(); const wks=ALL_WEEKS;
+  for(const wk of wks){ const w=JDATA?.[dataScope]?.weekly_clinic?.[wk]||{}; for(const k in w) keys.add(k); }
+  return [...keys].filter(k=>{ const city=clinCityOf(k); if(!city||city==='Online') return false;
+    if(activeCity!=='ALL' && city!==activeCity) return false;
+    if(activeTier!=='ALL' && cityTier(city)!==activeTier) return false;
+    if(activeMat!=='ALL' && (CLINIC_MAT[k]||'New')!==activeMat) return false;
+    return true; });
+}
+function snapAgg(wk){
+  if(activeChannel!=='ALL'){ const d=JDATA?.[dataScope]?.weekly_channel?.[wk]?.[activeChannel]||{}; return {gross:d.slot_booked||d.gross||0,calls:d.calls_done||0,no_show:d.no_show||0,leads:null}; }
+  if((activeMat!=='ALL'||activeTier!=='ALL'||activeCity!=='ALL') && dataScope!=='online'){
+    let g=0,c=0,ns=0; for(const k of effClinics()){ const d=JDATA?.[dataScope]?.weekly_clinic?.[wk]?.[k]; if(d){ g+=d.slot_booked||d.gross||0; c+=d.calls_done||0; ns+=d.no_show||0; } }
+    return {gross:g,calls:c,no_show:ns,leads: (activeTier!=='ALL'||activeCity!=='ALL')? leadsVal(wk):null};
+  }
+  const f=JDATA?.[dataScope]?.weekly_funnel?.[wk]||{}; return {gross:f.slot_booked||f.new_bookings||0,calls:f.calls_done||0,no_show:f.no_show||0,leads: TOTAL_LEADS_WK[wk]??null};
+}
+function scopeFilterLabel(){
+  const parts=[]; parts.push(dataScope.charAt(0).toUpperCase()+dataScope.slice(1));
+  if(activeTier!=='ALL') parts.push(activeTier); if(activeMat!=='ALL') parts.push(activeMat);
+  if(activeCity!=='ALL') parts.push('📍'+activeCity); if(activeChannel!=='ALL') parts.push('📣'+activeChannel);
+  return parts.join(' · ');
+}
+function renderSnapshot(){
+  const W=activeWkIdx, wk=ALL_WEEKS[W], wkP=ALL_WEEKS[W+1];
+  const lbl=WK_LABELS[wk]||JDATA?.[dataScope]?.weekly_funnel?.[wk]?.label||wk;
+  const a=snapAgg(wk), p=wkP?snapAgg(wkP):null;
+  const b2d=a.gross?a.calls/a.gross*100:null, b2dP=(p&&p.gross)?p.calls/p.gross*100:null;
+  const nsPct=a.gross?a.no_show/a.gross*100:null;
+  const win=ALL_WEEKS.slice(W+1,W+9).map(snapAgg);
+  const avgG=ovAvg(win.map(x=>x.gross)), avgC=ovAvg(win.map(x=>x.calls)), avgL=ovAvg(win.map(x=>x.leads).filter(x=>x!=null));
+  const wow=(c,pv)=>pv?(c-pv)/pv*100:null;
+  const dCol=v=>v==null?'#94a3b8':Math.abs(v)<0.5?'#94a3b8':v>0?'#059669':'#dc2626';
+  const tag=(v,suf,inv)=>{ if(v==null) return ''; const good=inv?v<0:v>0; const c=Math.abs(v)<0.5?'#94a3b8':good?'#059669':'#dc2626'; return `<span style="color:${c};font-weight:700;font-size:11px;">${v>0?'▲ +':v<0?'▼ ':''}${Math.abs(v).toFixed(0)}% WoW</span>`; };
+  const kpi=(label,big,sub,delta)=>`<div style="background:#fff;border:1px solid var(--line);border-radius:13px;padding:15px 17px;">
+    <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#94a3b8;">${label}</div>
+    <div style="font-size:30px;font-weight:800;line-height:1.05;margin-top:5px;">${big}</div>
+    <div style="font-size:11px;color:#64748b;margin-top:5px;">${delta||''} ${sub||''}</div></div>`;
+  const heroLeads = a.leads!=null ? kpi('Leads · '+lbl, fmtN(a.leads), avgL?'· 8-wk '+fmtN(avgL):'', tag(wow(a.leads,p&&p.leads),'',false))
+                  : kpi('Leads · '+lbl, '—', 'n/a for this filter', '');
+  const hero=`<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:13px;margin-bottom:16px;">
+    ${heroLeads}
+    ${kpi('Bookings · '+lbl, fmtN(a.gross), '· 8-wk '+fmtN(avgG), tag(wow(a.gross,p&&p.gross),'',false))}
+    ${kpi('Calls Done · '+lbl, fmtN(a.calls), '· 8-wk '+fmtN(avgC), tag(wow(a.calls,p&&p.calls),'',false))}
+    ${kpi('B2D ratio', fmtPct(b2d), 'calls ÷ bookings', b2dP!=null?`<span style="color:${dCol(b2d-b2dP)};font-weight:700;font-size:11px;">${b2d-b2dP>=0?'▲ +':'▼ '}${Math.abs(b2d-b2dP).toFixed(1)}pp</span>`:'')}
+    ${kpi('No-Show %', fmtPct(nsPct), 'of bookings', '')}
+  </div>`;
+  // funnel viz
+  const stages=[['Leads',a.leads],['Bookings',a.gross],['Calls Done',a.calls]].filter(s=>s[1]!=null);
+  const fmax=Math.max(...stages.map(s=>s[1]),1);
+  const funnel=`<div class="card" style="margin-bottom:16px;"><div style="font-size:13px;font-weight:700;margin-bottom:10px;">🔻 Demand funnel — ${scopeFilterLabel()} · ${lbl}</div>
+    ${stages.map((s,i)=>`<div style="display:flex;align-items:center;gap:10px;margin-bottom:7px;"><div style="width:90px;font-size:11px;color:#475569;font-weight:600;text-align:right;">${s[0]}</div><div style="flex:1;background:#f1f5f9;border-radius:5px;height:26px;"><div style="width:${Math.max(8,s[1]/fmax*100)}%;height:100%;background:${['#0ea5e9','#6366f1','#10b981'][i]};border-radius:5px;display:flex;align-items:center;padding-left:9px;color:#fff;font-weight:800;font-size:12px;">${fmtN(s[1])}</div></div><div style="width:90px;font-size:10px;color:#94a3b8;">${i>0&&stages[i-1][1]?(s[1]/stages[i-1][1]*100).toFixed(0)+'% of prev':''}</div></div>`).join('')}
+  </div>`;
+  // by-channel table
+  const channels=(JDATA.channels||['GMB','Google','Practo','Organic','Meta','Others']);
+  const chRows=channels.map(ch=>{ const d=JDATA?.[dataScope]?.weekly_channel?.[wk]?.[ch]||{}; const g=d.slot_booked||d.gross||0,c=d.calls_done||0; return {ch,g,c,b:g?c/g*100:null}; }).filter(r=>r.g>0||r.c>0).sort((a,b)=>b.g-a.g)
+    .map(r=>`<tr><td style="font-weight:600;"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${CH_COLORS[r.ch]||'#94a3b8'};margin-right:6px;"></span>${r.ch}</td><td style="text-align:right;">${fmtN(r.g)}</td><td style="text-align:right;">${fmtN(r.c)}</td><td style="text-align:right;color:#475569;">${fmtPct(r.b)}</td></tr>`).join('');
+  const chCard=`<div class="card"><div style="font-size:13px;font-weight:700;margin-bottom:8px;">📣 How each channel is doing · ${lbl}</div>
+    <table style="width:100%;border-collapse:collapse;font-size:12px;"><thead><tr style="color:#94a3b8;font-size:10px;text-transform:uppercase;"><th style="text-align:left;padding:5px;">Channel</th><th style="text-align:right;padding:5px;">Bookings</th><th style="text-align:right;padding:5px;">Calls</th><th style="text-align:right;padding:5px;">B2D</th></tr></thead><tbody>${chRows}</tbody></table></div>`;
+  // by-city
+  const cityRows=Object.keys(JDATA?.[dataScope]?.weekly_city?.[wk]||{}).filter(c=>c&&c!=='Online'&&(activeTier==='ALL'||cityTier(c)===activeTier)&&(activeCity==='ALL'||c===activeCity)).map(c=>{ const d=JDATA[dataScope].weekly_city[wk][c]; const g=d.slot_booked||d.gross||0,cc=d.calls_done||0; return {c,g,cc,b:g?cc/g*100:null}; }).filter(r=>r.g>0).sort((a,b)=>b.g-a.g)
+    .map(r=>`<tr><td style="font-weight:600;">${r.c}</td><td style="text-align:right;">${fmtN(r.g)}</td><td style="text-align:right;">${fmtN(r.cc)}</td><td style="text-align:right;color:#475569;">${fmtPct(r.b)}</td></tr>`).join('');
+  const cityCard=dataScope==='online'?'':`<div class="card"><div style="font-size:13px;font-weight:700;margin-bottom:8px;">🏙️ By city · ${lbl}</div>
+    <div style="max-height:340px;overflow:auto;"><table style="width:100%;border-collapse:collapse;font-size:12px;"><thead><tr style="color:#94a3b8;font-size:10px;text-transform:uppercase;"><th style="text-align:left;padding:5px;">City</th><th style="text-align:right;padding:5px;">Bookings</th><th style="text-align:right;padding:5px;">Calls</th><th style="text-align:right;padding:5px;">B2D</th></tr></thead><tbody>${cityRows}</tbody></table></div></div>`;
+  // by-clinic (filtered)
+  const clRows=(dataScope==='online')?[]:effClinics().map(k=>{ const d=JDATA?.[dataScope]?.weekly_clinic?.[wk]?.[k]; const g=d?.slot_booked||d?.gross||0,c=d?.calls_done||0; return {k,city:clinCityOf(k),name:k.slice(k.indexOf('_')+1),g,c,b:g?c/g*100:null,mat:CLINIC_MAT[k]||'New'}; }).filter(r=>r.g>0).sort((a,b)=>b.g-a.g).slice(0,40)
+    .map(r=>`<tr><td style="font-weight:600;">${r.name}</td><td style="color:#94a3b8;">${r.city}</td><td><span style="font-size:9px;padding:1px 5px;border-radius:8px;background:#f1f5f9;color:#64748b;">${r.mat}</span></td><td style="text-align:right;">${fmtN(r.g)}</td><td style="text-align:right;">${fmtN(r.c)}</td><td style="text-align:right;color:#475569;">${fmtPct(r.b)}</td></tr>`).join('');
+  const clCard=dataScope==='online'?'':`<div class="card"><div style="font-size:13px;font-weight:700;margin-bottom:8px;">🏥 By clinic${activeMat!=='ALL'?' · '+activeMat:''} · ${lbl}</div>
+    <div style="max-height:380px;overflow:auto;"><table style="width:100%;border-collapse:collapse;font-size:12px;"><thead><tr style="color:#94a3b8;font-size:10px;text-transform:uppercase;"><th style="text-align:left;padding:5px;">Clinic</th><th style="text-align:left;padding:5px;">City</th><th style="text-align:left;padding:5px;">Mat.</th><th style="text-align:right;padding:5px;">Bookings</th><th style="text-align:right;padding:5px;">Calls</th><th style="text-align:right;padding:5px;">B2D</th></tr></thead><tbody>${clRows}</tbody></table></div></div>`;
+  document.getElementById('root').innerHTML=`
+    <div style="margin-bottom:14px;"><h1 style="font-size:22px;font-weight:700;margin:0 0 4px;">Overall Demand — Snapshot</h1>
+      <p style="color:var(--muted);font-size:12px;margin:0;">${scopeFilterLabel()} · week of <strong>${lbl}</strong> · change any filter above to update.</p></div>
+    ${hero}${funnel}
+    <div style="display:grid;grid-template-columns:1fr;gap:16px;">${chCard}${cityCard}${clCard}</div>`;
+}
+function renderDataView(){
+  const wk=ALL_WEEKS[activeWkIdx]; const lbl=JDATA?.[dataScope]?.weekly_funnel?.[wk]?.label||wk;
+  document.getElementById('root').innerHTML=`
+    <div style="margin-bottom:14px;"><h1 style="font-size:22px;font-weight:700;margin:0 0 4px;">Overall Demand — Data</h1>
+      <p style="color:var(--muted);font-size:12px;margin:0;">${scopeFilterLabel()} · week of <strong>${lbl}</strong> · pure numbers across the funnel.</p></div>
+    ${sect('🔀 Funnel by channel','Leads → bookings → calls → done by acquisition channel', buildFullFunnelTable('channel'))}
+    ${dataScope!=='online'?sect('🏙️ Funnel by city &amp; clinic','Per-city / per-clinic funnel, indexed to availability', buildFullFunnelTable('city')+buildAvailabilityIndex()):''}`;
+  wireSectResize();
+}
+
 function render() {
   if (!JDATA) return;
+  seedMat();
+  if (displayMode==='snapshot') { try{ renderSnapshot(); }catch(e){ console.error('snapshot',e); document.getElementById('root').innerHTML='<div class="loading" style="color:#dc2626">Snapshot error: '+e.message+'</div>'; } return; }
+  if (displayMode==='data')     { try{ renderDataView(); }catch(e){ console.error('data',e); document.getElementById('root').innerHTML='<div class="loading" style="color:#dc2626">Data error: '+e.message+'</div>'; } return; }
   const wk  = ALL_WEEKS[activeWkIdx];
   const lbl = JDATA?.[dataScope]?.weekly_funnel?.[wk]?.label || wk;
   const isAll = activeMet === 'all';
