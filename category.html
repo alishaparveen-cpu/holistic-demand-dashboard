@@ -261,6 +261,10 @@ let chWeekIdx    = -1;    // Channel Analysis end week (-1 = latest)
 let cityFromIdx  = 0;     // City section date range (period indices)
 let cityToIdx    = -1;
 let charts       = {};
+let pcmMetric    = 'cat';  // channel-mix section: 'cat' | 'total'
+let pcmMode      = 'abs';  // 'abs' | 'pct'
+let _pcmData     = null;   // {labels, series, channels} stashed for post-render draw
+function setPcm(k,v){ if(k==='metric')pcmMetric=v; else pcmMode=v; render(); }
 function setChWin(v){ chWin = v; render(); }
 function setChWeek(i){ chWeekIdx = +i; render(); }
 function setCityFrom(i){ cityFromIdx = +i; if(cityToIdx>=0 && cityToIdx<cityFromIdx) cityToIdx=cityFromIdx; render(); }
@@ -1041,6 +1045,25 @@ function render() {
         <span style="margin-left:auto;font-size:11px;color:var(--muted);">${periods[chStart].label} → ${periods[chEnd].label} · ${chPeriods.length} ${pWord} · trends &amp; shares reflect this window</span></div>
        <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:14px;">${channelCardsHTML}</div>`)}
 
+    ${(()=>{ // ── Channel mix & trends — stacked channel composition over the window ──
+      const pcmCats=v=>cat==='SH'?getSHVal(v):cat==='ALL'?(v.total||0):(v[cat]||0);
+      const series=chPeriods.map(p=>{ const row={label:p.label,_tot:0}; channels.forEach(ch=>row[ch]=0);
+        for(const wk of p.weeks){ for(const ch of channels){ const d=scope.weekly_channel?.[wk]?.[ch]||{}; const val=pcmMetric==='total'?(d.total||0):pcmCats(d); row[ch]+=val; row._tot+=val; } } return row; });
+      _pcmData={labels:chLabels, series, channels};
+      const last=series[series.length-1]||{_tot:0};
+      const ranked=channels.map(ch=>[ch,last[ch]||0]).sort((a,b)=>b[1]-a[1]).filter(x=>x[1]>0);
+      const metLbl=pcmMetric==='total'?'Total calls':catLabel+' calls';
+      const ins=ranked.length?`<b>${ranked[0][0]}</b> leads at ${last._tot?Math.round(ranked[0][1]/last._tot*100):0}% of ${metLbl} · `+ranked.slice(0,3).map(([ch,v])=>`<span style="color:${CH_COLORS[ch]||'#64748b'}">${ch}</span> ${last._tot?Math.round(v/last._tot*100):0}%`).join(' · '):'no calls in window';
+      return `<div class="card" style="margin-bottom:16px;">
+        <div style="font-size:13px;font-weight:700;color:var(--ink);margin-bottom:2px;">📊 Channel mix &amp; trends — ${metLbl}</div>
+        <div style="font-size:11px;color:var(--muted);margin-bottom:10px;">Which channels drive ${pcmMetric==='total'?'demand':catLabel+' calls'} over the window, and how the mix is shifting</div>
+        <div class="ch-winbar"><span class="tb-lbl">Metric</span>${[[catLabel+' calls','cat'],['Total calls','total']].map(([l,v])=>`<button class="ch-winpill${pcmMetric===v?' on':''}" onclick="setPcm('metric','${v}')">${l}</button>`).join('')}
+          <span class="tb-lbl" style="margin-left:10px;">Mode</span>${[['Absolute','abs'],['100% share','pct']].map(([l,v])=>`<button class="ch-winpill${pcmMode===v?' on':''}" onclick="setPcm('mode','${v}')">${l}</button>`).join('')}
+          <span style="margin-left:auto;font-size:11px;color:var(--muted);">same ${chPeriods.length}-${pWord} window as above</span></div>
+         <div style="height:300px;margin-top:6px;"><canvas id="pageChMix"></canvas></div>
+         <div style="font-size:11.5px;color:#475569;margin-top:8px;line-height:1.5;">${ins}.</div></div>`;
+    })()}
+
     ${citySection ? sect('🏙️ City-level ' + catLabel + ' share — average',
       catLabel + '% by city · aggregated over the selected date range',
       citySection) : ''}`;
@@ -1048,6 +1071,14 @@ function render() {
   Object.values(charts).forEach(c => { try { c.destroy(); } catch(e){} });
   charts = {};
   renderDrill();
+  drawPageChMix();
+}
+function drawPageChMix(){
+  const ctx=document.getElementById('pageChMix'); if(!ctx||!_pcmData) return;
+  const {labels,series,channels}=_pcmData; const pct=pcmMode==='pct';
+  const ds=channels.map(ch=>({label:ch,data:series.map(x=>pct?(x._tot?x[ch]/x._tot*100:0):x[ch]),backgroundColor:(CH_COLORS[ch]||'#94a3b8')+'cc',borderColor:CH_COLORS[ch]||'#94a3b8',borderWidth:0,stack:'c',
+    datalabels:{display:c=>{const v=c.dataset.data[c.dataIndex];return pct?v>=8:v>=4;},color:'#fff',font:{size:9,weight:'bold'},formatter:v=>v>0?(pct?Math.round(v)+'%':Math.round(v)):''}}));
+  charts.pageChMix=new Chart(ctx,{type:'bar',data:{labels,datasets:ds},options:{animation:false,responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'top',labels:{font:{size:11},boxWidth:11,padding:8}},tooltip:{callbacks:{label:c=>`${c.dataset.label}: ${pct?(c.raw||0).toFixed(1)+'%':Math.round(c.raw||0)}`}}},scales:{x:{stacked:true,grid:{display:false},ticks:{font:{size:11}}},y:{stacked:true,max:pct?105:undefined,grid:{color:'#f1f5f9'},ticks:{font:{size:11},callback:v=>pct?v+'%':v}}}}});
 }
 
 // ── Deep-dive helpers ────────────────────────────────────────────────────────
