@@ -184,9 +184,10 @@ details[open]>.dl-gsum .dl-cv{transform:rotate(90deg);}
       <button class="toggle-btn"        id="tierT1Cat"  onclick="setTierCat('T1')">Tier 1</button>
       <button class="toggle-btn"        id="tierT2Cat"  onclick="setTierCat('T2')">Tier 2</button>
     </div>
-    <div class="flex items-center gap-1" id="geoSelWrap">
-      <select id="citySel" onchange="setCityCat(this.value)" title="City" style="font-size:12px;border:1px solid var(--line);border-radius:8px;padding:5px 8px;background:#fff;cursor:pointer;max-width:140px;"><option value="ALL">All cities</option></select>
-      <select id="clinicSel" onchange="setClinicCat(this.value)" title="Clinic" style="font-size:12px;border:1px solid var(--line);border-radius:8px;padding:5px 8px;background:#fff;cursor:pointer;max-width:150px;"><option value="ALL">All clinics</option></select>
+    <div class="flex items-center gap-1" id="geoSelWrap" style="position:relative;">
+      <button id="cityMsBtn" onclick="geoMsToggle('city')" style="font-size:12px;border:1px solid var(--line);border-radius:8px;padding:5px 10px;background:#fff;cursor:pointer;white-space:nowrap;">All cities ▾</button>
+      <button id="clinicMsBtn" onclick="geoMsToggle('clinic')" style="font-size:12px;border:1px solid var(--line);border-radius:8px;padding:5px 10px;background:#fff;cursor:pointer;white-space:nowrap;">All clinics ▾</button>
+      <div id="geoMsPanel" style="display:none;position:absolute;top:38px;right:0;z-index:50;background:#fff;border:1px solid var(--line);border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,.14);width:260px;padding:8px;"></div>
     </div>
     <!-- Display: Charts / Data snapshot -->
     <div class="flex gap-1 border rounded-lg p-0.5" style="border-color:var(--line);">
@@ -258,8 +259,12 @@ let activeCat    = 'STI';
 let viewMode     = 'abs';
 let activeScope  = 'offline';
 let activeChannel= 'ALL';
-let activeCity   = 'ALL';
+let activeCity   = 'ALL';   // legacy single-city (kept for Data/Snapshot paths); geoCitySel is the multi-select source of truth
 let activeClinic = 'ALL';
+let geoCitySel   = new Set();   // multi-select cities (empty = all)
+let geoClinicSel = new Set();   // multi-select clinic keys "City_Locality" (empty = all)
+let geoMsOpen    = null;        // open multiselect panel: 'city' | 'clinic' | null
+let geoMsSearch  = '';
 let activeTier   = 'ALL';
 let chWin        = 8;     // Channel Analysis time window (periods), or 'all'
 let chWeekIdx    = -1;    // Channel Analysis end week (-1 = latest)
@@ -434,42 +439,60 @@ function setSnapFrom(i){ snapFromIdx = +i; if(snapToIdx>=0 && snapToIdx<snapFrom
 function setSnapTo(i){ snapToIdx = +i; if(snapToIdx<snapFromIdx) snapFromIdx=snapToIdx; render(); }
 
 function setTierCat(t) {
-  activeTier = t; activeCity = 'ALL'; activeClinic = 'ALL'; activeChannel = 'ALL';
+  activeTier = t; activeCity = 'ALL'; activeClinic = 'ALL'; activeChannel = 'ALL'; geoCitySel.clear(); geoClinicSel.clear();
   ['tierAllCat','tierT1Cat','tierT2Cat'].forEach(id => document.getElementById(id)?.classList.remove('active'));
   document.getElementById(t==='ALL'?'tierAllCat':t==='T1'?'tierT1Cat':'tierT2Cat')?.classList.add('active');
-  syncDrillToGeo(); render();
+  syncDrillToGeo(); render(); renderGeoMs();
 }
-// City / Clinic top filters — drive every chart section (offline geo via CHDATA).
-function setCityCat(c){ activeCity = c; activeClinic = 'ALL'; activeTier = 'ALL'; activeChannel='ALL';
-  ['tierAllCat','tierT1Cat','tierT2Cat'].forEach(id=>document.getElementById(id)?.classList.toggle('active', id==='tierAllCat'));
-  syncDrillToGeo(); render(); }
-function setClinicCat(cl){ activeClinic = cl; syncDrillToGeo(); render(); }
-// Mirror the top geo filter into the drill-down explorer so its charts move with
-// Tier / City / Clinic too (not just Channel Analysis).
+// ── City / Clinic multi-select (searchable) — drive every chart section ──
+function geoAllCities(){ const n=(CHDATA&&CHDATA.offline&&CHDATA.offline.city)||{}; let cs=Object.keys(n).sort(); if(activeTier!=='ALL') cs=cs.filter(c=>cityTier(c)===activeTier); return cs; }
+function geoAllClinics(){ const n=(CHDATA&&CHDATA.offline&&CHDATA.offline.clinic)||{}; let ks=Object.keys(n).sort();
+  if(activeTier!=='ALL') ks=ks.filter(k=>cityTier(k.split('_')[0])===activeTier);
+  if(geoCitySel.size) ks=ks.filter(k=>geoCitySel.has(k.split('_')[0]));
+  return ks; }
+function geoMsToggle(kind){ geoMsOpen = geoMsOpen===kind?null:kind; geoMsSearch=''; renderGeoMs(); }
+function geoMsSearchInput(v){ geoMsSearch=(v||'').toLowerCase(); renderGeoMsList(); }
+function geoMsPick(kind,val){ const set=kind==='city'?geoCitySel:geoClinicSel; if(set.has(val)) set.delete(val); else set.add(val);
+  if(kind==='city'){ /* prune clinics whose city is no longer in the (now narrowed) set */ if(geoCitySel.size){ [...geoClinicSel].forEach(k=>{ if(!geoCitySel.has(k.split('_')[0])) geoClinicSel.delete(k); }); } }
+  activeTier='ALL'; ['tierAllCat','tierT1Cat','tierT2Cat'].forEach(id=>document.getElementById(id)?.classList.toggle('active', id==='tierAllCat'));
+  syncDrillToGeo(); render(); renderGeoMs(); }
+function geoMsClear(kind){ (kind==='city'?geoCitySel:geoClinicSel).clear(); if(kind==='city') geoClinicSel.clear(); syncDrillToGeo(); render(); renderGeoMs(); }
+function renderGeoMs(){
+  const cityBtn=document.getElementById('cityMsBtn'), clinicBtn=document.getElementById('clinicMsBtn'), panel=document.getElementById('geoMsPanel');
+  if(!cityBtn) return;
+  cityBtn.textContent   = (geoCitySel.size?  (geoCitySel.size===1?[...geoCitySel][0]:geoCitySel.size+' cities') : 'All cities')+' ▾';
+  clinicBtn.textContent = (geoClinicSel.size?(geoClinicSel.size===1?[...geoClinicSel][0].split('_').slice(1).join(' ')+'…':geoClinicSel.size+' clinics') : 'All clinics')+' ▾';
+  cityBtn.style.borderColor   = geoCitySel.size? '#4f46e5':'var(--line)'; cityBtn.style.color = geoCitySel.size?'#4338ca':'';
+  clinicBtn.style.borderColor = geoClinicSel.size?'#4f46e5':'var(--line)'; clinicBtn.style.color = geoClinicSel.size?'#4338ca':'';
+  if(!geoMsOpen){ panel.style.display='none'; return; }
+  panel.style.display='block';
+  panel.innerHTML = `<input id="geoMsInput" type="text" oninput="geoMsSearchInput(this.value)" placeholder="Search ${geoMsOpen==='city'?'cities':'clinics'}…" style="width:100%;box-sizing:border-box;font-size:12px;padding:6px 9px;border:1px solid var(--line);border-radius:7px;margin-bottom:6px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;"><span style="font-size:10px;color:#94a3b8;font-weight:700;text-transform:uppercase;">${geoMsOpen==='city'?'Cities':'Clinics'}</span><button onclick="geoMsClear('${geoMsOpen}')" style="font-size:10px;color:#4f46e5;background:none;border:none;cursor:pointer;">Clear</button></div>
+    <div id="geoMsList" style="max-height:240px;overflow:auto;"></div>`;
+  renderGeoMsList();
+  const inp=document.getElementById('geoMsInput'); if(inp) inp.focus();
+}
+function renderGeoMsList(){
+  const list=document.getElementById('geoMsList'); if(!list||!geoMsOpen) return;
+  const kind=geoMsOpen, set=kind==='city'?geoCitySel:geoClinicSel;
+  const items = kind==='city' ? geoAllCities().map(c=>[c,c]) : geoAllClinics().map(k=>[k, k.split('_')[0]+' › '+k.split('_').slice(1).join('_')]);
+  const f = geoMsSearch;
+  const shown = items.filter(([v,lab])=>!f || lab.toLowerCase().includes(f));
+  list.innerHTML = shown.length ? shown.map(([v,lab])=>`<label style="display:flex;align-items:center;gap:7px;font-size:12px;padding:4px 5px;border-radius:6px;cursor:pointer;${set.has(v)?'background:#eef2ff;':''}" onmouseover="this.style.background='#f1f5f9'" onmouseout="this.style.background='${set.has(v)?'#eef2ff':'transparent'}'">
+      <input type="checkbox" ${set.has(v)?'checked':''} onchange="geoMsPick('${kind}','${v.replace(/'/g,"\\'")}')" style="cursor:pointer;"> <span>${lab}</span></label>`).join('')
+    : '<div style="font-size:11px;color:#94a3b8;padding:8px;">No matches</div>';
+}
+// close the panel on outside click
+document.addEventListener('click', e=>{ if(geoMsOpen && !e.target.closest('#geoSelWrap')){ geoMsOpen=null; renderGeoMs(); } }, true);
+// Mirror the top geo filter into the drill-down explorer so its charts move with it.
 function syncDrillToGeo(){
   if(typeof dlCitySel==='undefined') return;
-  if(activeClinic!=='ALL'){ dlLevel='clinic'; dlClinicSel=new Set([activeCity+'_'+activeClinic]); dlCitySel=new Set(); }
-  else if(activeCity!=='ALL'){ dlLevel='city'; dlCitySel=new Set([activeCity]); dlClinicSel=new Set(); }
+  if(geoClinicSel.size){ dlLevel='clinic'; dlClinicSel=new Set(geoClinicSel); dlCitySel=new Set(); }
+  else if(geoCitySel.size){ dlLevel='city'; dlCitySel=new Set(geoCitySel); dlClinicSel=new Set(); }
   else if(activeTier!=='ALL'){ dlLevel='city'; dlCitySel=new Set(dlCities().filter(c=>cityTier(c)===activeTier)); dlClinicSel=new Set(); }
   else { dlLevel='city'; dlCitySel=new Set(dlCities()); dlClinicSel=new Set(); }
 }
-// Populate the city + clinic dropdowns from the offline geo (CHDATA), honouring tier.
-function populateGeoSel(){
-  const citySel=document.getElementById('citySel'), clinicSel=document.getElementById('clinicSel');
-  if(!citySel||!clinicSel) return;
-  const cityNode = (CHDATA&&CHDATA.offline&&CHDATA.offline.city) ? CHDATA.offline.city : {};
-  let cities = Object.keys(cityNode).sort();
-  if(activeTier!=='ALL') cities = cities.filter(c=>cityTier(c)===activeTier);
-  citySel.innerHTML = '<option value="ALL">All cities</option>' + cities.map(c=>`<option value="${c}" ${activeCity===c?'selected':''}>${c}</option>`).join('');
-  // clinics for the selected city
-  let clinics=[];
-  if(activeCity!=='ALL' && CHDATA&&CHDATA.offline&&CHDATA.offline.clinic){
-    clinics = Object.keys(CHDATA.offline.clinic).filter(k=>k.startsWith(activeCity+'_')).map(k=>k.slice(activeCity.length+1)).sort();
-  }
-  clinicSel.disabled = (activeCity==='ALL');
-  clinicSel.innerHTML = '<option value="ALL">All clinics</option>' + clinics.map(cl=>`<option value="${cl}" ${activeClinic===cl?'selected':''}>${cl}</option>`).join('');
-  clinicSel.style.opacity = activeCity==='ALL' ? .5 : 1;
-}
+function populateGeoSel(){ renderGeoMs(); }   // (kept name; syncHeaderFilters calls it)
 
 function getTierTotal(weekKey) {
   const scope = S();
@@ -485,7 +508,7 @@ function getTierTotal(weekKey) {
 }
 
 function setScope(s) {
-  activeScope = s; activeChannel = 'ALL'; activeCity = 'ALL';
+  activeScope = s; activeChannel = 'ALL'; activeCity = 'ALL'; geoCitySel.clear(); geoClinicSel.clear();
   ['offline','online','all'].forEach(k => {
     document.getElementById('scope' + k.charAt(0).toUpperCase() + k.slice(1))
       ?.classList.toggle('active', k === s);
@@ -877,18 +900,18 @@ function render() {
   // over the tier's cities (offline calls done; online isn't geo-tagged).
   // Geo filter active when any of tier / city / clinic is set (offline CHDATA).
   const _catKeys = DATA.categories || [];
-  const geoActive = (activeTier!=='ALL' || activeCity!=='ALL' || activeClinic!=='ALL') && CHDATA && CHDATA.offline;
+  const geoActive = (activeTier!=='ALL' || geoCitySel.size || geoClinicSel.size) && CHDATA && CHDATA.offline;
   const chRec = (wk, ch) => {
     if(!geoActive) return scope.weekly_channel?.[wk]?.[ch] || {};
     const out={total:0}; _catKeys.forEach(c=>out[c]=0);
-    if(activeClinic!=='ALL'){
-      const rr = CHDATA.offline.clinic?.[activeCity+'_'+activeClinic]?.[wk]?.[ch];
-      if(rr){ out.total+=rr.total||0; _catKeys.forEach(c=>out[c]+=rr[c]||0); }
+    if(geoClinicSel.size){
+      for(const key of geoClinicSel){ const rr=CHDATA.offline.clinic?.[key]?.[wk]?.[ch]; if(!rr) continue;
+        out.total+=rr.total||0; _catKeys.forEach(c=>out[c]+=rr[c]||0); }
       return out;
     }
     const cityNode = CHDATA.offline.city || {};
     for(const city in cityNode){
-      if(activeCity!=='ALL' && city!==activeCity) continue;
+      if(geoCitySel.size && !geoCitySel.has(city)) continue;
       if(activeTier!=='ALL' && cityTier(city)!==activeTier) continue;
       const rr=cityNode[city]?.[wk]?.[ch]; if(!rr) continue;
       out.total += rr.total||0; _catKeys.forEach(c=>out[c]+=rr[c]||0); }
@@ -1337,7 +1360,8 @@ function buildClinicCatSection(periods, cat, m, wkLabels, n4) {
     const name = sep > -1 ? key.slice(sep + 1) : key;
 
     if (activeTier !== 'ALL' && cityTier(city) !== activeTier) return null;
-    if (activeCity !== 'ALL' && city !== activeCity) return null;
+    if (geoCitySel.size && !geoCitySel.has(city)) return null;
+    if (geoClinicSel.size && !geoClinicSel.has(city+'_'+(activeClinic))) { /* clinic-level: keep cities that have a selected clinic */ if(![...geoClinicSel].some(k=>k.split('_')[0]===city)) return null; }
 
     const totalAll = s.totW.reduce((a, b) => a + b, 0);
     if (totalAll < 5) return null;
