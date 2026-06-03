@@ -182,9 +182,12 @@ html,body{background:#f8fafc;color:var(--ink);font-family:ui-sans-serif,system-u
 <!-- ══ MARKETING CONTROL BOARD (injected by JS) ══ -->
 <div id="marketingBoard" style="margin-bottom:20px;"></div>
 
+<!-- ══ SPEND & COST CLUSTER (injected by JS) — full cost stack, one place ══ -->
+<div id="spendCostCluster" style="margin-bottom:20px;"></div>
+
 <!-- ══ COST TREND PULSE (collapsed — secondary) ══ -->
 <details class="sect">
-  <summary><span class="sect-t">📉 Cost Trend Watch</span><span class="sect-s">Week-over-week CPL / CPD movement by channel — where unit costs are drifting</span><span class="sect-cv">▶</span></summary>
+  <summary><span class="sect-t">📉 Cost Trend Watch</span><span class="sect-s">CPL / CPB / CPD / CPM / CPC movement by channel over your selected range — where unit costs are drifting</span><span class="sect-cv">▶</span></summary>
   <div class="sect-body"><div id="costTrendPulse"></div></div>
 </details>
 
@@ -389,12 +392,35 @@ const L0_URL      = `https://docs.google.com/spreadsheets/d/${L0_SHEET_ID}/gviz/
 const L0_CACHE_KEY = 'allo_eff_l0_v5';   // bumped 2026-06-01: force fresh fetch after col shift
 const L0_CACHE_TTL = 45 * 60 * 1000; // 45 min
 
-const L0_WEEK_COLS = [2, 3, 4, 5, 6, 7, 8];   // col 2 = W-1 (25–31 May); shift +1 each week
 // Monday start-of-week keys matching data.json (newest first, parallel to L0_WEEK_COLS)
 const JSON_WEEK_KEYS = [
   '2026-05-25','2026-05-18','2026-05-11','2026-05-04',
   '2026-04-27','2026-04-20','2026-04-13'
 ];
+// L0_WEEK_COLS maps each JSON_WEEK_KEY (newest→oldest) to its CSV column.
+// The L0 sheet inserts a new week column each week, so these offsets SHIFT.
+// detectWeekCols() re-anchors them off the date-header row (row 2 = week-start
+// labels) so the page stays correct without a manual edit. Legacy fallback [2..8].
+let L0_WEEK_COLS = [2, 3, 4, 5, 6, 7, 8];
+const _L0_MONTHS = {jan:0,feb:1,mar:2,apr:3,may:4,jun:5,jul:6,aug:7,sep:8,oct:9,nov:10,dec:11};
+function _parseDM(s){
+  const m = (s||'').trim().toLowerCase().match(/^(\d{1,2})\s+([a-z]{3})/);
+  if(!m) return null; const mo = _L0_MONTHS[m[2]];
+  return mo==null ? null : {d:+m[1], mo};
+}
+function detectWeekCols(rows){
+  const startRow = rows[2] || [];
+  const targets = JSON_WEEK_KEYS.map(k=>{ const [,mo,d]=k.split('-').map(Number); return {d, mo:mo-1}; });
+  const hit = (col,t)=>{ const p=_parseDM(startRow[col]); return p && p.d===t.d && p.mo===t.mo; };
+  // Anchor: first column matching the newest week whose NEXT column matches the
+  // 2nd-newest week — this skips the duplicated "current week" column at idx 1.
+  for(let c=1; c<startRow.length-1; c++){
+    if(hit(c,targets[0]) && (targets.length<2 || hit(c+1,targets[1]))){
+      return JSON_WEEK_KEYS.map((_,i)=>c+i);
+    }
+  }
+  return [2,3,4,5,6,7,8];   // fallback: legacy fixed offsets
+}
 
 // gmb_google = combined "GMB+Google" section (full ad data).
 // gmb        = standalone GMB section (may have subset of metrics).
@@ -536,6 +562,7 @@ function parseCSV(text) {
 // ── L0 PARSER ─────────────────────────────────────────────────────────────
 function parseL0(text) {
   const rows = parseCSV(text);
+  L0_WEEK_COLS = detectWeekCols(rows);   // re-anchor columns off the date header
   function numVal(s) {
     if (s === null || s === undefined || s === '') return null;
     const c = s.toString().trim().replace('%','').replace(/,/g,'').replace('₹','').replace(/\s/g,'');
@@ -597,40 +624,61 @@ function parseL0(text) {
   const endLabels   = L0_WEEK_COLS.map(c => (rows[1]?.[c]||'').trim());
   const startLabels = L0_WEEK_COLS.map(c => (rows[2]?.[c]||'').trim());
 
-  // ── CONFIRMED ROW INDICES (fetched & verified from live L0 CSV) ──
-  // Row 0: empty  Row 1: week-end labels  Row 2: week-start labels
-  // Rows 3-32: overall metrics  Row 33+: per-channel sections
+  // ── OVERALL (network) block — parsed by LABEL, not fixed row indices. ──
+  // The L0 sheet periodically restructures the overall block (rows get inserted /
+  // removed), so positional indices go stale. We scan the block between row 3 and
+  // the first channel section header and look metrics up by their row label.
+  const _ovEnd = Math.min(
+    rows.length,
+    ...L0_SECTIONS.map(findSectionIdx).filter(i => i > 3)
+  );
+  function ovRow(...labels) {
+    for (const lbl of labels) {
+      const lc = lbl.toLowerCase();
+      for (let i = 3; i < _ovEnd; i++) {
+        if ((rows[i]?.[0] || '').trim().toLowerCase() === lc) return rowArr(i);
+      }
+    }
+    return Array(7).fill(null);
+  }
+  // ordinal label lookup: nth occurrence (online/offline/conv/rpc repeat in block)
+  function ovRowN(label, occurrence) {
+    const lc = label.toLowerCase(); let seen = 0;
+    for (let i = 3; i < _ovEnd; i++) {
+      if ((rows[i]?.[0] || '').trim().toLowerCase() === lc) {
+        if (++seen === occurrence) return rowArr(i);
+      }
+    }
+    return Array(7).fill(null);
+  }
   const overall = {
-    spends:            rowArr(3),   // "Spends"           → 539570…
-    leads:             rowArr(4),   // "Leads"            → 6139…
-    verified:          rowArr(5),   // "Verified Leads"   → 5986…
-    verified_pct:      rowArr(6),   // "Verified%"        → 97.5… (direct %)
-    cpl:               rowArr(7),   // "CPL (Verified)"   → 90…
-    bookings:          rowArr(8),   // "Bookings"         → 1764…
-    bkg_lead_pct:      rowArr(9),   // "Bookings/Lead%"   → 29…
-    cpb:               rowArr(10),  // "CPB"              → 306…
-    calls_done:        rowArr(11),  // "Calls Done"       → 1471…
-    online_done:       rowArr(12),  // "Online" done      → 499…
-    offline_done:      rowArr(13),  // "Offline" done     → 972…
-    b2d_blank:         rowArr(14),  // B2D% (blank label) → 74.4…
-    cpd:               rowArr(15),  // "CPD"              → 367…
-    sti_contr:         rowArr(16),  // "STI Contr."       → 15.1…
-    sti_contr_online:  rowArr(17),  // "STI Contr-Online" → 7.4…
-    sti_contr_offline: rowArr(18),  // "STI Contr-Offline"→ 19.0…
-    b2d:               rowArr(19),  // "Calls Done / Bookings" → 83…
-    b2d_online:        rowArr(20),  // "Online" B2D%      → 109…
-    b2d_offline:       rowArr(21),  // "Offline" B2D%     → 74…
-    rev_1st_tp:        rowArr(22),  // "1st TP Rev" LAKHS → 29.79…
-    consult_rev:       rowArr(23),  // "Consult Rev" LAKHS→ 5.84…
-    new_rev:           rowArr(24),  // "New Rev" LAKHS    → 35.64…
-    roas_1tp:          rowArr(25),  // "1st TP RoAS"      → 660.5…
-    rpc_net:           rowArr(26),  // "RPC"              → 2025…
-    online_tp:         rowArr(27),  // "Online TP #"      → 192…
-    online_tp_conv:    rowArr(28),  // "Conv"             → 38…
-    online_tp_rpc:     rowArr(29),  // "RPC" online TP    → 1102…
-    offline_tp:        rowArr(30),  // "Offline TP #"     → 726…
-    offline_tp_conv:   rowArr(31),  // "Conv"             → 75…
-    offline_tp_rpc:    rowArr(32),  // "RPC" offline TP   → 2500…
+    spends:            ovRow('spends'),
+    leads:             ovRow('leads'),
+    verified:          ovRow('verified leads'),
+    verified_pct:      ovRow('verified%'),
+    cpl:               ovRow('cpl (verified)','cpl (verfified)','cpl'),
+    bookings:          ovRow('bookings'),
+    bkg_lead_pct:      ovRow('bookings / lead%','bookings/lead%'),
+    cpb:               ovRow('cpb'),
+    calls_done:        ovRow('calls done'),
+    online_done:       ovRowN('online', 1),
+    offline_done:      ovRowN('offline', 1),
+    cpd:               ovRow('cpd'),
+    sti_contr:         ovRow('sti contr.'),
+    sti_contr_online:  ovRow('sti contr-online','sti contr - online'),
+    sti_contr_offline: ovRow('sti contr-offline','sti contr - offline'),
+    b2d:               ovRow('calls done / bookings'),
+    b2d_online:        ovRowN('online', 2),
+    b2d_offline:       ovRowN('offline', 2),
+    rev_1st_tp:        ovRow('1st tp rev'),
+    consult_rev:       ovRow('consult rev'),
+    new_rev:           ovRow('new rev'),
+    roas_1tp:          ovRow('1st tp roas'),
+    rpc_net:           ovRow('rpc'),
+    online_tp:         ovRow('online tp #'),
+    online_tp_conv:    ovRowN('conv', 1),
+    offline_tp:        ovRow('offline tp #'),
+    offline_tp_conv:   ovRowN('conv', 2),
   };
 
   function parseChannel(sectionLabel) {
@@ -766,6 +814,21 @@ function wowHtml(pct, inverted=false) {
 }
 function revArr(arr) { return arr ? [...arr].reverse() : []; }
 const revLabels = () => L0 ? revArr(L0.endLabels) : JSON_WEEK_KEYS.map(w=>w.slice(5)).reverse();
+
+// Network Bookings / Calls Done used to live in the L0 overall block, but the
+// sheet was restructured and no longer carries them. Fall back to data.json
+// (positionally aligned: L0 index i ↔ JDATA newest-first week i), honouring scope.
+function _jdNewest() { return JDATA ? [...(JDATA.weeks||[])].reverse() : []; }
+function netBookingsArr() {
+  if (L0?.overall?.bookings?.some(v => v != null)) return L0.overall.bookings;
+  const w = _jdNewest(), sc = dataScope || 'all';
+  return L0_WEEK_COLS.map((_, i) => JDATA?.[sc]?.weekly_funnel?.[w[i]]?.slot_booked ?? null);
+}
+function netCallsArr() {
+  if (L0?.overall?.calls_done?.some(v => v != null)) return L0.overall.calls_done;
+  const w = _jdNewest(), sc = dataScope || 'all';
+  return L0_WEEK_COLS.map((_, i) => JDATA?.[sc]?.weekly_funnel?.[w[i]]?.calls_done ?? null);
+}
 
 // ── MONTHLY HELPERS ───────────────────────────────────────────────────────
 function getMonthGroups() {
@@ -1452,13 +1515,125 @@ function buildChartRevRoas() {
 }
 
 // ── COST & VOLUME TREND WATCH ────────────────────────────────────────────
+// ── SPEND & COST CLUSTER ──────────────────────────────────────────────────
+// One consolidated view of the whole cost stack for the selected week:
+//   Spend · Spend% · CPM · CPC · CPL(verified) · CPB · CPD
+// Network totals up top, then a per-channel matrix with WoW deltas.
+function buildSpendCostCluster(wkIdx) {
+  if (!L0) return '';
+  const o = L0.overall || {};
+  const wkLbl = (L0.startLabels?.[wkIdx]||'') + ' – ' + (L0.endLabels?.[wkIdx]||'');
+  const prev = wkIdx + 1;
+
+  // CPM/CPC live only in the GMB+Google ad section at network level.
+  const ad = L0.gmb_google || {};
+  const fINR0 = v => (v==null||isNaN(v)) ? '—' : '₹'+Math.round(v).toLocaleString('en-IN');
+  const fPct  = (v,d=1) => v==null ? '—' : v.toFixed(d)+'%';
+
+  // ── network headline tiles ──
+  const netSpend = o.spends?.[wkIdx] ?? null;
+  const netCPL   = o.cpl?.[wkIdx] ?? null;
+  const netCPB   = o.cpb?.[wkIdx] ?? null;
+  const netCPD   = o.cpd?.[wkIdx] ?? null;
+  const cpm      = ad.cpm?.[wkIdx] ?? null;
+  const cpc      = ad.cpc?.[wkIdx] ?? null;
+  const tile = (lbl, val, prevVal, fmt, sub, invert=true) => {
+    const w = wow(val, prevVal);
+    // for unit-cost metrics, lower is better → invert
+    return `<div style="flex:1;min-width:120px;background:#fff;border:1px solid var(--line);border-radius:10px;padding:11px 13px;">
+      <div style="font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:#94a3b8;font-weight:700;">${lbl}</div>
+      <div style="font-size:21px;font-weight:800;color:#0f172a;margin:2px 0 1px;">${val!=null?fmt(val):'—'}</div>
+      <div style="font-size:10.5px;color:#94a3b8;display:flex;gap:6px;align-items:center;">${sub||''} ${wowHtml(w, invert)}</div>
+    </div>`;
+  };
+  const headline = `<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;">
+    ${tile('Total Spend', netSpend, o.spends?.[prev], fmtINR, 'this week', false)}
+    ${tile('CPM', cpm, ad.cpm?.[prev], fINR0, 'per 1k impr.')}
+    ${tile('CPC', cpc, ad.cpc?.[prev], fINR0, 'per click')}
+    ${tile('CPL', netCPL, o.cpl?.[prev], fINR0, 'verified lead')}
+    ${tile('CPB', netCPB, o.cpb?.[prev], fINR0, 'per booking')}
+    ${tile('CPD', netCPD, o.cpd?.[prev], fINR0, 'per call done')}
+  </div>`;
+
+  // ── per-channel cost matrix ──
+  // Use the NON-OVERLAPPING channel set: the combined "Google + GMB" already
+  // contains GMB + Google Search, so we drop those two standalones here to avoid
+  // double-counting spend% (they remain available as drill-downs / trend rows).
+  const chs = CHANNELS.filter(c => !['Others','GMB','GoogleSearch'].includes(c.key));
+  const costCell = (val, prevVal, fmt, invert=true) => {
+    if (val==null) return `<td style="${_scTd}text-align:right;color:#cbd5e1;">—</td>`;
+    const w = wow(val, prevVal);
+    const wTxt = w==null ? '' : `<div style="font-size:9.5px;margin-top:1px;">${wowHtml(w, invert)}</div>`;
+    return `<td style="${_scTd}text-align:right;"><div style="font-weight:700;color:#0f172a;font-size:12px;">${fmt(val)}</div>${wTxt}</td>`;
+  };
+  const rows = chs.map(ch => {
+    const d = getChannelL0(ch) || {};
+    const zeroSpend = ch.key === 'GMB' || ch.key === 'Organic';   // no media spend
+    const sp = d.spends?.[wkIdx] ?? null;
+    const spContr = d.spend_contr?.[wkIdx] ?? null;
+    const cplV = zeroSpend ? null : (d.cpl?.[wkIdx] ?? null);
+    const cpbV = zeroSpend ? null : (d.cpb?.[wkIdx] ?? null);
+    const cpdV = zeroSpend ? null : (d.cpd?.[wkIdx] ?? null);
+    const cpmV = ch.l0key==='gmb_google' ? (d.cpm?.[wkIdx] ?? null) : null;
+    const cpcV = ch.l0key==='gmb_google' ? (d.cpc?.[wkIdx] ?? null) : null;
+    // skip channels with no spend AND no cost signal AND no contribution
+    if (sp==null && spContr==null && cplV==null && cpdV==null) return '';
+    return `<tr>
+      <td style="${_scTd}text-align:left;white-space:nowrap;">
+        <span style="width:9px;height:9px;border-radius:50%;background:${ch.color};display:inline-block;margin-right:6px;"></span>
+        <span style="font-weight:600;font-size:12px;color:#0f172a;">${ch.label}</span>
+        ${zeroSpend?'<span style="font-size:9px;color:#94a3b8;margin-left:5px;">(0 spend)</span>':''}
+      </td>
+      ${costCell(sp, d.spends?.[prev], fmtINR, false)}
+      <td style="${_scTd}text-align:right;font-weight:700;color:#475569;font-size:12px;">${fPct(spContr)}</td>
+      ${costCell(cpmV, ch.l0key==='gmb_google'?ad.cpm?.[prev]:null, fINR0)}
+      ${costCell(cpcV, ch.l0key==='gmb_google'?ad.cpc?.[prev]:null, fINR0)}
+      ${costCell(cplV, zeroSpend?null:d.cpl?.[prev], fINR0)}
+      ${costCell(cpbV, zeroSpend?null:d.cpb?.[prev], fINR0)}
+      ${costCell(cpdV, zeroSpend?null:d.cpd?.[prev], fINR0)}
+    </tr>`;
+  }).filter(Boolean).join('');
+
+  const th = (t, tip) => `<th title="${tip||''}" style="${_scTh}">${t}</th>`;
+  return `<div class="card" style="border-left:4px solid #6366f1;">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px;flex-wrap:wrap;">
+      <span style="font-size:18px;">💰</span>
+      <span class="sec-title" style="font-size:15px;">Spend &amp; Cost</span>
+      <span class="sec-sub">The whole cost stack in one place · ${wkLbl} · WoW vs previous week · ▼ on a cost = cheaper = good</span>
+    </div>
+    <div style="font-size:11px;color:#64748b;margin-bottom:12px;padding:7px 11px;background:#f8fafc;border-radius:8px;line-height:1.7;">
+      <strong>CPM</strong> cost / 1k impressions · <strong>CPC</strong> cost / click · <strong>CPL</strong> cost / verified lead ·
+      <strong>CPB</strong> cost / booking · <strong>CPD</strong> cost / call done. CPM &amp; CPC are media-buy costs (Google+GMB only); GMB &amp; Organic carry no media spend.
+    </div>
+    ${headline}
+    <div style="overflow-x:auto;">
+      <table style="width:100%;border-collapse:collapse;min-width:680px;">
+        <thead><tr style="background:#f8fafc;">
+          <th style="${_scTh}text-align:left;">Channel</th>
+          ${th('Spend','Media spend this week')}
+          ${th('Spend%','Share of total network spend')}
+          ${th('CPM','Cost per 1,000 impressions (Google+GMB)')}
+          ${th('CPC','Cost per click (Google+GMB)')}
+          ${th('CPL','Cost per verified lead')}
+          ${th('CPB','Cost per booking')}
+          ${th('CPD','Cost per call done')}
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+  </div>`;
+}
+const _scTd = 'padding:8px 11px;border-bottom:1px solid #f1f5f9;vertical-align:middle;';
+const _scTh = 'padding:7px 11px;text-align:right;font-size:9.5px;text-transform:uppercase;letter-spacing:.05em;color:#94a3b8;border-bottom:1px solid #e2e8f0;white-space:nowrap;';
+
 function buildCostTrendPulse() {
   if (!L0) return '';
 
-  const N4 = Math.min(4, effectiveN());
+  const N4 = Math.min(Math.max(4, effectiveN()), L0_WEEK_COLS.length);
   const lbls = L0.endLabels.slice(0, N4).reverse(); // oldest → newest for display
 
-  const paidChs = CHANNELS.filter(c => c.type === 'paid' && c.key !== 'Others');
+  // include Organic too (zero-spend, but its volume trend still matters)
+  const paidChs = CHANNELS.filter(c => c.key !== 'Others');
 
   // Direction = (latest - earliest) / |earliest| × 100
   function trendDir(arr, n) {
@@ -1565,6 +1740,7 @@ function buildCostTrendPulse() {
       ${metCell(d.spends,        N4, ch.color,  ch.label + ' Spend',      spFmt,  false)}
       ${metCell(d.cpl,           N4, '#6366f1', ch.label + ' CPL',        cplFmt, true)}
       ${metCell(d.cpb,           N4, '#0ea5e9', ch.label + ' CPB',        cpbFmt, true)}
+      ${metCell(d.cpd,           N4, '#8b5cf6', ch.label + ' CPD',        cpbFmt, true)}
       ${metCell(d.ctr,           N4, '#10b981', ch.label + ' CTR',        ctrFmt, false)}
       ${metCell(d.calls_done_l0, N4, ch.color,  ch.label + ' Calls Done', nFmt,   false)}
     </tr>`;
@@ -1592,6 +1768,7 @@ function buildCostTrendPulse() {
             <th style="padding:7px 12px;text-align:center;font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:#94a3b8;border-bottom:1px solid #e2e8f0;white-space:nowrap;">Spend</th>
             <th style="padding:7px 12px;text-align:center;font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:#6366f1;border-bottom:1px solid #e2e8f0;white-space:nowrap;">CPL <small style="font-weight:400;color:#94a3b8;">↑=⚠</small></th>
             <th style="padding:7px 12px;text-align:center;font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:#0ea5e9;border-bottom:1px solid #e2e8f0;white-space:nowrap;">CPB <small style="font-weight:400;color:#94a3b8;">↑=⚠</small></th>
+            <th style="padding:7px 12px;text-align:center;font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:#8b5cf6;border-bottom:1px solid #e2e8f0;white-space:nowrap;">CPD <small style="font-weight:400;color:#94a3b8;">↑=⚠</small></th>
             <th style="padding:7px 12px;text-align:center;font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:#10b981;border-bottom:1px solid #e2e8f0;white-space:nowrap;">CTR <small style="font-weight:400;color:#94a3b8;">↓=⚠</small></th>
             <th style="padding:7px 12px;text-align:center;font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:#94a3b8;border-bottom:1px solid #e2e8f0;white-space:nowrap;">Calls Done</th>
           </tr>
@@ -2305,8 +2482,9 @@ function buildKPIStrip(wkIdx) {
 
   const spendsCur  = o.spends?.[wkIdx]   ?? null;
   const spendsPrv  = o.spends?.[p]       ?? null;
-  const bkgCur     = o.bookings?.[wkIdx] ?? null;
-  const bkgPrv     = o.bookings?.[p]     ?? null;
+  const _bkArr     = netBookingsArr();
+  const bkgCur     = _bkArr[wkIdx] ?? null;
+  const bkgPrv     = _bkArr[p]     ?? null;
   const cpbCur     = o.cpb?.[wkIdx]      ?? null;
   const cpbPrv     = o.cpb?.[p]          ?? null;
   const roasCur    = o.roas_1tp?.[wkIdx] ?? null;
@@ -2634,8 +2812,8 @@ function buildChartFunnel(wkIdx) {
   const o = L0.overall;
   const leads  = o.leads[wkIdx]      ?? 0;
   const verif  = o.verified[wkIdx]  ?? 0;
-  const bkgs   = o.bookings?.[wkIdx] ?? 0;   // rowArr(8)
-  const calls  = o.calls_done?.[wkIdx] ?? 0; // rowArr(11) = total calls done
+  const bkgs   = netBookingsArr()[wkIdx] ?? 0;   // L0 overall, else data.json
+  const calls  = netCallsArr()[wkIdx]    ?? 0;   // L0 overall, else data.json
 
   const stages = ['Leads','Verified','Bookings','Calls Done'];
   const vals   = [leads, verif, bkgs, calls];
@@ -3154,6 +3332,7 @@ function render() {
 
   // Marketing control board + trend pulse + funnel break (top of allView)
   document.getElementById('marketingBoard').innerHTML      = buildMarketingControlBoard(wkI);
+  document.getElementById('spendCostCluster').innerHTML    = buildSpendCostCluster(wkI);
   document.getElementById('costTrendPulse').innerHTML      = buildCostTrendPulse();
   document.getElementById('funnelBreakAnalyzer').innerHTML = buildFunnelBreakAnalyzer(wkI);
   document.getElementById('kpiStrip').innerHTML    = buildKPIStrip(wkI);
