@@ -108,7 +108,7 @@ const MIXCOL='#be185d';
 
 // ═══════════════ STATE ═══════════════
 let JDATA=null, SDATA={}, L0=null, PRACTO={}, ROSTER={};   // PRACTO['City|Clinic'] = [7 weekly counts aligned to WEEKS]; ROSTER['City|Clinic']={hrs:[7],we_hrs:[7]} scheduled bookable hours
-function rosterArr(city,clinic){ return ROSTER[city+'|'+clinic] || {hrs:Array(WEEKS.length).fill(null), we_hrs:Array(WEEKS.length).fill(null)}; }
+function rosterArr(city,clinic){ return ROSTER[city+'|'+clinic] || {hrs:Array(WEEKS.length).fill(null), we_hrs:Array(WEEKS.length).fill(null), dow:Array(WEEKS.length).fill(null).map(()=>Array(7).fill(0))}; }
 let scope='offline';      // 'offline' | 'online'
 let wkIdx=0;              // selected week index (0 = latest)
 let baseMode='peak';      // which baseline "Expected" is measured against (see BASE_OPTS)
@@ -662,6 +662,25 @@ function availSplitChart(wd, we, bk, hi){
     <span><span style="display:inline-block;width:11px;height:3px;background:#4f46e5;border-radius:2px;vertical-align:middle;margin-right:4px;"></span>Bookings</span></div>`;
   return `${legend}<svg width="100%" viewBox="0 0 ${w} ${h+2}" style="overflow:visible;">${bars}<path d="${bkPath}" fill="none" stroke="#4f46e5" stroke-width="2"/>${bkDots}${bkLab}</svg>`;
 }
+// Per-day-of-week scheduled-hours bars for the selected week. Each day is a bar
+// filled to its actual scheduled hours; the dashed marker is that day's recent
+// norm — so a day the doctor didn't sit (or got shrunk) is obvious.
+function dayBarsChart(wk, norm){
+  const days=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+  const track=58, mx=Math.max(1,...wk.map(x=>x||0),...norm.map(x=>x||0));
+  return `<div style="display:flex;gap:6px;align-items:flex-end;">${days.map((d,i)=>{
+    const h=wk[i]||0, nh=norm[i]||0, isWe=i>=5, col=isWe?'#a855f7':'#7c3aed';
+    const fillH=Math.round(h/mx*track), normH=Math.round(nh/mx*track);
+    return `<div style="flex:1;text-align:center;">
+      <div style="font-size:9.5px;font-weight:700;color:${h?col:'#cbd5e1'};margin-bottom:2px;">${h?h+'h':'0'}</div>
+      <div style="position:relative;height:${track}px;background:#f1f5f9;border-radius:3px;">
+        <div style="position:absolute;bottom:0;left:0;right:0;height:${fillH}px;background:${col};border-radius:3px;"></div>
+        ${nh>0.3?`<div title="norm ${r1(nh)}h" style="position:absolute;bottom:${normH}px;left:-1px;right:-1px;border-top:1.5px dashed #64748b;"></div>`:''}
+      </div>
+      <div style="font-size:9px;color:${isWe?'#a855f7':'#94a3b8'};font-weight:${isWe?700:500};margin-top:3px;">${d}</div>
+    </div>`;
+  }).join('')}</div>`;
+}
 function renderDeepDive(r){
   const wl=WEEKS[wkIdx].label;
   const m=CAUSE[r.cause]||{label:(r.cause==='grew'?'Growing':'Stable'),col:'#059669',bg:'#ecfdf5',owner:'—',desc:'no material booking loss this week'};
@@ -681,13 +700,26 @@ function renderDeepDive(r){
   const rsl=a=>a.slice(wkIdx+1,wkIdx+6).filter(x=>x!=null);
   const rh_w=ros.hrs[wkIdx], rh_avg=avg(rsl(ros.hrs)), rwe_w=ros.we_hrs[wkIdx], rwe_avg=avg(rsl(ros.we_hrs));
   const hasRoster=ros.hrs.some(x=>x!=null);
+  // per-day-of-week scheduled hours for the selected week + its recent norm
+  const dowWk = (ros.dow && ros.dow[wkIdx]) ? ros.dow[wkIdx] : null;
+  const dowNorm = ros.dow ? [0,1,2,3,4,5,6].map(di=>avg(ros.dow.slice(wkIdx+1,wkIdx+6).map(wd=>(wd&&wd[di])||0))) : null;
+  const hasDow = dowWk && dowWk.some(x=>x>0);
+  const zeroDays = hasDow ? ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].filter((d,i)=>(dowWk[i]||0)===0 && (dowNorm[i]||0)>=0.5) : [];
+  const dayBlock = hasDow ? `
+    <div style="margin-top:10px;">
+      <div style="font-size:11px;font-weight:700;color:#0f172a;margin-bottom:1px;">This week, day by day <span style="font-weight:500;color:#94a3b8;">— scheduled bookable hours</span></div>
+      <div style="font-size:10px;color:#94a3b8;margin-bottom:7px;">Each bar = hours the doctor was bookable that day · dashed line = that day's recent norm.</div>
+      ${dayBarsChart(dowWk, dowNorm)}
+      ${zeroDays.length?`<div style="font-size:10.5px;color:#dc2626;margin-top:7px;"><b>No cover on ${zeroDays.join(', ')}</b> this week — ${zeroDays.length>1?'days':'a day'} the clinic normally sits. That's where the lost slots are.</div>`:'<div style="font-size:10.5px;color:#059669;margin-top:7px;">Every usual day had some cover this week.</div>'}
+    </div>` : '';
   const rosBlock = hasRoster ? `
     <div style="margin-top:12px;border-top:1px dashed var(--line);padding-top:11px;">
       <div style="font-size:12px;font-weight:700;color:#0f172a;margin-bottom:2px;">🗓️ Scheduled bookable hours <span style="font-weight:500;color:#94a3b8;">(roster · Redshift)</span></div>
       <div style="font-size:10.5px;color:#94a3b8;margin-bottom:8px;">What the roster planned — before doctors shrink slots. Faint = 5-wk norm, solid = ${wl}.</div>
       ${dayRow('Total scheduled hrs', rh_avg, rh_w==null?0:rh_w, '#0891b2')}
       ${dayRow('Weekend scheduled hrs', rwe_avg, rwe_w==null?0:rwe_w, '#06b6d4')}
-      <div style="font-size:11.5px;color:#475569;margin-top:6px;line-height:1.55;">
+      ${dayBlock}
+      <div style="font-size:11.5px;color:#475569;margin-top:8px;line-height:1.55;">
         Roster scheduled <b>${rh_w==null?'—':r1(rh_w)}h</b> this week (norm <b>${r1(rh_avg)}h</b>${rh_avg>0&&rh_w!=null?', '+signed(Math.round((rh_w-rh_avg)/rh_avg*100),'%')+' vs norm':''}). ${rh_w!=null&&rh_avg-rh_w>2?`<b style="color:#dc2626">~${r1(rh_avg-rh_w)}h fewer hours were even put on the roster</b> — a supply/roster planning gap.`:'Roster supply held — any realized-day shortfall is doctor shrinkage of scheduled slots, not a planning gap.'}
       </div>
     </div>` : `<div style="margin-top:12px;font-size:10.5px;color:#cbd5e1;border-top:1px dashed var(--line);padding-top:9px;">No roster coverage for this clinic in the pull.</div>`;
