@@ -223,12 +223,12 @@ function buildSDataFromDiag(diag){
     const city=key.slice(0,bar), clinic=key.slice(bar+1);
     if(!city||!clinic||/online/i.test(clinic)) continue;
     const o=diag[key];
-    (out[city]=out[city]||{})[clinic]={_total:{ allBk:slc(o.allBk), bkWe:slc(o.bkWe), gmbLeads:slc(o.gmbLeads), avail:slc(o.avail), weekend:slc(o.weekend), docDays:slc(o.docDays) }};
+    (out[city]=out[city]||{})[clinic]={_total:{ allBk:slc(o.allBk), bkWe:slc(o.bkWe), bkNew:slc(o.bkNew), bkRepeat:slc(o.bkRepeat), gmbLeads:slc(o.gmbLeads), avail:slc(o.avail), weekend:slc(o.weekend), docDays:slc(o.docDays) }};
   }
   for(const city of Object.keys(out)){
-    const agg={allBk:Array(W).fill(0),bkWe:Array(W).fill(0),gmbLeads:Array(W).fill(0),avail:Array(W).fill(0),weekend:Array(W).fill(0),docDays:Array(W).fill(0)};
+    const agg={allBk:Array(W).fill(0),bkWe:Array(W).fill(0),bkNew:Array(W).fill(0),bkRepeat:Array(W).fill(0),gmbLeads:Array(W).fill(0),avail:Array(W).fill(0),weekend:Array(W).fill(0),docDays:Array(W).fill(0)};
     for(const clinic of Object.keys(out[city])){ const t=out[city][clinic]._total;
-      for(let i=0;i<W;i++){ agg.allBk[i]+=t.allBk[i]; agg.bkWe[i]+=t.bkWe[i]; agg.avail[i]+=t.avail[i]; agg.weekend[i]+=t.weekend[i]; agg.docDays[i]+=t.docDays[i]; } }
+      for(let i=0;i<W;i++){ agg.allBk[i]+=t.allBk[i]; agg.bkWe[i]+=t.bkWe[i]; agg.bkNew[i]+=t.bkNew[i]; agg.bkRepeat[i]+=t.bkRepeat[i]; agg.avail[i]+=t.avail[i]; agg.weekend[i]+=t.weekend[i]; agg.docDays[i]+=t.docDays[i]; } }
     out[city]._total=agg;
   }
   return out;
@@ -284,6 +284,7 @@ function rcaClinic(city, clinic){
   const W=wkIdx, d=SDATA[city][clinic]._total;
   const bk=d.allBk, av=d.avail, we=d.weekend;
   const bkWe=d.bkWe||Array(WEEKS.length).fill(0);   // weekend (Sat/Sun) bookings subset
+  const bkNew=d.bkNew||Array(WEEKS.length).fill(0), bkRepeat=d.bkRepeat||Array(WEEKS.length).fill(0);  // new+repeat = allBk
   const pr=practoArr(city,clinic);                       // Practo leads per week (external sheet)
   // ── leads: prefer Redshift (data_leads.json) over the sheet, so the chart, the
   //    RCA and the lead-loss drill all use ONE source. gmb = GMB+Google Ad. ──
@@ -352,7 +353,7 @@ function rcaClinic(city, clinic){
           gmb_w,gmb_avg,pr_w,pr_avg,wd_w,wd_avg,
           leadsBroke,actBroke,weBroke,availBroke,cause,mixWith,comp,L,mat,note,
           bkPerDay,weLost,wdLost,leadsLoss_gmb,leadsLoss_pr,expectedIfFull,
-          bkArr:bk,bkWeArr:bkWe,ldArr:ld,avArr:av,weArr:we,gmbArr:gmb,prArr:pr,wdArr:wd,
+          bkArr:bk,bkWeArr:bkWe,bkNewArr:bkNew,bkRepeatArr:bkRepeat,ldArr:ld,avArr:av,weArr:we,gmbArr:gmb,prArr:pr,wdArr:wd,
           orgArr:orgArr, gmbOnlyArr:gmbOnly, gAdArr:gAd, fbArr:fbA, jdArr:jdA, othArr:othA, useRedshiftLeads:useRedshift};
 }
 function allClinicRCA(){
@@ -540,7 +541,7 @@ function renderOffline(){
     <div class="sec-h"><span class="sec-num">1</span>Headline — ${wl}</div>
     <div class="sec-sub">Offline (clinic) bookings read against <b>both</b> baselines. "Flat vs the 8-week average" can hide a give-back from the recent peak.</div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px;">
-      <div class="kpi"><div class="kpi-l">Offline bookings · ${wl}</div><div class="kpi-v">${R.netW.toLocaleString()}</div><div class="kpi-s">new-patient SC bookings</div></div>
+      <div class="kpi"><div class="kpi-l">Offline bookings · ${wl}</div><div class="kpi-v">${R.netW.toLocaleString()}</div><div class="kpi-s">screening-call bookings (patient × doctor)</div></div>
       <div class="kpi"><div class="kpi-l">vs 8-wk average</div><div class="kpi-v" style="color:${dCol(dAvg)}">${signed(dAvg)}</div><div class="kpi-s">avg ${Math.round(R.netAvg).toLocaleString()}/wk</div></div>
       <div class="kpi"><div class="kpi-l">vs recent peak</div><div class="kpi-v" style="color:${dCol(dPeak)}">${signed(dPeak)}</div><div class="kpi-s">peak ${R.netPeak.toLocaleString()}</div></div>
       <div class="kpi"><div class="kpi-l">Underlying losses</div><div class="kpi-v" style="color:#dc2626">${R.totalLost}</div><div class="kpi-s">offset by +${R.growth} growth</div></div>
@@ -991,8 +992,8 @@ function leadBookingTiming(r){
   else if(ldDown && !bkDown){ diag=`Leads softened <b>(${signed(dLd,'%')})</b> but bookings held <b>(${signed(dBkP,'%')})</b> — conversion / repeat demand cushioned it this week, but watch next week if leads stay low.`; dcol='#7c3aed'; }
   else if(bkUp && ldUp){ diag=`Leads <b>(${signed(dLd,'%')})</b> and bookings <b>(${signed(dBkP,'%')})</b> both rose together — healthy demand-led growth.`; dcol='#059669'; }
   else { diag=`Leads ${signed(dLd,'%')}, bookings ${signed(dBkP,'%')} — broadly in line, no clear divergence this week.`; dcol='#475569'; }
-  // lead coverage: tracked leads vs new bookings
-  const newArr=hasBookType(r.city,r.clinic)?bookTypeArr(r.city,r.clinic,'new'):null;
+  // lead coverage: tracked leads vs new bookings (same distinct patient×doctor basis as headline)
+  const newArr=r.bkNewArr&&r.bkNewArr.some(x=>x)?r.bkNewArr:null;
   const new_w=newArr?newArr[wkIdx]:null;
   const cov = (new_w!=null && r.ld_w>0)
     ? (new_w>r.ld_w
@@ -1007,10 +1008,11 @@ function leadBookingTiming(r){
   </div>`;
 }
 // ── Booking mix: new (first-time, leads-driven) vs repeat (retention) ──
+// Same basis as the headline "📅 Bookings" (distinct patient × doctor), so new + repeat = headline.
 function bookTypeMix(r){
-  if(!hasBookType(r.city,r.clinic)) return '';
+  const nw=r.bkNewArr, rp=r.bkRepeatArr;
+  if(!nw || !nw.some((x,i)=>x||rp[i])) return '';
   const W=wkIdx, rev=a=>a.slice(0,WEEKS.length).reverse(), hi=(WEEKS.length-1)-W, sl=a=>a.slice(W+1,W+5);
-  const nw=bookTypeArr(r.city,r.clinic,'new'), rp=bookTypeArr(r.city,r.clinic,'repeat');
   const nw_w=nw[W], nw_n=avg(sl(nw)), rp_w=rp[W], rp_n=avg(sl(rp));
   const dNw=nw_w-nw_n, dRp=rp_w-rp_n;
   const tot_w=nw_w+rp_w, newShare=tot_w?Math.round(nw_w/tot_w*100):0;
@@ -1020,15 +1022,15 @@ function bookTypeMix(r){
     ? `The drop is mostly <b>${newWorse?'<span style="color:#4f46e5">new (first-time) bookings</span> — a leads / demand problem (look at the lead-loss drill below)':'<span style="color:#0891b2">repeat bookings</span> — a retention / follow-up problem, not leads'}</b>. New ${nw_w} vs norm ${r1(nw_n)} (${signed(r1(dNw))}) · repeat ${rp_w} vs ${r1(rp_n)} (${signed(r1(dRp))}).`
     : `New ${nw_w} (${signed(r1(dNw))}) and repeat ${rp_w} (${signed(r1(dRp))}) both broadly held.`;
   return `<div class="card"><div class="sec-h"><span class="sec-num">📋</span>Booking mix — new vs repeat</div>
-    <div class="sec-sub">First-time bookings move with <b>leads/demand</b>; repeat bookings move with <b>retention/follow-up</b> — so the split tells you whether to blame leads. · Redshift · ${WEEKS[wkIdx].label}</div>
+    <div class="sec-sub">The headline <b>${tot_w}</b> bookings, split: first-time bookings move with <b>leads/demand</b>, repeat bookings with <b>retention/follow-up</b> — so the split tells you whether to blame leads. · Redshift · ${WEEKS[wkIdx].label}</div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px;">
       ${mini('🆕 New (first-time) · '+nw_w+' ('+signed(r1(dNw))+')','#4f46e5','first-EVER visit · leads-driven · dashed = 4-wk avg',spark(rev(nw),'#4f46e5',hi,null,nw_n))}
       ${mini('🔁 Repeat (returning) · '+rp_w+' ('+signed(r1(dRp))+')','#0891b2','returning patient · retention / follow-up',spark(rev(rp),'#0891b2',hi,null,rp_n))}
     </div>
     <div style="margin-top:12px;font-size:11.5px;background:#eef2ff;border-radius:9px;padding:8px 13px;line-height:1.5;color:#3730a3;">
-      <b>${tot_w}</b> total screening-call appointments this week = <b style="color:#4f46e5">${nw_w} new</b> + <b style="color:#0891b2">${rp_w} repeat</b> &nbsp;·&nbsp; new share <b>${newShare}%</b>.</div>
+      <b>${tot_w}</b> bookings this week = <b style="color:#4f46e5">${nw_w} new</b> + <b style="color:#0891b2">${rp_w} repeat</b> &nbsp;·&nbsp; new share <b>${newShare}%</b> &nbsp;·&nbsp; <span style="color:#6366f1;">matches the headline 📅 Bookings (${tot_w}).</span></div>
     <div style="margin-top:8px;font-size:11.5px;background:#f8fafc;border-radius:9px;padding:10px 13px;line-height:1.6;color:#475569;">${verdict}</div>
-    <div style="margin-top:8px;font-size:10.5px;color:#94a3b8;line-height:1.5;">These are <b>all</b> Redshift screening-call appointments by appointment week (gross, every status) — a broader count than the headline "📅 Bookings" above (sheet-based net bookings, to be replaced in the Redshift cutover), so new + repeat won't sum to the top number. "New" uses each patient's <b>all-time</b> first visit, so early weeks aren't over-counted.</div>
+    <div style="margin-top:8px;font-size:10.5px;color:#94a3b8;line-height:1.5;">Counted the same way as the headline — distinct patient × doctor by appointment week. "New" = the patient's <b>all-time</b> first screening-call visit (computed across full history, so early weeks aren't over-counted); everyone else is "repeat".</div>
   </div>`;
 }
 // ── Lead-loss drill: GMB profile (reviews/rank) vs Google Ads (impression share) ──
@@ -1254,7 +1256,7 @@ function renderDeepDive(r){
     <div class="sec-sub">Showing the last <b>${winN}</b> week${winN>1?'s':''} · highlighted point = <b>${wl}</b> · dashed line = recent norm.</div>
     ${winBar}
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,1fr));gap:14px;">
-      ${trend('📅 Bookings', spark(rev(r.bkArr),'#4f46e5',hi,null,r.bkBase), 'new-patient SC bookings/week · dashed = expected')}
+      ${trend('📅 Bookings', spark(rev(r.bkArr),'#4f46e5',hi,null,r.bkBase), 'screening-call bookings/week (distinct patient × doctor) · dashed = expected')}
       ${trend('🔎 Leads — total, then where the gap is', sparkMulti(
           leadsGran ? [
             {vals:rev(r.ldArr), color:'#0ea5e9', label:'Total', width:2.5},
