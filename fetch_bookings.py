@@ -70,18 +70,28 @@ diag AS (
   FROM allo_encounters.encounters e
   LEFT JOIN allo_analytics.encounter_tags et ON et.encounter_id=e.id AND et.tag_category='diagnosis' AND et.deleted_at IS NULL
   WHERE e.deleted_at IS NULL GROUP BY 1
+),
+mh AS (
+  -- Mental Health = doctor's clinical paperform flag isMHOrSH='MH Only' (field exists from 2026-04-23).
+  -- Validated against the manual MH dashboard: 113/114 match (99%) once the field exists.
+  SELECT e.appointment_id, MAX(CASE WHEN q.value='MH Only' THEN 1 ELSE 0 END) AS mh_only
+  FROM allo_encounters.encounters e
+  JOIN allo_health.paperform_qa q ON q.encounter_id=e.id AND q.custom_key='isMHOrSH' AND q.deleted_at IS NULL
+  WHERE e.deleted_at IS NULL GROUP BY 1
 )
 SELECT TO_CHAR(DATE(sc.start_time + INTERVAL '5.5 hours'),'YYYY-MM-DD') AS apt_schedule_dt,
        TO_CHAR(DATE(sc.created_at  + INTERVAL '5.5 hours'),'YYYY-MM-DD') AS apt_create_dt,
        sc.status AS apt_status_final, sc.phone_rank,
        sc.phone_no, LOWER(COALESCE(ld.utm_source,'')) utm_source, LOWER(COALESCE(ld.origin,'')) origin,
-       COALESCE(d.diag_cat,'oth') diag_cat, COALESCE(loc.city,'') city,
+       CASE WHEN mh.mh_only=1 THEN 'MH' ELSE COALESCE(d.diag_cat,'oth') END AS diag_cat,
+       COALESCE(loc.city,'') city,
        COALESCE(loc.locality, loc.name,'') locality, COALESCE(sc.mode,'') AS consult_mode
 FROM sc
   LEFT JOIN allo_health.locations loc ON loc.id=sc.location_id AND loc.deleted_at IS NULL
   LEFT JOIN allo_persons.patient pt ON pt.id=sc.patient_id
   LEFT JOIN allo_persons.lead ld ON ld.id=pt.lead_id AND ld.deleted_at IS NULL
   LEFT JOIN diag d ON d.appointment_id=sc.id
+  LEFT JOIN mh ON mh.appointment_id=sc.id
 WHERE sc.created_at >= CURRENT_DATE - {OUT_DAYS}
 """
 

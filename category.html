@@ -18,6 +18,10 @@
 html,body{background:#f8fafc;color:var(--ink);font-family:ui-sans-serif,system-ui,sans-serif;}
 .card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:20px;box-shadow:0 1px 3px rgba(15,23,42,.05);}
 .sect{background:#fff;border:1px solid var(--line);border-radius:14px;box-shadow:0 1px 3px rgba(15,23,42,.05);margin-bottom:16px;overflow:hidden;}
+/* drill-down section must let its filter dropdowns overflow the card (otherwise they get clipped & unclickable) */
+.dl-sect, .dl-sect>.sect-body{overflow:visible;}
+/* drill filter triggers sit far right on a wide bar — anchor panels to the right edge so they don't run off-screen */
+.dl-mf .mf-panel{left:auto;right:0;}
 .sect>summary{list-style:none;cursor:pointer;padding:13px 18px;display:flex;align-items:center;gap:12px;user-select:none;}
 .sect>summary::-webkit-details-marker{display:none;}
 .sect>summary:hover{background:#fafaff;}
@@ -174,8 +178,8 @@ details[open]>.dl-gsum .dl-cv{transform:rotate(90deg);}
       <div class="text-xs mt-0.5 flex items-center gap-1.5" id="dataNote"></div>
     </div>
     <div class="flex items-center gap-2 ml-auto flex-wrap" id="catChips"></div>
-    <!-- Tier filter -->
-    <div class="flex gap-1 border rounded-lg p-0.5" style="border-color:var(--line);">
+    <!-- Tier filter (only relevant to Data / Snapshot — hidden in Charts where each section owns its filters) -->
+    <div class="flex gap-1 border rounded-lg p-0.5" style="border-color:var(--line);" id="tierToggleWrap">
       <button class="toggle-btn active" id="tierAllCat" onclick="setTierCat('ALL')">All Cities</button>
       <button class="toggle-btn"        id="tierT1Cat"  onclick="setTierCat('T1')">Tier 1</button>
       <button class="toggle-btn"        id="tierT2Cat"  onclick="setTierCat('T2')">Tier 2</button>
@@ -192,10 +196,6 @@ details[open]>.dl-gsum .dl-cv{transform:rotate(90deg);}
       <button class="toggle-btn" id="scopeOnline" onclick="setScope('online')">Online</button>
       <button class="toggle-btn" id="scopeAll" onclick="setScope('all')">All</button>
     </div>
-    <div class="flex gap-1 border rounded-lg p-0.5" style="border-color:var(--line);">
-      <button class="toggle-btn active" id="modeAbs" onclick="setMode('abs')">Calls Done</button>
-      <button class="toggle-btn" id="modeShare" onclick="setMode('share')">Share %</button>
-    </div>
   </div>
 </div>
 
@@ -206,6 +206,7 @@ details[open]>.dl-gsum .dl-cv{transform:rotate(90deg);}
 <script>
 const CAT_META = {
   'STI':    { label:'STI', color:'#0ea5e9', bg:'#eff6ff' },
+  'MH':     { label:'Mental Health', color:'#4f46e5', bg:'#eef2ff' },
   'SH':     { label:'Sexual Health', isSHAggregate:true, color:'#7c3aed', bg:'#f5f3ff' },
   'ED+':    { label:'ED+',    parent:'Sexual Health', color:'#7c3aed', bg:'#f5f3ff' },
   'PE+':    { label:'PE+',    parent:'Sexual Health', color:'#f59e0b', bg:'#fffbeb' },
@@ -375,12 +376,8 @@ function ddPanel(which){
     <div class="mf-foot"><span>${clinInc.size} incl · ${clinExc.size} excl</span><button onclick="clinInc.clear();clinExc.clear();render()">Clear</button></div></div>`;
 }
 
-// ── Time controls: simple dropdowns — Period vs Comparison ──
+// ── Time control: granularity only (Weekly/Monthly). Per-section filters live in each section. ──
 let tGran = 'week';        // 'week' | 'month'
-let tFocusIdx = -1;        // focus period index (-1 = latest)
-let tCmp = 'avgN';         // comparison mode
-let tAvgN = 8;             // rolling-average window (periods), or 'all'
-let tCmpIdx = 0;           // specific compare period index
 const TMS  = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 const TMS1 = ['J','F','M','A','My','Jn','Jl','Au','S','O','N','D'];
 function tShortWk(wk){ const d = new Date(wk+'T00:00:00Z'); return d.getUTCDate()+TMS1[d.getUTCMonth()]; }
@@ -402,57 +399,20 @@ function tAgg(weeksArr){
   for (const wk of weeksArr){ const {cats,total:t}=getFilteredData(wk); total+=t; catVal += cat==='SH'?getSHVal(cats):cat==='ALL'?t:(cats[cat]||0); }
   return { total, catVal, rate: total ? catVal/total*100 : 0 };
 }
-function focusIndex(){ const N=tAllPeriods().length; return (tFocusIdx<0||tFocusIdx>=N) ? N-1 : tFocusIdx; }
-// Average aggregate over a set of period indices (per-period averages of total & cat).
-function avgOver(idxs){
-  const pAll=tAllPeriods(); const wks=idxs.flatMap(i=>pAll[i]?pAll[i].weeks:[]); const a=tAgg(wks);
-  const n=Math.max(1,idxs.length); return { total:a.total/n, catVal:a.catVal/n, rate:a.rate };
-}
-// Compare options for the current granularity.
-function cmpOptions(){
-  return (tGran==='month')
-    ? [['Rolling average','avgN'],['Previous month','prev'],['Peak month','peak'],['Specific month…','specific']]
-    : [['Rolling average','avgN'],['Previous week','prev'],['2 weeks ago','prev2'],['4 weeks ago','prev4'],['Peak week','peak'],['Specific week…','specific']];
-}
-// Window options for the rolling average (number of periods to average over).
-function avgWindowOptions(){
-  return (tGran==='month') ? [['2 mo',2],['3 mo',3],['All prior','all']]
-                           : [['2 wk',2],['3 wk',3],['4 wk',4],['6 wk',6],['8 wk',8],['10 wk',10],['12 wk',12],['All prior','all']];
-}
-// Resolve the comparison aggregate + label.
-function compareAgg(){
-  const pAll=tAllPeriods(); const N=pAll.length; const f=focusIndex();
-  const range=(a,b)=>{ const out=[]; for(let i=Math.max(0,a);i<=b;i++) out.push(i); return out; };
-  let mode=tCmp; const valid=cmpOptions().map(o=>o[1]); if(!valid.includes(mode)) mode=valid[0];
-  if(mode==='avgN'){ const n = tAvgN==='all' ? f : tAvgN; const idxs=range(f-n, f-1); const lab=(tAvgN==='all'?'all-':n+'-')+tPWord()+' avg'; return { agg:idxs.length?avgOver(idxs):null, label:lab }; }
-  if(mode==='prev'){ const i=f-1; return { agg:i>=0?tAgg(pAll[i].weeks):null, label:i>=0?pAll[i].label:'—' }; }
-  if(mode==='prev2'){ const i=f-2; return { agg:i>=0?tAgg(pAll[i].weeks):null, label:i>=0?pAll[i].label:'—' }; }
-  if(mode==='prev4'){ const i=f-4; return { agg:i>=0?tAgg(pAll[i].weeks):null, label:i>=0?pAll[i].label:'—' }; }
-  if(mode==='peak'){ let bi=0,bv=-1; pAll.forEach((p,i)=>{ const v=tAgg(p.weeks).catVal; if(v>bv){bv=v;bi=i;} }); return { agg:tAgg(pAll[bi].weeks), label:'peak ('+pAll[bi].label+')' }; }
-  // specific
-  const i=Math.max(0,Math.min(N-1,tCmpIdx)); return { agg:tAgg(pAll[i].weeks), label:pAll[i].label };
-}
-function setGran(g){ tGran=g; tFocusIdx=-1; tCmp='avgN'; render(); }
-function setFocus(idx){ tFocusIdx=+idx; render(); }
-function setCmp(v){ tCmp=v; if(v==='specific'){ tCmpIdx=Math.max(0,focusIndex()-1); } render(); }
-function setCmpIdx(idx){ tCmpIdx=+idx; render(); }
-function setAvgN(v){ tAvgN = (v==='all') ? 'all' : +v; render(); }
+function setGran(g){ tGran=g; render(); }
 function renderTimeBar(){
-  const pAll=tAllPeriods(); const f=focusIndex();
-  const focusOpts=pAll.map((p,i)=>`<option value="${i}" ${i===f?'selected':''}>${p.label}${i===pAll.length-1?' (latest)':''}</option>`).join('');
-  const cmpSel=cmpOptions().map(([l,v])=>`<option value="${v}" ${tCmp===v?'selected':''}>${l}</option>`).join('');
-  const avgSel = tCmp==='avgN' ? `<span class="tb-lbl" style="margin-left:4px;">over</span><select class="tb-sel" onchange="setAvgN(this.value)">${avgWindowOptions().map(([l,v])=>`<option value="${v}" ${(''+tAvgN)===(''+v)?'selected':''}>${l}</option>`).join('')}</select>` : '';
-  const specSel = tCmp==='specific' ? `<select class="tb-sel" onchange="setCmpIdx(+this.value)">${pAll.map((p,i)=>`<option value="${i}" ${i===tCmpIdx?'selected':''}>${p.label}</option>`).join('')}</select>` : '';
   return `<div class="tbar2">
     <div class="tb-grp"><span class="tb-lbl">View</span>
       <button class="tb-pill${tGran==='week'?' on':''}" onclick="setGran('week')">Weekly</button><button class="tb-pill${tGran==='month'?' on':''}" onclick="setGran('month')">Monthly</button></div>
-    <div class="tb-grp"><span class="tb-lbl">Period</span><select class="tb-sel" onchange="setFocus(+this.value)">${focusOpts}</select></div>
-    <div class="tb-grp"><span class="tb-lbl">Compare to</span><select class="tb-sel" onchange="setCmp(this.value)">${cmpSel}</select>${avgSel}${specSel}</div>
+    <span style="font-size:11px;color:var(--muted);">↓ Weekly / monthly granularity for the <b>Channel Analysis</b> &amp; <b>City</b> sections below. (The drill-down above has its own per-chart View &amp; Tier controls.)</span>
   </div>`;
 }
 let dataMode = 'charts';   // 'charts' | 'snapshot' (Data) | 'kpi' (Snapshot)
 let snapFromIdx = 0, snapToIdx = -1;   // snapshot date range (period indices)
-function setDataMode(m){ dataMode = m; document.getElementById('displayCharts')?.classList.toggle('active', m==='charts'); document.getElementById('displayData')?.classList.toggle('active', m==='snapshot'); document.getElementById('displayKpi')?.classList.toggle('active', m==='kpi'); render(); }
+function setDataMode(m){ dataMode = m; document.getElementById('displayCharts')?.classList.toggle('active', m==='charts'); document.getElementById('displayData')?.classList.toggle('active', m==='snapshot'); document.getElementById('displayKpi')?.classList.toggle('active', m==='kpi'); syncHeaderFilters(); render(); }
+// Show only header filters that actually drive the active view.
+// Tier (city-tier quick filter) drives Data/Snapshot; in Charts each section owns its filters, so hide it.
+function syncHeaderFilters(){ const tw=document.getElementById('tierToggleWrap'); if(tw) tw.style.display = (dataMode==='charts') ? 'none' : ''; }
 function setSnapFrom(i){ snapFromIdx = +i; if(snapToIdx>=0 && snapToIdx<snapFromIdx) snapToIdx=snapFromIdx; render(); }
 function setSnapTo(i){ snapToIdx = +i; if(snapToIdx<snapFromIdx) snapFromIdx=snapToIdx; render(); }
 
@@ -493,27 +453,9 @@ function setScope(s) {
   render();
 }
 
-function setMode(m) {
-  viewMode = m;
-  document.getElementById('modeAbs').classList.toggle('active', m==='abs');
-  document.getElementById('modeShare').classList.toggle('active', m==='share');
-  render();
-}
-
 function setChannel(ch) {
   activeChannel = ch;
   if (ch !== 'ALL') activeCity = 'ALL';
-  render();
-}
-
-function setCity(city) {
-  activeCity = city;
-  if (city !== 'ALL') activeChannel = 'ALL';
-  render();
-}
-
-function clearFilters() {
-  activeChannel = 'ALL'; activeCity = 'ALL';
   render();
 }
 
@@ -539,23 +481,6 @@ function last8WeeksAvg(weeks, cat, upToIdx) {
 
 function fmt(n)    { return n >= 1000 ? (n/1000).toFixed(1)+'k' : Math.round(n).toString(); }
 function fmtPct(n) { return n.toFixed(1)+'%'; }
-
-// ── KPI card helpers ────────────────────────────────────────────────────────
-function kpiCard(label, val, sub, color) {
-  return `<div class="card" style="padding:14px 16px;">
-    <div style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:4px;">${label}</div>
-    <div style="font-size:22px;font-weight:700;color:${color};line-height:1.2;">${val}</div>
-    <div style="font-size:11px;color:var(--muted);margin-top:4px;">${sub}</div>
-  </div>`;
-}
-
-function kpiCard2(label, val, sub, color) {
-  return `<div style="background:#f8fafc;border:1px solid var(--line);border-radius:12px;padding:14px 16px;">
-    <div style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:4px;">${label}</div>
-    <div style="font-size:26px;font-weight:700;color:${color};line-height:1.2;">${val}</div>
-    <div style="font-size:12px;color:var(--muted);margin-top:4px;">${sub}</div>
-  </div>`;
-}
 
 function miniKpi(label, val, sub, color) {
   return `<div style="background:#f8fafc;border-radius:8px;padding:8px 10px;">
@@ -656,30 +581,11 @@ function buildGrowthIndexChart(weeks, cat, m, wkLabels, allWeekData) {
   });
 }
 
-// ── Period vs comparison stat card (focus value big, comparison value + delta) ──
-function cmpCard(label, aVal, bVal, isPct, cmpLabel){
-  const fmtV = v => isPct ? (v||0).toFixed(1)+'%' : Math.round(v||0).toLocaleString();
-  let foot;
-  if (bVal == null){
-    foot = `<span style="color:#cbd5e1;">— no comparison available</span>`;
-  } else {
-    let dStr = '—', dcol = '#94a3b8';
-    if (isPct){ const pp = (aVal||0)-bVal; dcol = pp>=0?'#059669':'#dc2626'; dStr = (pp>=0?'▲ +':'▼ ')+Math.abs(pp).toFixed(1)+'pp'; }
-    else if (bVal !== 0){ const pc = ((aVal||0)-bVal)/bVal*100; dcol = pc>=0?'#059669':'#dc2626'; dStr = (pc>=0?'▲ +':'▼ ')+Math.abs(pc).toFixed(0)+'%'; }
-    foot = `<span style="color:${dcol};font-weight:800;">${dStr}</span> <span style="color:var(--muted);">vs ${cmpLabel||'compare'} (${fmtV(bVal)})</span>`;
-  }
-  return `<div class="card" style="padding:14px 16px;">
-    <div style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:5px;">${label}</div>
-    <div style="font-size:25px;font-weight:800;color:#0f172a;line-height:1.1;">${fmtV(aVal)}</div>
-    <div style="font-size:11px;margin-top:6px;">${foot}</div>
-  </div>`;
-}
-
 // ── MAIN RENDER ────────────────────────────────────────────────────────────
 // ══════════ SNAPSHOT (pure-data tables · no charts · all filters live) ══════════
 function renderSnapshot(){
   const cat=activeCat, m=CAT_META[cat]||CAT_META.oth, catLabel=m.label, pWord=tPWord();
-  const CATS=['STI','ED+','PE+','ED+PE+','NSSD','oth'];
+  const CATS=['STI','ED+','PE+','ED+PE+','NSSD','MH','oth'];
   const periods=tAllPeriods();
   // ── date range window ──
   const sF=Math.max(0,Math.min(snapFromIdx,periods.length-1));
@@ -756,6 +662,7 @@ function renderSnapshot(){
   }
 
   document.getElementById('mainContent').innerHTML=`
+    ${mhBanner()}
     ${snapBar}
     ${filterCard}
     <div class="card" style="padding:10px 16px;display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;">
@@ -769,7 +676,7 @@ function renderSnapshot(){
 // ══════════ KPI SNAPSHOT (decluttered at-a-glance · all filters live) ══════════
 function renderKpiSnapshot(){
   const cat=activeCat, m=CAT_META[cat]||CAT_META.oth, catLabel=m.label, pWord=tPWord();
-  const CATS=['STI','ED+','PE+','ED+PE+','NSSD','oth'];
+  const CATS=['STI','ED+','PE+','ED+PE+','NSSD','MH','oth'];
   const periods=tAllPeriods();
   const sF=Math.max(0,Math.min(snapFromIdx,periods.length-1));
   const sT=(snapToIdx<0||snapToIdx>=periods.length)?periods.length-1:snapToIdx;
@@ -849,10 +756,14 @@ function renderKpiSnapshot(){
       <span style="font-size:13px;font-weight:700;color:#4338ca;">⚡ ${catDisplayLabel(cat)} snapshot</span>
       <span style="font-size:11px;color:var(--muted);">${dlScopeLbl()}${activeChannel!=='ALL'?' · '+activeChannel+' channel':''}${geoMode()!=='none'?' · geo-filtered':''} · ${tGran==='month'?'monthly':'weekly'} · ${rngLabel} — change category, dates, channel, city, clinic or maturity above to update everything.</span></div>`;
 
-  document.getElementById('mainContent').innerHTML=`${snapBar}${filterCard}${ctx}${heroRow}${windowStrip}${momentum}`;
+  document.getElementById('mainContent').innerHTML=`${mhBanner()}${snapBar}${filterCard}${ctx}${heroRow}${windowStrip}${momentum}`;
 }
 
+function mhBanner(){ return activeCat==='MH'
+  ? `<div class="card" style="padding:8px 14px;background:#eef2ff;border-color:#c7d2fe;color:#4338ca;font-size:11px;line-height:1.5;">ℹ️ <b>Mental Health</b> is identified from the clinician's <b>“MH or SH?”</b> assessment flag on the screening call — live in the system from <b>23 Apr 2026</b>, so earlier weeks read 0. Concentrated at <b>Indiranagar</b> (Bangalore) &amp; <b>Bharathi Nagar</b> (Coimbatore) but tracked network-wide.</div>`
+  : ''; }
 function render() {
+  syncHeaderFilters();
   if (dataMode === 'snapshot') { try { renderSnapshot(); } catch(e){ console.error('snapshot', e); } return; }
   if (dataMode === 'kpi') { try { renderKpiSnapshot(); } catch(e){ console.error('kpi', e); } return; }
   const scope    = S();
@@ -1116,59 +1027,12 @@ function render() {
     </div>`;
   }
 
-  // ── Filter bar ──
-  const allCh2 = ['ALL', ...channels];
-  const chipsHTML = allCh2.map(ch => {
-    const active = ch === activeChannel;
-    const color  = ch==='ALL' ? '#0f172a' : (CH_COLORS[ch] || '#94a3b8');
-    const style  = active ? `background:${color};color:#fff;border-color:${color};` : `color:${ch==='ALL'?'var(--ink)':color};border-color:#e2e8f0;`;
-    const dot    = ch !== 'ALL' ? `<span style="width:7px;height:7px;border-radius:50%;background:${active?'#fff':color};display:inline-block;flex-shrink:0;"></span>` : '';
-    return `<button class="chip" style="${style}font-size:11px;padding:3px 10px;" onclick="setChannel('${ch}')">${dot}${ch==='ALL'?'All':ch}</button>`;
-  }).join('');
-
-  const citiesForFilter = hasGeo ? ['ALL', ...(S().cities||[]).filter(c => c && c!=='Online')] : [];
-  const citySel = hasGeo ? `
-    <span style="width:1px;height:20px;background:#e2e8f0;flex-shrink:0;"></span>
-    <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#94a3b8;flex-shrink:0;">City:</span>
-    <select style="font-size:12px;border:1.5px solid ${activeCity!=='ALL'?'#7c3aed':'var(--line)'};border-radius:6px;padding:3px 8px;background:#fff;cursor:pointer;" onchange="setCity(this.value)">
-      ${citiesForFilter.map(c=>`<option value="${c}" ${c===activeCity?'selected':''}>${c==='ALL'?'All Cities':c}</option>`).join('')}
-    </select>` : '';
-
-  const filterNote = activeChannel!=='ALL'||activeCity!=='ALL'
-    ? `<span style="font-size:11px;color:#7c3aed;font-weight:600;">Filtered: ${activeChannel!=='ALL'?activeChannel+' channel':activeCity+' city'}</span>
-       <button onclick="clearFilters();" style="font-size:10px;color:#94a3b8;border:1px solid #e2e8f0;border-radius:4px;padding:1px 7px;background:#fff;cursor:pointer;margin-left:4px;">✕ Clear</button>` : '';
-
-
-  // ── Focus period vs comparison ──
-  const fIdx   = focusIndex();
-  const focusP = periods[fIdx] || periods[periods.length-1];
-  const fAgg   = focusP ? tAgg(focusP.weeks) : {total:0,catVal:0,rate:0};
-  const cmp    = compareAgg();
-  const cAgg   = cmp.agg;          // may be null
-  const fTot = fAgg.total, fCat = fAgg.catVal, fRate = fAgg.rate;
-  const bTot = cAgg ? cAgg.total : null, bCat = cAgg ? cAgg.catVal : null, bRate = cAgg ? cAgg.rate : null;
-  const focusLabel = focusP ? (focusP.wlabel || focusP.label) : '—';
-
   // ── Assemble all HTML ──
   document.getElementById('mainContent').innerHTML = `
-    ${renderTimeBar()}
-
-    <div class="card" style="padding:10px 16px;">
-      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
-        <span class="flt-lbl">Channel:</span>
-        <div style="display:flex;gap:5px;flex-wrap:wrap;align-items:center;">${chipsHTML}</div>
-        ${hasGeo ? `<span class="flt-sep"></span>
-        <span class="flt-lbl">City:</span><div class="mf">${ddBtn('city')}${openDD==='city'?ddPanel('city'):''}</div>
-        <span class="flt-lbl">Clinic:</span><div class="mf">${ddBtn('clinic')}${openDD==='clinic'?ddPanel('clinic'):''}</div>
-        <span class="flt-sep"></span>
-        <span class="flt-lbl">Maturity:</span>
-        <div style="display:flex;gap:4px;">${['ALL','Matured','Maturing','New'].map(mt=>`<button class="mtp${activeMat===mt?' on':''}" onclick="setMat('${mt}')">${mt==='ALL'?'All':mt}</button>`).join('')}</div>` : ''}
-        ${geoMode()!=='none' ? `<button class="flt-clear" onclick="clearGeo()">✕ Clear filters</button>` : ''}
-        ${activeChannel!=='ALL' ? `<span style="font-size:11px;color:#7c3aed;font-weight:600;">Channel: ${activeChannel}</span><button onclick="clearFilters();" style="font-size:10px;color:#94a3b8;border:1px solid #e2e8f0;border-radius:4px;padding:1px 7px;background:#fff;cursor:pointer;">✕</button>` : ''}
-      </div>
-    </div>
-
+    ${mhBanner()}
     <div id="drillRoot"></div>
+
+    ${renderTimeBar()}
 
     ${sect('🔀 Channel Analysis — ' + catDisplayLabel(cat),
       'Per-channel ' + catLabel + ' rate &amp; volume trend · network-wide',
@@ -1577,9 +1441,9 @@ function buildClinicCatSection(periods, cat, m, wkLabels, n4) {
 
 async function init() {
   try {
-    const res  = await fetch('data.json');
+    const res  = await fetch('data.json', {cache:'no-store'});
     DATA       = await res.json();
-    try { const cr = await fetch('data_channel.json'); if (cr.ok) CHDATA = await cr.json(); }
+    try { const cr = await fetch('data_channel.json', {cache:'no-store'}); if (cr.ok) CHDATA = await cr.json(); }
     catch(_) { CHDATA = null; }   // channel mix is an enhancement — page still works without it
     const firstLabel = DATA.week_labels[DATA.weeks[0]] || DATA.weeks[0];
     const lastLabel  = DATA.week_labels[DATA.weeks[DATA.weeks.length-1]] || DATA.weeks[DATA.weeks.length-1];
@@ -1598,6 +1462,7 @@ async function init() {
 function buildCatChips() {
   const container = document.getElementById('catChips');
   makeChip(container, 'STI');
+  makeChip(container, 'MH');
   const div = document.createElement('span');
   div.style.cssText = 'width:1px;height:20px;background:#e2e8f0;display:inline-block;margin:0 4px;';
   container.appendChild(div);
@@ -1657,8 +1522,8 @@ let dlInit=false;
 let dlGear=null;               // open gear popover: 'trend' | 'mix' | null
 let dlChMixOpen=false;         // channel-mix card expanded?
 let dlChanSel=new Set(['GMB','Google','Practo','Organic','Meta','Others']);   // channel cross-filter (all = no filter)
-const DL_CATS=['STI','ED+','PE+','ED+PE+','NSSD','oth'];
-const DL_CATCOL={STI:'#0ea5e9','ED+':'#7c3aed','PE+':'#f59e0b','ED+PE+':'#10b981',NSSD:'#94a3b8',oth:'#cbd5e1'};
+const DL_CATS=['STI','ED+','PE+','ED+PE+','NSSD','MH','oth'];
+const DL_CATCOL={STI:'#0ea5e9','ED+':'#7c3aed','PE+':'#f59e0b','ED+PE+':'#10b981',NSSD:'#94a3b8',MH:'#4f46e5',oth:'#cbd5e1'};
 let dlCfg={ trend:{gran:'week',range:8,metric:'calls',avg:{},cmpCat:null}, mix:{gran:'week',range:8,mode:'abs'}, growth:{gran:'week',range:8,avg:{}}, chmix:{gran:'week',range:8,metric:'cat',mode:'abs'} };
 function dlValOf(o,cat){ if(cat==='SH') return getSHVal(o); if(cat==='ALL') return o.total||0; return o[cat]||0; }
 function dlLabOf(cat){ return (CAT_META[cat]||{}).label||cat; }
@@ -1803,7 +1668,7 @@ function dlGearPanel(id){
   const rng=[['4',4],['8',8],['12',12],['All','all']].map(([l,v])=>`<button class="tb-pill${cfg.range===v?' on':''}" onclick="dlSetCfg('${id}','range',${v==='all'?"'all'":v})">${l}</button>`).join('');
   const cl=dlCatLab();
   let extra='';
-  if (id==='trend'){ const cmpCats=['STI','SH','ED+','PE+','ED+PE+','NSSD','oth','ALL'].filter(c=>c!==activeCat);
+  if (id==='trend'){ const cmpCats=['STI','MH','SH','ED+','PE+','ED+PE+','NSSD','oth','ALL'].filter(c=>c!==activeCat);
     extra=`<div class="dl-grp"><span class="tb-lbl">Metric</span>${[['Calls','calls'],[cl+' share %','share']].map(([l,v])=>`<button class="tb-pill${cfg.metric===v?' on':''}" onclick="dlSetCfg('trend','metric','${v}')">${l}</button>`).join('')}</div>`
     + `<div class="dl-grp"><span class="tb-lbl">+ Compare cat</span><select class="tb-sel" onchange="dlSetCmpCat(this.value)"><option value="">None</option>${cmpCats.map(c=>`<option value="${c}" ${cfg.cmpCat===c?'selected':''}>${dlLabOf(c)}</option>`).join('')}</select></div>`; }
   else if (id==='mix') extra=`<div class="dl-grp"><span class="tb-lbl">Mode</span>${[['Absolute','abs'],['100% share','pct']].map(([l,v])=>`<button class="tb-pill${cfg.mode===v?' on':''}" onclick="dlSetCfg('mix','mode','${v}')">${l}</button>`).join('')}</div>`;
@@ -1848,7 +1713,7 @@ function renderDrill(){
       </div>
       ${set.size||dlChanFilterOn()?`<div class="dl-chips">${dlChipsHTML(dlLevel)}${dlChanFilterOn()?`<span class="dl-chip" style="background:#eef2ff;color:#4338ca;border-color:#c7d2fe;font-weight:600;">× ${[...dlActiveChans()].join(', ')}<button onclick="dlSelAll('chan')" title="clear channel filter">×</button></span>`:''}</div>`:''}`;
     if(set.size===0){
-      root.innerHTML=`<details class="sect" open><summary><span class="sect-t">🔎 Drill-down</span><span class="sect-s">Select one or more ${dlLevel==='city'?'cities':'clinics'} to explore.</span><span class="sect-cv">▶</span></summary><div class="sect-body">${sel}<div class="dl-empty">Select one or more ${dlLevel==='city'?'cities':'clinics'} above to see the charts.</div></div></details>`;
+      root.innerHTML=`<details class="sect dl-sect" open><summary><span class="sect-t">🔎 Drill-down</span><span class="sect-s">Select one or more ${dlLevel==='city'?'cities':'clinics'} to explore.</span><span class="sect-cv">▶</span></summary><div class="sect-body">${sel}<div class="dl-empty">Select one or more ${dlLevel==='city'?'cities':'clinics'} above to see the charts.</div></div></details>`;
       return;
     }
     note = `${dlScopeLbl()} ${dlLevel} data${set.size>1?` · aggregated across ${set.size} ${dlLevel==='city'?'cities':'clinics'}`:''}.${dlChanFilterOn()?` <b style="color:#4338ca;">Cross-filtered to ${dlActiveChans().length} channel${dlActiveChans().length>1?'s':''}</b> — every chart below counts only ${dlActiveChans().join(', ')}.`:dlChAvail()?' Channel mix below is the verified per-'+dlLevel+' split (reconciles 100% to the booking feed).':''}`;
@@ -1865,7 +1730,7 @@ function renderDrill(){
       ${dlChanFilterOn()?`<div class="dl-chips"><span class="dl-chip" style="background:#eef2ff;color:#4338ca;border-color:#c7d2fe;font-weight:600;">× ${[...dlActiveChans()].join(', ')}<button onclick="dlSelAll('chan')" title="clear channel filter">×</button></span></div>`:''}`;
     note = `${dlScopeLbl()} network total${activeScope==='all'?' — online + offline combined':''}.${dlChanFilterOn()?` <b style="color:#4338ca;">Channel-filtered to ${dlActiveChans().join(', ')}</b> — charts count only those channels.`:dlChShow()?' Channel-wise mix is shown below.':''} City/clinic drill-down is available under the <b>Offline</b> scope only.`;
   }
-  root.innerHTML=`<details class="sect" open><summary><span class="sect-t">🔎 Drill-down — ${ent}</span><span class="sect-s">${geo?'Select one or more '+dlLevel+'s; charts aggregate the selection.':'Network view'} Each chart has its own ⚙ controls.</span><span class="sect-cv">▶</span></summary><div class="sect-body">
+  root.innerHTML=`<details class="sect dl-sect" open><summary><span class="sect-t">🔎 Drill-down — ${ent}</span><span class="sect-s">${geo?'Select one or more '+dlLevel+'s; charts aggregate the selection.':'Network view'} Each chart has its own ⚙ controls.</span><span class="sect-cv">▶</span></summary><div class="sect-body">
     ${sel}
     <div style="font-size:11px;color:#94a3b8;margin:8px 0 14px;">${note}</div>
     ${(()=>{const cm=dlCfg.trend.cmpCat&&dlCfg.trend.cmpCat!==activeCat?dlCfg.trend.cmpCat:null; return cm

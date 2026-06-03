@@ -17,7 +17,7 @@ OUT_PATH = "/Users/alishaparveen/holistic-demand-dashboard/data.json"
 # Number of complete Mon–Sun weeks to include (most recent first)
 NUM_WEEKS = 12
 
-CATEGORIES = ["STI", "ED+", "PE+", "ED+PE+", "NSSD", "oth"]
+CATEGORIES = ["STI", "ED+", "PE+", "ED+PE+", "NSSD", "MH", "oth"]
 CHANNELS   = ["GMB", "Google", "Practo", "Organic", "Meta", "Others"]
 
 
@@ -43,7 +43,7 @@ def map_channel(src: str) -> str:
 
 def map_cat(raw: str) -> str:
     c = raw.strip()
-    return c if c in ("STI", "ED+", "PE+", "ED+PE+", "NSSD", "oth") else "oth"
+    return c if c in ("STI", "ED+", "PE+", "ED+PE+", "NSSD", "MH", "oth") else "oth"
 
 
 def empty_funnel():

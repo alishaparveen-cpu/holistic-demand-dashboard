@@ -17,7 +17,7 @@ from datetime import datetime, timedelta, date
 CSV_PATH = "/tmp/bookings_full.csv"
 ROOT     = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT      = os.path.join(ROOT, "data_channel.json")
-CATS     = ["STI", "ED+", "PE+", "ED+PE+", "NSSD", "oth"]
+CATS     = ["STI", "ED+", "PE+", "ED+PE+", "NSSD", "MH", "oth"]
 CHANNELS = ["GMB", "Google", "Practo", "Organic", "Meta", "Others"]
 
 def map_channel(src):
