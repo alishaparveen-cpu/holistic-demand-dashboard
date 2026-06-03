@@ -792,13 +792,16 @@ function zoomTrend(id){
 function closeZoom(){ const ov=document.getElementById('zoomOverlay'); if(ov) ov.style.display='none'; }
 document.addEventListener('keydown',e=>{ if(e.key==='Escape') closeZoom(); });
 // ═══════════════ STATISTICAL ATTRIBUTION (OLS regression) ═══════════════
-// Pool every operating clinic-week and fit  bookings ≈ b0 + bLead·leads + bAvail·active-days.
-// Global coefficients are stable (≈700 obs) and interpretable: "one extra lead → bLead
-// bookings", "one extra active doctor-day → bAvail bookings". We then use them to split a
-// clinic's weekly gap (vs expected) into a leads part, an availability part and a residual
-// (conversion / call-handling / unexplained). R² tells you how much of bookings the two
-// demand+supply levers explain network-wide.
-let _REG=null;
+// Model:  bookings ≈ b0 + bLead·leads + bAvail·doctor-HOURS  (hours, not days — a "day"
+// can be 2h or 10h of bookable cover, so hours are sharper). It is fit PER CLINIC, but with
+// only ~7 weeks each a raw 2-predictor clinic fit would wildly overfit — so each clinic's
+// coefficients are RIDGE-shrunk toward a stable network model (pooled across all clinic-weeks).
+// A clinic with lots of clean weeks moves toward its own slope; a thin one borrows the network's.
+// (The Redshift cutover, adding more weeks per clinic, will let each clinic stand more on its
+// own data.) Coefficients are interpretable: bLead = extra bookings per inbound lead, bAvail =
+// extra bookings per bookable doctor-hour. We then split a clinic-week's gap-vs-expected into a
+// leads part, an availability part and a residual (conversion / call-handling).
+let _REGG={};   // network-model cache, keyed 'h' (hours) | 'd' (days fallback)
 function solve3(A,b){ // Gaussian elimination w/ partial pivot on 3×4 augmented matrix
   const M=[[...A[0],b[0]],[...A[1],b[1]],[...A[2],b[2]]];
   for(let c=0;c<3;c++){
@@ -810,55 +813,84 @@ function solve3(A,b){ // Gaussian elimination w/ partial pivot on 3×4 augmented
   }
   return [M[0][3]/M[0][0], M[1][3]/M[1][1], M[2][3]/M[2][2]];
 }
-function fitRegression(){
-  if(_REG) return _REG;
+function _gram(X,Y){ const XtX=[[0,0,0],[0,0,0],[0,0,0]], XtY=[0,0,0];
+  for(let k=0;k<Y.length;k++){ const x=X[k];
+    for(let a=0;a<3;a++){ XtY[a]+=x[a]*Y[k]; for(let b=0;b<3;b++) XtX[a][b]+=x[a]*x[b]; } }
+  return {XtX,XtY}; }
+function _r2(X,Y,beta){ const n=Y.length; if(!n) return 0; const yb=Y.reduce((s,v)=>s+v,0)/n; let ssr=0,sst=0;
+  for(let k=0;k<n;k++){ const x=X[k]; const p=beta[0]+beta[1]*x[1]+beta[2]*x[2]; ssr+=(Y[k]-p)**2; sst+=(Y[k]-yb)**2; }
+  return sst>0?1-ssr/sst:0; }
+// availability series for a clinic: bookable HOURS if roster present, else active-days
+function availSeriesFor(r){ const h=rosterArr(r.city,r.clinic).hrs;
+  return h.some(x=>x!=null) ? {arr:h.map(x=>x==null?0:x), hours:true} : {arr:r.avArr, hours:false}; }
+// Network (pooled) model — the shrinkage prior. Two variants: hours vs days.
+function fitNetwork(useHours){
+  const key=useHours?'h':'d'; if(_REGG[key]) return _REGG[key];
   const X=[],Y=[];
   for(const r of allClinicRCA()){
-    const bk=r.bkArr, ld=r.ldArr, av=r.avArr;
-    for(let i=0;i<WEEKS.length;i++){
-      if((av[i]||0)<=0) continue;                       // skip weeks the clinic wasn't operating
-      if(ld[i]==null||bk[i]==null) continue;
-      X.push([1, ld[i]||0, av[i]||0]); Y.push(bk[i]||0);
-    }
+    const av = useHours ? availSeriesFor(r).arr : r.avArr;
+    for(let i=0;i<WEEKS.length;i++){ const a=av[i]; if(a==null||a<=0) continue;
+      if(r.ldArr[i]==null||r.bkArr[i]==null) continue;
+      if((r.bkArr[i]||0)<=0) continue;                 // skip 0-booking weeks (sheet gaps / closures)
+      X.push([1,r.ldArr[i]||0,a]); Y.push(r.bkArr[i]||0); }
   }
-  const n=Y.length;
-  if(n<8){ _REG={ok:false,n}; return _REG; }
-  const XtX=[[0,0,0],[0,0,0],[0,0,0]], XtY=[0,0,0];
-  for(let k=0;k<n;k++){ const x=X[k];
-    for(let a=0;a<3;a++){ XtY[a]+=x[a]*Y[k]; for(let b=0;b<3;b++) XtX[a][b]+=x[a]*x[b]; } }
-  const beta=solve3(XtX,XtY);
-  if(!beta){ _REG={ok:false,n}; return _REG; }
-  const ybar=Y.reduce((s,v)=>s+v,0)/n; let ssr=0,sst=0;
-  for(let k=0;k<n;k++){ const x=X[k]; const pred=beta[0]+beta[1]*x[1]+beta[2]*x[2];
-    ssr+=(Y[k]-pred)**2; sst+=(Y[k]-ybar)**2; }
-  _REG={ok:true,n,b0:beta[0],bLead:beta[1],bAvail:beta[2],r2:sst>0?1-ssr/sst:0};
-  return _REG;
+  const n=Y.length; if(n<8){ return (_REGG[key]={ok:false,n}); }
+  const {XtX,XtY}=_gram(X,Y); const beta=solve3(XtX,XtY);
+  if(!beta){ return (_REGG[key]={ok:false,n}); }
+  return (_REGG[key]={ok:true,n,b0:beta[0],bLead:beta[1],bAvail:beta[2],r2:_r2(X,Y,beta)});
 }
-// Regression card: quantitative split of THIS clinic-week's gap using the global model.
+// Per-clinic model: ridge-shrunk toward the network prior. Returns the clinic's own beta,
+// its own R², the prior, the shrink weight α (fraction borrowed from the network) and unit.
+function fitClinicModel(r){
+  const av=availSeriesFor(r), useHours=av.hours;
+  const g=fitNetwork(useHours); if(!g||!g.ok) return null;
+  const X=[],Y=[];
+  for(let i=0;i<WEEKS.length;i++){ const a=av.arr[i]; if(a==null||a<=0) continue;
+    if(r.ldArr[i]==null||r.bkArr[i]==null) continue;
+    if((r.bkArr[i]||0)<=0) continue;                   // skip 0-booking weeks (sheet gaps / closures)
+    X.push([1,r.ldArr[i]||0,a]); Y.push(r.bkArr[i]||0); }
+  const nC=Y.length, prior=[g.b0,g.bLead,g.bAvail];
+  if(nC<3) return {useHours,nC,beta:prior,r2:null,alpha:1,g,own:false};
+  const {XtX,XtY}=_gram(X,Y);
+  const K=4, alpha=K/(K+nC);               // prior weight fraction: thin clinic → more network
+  const lam=alpha/(1-alpha);               // per-feature ridge scaled by that feature's XtX_jj
+  const A=[[...XtX[0]],[...XtX[1]],[...XtX[2]]], bb=[...XtY];
+  for(let j=0;j<3;j++){ const lj=lam*XtX[j][j]; A[j][j]+=lj; bb[j]+=lj*prior[j]; }
+  const beta=solve3(A,bb)||prior;
+  return {useHours,nC,beta,r2:_r2(X,Y,beta),alpha,g,own:true};
+}
+// Regression card: per-clinic, hours-based, network-stabilised attribution of the weekly gap.
 function regCard(r){
-  const m=fitRegression();
-  if(!m||!m.ok) return '';
-  const W=wkIdx;
-  const ldBase=expectedOf(r.ldArr,W), avBase=expectedOf(r.avArr,W);
-  const cLeads=m.bLead*(r.ld_w-ldBase), cAvail=m.bAvail*(r.av_w-avBase);
+  const cm=fitClinicModel(r); if(!cm) return '';
+  const W=wkIdx, useHours=cm.useHours, unit=useHours?'doctor-hours':'doctor-days', uShort=useHours?'hr':'day';
+  const av=availSeriesFor(r).arr;
+  const av_w=av[W]==null?0:av[W], avBase=expectedOf(av,W), ldBase=expectedOf(r.ldArr,W);
+  const [b0,bLead,bAvail]=cm.beta;
+  const cLeads=bLead*(r.ld_w-ldBase), cAvail=bAvail*(av_w-avBase);
   const gap=r.dBk, resid=gap-cLeads-cAvail;
-  const pred=m.b0+m.bLead*r.ld_w+m.bAvail*r.av_w;
-  const r2pct=Math.round(m.r2*100);
-  const conf=m.r2>=0.6?'strong':m.r2>=0.35?'moderate':'weak';
-  // signed bar segments for the gap decomposition (negative = loss)
-  const parts=[{k:'Leads',v:cLeads,c:'#f59e0b'},{k:'Doctor-days',v:cAvail,c:'#0891b2'},{k:'Other (conversion)',v:resid,c:'#94a3b8'}];
+  const pred=b0+bLead*r.ld_w+bAvail*av_w;
+  const r2raw=cm.r2==null?cm.g.r2:cm.r2, r2=Math.max(0,r2raw), r2pct=Math.round(r2*100);
+  const conf=r2>=0.6?'strong':r2>=0.35?'moderate':'weak';
+  const weakClinic=cm.own && r2raw<0.2;   // leads+hours explain little of this clinic's weekly swings
+  const parts=[{k:'Leads',v:cLeads,c:'#f59e0b'},{k:cap(unit),v:cAvail,c:'#0891b2'},{k:'Other (conversion)',v:resid,c:'#94a3b8'}];
   const tot=parts.reduce((s,p)=>s+Math.abs(p.v),0)||1;
   const bar=parts.map(p=>`<div title="${p.k} ${signed(r1(p.v))}" style="width:${Math.abs(p.v)/tot*100}%;background:${p.c};"></div>`).join('');
   const tile=(p)=>`<div style="flex:1;min-width:90px;"><div style="font-size:10px;color:#64748b;">${p.k}</div><div style="font-size:16px;font-weight:800;color:${p.c};">${signed(r1(p.v))}</div><div style="font-size:9px;color:#94a3b8;">bookings</div></div>`;
-  const eq=`bookings ≈ ${r1(m.b0)} + ${r1(m.bLead)}·leads + ${r1(m.bAvail)}·doctor-days`;
+  const eq=`bookings ≈ ${r1(b0)} + ${r1(bLead)}·leads + ${r1(bAvail)}·${unit}`;
   const drv=Math.abs(cLeads)>=Math.abs(cAvail)&&Math.abs(cLeads)>=Math.abs(resid)?'leads (demand)'
-           :Math.abs(cAvail)>=Math.abs(resid)?'doctor-days (availability)':'conversion / call-handling';
+           :Math.abs(cAvail)>=Math.abs(resid)?unit+' (availability)':'conversion / call-handling';
   const story = Math.abs(gap)<1
     ? `Bookings are essentially on-model this week (gap ${signed(r1(gap))}).`
-    : `Of the <b>${signed(r1(gap))}</b> booking gap vs expected, the model attributes ≈<b style="color:#f59e0b">${signed(r1(cLeads))}</b> to leads, ≈<b style="color:#0891b2">${signed(r1(cAvail))}</b> to doctor-days and ≈<b style="color:#64748b">${signed(r1(resid))}</b> to conversion / other. Biggest driver: <b>${drv}</b>.`;
+    : `Of the <b>${signed(r1(gap))}</b> booking gap vs expected, the model attributes ≈<b style="color:#f59e0b">${signed(r1(cLeads))}</b> to leads, ≈<b style="color:#0891b2">${signed(r1(cAvail))}</b> to ${unit} and ≈<b style="color:#64748b">${signed(r1(resid))}</b> to conversion / other. Biggest driver: <b>${drv}</b>.`;
+  const blendPct=Math.round(cm.alpha*100);
+  const fitNote = cm.own
+    ? `Fitted on <b>this clinic's ${cm.nC} weeks</b>, ridge-blended ~${blendPct}% toward the network model for stability. This clinic: <b>${r1(bLead)}</b> bookings/lead · <b>${r1(bAvail)}</b> per ${uShort} &nbsp;vs&nbsp; network <b>${r1(cm.g.bLead)}</b> / <b>${r1(cm.g.bAvail)}</b>.`
+      + (weakClinic?` <span style="color:#b45309;">Note: leads + hours explain little of this clinic's week-to-week swings (low R²) — other factors (mix, conversion, walk-ins) dominate here, so read the split as indicative.</span>`:'')
+    : `Too few clean weeks here yet — using the <b>network model</b> (${cm.g.n} clinic-weeks). Sharpens to a clinic-specific fit once the Redshift cutover adds more weeks.`;
   return `<div class="card"><div class="sec-h"><span class="sec-num">📐</span>Statistical attribution — regression</div>
-    <div class="sec-sub">OLS fit across <b>${m.n}</b> operating clinic-weeks · R²=<b>${(m.r2).toFixed(2)}</b> (${r2pct}% of bookings explained — <b>${conf}</b> fit) · ${WEEKS[wkIdx].label}</div>
-    <div style="font-family:ui-monospace,monospace;font-size:12px;background:#0f172a;color:#e2e8f0;border-radius:8px;padding:9px 12px;margin-bottom:12px;">${eq}</div>
+    <div class="sec-sub">Per-clinic ${useHours?'hours-based':'days-based'} model · R²=<b>${(r2).toFixed(2)}</b> (${r2pct}% of this clinic's bookings explained — <b>${conf}</b> fit) · ${WEEKS[wkIdx].label}</div>
+    <div style="font-family:ui-monospace,monospace;font-size:12px;background:#0f172a;color:#e2e8f0;border-radius:8px;padding:9px 12px;margin-bottom:10px;">${eq}</div>
+    <div style="font-size:10.5px;color:#64748b;background:#f1f5f9;border-radius:8px;padding:8px 11px;margin-bottom:12px;line-height:1.55;">${fitNote}</div>
     <div style="font-size:11px;color:#475569;margin-bottom:6px;">This week's gap (<b>${signed(r1(gap))}</b> vs expected ${r1(r.bkBase)}) splits as:</div>
     <div style="display:flex;height:14px;border-radius:7px;overflow:hidden;margin-bottom:10px;">${bar}</div>
     <div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:12px;">${parts.map(tile).join('')}</div>
