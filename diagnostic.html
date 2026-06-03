@@ -963,6 +963,49 @@ function regCard(r){
     <div style="font-size:11.5px;background:#f8fafc;border-radius:9px;padding:10px 13px;line-height:1.6;color:#475569;">${story} <span style="color:#94a3b8;">Model predicts ${r1(pred)} bookings this week vs actual ${r.bk_w}.</span></div>
   </div>`;
 }
+// ═══════════════ LEADS → BOOKINGS: timing & co-movement ═══════════════
+// Answers: do this week's bookings follow this week's leads or last week's? did leads and
+// bookings move together (demand) or diverge (conversion / availability)? and are there more
+// bookings than tracked leads (walk-ins / referrals / untracked)? Uses the weekly series.
+function _corr(a,b){ const n=Math.min(a.length,b.length); if(n<3) return null;
+  const sa=a.slice(0,n), sb=b.slice(0,n); const ma=sa.reduce((s,v)=>s+v,0)/n, mb=sb.reduce((s,v)=>s+v,0)/n;
+  let num=0,da=0,db=0; for(let i=0;i<n;i++){ const x=sa[i]-ma,y=sb[i]-mb; num+=x*y; da+=x*x; db+=y*y; }
+  return (da&&db)?num/Math.sqrt(da*db):null; }
+function leadBookingTiming(r){
+  if(!r.useRedshiftLeads) return '';
+  const bk=r.bkArr, ld=r.ldArr;
+  const lag0=_corr(bk,ld);                                  // bookings[t] vs leads[t] (same week)
+  const lag1=_corr(bk.slice(0,bk.length-1), ld.slice(1));   // bookings[t] vs leads[t+1] (prior week, newest-first)
+  if(lag0==null) return '';
+  const sameWeek = lag0>=(lag1==null?-1:lag1);
+  const strong = Math.abs(lag0)>=0.6;
+  const timing = sameWeek
+    ? `Bookings track <b>this week's</b> leads (corr ${lag0.toFixed(2)}) more than last week's (${lag1==null?'—':lag1.toFixed(2)}) — <b>leads convert fast, the same week</b>, so a lead dip shows up in bookings immediately.`
+    : `Bookings track <b>last week's</b> leads (corr ${lag1.toFixed(2)}) more than this week's (${lag0.toFixed(2)}) — <b>leads lag ~a week</b> before becoming bookings, so this week's booking dip may trace to last week's leads.`;
+  // co-movement this week
+  const dLd=Math.round(r.dLeadPct), dBkP=r.bkBase?Math.round(r.dBk/r.bkBase*100):0;
+  const ldDown=dLd<=-12, bkDown=dBkP<=-12, ldUp=dLd>=12, bkUp=dBkP>=12;
+  let diag, dcol;
+  if(bkDown && ldDown){ diag=`Leads <b>${signed(dLd,'%')}</b> and bookings <b>${signed(dBkP,'%')}</b> fell <b>together</b> → this is a <b style="color:#0ea5e9">demand</b> problem (fewer leads). Fix leads (see the drill below).`; dcol='#0ea5e9'; }
+  else if(bkDown && !ldDown){ diag=`Bookings fell <b>${signed(dBkP,'%')}</b> but leads held <b>(${signed(dLd,'%')})</b> → <b>not a demand problem</b>. The gap is <b style="color:#d97706">availability or conversion</b> — see the booking-rate card above.`; dcol='#d97706'; }
+  else if(ldDown && !bkDown){ diag=`Leads softened <b>(${signed(dLd,'%')})</b> but bookings held <b>(${signed(dBkP,'%')})</b> — conversion / repeat demand cushioned it this week, but watch next week if leads stay low.`; dcol='#7c3aed'; }
+  else if(bkUp && ldUp){ diag=`Leads <b>(${signed(dLd,'%')})</b> and bookings <b>(${signed(dBkP,'%')})</b> both rose together — healthy demand-led growth.`; dcol='#059669'; }
+  else { diag=`Leads ${signed(dLd,'%')}, bookings ${signed(dBkP,'%')} — broadly in line, no clear divergence this week.`; dcol='#475569'; }
+  // lead coverage: tracked leads vs new bookings
+  const newArr=hasBookType(r.city,r.clinic)?bookTypeArr(r.city,r.clinic,'new'):null;
+  const new_w=newArr?newArr[wkIdx]:null;
+  const cov = (new_w!=null && r.ld_w>0)
+    ? (new_w>r.ld_w
+        ? `<b>${new_w}</b> new (first-time) bookings vs only <b>${r.ld_w}</b> tracked leads this week — so ~<b>${Math.round((new_w-r.ld_w))}</b> new patients came with <b>no tracked lead</b> (walk-in / referral / direct). Tracked leads explain the trend, not the whole volume.`
+        : `<b>${new_w}</b> new bookings from <b>${r.ld_w}</b> tracked leads (~${Math.round(new_w/r.ld_w*100)}% lead→new-booking) — most new bookings are lead-attributed.`)
+    : '';
+  return `<div class="card"><div class="sec-h"><span class="sec-num">🔗</span>Leads → bookings — timing &amp; co-movement</div>
+    <div class="sec-sub">Do bookings follow this week's leads or last week's? did they move together (demand) or diverge (conversion / availability)? · Redshift · ${WEEKS[wkIdx].label}</div>
+    <div style="font-size:11.5px;color:#475569;line-height:1.6;background:#f8fafc;border-radius:9px;padding:10px 13px;margin-bottom:9px;">⏱️ <b>Timing.</b> ${timing}${strong?'':' <span style="color:#94a3b8;">(weak correlation — few weeks of history, read as a hint.)</span>'}</div>
+    <div style="font-size:11.5px;color:#475569;line-height:1.6;background:${dcol}11;border-radius:9px;padding:10px 13px;margin-bottom:${cov?'9px':'0'};border-left:3px solid ${dcol};">🔀 <b>This week.</b> ${diag}</div>
+    ${cov?`<div style="font-size:11px;color:#475569;line-height:1.6;background:#f8fafc;border-radius:9px;padding:9px 13px;">👥 <b>Coverage.</b> ${cov}</div>`:''}
+  </div>`;
+}
 // ── Booking mix: new (first-time, leads-driven) vs repeat (retention) ──
 function bookTypeMix(r){
   if(!hasBookType(r.city,r.clinic)) return '';
@@ -1248,6 +1291,7 @@ function renderDeepDive(r){
   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:16px;">${availCard}${attribCard}</div>
   ${regCard(r)}
   ${bookTypeMix(r)}
+  ${leadBookingTiming(r)}
   ${leadLossDrill(r)}`;
 }
 function renderOnline(){
