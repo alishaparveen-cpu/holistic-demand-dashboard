@@ -100,6 +100,11 @@ const WEEKS = [
   { sheet:'03/05/2026', json:'2026-04-27', label:'27 Apr–3 May' },
   { sheet:'26/04/2026', json:'2026-04-20', label:'20–26 Apr' },
   { sheet:'19/04/2026', json:'2026-04-13', label:'13–19 Apr' },
+  { sheet:'12/04/2026', json:'2026-04-06', label:'6–12 Apr' },
+  { sheet:'05/04/2026', json:'2026-03-30', label:'30 Mar–5 Apr' },
+  { sheet:'29/03/2026', json:'2026-03-23', label:'23–29 Mar' },
+  { sheet:'22/03/2026', json:'2026-03-16', label:'16–22 Mar' },
+  { sheet:'15/03/2026', json:'2026-03-09', label:'9–15 Mar' },
 ];
 const AVAIL_C = 4, ALLBK_C = 20, GMB_C = 27;   // sheet column offsets (Availability "Total | Weekend", bookings, GMB+Google leads)
 
@@ -193,16 +198,18 @@ function parseSheet(rows){
     if(c0&&!c0.startsWith('<>')) curCity=c0;
     if(!curCity||c2==='<>All'||c2==='<>ALL'||c3==='<>All'||!c2) continue;
     (raw[curCity]=raw[curCity]||{})[c2]=raw[curCity][c2]||[];
+    const pad=fn=>Array.from({length:WEEKS.length},(_,i)=>i<7?fn(i):0);   // sheet has 7 weeks; pad older to 0
     raw[curCity][c2].push({
-      allBk:    Array.from({length:7},(_,i)=>pn(r[ALLBK_C+i])),
-      gmbLeads: Array.from({length:7},(_,i)=>pn(r[GMB_C+i])),
-      avail:    Array.from({length:7},(_,i)=>pTotal(r[AVAIL_C+i])),
-      weekend:  Array.from({length:7},(_,i)=>pWeekend(r[AVAIL_C+i])),
-      docDays:  Array.from({length:7},(_,i)=>hasAvail(r[AVAIL_C+i])?1:0),
+      allBk:    pad(i=>pn(r[ALLBK_C+i])),
+      gmbLeads: pad(i=>pn(r[GMB_C+i])),
+      avail:    pad(i=>pTotal(r[AVAIL_C+i])),
+      weekend:  pad(i=>pWeekend(r[AVAIL_C+i])),
+      docDays:  pad(i=>hasAvail(r[AVAIL_C+i])?1:0),
     });
   }
-  const agg=objs=>{ const o={allBk:Array(7).fill(0),gmbLeads:Array(7).fill(0),avail:Array(7).fill(0),weekend:Array(7).fill(0),docDays:Array(7).fill(0)};
-    for(const x of objs) for(let i=0;i<7;i++){ o.allBk[i]+=x.allBk[i]; o.gmbLeads[i]+=x.gmbLeads[i]; o.avail[i]+=x.avail[i]; o.weekend[i]+=x.weekend[i]; o.docDays[i]+=x.docDays[i]; } return o; };
+  const W=WEEKS.length;
+  const agg=objs=>{ const o={allBk:Array(W).fill(0),gmbLeads:Array(W).fill(0),avail:Array(W).fill(0),weekend:Array(W).fill(0),docDays:Array(W).fill(0)};
+    for(const x of objs) for(let i=0;i<W;i++){ o.allBk[i]+=x.allBk[i]; o.gmbLeads[i]+=x.gmbLeads[i]; o.avail[i]+=x.avail[i]; o.weekend[i]+=x.weekend[i]; o.docDays[i]+=x.docDays[i]; } return o; };
   const out={};
   for(const [city,clinics] of Object.entries(raw)){
     out[city]={}; const allDocs=[];
@@ -237,14 +244,15 @@ function buildSDataFromDiag(diag){
 function parseL0(text){
   const rows=parseCSV(text);
   const num=s=>{ if(s==null||s==='')return null; const c=(''+s).replace(/[%,₹\s]/g,''); const v=parseFloat(c); return isNaN(v)?null:v; };
-  const rowArr=idx=> rows[idx]? L0_WEEK_COLS.map(c=>num(rows[idx][c])) : Array(7).fill(null);
+  const padN=a=>{ const b=a.slice(); while(b.length<WEEKS.length) b.push(null); return b; };  // L0 sheet has 7 weeks; pad older to null
+  const rowArr=idx=> padN(rows[idx]? L0_WEEK_COLS.map(c=>num(rows[idx][c])) : []);
   const isHeader=r=>{ const c0=(r[0]||'').trim(); return c0 && L0_WEEK_COLS.every(c=>!((r[c]||'').trim())); };
   // value of `label` within section `sec` (header row col0===sec, until the next header row)
   function secVal(sec,label){
-    const start=rows.findIndex(r=>(r[0]||'').trim()===sec); if(start<0) return Array(7).fill(null);
+    const start=rows.findIndex(r=>(r[0]||'').trim()===sec); if(start<0) return padN([]);
     let end=rows.length; for(let i=start+1;i<rows.length;i++){ if(isHeader(rows[i])){ end=i; break; } }
     for(let i=start+1;i<end;i++){ if((rows[i][0]||'').trim().toLowerCase()===label.toLowerCase()) return rowArr(i); }
-    return Array(7).fill(null);
+    return padN([]);
   }
   const overall=rowArr(4);  // network total leads
   // per-channel sections carry "Lead Contr." (% share) — estimate channel leads = contr% × overall
@@ -266,7 +274,8 @@ function parsePracto(rows){   // row-per-lead → PRACTO['City|Clinic'] = [weekl
   }
   return out;
 }
-function practoArr(city,clinic){ return PRACTO[city+'|'+clinic] || Array(WEEKS.length).fill(0); }
+function practoArr(city,clinic){ const a=PRACTO[city+'|'+clinic]; if(!a) return Array(WEEKS.length).fill(0);
+  const b=a.slice(0,WEEKS.length); while(b.length<WEEKS.length) b.push(0); return b; }   // pad if sheet has fewer weeks
 
 // ═══════════════ HELPERS ═══════════════
 const avg=a=>{ const v=a.filter(x=>x!=null); return v.length? v.reduce((x,y)=>x+y,0)/v.length : 0; };
@@ -365,8 +374,8 @@ function allClinicRCA(){
   return out;
 }
 function netSeries(){ // network offline bookings per week (sum of all clinics)
-  const s=Array(7).fill(0);
-  for(const city of Object.keys(SDATA)){ const t=SDATA[city]._total; for(let i=0;i<7;i++) s[i]+=t.allBk[i]; }
+  const s=Array(WEEKS.length).fill(0);
+  for(const city of Object.keys(SDATA)){ const t=SDATA[city]._total; for(let i=0;i<WEEKS.length;i++) s[i]+=(t.allBk[i]||0); }
   return s;
 }
 // attributed cause totals (sum each clinic's split across material-loss clinics) + clinics grouped by primary cause
