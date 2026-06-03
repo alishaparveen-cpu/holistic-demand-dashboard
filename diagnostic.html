@@ -495,17 +495,24 @@ function renderOffline(){
   return ctrl+fNote+headline+decomp+matrix+detail+maturity+bottom;
 }
 
-// inline SVG trend sparkline with value labels; hiIdx = highlighted (selected) point
-function spark(vals, color, hiIdx, fmt){
+// inline SVG trend sparkline with value labels; hiIdx = highlighted (selected) point.
+// refVal (optional) draws a dashed "normal/expected" baseline so the reader can
+// see at a glance how the latest point sits vs the clinic's recent norm.
+function spark(vals, color, hiIdx, fmt, refVal){
   const w=340,h=66,pad=10; const arr=vals.map(x=>x==null?0:x);
   if(arr.length<2) return '<div style="color:#94a3b8;font-size:11px;">no trend</div>';
-  const mn=Math.min(...arr,0), mx=Math.max(...arr,1), rng=(mx-mn)||1;
+  const hasRef = refVal!=null && isFinite(refVal);
+  const mn=Math.min(...arr,0,hasRef?refVal:Infinity), mx=Math.max(...arr,1,hasRef?refVal:-Infinity), rng=(mx-mn)||1;
   const X=i=>pad+i/(arr.length-1)*(w-2*pad), Y=v=>h-pad-(v-mn)/rng*(h-2*pad);
   const pts=arr.map((v,i)=>[X(i),Y(v)]);
   const path=pts.map((p,i)=>(i?'L':'M')+p[0].toFixed(1)+' '+p[1].toFixed(1)).join(' ');
   const dots=pts.map((p,i)=>`<circle cx="${p[0].toFixed(1)}" cy="${p[1].toFixed(1)}" r="${i===hiIdx?4:2.5}" fill="${i===hiIdx?color:'#fff'}" stroke="${color}" stroke-width="1.5"/>`).join('');
   const labs=pts.map((p,i)=>`<text x="${p[0].toFixed(1)}" y="${(p[1]-7).toFixed(1)}" font-size="9" fill="${i===hiIdx?color:'#64748b'}" text-anchor="middle" font-weight="${i===hiIdx?800:500}">${fmt?fmt(arr[i]):arr[i]}</text>`).join('');
-  return `<svg width="100%" viewBox="0 0 ${w} ${h+4}" style="overflow:visible;"><path d="${path}" fill="none" stroke="${color}" stroke-width="2"/>${dots}${labs}</svg>`;
+  let ref='';
+  if(hasRef){ const ry=Y(refVal).toFixed(1);
+    ref=`<line x1="${pad}" y1="${ry}" x2="${w-pad}" y2="${ry}" stroke="#94a3b8" stroke-width="1" stroke-dasharray="3 3"/>`+
+        `<text x="${w-pad}" y="${(+ry-3).toFixed(1)}" font-size="8" fill="#94a3b8" text-anchor="end">norm ${fmt?fmt(refVal):r1(refVal)}</text>`; }
+  return `<svg width="100%" viewBox="0 0 ${w} ${h+4}" style="overflow:visible;">${ref}<path d="${path}" fill="none" stroke="${color}" stroke-width="2"/>${dots}${labs}</svg>`;
 }
 function renderDeepDive(r){
   const wl=WEEKS[wkIdx].label;
@@ -563,6 +570,44 @@ function renderDeepDive(r){
       </div>
     </div>`;
   }
+  // ── "The story": expected vs actual + what the trend was doing + how it moved ──
+  const W=wkIdx;
+  const exp=Math.round(r.bkBase), act=r.bk_w, gap=r.dBk;
+  const gapPct=r.bkBase?Math.round(r.dBk/r.bkBase*100):0;
+  const recentPrior=avg(r.bkArr.slice(W+1,W+3)), olderPrior=avg(r.bkArr.slice(W+3,W+6));
+  const priorDir = recentPrior>olderPrior*1.08?'on a <b>rising</b> run'
+                 : recentPrior<olderPrior*0.92?'on a <b>softening</b> run'
+                 : '<b>holding steady</b>';
+  const grew = r.cause==='grew' || gap>2;
+  const storyCol = grew?'#059669':(r.mixWith?MIXCOL:m.col);
+  const bigTile=(lbl,val,col,sub)=>`<div style="flex:1;min-width:120px;background:#fff;border:1px solid var(--line);border-radius:11px;padding:12px 14px;">
+    <div style="font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:#94a3b8;font-weight:700;">${lbl}</div>
+    <div style="font-size:28px;font-weight:800;color:${col};line-height:1.1;margin:2px 0;">${val}</div>
+    <div style="font-size:10.5px;color:#94a3b8;">${sub||''}</div></div>`;
+  // availability + leads movement in plain terms
+  const availMove = `availability ran <b>${r1(r.av_avg)}→${r1(r.av_w)}</b> doctor-days (${signed(r1(r.dAct))}${r.weLost>0.3?`, of it ${r1(r.weLost)} weekend-day${r.weLost>=1.5?'s':''} lost`:''})`;
+  const leadMove  = `leads <b>${Math.round(r.ld_avg)}→${r.ld_w}</b> (${signed(Math.round(r.dLeadPct),'%')})`;
+  let storyLine;
+  if(grew){
+    storyLine = `Going into <b>${wl}</b> the clinic was ${priorDir}. On that run-rate we'd expect about <b>${exp}</b> bookings — it landed <b style="color:#059669">${act}</b> (${signed(gap)}, ${signed(gapPct,'%')}). It's <b style="color:#059669">ahead of trend</b>; ${availMove}, ${leadMove}.`;
+  } else if(r.L>0 && r.cause!=='ok'){
+    const causeBlurb = r.mixWith
+      ? `a mix of <b style="color:${m.col}">${CAUSE[r.cause].short}</b> (~${Math.round(r.comp[r.cause])}) and <b style="color:${CAUSE[r.mixWith].col}">${CAUSE[r.mixWith].short}</b> (~${Math.round(r.comp[r.mixWith])})`
+      : `<b style="color:${m.col}">${m.short}</b>`;
+    storyLine = `Going into <b>${wl}</b> the clinic was ${priorDir}, so on its run-rate we'd expect about <b>${exp}</b> bookings. It booked <b style="color:${m.col}">${act}</b> — a shortfall of <b>${Math.abs(gap)}</b> (${signed(gapPct,'%')}). That gap is mostly ${causeBlurb}: ${availMove}, and ${leadMove}.`;
+  } else {
+    storyLine = `Going into <b>${wl}</b> the clinic was ${priorDir}. Expected ~<b>${exp}</b>, booked <b>${act}</b> (${signed(gap)}) — within normal range. ${cap(availMove)}; ${leadMove}.`;
+  }
+  const storyCard=`<div class="card" style="border-left:4px solid ${storyCol};">
+    <div class="sec-h"><span class="sec-num">📖</span>The story — ${r.clinic}, ${wl}</div>
+    <div style="display:flex;gap:11px;flex-wrap:wrap;margin:4px 0 12px;">
+      ${bigTile('Expected', exp, '#475569', baseMode==='avg'?'8-wk run-rate':'recent peak')}
+      ${bigTile('Actual', act, grew?'#059669':m.col, 'booked this week')}
+      ${bigTile('Gap', signed(gap), grew?'#059669':dCol(gap), signed(gapPct,'%')+' vs expected')}
+    </div>
+    <div style="font-size:12.5px;color:#334155;line-height:1.65;">${storyLine}</div>
+  </div>`;
+
   return `<div class="card">
     <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
       <button onclick="setSelClinic('')" style="font-size:12px;padding:5px 12px;background:#f1f5f9;border:1px solid var(--line);border-radius:8px;cursor:pointer;">← Back to network RCA</button>
@@ -570,6 +615,7 @@ function renderDeepDive(r){
       <div style="margin-left:auto;text-align:right;">${causePill(r.cause, r.mixWith)}<div style="font-size:11px;color:${r.mixWith?MIXCOL:m.col};margin-top:4px;max-width:280px;">${r.note||m.desc}</div></div>
     </div>
   </div>
+  ${storyCard}
   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px;margin-bottom:16px;">
     ${kpi('Bookings · '+wl, r.bk_w, 'vs '+ (baseMode==='avg'?'8-wk avg '+Math.round(r.bk_avg):'peak '+r.bk_peak)+' = '+signed(r.dBk), dCol(r.dBk))}
     ${kpi('Total leads', r.ld_w, 'GMB+G '+r.gmb_w+' · Practo '+r.pr_w+' · '+signed(Math.round(r.dLeadPct),'%')+' vs avg', dCol(r.dLeadPct))}
@@ -577,13 +623,13 @@ function renderDeepDive(r){
   </div>
   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:16px;">${availCard}${attribCard}</div>
   <div class="card"><div class="sec-h"><span class="sec-num">▦</span>${r.clinic} — trends over time</div>
-    <div class="sec-sub">Each trend over the last ${WEEKS.length} weeks; highlighted point = <b>${wl}</b>.</div>
+    <div class="sec-sub">Each trend over the last ${WEEKS.length} weeks; highlighted point = <b>${wl}</b> · dashed line = recent norm.</div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(270px,1fr));gap:14px;">
-      ${trend('📅 Bookings', spark(rev(r.bkArr),'#4f46e5',hi), 'new-patient SC bookings/week')}
-      ${trend('🔎 Total leads', spark(rev(r.ldArr),'#0ea5e9',hi), 'GMB+Google + Practo / week')}
-      ${trend('🩺 Active-days', spark(rev(r.avArr),'#7c3aed',hi), 'total bookable doctor-days/week')}
-      ${trend('🗓️ Weekend days', spark(rev(r.weArr),'#a855f7',hi), 'weekend bookable days/week')}
-      ${hasRoster?trend('🗓️ Scheduled hrs', spark(rev(ros.hrs.map(x=>x==null?0:x)),'#0891b2',hi), 'roster bookable hours/week (planned)'):''}
+      ${trend('📅 Bookings', spark(rev(r.bkArr),'#4f46e5',hi,null,r.bkBase), 'new-patient SC bookings/week · dashed = expected')}
+      ${trend('🔎 Total leads', spark(rev(r.ldArr),'#0ea5e9',hi,null,r.ld_avg), 'GMB+Google + Practo / week')}
+      ${trend('🩺 Active-days', spark(rev(r.avArr),'#7c3aed',hi,null,r.av_avg), 'total bookable doctor-days/week')}
+      ${trend('🗓️ Weekend days', spark(rev(r.weArr),'#a855f7',hi,null,r.we_avg), 'weekend bookable days/week')}
+      ${hasRoster?trend('🗓️ Scheduled hrs', spark(rev(ros.hrs.map(x=>x==null?0:x)),'#0891b2',hi,null,rh_avg), 'roster bookable hours/week (planned)'):''}
     </div>
     <div style="margin-top:12px;font-size:11.5px;background:${r.mixWith?MIXCOL+'12':m.bg};border-radius:9px;padding:10px 13px;line-height:1.6;color:#475569;">
       <b style="color:${r.mixWith?MIXCOL:m.col};">Verdict — ${r.mixWith?'Mix ('+cap(CAUSE[r.cause].short)+' + '+CAUSE[r.mixWith].short+')':m.label}.</b>
