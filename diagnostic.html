@@ -169,9 +169,11 @@ let selClinic='';         // "City|Clinic" — single-clinic deep-dive (empty = 
 let leadsAvg=false;       // leads chart: show per-series average lines (toggle)
 let leadsGran=false;      // leads chart: granular sources (GMB/Google Ad/Organic/FB/Justdial) vs grouped
 let trendWin='all';       // trend window: number of most-recent weeks to show, or 'all'
+let ddTab='overview';     // deep-dive active tab: overview | leads | availability | bookings | stats
 function toggleLeadsAvg(){ leadsAvg=!leadsAvg; render(); }
 function toggleLeadsGran(){ leadsGran=!leadsGran; render(); }
 function setTrendWin(n){ trendWin=n; render(); }
+function setDdTab(t){ ddTab=t; render(); window.scrollTo(0,0); }
 
 // ═══════════════ PARSERS ═══════════════
 function parseCSV(text){
@@ -1263,33 +1265,48 @@ function renderDeepDive(r){
     ${winOpts.map(([l,v])=>{ const on=(trendWin==='all'&&v===WEEKS.length)||(+trendWin===v); return `<button onclick="setTrendWin(${v===WEEKS.length?"'all'":v})" style="font-size:11px;padding:3px 10px;border-radius:7px;border:1.5px solid ${on?'#4f46e5':'var(--line)'};background:${on?'#eef2ff':'#fff'};color:${on?'#4338ca':'#475569'};font-weight:${on?700:500};cursor:pointer;">${l}</button>`; }).join('')}
     <span style="font-size:10px;color:#cbd5e1;margin-left:4px;">${WEEKS.length} weeks of history available</span>
   </div>`;
-  const trendsCard=`<div class="card"><div class="sec-h"><span class="sec-num">📈</span>${r.clinic} — trends over time</div>
-    <div class="sec-sub">Showing the last <b>${winN}</b> week${winN>1?'s':''} · highlighted point = <b>${wl}</b> · dashed line = recent norm.</div>
-    ${winBar}
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,1fr));gap:14px;">
-      ${trend('📅 Bookings', spark(rev(r.bkArr),'#4f46e5',hi,null,r.bkBase), 'screening-call bookings/week (distinct patient × doctor) · dashed = expected')}
-      ${trend('🔎 Leads — total, then where the gap is', sparkMulti(
-          leadsGran ? [
-            {vals:rev(r.ldArr), color:'#0ea5e9', label:'Total', width:2.5},
-            {vals:rev(r.gmbArr), color:'#6366f1', label:'GMB+Google Ad'},
-            {vals:rev(r.orgArr), color:'#10b981', label:'Organic'},
-            {vals:rev(r.prArr), color:'#f59e0b', label:'Practo'},
-            {vals:rev(r.fbArr.map((f,i)=>(f||0)+(r.jdArr[i]||0)+(r.othArr[i]||0))), color:'#94a3b8', label:'Others (FB/JD/…)'}]
-          : [
-            {vals:rev(r.ldArr), color:'#0ea5e9', label:'Total', width:2.5}], hi, leadsAvg),
-        (r.useRedshiftLeads?'Redshift':'sheet')+' leads · '+(leadsGran?'Total = GMB+Google Ad + Organic + Practo + Others':'total inbound leads — open the breakdown to see by source')
-        +' · <span onclick="event.stopPropagation();toggleLeadsGran()" style="cursor:pointer;color:'+(leadsGran?'#4f46e5':'#94a3b8')+';font-weight:700;border:1px solid '+(leadsGran?'#4f46e5':'var(--line)')+';border-radius:6px;padding:1px 7px;">'+(leadsGran?'✓ ':'+ ')+'split sources</span>'
-        +' <span onclick="event.stopPropagation();toggleLeadsAvg()" style="cursor:pointer;color:'+(leadsAvg?'#4f46e5':'#94a3b8')+';font-weight:700;border:1px solid '+(leadsAvg?'#4f46e5':'var(--line)')+';border-radius:6px;padding:1px 7px;">'+(leadsAvg?'✓ ':'+ ')+'avg line</span>')}
-      ${trend('🩺 Availability — weekday vs weekend', availSplitChart(rev(r.wdArr), rev(r.weArr), hi, r.av_avg),
-        'each bar = bookable doctor-days that week, split weekday (dark) + weekend (light) · number on top = total · dashed = norm')}
-      ${hasRoster?trend('🗓️ Scheduled hrs', spark(rev(ros.hrs.map(x=>x==null?0:x)),'#0891b2',hi,null,rh_avg), 'roster bookable hours/week (planned)'):''}
-    </div>
-    <div style="margin-top:12px;font-size:11.5px;background:${r.mixWith?MIXCOL+'12':m.bg};border-radius:9px;padding:10px 13px;line-height:1.6;color:#475569;">
+  // ── individual trend charts (each registers its own zoom) ──
+  const bkTrend = trend('📅 Bookings', spark(rev(r.bkArr),'#4f46e5',hi,null,r.bkBase), 'screening-call bookings/week (distinct patient × doctor) · dashed = expected');
+  const leadsTotalTrend = trend('📈 Total inbound leads', spark(rev(r.ldArr),'#0ea5e9',hi,null,r.ld_avg), 'all sources combined · dashed = recent norm');
+  const avgToggle = '<span onclick="event.stopPropagation();toggleLeadsAvg()" style="cursor:pointer;color:'+(leadsAvg?'#4f46e5':'#94a3b8')+';font-weight:700;border:1px solid '+(leadsAvg?'#4f46e5':'var(--line)')+';border-radius:6px;padding:1px 7px;">'+(leadsAvg?'✓ ':'+ ')+'avg line</span>';
+  const leadsBreakdownTrend = trend('🔎 By source', sparkMulti([
+      {vals:rev(r.gmbArr), color:'#6366f1', label:'GMB+Google Ad', width:2},
+      {vals:rev(r.orgArr), color:'#10b981', label:'Organic'},
+      {vals:rev(r.prArr), color:'#f59e0b', label:'Practo'},
+      {vals:rev(r.fbArr.map((f,i)=>(f||0)+(r.jdArr[i]||0)+(r.othArr[i]||0))), color:'#94a3b8', label:'Others (FB/JD/…)'}], hi, leadsAvg),
+    'each source that adds up to Total · '+avgToggle);
+  const availTrend = trend('🩺 Availability — weekday vs weekend', availSplitChart(rev(r.wdArr), rev(r.weArr), hi, r.av_avg),
+    'each bar = bookable doctor-days that week, split weekday (dark) + weekend (light) · number on top = total · dashed = norm');
+  const schedTrend = hasRoster?trend('🗓️ Scheduled hrs', spark(rev(ros.hrs.map(x=>x==null?0:x)),'#0891b2',hi,null,rh_avg), 'roster bookable hours/week (planned)'):'';
+  const verdictBlock = `<div style="margin-top:12px;font-size:11.5px;background:${r.mixWith?MIXCOL+'12':m.bg};border-radius:9px;padding:10px 13px;line-height:1.6;color:#475569;">
       <b style="color:${r.mixWith?MIXCOL:m.col};">Verdict — ${r.mixWith?'Mix ('+cap(CAUSE[r.cause].short)+' + '+CAUSE[r.mixWith].short+')':m.label}.</b>
       In ${wl}: leads ${dimCell(r.leadsBroke,Math.round(r.dLeadPct),'%')} · active-days ${dimCell(r.actBroke,r1(r.dAct))} · weekend ${dimCell(r.weBroke,r1(r.dWe))}.
       Owner: <b>${r.mixWith?CAUSE[r.cause].owner+' + '+CAUSE[r.mixWith].owner:m.owner}</b>.
-    </div>
+    </div>`;
+  // ── dedicated Leads card: Total on top, source breakdown below ──
+  const leadsCard = `<div class="card"><div class="sec-h"><span class="sec-num">🔎</span>Leads — total &amp; by source</div>
+    <div class="sec-sub">Total inbound leads first (the size), then the source split (where the gap is). · ${r.useRedshiftLeads?'Redshift':'sheet'} · last ${winN} weeks · highlighted = ${wl}.</div>
+    ${winBar}
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:14px;">${leadsTotalTrend}${leadsBreakdownTrend}</div>
   </div>`;
+  const bkTrendCard = `<div class="card"><div class="sec-h"><span class="sec-num">📈</span>Bookings — trend &amp; verdict</div>
+    <div class="sec-sub">Last <b>${winN}</b> weeks · highlighted point = <b>${wl}</b> · dashed = expected.</div>
+    ${winBar}<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:14px;">${bkTrend}</div>${verdictBlock}</div>`;
+  const availTrendCard = `<div class="card"><div class="sec-h"><span class="sec-num">📈</span>Availability — trend</div>
+    <div class="sec-sub">Last <b>${winN}</b> weeks · highlighted = <b>${wl}</b>.</div>
+    ${winBar}<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:14px;">${availTrend}${schedTrend}</div></div>`;
+
+  // ── tabbed deep-dive ──
+  const tabs=[['overview','📖 Overview'],['leads','🔎 Leads'],['availability','🩺 Availability'],['bookings','📋 Bookings mix'],['stats','📐 Stats']];
+  if(!tabs.some(t=>t[0]===ddTab)) ddTab='overview';
+  const tabBar=`<div style="display:flex;gap:6px;flex-wrap:wrap;margin:14px 0 4px;">${tabs.map(([k,l])=>{const on=ddTab===k;return `<button onclick="setDdTab('${k}')" style="font-size:12.5px;font-weight:${on?700:500};padding:7px 15px;border-radius:9px;border:1.5px solid ${on?'#4f46e5':'var(--line)'};background:${on?'#4f46e5':'#fff'};color:${on?'#fff':'#475569'};cursor:pointer;">${l}</button>`;}).join('')}</div>`;
+  const tabContent = {
+    overview: `${storyCard}${bkTrendCard}${bookingRateCard(r)}${attribCard}`,
+    leads: `${leadsCard}${leadBookingTiming(r)}${leadLossDrill(r)}`,
+    availability: `${availCard}${availTrendCard}`,
+    bookings: `${bookTypeMix(r)||'<div class="card" style="color:#94a3b8;">No booking-mix data for this clinic.</div>'}`,
+    stats: `${regCard(r)||'<div class="card" style="color:#94a3b8;">Not enough history to fit a model for this clinic yet.</div>'}`,
+  };
 
   return `<div class="card">
     <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
@@ -1297,15 +1314,9 @@ function renderDeepDive(r){
       <div><div style="font-size:18px;font-weight:800;">${r.clinic}</div><div style="font-size:11px;color:#94a3b8;">${r.city} · ${cityTier(r.city)} · ${r.mat} · ${wl}</div></div>
       <div style="margin-left:auto;text-align:right;">${causePill(r.cause, r.mixWith)}<div style="font-size:11px;color:${r.mixWith?MIXCOL:m.col};margin-top:4px;max-width:280px;">${r.note||m.desc}</div></div>
     </div>
+    ${tabBar}
   </div>
-  ${storyCard}
-  ${bookingRateCard(r)}
-  ${trendsCard}
-  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:16px;">${availCard}${attribCard}</div>
-  ${regCard(r)}
-  ${bookTypeMix(r)}
-  ${leadBookingTiming(r)}
-  ${leadLossDrill(r)}`;
+  ${tabContent[ddTab]}`;
 }
 function renderOnline(){
   if(!JDATA.online) return '<div class="card">No online scope in data.json.</div>';
