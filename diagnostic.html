@@ -872,6 +872,7 @@ function bookTypeMix(r){
   const nw=bookTypeArr(r.city,r.clinic,'new'), rp=bookTypeArr(r.city,r.clinic,'repeat');
   const nw_w=nw[W], nw_n=avg(sl(nw)), rp_w=rp[W], rp_n=avg(sl(rp));
   const dNw=nw_w-nw_n, dRp=rp_w-rp_n;
+  const tot_w=nw_w+rp_w, newShare=tot_w?Math.round(nw_w/tot_w*100):0;
   const newWorse = dNw<=dRp;
   const mini=(label,col,sub,svg)=>`<div><div style="font-size:12px;font-weight:700;color:${col};">${label}</div><div style="font-size:10px;color:#94a3b8;margin-bottom:3px;">${sub}</div>${svg}</div>`;
   const verdict = (dNw<-1||dRp<-1)
@@ -880,10 +881,13 @@ function bookTypeMix(r){
   return `<div class="card"><div class="sec-h"><span class="sec-num">📋</span>Booking mix — new vs repeat</div>
     <div class="sec-sub">First-time bookings move with <b>leads/demand</b>; repeat bookings move with <b>retention/follow-up</b> — so the split tells you whether to blame leads. · Redshift · ${WEEKS[wkIdx].label}</div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px;">
-      ${mini('🆕 New (first-time) · '+nw_w+' ('+signed(r1(dNw))+')','#4f46e5','leads-driven · dashed = 4-wk avg',spark(rev(nw),'#4f46e5',hi,null,nw_n))}
-      ${mini('🔁 Repeat (returning) · '+rp_w+' ('+signed(r1(dRp))+')','#0891b2','retention / follow-up',spark(rev(rp),'#0891b2',hi,null,rp_n))}
+      ${mini('🆕 New (first-time) · '+nw_w+' ('+signed(r1(dNw))+')','#4f46e5','first-EVER visit · leads-driven · dashed = 4-wk avg',spark(rev(nw),'#4f46e5',hi,null,nw_n))}
+      ${mini('🔁 Repeat (returning) · '+rp_w+' ('+signed(r1(dRp))+')','#0891b2','returning patient · retention / follow-up',spark(rev(rp),'#0891b2',hi,null,rp_n))}
     </div>
-    <div style="margin-top:12px;font-size:11.5px;background:#f8fafc;border-radius:9px;padding:10px 13px;line-height:1.6;color:#475569;">${verdict}</div>
+    <div style="margin-top:12px;font-size:11.5px;background:#eef2ff;border-radius:9px;padding:8px 13px;line-height:1.5;color:#3730a3;">
+      <b>${tot_w}</b> total screening-call appointments this week = <b style="color:#4f46e5">${nw_w} new</b> + <b style="color:#0891b2">${rp_w} repeat</b> &nbsp;·&nbsp; new share <b>${newShare}%</b>.</div>
+    <div style="margin-top:8px;font-size:11.5px;background:#f8fafc;border-radius:9px;padding:10px 13px;line-height:1.6;color:#475569;">${verdict}</div>
+    <div style="margin-top:8px;font-size:10.5px;color:#94a3b8;line-height:1.5;">These are <b>all</b> Redshift screening-call appointments by appointment week (gross, every status) — a broader count than the headline "📅 Bookings" above (sheet-based net bookings, to be replaced in the Redshift cutover), so new + repeat won't sum to the top number. "New" uses each patient's <b>all-time</b> first visit, so early weeks aren't over-counted.</div>
   </div>`;
 }
 // ── Lead-loss drill: GMB profile (reviews/rank) vs Google Ads (impression share) ──
@@ -1113,8 +1117,9 @@ function renderDeepDive(r){
             {vals:rev(r.ldArr), color:'#0ea5e9', label:'Total', width:2.5},
             {vals:rev(r.gmbArr), color:'#6366f1', label:'GMB+Google Ad'},
             {vals:rev(r.orgArr), color:'#10b981', label:'Organic'},
-            {vals:rev(r.prArr), color:'#f59e0b', label:'Practo'}], hi, leadsAvg),
-        (r.useRedshiftLeads?'Redshift':'sheet')+' leads · GMB+Google Ad, Organic, Practo'
+            {vals:rev(r.prArr), color:'#f59e0b', label:'Practo'},
+            {vals:rev(r.fbArr.map((f,i)=>(f||0)+(r.jdArr[i]||0)+(r.othArr[i]||0))), color:'#94a3b8', label:'Others (FB/JD/…)'}], hi, leadsAvg),
+        (r.useRedshiftLeads?'Redshift':'sheet')+' leads · Total = GMB+Google Ad + Organic + Practo + Others'
         +' · <span onclick="event.stopPropagation();toggleLeadsGran()" style="cursor:pointer;color:'+(leadsGran?'#4f46e5':'#94a3b8')+';font-weight:700;border:1px solid '+(leadsGran?'#4f46e5':'var(--line)')+';border-radius:6px;padding:1px 7px;">'+(leadsGran?'✓ ':'+ ')+'split sources</span>'
         +' <span onclick="event.stopPropagation();toggleLeadsAvg()" style="cursor:pointer;color:'+(leadsAvg?'#4f46e5':'#94a3b8')+';font-weight:700;border:1px solid '+(leadsAvg?'#4f46e5':'var(--line)')+';border-radius:6px;padding:1px 7px;">'+(leadsAvg?'✓ ':'+ ')+'avg line</span>')}
       ${trend('🩺 Availability — weekday vs weekend', availSplitChart(rev(r.wdArr), rev(r.weArr), hi, r.av_avg),
