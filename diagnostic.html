@@ -107,7 +107,8 @@ const CAUSE = {
 const MIXCOL='#be185d';
 
 // ═══════════════ STATE ═══════════════
-let JDATA=null, SDATA={}, L0=null, PRACTO={};   // PRACTO['City|Clinic'] = [7 weekly counts aligned to WEEKS]
+let JDATA=null, SDATA={}, L0=null, PRACTO={}, ROSTER={};   // PRACTO['City|Clinic'] = [7 weekly counts aligned to WEEKS]; ROSTER['City|Clinic']={hrs:[7],we_hrs:[7]} scheduled bookable hours
+function rosterArr(city,clinic){ return ROSTER[city+'|'+clinic] || {hrs:Array(WEEKS.length).fill(null), we_hrs:Array(WEEKS.length).fill(null)}; }
 let scope='offline';      // 'offline' | 'online'
 let wkIdx=0;              // selected week index (0 = latest)
 let baseMode='peak';      // 'peak' | 'avg'  — which baseline the give-back is measured against
@@ -520,6 +521,21 @@ function renderDeepDive(r){
       <div style="display:flex;justify-content:space-between;font-size:11.5px;margin-bottom:3px;"><span style="color:#475569;font-weight:600;">${label}</span><span style="color:#94a3b8;">norm <b>${r1(base)}</b> → wk <b style="color:${lost>0.3?'#dc2626':'#059669'}">${r1(cur)}</b>${lost>0.3?` · <b style="color:#dc2626">−${r1(lost)} lost</b>`:''}</span></div>
       <div style="position:relative;height:16px;background:#f1f5f9;border-radius:4px;"><div style="position:absolute;height:100%;width:${base/mx*100}%;background:${col}33;border-radius:4px;"></div><div style="position:absolute;height:100%;width:${cur/mx*100}%;background:${col};border-radius:4px;"></div></div>
     </div>`; };
+  // ── scheduled bookable hours from roster (Redshift) — planned capacity vs realized days ──
+  const ros=rosterArr(r.city,r.clinic);
+  const rsl=a=>a.slice(wkIdx+1,wkIdx+6).filter(x=>x!=null);
+  const rh_w=ros.hrs[wkIdx], rh_avg=avg(rsl(ros.hrs)), rwe_w=ros.we_hrs[wkIdx], rwe_avg=avg(rsl(ros.we_hrs));
+  const hasRoster=ros.hrs.some(x=>x!=null);
+  const rosBlock = hasRoster ? `
+    <div style="margin-top:12px;border-top:1px dashed var(--line);padding-top:11px;">
+      <div style="font-size:12px;font-weight:700;color:#0f172a;margin-bottom:2px;">🗓️ Scheduled bookable hours <span style="font-weight:500;color:#94a3b8;">(roster · Redshift)</span></div>
+      <div style="font-size:10.5px;color:#94a3b8;margin-bottom:8px;">What the roster planned — before doctors shrink slots. Faint = 5-wk norm, solid = ${wl}.</div>
+      ${dayRow('Total scheduled hrs', rh_avg, rh_w==null?0:rh_w, '#0891b2')}
+      ${dayRow('Weekend scheduled hrs', rwe_avg, rwe_w==null?0:rwe_w, '#06b6d4')}
+      <div style="font-size:11.5px;color:#475569;margin-top:6px;line-height:1.55;">
+        Roster scheduled <b>${rh_w==null?'—':r1(rh_w)}h</b> this week (norm <b>${r1(rh_avg)}h</b>${rh_avg>0&&rh_w!=null?', '+signed(Math.round((rh_w-rh_avg)/rh_avg*100),'%')+' vs norm':''}). ${rh_w!=null&&rh_avg-rh_w>2?`<b style="color:#dc2626">~${r1(rh_avg-rh_w)}h fewer hours were even put on the roster</b> — a supply/roster planning gap.`:'Roster supply held — any realized-day shortfall is doctor shrinkage of scheduled slots, not a planning gap.'}
+      </div>
+    </div>` : `<div style="margin-top:12px;font-size:10.5px;color:#cbd5e1;border-top:1px dashed var(--line);padding-top:9px;">No roster coverage for this clinic in the pull.</div>`;
   const availCard = `<div class="card"><div class="sec-h"><span class="sec-num">🩺</span>Availability — weekday vs weekend</div>
     <div class="sec-sub">Average bookable doctor-days, split into weekday & weekend (the high-demand window). Faint bar = 5-wk norm, solid = ${wl}.</div>
     ${dayRow('Weekday days', r.wd_avg, r.wd_w, '#7c3aed')}
@@ -527,8 +543,8 @@ function renderDeepDive(r){
     <div style="font-size:11.5px;color:#475569;margin-top:8px;line-height:1.55;">
       Total active-days <b>${r1(r.av_avg)} → ${r1(r.av_w)}</b> (${signed(r1(r.dAct))}). Days lost: <b style="color:#7c3aed">${r1(r.wdLost)} weekday</b> + <b style="color:#a855f7">${r1(r.weLost)} weekend</b>.
       ${r.weLost>r.wdLost?'The loss is <b>weekend-weighted</b> — the costliest window.':r.wdLost>0.3?'The loss is <b>mid-week</b>.':'Availability broadly held.'}
-      <span style="color:#94a3b8;">(Day-level from the tracker; hour-level needs the Redshift roster pull.)</span>
     </div>
+    ${rosBlock}
   </div>`;
   let attribCard='';
   if(r.L>0){
@@ -567,6 +583,7 @@ function renderDeepDive(r){
       ${trend('🔎 Total leads', spark(rev(r.ldArr),'#0ea5e9',hi), 'GMB+Google + Practo / week')}
       ${trend('🩺 Active-days', spark(rev(r.avArr),'#7c3aed',hi), 'total bookable doctor-days/week')}
       ${trend('🗓️ Weekend days', spark(rev(r.weArr),'#a855f7',hi), 'weekend bookable days/week')}
+      ${hasRoster?trend('🗓️ Scheduled hrs', spark(rev(ros.hrs.map(x=>x==null?0:x)),'#0891b2',hi), 'roster bookable hours/week (planned)'):''}
     </div>
     <div style="margin-top:12px;font-size:11.5px;background:${r.mixWith?MIXCOL+'12':m.bg};border-radius:9px;padding:10px 13px;line-height:1.6;color:#475569;">
       <b style="color:${r.mixWith?MIXCOL:m.col};">Verdict — ${r.mixWith?'Mix ('+cap(CAUSE[r.cause].short)+' + '+CAUSE[r.mixWith].short+')':m.label}.</b>
@@ -616,12 +633,13 @@ function renderOnline(){
 async function init(){
   try{
     const safe=u=>fetch(u,{cache:'no-store'}).catch(()=>({ok:false}));
-    const [jr,sr,lr,pr]=await Promise.all([ fetch('data.json',{cache:'no-store'}), safe(SHEET_URL), safe(L0_URL), safe(PRACTO_URL) ]);
+    const [jr,sr,lr,pr,rr]=await Promise.all([ fetch('data.json',{cache:'no-store'}), safe(SHEET_URL), safe(L0_URL), safe(PRACTO_URL), safe('data_roster.json') ]);
     if(!jr.ok) throw new Error('data.json not found');
     JDATA=await jr.json();
     if(sr.ok){ SDATA=parseSheet(parseCSV(await sr.text())); } else { console.warn('demand-tracker sheet failed'); }
     if(lr.ok){ L0=parseL0(await lr.text()); } else { console.warn('L0 sheet failed'); }
     if(pr.ok){ PRACTO=parsePracto(parseCSV(await pr.text())); } else { console.warn('Practo sheet failed'); }
+    if(rr.ok){ try{ ROSTER=await rr.json(); }catch(_){ console.warn('roster parse failed'); } } else { console.warn('data_roster.json failed'); }
     const wSel=document.getElementById('weekSelect');
     WEEKS.forEach((w,i)=>{ const o=document.createElement('option'); o.value=i; o.textContent=w.label+(i===0?' (latest)':''); if(i===0)o.selected=true; wSel.appendChild(o); });
     render();
