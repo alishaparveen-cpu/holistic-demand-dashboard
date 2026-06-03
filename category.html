@@ -184,6 +184,12 @@ details[open]>.dl-gsum .dl-cv{transform:rotate(90deg);}
       <button class="toggle-btn"        id="tierT1Cat"  onclick="setTierCat('T1')">Tier 1</button>
       <button class="toggle-btn"        id="tierT2Cat"  onclick="setTierCat('T2')">Tier 2</button>
     </div>
+    <div class="flex gap-1 border rounded-lg p-0.5" style="border-color:var(--line);" id="matToggleWrap" title="Clinic maturity (by # active weeks)">
+      <button class="toggle-btn active" id="matAllCat"      onclick="setMatCat('ALL')">All Mat.</button>
+      <button class="toggle-btn"        id="matMaturedCat"  onclick="setMatCat('Matured')">Matured</button>
+      <button class="toggle-btn"        id="matMaturingCat" onclick="setMatCat('Maturing')">Maturing</button>
+      <button class="toggle-btn"        id="matNewCat"      onclick="setMatCat('New')">New</button>
+    </div>
     <div class="flex items-center gap-1" id="geoSelWrap" style="position:relative;">
       <button id="cityMsBtn" onclick="geoMsToggle('city')" style="font-size:12px;border:1px solid var(--line);border-radius:8px;padding:5px 10px;background:#fff;cursor:pointer;white-space:nowrap;">All cities ▾</button>
       <button id="clinicMsBtn" onclick="geoMsToggle('clinic')" style="font-size:12px;border:1px solid var(--line);border-radius:8px;padding:5px 10px;background:#fff;cursor:pointer;white-space:nowrap;">All clinics ▾</button>
@@ -433,6 +439,7 @@ function setDataMode(m){ dataMode = m; document.getElementById('displayCharts')?
 // not just Data/Snapshot. Hidden only for the online scope.
 function syncHeaderFilters(){ const off = activeScope!=='online';
   const tw=document.getElementById('tierToggleWrap'); if(tw) tw.style.display = off ? '' : 'none';
+  const mw=document.getElementById('matToggleWrap'); if(mw) mw.style.display = off ? '' : 'none';
   const gw=document.getElementById('geoSelWrap'); if(gw) gw.style.display = off ? '' : 'none';
   populateGeoSel(); }
 function setSnapFrom(i){ snapFromIdx = +i; if(snapToIdx>=0 && snapToIdx<snapFromIdx) snapToIdx=snapFromIdx; render(); }
@@ -442,6 +449,13 @@ function setTierCat(t) {
   activeTier = t; activeCity = 'ALL'; activeClinic = 'ALL'; activeChannel = 'ALL'; geoCitySel.clear(); geoClinicSel.clear();
   ['tierAllCat','tierT1Cat','tierT2Cat'].forEach(id => document.getElementById(id)?.classList.remove('active'));
   document.getElementById(t==='ALL'?'tierAllCat':t==='T1'?'tierT1Cat':'tierT2Cat')?.classList.add('active');
+  syncDrillToGeo(); render(); renderGeoMs();
+}
+// Clinic maturity filter (Matured / Maturing / New) — combines with tier/city.
+function setMatCat(m){
+  activeMat = m; geoClinicSel.clear();   // maturity selects clinics by rule
+  ['matAllCat','matMaturedCat','matMaturingCat','matNewCat'].forEach(id=>document.getElementById(id)?.classList.remove('active'));
+  document.getElementById(m==='ALL'?'matAllCat':m==='Matured'?'matMaturedCat':m==='Maturing'?'matMaturingCat':'matNewCat')?.classList.add('active');
   syncDrillToGeo(); render(); renderGeoMs();
 }
 // ── City / Clinic multi-select (searchable) — drive every chart section ──
@@ -488,6 +502,10 @@ document.addEventListener('click', e=>{ if(geoMsOpen && !e.target.closest('#geoS
 function syncDrillToGeo(){
   if(typeof dlCitySel==='undefined') return;
   if(geoClinicSel.size){ dlLevel='clinic'; dlClinicSel=new Set(geoClinicSel); dlCitySel=new Set(); }
+  else if(activeMat!=='ALL'){ seedMat(); dlLevel='clinic';
+    dlClinicSel=new Set((S().clinics||[]).filter(k=>(CLINIC_MAT[k]||'New')===activeMat
+      && (activeTier==='ALL'||cityTier(clinCity(k))===activeTier)
+      && (!geoCitySel.size||geoCitySel.has(clinCity(k))))); dlCitySel=new Set(); }
   else if(geoCitySel.size){ dlLevel='city'; dlCitySel=new Set(geoCitySel); dlClinicSel=new Set(); }
   else if(activeTier!=='ALL'){ dlLevel='city'; dlCitySel=new Set(dlCities().filter(c=>cityTier(c)===activeTier)); dlClinicSel=new Set(); }
   else { dlLevel='city'; dlCitySel=new Set(dlCities()); dlClinicSel=new Set(); }
@@ -900,12 +918,20 @@ function render() {
   // over the tier's cities (offline calls done; online isn't geo-tagged).
   // Geo filter active when any of tier / city / clinic is set (offline CHDATA).
   const _catKeys = DATA.categories || [];
-  const geoActive = (activeTier!=='ALL' || geoCitySel.size || geoClinicSel.size) && CHDATA && CHDATA.offline;
+  seedMat();
+  const geoActive = (activeTier!=='ALL' || geoCitySel.size || geoClinicSel.size || activeMat!=='ALL') && CHDATA && CHDATA.offline;
   const chRec = (wk, ch) => {
     if(!geoActive) return scope.weekly_channel?.[wk]?.[ch] || {};
     const out={total:0}; _catKeys.forEach(c=>out[c]=0);
-    if(geoClinicSel.size){
-      for(const key of geoClinicSel){ const rr=CHDATA.offline.clinic?.[key]?.[wk]?.[ch]; if(!rr) continue;
+    // clinic-level aggregation when explicit clinics OR maturity is in play
+    if(geoClinicSel.size || activeMat!=='ALL'){
+      const clinicNode = CHDATA.offline.clinic || {};
+      for(const key in clinicNode){
+        if(geoClinicSel.size && !geoClinicSel.has(key)) continue;
+        if(activeMat!=='ALL' && (CLINIC_MAT[key]||'New')!==activeMat) continue;
+        if(activeTier!=='ALL' && cityTier(clinCity(key))!==activeTier) continue;
+        if(geoCitySel.size && !geoCitySel.has(clinCity(key))) continue;
+        const rr=clinicNode[key]?.[wk]?.[ch]; if(!rr) continue;
         out.total+=rr.total||0; _catKeys.forEach(c=>out[c]+=rr[c]||0); }
       return out;
     }
