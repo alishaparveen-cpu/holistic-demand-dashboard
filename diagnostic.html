@@ -626,12 +626,14 @@ function sparkMulti(series, hiIdx){
   const mn=Math.min(0,...all), mx=Math.max(1,...all), rng=(mx-mn)||1;
   const n=series[0].vals.length;
   const X=i=>pad+i/(n-1)*(w-2*pad), Y=v=>h-pad-(v-mn)/rng*(h-2*pad);
-  const lines=series.map(s=>{
+  const lines=series.map((s,si)=>{
     const a=s.vals.map(x=>x==null?0:x);
     const path=a.map((v,i)=>(i?'L':'M')+X(i).toFixed(1)+' '+Y(v).toFixed(1)).join(' ');
     const dots=a.map((v,i)=>`<circle cx="${X(i).toFixed(1)}" cy="${Y(v).toFixed(1)}" r="${i===hiIdx?3.4:1.9}" fill="${s.color}"/>`).join('');
-    // value label at every point, with a white halo so overlapping lines stay legible
-    const labs=a.map((v,i)=>`<text x="${X(i).toFixed(1)}" y="${(Y(v)-5).toFixed(1)}" font-size="8" fill="${s.color}" text-anchor="middle" font-weight="${i===hiIdx?800:600}" style="paint-order:stroke;stroke:#fff;stroke-width:2.4px;stroke-linejoin:round;">${v}</text>`).join('');
+    // value label at every point; stagger by series (Total above, others below) so
+    // the three lines' numbers don't collide where the lines cross. White halo for legibility.
+    const dy = si===0?-6 : si===1?10:19;
+    const labs=a.map((v,i)=>`<text x="${X(i).toFixed(1)}" y="${(Y(v)+dy).toFixed(1)}" font-size="8" fill="${s.color}" text-anchor="middle" font-weight="${i===hiIdx?800:600}" style="paint-order:stroke;stroke:#fff;stroke-width:2.4px;stroke-linejoin:round;">${v}</text>`).join('');
     return `<path d="${path}" fill="none" stroke="${s.color}" stroke-width="${s.width||1.7}" stroke-linejoin="round"/>${dots}${labs}`;
   }).join('');
   const legend=series.map(s=>{ const a=s.vals.map(x=>x==null?0:x);
@@ -686,6 +688,26 @@ function dayBarsChart(wk, norm){
     </div>`;
   }).join('')}</div>`;
 }
+// ── chart zoom: each trend cell registers its content; ⛶ opens a large modal ──
+let _zoomCharts={}, _zoomSeq=0;
+function zoomTrend(id){
+  const z=_zoomCharts[id]; if(!z) return;
+  let ov=document.getElementById('zoomOverlay');
+  if(!ov){ ov=document.createElement('div'); ov.id='zoomOverlay'; ov.addEventListener('click',e=>{ if(e.target===ov) closeZoom(); }); document.body.appendChild(ov); }
+  ov.style.cssText='position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:1000;display:flex;align-items:center;justify-content:center;padding:24px;';
+  ov.innerHTML=`<div style="background:#fff;border-radius:16px;padding:22px 26px 18px;max-width:980px;width:100%;box-shadow:0 24px 70px rgba(0,0,0,.32);">
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:2px;">
+      <div><div style="font-size:18px;font-weight:800;color:#0f172a;">${z.title}</div>
+        <div style="font-size:12.5px;color:#94a3b8;margin-top:2px;">${z.sub}</div></div>
+      <button onclick="closeZoom()" title="Close" style="flex-shrink:0;font-size:16px;border:1px solid var(--line);background:#f8fafc;border-radius:9px;width:34px;height:34px;cursor:pointer;color:#475569;">✕</button>
+    </div>
+    <div style="margin-top:14px;">${z.svg}</div>
+    <div style="display:flex;justify-content:space-between;font-size:11px;color:#94a3b8;margin-top:6px;">${z.weeks}</div>
+  </div>`;
+  ov.style.display='flex';
+}
+function closeZoom(){ const ov=document.getElementById('zoomOverlay'); if(ov) ov.style.display='none'; }
+document.addEventListener('keydown',e=>{ if(e.key==='Escape') closeZoom(); });
 function renderDeepDive(r){
   const wl=WEEKS[wkIdx].label;
   const m=CAUSE[r.cause]||{label:(r.cause==='grew'?'Growing':'Stable'),col:'#059669',bg:'#ecfdf5',owner:'—',desc:'no material booking loss this week'};
@@ -693,7 +715,10 @@ function renderDeepDive(r){
   const rev=a=>a.slice(0,WEEKS.length).reverse();
   const wkS=WEEKS.map(w=>w.label.replace(/ \d{4}/,'')).slice(0,WEEKS.length).reverse();
   const kpi=(l,v,s,c)=>`<div class="kpi"><div class="kpi-l">${l}</div><div class="kpi-v" style="color:${c||'#0f172a'};font-size:26px;">${v}</div><div class="kpi-s">${s}</div></div>`;
-  const trend=(title,svg,sub)=>`<div class="card" style="margin-bottom:0;"><div style="font-size:12px;font-weight:700;margin-bottom:2px;">${title}</div><div style="font-size:10.5px;color:#94a3b8;margin-bottom:8px;">${sub}</div>${svg}<div style="display:flex;justify-content:space-between;font-size:8.5px;color:#cbd5e1;margin-top:2px;">${wkS.map((l,i)=>`<span style="${i===hi?'color:#475569;font-weight:700;':''}">${l}</span>`).join('')}</div></div>`;
+  _zoomCharts={}; _zoomSeq=0;
+  const weeksRow=wkS.map((l,i)=>`<span style="${i===hi?'color:#475569;font-weight:700;':''}">${l}</span>`).join('');
+  const trend=(title,svg,sub)=>{ const id='z'+(_zoomSeq++); _zoomCharts[id]={title,sub,svg,weeks:weeksRow};
+    return `<div class="card" style="margin-bottom:0;position:relative;"><button onclick="zoomTrend('${id}')" title="Zoom in" style="position:absolute;top:7px;right:7px;border:1px solid var(--line);background:#fff;border-radius:6px;width:23px;height:23px;cursor:pointer;font-size:12px;line-height:1;color:#64748b;padding:0;">⛶</button><div style="font-size:12px;font-weight:700;margin-bottom:2px;padding-right:26px;">${title}</div><div style="font-size:10.5px;color:#94a3b8;margin-bottom:8px;">${sub}</div>${svg}<div style="display:flex;justify-content:space-between;font-size:8.5px;color:#cbd5e1;margin-top:2px;">${weeksRow}</div></div>`; };
   const pctG=(part,base)=>base>0?Math.round(part/base*100)+'%':'—';
   const dayRow=(label,base,cur,col)=>{ const mx=Math.max(base,cur,1), lost=base-cur;
     return `<div style="margin-bottom:10px;">
@@ -798,7 +823,7 @@ function renderDeepDive(r){
   const rate_n = r.av_avg>0 ? r.bk_avg/r.av_avg : 0;
   const trendsCard=`<div class="card"><div class="sec-h"><span class="sec-num">📈</span>${r.clinic} — trends over time</div>
     <div class="sec-sub">Last ${WEEKS.length} weeks · highlighted point = <b>${wl}</b> · dashed line = recent norm.</div>
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;">
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,1fr));gap:14px;">
       ${trend('📅 Bookings', spark(rev(r.bkArr),'#4f46e5',hi,null,r.bkBase), 'new-patient SC bookings/week · dashed = expected')}
       ${trend('🔎 Leads — where the gap is', sparkMulti([
           {vals:rev(r.ldArr), color:'#0ea5e9', label:'Total', width:2.5},
