@@ -83,6 +83,7 @@ code{background:#f1f5f9;padding:1px 5px;border-radius:4px;font-size:11px;}
 // ═══════════════ CONFIG ═══════════════
 const SHEET_ID  = '1bZWGVKu6b4EFPDt3aKHn21gYjdhN1aT1-LT60BFe8g0';
 const SHEET_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Booking%20and%20Leads%20trend%20summary`;
+const PRACTO_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=RD_Practo_Leads`;
 const L0_ID  = '1jyyFYpd7gfYyAQ3U7E56c7OA3OuQQAVgJrAGyQr90XM';
 const L0_URL = `https://docs.google.com/spreadsheets/d/${L0_ID}/gviz/tq?tqx=out:csv&sheet=L0`;
 const L0_WEEK_COLS = [2,3,4,5,6,7,8];
@@ -106,7 +107,7 @@ const CAUSE = {
 const MIXCOL='#be185d';
 
 // ═══════════════ STATE ═══════════════
-let JDATA=null, SDATA={}, L0=null;
+let JDATA=null, SDATA={}, L0=null, PRACTO={};   // PRACTO['City|Clinic'] = [7 weekly counts aligned to WEEKS]
 let scope='offline';      // 'offline' | 'online'
 let wkIdx=0;              // selected week index (0 = latest)
 let baseMode='peak';      // 'peak' | 'avg'  — which baseline the give-back is measured against
@@ -177,6 +178,22 @@ function parseL0(text){
   return { overallLeads:overall, fb:chLeads('FB'), google:chLeads('Google Search'), gmb:chLeads('GMB'), practo:chLeads('Practo') };
 }
 
+function parsePracto(rows){   // row-per-lead → PRACTO['City|Clinic'] = [weekly counts aligned to WEEKS]
+  const wkIndex={}; WEEKS.forEach((w,i)=>wkIndex[w.json]=i);
+  const out={};
+  for(let i=1;i<rows.length;i++){ const r=rows[i]; if(!r||r.length<9) continue;
+    const p=(r[0]||'').trim().split('-'); if(p.length!==3) continue;            // DD-MM-YYYY
+    const dt=new Date(+p[2], +p[1]-1, +p[0]); if(isNaN(dt.getTime())) continue;
+    const mon=new Date(dt); mon.setDate(dt.getDate()-((dt.getDay()+6)%7));        // Monday start
+    const key=`${mon.getFullYear()}-${String(mon.getMonth()+1).padStart(2,'0')}-${String(mon.getDate()).padStart(2,'0')}`;
+    const idx=wkIndex[key]; if(idx===undefined) continue;
+    const clinic=(r[7]||'').trim(), city=(r[8]||'').trim(); if(!clinic) continue;
+    const k=city+'|'+clinic; (out[k]=out[k]||Array(WEEKS.length).fill(0))[idx]++;
+  }
+  return out;
+}
+function practoArr(city,clinic){ return PRACTO[city+'|'+clinic] || Array(WEEKS.length).fill(0); }
+
 // ═══════════════ HELPERS ═══════════════
 const avg=a=>{ const v=a.filter(x=>x!=null); return v.length? v.reduce((x,y)=>x+y,0)/v.length : 0; };
 const sum=a=>a.reduce((x,y)=>x+(y||0),0);
@@ -191,10 +208,14 @@ function deltaTag(v,suf,inv){ const c=dCol(v,inv); return `<b style="color:${c}"
 //   bookings measured vs recent PEAK; leads & availability vs prior-5-week avg.
 function rcaClinic(city, clinic){
   const W=wkIdx, d=SDATA[city][clinic]._total;
-  const bk=d.allBk, ld=d.gmbLeads, av=d.avail, we=d.weekend;
-  const priorBk=bk.slice(W+1,W+6), priorLd=ld.slice(W+1,W+6), priorAv=av.slice(W+1,W+6), priorWe=we.slice(W+1,W+6);
-  const bk_w=bk[W], bk_peak=Math.max(bk[W+1]||0, bk[W+2]||0), bk_avg=avg(priorBk);
-  const ld_w=ld[W], ld_avg=avg(priorLd), av_w=av[W], av_avg=avg(priorAv), we_w=we[W], we_avg=avg(priorWe);
+  const bk=d.allBk, gmb=d.gmbLeads, av=d.avail, we=d.weekend;
+  const pr=practoArr(city,clinic);                       // Practo leads per week
+  const ld=gmb.map((g,i)=>g+(pr[i]||0));                 // total inbound leads = GMB+Google + Practo
+  const wd=av.map((a,i)=>a-(we[i]||0));                  // weekday active-days = total − weekend
+  const sl=a=>a.slice(W+1,W+6);
+  const bk_w=bk[W], bk_peak=Math.max(bk[W+1]||0, bk[W+2]||0), bk_avg=avg(sl(bk));
+  const ld_w=ld[W], ld_avg=avg(sl(ld)), av_w=av[W], av_avg=avg(sl(av)), we_w=we[W], we_avg=avg(sl(we)), wd_w=wd[W], wd_avg=avg(sl(wd));
+  const gmb_w=gmb[W], gmb_avg=avg(sl(gmb)), pr_w=pr[W], pr_avg=avg(sl(pr));
   const dBkPeak=bk_w-bk_peak, dBkAvg=bk_w-bk_avg;
   const dBk = baseMode==='avg'?dBkAvg:dBkPeak;            // active baseline (peak or 8-wk avg)
   const bkBase = baseMode==='avg'?bk_avg:bk_peak;
@@ -216,12 +237,16 @@ function rcaClinic(city, clinic){
   const bkPerDay  = av_avg>0 ? bk_avg/av_avg : 0;               // bookings per active doctor-day
   const bkPerLead = ld_avg>0 ? bk_avg/ld_avg : 0;              // bookings per inbound lead
   const weLost = Math.max(0, we_avg - we_w);                   // weekend days lost (high-demand → weighted 1.5×)
-  const wdLost = Math.max(0, (av_avg-we_avg) - (av_w-we_w));   // weekday days lost
+  const wdLost = Math.max(0, wd_avg - wd_w);                   // weekday days lost
   // only attribute to a dimension that actually BROKE (passed its threshold) — sub-threshold wobble is noise, not a cause
   let availLoss = availBroke ? Math.min(L, (weLost*1.5 + wdLost) * bkPerDay) : 0;
   let leadsLoss = leadsBroke ? Math.max(0, Math.min(L-availLoss, Math.max(0, ld_avg-ld_w) * bkPerLead)) : 0;
   let l2bLoss   = Math.max(0, L - availLoss - leadsLoss);       // residual = conversion / call-handling
   const comp = {avail:availLoss, leads:leadsLoss, l2b:l2bLoss};
+  // lead-loss source split (GMB+Google vs Practo)
+  const gmbDrop=Math.max(0,gmb_avg-gmb_w), prDrop=Math.max(0,pr_avg-pr_w), totDrop=(gmbDrop+prDrop)||1;
+  const leadsLoss_gmb=leadsLoss*gmbDrop/totDrop, leadsLoss_pr=leadsLoss*prDrop/totDrop;
+  const expectedIfFull = bk_w + availLoss;                      // bookings we'd expect this week if availability were restored
 
   // primary cause = biggest component; "mix" if the 2nd component is also material (≥30% & ≥3 bookings)
   let cause, mixWith=null;
@@ -238,12 +263,14 @@ function rcaClinic(city, clinic){
   if(material){
     if(mixWith){ note = `Mix: ~${Math.round(comp[cause])} ${CAUSE[cause].short} + ~${Math.round(comp[mixWith])} ${CAUSE[mixWith].short}`; }
     else if(cause==='avail') note = (weBroke&&!actBroke)?`Weekend cover collapsed (${r1(dWe)} we-days)` : `Active-days fell ${r1(dAct)}`;
-    else if(cause==='leads') note = `Inbound leads ${Math.round(dLeadPct)}% — demand, not conversion`;
+    else if(cause==='leads'){ const src = gmbDrop>=prDrop?'GMB+Google':'Practo'; note = `Inbound leads ${Math.round(dLeadPct)}% — mainly ${src}`; }
     else if(cause==='l2b')  note = 'Leads & doctor-days held — conversion / call-handling gap';
   }
   return {city,clinic,bk_w,bk_peak,bk_avg,bkBase,dBkPeak,dBkAvg,dBk,ld_w,ld_avg,dLeadPct,av_w,av_avg,dAct,we_w,we_avg,dWe,
+          gmb_w,gmb_avg,pr_w,pr_avg,wd_w,wd_avg,
           leadsBroke,actBroke,weBroke,availBroke,cause,mixWith,comp,L,mat,note,
-          bkArr:bk,ldArr:ld,avArr:av,weArr:we};
+          bkPerDay,weLost,wdLost,leadsLoss_gmb,leadsLoss_pr,expectedIfFull,
+          bkArr:bk,ldArr:ld,avArr:av,weArr:we,gmbArr:gmb,prArr:pr,wdArr:wd};
 }
 function allClinicRCA(){
   const out=[];
@@ -485,37 +512,69 @@ function renderDeepDive(r){
   const hi=(WEEKS.length-1)-wkIdx;
   const rev=a=>a.slice(0,WEEKS.length).reverse();
   const wkS=WEEKS.map(w=>w.label.replace(/ \d{4}/,'')).slice(0,WEEKS.length).reverse();
-  const bkS=rev(r.bkArr), ldS=rev(r.ldArr), avS=rev(r.avArr), weS=rev(r.weArr);
   const kpi=(l,v,s,c)=>`<div class="kpi"><div class="kpi-l">${l}</div><div class="kpi-v" style="color:${c||'#0f172a'};font-size:26px;">${v}</div><div class="kpi-s">${s}</div></div>`;
   const trend=(title,svg,sub)=>`<div class="card" style="margin-bottom:0;"><div style="font-size:12px;font-weight:700;margin-bottom:2px;">${title}</div><div style="font-size:10.5px;color:#94a3b8;margin-bottom:8px;">${sub}</div>${svg}<div style="display:flex;justify-content:space-between;font-size:8.5px;color:#cbd5e1;margin-top:2px;">${wkS.map((l,i)=>`<span style="${i===hi?'color:#475569;font-weight:700;':''}">${l}</span>`).join('')}</div></div>`;
+  const pctG=(part,base)=>base>0?Math.round(part/base*100)+'%':'—';
+  const dayRow=(label,base,cur,col)=>{ const mx=Math.max(base,cur,1), lost=base-cur;
+    return `<div style="margin-bottom:10px;">
+      <div style="display:flex;justify-content:space-between;font-size:11.5px;margin-bottom:3px;"><span style="color:#475569;font-weight:600;">${label}</span><span style="color:#94a3b8;">norm <b>${r1(base)}</b> → wk <b style="color:${lost>0.3?'#dc2626':'#059669'}">${r1(cur)}</b>${lost>0.3?` · <b style="color:#dc2626">−${r1(lost)} lost</b>`:''}</span></div>
+      <div style="position:relative;height:16px;background:#f1f5f9;border-radius:4px;"><div style="position:absolute;height:100%;width:${base/mx*100}%;background:${col}33;border-radius:4px;"></div><div style="position:absolute;height:100%;width:${cur/mx*100}%;background:${col};border-radius:4px;"></div></div>
+    </div>`; };
+  const availCard = `<div class="card"><div class="sec-h"><span class="sec-num">🩺</span>Availability — weekday vs weekend</div>
+    <div class="sec-sub">Average bookable doctor-days, split into weekday & weekend (the high-demand window). Faint bar = 5-wk norm, solid = ${wl}.</div>
+    ${dayRow('Weekday days', r.wd_avg, r.wd_w, '#7c3aed')}
+    ${dayRow('Weekend days', r.we_avg, r.we_w, '#a855f7')}
+    <div style="font-size:11.5px;color:#475569;margin-top:8px;line-height:1.55;">
+      Total active-days <b>${r1(r.av_avg)} → ${r1(r.av_w)}</b> (${signed(r1(r.dAct))}). Days lost: <b style="color:#7c3aed">${r1(r.wdLost)} weekday</b> + <b style="color:#a855f7">${r1(r.weLost)} weekend</b>.
+      ${r.weLost>r.wdLost?'The loss is <b>weekend-weighted</b> — the costliest window.':r.wdLost>0.3?'The loss is <b>mid-week</b>.':'Availability broadly held.'}
+      <span style="color:#94a3b8;">(Day-level from the tracker; hour-level needs the Redshift roster pull.)</span>
+    </div>
+  </div>`;
+  let attribCard='';
+  if(r.L>0){
+    const segs=[['Availability',r.comp.avail,'#7c3aed'],['Leads · GMB+Google',r.leadsLoss_gmb,'#0ea5e9'],['Leads · Practo',r.leadsLoss_pr,'#06b6d4'],['Conversion',r.comp.l2b,'#d97706']].filter(s=>s[1]>=0.5);
+    const tot=r.L;
+    const stacked=`<div style="display:flex;height:34px;border-radius:8px;overflow:hidden;border:1px solid var(--line);">${segs.map(s=>`<div title="${s[0]}: ~${Math.round(s[1])}" style="width:${s[1]/tot*100}%;background:${s[2]};display:flex;align-items:center;justify-content:center;color:#fff;font-size:10.5px;font-weight:800;">${s[1]/tot>=0.08?'~'+Math.round(s[1]):''}</div>`).join('')}</div>`;
+    const legend=segs.map(s=>`<span style="font-size:11px;color:#475569;margin-right:14px;white-space:nowrap;"><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${s[2]};margin-right:4px;vertical-align:middle;"></span>${s[0]} <b>~${Math.round(s[1])}</b> (${pctG(s[1],tot)})</span>`).join('');
+    attribCard=`<div class="card"><div class="sec-h"><span class="sec-num">⚖</span>Where the ${Math.round(r.L)} lost bookings went</div>
+      <div class="sec-sub">Booked <b>${r.bk_w}</b> vs a norm of <b>${Math.round(r.bkBase)}</b>. We split the gap: how much availability explains, how much is lead loss (by source), and the conversion residual.</div>
+      ${stacked}
+      <div style="margin-top:10px;">${legend}</div>
+      <div style="margin-top:12px;font-size:11.5px;color:#475569;line-height:1.6;background:#f8fafc;border-radius:9px;padding:10px 13px;">
+        ${r.comp.avail>=0.5?`<b style="color:#7c3aed">If availability were at its norm</b> (${r1(r.av_avg)} days vs ${r1(r.av_w)} this wk), we'd expect ~<b>${Math.round(r.expectedIfFull)}</b> bookings — the missing <b style="color:#7c3aed">~${Math.round(r.comp.avail)}</b> is the availability gap (${pctG(r.comp.avail,tot)} of the loss). `:`Availability held, so it explains none of the loss. `}
+        ${(r.leadsLoss_gmb+r.leadsLoss_pr)>=0.5?`<b style="color:#0ea5e9">Lead loss</b> explains ~<b>${Math.round(r.leadsLoss_gmb+r.leadsLoss_pr)}</b> — ${r.leadsLoss_gmb>=0.5?`~${Math.round(r.leadsLoss_gmb)} from GMB+Google`:''}${r.leadsLoss_gmb>=0.5&&r.leadsLoss_pr>=0.5?', ':''}${r.leadsLoss_pr>=0.5?`~${Math.round(r.leadsLoss_pr)} from Practo`:''}. `:''}
+        ${r.comp.l2b>=0.5?`The remaining <b style="color:#d97706">~${Math.round(r.comp.l2b)}</b> isn't availability or demand — it's <b style="color:#d97706">conversion</b> (call-handling / scheduling).`:''}
+      </div>
+    </div>`;
+  }
   return `<div class="card">
     <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
       <button onclick="setSelClinic('')" style="font-size:12px;padding:5px 12px;background:#f1f5f9;border:1px solid var(--line);border-radius:8px;cursor:pointer;">← Back to network RCA</button>
       <div><div style="font-size:18px;font-weight:800;">${r.clinic}</div><div style="font-size:11px;color:#94a3b8;">${r.city} · ${cityTier(r.city)} · ${r.mat} · ${wl}</div></div>
-      <div style="margin-left:auto;text-align:right;">${causePill(r.cause, r.mixWith)}<div style="font-size:11px;color:${m.col};margin-top:4px;max-width:280px;">${r.note||m.desc}</div></div>
+      <div style="margin-left:auto;text-align:right;">${causePill(r.cause, r.mixWith)}<div style="font-size:11px;color:${r.mixWith?MIXCOL:m.col};margin-top:4px;max-width:280px;">${r.note||m.desc}</div></div>
     </div>
   </div>
-  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:16px;">
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px;margin-bottom:16px;">
     ${kpi('Bookings · '+wl, r.bk_w, 'vs '+ (baseMode==='avg'?'8-wk avg '+Math.round(r.bk_avg):'peak '+r.bk_peak)+' = '+signed(r.dBk), dCol(r.dBk))}
-    ${kpi('GMB+Google leads', r.ld_w, 'vs 5-wk avg '+Math.round(r.ld_avg)+' = '+deltaTag(Math.round(r.dLeadPct),'%').replace(/<[^>]+>/g,''), dCol(r.dLeadPct))}
-    ${kpi('Active doctor-days', r1(r.av_w), 'vs avg '+r1(r.av_avg)+' ('+signed(r1(r.dAct))+' day, '+signed(r1(r.dWe))+' weekend)', dCol(r.dAct))}
+    ${kpi('Total leads', r.ld_w, 'GMB+G '+r.gmb_w+' · Practo '+r.pr_w+' · '+signed(Math.round(r.dLeadPct),'%')+' vs avg', dCol(r.dLeadPct))}
+    ${kpi('Active doctor-days', r1(r.av_w), 'wd '+r1(r.wd_w)+' · we '+r1(r.we_w)+' · '+signed(r1(r.dAct))+' vs avg', dCol(r.dAct))}
   </div>
-  <div class="card"><div class="sec-h"><span class="sec-num">▦</span>${r.clinic} — the three dimensions over time</div>
-    <div class="sec-sub">Each trend over the last ${WEEKS.length} weeks; the highlighted point is <b>${wl}</b>. The cause is the line that broke while the others held.</div>
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px;">
-      ${trend('📅 Bookings', spark(bkS,'#4f46e5',hi), 'new-patient SC bookings/week')}
-      ${trend('🔎 Leads (GMB+Google)', spark(ldS,'#0ea5e9',hi), 'inbound local-search leads/week')}
-      ${trend('🩺 Active doctor-days', spark(avS,'#7c3aed',hi), 'total bookable days · weekend below')}
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:16px;">${availCard}${attribCard}</div>
+  <div class="card"><div class="sec-h"><span class="sec-num">▦</span>${r.clinic} — trends over time</div>
+    <div class="sec-sub">Each trend over the last ${WEEKS.length} weeks; highlighted point = <b>${wl}</b>.</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(270px,1fr));gap:14px;">
+      ${trend('📅 Bookings', spark(rev(r.bkArr),'#4f46e5',hi), 'new-patient SC bookings/week')}
+      ${trend('🔎 Total leads', spark(rev(r.ldArr),'#0ea5e9',hi), 'GMB+Google + Practo / week')}
+      ${trend('🩺 Active-days', spark(rev(r.avArr),'#7c3aed',hi), 'total bookable doctor-days/week')}
+      ${trend('🗓️ Weekend days', spark(rev(r.weArr),'#a855f7',hi), 'weekend bookable days/week')}
     </div>
-    <div style="margin-top:12px;font-size:11.5px;color:#475569;background:${r.mixWith?MIXCOL+'12':m.bg};border-radius:9px;padding:10px 13px;line-height:1.6;">
-      <b style="color:${r.mixWith?MIXCOL:m.col};">Verdict — ${r.mixWith?'Mix ('+cap(CAUSE[r.cause].short)+' + '+CAUSE[r.mixWith].short+')':m.label}.</b> ${r.note||m.desc}.
-      In ${wl}: bookings ${signed(r.dBk)} vs ${baseMode==='avg'?'8-wk avg':'peak'} · leads ${dimCell(r.leadsBroke,Math.round(r.dLeadPct),'%')} · active-days ${dimCell(r.actBroke,r1(r.dAct))} · weekend ${dimCell(r.weBroke,r1(r.dWe))}.
-      ${r.L>0?`<div style="margin-top:6px;">Attribution of the ${Math.round(r.L)} lost: ${[['availability',r.comp.avail,'#7c3aed'],['conversion',r.comp.l2b,'#d97706'],['leads',r.comp.leads,'#0ea5e9']].filter(x=>x[1]>=0.5).sort((a,b)=>b[1]-a[1]).map(x=>`<b style="color:${x[2]}">~${Math.round(x[1])} ${x[0]}</b>`).join(' + ')||'—'}.</div>`:''}
+    <div style="margin-top:12px;font-size:11.5px;background:${r.mixWith?MIXCOL+'12':m.bg};border-radius:9px;padding:10px 13px;line-height:1.6;color:#475569;">
+      <b style="color:${r.mixWith?MIXCOL:m.col};">Verdict — ${r.mixWith?'Mix ('+cap(CAUSE[r.cause].short)+' + '+CAUSE[r.mixWith].short+')':m.label}.</b>
+      In ${wl}: leads ${dimCell(r.leadsBroke,Math.round(r.dLeadPct),'%')} · active-days ${dimCell(r.actBroke,r1(r.dAct))} · weekend ${dimCell(r.weBroke,r1(r.dWe))}.
       Owner: <b>${r.mixWith?CAUSE[r.cause].owner+' + '+CAUSE[r.mixWith].owner:m.owner}</b>.
     </div>
   </div>`;
 }
-
 function renderOnline(){
   if(!JDATA.online) return '<div class="card">No online scope in data.json.</div>';
   const O=rcaOnline(), wl=WEEKS[wkIdx].label;
@@ -557,11 +616,12 @@ function renderOnline(){
 async function init(){
   try{
     const safe=u=>fetch(u,{cache:'no-store'}).catch(()=>({ok:false}));
-    const [jr,sr,lr]=await Promise.all([ fetch('data.json',{cache:'no-store'}), safe(SHEET_URL), safe(L0_URL) ]);
+    const [jr,sr,lr,pr]=await Promise.all([ fetch('data.json',{cache:'no-store'}), safe(SHEET_URL), safe(L0_URL), safe(PRACTO_URL) ]);
     if(!jr.ok) throw new Error('data.json not found');
     JDATA=await jr.json();
     if(sr.ok){ SDATA=parseSheet(parseCSV(await sr.text())); } else { console.warn('demand-tracker sheet failed'); }
     if(lr.ok){ L0=parseL0(await lr.text()); } else { console.warn('L0 sheet failed'); }
+    if(pr.ok){ PRACTO=parsePracto(parseCSV(await pr.text())); } else { console.warn('Practo sheet failed'); }
     const wSel=document.getElementById('weekSelect');
     WEEKS.forEach((w,i)=>{ const o=document.createElement('option'); o.value=i; o.textContent=w.label+(i===0?' (latest)':''); if(i===0)o.selected=true; wSel.appendChild(o); });
     render();
