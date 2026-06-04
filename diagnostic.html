@@ -671,15 +671,16 @@ function renderOffline(){
 // refVal (optional) draws a dashed "normal/expected" baseline so the reader can
 // see at a glance how the latest point sits vs the clinic's recent norm.
 function spark(vals, color, hiIdx, fmt, refVal){
-  const w=340,h=66,pad=10; const arr=vals.map(x=>x==null?0:x);
-  if(arr.length<2) return '<div style="color:#94a3b8;font-size:11px;">no trend</div>';
+  const w=340,h=66,pad=10;
+  const valid=vals.filter(x=>x!=null);                 // null = no data that week → render as a gap, not 0
+  if(valid.length<2) return '<div style="color:#94a3b8;font-size:11px;">no trend</div>';
   const hasRef = refVal!=null && isFinite(refVal);
-  const mn=Math.min(...arr,0,hasRef?refVal:Infinity), mx=Math.max(...arr,1,hasRef?refVal:-Infinity), rng=(mx-mn)||1;
-  const X=i=>pad+i/(arr.length-1)*(w-2*pad), Y=v=>h-pad-(v-mn)/rng*(h-2*pad);
-  const pts=arr.map((v,i)=>[X(i),Y(v)]);
-  const path=pts.map((p,i)=>(i?'L':'M')+p[0].toFixed(1)+' '+p[1].toFixed(1)).join(' ');
-  const dots=pts.map((p,i)=>`<circle cx="${p[0].toFixed(1)}" cy="${p[1].toFixed(1)}" r="${i===hiIdx?4:2.5}" fill="${i===hiIdx?color:'#fff'}" stroke="${color}" stroke-width="1.5"/>`).join('');
-  const labs=pts.map((p,i)=>`<text x="${p[0].toFixed(1)}" y="${(p[1]-7).toFixed(1)}" font-size="9" fill="${i===hiIdx?color:'#64748b'}" text-anchor="middle" font-weight="${i===hiIdx?800:500}">${fmt?fmt(arr[i]):arr[i]}</text>`).join('');
+  const mn=Math.min(...valid,0,hasRef?refVal:Infinity), mx=Math.max(...valid,1,hasRef?refVal:-Infinity), rng=(mx-mn)||1;
+  const X=i=>pad+i/(vals.length-1)*(w-2*pad), Y=v=>h-pad-(v-mn)/rng*(h-2*pad);
+  let path='', pen=false;                              // break the line across null gaps
+  vals.forEach((v,i)=>{ if(v==null){ pen=false; return; } path+=(pen?'L':'M')+X(i).toFixed(1)+' '+Y(v).toFixed(1)+' '; pen=true; });
+  const dots=vals.map((v,i)=> v==null?'':`<circle cx="${X(i).toFixed(1)}" cy="${Y(v).toFixed(1)}" r="${i===hiIdx?4:2.5}" fill="${i===hiIdx?color:'#fff'}" stroke="${color}" stroke-width="1.5"/>`).join('');
+  const labs=vals.map((v,i)=> v==null?'':`<text x="${X(i).toFixed(1)}" y="${(Y(v)-7).toFixed(1)}" font-size="9" fill="${i===hiIdx?color:'#64748b'}" text-anchor="middle" font-weight="${i===hiIdx?800:500}">${fmt?fmt(v):v}</text>`).join('');
   let ref='';
   if(hasRef){ const ry=Y(refVal).toFixed(1);
     ref=`<line x1="${pad}" y1="${ry}" x2="${w-pad}" y2="${ry}" stroke="#94a3b8" stroke-width="1" stroke-dasharray="3 3"/>`+
