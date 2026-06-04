@@ -25,18 +25,24 @@ echo "── 2/3  Redshift: recent negative reviews + network total leads"
 if python3 scripts/build_reviews_neg.py; then ok+=("data_reviews_neg.json"); else fail+=("reviews_neg"); fi
 if python3 scripts/build_leads_total.py; then ok+=("data_leads_total.json"); else fail+=("leads_total"); fi
 
-echo "── 3/3  Google Ads: city-level health + campaign roster/trends"
+echo "── 3/4  Google Ads: city-level health + campaign roster/trends"
 for cf in "$HOME/.allo_ga.env" scripts/.ga_creds.env; do [ -f "$cf" ] && { set -a; . "$cf"; set +a; }; done
 if [ -z "${GOOGLE_ADS_REFRESH_TOKEN:-}" ]; then
   fail+=("google-ads — no creds (set GOOGLE_ADS_* or scripts/.ga_creds.env)")
 elif python3 scripts/pull_ga_city.py; then ok+=("data_ga_city.json"); else fail+=("google-ads pull"); fi
+
+echo "── 4/4  GBP: GMB profile Insights (searches · interactions) per clinic"
+[ -f "$HOME/.allo_gbp.env" ] && { set -a; . "$HOME/.allo_gbp.env"; set +a; }
+if [ -z "${GBP_REFRESH_TOKEN:-}" ]; then
+  fail+=("gmb-insights — no creds (set GBP_* in ~/.allo_gbp.env)")
+elif python3 scripts/pull_gmb_insights.py; then ok+=("data_gmb_insights.json"); else fail+=("gmb-insights pull"); fi
 
 echo
 echo "Refreshed: ${ok[*]:-none}"
 [ ${#fail[@]} -gt 0 ] && printf 'Skipped/failed:\n  - %s\n' "${fail[@]}"
 
 # ── deploy: commit only the data files that changed, then push main ──
-CHANGED=$(git status --porcelain data_diagnostic.json data_reviews_neg.json data_ga_city.json data_leads_total.json | awk '{print $2}')
+CHANGED=$(git status --porcelain data_diagnostic.json data_reviews_neg.json data_ga_city.json data_leads_total.json data_gmb_insights.json | awk '{print $2}')
 if [ -z "$CHANGED" ]; then echo "No data changes — nothing to deploy."; exit 0; fi
 echo; echo "Deploying: $CHANGED"
 git add $CHANGED

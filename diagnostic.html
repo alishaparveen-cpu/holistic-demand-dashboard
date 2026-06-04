@@ -136,7 +136,9 @@ const MIXCOL='#be185d';
 
 // ═══════════════ STATE ═══════════════
 let JDATA=null, SDATA={}, L0=null, PRACTO={}, ROSTER={};   // PRACTO['City|Clinic'] = [7 weekly counts aligned to WEEKS]; ROSTER['City|Clinic']={hrs:[7],we_hrs:[7]} scheduled bookable hours
-let LEADS={}, REVIEWS={}, MKT=null, BOOKTYPE={}, GACITY={}, NEGREV={};   // Redshift leads-by-source · GMB review velocity · Google Ads impression-share · booking-type split · city-level Google Ads health · recent negative reviews
+let LEADS={}, REVIEWS={}, MKT=null, BOOKTYPE={}, GACITY={}, NEGREV={}, GMBINS={};   // Redshift leads-by-source · GMB review velocity · Google Ads impression-share · booking-type split · city-level Google Ads health · recent negative reviews · GMB profile Insights (searches/interactions)
+function gmbInsArr(city,clinic,field){ const o=GMBINS[city+'|'+clinic]; return o&&o[field] ? o[field].slice(0,WEEKS.length) : Array(WEEKS.length).fill(0); }
+function hasGmbIns(city,clinic){ return !!GMBINS[city+'|'+clinic]; }
 // clinic city (Redshift spelling) → Google Ads campaign city spelling
 const GA_CITY_ALIAS={'Hubli':'Hubballi','Mangaluru':'Mangalore','Visakhapatnam':'Vizag'};
 function gaForCity(city){ return GACITY[GA_CITY_ALIAS[city]||city]; }
@@ -1466,8 +1468,12 @@ function leadLossDrill(r){
     <div class="sec-sub">When inbound leads break, which source? <b>GMB profile</b> (reviews → rank) · <b>Google Ads</b> (impression share / spend) · <b>Practo</b> · <b>Organic &amp; others</b>. · leads from Redshift · ${WEEKS[wkIdx].label}</div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;">
       <div style="background:#eef2ff;border-radius:11px;padding:12px 14px;">
-        <div style="font-size:13px;font-weight:800;color:#4338ca;margin-bottom:8px;">📍 GMB profile</div>
-        ${mini('GMB leads · '+gmb_w+' ('+signed(dGmbP,'%')+')', '#6366f1', 'profile clicks + inbound calls · dashed = 4-wk avg', spark(rev(gmb),'#6366f1',hi,null,gmb_n))}
+        <div style="font-size:13px;font-weight:800;color:#4338ca;margin-bottom:8px;">📍 GMB profile <span style="font-weight:500;color:#94a3b8;font-size:10px;">${hasGmbIns(r.city,r.clinic)?'· live Insights':''}</span></div>
+        ${hasGmbIns(r.city,r.clinic)?(()=>{ const gs=gmbInsArr(r.city,r.clinic,'searches'), gix=gmbInsArr(r.city,r.clinic,'interactions');
+          const sw=gs[W]||0, sn=avg(sl(gs)), iw=gix[W]||0, iN=avg(sl(gix)); const dsp=sn?Math.round((sw-sn)/sn*100):0, dip=iN?Math.round((iw-iN)/iN*100):0;
+          return mini('Searches · '+sw.toLocaleString()+' ('+signed(dsp,'%')+')', '#7c3aed', 'GMB+Google impressions — how often the listing was seen · dashed = 4-wk avg', spark(rev(gs),'#7c3aed',hi,null,sn))
+            + mini('Interactions · '+iw+' ('+signed(dip,'%')+')', '#0d9488', 'calls + directions + website taps on the profile · dashed = 4-wk avg', spark(rev(gix),'#0d9488',hi,null,iN)); })():''}
+        ${mini('GMB leads · '+gmb_w+' ('+signed(dGmbP,'%')+')', '#6366f1', 'profile clicks + inbound calls → tracked leads · dashed = 4-wk avg', spark(rev(gmb),'#6366f1',hi,null,gmb_n))}
         ${mini('Review velocity · '+vel_w+'/wk', '#0891b2', 'reviews/week — a primary GMB-rank driver', spark(rev(rvN),'#0891b2',hi,null,vel_n))}
         <div style="font-size:10.5px;color:#475569;">Rating ${lastRating!=null?'<b>'+lastRating+'★</b>':'—'} · ${vel_n>0.5&&vel_w<vel_n-0.5?'<b style="color:#dc2626">velocity dropping → rank risk</b>':'velocity steady'}.</div>
         ${negReviewsBlock(r.city, r.clinic)}
@@ -1864,7 +1870,7 @@ function renderOnline(){
 async function init(){
   try{
     const safe=u=>fetch(u,{cache:'no-store'}).catch(()=>({ok:false}));
-    const [jr,sr,lr,pr,rr,ld,rv,mk,bt,dg,ga,nr]=await Promise.all([ fetch('data.json',{cache:'no-store'}), safe(SHEET_URL), safe(L0_URL), safe(PRACTO_URL), safe('data_roster.json'), safe('data_leads.json'), safe('data_reviews.json'), safe('data_marketing.json'), safe('data_booktype.json'), safe('data_diagnostic.json'), safe('data_ga_city.json'), safe('data_reviews_neg.json') ]);
+    const [jr,sr,lr,pr,rr,ld,rv,mk,bt,dg,ga,nr,gi]=await Promise.all([ fetch('data.json',{cache:'no-store'}), safe(SHEET_URL), safe(L0_URL), safe(PRACTO_URL), safe('data_roster.json'), safe('data_leads.json'), safe('data_reviews.json'), safe('data_marketing.json'), safe('data_booktype.json'), safe('data_diagnostic.json'), safe('data_ga_city.json'), safe('data_reviews_neg.json'), safe('data_gmb_insights.json') ]);
     if(!jr.ok) throw new Error('data.json not found');
     JDATA=await jr.json();
     // SDATA now comes from Redshift (data_diagnostic.json); the Google Sheet is a fallback only.
@@ -1880,6 +1886,7 @@ async function init(){
     if(bt.ok){ try{ BOOKTYPE=await bt.json(); }catch(_){ } }
     if(ga.ok){ try{ GACITY=await ga.json(); }catch(_){ } }
     if(nr.ok){ try{ NEGREV=await nr.json(); }catch(_){ } }
+    if(gi.ok){ try{ GMBINS=await gi.json(); }catch(_){ } }
     const wSel=document.getElementById('weekSelect');
     WEEKS.forEach((w,i)=>{ const o=document.createElement('option'); o.value=i; o.textContent=w.label+(i===0?' (latest)':''); if(i===0)o.selected=true; wSel.appendChild(o); });
     render(); updateRefreshBadge();
