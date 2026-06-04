@@ -1302,27 +1302,64 @@ function renderDeepDive(r){
     <div class="sec-sub">Last <b>${winN}</b> weeks · highlighted = <b>${wl}</b>.</div>
     ${winBar}<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:14px;">${availTrend}${schedTrend}</div></div>`;
 
-  // ── tabbed deep-dive ──
-  const tabs=[['overview','📖 Overview'],['leads','🔎 Leads'],['availability','🩺 Availability'],['bookings','📋 Bookings mix'],['stats','📐 Stats']];
-  if(!tabs.some(t=>t[0]===ddTab)) ddTab='overview';
-  const tabBar=`<div style="display:flex;gap:6px;flex-wrap:wrap;margin:14px 0 4px;">${tabs.map(([k,l])=>{const on=ddTab===k;return `<button onclick="setDdTab('${k}')" style="font-size:12.5px;font-weight:${on?700:500};padding:7px 15px;border-radius:9px;border:1.5px solid ${on?'#4f46e5':'var(--line)'};background:${on?'#4f46e5':'#fff'};color:${on?'#fff':'#475569'};cursor:pointer;">${l}</button>`;}).join('')}</div>`;
-  const tabContent = {
-    overview: `${storyCard}${bkTrendCard}${bookingRateCard(r)}${attribCard}`,
-    leads: `${leadsCard}${leadLossDrill(r)}`,
-    availability: `${availCard}${availTrendCard}`,
-    bookings: `${bookTypeMix(r)||'<div class="card" style="color:#94a3b8;">No booking-mix data for this clinic.</div>'}`,
-    stats: `${regCard(r)||'<div class="card" style="color:#94a3b8;">Not enough history to fit a model for this clinic yet.</div>'}`,
-  };
+  // ═══════════════ SINGLE-PAGE, TOP-DOWN DIAGNOSIS ═══════════════
+  const pctOf=(d,b)=>b?Math.round(d/b*100):0;
+  // 0) Verdict banner — names the size of the move and the single biggest cause.
+  const statusCol = grew?'#059669' : (r.L>0&&r.cause!=='ok' ? (r.mixWith?MIXCOL:m.col) : '#64748b');
+  const causePhrase = grew ? 'ahead of trend — growing'
+    : (r.cause==='leads' ? 'demand — fewer inbound leads'
+    : r.cause==='avail' ? 'availability — lost bookable doctor cover'
+    : r.cause==='l2b'   ? 'conversion — leads & cover held, fewer converted'
+    : 'within normal range');
+  const drillHint = r.cause==='leads'?'Leads':r.cause==='avail'?'Availability':r.cause==='l2b'?'Bookings':'';
+  const verdictBanner = `<div class="card" style="border-left:5px solid ${statusCol};background:${statusCol}0d;">
+    <div style="font-size:15.5px;font-weight:800;color:#0f172a;line-height:1.45;">
+      ${r.clinic} booked <span style="color:${statusCol}">${r.bk_w}</span> vs <b>${exp}</b> expected
+      <b style="color:${dCol(gap)}">(${signed(gap)}, ${signed(gapPct,'%')})</b> in ${wl}.</div>
+    <div style="font-size:12.5px;color:#475569;margin-top:5px;line-height:1.5;">
+      Primary cause: <b style="color:${statusCol}">${causePhrase}</b>${r.mixWith?` (mix with ${CAUSE[r.mixWith].short})`:''}.${r.note?` <span style="color:#94a3b8;">${r.note}.</span>`:''}
+      ${drillHint?`<span style="color:#94a3b8;"> → see the <b>${drillHint}</b> drill below.</span>`:''}</div>
+  </div>`;
+  // 1) Four vital signs — outcome + the three levers (demand, supply, efficiency).
+  const rateArr = r.bkArr.map((b,i)=> (r.avArr[i]>0 ? b/r.avArr[i] : 0));
+  const vital=(icon,title,val,unit,dpct,sub,svg)=>`<div class="card" style="margin:0;">
+    <div style="font-size:12px;font-weight:700;color:#0f172a;">${icon} ${title}</div>
+    <div style="display:flex;align-items:baseline;gap:8px;margin:1px 0 1px;">
+      <span style="font-size:23px;font-weight:800;color:#0f172a;line-height:1.1;">${val}<span style="font-size:11px;font-weight:600;color:#94a3b8;">${unit||''}</span></span>
+      <span style="font-size:12.5px;font-weight:800;color:${dCol(dpct)};">${signed(dpct,'%')}</span></div>
+    <div style="font-size:10px;color:#94a3b8;margin-bottom:4px;">${sub}</div>${svg}</div>`;
+  const vitals = `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;">
+    ${vital('📅','Bookings', r.bk_w,'', gapPct, 'vs '+exp+' expected', spark(rev(r.bkArr),'#4f46e5',hi,null,r.bkBase))}
+    ${vital('🔎','Leads', r.ld_w,'', Math.round(r.dLeadPct), 'demand · vs '+Math.round(r.ld_avg)+' norm', spark(rev(r.ldArr),'#0ea5e9',hi,null,r.ld_avg))}
+    ${vital('🩺','Availability', r1(r.av_w),' d', pctOf(r.dAct,r.av_avg), 'supply · '+r1(r.wd_w)+' wkday + '+r1(r.we_w)+' wkend', spark(rev(r.avArr),'#7c3aed',hi,null,r.av_avg))}
+    ${vital('⚡','Booking rate', r1(rate_w),'/day', pctOf(rate_w-rate_n,rate_n), 'efficiency · bookings per open day', spark(rev(rateArr),'#0891b2',hi,r1,rate_n))}
+  </div>`;
+  const vitalsCard = `<div class="card"><div class="sec-h"><span class="sec-num">🩺</span>Vital signs — ${r.clinic}</div>
+    <div class="sec-sub">Outcome + the three levers that explain it. Last ${winN} weeks · highlighted = ${wl} · dashed = norm/expected.</div>
+    ${winBar}${vitals}</div>`;
+  // 2) Collapsible drills — each a 2-layer story; the culprit lever auto-opens.
+  const drill=(icon,title,sub,body,openIt)=>`<details ${openIt?'open':''} style="margin-bottom:14px;border:1px solid var(--line);border-radius:12px;background:#fafbfc;">
+    <summary style="cursor:pointer;padding:13px 16px;font-size:14px;font-weight:700;color:#0f172a;">${icon} ${title} <span style="font-weight:500;color:#94a3b8;font-size:11.5px;">— ${sub}</span></summary>
+    <div style="padding:2px 14px 12px;">${body}</div></details>`;
+  const bm=bookTypeMix(r), reg=regCard(r);
+  const drills =
+      drill('🔎','Leads — demand drill','total → by channel → why the channel moved', `${leadsCard}${leadLossDrill(r)}`, r.cause==='leads')
+    + drill('🩺','Availability — supply drill','days → hours-of-day → scheduled vs shrunk slots', availCard, r.cause==='avail')
+    + drill('📋','Bookings — new vs repeat & rate','first-time vs returning, and bookings per open day', `${bm||''}${bookingRateCard(r)}`, r.cause==='l2b')
+    + drill('📐','Advanced — statistical model','regression: how leads & hours explain bookings', reg||'<div style="font-size:11.5px;color:#94a3b8;">Not enough history to fit a model for this clinic yet.</div>', false);
 
   return `<div class="card">
     <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
       <button onclick="setSelClinic('')" style="font-size:12px;padding:5px 12px;background:#f1f5f9;border:1px solid var(--line);border-radius:8px;cursor:pointer;">← Back to network RCA</button>
       <div><div style="font-size:18px;font-weight:800;">${r.clinic}</div><div style="font-size:11px;color:#94a3b8;">${r.city} · ${cityTier(r.city)} · ${r.mat} · ${wl}</div></div>
-      <div style="margin-left:auto;text-align:right;">${causePill(r.cause, r.mixWith)}<div style="font-size:11px;color:${r.mixWith?MIXCOL:m.col};margin-top:4px;max-width:280px;">${r.note||m.desc}</div></div>
+      <div style="margin-left:auto;text-align:right;">${causePill(r.cause, r.mixWith)}</div>
     </div>
-    ${tabBar}
   </div>
-  ${tabContent[ddTab]}`;
+  ${verdictBanner}
+  ${vitalsCard}
+  ${attribCard}
+  <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#94a3b8;margin:18px 0 8px;">Drill down — the culprit lever is open</div>
+  ${drills}`;
 }
 function renderOnline(){
   if(!JDATA.online) return '<div class="card">No online scope in data.json.</div>';
