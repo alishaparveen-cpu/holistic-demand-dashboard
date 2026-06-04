@@ -170,6 +170,8 @@ let leadsAvg=false;       // leads chart: show per-series average lines (toggle)
 let leadsGran=false;      // leads chart: granular sources (GMB/Google Ad/Organic/FB/Justdial) vs grouped
 let trendWin='all';       // trend window: number of most-recent weeks to show, or 'all'
 let ddTab='overview';     // deep-dive active tab: overview | leads | availability | bookings | stats
+let leadsHide=new Set();  // leads "by source" chart: series labels the user has clicked off
+function toggleLeadsLine(lbl){ lbl=decodeURIComponent(lbl); if(leadsHide.has(lbl)) leadsHide.delete(lbl); else leadsHide.add(lbl); render(); }
 function toggleLeadsAvg(){ leadsAvg=!leadsAvg; render(); }
 function toggleLeadsGran(){ leadsGran=!leadsGran; render(); }
 function setTrendWin(n){ trendWin=n; render(); }
@@ -689,38 +691,40 @@ function spark(vals, color, hiIdx, fmt, refVal){
 }
 // Multi-line sparkline — e.g. Total / GMB+Google / Practo leads on one chart so
 // you can see WHERE a lead gap came from. series=[{vals,color,label,width}].
-function sparkMulti(series, hiIdx, showAvg, labelMode){
+function sparkMulti(series, hiIdx, showAvg, labelMode, hide, toggle){
   labelMode = labelMode||'all';   // 'all' = label every point · 'hi' = only the highlighted week · 'none'
+  hide = hide||new Set();         // Set of series labels to hide · toggle = handler name for clickable legend
   const w=340,h=92,pad=12;
-  const all=series.flatMap(s=>s.vals.map(x=>x==null?0:x));
+  const vis=series.filter(s=>!hide.has(s.label));         // only visible series drive the chart + scale
+  const all=vis.flatMap(s=>s.vals.map(x=>x==null?0:x));
   const mn=Math.min(0,...all), mx=Math.max(1,...all), rng=(mx-mn)||1;
   const n=series[0].vals.length;
   const X=i=>pad+i/(n-1)*(w-2*pad), Y=v=>h-pad-(v-mn)/rng*(h-2*pad);
   // optional per-series average lines (only drawn when toggled on)
   let avgLines='';
-  if(showAvg){ avgLines=series.map(s=>{ const a=s.vals.map(x=>x==null?0:x); const m=a.reduce((x,y)=>x+y,0)/(a.length||1); const y=Y(m).toFixed(1);
+  if(showAvg){ avgLines=vis.map(s=>{ const a=s.vals.map(x=>x==null?0:x); const m=a.reduce((x,y)=>x+y,0)/(a.length||1); const y=Y(m).toFixed(1);
     return `<line x1="${pad}" y1="${y}" x2="${w-pad}" y2="${y}" stroke="${s.color}" stroke-width="1" stroke-dasharray="4 3" opacity="0.65"/><text x="${pad+2}" y="${(+y-2).toFixed(1)}" font-size="7.5" fill="${s.color}" opacity="0.9" font-weight="700">avg ${Math.round(m)}</text>`; }).join(''); }
-  // lines + dots
-  const lines=series.map(s=>{
+  // lines + dots (visible only)
+  const lines=vis.map(s=>{
     const a=s.vals.map(x=>x==null?0:x);
     const path=a.map((v,i)=>(i?'L':'M')+X(i).toFixed(1)+' '+Y(v).toFixed(1)).join(' ');
     const dots=a.map((v,i)=>`<circle cx="${X(i).toFixed(1)}" cy="${Y(v).toFixed(1)}" r="${i===hiIdx?3.4:1.9}" fill="${s.color}"/>`).join('');
     return `<path d="${path}" fill="none" stroke="${s.color}" stroke-width="${s.width||1.7}" stroke-linejoin="round"/>${dots}`;
   }).join('');
-  // value labels — per-column collision resolution so the 3 numbers never overlap:
-  // within each week, sort points top→bottom and stack labels with a min vertical gap.
+  // value labels — per-column collision resolution so the numbers never overlap (visible series only)
   const minGap=9; let labels='';
   for(let i=0;i<n;i++){
     if(labelMode==='none') break;
     if(labelMode==='hi' && i!==hiIdx) continue;
-    const items=series.map(s=>{ const v=s.vals[i]==null?0:s.vals[i]; return {color:s.color, v, y:Y(v), hi:i===hiIdx}; })
+    const items=vis.map(s=>{ const v=s.vals[i]==null?0:s.vals[i]; return {color:s.color, v, y:Y(v), hi:i===hiIdx}; })
                       .sort((a,b)=>a.y-b.y);
     let prev=-1e9;
     items.forEach(it=>{ let ly=it.y-4; if(ly<prev+minGap) ly=prev+minGap; prev=ly;
       labels+=`<text x="${X(i).toFixed(1)}" y="${ly.toFixed(1)}" font-size="8" fill="${it.color}" text-anchor="middle" font-weight="${it.hi?800:600}" style="paint-order:stroke;stroke:#fff;stroke-width:2.6px;stroke-linejoin:round;">${it.v}</text>`; });
   }
-  const legend=series.map(s=>{ const a=s.vals.map(x=>x==null?0:x);
-    return `<span style="font-size:10px;color:#475569;font-weight:600;margin-right:11px;white-space:nowrap;"><span style="display:inline-block;width:11px;height:3px;background:${s.color};vertical-align:middle;border-radius:2px;margin-right:4px;"></span>${s.label} <b style="color:${s.color};">${a[hiIdx]}</b></span>`; }).join('');
+  const legend=series.map(s=>{ const a=s.vals.map(x=>x==null?0:x), off=hide.has(s.label);
+    const click=toggle?`onclick="event.stopPropagation();${toggle}('${encodeURIComponent(s.label)}')" style="cursor:pointer;`:`style="`;
+    return `<span ${click}font-size:10px;color:#475569;font-weight:600;margin-right:11px;white-space:nowrap;opacity:${off?0.4:1};${off?'text-decoration:line-through;':''}"><span style="display:inline-block;width:11px;height:3px;background:${s.color};vertical-align:middle;border-radius:2px;margin-right:4px;"></span>${s.label} <b style="color:${s.color};">${a[hiIdx]}</b></span>`; }).join('');
   return `<div style="margin-bottom:3px;">${legend}</div><svg width="100%" viewBox="0 0 ${w} ${h+4}" style="overflow:visible;">${avgLines}${lines}${labels}</svg>`;
 }
 // Availability split — a clean stacked bar per week: weekday doctor-days (dark)
@@ -1335,8 +1339,8 @@ function renderDeepDive(r){
       {vals:rev(r.gmbArr), color:'#6366f1', label:'GMB+Google Ad', width:2},
       {vals:rev(r.orgArr), color:'#10b981', label:'Organic'},
       {vals:rev(r.prArr), color:'#f59e0b', label:'Practo'},
-      {vals:rev(r.fbArr.map((f,i)=>(f||0)+(r.jdArr[i]||0)+(r.othArr[i]||0))), color:'#94a3b8', label:'Others (FB/JD/…)'}], hi, leadsAvg),
-    'each source that adds up to Total · '+avgToggle);
+      {vals:rev(r.fbArr.map((f,i)=>(f||0)+(r.jdArr[i]||0)+(r.othArr[i]||0))), color:'#94a3b8', label:'Others (FB/JD/…)'}], hi, leadsAvg, 'all', leadsHide, 'toggleLeadsLine'),
+    '<b>click a source name</b> to show/hide it (e.g. isolate Organic) · '+avgToggle);
   const availTrend = trend('🩺 Availability — weekday vs weekend', availSplitChart(rev(r.wdArr), rev(r.weArr), hi, r.av_avg),
     'each bar = bookable doctor-days that week, split weekday (dark) + weekend (light) · number on top = total · dashed = norm');
   const schedTrend = hasRoster?trend('🗓️ Scheduled hrs', spark(rev(ros.hrs.map(x=>x==null?0:x)),'#0891b2',hi,null,rh_avg), 'roster bookable hours/week (planned)'):'';
