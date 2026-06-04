@@ -351,7 +351,7 @@ function parseL0(text){
   return { overallLeads:overall, fb:chLeads('FB'), google:chLeads('Google Search'), gmb:chLeads('GMB'), practo:chLeads('Practo') };
 }
 
-function parsePracto(rows){   // row-per-lead → PRACTO['City|Clinic'] = [weekly counts aligned to WEEKS]
+function parsePracto(rows){   // row-per-lead → PRACTO['City|Clinic'] = {leads:[12], booked:[12]} aligned to WEEKS
   const wkIndex={}; WEEKS.forEach((w,i)=>wkIndex[w.json]=i);
   const out={};
   for(let i=1;i<rows.length;i++){ const r=rows[i]; if(!r||r.length<9) continue;
@@ -361,12 +361,17 @@ function parsePracto(rows){   // row-per-lead → PRACTO['City|Clinic'] = [weekl
     const key=`${mon.getFullYear()}-${String(mon.getMonth()+1).padStart(2,'0')}-${String(mon.getDate()).padStart(2,'0')}`;
     const idx=wkIndex[key]; if(idx===undefined) continue;
     const clinic=(r[7]||'').trim(), city=(r[8]||'').trim(); if(!clinic) continue;
-    const k=city+'|'+clinic; (out[k]=out[k]||Array(WEEKS.length).fill(0))[idx]++;
+    const k=city+'|'+clinic; const o=out[k]=out[k]||{leads:Array(WEEKS.length).fill(0), booked:Array(WEEKS.length).fill(0)};
+    o.leads[idx]++;
+    const bts=(r[4]||'').trim(), ym=bts.match(/(\d{4})/);                         // Slot Booked TS — valid yr ⇒ booked
+    if(bts && !/1899/.test(bts) && ym && +ym[1]>=2000) o.booked[idx]++;
   }
   return out;
 }
-function practoArr(city,clinic){ const a=PRACTO[city+'|'+clinic]; if(!a) return Array(WEEKS.length).fill(0);
-  const b=a.slice(0,WEEKS.length); while(b.length<WEEKS.length) b.push(0); return b; }   // pad if sheet has fewer weeks
+function practoArr(city,clinic){ const a=PRACTO[city+'|'+clinic]; const arr=a&&a.leads?a.leads:(Array.isArray(a)?a:null); if(!arr) return Array(WEEKS.length).fill(0);
+  const b=arr.slice(0,WEEKS.length); while(b.length<WEEKS.length) b.push(0); return b; }   // pad if sheet has fewer weeks
+function practoBookedArr(city,clinic){ const a=PRACTO[city+'|'+clinic]; if(!a||!a.booked) return Array(WEEKS.length).fill(0);
+  const b=a.booked.slice(0,WEEKS.length); while(b.length<WEEKS.length) b.push(0); return b; }
 
 // ═══════════════ HELPERS ═══════════════
 const avg=a=>{ const v=a.filter(x=>x!=null); return v.length? v.reduce((x,y)=>x+y,0)/v.length : 0; };
@@ -1480,6 +1485,8 @@ function leadLossDrill(r){
   const dGmbP=gmb_n?Math.round((gmb_w-gmb_n)/gmb_n*100):0, dGadsP=gads_n?Math.round((gads_w-gads_n)/gads_n*100):0;
   // other sources — Practo, Organic, and a combined "Others" (FB + JustDial + misc)
   const practo=practoArr(r.city,r.clinic), pr_w=practo[W]||0, pr_n=avg(sl(practo)), dPrP=pr_n?Math.round((pr_w-pr_n)/pr_n*100):0;
+  const prBk=practoBookedArr(r.city,r.clinic), prBk_w=prBk[W]||0, prBk_n=avg(sl(prBk));    // Practo booked (Slot Booked TS)
+  const prConv=pr_w>0?Math.round(prBk_w/pr_w*100):null, hasPrBk=prBk.some(x=>x>0);
   const org_w=org[W]||0, org_n=avg(sl(org)), dOrgP=org_n?Math.round((org_w-org_n)/org_n*100):0;
   const fb=leadArr(r.city,r.clinic,'fb'), jd=leadArr(r.city,r.clinic,'justdial'), othRaw=leadArr(r.city,r.clinic,'others');
   const oth=othRaw.map((o,i)=>(o||0)+(fb[i]||0)+(jd[i]||0)); const oth_w=oth[W]||0, oth_n=avg(sl(oth)), dOthP=oth_n?Math.round((oth_w-oth_n)/oth_n*100):0;
@@ -1537,7 +1544,8 @@ function leadLossDrill(r){
       </div>
       ${(hasPracto||hasOther)?`<div style="background:#f0fdf4;border-radius:11px;padding:12px 14px;">
         <div style="font-size:13px;font-weight:800;color:#047857;margin-bottom:8px;">🌐 Practo · Organic · Others</div>
-        ${hasPracto?mini('Practo · '+pr_w+' ('+signed(dPrP,'%')+')', '#f59e0b', 'Practo profile leads · dashed = 4-wk avg', spark(rev(practo),'#f59e0b',hi,null,pr_n)):''}
+        ${hasPracto?mini('Practo leads · '+pr_w+' ('+signed(dPrP,'%')+')', '#f59e0b', 'Practo profile leads · dashed = 4-wk avg', spark(rev(practo),'#f59e0b',hi,null,pr_n)):''}
+        ${hasPrBk?mini('Practo booked · '+prBk_w+(prConv!=null?' ('+prConv+'% of leads)':''), '#ea580c', 'Practo leads with a slot booked · dashed = 4-wk avg', spark(rev(prBk),'#ea580c',hi,null,prBk_n)):''}
         ${mini('Organic · '+org_w+' ('+signed(dOrgP,'%')+')', '#10b981', 'SEO / direct (non-paid) · dashed = 4-wk avg', spark(rev(org),'#10b981',hi,null,org_n))}
         ${mini('Others · '+oth_w+' ('+signed(dOthP,'%')+')', '#94a3b8', 'FB + JustDial + misc · dashed = 4-wk avg', spark(rev(oth),'#94a3b8',hi,null,oth_n))}
       </div>`:''}
