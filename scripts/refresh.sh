@@ -21,9 +21,12 @@ ok=(); fail=()
 echo "── 1/3  Redshift: diagnostic (bookings · disposition · availability)"
 if python3 scripts/build_diagnostic.py; then ok+=("data_diagnostic.json"); else fail+=("diagnostic — is your AWS SSO session valid? run: aws sso login --profile redshift-data"); fi
 
-echo "── 2/3  Redshift: recent negative reviews + network total leads"
-if python3 scripts/build_reviews_neg.py; then ok+=("data_reviews_neg.json"); else fail+=("reviews_neg"); fi
+echo "── 2/4  Redshift: network total leads · GBP: live negative reviews"
 if python3 scripts/build_leads_total.py; then ok+=("data_leads_total.json"); else fail+=("leads_total"); fi
+# Negatives come LIVE from the Google Business Profile API (warehouse external_reviews ETL stopped 2026-05-06).
+[ -f "$HOME/.allo_gbp.env" ] && { set -a; . "$HOME/.allo_gbp.env"; set +a; }
+if [ -n "${GBP_REFRESH_TOKEN:-}" ] && python3 scripts/build_reviews_neg_gbp.py; then ok+=("data_reviews_neg.json (GBP)");
+elif python3 scripts/build_reviews_neg.py; then ok+=("data_reviews_neg.json (warehouse fallback)"); else fail+=("reviews_neg"); fi
 
 echo "── 3/4  Google Ads: city-level health + campaign roster/trends"
 for cf in "$HOME/.allo_ga.env" scripts/.ga_creds.env; do [ -f "$cf" ] && { set -a; . "$cf"; set +a; }; done
