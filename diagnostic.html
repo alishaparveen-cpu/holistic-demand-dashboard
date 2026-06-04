@@ -165,6 +165,7 @@ function expectedOf(arr, W){
 let causeF='all';         // 'all' | 'avail' | 'l2b' | 'leads' | 'mixed'
 let matF='all';           // 'all' | 'New' | 'Maturing' | 'Mature'
 let tierF='all';          // 'all' | 'T1' | 'T2'
+let cityF='all';          // 'all' | "<City>" — primary lens for city heads
 let selClinic='';         // "City|Clinic" — single-clinic deep-dive (empty = network)
 let leadsAvg=false;       // leads chart: show per-series average lines (toggle)
 let leadsGran=false;      // leads chart: granular sources (GMB/Google Ad/Organic/FB/Justdial) vs grouped
@@ -432,8 +433,10 @@ function setBase(b){ baseMode=b; render(); }
 function setCauseF(c){ causeF=c; render(); }
 function setMatF(m){ matF=m; render(); }
 function setTierF(t){ tierF=t; render(); }
+function setCityF(c){ cityF=c; if(selClinic && cityF!=='all' && selClinic.split('|')[0]!==cityF) selClinic=''; render(); }
 function setSelClinic(v){ selClinic=v; render(); window.scrollTo(0,0); }
-function passF(r){ // does a clinic row pass the tier + maturity filters?
+function passF(r){ // does a clinic row pass the city + tier + maturity filters?
+  if(cityF!=='all' && r.city!==cityF) return false;
   if(tierF!=='all' && cityTier(r.city)!==tierF) return false;
   if(matF!=='all' && r.mat!==matF) return false;
   return true;
@@ -446,10 +449,19 @@ function ctrlBar(R){
     <select onchange="setBase(this.value)" title="${BASE_OPTS.find(o=>o[0]===baseMode)?.[2]||''}" style="font-size:12px;border:1.5px solid #4f46e5;border-radius:7px;padding:4px 9px;background:#fff;cursor:pointer;font-weight:600;color:#4338ca;">
       ${BASE_OPTS.map(([v,l])=>`<option value="${v}" ${baseMode===v?'selected':''}>${l}</option>`).join('')}
     </select></div>`;
-  // clinic dropdown (all clinics with bookings, filtered by tier/mat)
+  // city dropdown — the primary lens for city heads (filters the network RCA + clinic list)
+  const cities=[...new Set(R.rows.map(r=>r.city))].sort();
+  const citySel=`<div style="display:flex;align-items:center;gap:6px;">
+    <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#94a3b8;">City</span>
+    <select onchange="setCityF(this.value)" style="font-size:12.5px;font-weight:700;border:1.5px solid ${cityF!=='all'?'#4f46e5':'var(--line)'};border-radius:7px;padding:4px 10px;background:${cityF!=='all'?'#eef2ff':'#fff'};color:${cityF!=='all'?'#4338ca':'#0f172a'};cursor:pointer;">
+      <option value="all" ${cityF==='all'?'selected':''}>All cities</option>
+      ${cities.map(c=>`<option value="${c}" ${cityF===c?'selected':''}>${c}</option>`).join('')}
+    </select></div>`;
+  // clinic dropdown (clinics with bookings, filtered by city/tier/mat)
   const clinicOpts=R.rows.filter(passF).sort((a,b)=>a.city.localeCompare(b.city)||a.clinic.localeCompare(b.clinic))
     .map(r=>`<option value="${r.city}|${r.clinic}" ${selClinic===r.city+'|'+r.clinic?'selected':''}>${r.city} › ${r.clinic}</option>`).join('');
   return `<div class="card" style="position:sticky;top:54px;z-index:10;padding:11px 16px;display:flex;align-items:center;gap:16px;flex-wrap:wrap;">
+    ${citySel}
     ${baseSel}
     ${seg('Tier',[['All','all'],['T1','T1'],['T2','T2']],tierF,'setTierF')}
     ${seg('Maturity',[['All','all'],['Mature','Mature'],['Maturing','Maturing'],['New','New']],matF,'setMatF')}
@@ -478,8 +490,8 @@ function render(){
   catch(e){ el.innerHTML=`<div class="loading-msg" style="color:#dc2626">RCA error: ${e.message}</div>`; console.error(e); }
 }
 
-function scopeRCA(R){   // apply Tier + Maturity filters and recompute the whole RCA on that subset
-  if(tierF==='all' && matF==='all') return R;
+function scopeRCA(R){   // apply City + Tier + Maturity filters and recompute the whole RCA on that subset
+  if(cityF==='all' && tierF==='all' && matF==='all') return R;
   const rows=R.rows.filter(passF);
   const A=aggCauses(rows);
   const netW=rows.reduce((s,r)=>s+r.bk_w,0), netPeak=rows.reduce((s,r)=>s+r.bk_peak,0), netAvg=rows.reduce((s,r)=>s+r.bk_avg,0);
@@ -546,7 +558,7 @@ function renderOffline(){
   const ctrl=ctrlBar(Rall);
   if(selClinic){ const [c,cl]=selClinic.split('|'); const row=Rall.rows.find(r=>r.city===c&&r.clinic===cl); return ctrl+(row?renderDeepDive(row):'<div class="card">Clinic not found.</div>'); }
   const R=scopeRCA(Rall), wl=WEEKS[wkIdx].label;
-  const fNote=(tierF!=='all'||matF!=='all')?`<div style="font-size:11px;color:#4338ca;margin-bottom:10px;">Scoped to <b>${[tierF!=='all'?tierF:'',matF!=='all'?matF:''].filter(Boolean).join(' · ')}</b> clinics (${R.rows.length}). Clear filters above for the full network.</div>`:'';
+  const fNote=(cityF!=='all'||tierF!=='all'||matF!=='all')?`<div style="font-size:11px;color:#4338ca;margin-bottom:10px;">Scoped to <b>${[cityF!=='all'?cityF:'',tierF!=='all'?tierF:'',matF!=='all'?matF:''].filter(Boolean).join(' · ')}</b> — ${R.rows.length} clinic${R.rows.length===1?'':'s'}. Clear filters above for the full network.</div>`:'';
   const dPeak=R.netW-R.netPeak, dAvg=R.netW-R.netAvg;
   const baseLbl=baseShort();
   const order=['avail','l2b','leads'];
