@@ -1321,7 +1321,12 @@ function renderDeepDive(r){
       ${drillHint?`<span style="color:#94a3b8;"> → see the <b>${drillHint}</b> drill below.</span>`:''}</div>
   </div>`;
   // 1) Four vital signs — outcome + the three levers (demand, supply, efficiency).
-  const rateArr = r.bkArr.map((b,i)=> (r.avArr[i]>0 ? b/r.avArr[i] : 0));
+  // booking-rate split: weekday vs weekend bookings per OPEN day (rounded for clean labels)
+  const _bkWe=r.bkWeArr||[];
+  const wdRateArr = r.bkArr.map((b,i)=>{ const d=(r.avArr[i]||0)-(r.weArr[i]||0); return d>0?Math.round((b-(_bkWe[i]||0))/d*10)/10:0; });
+  const weRateArr = r.bkArr.map((b,i)=>{ const d=r.weArr[i]||0; return d>0?Math.round((_bkWe[i]||0)/d*10)/10:0; });
+  const wd_rate_w=(r.av_w-r.we_w)>0?(r.bk_w-(_bkWe[wkIdx]||0))/(r.av_w-r.we_w):0;
+  const we_rate_w=r.we_w>0?(_bkWe[wkIdx]||0)/r.we_w:0;
   const vital=(icon,title,val,unit,dpct,sub,svg)=>`<div class="card" style="margin:0;">
     <div style="font-size:12px;font-weight:700;color:#0f172a;">${icon} ${title}</div>
     <div style="display:flex;align-items:baseline;gap:8px;margin:1px 0 1px;">
@@ -1332,7 +1337,7 @@ function renderDeepDive(r){
     ${vital('📅','Bookings', r.bk_w,'', gapPct, 'vs '+exp+' expected', spark(rev(r.bkArr),'#4f46e5',hi,null,r.bkBase))}
     ${vital('🔎','Leads', r.ld_w,'', Math.round(r.dLeadPct), 'demand · vs '+Math.round(r.ld_avg)+' norm', spark(rev(r.ldArr),'#0ea5e9',hi,null,r.ld_avg))}
     ${vital('🩺','Availability', r1(r.av_w),' d', pctOf(r.dAct,r.av_avg), 'supply · '+r1(r.wd_w)+' wkday + '+r1(r.we_w)+' wkend', spark(rev(r.avArr),'#7c3aed',hi,null,r.av_avg))}
-    ${vital('⚡','Booking rate', r1(rate_w),'/day', pctOf(rate_w-rate_n,rate_n), 'efficiency · bookings per open day', spark(rev(rateArr),'#0891b2',hi,r1,rate_n))}
+    ${vital('⚡','Booking rate', r1(rate_w),'/day', pctOf(rate_w-rate_n,rate_n), 'efficiency · wkday '+r1(wd_rate_w)+' · wkend '+r1(we_rate_w)+' per open day', sparkMulti([{vals:rev(wdRateArr),color:'#7c3aed',label:'Weekday',width:1.9},{vals:rev(weRateArr),color:'#db2777',label:'Weekend'}], hi, false))}
   </div>`;
   const vitalsCard = `<div class="card"><div class="sec-h"><span class="sec-num">🩺</span>Vital signs — ${r.clinic}</div>
     <div class="sec-sub">Outcome + the three levers that explain it. Last ${winN} weeks · highlighted = ${wl} · dashed = norm/expected.</div>
