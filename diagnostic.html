@@ -57,7 +57,7 @@ code{background:#f1f5f9;padding:1px 5px;border-radius:4px;font-size:11px;}
     <a href="channel.html" class="nav-link">Channel</a>
     <a href="efficiency.html" class="nav-link">Efficiency</a>
     <a href="comparison.html" class="nav-link">Comparison →</a>
-    <a href="weekly-report.html" class="nav-link">Weekly Report</a><button onclick="location.reload()" title="Reset all filters on this page" style="margin-left:12px;font-size:11.5px;font-weight:600;color:#4f46e5;background:#eef2ff;border:1px solid #c7d2fe;border-radius:8px;padding:3px 10px;cursor:pointer;white-space:nowrap;">↺ Reset filters</button>
+    <a href="weekly-report.html" class="nav-link">Weekly Report</a><button onclick="location.reload()" title="Reset all filters on this page" style="margin-left:12px;font-size:11.5px;font-weight:600;color:#4f46e5;background:#eef2ff;border:1px solid #c7d2fe;border-radius:8px;padding:3px 10px;cursor:pointer;white-space:nowrap;">↺ Reset filters</button><button id="refreshBtn" onclick="showRefreshHelp()" title="How to refresh this week's data" style="margin-left:8px;font-size:11.5px;font-weight:600;color:#0f766e;background:#ecfeff;border:1px solid #99f6e4;border-radius:8px;padding:3px 10px;cursor:pointer;white-space:nowrap;">↻ Refresh data</button>
     <div class="ml-2">
       <div class="font-bold text-base">Weekly Demand RCA</div>
       <div class="text-xs text-slate-400">Where did bookings break — leads, availability, or conversion?</div>
@@ -166,6 +166,22 @@ let causeF='all';         // 'all' | 'avail' | 'l2b' | 'leads' | 'mixed'
 let matF='all';           // 'all' | 'New' | 'Maturing' | 'Mature'
 let tierF='all';          // 'all' | 'T1' | 'T2'
 let cityF='all';          // 'all' | "<City>" — primary lens for city heads
+let dataPulled='';        // date the diagnostic data was last refreshed (from data_diagnostic.json _meta)
+function updateRefreshBadge(){ const b=document.getElementById('refreshBtn'); if(b&&dataPulled) b.textContent='↻ Data: '+dataPulled; }
+function showRefreshHelp(){
+  const when=dataPulled?`Current data was pulled <b>${dataPulled}</b>. `:'';
+  const ov=document.createElement('div');
+  ov.style.cssText='position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;';
+  ov.onclick=()=>ov.remove();
+  ov.innerHTML=`<div onclick="event.stopPropagation()" style="background:#fff;border-radius:14px;max-width:520px;padding:22px 24px;box-shadow:0 20px 60px rgba(0,0,0,.3);">
+    <div style="font-size:16px;font-weight:800;margin-bottom:8px;">↻ Refresh this week's data</div>
+    <div style="font-size:12.5px;color:#475569;line-height:1.6;margin-bottom:12px;">${when}The dashboard is a static site, so the weekly pulls run from the repo. One command rebuilds bookings, disposition, availability, negative reviews and Google Ads, then deploys:</div>
+    <div style="font-family:ui-monospace,monospace;font-size:12.5px;background:#0f172a;color:#e2e8f0;border-radius:8px;padding:11px 13px;margin-bottom:8px;">bash scripts/refresh.sh</div>
+    <div style="font-size:11px;color:#94a3b8;line-height:1.6;">First time: <code>aws sso login --profile redshift-data</code> (Redshift pulls) + the 4 GOOGLE_ADS_* keys in <code>scripts/.ga_creds.env</code> (ads pull). It also runs automatically every Monday morning.</div>
+    <div style="text-align:right;margin-top:14px;"><button onclick="this.closest('div').parentElement.remove()" style="font-size:12px;font-weight:600;background:#4f46e5;color:#fff;border:none;border-radius:8px;padding:6px 16px;cursor:pointer;">Got it</button></div>
+  </div>`;
+  document.body.appendChild(ov);
+}
 let selClinic='';         // "City|Clinic" — single-clinic deep-dive (empty = network)
 let leadsAvg=false;       // leads chart: show per-series average lines (toggle)
 let leadsGran=false;      // leads chart: granular sources (GMB/Google Ad/Organic/FB/Justdial) vs grouped
@@ -1569,7 +1585,7 @@ async function init(){
     JDATA=await jr.json();
     // SDATA now comes from Redshift (data_diagnostic.json); the Google Sheet is a fallback only.
     let diagOk=false;
-    if(dg.ok){ try{ SDATA=buildSDataFromDiag(await dg.json()); diagOk=Object.keys(SDATA).length>0; }catch(e){ console.warn('data_diagnostic.json parse failed',e); } }
+    if(dg.ok){ try{ const _dj=await dg.json(); dataPulled=(_dj._meta&&_dj._meta.pulled)||''; SDATA=buildSDataFromDiag(_dj); diagOk=Object.keys(SDATA).length>0; }catch(e){ console.warn('data_diagnostic.json parse failed',e); } }
     if(!diagOk){ if(sr.ok){ SDATA=parseSheet(parseCSV(await sr.text())); console.warn('fell back to demand-tracker sheet'); } else { console.warn('no SDATA source available'); } }
     if(lr.ok){ L0=parseL0(await lr.text()); } else { console.warn('L0 sheet failed'); }
     if(pr.ok){ PRACTO=parsePracto(parseCSV(await pr.text())); } else { console.warn('Practo sheet failed'); }
@@ -1582,7 +1598,7 @@ async function init(){
     if(nr.ok){ try{ NEGREV=await nr.json(); }catch(_){ } }
     const wSel=document.getElementById('weekSelect');
     WEEKS.forEach((w,i)=>{ const o=document.createElement('option'); o.value=i; o.textContent=w.label+(i===0?' (latest)':''); if(i===0)o.selected=true; wSel.appendChild(o); });
-    render();
+    render(); updateRefreshBadge();
   }catch(e){
     document.getElementById('mainContent').innerHTML=`<div class="loading-msg" style="color:#dc2626">Error: ${e.message}</div>`;
     console.error(e);
