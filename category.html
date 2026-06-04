@@ -310,6 +310,7 @@ function clinCity(key){ const i = key.indexOf('_'); return i>-1 ? key.slice(0,i)
 function effectiveCities(){
   let cs = (S().cities||[]).filter(c => c && c!=='Online');
   if (activeTier !== 'ALL') cs = cs.filter(c => cityTier(c)===activeTier);
+  if (geoCitySel.size) cs = cs.filter(c => geoCitySel.has(c));   // header multiselect (source of truth)
   if (cityInc.size) cs = cs.filter(c => cityInc.has(c));
   if (cityExc.size) cs = cs.filter(c => !cityExc.has(c));
   return cs;
@@ -318,6 +319,8 @@ function effectiveClinicKeys(){
   seedMat();
   let ks = (S().clinics||[]).slice();
   if (activeTier !== 'ALL') ks = ks.filter(k => cityTier(clinCity(k))===activeTier);
+  if (geoCitySel.size)   ks = ks.filter(k => geoCitySel.has(clinCity(k)));   // header city multiselect
+  if (geoClinicSel.size) ks = ks.filter(k => geoClinicSel.has(k));           // header clinic multiselect
   if (cityInc.size) ks = ks.filter(k => cityInc.has(clinCity(k)));
   if (cityExc.size) ks = ks.filter(k => !cityExc.has(clinCity(k)));
   if (clinInc.size) ks = ks.filter(k => clinInc.has(k));
@@ -326,13 +329,13 @@ function effectiveClinicKeys(){
   return ks;
 }
 function geoMode(){
-  if (clinInc.size || clinExc.size || activeMat!=='ALL') return 'clinic';
-  if (activeTier!=='ALL' || cityInc.size || cityExc.size) return 'city';
+  if (clinInc.size || clinExc.size || geoClinicSel.size || activeMat!=='ALL') return 'clinic';
+  if (activeTier!=='ALL' || cityInc.size || cityExc.size || geoCitySel.size) return 'city';
   return 'none';
 }
 function aggCats(weekKey, keys, src){
   const scope = S(), table = scope[src]?.[weekKey] || {};
-  const o = { total:0, by_cat:{ STI:0,'ED+':0,'PE+':0,'ED+PE+':0,NSSD:0,oth:0 } };
+  const o = { total:0, by_cat:{ STI:0,'ED+':0,'PE+':0,'ED+PE+':0,NSSD:0,MH:0,oth:0 } };
   for (const k of keys){ const d = table[k]; if (!d) continue; o.total += d.total||0; for (const c in o.by_cat) o.by_cat[c] += d[c]||0; }
   return o;
 }
