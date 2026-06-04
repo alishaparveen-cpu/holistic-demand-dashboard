@@ -135,18 +135,20 @@ def main():
         if qi.get("creativeQualityScore") == "BELOW_AVERAGE": a['ad_bad'] += imp
         if qi.get("postClickQualityScore") == "BELOW_AVERAGE": a['lp_bad'] += imp
 
-    # 3) ALL enabled search campaigns (last 7 days) → per-city roster: impressions, clicks, CTR, spend, IS
+    # 3) ALL enabled search campaigns by WEEK (last ~8 weeks) → per-city roster + weekly trend
     crows = gaql(token, c, f"""
-      SELECT campaign.name, metrics.impressions, metrics.clicks, metrics.cost_micros,
-        metrics.search_impression_share
+      SELECT campaign.name, segments.week, metrics.impressions, metrics.clicks,
+        metrics.cost_micros, metrics.search_impression_share
       FROM campaign
       WHERE campaign.advertising_channel_type = 'SEARCH' AND campaign.status = 'ENABLED'
-        AND segments.date BETWEEN '{ymd(today - datetime.timedelta(days=7))}' AND '{ymd(today)}'""")
-    camps = defaultdict(lambda: defaultdict(lambda: {'impr':0,'clicks':0,'cost':0,'is':None}))
+        AND segments.date BETWEEN '{ymd(today - datetime.timedelta(days=63))}' AND '{ymd(today)}'
+      ORDER BY campaign.name, segments.week""")
+    # camps[city][name][week] = metrics
+    camps = defaultdict(lambda: defaultdict(lambda: defaultdict(lambda: {'impr':0,'clicks':0,'cost':0,'is':None})))
     for r in crows:
         name = r["campaign"]["name"]; cy = city_of_any(name)
         if not cy: continue
-        m = r.get("metrics", {}); a = camps[cy][name]
+        wk = r.get("segments", {}).get("week"); m = r.get("metrics", {}); a = camps[cy][name][wk]
         a['impr'] += int(m.get("impressions",0) or 0); a['clicks'] += int(m.get("clicks",0) or 0)
         a['cost'] += int(m.get("costMicros",0) or 0)/1e6
         if m.get("searchImpressionShare") is not None: a['is'] = float(m["searchImpressionShare"])
@@ -182,13 +184,27 @@ def main():
         p = prev.get(city, {})
         g['qs_prev'] = p.get('qs'); g['ad_rel_drag_prev'] = p.get('ad_rel_drag'); g['lp_drag_prev'] = p.get('lp_drag')
         g['suggestion'] = derive_suggestion(g)
-        # full campaign roster for the city (last 7 days) — impressions, clicks, CTR, spend, IS
-        g['campaigns'] = sorted([
-            {'name': short_campaign(n, city), 'impr': v['impr'], 'clicks': v['clicks'],
-             'ctr': round(v['clicks']/v['impr'],4) if v['impr'] else 0,
-             'cost': round(v['cost'],0), 'is': round(v['is'],4) if v['is'] is not None else None}
-            for n, v in camps.get(city, {}).items()
-        ], key=lambda x: -x['impr'])
+        # full campaign roster for the city — latest complete week + an 8-week trend per campaign
+        def is_complete(wk):
+            try: return (datetime.date.fromisoformat(wk) + datetime.timedelta(days=7)) <= today
+            except Exception: return True
+        def camp_record(n, weeks):
+            wks = [w for w in sorted(weeks.keys()) if is_complete(w)][-8:]
+            last = weeks[wks[-1]] if wks else {'impr':0,'clicks':0,'cost':0,'is':None}
+            return {
+                'name': short_campaign(n, city),
+                'impr': last['impr'], 'clicks': last['clicks'],
+                'ctr': round(last['clicks']/last['impr'],4) if last['impr'] else 0,
+                'cost': round(last['cost'],0), 'is': round(last['is'],4) if last['is'] is not None else None,
+                'trend': {
+                    'wk': wks,
+                    'impr':   [weeks[w]['impr'] for w in wks],
+                    'clicks': [weeks[w]['clicks'] for w in wks],
+                    'ctr':    [round(weeks[w]['clicks']/weeks[w]['impr'],3) if weeks[w]['impr'] else 0 for w in wks],
+                },
+            }
+        g['campaigns'] = sorted([camp_record(n, weeks) for n, weeks in camps.get(city, {}).items()],
+                                key=lambda x: -x['impr'])
         res[city] = g
 
     json.dump(res, open(OUT,'w'), separators=(',',':'))
