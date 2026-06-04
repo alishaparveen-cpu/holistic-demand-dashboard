@@ -55,29 +55,35 @@ def main():
     loc_by = { k.split("|")[1].strip().lower(): k for k in diag if k!="_meta" }
     D = {"_meta":{"source":"Google Business Profile reviews API (live) · rating<=3 · since "+CUTOFF,
                   "note":"Replaces warehouse external_reviews ETL (stopped 2026-05-06)."}}
-    nrev = 0
+    nrev = 0; flat = []
     for L in list_locations(at):
         m = re.search(r"Allo Health,?\s*([^-–|]+)", L.get("title",""))
         if not m: continue
         nm = m.group(1).strip().lower()
-        key = loc_by.get(nm) or next((v for kk,v in loc_by.items() if kk==nm or kk in nm or nm in kk), None)
+        key = loc_by.get(nm)                      # EXACT locality match only — substring matching cross-assigns
         if not key: continue
         loc = L["name"].split("/")[-1]
-        negs = []
         for rv in reviews(ACCOUNT, loc, at):
             dt = rv.get("createTime","")[:10]
             if dt < CUTOFF: continue
             rating = STAR.get(rv.get("starRating"), 5)
             if rating > 3: continue
-            negs.append({"dt":dt, "rating":rating,
+            flat.append((key, {"dt":dt, "rating":rating,
                          "author":(rv.get("reviewer") or {}).get("displayName",""),
                          "replied":1 if rv.get("reviewReply") else 0,
-                         "txt":clean(rv.get("comment",""))})
-        if negs:
-            negs.sort(key=lambda x:x["dt"], reverse=True); D[key]=negs; nrev += len(negs)
-            print(f"  {key}: {len(negs)} negative(s) · latest {negs[0]['dt']}", flush=True)
+                         "txt":clean(rv.get("comment",""))}))
+    # De-duplicate reviews cross-posted to multiple clinic listings (same reviewer + date + text):
+    # keep the copy on the listing the OWNER REPLIED to (the engaged/primary one), else the first.
+    flat.sort(key=lambda kr: -kr[1]["replied"])
+    seen = set()
+    for key, rv in flat:
+        sig = (rv["author"], rv["dt"], rv["txt"][:80])
+        if sig in seen: continue
+        seen.add(sig); D.setdefault(key, []).append(rv); nrev += 1
+    for key in D:
+        if key != "_meta": D[key].sort(key=lambda x: x["dt"], reverse=True)
     json.dump(D, open(os.path.join(ROOT,"data_reviews_neg.json"),"w"), separators=(",",":"))
-    print(f"data_reviews_neg.json · {len([k for k in D if k!='_meta'])} clinics · {nrev} negative reviews")
+    print(f"data_reviews_neg.json · {len([k for k in D if k!='_meta'])} clinics · {nrev} negative reviews (deduped)")
 
 if __name__ == "__main__":
     main()
