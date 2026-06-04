@@ -151,7 +151,7 @@ const HOD_HOURS=[9,10,11,12,13,14,15,16,17,18,19,20,21];   // hour-of-day bucket
 function rosterArr(city,clinic){ return ROSTER[city+'|'+clinic] || {hrs:Array(WEEKS.length).fill(null), we_hrs:Array(WEEKS.length).fill(null), dow:Array(WEEKS.length).fill(null).map(()=>Array(7).fill(0)), hod:Array(WEEKS.length).fill(null).map(()=>Array(HOD_HOURS.length).fill(0)), shr:{sched:Array(WEEKS.length).fill(0),shrunk:Array(WEEKS.length).fill(0),avail:Array(WEEKS.length).fill(0)}}; }
 let scope='offline';      // 'offline' | 'online'
 let wkIdx=0;              // selected week index (0 = latest)
-let baseMode='peak';      // which baseline "Expected" is measured against (see BASE_OPTS)
+let baseMode='avg8';      // which baseline "Expected" is measured against (see BASE_OPTS) — default 8-wk
 // Baseline options for the comparison dropdown. Each defines how "Expected" is
 // computed from the prior weeks (newest-first arrays, W = selected week index)
 // and the window used for the leads/availability dimension baselines.
@@ -509,6 +509,8 @@ function setScope(s){ scope=s; document.getElementById('scOffline').classList.to
 function setWeek(i){ wkIdx=i; render(); }
 function setBase(b){ baseMode=b; render(); }
 function setCauseF(c){ causeF=c; render(); }
+// does a clinic row match the active Cause filter? (used by the city/clinic landing cards)
+function causeMatch(r){ if(causeF==='all') return true; if(causeF==='mixed') return !!r.mixWith; return r.cause===causeF; }
 function setMatF(m){ matF=m; render(); }
 function setTierF(t){ tierF=t; render(); }
 function setSelClinic(v){ selClinic=v; diagStep=null; render(); window.scrollTo(0,0); }
@@ -631,7 +633,7 @@ function miniClinicCard(r){
 // City-head landing: the scoped clinics ranked worst-first by new-patient booking drop, click to drill.
 function cityOverview(R){
   const W=wkIdx;
-  const list=R.rows.map(r=>{ const nw=r.bkNewArr||[]; const new_w=nw[W]||0, new_n=avg(nw.slice(W+1,W+6)); const dN=new_w-Math.round(new_n);
+  const list=R.rows.filter(causeMatch).map(r=>{ const nw=r.bkNewArr||[]; const new_w=nw[W]||0, new_n=expectedOf(nw, W); const dN=new_w-Math.round(new_n);
     const dNp=new_n>0?Math.round((new_w-new_n)/new_n*100):0; return {r,new_w,new_n,dN,dNp}; }).sort((a,b)=>a.dN-b.dN);
   const isAff=x=> x.dN<=-2 || (x.new_n>0 && (x.new_w-x.new_n)/x.new_n<=-0.2);
   const affected=list.filter(isAff);
@@ -648,7 +650,7 @@ function cityOverview(R){
 // All-cities landing: each city's new-patient bookings vs norm, worst-first. Click a city to see its clinics.
 function cityRollup(R){
   const W=wkIdx, byCity={};
-  R.rows.forEach(r=>{ const c=r.city, nw=r.bkNewArr||[], new_w=nw[W]||0, new_n=avg(nw.slice(W+1,W+6));
+  R.rows.filter(causeMatch).forEach(r=>{ const c=r.city, nw=r.bkNewArr||[], new_w=nw[W]||0, new_n=expectedOf(nw, W);
     if(!byCity[c]) byCity[c]={city:c,new_w:0,new_n:0,bk_w:0,n:0,aff:0,newArr:Array(WEEKS.length).fill(0)};
     const o=byCity[c]; o.new_w+=new_w; o.new_n+=new_n; o.bk_w+=r.bk_w; o.n++;
     for(let i=0;i<WEEKS.length;i++) o.newArr[i]+=(nw[i]||0);
