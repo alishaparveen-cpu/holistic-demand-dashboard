@@ -948,16 +948,22 @@ function groupBars(series, hi, fmt, normVal, weeks){
 // Per-day-of-week scheduled-hours bars for the selected week. Each day is a bar
 // filled to its actual scheduled hours; the dashed marker is that day's recent
 // norm — so a day the doctor didn't sit (or got shrunk) is obvious.
-function dayBarsChart(wk, norm){
+// Day-by-day roster: each bar = SCHEDULED bookable hours (striped) with the estimated
+// BOOKABLE-AFTER-SHRINKAGE portion solid at the bottom (scheduled × (1 − week shrink%)).
+// The striped gap on top = hours the doctor blocked. shrink = week-level fraction (0–1).
+function dayBarsChart(wk, norm, shrink){
+  shrink=Math.max(0,Math.min(0.95, shrink||0));
   const days=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
   const track=58, mx=Math.max(1,...wk.map(x=>x||0),...norm.map(x=>x||0));
   return `<div style="display:flex;gap:6px;align-items:flex-end;">${days.map((d,i)=>{
     const h=wk[i]||0, nh=norm[i]||0, isWe=i>=5, col=isWe?'#a855f7':'#7c3aed';
-    const fillH=Math.round(h/mx*track), normH=Math.round(nh/mx*track);
+    const actH=h*(1-shrink);
+    const schedPx=Math.round(h/mx*track), actPx=Math.round(actH/mx*track), normH=Math.round(nh/mx*track);
     return `<div style="flex:1;text-align:center;">
-      <div style="font-size:9.5px;font-weight:700;color:${h?col:'#cbd5e1'};margin-bottom:2px;">${h?h+'h':'0'}</div>
+      <div style="font-size:9.5px;font-weight:700;color:${h?col:'#cbd5e1'};margin-bottom:2px;">${h?h+'h':'0'}${(h&&shrink>0.02)?`<span style="font-size:8px;font-weight:600;color:#94a3b8;"> →${r1(actH)}</span>`:''}</div>
       <div style="position:relative;height:${track}px;background:#f1f5f9;border-radius:3px;">
-        <div style="position:absolute;bottom:0;left:0;right:0;height:${fillH}px;background:${col};border-radius:3px;"></div>
+        <div title="scheduled ${r1(h)}h" style="position:absolute;bottom:0;left:0;right:0;height:${schedPx}px;border-radius:3px;background:repeating-linear-gradient(135deg,${col}40,${col}40 3px,${col}14 3px,${col}14 6px);"></div>
+        <div title="bookable after shrinkage ≈ ${r1(actH)}h" style="position:absolute;bottom:0;left:0;right:0;height:${actPx}px;background:${col};border-radius:3px;"></div>
         ${nh>0.3?`<div title="norm ${r1(nh)}h" style="position:absolute;bottom:${normH}px;left:-1px;right:-1px;border-top:1.5px dashed #64748b;"></div>`:''}
       </div>
       <div style="font-size:9px;color:${isWe?'#a855f7':'#94a3b8'};font-weight:${isWe?700:500};margin-top:3px;">${d}</div>
@@ -1501,10 +1507,17 @@ function renderDeepDive(r){
   const hasHod = hodWk && hodWk.some(x=>x>0);
   const dayBlock = hasDow ? `
     <div style="margin-top:10px;">
-      <div style="font-size:11px;font-weight:700;color:#0f172a;margin-bottom:1px;">This week, day by day <span style="font-weight:500;color:#94a3b8;">— scheduled bookable hours</span></div>
-      <div style="font-size:10px;color:#94a3b8;margin-bottom:7px;"><b>Why this matters:</b> demand isn't flat across the week — losing a day patients want (often weekends) costs more bookings than a quiet day. Each bar = hours the doctor was bookable that day · dashed line = that day's recent norm.</div>
-      ${dayBarsChart(dowWk, dowNorm)}
-      ${zeroDays.length?`<div style="font-size:10.5px;color:#dc2626;margin-top:7px;"><b>No cover on ${zeroDays.join(', ')}</b> this week — ${zeroDays.length>1?'days':'a day'} the clinic normally sits. That's where the lost slots are.</div>`:'<div style="font-size:10.5px;color:#059669;margin-top:7px;">Every usual day had some cover this week.</div>'}
+      <div style="font-size:11px;font-weight:700;color:#0f172a;margin-bottom:1px;">This week, day by day <span style="font-weight:500;color:#94a3b8;">— scheduled vs actually-bookable hours</span></div>
+      <div style="font-size:10px;color:#94a3b8;margin-bottom:7px;"><b>Why this matters:</b> demand isn't flat across the week — losing a day patients want (often weekends) costs more bookings than a quiet day. <b>Solid</b> = hours actually bookable after the doctor blocked slots · <b>striped top</b> = scheduled but blocked (shrinkage) · dashed line = that day's recent norm.</div>
+      <div style="font-size:9.5px;color:#475569;margin-bottom:5px;display:flex;gap:14px;flex-wrap:wrap;">
+        <span><span style="display:inline-block;width:11px;height:9px;background:#7c3aed;border-radius:2px;vertical-align:middle;margin-right:4px;"></span>Bookable (after shrinkage)</span>
+        <span><span style="display:inline-block;width:11px;height:9px;border-radius:2px;vertical-align:middle;margin-right:4px;background:repeating-linear-gradient(135deg,#7c3aed40,#7c3aed40 3px,#7c3aed14 3px,#7c3aed14 6px);"></span>Scheduled but blocked</span>
+      </div>
+      ${dayBarsChart(dowWk, dowNorm, (ros.shr&&ros.shr.sched&&ros.shr.sched[wkIdx]>0)?((ros.shr.shrunk[wkIdx]||0)/ros.shr.sched[wkIdx]):0)}
+      ${(()=>{ const sc=(ros.shr&&ros.shr.sched&&ros.shr.sched[wkIdx])||0, sh=(ros.shr&&ros.shr.shrunk&&ros.shr.shrunk[wkIdx])||0, p=sc?Math.round(sh/sc*100):0;
+        return p>=8 ? `<div style="font-size:10.5px;color:#d97706;margin-top:7px;">⚠ The doctor blocked <b>~${p}%</b> of scheduled slots this week — so actual bookable time was below the schedule shown. <span style="color:#94a3b8;">(week-level shrinkage applied evenly across days — exact per-day split isn't tracked.)</span></div>`
+          : '<div style="font-size:10.5px;color:#059669;margin-top:7px;">Low shrinkage — actual bookable time closely matched the schedule.</div>'; })()}
+      ${zeroDays.length?`<div style="font-size:10.5px;color:#dc2626;margin-top:4px;"><b>No cover on ${zeroDays.join(', ')}</b> this week — ${zeroDays.length>1?'days':'a day'} the clinic normally sits. That's where the lost slots are.</div>`:''}
     </div>
     ${hasHod?`<div style="margin-top:12px;">
       <div style="font-size:11px;font-weight:700;color:#0f172a;margin-bottom:1px;">By hour of day <span style="font-weight:500;color:#94a3b8;">— when was the clinic actually open?</span></div>
@@ -1723,9 +1736,12 @@ function renderDeepDive(r){
   // compact stat chip for the always-visible overview row (number + delta + tiny sparkline)
   const vchip=(icon,label,val,suf,delta,sub,chart)=>{
     const dt=(delta!=null && !isNaN(delta)) ? `<span style="font-size:11.5px;font-weight:800;color:${dCol(delta)};">${delta>0?'+':''}${delta}%</span>` : '';
-    return `<div class="vchip"><div class="vc-l">${icon} ${label}</div>
+    const zid='z'+(_zoomSeq++); _zoomCharts[zid]={title:icon+' '+label+' — '+r.clinic, sub:sub+' · last '+winN+' weeks · latest '+wl, svg:chart||'', weeks:weeksRow};
+    return `<div class="vchip" style="position:relative;">
+      <button onclick="zoomTrend('${zid}')" title="Zoom" style="position:absolute;top:6px;right:6px;border:1px solid var(--line);background:#fff;border-radius:6px;width:21px;height:21px;cursor:pointer;font-size:11px;line-height:1;color:#94a3b8;padding:0;z-index:2;">⛶</button>
+      <div class="vc-l">${icon} ${label}</div>
       <div style="display:flex;align-items:baseline;gap:6px;flex-wrap:wrap;"><span class="vc-v">${val}${suf?`<span style="font-size:12px;font-weight:600;color:#94a3b8;"> ${suf}</span>`:''}</span>${dt}</div>
-      <div style="font-size:9.5px;color:#94a3b8;margin:1px 0 5px;">${sub}</div>${chart||''}</div>`; };
+      <div style="font-size:9.5px;color:#94a3b8;margin:1px 0 5px;">${sub}</div>${chart||''}${wkAxisRow}</div>`; };
   // a collapsible step: header shows title + an inline at-a-glance stat even when closed
   const acc=(n,icon,title,sub,col,stat,body,open)=>`<details class="accstep"${open?' open':''}>
     <summary><span class="stepbadge" style="background:${col||'#4f46e5'};">${n}</span>
@@ -1739,6 +1755,7 @@ function renderDeepDive(r){
   const l2b_w=l2bArr[wkIdx], b2d_w=b2dArr[wkIdx];
   // OVERVIEW STRIP — six at a glance in a 3×2 grid; details live in the tabs below
   const ov = `<div class="card" style="margin-bottom:12px;">${winBar}
+    <div style="font-size:10.5px;color:#94a3b8;margin:0 0 9px;">📅 Trailing <b>${winN}</b> weeks · ${WEEKS[Math.min(wkIdx+winN-1,WEEKS.length-1)].label} → <b>${wl}</b> · chart dates are week-ending · click ⛶ on any chart to zoom.</div>
     <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;">
       ${vchip('🆕','New bookings', new_w,'', newPct, 'first-time · vs '+r1(new_n)+' norm', spark(rev(r.bkNewArr),'#4f46e5',hi,null,new_n))}
       ${vchip('📅','All SC bookings', r.bk_w,'', gapPct, 'new+repeat · vs '+exp+' exp', spark(rev(r.bkArr),'#6366f1',hi,null,r.bkBase))}
