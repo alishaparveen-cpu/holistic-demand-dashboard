@@ -1063,36 +1063,45 @@ function marketingVsOpsCard(r){
 function funnelCard(r){
   const W=wkIdx;
   const ld=r.ld_w||0, bk=r.bk_w||0, done=(r.bkDoneArr&&r.bkDoneArr[W])||0;
+  const newbk=(r.bkNewArr&&r.bkNewArr[W])||0, repbk=Math.max(0,bk-newbk);
   const res=(r.bkReschedArr&&r.bkReschedArr[W])||0, mis=(r.bkMissedArr&&r.bkMissedArr[W])||0, can=(r.bkCancelledArr&&r.bkCancelledArr[W])||0;
   const pend=Math.max(0, bk-done-res-mis-can);
   if(bk<=0) return '';
-  const l2b=ld>0?Math.round(bk/ld*100):null, b2d=bk>0?Math.round(done/bk*100):0;
+  const l2new=ld>0?Math.round(newbk/ld*100):null;        // NEW-lead → first-time booking (the conversion we care about)
+  const b2d=bk>0?Math.round(done/bk*100):0;
+  const deferred=res+pend;                                // not lost — lands in a later week
+  const relevPct=bk>0?Math.round(can/bk*100):0;          // cancelled = lead-relevancy / demand-quality proxy (lower better)
+  const agentPct=bk>0?Math.round(mis/bk*100):0;          // no-show = call-handling / reminder gap, our side (lower better)
+  const relevCol=relevPct>=15?'#dc2626':relevPct>=8?'#d97706':'#059669';
+  const agentCol=agentPct>=15?'#dc2626':agentPct>=8?'#d97706':'#059669';
   const stage=(lbl,val,sub,col)=>`<div style="flex:1;min-width:90px;text-align:center;"><div style="font-size:9.5px;text-transform:uppercase;letter-spacing:.04em;color:#94a3b8;font-weight:700;">${lbl}</div><div style="font-size:24px;font-weight:800;color:${col};line-height:1.1;">${val}</div><div style="font-size:9.5px;color:#94a3b8;">${sub}</div></div>`;
-  const arrow=t=>`<div style="align-self:center;text-align:center;color:#cbd5e1;font-size:11px;min-width:54px;">→<div style="font-size:9.5px;color:#64748b;font-weight:700;">${t}</div></div>`;
+  const arrow=(t,sub)=>`<div style="align-self:center;text-align:center;color:#cbd5e1;font-size:11px;min-width:60px;">→<div style="font-size:10px;color:#64748b;font-weight:800;">${t}</div><div style="font-size:8px;color:#94a3b8;">${sub||''}</div></div>`;
+  const mtile=(lbl,val,col,sub)=>`<div style="flex:1;min-width:120px;background:#fff;border:1px solid var(--line);border-radius:10px;padding:9px 11px;"><div style="font-size:9px;text-transform:uppercase;letter-spacing:.04em;color:#94a3b8;font-weight:700;">${lbl}</div><div style="font-size:20px;font-weight:800;color:${col};line-height:1.15;">${val}</div><div style="font-size:9px;color:#94a3b8;line-height:1.35;">${sub}</div></div>`;
   // disposition stacked bar of the booked appointments
   const segs=[['Done',done,'#059669'],['Rescheduled',res,'#f59e0b'],['No-show',mis,'#dc2626'],['Cancelled',can,'#64748b'],['Pending',pend,'#cbd5e1']].filter(s=>s[1]>0);
   const bar=segs.map(s=>`<div title="${s[0]}: ${s[1]}" style="width:${s[1]/bk*100}%;background:${s[2]};display:flex;align-items:center;justify-content:center;color:#fff;font-size:10px;font-weight:800;">${s[1]/bk>=0.1?s[1]:''}</div>`).join('');
   const leg=segs.map(s=>`<span style="font-size:10px;color:#475569;margin-right:12px;white-space:nowrap;"><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${s[2]};vertical-align:middle;margin-right:4px;"></span>${s[0]} <b>${s[1]}</b></span>`).join('');
-  const why=[];
-  if(res>0) why.push(`<b style="color:#d97706">${res} rescheduled</b> — moved to a later week, usually <b>not lost</b>, just delayed (they show up in a future week's "done")`);
-  if(mis>0) why.push(`<b style="color:#dc2626">${mis} no-show</b> — booked but didn't turn up: a <b>confirmation / reminder</b> gap`);
-  if(can>0) why.push(`<b style="color:#475569">${can} cancelled</b> — patient called it off: <b>demand quality / lead relevance</b>`);
-  if(pend>0) why.push(`${pend} still <b>pending</b> — upcoming, or the week isn't closed yet`);
-  return `<div class="card"><div class="sec-h"><span class="sec-num">⛳</span>Leads → booked → done — where it leaks</div>
-    <div class="sec-sub">Why only <b>${done}</b> of <b>${bk}</b> booked calls completed. Same distinct patient×doctor basis · Redshift · ${WEEKS[wkIdx].label}</div>
-    <div style="display:flex;gap:6px;margin:6px 0 12px;">
-      ${stage('Leads', ld, 'inbound', '#0ea5e9')}
-      ${arrow(l2b!=null?l2b+'%':'—')}
-      ${stage('Booked', bk, 'SC appts', '#4f46e5')}
-      ${arrow(b2d+'%')}
+  return `<div class="card"><div class="sec-h"><span class="sec-num">⛳</span>Did the leads convert? — new-lead → booking → done</div>
+    <div class="sec-sub">What matters is whether <b>new (first-time) leads converted</b>. Of this week's ${ld} inbound leads, how many became a first-time booking, completed, or are simply <b>deferred</b> to a later week (not lost). · Redshift · ${WEEKS[wkIdx].label}</div>
+    <div style="display:flex;gap:6px;margin:6px 0 10px;">
+      ${stage('Leads', ld, 'inbound · ~all first-time', '#0ea5e9')}
+      ${arrow(l2new!=null?l2new+'%':'—','new-lead → book')}
+      ${stage('New bookings', newbk, '+'+repbk+' repeat = '+bk+' SC', '#4f46e5')}
+      ${arrow(b2d+'%','booked → done')}
       ${stage('Done', done, 'completed', '#059669')}
     </div>
-    <div style="font-size:11px;color:#475569;margin-bottom:5px;">Of the <b>${bk}</b> booked, what happened:</div>
+    <div style="font-size:11px;color:#475569;margin:2px 0 6px;"><b>Lead → booking conversion: ${l2new!=null?l2new+'%':'—'}</b> — ${newbk} of ${ld} inbound leads became a first-time booking this week.</div>
+    <div style="font-size:11px;color:#475569;margin-bottom:5px;">Of the <b>${bk}</b> booked calls, what happened — and <b>which side</b> owns each leak:</div>
+    <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
+      ${mtile('Deferred · not lost', deferred, '#0891b2', res+' resched + '+pend+' pending → land in a later week')}
+      ${mtile('Lead relevancy', relevPct+'%', relevCol, can+' cancelled — patient didn\'t want it · <b>marketing / demand quality</b>')}
+      ${mtile('Call-handling · agent', agentPct+'%', agentCol, mis+' no-show — confirmation/reminder gap · <b>ops / our side</b>')}
+    </div>
     <div style="display:flex;height:30px;border-radius:8px;overflow:hidden;border:1px solid var(--line);margin-bottom:8px;">${bar}</div>
     <div style="margin-bottom:10px;">${leg}</div>
     <div style="font-size:11.5px;background:#f8fafc;border-radius:9px;padding:10px 13px;line-height:1.65;color:#475569;">
-      <b>${bk-done}</b> of ${bk} didn't complete: ${why.length?why.join('; ')+'.':'all booked calls completed.'}
-      ${l2b!=null&&l2b>120?` <span style="color:#94a3b8;">(Booked &gt; leads because repeat/walk-in patients book without a tracked lead.)</span>`:''}</div>
+      So the lead→booking leak splits cleanly: <b style="color:#0891b2">deferred</b> (reschedule/pending) isn't lost — it lands later; <b style="color:${relevCol}">cancellations</b> point to <b>lead relevancy / demand quality</b> (a marketing lever); <b style="color:${agentCol}">no-shows</b> point to <b>call-handling</b> — confirmation &amp; reminders on our side (an ops lever).
+      <div style="font-size:10px;color:#94a3b8;margin-top:6px;">Note: a richer lead-relevancy signal (junk / wrong-number / not-interested at the <i>lead</i> level) needs a lead-disposition pull — here we proxy relevancy with booking cancellations. Disposition is across all booked SC (new + repeat).</div></div>
   </div>`;
 }
 // ── chart zoom: each trend cell registers its content; ⛶ opens a large modal ──
@@ -1354,6 +1363,12 @@ function leadLossDrill(r){
   const gmb=leadArr(r.city,r.clinic,'gmb'), gads=leadArr(r.city,r.clinic,'google_ad'), org=leadArr(r.city,r.clinic,'organic');
   const gmb_w=gmb[W], gmb_n=avg(sl(gmb)), gads_w=gads[W], gads_n=avg(sl(gads));
   const dGmbP=gmb_n?Math.round((gmb_w-gmb_n)/gmb_n*100):0, dGadsP=gads_n?Math.round((gads_w-gads_n)/gads_n*100):0;
+  // other sources — Practo, Organic, and a combined "Others" (FB + JustDial + misc)
+  const practo=practoArr(r.city,r.clinic), pr_w=practo[W]||0, pr_n=avg(sl(practo)), dPrP=pr_n?Math.round((pr_w-pr_n)/pr_n*100):0;
+  const org_w=org[W]||0, org_n=avg(sl(org)), dOrgP=org_n?Math.round((org_w-org_n)/org_n*100):0;
+  const fb=leadArr(r.city,r.clinic,'fb'), jd=leadArr(r.city,r.clinic,'justdial'), othRaw=leadArr(r.city,r.clinic,'others');
+  const oth=othRaw.map((o,i)=>(o||0)+(fb[i]||0)+(jd[i]||0)); const oth_w=oth[W]||0, oth_n=avg(sl(oth)), dOthP=oth_n?Math.round((oth_w-oth_n)/oth_n*100):0;
+  const hasPracto=practo.some(x=>x>0), hasOther=oth.some(x=>x>0)||org.some(x=>x>0);
   const rvN=reviewArr(r.city,r.clinic,'n'), rvNeg=reviewArr(r.city,r.clinic,'neg'), rvRate=reviewArr(r.city,r.clinic,'rating');
   const vel_w=rvN[W]||0, vel_n=avg(sl(rvN)), recentNeg=(rvNeg[W]||0)+(rvNeg[W+1]||0), lastRating=rvRate.slice(W).find(x=>x!=null);
   const isPct=mktArr('search_is').map(x=>x==null?null:x*100), rlPct=mktArr('rank_lost_is').map(x=>x==null?null:x*100);
@@ -1378,8 +1393,13 @@ function leadLossDrill(r){
   const mini=(label,col,sub,svg)=>`<div style="margin-bottom:9px;"><div style="font-size:11.5px;font-weight:700;color:${col};">${label}</div><div style="font-size:9.5px;color:#94a3b8;margin-bottom:2px;">${sub}</div>${svg}</div>`;
   const pctF=v=>Math.round(v)+'%';
   const gaCity=gaForCity(r.city);   // city-level Google Ads health — clinic-relevant, replaces the account blend (alias-mapped)
-  return `<div class="card"><div class="sec-h"><span class="sec-num">🔎</span>Lead-loss drill — GMB vs Google Ads</div>
-    <div class="sec-sub">When inbound leads break, is it the <b>GMB profile</b> (reviews → rank) or <b>Google Ads</b> (impression share / spend)? · leads from Redshift · ${WEEKS[wkIdx].label}</div>
+  // also surface notable drops in the other sources
+  const extraDrops=[];
+  if(hasPracto && pr_n>1 && dPrP<=-15) extraDrops.push(`Practo ${signed(dPrP,'%')}`);
+  if(org_n>1 && dOrgP<=-15) extraDrops.push(`Organic ${signed(dOrgP,'%')}`);
+  if(oth_n>1 && dOthP<=-15) extraDrops.push(`Others ${signed(dOthP,'%')}`);
+  return `<div class="card"><div class="sec-h"><span class="sec-num">🔎</span>Lead-loss drill — by source</div>
+    <div class="sec-sub">When inbound leads break, which source? <b>GMB profile</b> (reviews → rank) · <b>Google Ads</b> (impression share / spend) · <b>Practo</b> · <b>Organic &amp; others</b>. · leads from Redshift · ${WEEKS[wkIdx].label}</div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;">
       <div style="background:#eef2ff;border-radius:11px;padding:12px 14px;">
         <div style="font-size:13px;font-weight:800;color:#4338ca;margin-bottom:8px;">📍 GMB profile</div>
@@ -1396,8 +1416,14 @@ function leadLossDrill(r){
           : mini('Impression share', '#f59e0b', 'how often our ad showed — higher is better', spark(rev(isPct),'#f59e0b',hi,pctF))
             + mini('Rank-lost impression share', '#dc2626', 'lost to low Ad Rank (keyword/quality) — lower is better', spark(rev(rlPct),'#dc2626',hi,pctF))}
       </div>
+      ${(hasPracto||hasOther)?`<div style="background:#f0fdf4;border-radius:11px;padding:12px 14px;">
+        <div style="font-size:13px;font-weight:800;color:#047857;margin-bottom:8px;">🌐 Practo · Organic · Others</div>
+        ${hasPracto?mini('Practo · '+pr_w+' ('+signed(dPrP,'%')+')', '#f59e0b', 'Practo profile leads · dashed = 4-wk avg', spark(rev(practo),'#f59e0b',hi,null,pr_n)):''}
+        ${mini('Organic · '+org_w+' ('+signed(dOrgP,'%')+')', '#10b981', 'SEO / direct (non-paid) · dashed = 4-wk avg', spark(rev(org),'#10b981',hi,null,org_n))}
+        ${mini('Others · '+oth_w+' ('+signed(dOthP,'%')+')', '#94a3b8', 'FB + JustDial + misc · dashed = 4-wk avg', spark(rev(oth),'#94a3b8',hi,null,oth_n))}
+      </div>`:''}
     </div>
-    <div style="margin-top:12px;font-size:11.5px;background:#f8fafc;border-radius:9px;padding:10px 13px;line-height:1.6;color:#475569;">${verdict}</div>
+    <div style="margin-top:12px;font-size:11.5px;background:#f8fafc;border-radius:9px;padding:10px 13px;line-height:1.6;color:#475569;">${verdict}${extraDrops.length?` Also down vs their 4-wk avg: <b>${extraDrops.join(', ')}</b>.`:''}</div>
   </div>`;
 }
 function accAll(open){ document.querySelectorAll('details.accstep').forEach(d=>{ d.open=open; }); }
