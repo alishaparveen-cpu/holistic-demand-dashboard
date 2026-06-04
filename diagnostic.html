@@ -938,42 +938,48 @@ function shrinkChart(sched, shrunk, avail, hi){
 // converted" (demand / conversion). Expected = wd_rate·weekday-days-open + we_rate·weekend-days-open.
 function bookingRateCard(r){
   const W=wkIdx, sl=a=>a.slice(W+1,W+6);
-  const bkP=sl(r.bkArr), weBkP=sl(r.bkWeArr||[]), avP=sl(r.avArr), weP=sl(r.weArr);
-  let wdBk=0,weBk=0,wdDay=0,weDay=0,nW=0;
-  for(let i=0;i<bkP.length;i++){ const a=avP[i]||0; if(a<=0) continue;   // skip closed weeks
-    const w=weP[i]||0, b=bkP[i]||0, wb=weBkP[i]||0;
-    wdBk+=(b-wb); weBk+=wb; wdDay+=(a-w); weDay+=w; nW++; }
+  // Capacity = bookable HOURS (roster) when available — a day open 3h ≠ a day open 8h — else fall back to days.
+  const ros=rosterArr(r.city,r.clinic);
+  const hasHrs = ros.hrs && ros.hrs.some(x=>x!=null && x>0);
+  const unit=hasHrs?'/hr':'/day', uName=hasHrs?'bookable hour':'open day', uShort=hasHrs?'h':'d';
+  const capWd=i=> hasHrs ? Math.max(0,(ros.hrs[i]||0)-(ros.we_hrs[i]||0)) : Math.max(0,(r.avArr[i]||0)-(r.weArr[i]||0));
+  const capWe=i=> hasHrs ? (ros.we_hrs[i]||0) : (r.weArr[i]||0);
+  const bkP=sl(r.bkArr), weBkP=sl(r.bkWeArr||[]);
+  let wdBk=0,weBk=0,wdCap=0,weCap=0,nW=0;
+  for(let k=0;k<bkP.length;k++){ const i=W+1+k, cw=capWd(i), ce=capWe(i); if((cw+ce)<=0) continue;   // skip closed weeks
+    const b=bkP[k]||0, wb=weBkP[k]||0; wdBk+=(b-wb); weBk+=wb; wdCap+=cw; weCap+=ce; nW++; }
   if(nW<2) return '';                                   // not enough history for a stable rate
-  const wkBk=wdBk+weBk, wkDay=wdDay+weDay;
-  const wdRate=wdDay>0?wdBk/wdDay:0, weRate=weDay>0?weBk/weDay:0, wkRate=wkDay>0?wkBk/wkDay:0;
-  const wdOpen=Math.max(0,(r.av_w||0)-(r.we_w||0)), weOpen=r.we_w||0;
-  const expDays=wdRate*wdOpen+weRate*weOpen;            // expected at THIS week's days-open
-  const bkNorm=wkBk/nW;                                 // normal weekly bookings (rate × normal days)
-  const daysEffect=expDays-bkNorm;                      // gap explained by days-open differing from normal
-  const rateEffect=r.bk_w-expDays;                      // gap explained by bookings-per-day differing
+  const wkBk=wdBk+weBk, wkCap=wdCap+weCap;
+  const wdRate=wdCap>0?wdBk/wdCap:0, weRate=weCap>0?weBk/weCap:0, wkRate=wkCap>0?wkBk/wkCap:0;
+  const wdOpen=capWd(W), weOpen=capWe(W);               // THIS week's weekday/weekend capacity (hours or days)
+  const expCap=wdRate*wdOpen+weRate*weOpen;             // expected at this week's bookable hours
+  const bkNorm=wkBk/nW;                                 // normal weekly bookings (rate × normal capacity)
+  const capEffect=expCap-bkNorm;                        // gap from capacity (hours open) differing from normal
+  const rateEffect=r.bk_w-expCap;                       // gap from bookings-per-hour differing
   const gap=r.bk_w-bkNorm;
+  const daysWk=r1(r.av_w);                              // days open this week (context)
   const weHotter=weRate>wdRate*1.15;
-  const tile=(lbl,val,unit,col,sub)=>`<div style="flex:1;min-width:96px;background:#fff;border:1px solid var(--line);border-radius:10px;padding:9px 11px;"><div style="font-size:9.5px;text-transform:uppercase;letter-spacing:.04em;color:#94a3b8;font-weight:700;">${lbl}</div><div style="font-size:21px;font-weight:800;color:${col};line-height:1.15;">${val}<span style="font-size:10px;font-weight:600;color:#94a3b8;">${unit}</span></div><div style="font-size:9.5px;color:#94a3b8;">${sub||''}</div></div>`;
-  const driver = Math.abs(daysEffect)>=Math.abs(rateEffect)
-    ? `<b style="color:#7c3aed">fewer days open (availability)</b>` : `<b style="color:#d97706">lower bookings per open day (demand / conversion)</b>`;
+  const tile=(lbl,val,u,col,sub)=>`<div style="flex:1;min-width:96px;background:#fff;border:1px solid var(--line);border-radius:10px;padding:9px 11px;"><div style="font-size:9.5px;text-transform:uppercase;letter-spacing:.04em;color:#94a3b8;font-weight:700;">${lbl}</div><div style="font-size:21px;font-weight:800;color:${col};line-height:1.15;">${val}<span style="font-size:10px;font-weight:600;color:#94a3b8;">${u}</span></div><div style="font-size:9.5px;color:#94a3b8;">${sub||''}</div></div>`;
+  const driver = Math.abs(capEffect)>=Math.abs(rateEffect)
+    ? `<b style="color:#7c3aed">fewer bookable ${hasHrs?'hours':'days'} (availability)</b>` : `<b style="color:#d97706">lower bookings per ${uName} (demand / conversion)</b>`;
   const verdict = Math.abs(gap)<1.5
-    ? `Bookings landed about where this clinic's rate × days-open predicts (${r1(expDays)}).`
-    : `At its normal rates the clinic should book ~<b>${r1(expDays)}</b> on the <b>${wdOpen} weekday + ${weOpen} weekend</b> days it opened this week; it booked <b>${r.bk_w}</b> (${signed(r1(gap))} vs its ${r1(bkNorm)} norm). Of that gap, ≈<b style="color:#7c3aed">${signed(r1(daysEffect))}</b> is days-open and ≈<b style="color:#d97706">${signed(r1(rateEffect))}</b> is rate-per-day → mostly ${driver}.`;
-  return `<div class="card"><div class="sec-h"><span class="sec-num">📊</span>Booking rate — per day open</div>
-    <div class="sec-sub">This clinic's own bookings per <b>open day</b>, weekday vs weekend, over the prior ${nW} weeks. Separates <b>how many days were open</b> from <b>how well each day converted</b>. · ${WEEKS[wkIdx].label}</div>
+    ? `Bookings landed about where this clinic's rate × ${hasHrs?'hours':'days'}-open predicts (${r1(expCap)}).`
+    : `At its normal rates the clinic should book ~<b>${r1(expCap)}</b> on the <b>${r1(wdOpen)} weekday + ${r1(weOpen)} weekend ${uShort}</b> it opened this week; it booked <b>${r.bk_w}</b> (${signed(r1(gap))} vs its ${r1(bkNorm)} norm). Of that gap, ≈<b style="color:#7c3aed">${signed(r1(capEffect))}</b> is ${hasHrs?'hours':'days'}-open and ≈<b style="color:#d97706">${signed(r1(rateEffect))}</b> is rate-per-${uShort} → mostly ${driver}.`;
+  return `<div class="card"><div class="sec-h"><span class="sec-num">📊</span>Booking rate — per bookable ${hasHrs?'hour':'day'}</div>
+    <div class="sec-sub">This clinic's own bookings per <b>bookable ${uName}</b>, weekday vs weekend, over the prior ${nW} weeks. ${hasHrs?'Uses roster <b>hours</b> (a day open 3h ≠ open 8h), not just days.':'Roster hours unavailable — falls back to days.'} Separates <b>how much capacity was open</b> from <b>how well each ${uName} converted</b>. · ${WEEKS[wkIdx].label}</div>
     <div style="display:flex;gap:9px;flex-wrap:wrap;margin-bottom:10px;">
-      ${tile('Weekday rate',r1(wdRate),'/day','#7c3aed','bookings per weekday open')}
-      ${tile('Weekend rate',r1(weRate),'/day',weHotter?'#db2777':'#a855f7',weHotter?'busier — high-demand window':'bookings per weekend open')}
-      ${tile('Overall rate',r1(wkRate),'/day','#475569','blended per open day')}
+      ${tile('Weekday rate',r1(wdRate),unit,'#7c3aed','bookings per weekday '+uName)}
+      ${tile('Weekend rate',r1(weRate),unit,weHotter?'#db2777':'#a855f7',weHotter?'busier — high-demand window':'bookings per weekend '+uName)}
+      ${tile('Overall rate',r1(wkRate),unit,'#475569','blended per '+uName)}
     </div>
     <div style="display:flex;gap:9px;flex-wrap:wrap;margin-bottom:8px;">
-      ${tile('Open this week',wdOpen+' + '+weOpen,' d','#0f172a','weekday + weekend days')}
-      ${tile('Expected',r1(expDays),'','#475569','rate × days open')}
+      ${tile('Open this week',r1(wdOpen)+' + '+r1(weOpen),' '+uShort,'#0f172a',hasHrs?'wkday + wkend hours · '+daysWk+' days':'weekday + weekend days')}
+      ${tile('Expected',r1(expCap),'','#475569','rate × '+(hasHrs?'hours':'days')+' open')}
       ${tile('Actual',r.bk_w,'',gap>=0?'#059669':'#dc2626','booked this week')}
     </div>
     <div style="font-family:ui-monospace,monospace;font-size:11.5px;background:#0f172a;color:#e2e8f0;border-radius:8px;padding:8px 12px;margin-bottom:10px;line-height:1.5;">
-      Expected = <span style="color:#c4b5fd">${r1(wdRate)}</span>×<span style="color:#c4b5fd">${wdOpen}</span> wkday + <span style="color:#f0abfc">${r1(weRate)}</span>×<span style="color:#f0abfc">${weOpen}</span> wkend = <b style="color:#fff">${r1(expDays)}</b> &nbsp;vs&nbsp; actual <b style="color:${gap>=0?'#86efac':'#fca5a5'}">${r.bk_w}</b></div>
-    ${weHotter?`<div style="font-size:10.5px;color:#be185d;background:#fdf2f8;border-radius:8px;padding:7px 11px;margin-bottom:9px;">Weekends convert <b>${r1(weRate/Math.max(0.01,wdRate))}×</b> a weekday here — losing a weekend day costs the most.</div>`:''}
+      Expected = <span style="color:#c4b5fd">${r1(wdRate)}</span>×<span style="color:#c4b5fd">${r1(wdOpen)}</span> wkday-${uShort} + <span style="color:#f0abfc">${r1(weRate)}</span>×<span style="color:#f0abfc">${r1(weOpen)}</span> wkend-${uShort} = <b style="color:#fff">${r1(expCap)}</b> &nbsp;vs&nbsp; actual <b style="color:${gap>=0?'#86efac':'#fca5a5'}">${r.bk_w}</b></div>
+    ${weHotter?`<div style="font-size:10.5px;color:#be185d;background:#fdf2f8;border-radius:8px;padding:7px 11px;margin-bottom:9px;">Weekends convert <b>${r1(weRate/Math.max(0.01,wdRate))}×</b> a weekday ${uName} here — the high-demand window.</div>`:''}
     <div style="font-size:11.5px;background:#f8fafc;border-radius:9px;padding:10px 13px;line-height:1.6;color:#475569;">${verdict}</div>
   </div>`;
 }
