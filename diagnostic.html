@@ -1659,10 +1659,10 @@ function renderDeepDive(r){
       Owner: <b>${r.mixWith?CAUSE[r.cause].owner+' + '+CAUSE[r.mixWith].owner:m.owner}</b>.
     </div>`;
   // ── dedicated Leads card: Total on top, source breakdown below ──
-  const leadsCard = `<div class="card"><div class="sec-h"><span class="sec-num">🔎</span>Leads — total &amp; by source</div>
-    <div class="sec-sub">Total inbound leads first (the size), then the source split (where the gap is). · ${r.useRedshiftLeads?'Redshift':'sheet'} · last ${winN} weeks · highlighted = ${wl}.</div>
+  const leadsCard = `<div class="card"><div class="sec-h"><span class="sec-num">🔎</span>Leads — total inbound</div>
+    <div class="sec-sub">Total inbound leads (the size of demand). The source split &amp; lead-loss drill are below. · ${r.useRedshiftLeads?'Redshift':'sheet'} · last ${winN} weeks · highlighted = ${wl}.</div>
     ${winBar}
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:14px;">${leadsTotalTrend}${leadsBreakdownTrend}</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:14px;">${leadsTotalTrend}</div>
   </div>`;
   const bkTrendCard = `<div class="card"><div class="sec-h"><span class="sec-num">📈</span>Bookings — trend &amp; verdict</div>
     <div class="sec-sub">Last <b>${winN}</b> weeks · highlighted point = <b>${wl}</b> · dashed = expected.</div>
@@ -1731,14 +1731,19 @@ function renderDeepDive(r){
       <div style="margin-left:auto;text-align:right;font-size:11.5px;white-space:nowrap;font-weight:700;padding-left:8px;">${stat||''}</div>
       <span class="chev">▾</span></summary>
     <div class="accbody">${body}</div></details>`;
-  // OVERVIEW STRIP — all five at a glance, small; details live one click down in the steps below
+  // conversion trends — lead→book% (new bookings / leads) and book→done% per week
+  const l2bArr = r.bkArr.map((b,i)=>{ const l=r.ldArr[i]||0, nb=(r.bkNewArr[i]||0); return l>0?Math.round(nb/l*100):0; });
+  const b2dArr = r.bkArr.map((b,i)=>{ const d=(r.bkDoneArr[i]||0); return b>0?Math.round(d/b*100):0; });
+  const l2b_w=l2bArr[wkIdx], b2d_w=b2dArr[wkIdx];
+  // OVERVIEW STRIP — six at a glance in a 3×2 grid; details live in the tabs below
   const ov = `<div class="card" style="margin-bottom:12px;">${winBar}
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(166px,1fr));gap:10px;">
+    <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;">
       ${vchip('🆕','New bookings', new_w,'', newPct, 'first-time · vs '+r1(new_n)+' norm', spark(rev(r.bkNewArr),'#4f46e5',hi,null,new_n))}
       ${vchip('📅','All SC bookings', r.bk_w,'', gapPct, 'new+repeat · vs '+exp+' exp', spark(rev(r.bkArr),'#6366f1',hi,null,r.bkBase))}
       ${vchip('📞','Consults done', done_w,'', pctOf(done_w-done_n,done_n), doneRate+'% of '+r.bk_w+' SC completed', spark(rev(r.bkDoneArr),'#0891b2',hi,null,done_n))}
       ${vchip('🔎','Leads', r.ld_w,'', Math.round(r.dLeadPct), 'inbound · vs '+Math.round(r.ld_avg)+' norm', spark(rev(r.ldArr),'#0ea5e9',hi,null,r.ld_avg))}
       ${vchip('🩺','Availability', r1(r.av_w),'d', pctOf(r.dAct,r.av_avg), 'doctor-days · wd '+r1(r.wd_w)+' + we '+r1(r.we_w)+(hasRoster&&rh_w!=null?' · '+r1(rh_w)+'h rostered':''), availSplitChart(rev(r.wdArr), rev(r.weArr), hi, r.av_avg, wkS))}
+      ${vchip('⛳','Conversion', l2b_w,'%', null, 'lead→book '+l2b_w+'% · book→done '+b2d_w+'%', groupBars([{vals:rev(l2bArr),color:'#0ea5e9',label:'Lead→book %'},{vals:rev(b2dArr),color:'#059669',label:'Book→done %'}], hi, v=>v+'%', null, wkS))}
     </div></div>`;
   // the "why" fork — leads down (demand/sources) vs leads held (conversion)
   const leadsDown = r.dLeadPct<=-12 || r.leadsBroke;
@@ -1756,11 +1761,10 @@ function renderDeepDive(r){
   const tabs=[
     {n:1,icon:'🩺',label:'Availability',col:'#7c3aed',stat:availStat,body:availCard},
     {n:2,icon:'📊',label:'Expected',col:'#4f46e5',stat:expStat,body:bookingRateCard(r)},
-    {n:3,icon:'🔎',label:'Leads',col:'#0ea5e9',stat:leadStat,body:whyIntro+leadsCard},
+    {n:3,icon:'🔎',label:'Leads & source',col:'#0ea5e9',stat:leadStat,body:whyIntro+leadsCard+leadLossDrill(r)},
     {n:4,icon:'⛳',label:'Convert',col:step5col,stat:convStat,body:funnelCard(r)+marketingVsOpsCard(r)},
-    {n:5,icon:'📉',label:'Source',col:step6col,stat:srcStat,body:leadLossDrill(r)},
   ];
-  if(reg||bm) tabs.push({n:6,icon:'🧪',label:'Model',col:'#64748b',stat:'',body:(reg||'')+(bm||'')});
+  if(reg||bm) tabs.push({n:5,icon:'🧪',label:'Model',col:'#64748b',stat:'',body:(reg||'')+(bm||'')});
   const causeTab = r.cause==='avail'?1 : r.cause==='leads'?3 : r.cause==='l2b'?4 : 1;
   const active = (diagStep && tabs.some(t=>t.n===diagStep)) ? diagStep : causeTab;
   const tabBar = `<div class="diagtabs">${tabs.map(t=>{ const on=t.n===active;
