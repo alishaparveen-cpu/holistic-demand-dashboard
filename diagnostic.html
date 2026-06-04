@@ -606,6 +606,23 @@ function miniClinicCard(r){
     </div>
   </div>`;
 }
+// City-head landing: the scoped clinics ranked worst-first by new-patient booking drop, click to drill.
+function cityOverview(R){
+  const W=wkIdx;
+  const list=R.rows.map(r=>{ const nw=r.bkNewArr||[]; const new_w=nw[W]||0, new_n=avg(nw.slice(W+1,W+6)); const dN=new_w-Math.round(new_n);
+    const dNp=new_n>0?Math.round((new_w-new_n)/new_n*100):0; return {r,new_w,new_n,dN,dNp}; }).sort((a,b)=>a.dN-b.dN);
+  const isAff=x=> x.dN<=-2 || (x.new_n>0 && (x.new_w-x.new_n)/x.new_n<=-0.2);
+  const affected=list.filter(isAff);
+  const card=x=>{ const {r,new_w,new_n,dN,dNp}=x, aff=isAff(x), col=aff?'#dc2626':(dN>1?'#059669':'#475569');
+    return `<div onclick="setSelClinic('${r.city}|${r.clinic}')" style="cursor:pointer;border:1px solid ${aff?'#fecaca':'var(--line)'};background:${aff?'#fef2f2':'#fff'};border-radius:11px;padding:11px 13px;" onmouseover="this.style.boxShadow='0 4px 14px rgba(0,0,0,.08)'" onmouseout="this.style.boxShadow='none'">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;"><div style="font-size:13.5px;font-weight:800;color:#0f172a;">${r.clinic}</div><div style="font-size:10.5px;color:#94a3b8;white-space:nowrap;">${r.city}</div></div>
+      <div style="display:flex;align-items:baseline;gap:7px;margin:5px 0 2px;"><span style="font-size:22px;font-weight:800;color:${col};">${new_w}</span><span style="font-size:11px;color:#94a3b8;">new bookings</span><span style="font-size:12px;font-weight:800;color:${dCol(dN)};margin-left:auto;">${signed(dNp,'%')}</span></div>
+      <div style="font-size:10px;color:#94a3b8;margin-bottom:3px;">vs ${r1(new_n)} norm · ${r.bk_w} total SC · <span style="color:${aff?'#dc2626':'#059669'};font-weight:700;">${aff?'⚠ '+(CAUSE[r.cause]?cap(CAUSE[r.cause].short):'dipped'):'✓ on track'}</span></div>
+      ${spark(r.bkNewArr.slice(0,WEEKS.length).reverse(),col,(WEEKS.length-1)-W,null,new_n)}</div>`; };
+  return `<div class="card"><div class="sec-h"><span class="sec-num">📍</span>Your clinics${geoScopeText()?' — '+geoScopeText():''}</div>
+    <div class="sec-sub"><b>${list.length}</b> clinic${list.length>1?'s':''} in scope · <b style="color:${affected.length?'#dc2626':'#059669'}">${affected.length} dipped</b> in new-patient bookings this week. Worst-first — click one for the full story.</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(248px,1fr));gap:12px;">${list.map(card).join('')}</div></div>`;
+}
 function renderOffline(){
   if(!Object.keys(SDATA).length) return '<div class="card">Demand-tracker sheet didn\'t load (leads & availability unavailable). Check the sheet is published.</div>';
   const Rall=rcaOffline();
@@ -733,7 +750,9 @@ function renderOffline(){
     <table class="rca"><thead><tr><th>Cause</th><th class="r">Bookings</th><th>Owner</th><th>Where to start</th></tr></thead><tbody>${bl}</tbody></table>
   </div>`;
 
-  return ctrl+fNote+headline+decomp+matrix+bottom;
+  const overview = geoSel.size ? cityOverview(R) : '';
+  const networkLabel = geoSel.size ? `<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#94a3b8;margin:18px 0 8px;">Network breakdown (for reference)</div>` : '';
+  return ctrl+fNote+overview+networkLabel+headline+decomp+matrix+bottom;
 }
 
 // inline SVG trend sparkline with value labels; hiIdx = highlighted (selected) point.
@@ -1510,6 +1529,8 @@ function renderDeepDive(r){
 
   // ═══════════════ SINGLE-PAGE, TOP-DOWN DIAGNOSIS ═══════════════
   const pctOf=(d,b)=>b?Math.round(d/b*100):0;
+  // new-patient bookings (the demand outcome a city head leads with) + its norm
+  const _new=r.bkNewArr||[], new_w=_new[wkIdx]||0, new_n=avg(_new.slice(wkIdx+1,wkIdx+6)), newPct=pctOf(new_w-new_n,new_n);
   // 0) Verdict banner — names the size of the move and the single biggest cause.
   const statusCol = grew?'#059669' : (r.L>0&&r.cause!=='ok' ? (r.mixWith?MIXCOL:m.col) : '#64748b');
   const causePhrase = grew ? 'ahead of trend — growing'
@@ -1520,8 +1541,8 @@ function renderDeepDive(r){
   const drillHint = r.cause==='leads'?'Leads':r.cause==='avail'?'Availability':r.cause==='l2b'?'Bookings':'';
   const verdictBanner = `<div class="card" style="border-left:5px solid ${statusCol};background:${statusCol}0d;">
     <div style="font-size:15.5px;font-weight:800;color:#0f172a;line-height:1.45;">
-      ${r.clinic} booked <span style="color:${statusCol}">${r.bk_w}</span> vs <b>${exp}</b> expected
-      <b style="color:${dCol(gap)}">(${signed(gap)}, ${signed(gapPct,'%')})</b> in ${wl}.</div>
+      ${r.clinic} booked <span style="color:${statusCol}">${new_w}</span> new patients <b style="color:${dCol(new_w-Math.round(new_n))}">(${signed(new_w-Math.round(new_n))} vs ${r1(new_n)} norm)</b> in ${wl}.
+      <span style="font-weight:600;color:#64748b;font-size:13px;">${r.bk_w} total SC bookings vs ${exp} expected (${signed(gap)}).</span></div>
     <div style="font-size:12.5px;color:#475569;margin-top:5px;line-height:1.5;">
       Primary cause: <b style="color:${statusCol}">${causePhrase}</b>${r.mixWith?` (mix with ${CAUSE[r.mixWith].short})`:''}.${r.note?` <span style="color:#94a3b8;">${r.note}.</span>`:''}
       ${drillHint?`<span style="color:#94a3b8;"> → see the <b>${drillHint}</b> drill below.</span>`:''}</div>
@@ -1556,12 +1577,12 @@ function renderDeepDive(r){
   const stepHdr=(n,icon,title,sub,col)=>`<div style="display:flex;align-items:center;gap:10px;margin:20px 0 8px;">
     <span style="display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:50%;background:${col||'#4f46e5'};color:#fff;font-size:13px;font-weight:800;flex:none;">${n}</span>
     <div><div style="font-size:14px;font-weight:800;color:#0f172a;">${icon} ${title}</div><div style="font-size:11px;color:#94a3b8;">${sub}</div></div></div>`;
-  const new_w=(r.bkNewArr&&r.bkNewArr[wkIdx])||0;
-  // STEP 1 — Bookings (the outcome) + booked→done
-  const step1 = stepHdr(1,'📅','Bookings at '+r.clinic,'What booked this week vs expected — and how many completed.') + `<div class="card">${winBar}
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px;">
-      ${vital('📅','Bookings', r.bk_w,'', gapPct, 'vs '+exp+' expected · '+new_w+' new patients', spark(rev(r.bkArr),'#4f46e5',hi,null,r.bkBase))}
-      ${vital('📞','Calls done', done_w,'', pctOf(done_w-done_n,done_n), doneRate+'% of '+r.bk_w+' booked completed', spark(rev(r.bkDoneArr),'#0891b2',hi,null,done_n))}
+  // STEP 1 — New-patient bookings (the demand outcome a city head leads with), with all-SC + done alongside
+  const step1 = stepHdr(1,'🆕','New-patient bookings at '+r.clinic,'First-time screening-call patients booked. Total SC bookings & calls-done shown alongside to drill.') + `<div class="card">${winBar}
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;">
+      ${vital('🆕','New bookings', new_w,'', newPct, 'first-time patients · vs '+r1(new_n)+' norm', spark(rev(r.bkNewArr),'#4f46e5',hi,null,new_n))}
+      ${vital('📅','All SC bookings', r.bk_w,'', gapPct, 'new + repeat · vs '+exp+' expected', spark(rev(r.bkArr),'#6366f1',hi,null,r.bkBase))}
+      ${vital('📞','Calls done', done_w,'', pctOf(done_w-done_n,done_n), doneRate+'% of '+r.bk_w+' completed', spark(rev(r.bkDoneArr),'#0891b2',hi,null,done_n))}
     </div></div>`;
   // STEP 2 — Availability
   const step2 = stepHdr(2,'🩺','Availability','Bookable doctor-days — weekday vs weekend (the high-demand window).') + availCard;
