@@ -989,21 +989,23 @@ function marketingVsOpsCard(r){
   if(ld_n<=0 && new_n<=0) return '';
   const conv_w=ld_w>0?new_w/ld_w:0, conv_n=ld_n>0?new_n/ld_n:0;
   const mkt=conv_n*(ld_w-ld_n), ops=ld_w*(conv_w-conv_n), gapNew=new_w-new_n;
+  const rp=r.bkRepeatArr||[], rep_w=rp[W]||0, rep_n=avg(rp.slice(W+1,W+6)), retention=rep_w-rep_n;  // returning patients
   const done_w=dn[W]||0, doneR_w=r.bk_w>0?done_w/r.bk_w:0, doneR_n=(avg(bk.slice(W+1,W+6))>0?avg(dn.slice(W+1,W+6))/avg(bk.slice(W+1,W+6)):0);
-  const segs=[['Marketing · lead volume',mkt,'#0ea5e9'],['Ops · lead→book conversion',ops,'#d97706']];
-  const tot=Math.abs(mkt)+Math.abs(ops)||1;
+  const segs=[['Marketing · new-lead volume',mkt,'#0ea5e9'],['Ops · lead→book conversion',ops,'#d97706'],['Retention · returning patients',retention,'#0891b2']];
+  const tot=segs.reduce((s,x)=>s+Math.abs(x[1]),0)||1;
   const bar=segs.map(s=>`<div title="${s[0]}: ${signed(r1(s[1]))}" style="width:${Math.abs(s[1])/tot*100}%;background:${s[2]};display:flex;align-items:center;justify-content:center;color:#fff;font-size:10.5px;font-weight:800;">${Math.abs(s[1])/tot>=0.12?signed(r1(s[1])):''}</div>`).join('');
-  const leadLever=Math.abs(mkt)>=Math.abs(ops)?'marketing':'ops';
-  const leadCol=leadLever==='marketing'?'#0ea5e9':'#d97706';
+  const ranked=segs.slice().sort((a,b)=>Math.abs(b[1])-Math.abs(a[1]));
+  const leadName=ranked[0][0].split(' · ')[0].toLowerCase(), leadCol=ranked[0][2];
   const leg=segs.map(s=>`<span style="font-size:11px;color:#475569;margin-right:14px;white-space:nowrap;"><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${s[2]};vertical-align:middle;margin-right:4px;"></span>${s[0]} <b>${signed(r1(s[1]))}</b></span>`).join('');
+  const totalGap=gapNew+retention;
   return `<div class="card" style="border-left:4px solid ${leadCol};">
-    <div class="sec-h"><span class="sec-num">🧭</span>Marketing vs Ops — where's the new-booking gap?</div>
-    <div class="sec-sub">Splits the new-patient booking change into <b>lead volume</b> (marketing brings demand) and <b>lead→book conversion</b> (ops handles it). · ${WEEKS[W].label}</div>
+    <div class="sec-h"><span class="sec-num">🧭</span>Marketing vs Ops vs Retention — where's the booking gap?</div>
+    <div class="sec-sub">Splits the booking change three ways: <b>marketing</b> (new-lead volume), <b>ops</b> (lead→book conversion), <b>retention</b> (returning patients re-booking). · ${WEEKS[W].label}</div>
     <div style="display:flex;height:30px;border-radius:8px;overflow:hidden;border:1px solid var(--line);margin:6px 0 8px;">${bar}</div>
     <div style="margin-bottom:9px;">${leg}</div>
     <div style="font-size:11.5px;background:#f8fafc;border-radius:9px;padding:10px 13px;line-height:1.65;color:#475569;">
-      New bookings <b>${signed(r1(gapNew))}</b> vs norm. Leads <b>${ld_w}</b> vs ${r1(ld_n)} (${signed(Math.round(r.dLeadPct),'%')}) → <b style="color:#0ea5e9">marketing ${signed(r1(mkt))}</b>. Of leads, <b>${Math.round(conv_w*100)}%</b> became new bookings vs <b>${Math.round(conv_n*100)}%</b> normally → <b style="color:#d97706">ops ${signed(r1(ops))}</b>. Bigger lever: <b style="color:${leadCol}">${leadLever}</b>.${doneR_n>0&&doneR_w<doneR_n-0.05?` Plus only <b>${Math.round(doneR_w*100)}%</b> of booked calls completed (vs ${Math.round(doneR_n*100)}%) — extra <b style="color:#d97706">ops</b> leakage (no-shows / reschedules).`:''}</div>
-    <div style="font-size:10px;color:#94a3b8;margin-top:6px;">Leads are unique inquiries (source table de-duped — only ~1% ever re-inquire), so there's no real "repeat lead" — marketing (volume) vs ops (conversion) is the useful split.</div>
+      Bookings <b>${signed(r1(totalGap))}</b> vs norm. <b style="color:#0ea5e9">Marketing</b> ${signed(r1(mkt))}: leads <b>${ld_w}</b> vs ${r1(ld_n)} (${signed(Math.round(r.dLeadPct),'%')}). <b style="color:#d97706">Ops</b> ${signed(r1(ops))}: <b>${Math.round(conv_w*100)}%</b> of leads booked vs ${Math.round(conv_n*100)}% normally. <b style="color:#0891b2">Retention</b> ${signed(r1(retention))}: returning patients <b>${rep_w}</b> vs ${r1(rep_n)}. Biggest lever: <b style="color:${leadCol}">${leadName}</b>.${doneR_n>0&&doneR_w<doneR_n-0.05?` Plus only <b>${Math.round(doneR_w*100)}%</b> of booked calls completed (vs ${Math.round(doneR_n*100)}%) — extra <b style="color:#d97706">ops</b> leakage (no-shows / reschedules).`:''}</div>
+    <div style="font-size:10px;color:#94a3b8;margin-top:6px;">New bookings = marketing + ops (leads-driven); returning patients = retention. Leads themselves are unique inquiries (source de-duped, ~1% re-inquire), so there's no "repeat lead" to split.</div>
   </div>`;
 }
 // ═══════════════ LEADS → BOOKED → DONE funnel + booked→done disposition ═══════════════
