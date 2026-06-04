@@ -41,6 +41,13 @@ table.rca td.c,table.rca th.c{text-align:center;}
 .accstep[open] .chev{transform:rotate(180deg);}
 .accstep .accbody{padding:2px 15px 15px;}
 .stepbadge{display:inline-flex;align-items:center;justify-content:center;width:25px;height:25px;border-radius:50%;color:#fff;font-size:12.5px;font-weight:800;flex:none;}
+/* horizontal step tabs for the clinic deep-dive */
+.diagtabs{display:flex;gap:7px;overflow-x:auto;padding:2px 2px 9px;margin-bottom:14px;border-bottom:2px solid var(--line);-webkit-overflow-scrolling:touch;}
+.diagtab{flex:none;display:inline-flex;align-items:center;gap:7px;font-size:12.5px;font-weight:700;color:#64748b;background:#fff;border:1.5px solid var(--line);border-radius:11px;padding:8px 13px;cursor:pointer;white-space:nowrap;transition:box-shadow .12s,border-color .12s;}
+.diagtab:hover{box-shadow:0 2px 8px rgba(0,0,0,.06);}
+.diagtab.on{box-shadow:0 3px 12px rgba(0,0,0,.08);}
+.diagtab .dt-num{display:inline-flex;align-items:center;justify-content:center;width:19px;height:19px;border-radius:50%;background:#eef2ff;color:#4338ca;font-size:11px;font-weight:800;flex:none;}
+.diagtab .dt-stat{font-weight:800;font-size:11px;}
 .vchip{border:1px solid var(--line);border-radius:11px;padding:9px 11px;background:#fff;}
 .vchip .vc-l{font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--dim);}
 .vchip .vc-v{font-size:21px;font-weight:800;line-height:1;margin:3px 0 1px;}
@@ -245,6 +252,8 @@ function toggleLeadsAvg(){ leadsAvg=!leadsAvg; render(); }
 function toggleLeadsGran(){ leadsGran=!leadsGran; render(); }
 function setTrendWin(n){ trendWin=n; render(); }
 function setDdTab(t){ ddTab=t; render(); window.scrollTo(0,0); }
+let diagStep=null;        // deep-dive active step tab (1-6); null = auto = the diagnosed cause
+function setDiagStep(n){ diagStep=n; render(); const el=document.querySelector('.diagtabs'); if(el){ el.scrollIntoView({block:'start'}); window.scrollBy(0,-64); } }
 
 // ═══════════════ PARSERS ═══════════════
 function parseCSV(text){
@@ -501,7 +510,7 @@ function setBase(b){ baseMode=b; render(); }
 function setCauseF(c){ causeF=c; render(); }
 function setMatF(m){ matF=m; render(); }
 function setTierF(t){ tierF=t; render(); }
-function setSelClinic(v){ selClinic=v; render(); window.scrollTo(0,0); }
+function setSelClinic(v){ selClinic=v; diagStep=null; render(); window.scrollTo(0,0); }
 function passF(r){ // does a clinic row pass the city + tier + maturity filters?
   if(geoSel.size && !geoMatchRow(r)) return false;
   if(tierF!=='all' && cityTier(r.city)!==tierF) return false;
@@ -1706,29 +1715,36 @@ function renderDeepDive(r){
       ${vchip('📅','All SC bookings', r.bk_w,'', gapPct, 'new+repeat · vs '+exp+' exp', spark(rev(r.bkArr),'#6366f1',hi,null,r.bkBase))}
       ${vchip('📞','Consults done', done_w,'', pctOf(done_w-done_n,done_n), doneRate+'% of '+r.bk_w+' SC completed', spark(rev(r.bkDoneArr),'#0891b2',hi,null,done_n))}
       ${vchip('🔎','Leads', r.ld_w,'', Math.round(r.dLeadPct), 'inbound · vs '+Math.round(r.ld_avg)+' norm', spark(rev(r.ldArr),'#0ea5e9',hi,null,r.ld_avg))}
-      ${vchip('🩺','Availability', r1(r.av_w),'d', pctOf(r.dAct,r.av_avg), 'realized doctor-days · '+(hasRoster&&rh_w!=null?r1(rh_w)+'h rostered':'wd '+r1(r.wd_w)+' + we '+r1(r.we_w)), spark(rev(r.avArr),'#7c3aed',hi,null,r.av_avg))}
+      ${vchip('🩺','Availability', r1(r.av_w),'d', pctOf(r.dAct,r.av_avg), 'doctor-days · wd '+r1(r.wd_w)+' + we '+r1(r.we_w)+(hasRoster&&rh_w!=null?' · '+r1(rh_w)+'h rostered':''), availSplitChart(rev(r.wdArr), rev(r.weArr), hi, r.av_avg, wkS))}
     </div></div>`;
   // the "why" fork — leads down (demand/sources) vs leads held (conversion)
   const leadsDown = r.dLeadPct<=-12 || r.leadsBroke;
-  const whyIntro = (gap<-1) ? `<div class="card" style="background:#fff7ed;border-left:4px solid #d97706;margin:0 0 12px;"><div style="font-size:13px;color:#9a3412;line-height:1.55;"><b>Bookings dipped ${signed(gap)} (${signed(gapPct,'%')}).</b> ${leadsDown?`Same-week leads fell <b>${Math.round(r.dLeadPct)}%</b> — cause is upstream in <b>demand / channels</b>: open <b>step 4</b> (leads) then <b>step 6</b> (source).`:`Same-week leads held (<b>${signed(Math.round(r.dLeadPct),'%')}</b>) — cause is <b>conversion</b>, not demand: open <b>step 5</b>.`}</div></div>` : '';
-  // which step to auto-open = the diagnosed cause
-  const openStep = r.cause==='avail'?2 : r.cause==='leads'?4 : r.cause==='l2b'?5 : 0;
-  // inline at-a-glance stats for each closed step
-  const availStat = `${r1(r.av_w)} d ${deltaTag(pctOf(r.dAct,r.av_avg),'%')}`;
-  const expStat   = `<span style="color:${dCol(gap)}">${signed(gap)} vs ${exp} exp</span>`;
-  const leadStat  = `${r.ld_w} ${deltaTag(Math.round(r.dLeadPct),'%')}`;
-  const convStat  = `<span style="color:${doneRate>=70?'#059669':'#d97706'}">${doneRate}% done</span>`;
-  const srcStat   = `<span style="color:${leadsDown?'#dc2626':'#059669'}">${leadsDown?'leads dropped':'leads held'}</span>`;
+  const whyIntro = (gap<-1) ? `<div class="card" style="background:#fff7ed;border-left:4px solid #d97706;margin:0 0 12px;"><div style="font-size:13px;color:#9a3412;line-height:1.55;"><b>Bookings dipped ${signed(gap)} (${signed(gapPct,'%')}).</b> ${leadsDown?`Same-week leads fell <b>${Math.round(r.dLeadPct)}%</b> — cause is upstream in <b>demand / channels</b>: see the <b>Leads</b> then <b>Source</b> tabs.`:`Same-week leads held (<b>${signed(Math.round(r.dLeadPct),'%')}</b>) — cause is <b>conversion</b>, not demand: see the <b>Convert</b> tab.`}</div></div>` : '';
+  // inline at-a-glance stats shown on each tab
+  const availStat = deltaTag(pctOf(r.dAct,r.av_avg),'%');
+  const expStat   = `<span style="color:${dCol(gap)}">${signed(gap)}</span>`;
+  const leadStat  = deltaTag(Math.round(r.dLeadPct),'%');
+  const convStat  = `<span style="color:${doneRate>=70?'#059669':'#d97706'}">${doneRate}%</span>`;
+  const srcStat   = `<span style="color:${leadsDown?'#dc2626':'#059669'}">${leadsDown?'↓':'held'}</span>`;
   const step5col = !leadsDown && gap<-1 ? '#d97706' : '#4f46e5';
   const step6col = leadsDown ? '#dc2626' : '#4f46e5';
-  // marketing-team extras (collapsed) — regression + new/repeat
   const reg=regCard(r), bm=bookTypeMix(r);
-  const marketing = (reg||bm) ? `<details style="margin-top:6px;border:1px dashed var(--line);border-radius:12px;background:#fafbfc;"><summary style="cursor:pointer;padding:12px 16px;font-size:13px;font-weight:700;color:#64748b;">🧪 For the marketing team — statistical model &amp; booking mix (optional)</summary><div style="padding:4px 14px 12px;">${reg||''}${bm||''}</div></details>` : '';
-  const stepsBar = `<div style="display:flex;align-items:center;gap:8px;margin:2px 0 8px;flex-wrap:wrap;">
-    <span style="font-size:10.5px;color:#94a3b8;font-weight:700;text-transform:uppercase;letter-spacing:.05em;">Diagnosis steps</span>
-    <button onclick="accAll(true)" style="font-size:11px;padding:3px 10px;border-radius:7px;border:1px solid var(--line);background:#fff;color:#475569;cursor:pointer;font-weight:600;">⊞ Expand all</button>
-    <button onclick="accAll(false)" style="font-size:11px;padding:3px 10px;border-radius:7px;border:1px solid var(--line);background:#fff;color:#475569;cursor:pointer;font-weight:600;">⊟ Collapse all</button>
-    <span style="font-size:10px;color:#cbd5e1;">tap a step to expand its chart</span></div>`;
+  // ── horizontal step tabs — one full-width, scrollable section at a time ──
+  const tabs=[
+    {n:1,icon:'🩺',label:'Availability',col:'#7c3aed',stat:availStat,body:availCard},
+    {n:2,icon:'📊',label:'Expected',col:'#4f46e5',stat:expStat,body:bookingRateCard(r)},
+    {n:3,icon:'🔎',label:'Leads',col:'#0ea5e9',stat:leadStat,body:whyIntro+leadsCard},
+    {n:4,icon:'⛳',label:'Convert',col:step5col,stat:convStat,body:funnelCard(r)+marketingVsOpsCard(r)},
+    {n:5,icon:'📉',label:'Source',col:step6col,stat:srcStat,body:leadLossDrill(r)},
+  ];
+  if(reg||bm) tabs.push({n:6,icon:'🧪',label:'Model',col:'#64748b',stat:'',body:(reg||'')+(bm||'')});
+  const causeTab = r.cause==='avail'?1 : r.cause==='leads'?3 : r.cause==='l2b'?4 : 1;
+  const active = (diagStep && tabs.some(t=>t.n===diagStep)) ? diagStep : causeTab;
+  const tabBar = `<div class="diagtabs">${tabs.map(t=>{ const on=t.n===active;
+    return `<button onclick="setDiagStep(${t.n})" class="diagtab${on?' on':''}" style="${on?`border-color:${t.col};color:${t.col};background:${t.col}0d;`:''}">
+      <span class="dt-num" style="${on?`background:${t.col};color:#fff;`:''}">${t.n}</span>
+      <span>${t.icon} ${t.label}</span>${t.stat?`<span class="dt-stat">${t.stat}</span>`:''}</button>`; }).join('')}</div>`;
+  const activeBody = (tabs.find(t=>t.n===active)||tabs[0]).body;
 
   return `<div class="card">
     <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
@@ -1739,14 +1755,8 @@ function renderDeepDive(r){
   </div>
   ${verdictBanner}
   ${ov}
-  ${stepsBar}
-  ${acc(2,'🩺','Availability','Bookable doctor-days — weekday vs weekend (high-demand window).','#7c3aed',availStat,availCard,openStep===2)}
-  ${acc(3,'📊','Expected from your open days','Your booking rate × the weekday/weekend days you opened.','#4f46e5',expStat,bookingRateCard(r),openStep===3)}
-  ${whyIntro}
-  ${acc(4,'🔎','Were the leads there?','Same-week inbound leads — total, then by source (incl. Practo).','#0ea5e9',leadStat,leadsCard,openStep===4)}
-  ${acc(5,'⛳','Did the leads convert?','Leads → booked → done · plus marketing vs ops split.',step5col,convStat,funnelCard(r)+marketingVsOpsCard(r),openStep===5)}
-  ${acc(6,'📉','If leads dropped — which source?','GMB (reviews · negatives) → Google Ads (clicks · CTR) → Practo.',step6col,srcStat,leadLossDrill(r),openStep===6)}
-  ${marketing}`;
+  ${tabBar}
+  <div class="diagtab-body">${activeBody}</div>`;
 }
 function renderOnline(){
   if(!JDATA.online) return '<div class="card">No online scope in data.json.</div>';
