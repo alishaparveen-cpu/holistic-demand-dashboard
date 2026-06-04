@@ -1009,14 +1009,14 @@ function bookingRateCard(r){
     ? `Bookings landed about where this clinic's rate × ${hasHrs?'hours':'days'}-open predicts (${r1(expCap)}).`
     : `At its normal rates the clinic should book ~<b>${r1(expCap)}</b> on the <b>${r1(wdOpen)} weekday + ${r1(weOpen)} weekend ${uShort}</b> it opened this week; it booked <b>${r.bk_w}</b> (${signed(r1(gap))} vs its ${r1(bkNorm)} norm). Of that gap, ≈<b style="color:#7c3aed">${signed(r1(capEffect))}</b> is ${hasHrs?'hours':'days'}-open and ≈<b style="color:#d97706">${signed(r1(rateEffect))}</b> is rate-per-${uShort} → mostly ${driver}.`;
   return `<div class="card"><div class="sec-h"><span class="sec-num">📊</span>Booking rate — per bookable ${hasHrs?'hour':'day'}</div>
-    <div class="sec-sub">This clinic's own bookings per <b>bookable ${uName}</b>, weekday vs weekend, over the prior ${nW} weeks. ${hasHrs?'Uses roster <b>hours</b> (a day open 3h ≠ open 8h), not just days.':'Roster hours unavailable — falls back to days.'} Separates <b>how much capacity was open</b> from <b>how well each ${uName} converted</b>. · ${WEEKS[wkIdx].label}</div>
+    <div class="sec-sub">This clinic's own bookings per <b>${uName}</b>, weekday vs weekend, over the prior ${nW} weeks. ${hasHrs?'Uses roster <b>hours</b> (a day open 3h ≠ open 8h), not just days.':'Roster hours unavailable — falls back to days.'} Separates <b>how much capacity was open</b> from <b>how well each ${uName} converted</b>. · ${WEEKS[wkIdx].label}</div>
     <div style="display:flex;gap:9px;flex-wrap:wrap;margin-bottom:10px;">
       ${tile('Weekday rate',r1(wdRate),unit,'#7c3aed','bookings per weekday '+uName)}
       ${tile('Weekend rate',r1(weRate),unit,weHotter?'#db2777':'#a855f7',weHotter?'busier — high-demand window':'bookings per weekend '+uName)}
       ${tile('Overall rate',r1(wkRate),unit,'#475569','blended per '+uName)}
     </div>
     <div style="display:flex;gap:9px;flex-wrap:wrap;margin-bottom:8px;">
-      ${tile('Open this week',r1(wdOpen)+' + '+r1(weOpen),' '+uShort,'#0f172a',hasHrs?'wkday + wkend hours · '+daysWk+' days':'weekday + weekend days')}
+      ${tile('Open this week',r1(wdOpen)+' + '+r1(weOpen),' '+uShort,'#0f172a',hasHrs?'wkday + wkend hours rostered':'weekday + weekend days')}
       ${tile('Expected',r1(expCap),'','#475569','rate × '+(hasHrs?'hours':'days')+' open')}
       ${tile('Actual',r.bk_w,'',gap>=0?'#059669':'#dc2626','booked this week')}
     </div>
@@ -1493,8 +1493,13 @@ function renderDeepDive(r){
         Roster scheduled <b>${rh_w==null?'—':r1(rh_w)}h</b> this week (norm <b>${r1(rh_avg)}h</b>${rh_avg>0&&rh_w!=null?', '+signed(Math.round((rh_w-rh_avg)/rh_avg*100),'%')+' vs norm':''}). ${rh_w!=null&&rh_avg-rh_w>2?`<b style="color:#dc2626">~${r1(rh_avg-rh_w)}h fewer hours were even put on the roster</b> — a supply/roster planning gap.`:'Roster supply held — any realized-day shortfall is doctor shrinkage of scheduled slots, not a planning gap.'}
       </div>
     </div>` : `<div style="margin-top:12px;font-size:10.5px;color:#cbd5e1;border-top:1px dashed var(--line);padding-top:9px;">No roster coverage for this clinic in the pull.</div>`;
+  const _schedDays = hasDow ? dowWk.filter(h=>h>0).length : null;
+  const reconNote = (hasRoster && rh_w!=null) ? `<div style="font-size:11px;color:#475569;background:#f5f3ff;border:1px solid #ddd6fe;border-radius:9px;padding:9px 12px;margin:2px 0 10px;line-height:1.55;">
+      <b>Two layers — different units, both correct.</b> The roster <b>scheduled ${r1(rh_w)}h${_schedDays?` across ${_schedDays} day-slots`:''}</b> (the plan — that's the 7-day × hours view in the day-by-day &amp; hour charts below). The headline <b>${r1(r.av_w)} active doctor-days</b> counts distinct doctor×day that still had a <b>bookable, non-blocked</b> slot <b>after shrinkage</b>. So "${r1(r.av_w)} days" = realized; "${r1(rh_w)}h${_schedDays?` / ${_schedDays} days`:''}" = scheduled. The gap between them is doctor shrinkage — see <b>Slots &amp; shrinkage</b> below.
+    </div>` : '';
   const availCard = `<div class="card"><div class="sec-h"><span class="sec-num">🩺</span>Availability — weekday vs weekend</div>
-    <div class="sec-sub">Bookable doctor-days the clinic was open, split weekday vs weekend.</div>
+    <div class="sec-sub">Realized active <b>doctor-days</b> (post-shrinkage) the clinic was open, split weekday vs weekend. Scheduled roster <b>hours</b> shown lower down.</div>
+    ${reconNote}
     <div style="font-size:10px;color:#94a3b8;margin:-2px 0 8px;display:flex;gap:14px;flex-wrap:wrap;">
       <span><span style="display:inline-block;width:18px;height:9px;background:#7c3aed33;border-radius:2px;vertical-align:middle;margin-right:4px;"></span>5-week norm</span>
       <span><span style="display:inline-block;width:18px;height:9px;background:#7c3aed;border-radius:2px;vertical-align:middle;margin-right:4px;"></span>this week (${wl})</span>
@@ -1675,7 +1680,7 @@ function renderDeepDive(r){
       ${vchip('📅','All SC bookings', r.bk_w,'', gapPct, 'new+repeat · vs '+exp+' exp', spark(rev(r.bkArr),'#6366f1',hi,null,r.bkBase))}
       ${vchip('📞','Consults done', done_w,'', pctOf(done_w-done_n,done_n), doneRate+'% of '+r.bk_w+' SC completed', spark(rev(r.bkDoneArr),'#0891b2',hi,null,done_n))}
       ${vchip('🔎','Leads', r.ld_w,'', Math.round(r.dLeadPct), 'inbound · vs '+Math.round(r.ld_avg)+' norm', spark(rev(r.ldArr),'#0ea5e9',hi,null,r.ld_avg))}
-      ${vchip('🩺','Availability', r1(r.av_w),'d', pctOf(r.dAct,r.av_avg), 'wkday '+r1(r.wd_w)+' + wkend '+r1(r.we_w)+' · split below', spark(rev(r.avArr),'#7c3aed',hi,null,r.av_avg))}
+      ${vchip('🩺','Availability', r1(r.av_w),'d', pctOf(r.dAct,r.av_avg), 'realized doctor-days · '+(hasRoster&&rh_w!=null?r1(rh_w)+'h rostered':'wd '+r1(r.wd_w)+' + we '+r1(r.we_w)), spark(rev(r.avArr),'#7c3aed',hi,null,r.av_avg))}
     </div></div>`;
   // the "why" fork — leads down (demand/sources) vs leads held (conversion)
   const leadsDown = r.dLeadPct<=-12 || r.leadsBroke;
