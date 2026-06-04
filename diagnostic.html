@@ -117,7 +117,7 @@ const MIXCOL='#be185d';
 
 // ═══════════════ STATE ═══════════════
 let JDATA=null, SDATA={}, L0=null, PRACTO={}, ROSTER={};   // PRACTO['City|Clinic'] = [7 weekly counts aligned to WEEKS]; ROSTER['City|Clinic']={hrs:[7],we_hrs:[7]} scheduled bookable hours
-let LEADS={}, REVIEWS={}, MKT=null, BOOKTYPE={}, GACITY={};   // Redshift leads-by-source · GMB review velocity · Google Ads impression-share · booking-type split · city-level Google Ads health
+let LEADS={}, REVIEWS={}, MKT=null, BOOKTYPE={}, GACITY={}, NEGREV={};   // Redshift leads-by-source · GMB review velocity · Google Ads impression-share · booking-type split · city-level Google Ads health · recent negative reviews
 function bookTypeArr(city,clinic,field){ const o=BOOKTYPE[city+'|'+clinic]; return o&&o[field] ? o[field].slice(0,WEEKS.length) : Array(WEEKS.length).fill(0); }
 function hasBookType(city,clinic){ return !!BOOKTYPE[city+'|'+clinic]; }
 // align a 12-week newest-first data array (LEADS/REVIEWS) to the diagnostic's WEEKS (also newest-first) → length WEEKS.length
@@ -1110,6 +1110,17 @@ function gaCityPanel(city){
   </div>
   ${g.suggestion?`<div style="font-size:10.5px;background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:6px 9px;color:#9a3412;line-height:1.5;"><b>Marketing's call:</b> ${g.suggestion}.</div>`:''}`;
 }
+// Recent negative Google/GMB reviews for a clinic (rating ≤3, last ~8 weeks) — the actual
+// complaint text, date, reviewer and whether it was replied to. Negative reviews drag GMB rank.
+function negReviewsBlock(city, clinic){
+  const list=NEGREV[city+'|'+clinic];
+  if(!list||!list.length) return `<div style="font-size:10px;color:#059669;margin-top:7px;">✓ No negative Google reviews in the last 8 weeks.</div>`;
+  const esc=s=>(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const items=list.slice(0,4).map(rv=>`<div style="background:#fff;border:1px solid #fecaca;border-left:3px solid #dc2626;border-radius:7px;padding:6px 8px;margin-top:5px;">
+    <div style="font-size:10px;font-weight:700;color:#0f172a;">${'★'.repeat(rv.rating)}<span style="color:#e2e8f0">${'★'.repeat(5-rv.rating)}</span> <span style="color:#94a3b8;font-weight:500;">· ${rv.dt} · ${esc(rv.author)||'anon'}</span> ${rv.replied?'<span style="color:#059669;">· replied</span>':'<span style="color:#dc2626;font-weight:700;">· NOT replied</span>'}</div>
+    ${rv.txt?`<div style="font-size:10px;color:#475569;line-height:1.4;margin-top:2px;">“${esc(rv.txt)}”</div>`:'<div style="font-size:10px;color:#94a3b8;margin-top:2px;">(rating only, no text)</div>'}</div>`).join('');
+  return `<div style="margin-top:8px;"><div style="font-size:10.5px;font-weight:700;color:#dc2626;">⚠ ${list.length} negative review${list.length>1?'s':''} (last 8 wks) — can drag GMB rank</div>${items}</div>`;
+}
 function leadLossDrill(r){
   if(!hasLeadDrill(r.city,r.clinic)) return '';
   const W=wkIdx, rev=a=>a.slice(0,WEEKS.length).reverse(), hi=(WEEKS.length-1)-W, sl=a=>a.slice(W+1,W+5);
@@ -1147,7 +1158,8 @@ function leadLossDrill(r){
         <div style="font-size:13px;font-weight:800;color:#4338ca;margin-bottom:8px;">📍 GMB profile</div>
         ${mini('GMB leads · '+gmb_w+' ('+signed(dGmbP,'%')+')', '#6366f1', 'profile clicks + inbound calls · dashed = 4-wk avg', spark(rev(gmb),'#6366f1',hi,null,gmb_n))}
         ${mini('Review velocity · '+vel_w+'/wk', '#0891b2', 'reviews/week — a primary GMB-rank driver', spark(rev(rvN),'#0891b2',hi,null,vel_n))}
-        <div style="font-size:10.5px;color:#475569;">Rating ${lastRating!=null?'<b>'+lastRating+'★</b>':'—'}${recentNeg>0?` · <b style="color:#dc2626">${recentNeg} recent negative</b>`:''} · ${vel_n>0.5&&vel_w<vel_n-0.5?'<b style="color:#dc2626">velocity dropping → rank risk</b>':'velocity steady'}.</div>
+        <div style="font-size:10.5px;color:#475569;">Rating ${lastRating!=null?'<b>'+lastRating+'★</b>':'—'} · ${vel_n>0.5&&vel_w<vel_n-0.5?'<b style="color:#dc2626">velocity dropping → rank risk</b>':'velocity steady'}.</div>
+        ${negReviewsBlock(r.city, r.clinic)}
       </div>
       <div style="background:#fef7f6;border-radius:11px;padding:12px 14px;">
         <div style="font-size:13px;font-weight:800;color:#DB4437;margin-bottom:8px;">🔍 Google Ads <span style="font-weight:500;color:#94a3b8;font-size:10px;">${gaCity?'· '+r.city+' (SH local)':'(network)'}</span></div>
@@ -1471,7 +1483,7 @@ function renderOnline(){
 async function init(){
   try{
     const safe=u=>fetch(u,{cache:'no-store'}).catch(()=>({ok:false}));
-    const [jr,sr,lr,pr,rr,ld,rv,mk,bt,dg,ga]=await Promise.all([ fetch('data.json',{cache:'no-store'}), safe(SHEET_URL), safe(L0_URL), safe(PRACTO_URL), safe('data_roster.json'), safe('data_leads.json'), safe('data_reviews.json'), safe('data_marketing.json'), safe('data_booktype.json'), safe('data_diagnostic.json'), safe('data_ga_city.json') ]);
+    const [jr,sr,lr,pr,rr,ld,rv,mk,bt,dg,ga,nr]=await Promise.all([ fetch('data.json',{cache:'no-store'}), safe(SHEET_URL), safe(L0_URL), safe(PRACTO_URL), safe('data_roster.json'), safe('data_leads.json'), safe('data_reviews.json'), safe('data_marketing.json'), safe('data_booktype.json'), safe('data_diagnostic.json'), safe('data_ga_city.json'), safe('data_reviews_neg.json') ]);
     if(!jr.ok) throw new Error('data.json not found');
     JDATA=await jr.json();
     // SDATA now comes from Redshift (data_diagnostic.json); the Google Sheet is a fallback only.
@@ -1486,6 +1498,7 @@ async function init(){
     if(mk.ok){ try{ MKT=await mk.json(); }catch(_){ } }
     if(bt.ok){ try{ BOOKTYPE=await bt.json(); }catch(_){ } }
     if(ga.ok){ try{ GACITY=await ga.json(); }catch(_){ } }
+    if(nr.ok){ try{ NEGREV=await nr.json(); }catch(_){ } }
     const wSel=document.getElementById('weekSelect');
     WEEKS.forEach((w,i)=>{ const o=document.createElement('option'); o.value=i; o.textContent=w.label+(i===0?' (latest)':''); if(i===0)o.selected=true; wSel.appendChild(o); });
     render();
