@@ -736,16 +736,7 @@ function renderOffline(){
   const matrix=`<div class="card">
     <div class="sec-h"><span class="sec-num">3</span>Why did each clinic's bookings drop?</div>
     <div class="sec-sub">Each card is one clinic that booked fewer new-patient screening calls than expected. <b>Click a card to open its full deep-dive.</b></div>
-    <div style="font-size:11.5px;color:#475569;line-height:1.7;background:#f8fafc;border:1px solid var(--line);border-radius:10px;padding:11px 14px;margin:4px 0 14px;">
-      <b>How to read a card:</b>
-      <b>Expected</b> = what the clinic <i>should</i> have booked, set to its own <b>${baseLabel().toLowerCase()}</b> (change the <i>Baseline</i> dropdown up top) ·
-      <b>Actual</b> = what it booked this week · <b>Gap</b> = the shortfall.
-      Then we ask <b>why</b> by checking the only three things that move bookings —
-      <span style="color:${CAUSE.leads.col};font-weight:700;">leads</span> (enough enquiries?),
-      <span style="color:${CAUSE.avail.col};font-weight:700;">availability</span> (enough doctor-days / weekend cover?), and
-      <span style="color:${CAUSE.l2b.col};font-weight:700;">conversion</span> (did the enquiries that came turn into bookings?).
-      Whichever <span class="dim-bad">broke</span> while the others <span class="dim-ok">held ✓</span> is the cause — that's how a clinic gets labelled.
-    </div>
+    <div style="font-size:10.5px;color:#94a3b8;margin:2px 0 12px;">Each card: <b>Expected</b> (vs its own ${baseLabel().toLowerCase()}) → <b>Actual</b> → <b>Gap</b>, then which of <span style="color:${CAUSE.leads.col};font-weight:700;">leads</span> · <span style="color:${CAUSE.avail.col};font-weight:700;">availability</span> · <span style="color:${CAUSE.l2b.col};font-weight:700;">conversion</span> broke while the others held.</div>
     ${chips}
     ${grid}
   </div>`;
@@ -801,7 +792,19 @@ function renderOffline(){
   // Landing drill: no scope → cities (cityRollup); a city/clinic picked → that scope's clinics (cityOverview).
   const overview = geoSel.size ? cityOverview(R) : cityRollup(R);
   const networkLabel = `<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#94a3b8;margin:18px 0 8px;">Network breakdown${geoSel.size?' (for reference)':' — all clinics &amp; causes'}</div>`;
-  return ctrl+fNote+overview+networkLabel+headline+decomp+matrix+bottom;
+  // Compact network summary — replaces the verbose Headline + Cause-decomposition cards.
+  const compactSummary=`<div class="card" style="padding:12px 16px;">
+    <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:9px;">
+      <span style="font-size:13.5px;font-weight:800;">📊 Network — ${wl}</span>
+      <span style="font-size:12px;color:#475569;">Offline <b>${R.netW.toLocaleString()}</b> bookings · <b style="color:${dCol(dAvg)}">${signed(dAvg)}</b> vs 8-wk avg · <b style="color:${dCol(dPeak)}">${signed(dPeak)}</b> vs peak · <b style="color:#dc2626">~${Math.abs(R.totalLost)}</b> lost / <b style="color:#059669">+${R.growth}</b> growth</span>
+    </div>
+    <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:center;">
+      ${order.filter(k=>R.causeTotals[k]<0).map(k=>`<span style="font-size:11.5px;white-space:nowrap;"><span style="display:inline-block;width:9px;height:9px;border-radius:2px;background:${CAUSE[k].col};vertical-align:middle;margin-right:4px;"></span>${CAUSE[k].label} <b style="color:${CAUSE[k].col}">${signed(R.causeTotals[k])}</b> <span style="color:#94a3b8;">(${R.buckets[k].length})</span></span>`).join('')}
+      ${R.growth>0?`<span style="font-size:11.5px;white-space:nowrap;"><span style="display:inline-block;width:9px;height:9px;border-radius:2px;background:#059669;vertical-align:middle;margin-right:4px;"></span>Growth <b style="color:#059669">+${R.growth}</b></span>`:''}
+      <span style="font-size:10px;color:#94a3b8;">vs each clinic's own ${baseShort()} — shows where losses concentrate · clinics with issues below</span>
+    </div>
+  </div>`;
+  return ctrl+fNote+overview+networkLabel+compactSummary+matrix;
 }
 
 // inline SVG trend sparkline with value labels; hiIdx = highlighted (selected) point.
