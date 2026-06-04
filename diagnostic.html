@@ -118,6 +118,9 @@ const MIXCOL='#be185d';
 // ═══════════════ STATE ═══════════════
 let JDATA=null, SDATA={}, L0=null, PRACTO={}, ROSTER={};   // PRACTO['City|Clinic'] = [7 weekly counts aligned to WEEKS]; ROSTER['City|Clinic']={hrs:[7],we_hrs:[7]} scheduled bookable hours
 let LEADS={}, REVIEWS={}, MKT=null, BOOKTYPE={}, GACITY={}, NEGREV={};   // Redshift leads-by-source · GMB review velocity · Google Ads impression-share · booking-type split · city-level Google Ads health · recent negative reviews
+// clinic city (Redshift spelling) → Google Ads campaign city spelling
+const GA_CITY_ALIAS={'Hubli':'Hubballi','Mangaluru':'Mangalore','Visakhapatnam':'Vizag'};
+function gaForCity(city){ return GACITY[GA_CITY_ALIAS[city]||city]; }
 function bookTypeArr(city,clinic,field){ const o=BOOKTYPE[city+'|'+clinic]; return o&&o[field] ? o[field].slice(0,WEEKS.length) : Array(WEEKS.length).fill(0); }
 function hasBookType(city,clinic){ return !!BOOKTYPE[city+'|'+clinic]; }
 // align a 12-week newest-first data array (LEADS/REVIEWS) to the diagnostic's WEEKS (also newest-first) → length WEEKS.length
@@ -1157,7 +1160,7 @@ function bookTypeMix(r){
 // City-level Google Ads health tiles (from the weekly export) — IS, rank-lost vs budget-lost,
 // QS + ad-relevance/LP drag, CPC, Util + the marketing team's suggestion. Arrows = W0 vs W1.
 function gaCityPanel(city){
-  const g=GACITY[city]; if(!g) return '';
+  const g=gaForCity(city); if(!g) return '';
   const P=v=>v==null?'—':Math.round(v*100)+'%';
   const dir=(cur,prev,goodUp)=>{ if(cur==null||prev==null) return ''; const d=cur-prev; if(Math.abs(d)<0.005) return ' <span style="color:#cbd5e1;font-size:9px;">→</span>';
     const up=d>0, good=goodUp?up:!up; return ` <span style="color:${good?'#059669':'#dc2626'};font-size:9px;">${up?'▲':'▼'}${Math.abs(Math.round(d*100))}</span>`; };
@@ -1240,7 +1243,7 @@ function leadLossDrill(r){
     : 'GMB and Google Ads leads broadly held this week — lead loss (if any) is elsewhere.';
   const mini=(label,col,sub,svg)=>`<div style="margin-bottom:9px;"><div style="font-size:11.5px;font-weight:700;color:${col};">${label}</div><div style="font-size:9.5px;color:#94a3b8;margin-bottom:2px;">${sub}</div>${svg}</div>`;
   const pctF=v=>Math.round(v)+'%';
-  const gaCity=GACITY[r.city];   // city-level Google Ads health (from weekly export) — clinic-relevant, replaces the account blend
+  const gaCity=gaForCity(r.city);   // city-level Google Ads health — clinic-relevant, replaces the account blend (alias-mapped)
   return `<div class="card"><div class="sec-h"><span class="sec-num">🔎</span>Lead-loss drill — GMB vs Google Ads</div>
     <div class="sec-sub">When inbound leads break, is it the <b>GMB profile</b> (reviews → rank) or <b>Google Ads</b> (impression share / spend)? · leads from Redshift · ${WEEKS[wkIdx].label}</div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;">
