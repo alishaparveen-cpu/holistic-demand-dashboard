@@ -1078,23 +1078,54 @@ function bookingRateCard(r){
   const chainRow = (hasHrs && hasShrink && schTot>0) ? `<div style="font-size:11.5px;background:#f5f3ff;border:1px solid #ddd6fe;border-radius:9px;padding:9px 12px;margin-bottom:10px;line-height:1.6;color:#475569;">
       <b>Scheduled ${r1(schTot)}h</b> → doctor blocked <b style="color:#dc2626">${Math.round(shrThis*100)}%</b> (shrinkage) → <b style="color:#7c3aed">${r1(actTot)}h actually bookable</b> → at this clinic's rate that's <b>${r1(expCap)}</b> expected bookings. Rates &amp; expected below are all on <b>actual</b> (post-shrinkage) hours.
     </div>` : '';
-  return `<div class="card"><div class="sec-h"><span class="sec-num">📊</span>Booking rate — per <b>actual</b> bookable ${hasHrs?'hour':'day'}</div>
-    <div class="sec-sub">This clinic's own bookings per <b>actual bookable ${uShort}</b> (scheduled roster ${hasHrs?'hours':'days'} <b>minus doctor shrinkage</b>), weekday vs weekend, over the prior ${nW} weeks. ${hasHrs?'Uses roster <b>hours</b> after shrinkage — a day open 3h ≠ open 8h, and blocked slots don\'t count.':'Roster hours unavailable — falls back to days.'} Separates <b>how much capacity was actually open</b> from <b>how well each ${uName} converted</b>. · ${WEEKS[wkIdx].label}</div>
-    ${chainRow}
+  // ── counterfactual waterfall: how many bookings under each scenario, holding the others as-is ──
+  const _normSch=sl(ros.hrs).filter(x=>x!=null), _normWe=sl(ros.we_hrs).filter(x=>x!=null);
+  const normSchTot=_normSch.length?avg(_normSch):schTot, normSchWe=_normWe.length?avg(_normWe):schWe, normSchWd=Math.max(0,normSchTot-normSchWe);
+  const E_ideal=wdRate*normSchWd+weRate*normSchWe;        // rostered & open like a normal week (no shrinkage)
+  const E_thisSched=wdRate*schWd+weRate*schWe;            // this week's roster, before shrinkage
+  const schedDelta=E_thisSched-E_ideal;                  // availability: rostered more/fewer hours than usual
+  const shrLoss=expCap-E_thisSched;                      // shrinkage cost (negative)
+  const demandDelta=r.bk_w-expCap;                       // demand / conversion per hour
+  const convPerLead=r.ld_avg>0?bkNorm/r.ld_avg:0;
+  const leadEffect=(r.ld_w-r.ld_avg)*convPerLead;        // leads share of the demand gap
+  const convEffect=demandDelta-leadEffect;
+  const wfRow=(icon,label,val,delta,note,col)=>`<div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid #f1f5f9;">
+    <div style="flex:none;font-size:14px;width:20px;text-align:center;">${icon}</div>
+    <div style="flex:1;min-width:0;"><div style="font-size:12px;font-weight:700;color:#0f172a;">${label}</div>${note?`<div style="font-size:9.5px;color:#94a3b8;line-height:1.35;">${note}</div>`:''}</div>
+    <div style="text-align:right;flex:none;"><div style="font-size:17px;font-weight:800;color:${col||'#0f172a'};">${val}</div>${delta!=null?`<div style="font-size:10px;font-weight:700;color:${dCol(delta)};">${signed(r1(delta))}</div>`:''}</div></div>`;
+  const cfAvail=r.bk_w - Math.min(0,schedDelta) - Math.min(0,shrLoss);   // if hours/availability had held
+  const cfLeads=r.bk_w - Math.min(0,leadEffect);                        // if leads had held
+  const levers=[['availability',-(Math.min(0,schedDelta)+Math.min(0,shrLoss))],['leads',-Math.min(0,leadEffect)],['conversion',-Math.min(0,convEffect)]].sort((a,b)=>b[1]-a[1]);
+  const waterfall = (hasHrs && hasShrink) ? `
+    <div style="font-size:11.5px;font-weight:800;color:#0f172a;margin:6px 0 3px;">🔬 Deep dive — what each factor cost</div>
+    <div style="font-size:10px;color:#94a3b8;margin-bottom:6px;">“If this factor had been normal — holding the others as they actually were — you'd have booked…”</div>
+    <div style="border:1px solid var(--line);border-radius:10px;padding:3px 13px;background:#fff;margin-bottom:9px;">
+      ${wfRow('🗓️','Rostered &amp; open like a normal week',r1(E_ideal),null,'your usual ~'+r1(normSchTot)+'h schedule × your rate (no shrinkage)','#475569')}
+      ${wfRow('📅','At this week\'s scheduled hours',r1(E_thisSched),schedDelta, (Math.abs(schedDelta)<1?'rostered '+r1(schTot)+'h ≈ your usual '+r1(normSchTot)+'h':(schedDelta>0?'rostered '+r1(schTot)+'h — <b>more</b> than usual '+r1(normSchTot)+'h, so availability isn\'t the issue':'rostered '+r1(schTot)+'h — <b>'+r1(-schedDelta)+' fewer</b> than usual '+r1(normSchTot)+'h (availability gap)')), schedDelta<-0.4?'#7c3aed':'#059669')}
+      ${wfRow('✂️','After doctor shrinkage ('+Math.round(shrThis*100)+'%)',r1(expCap),shrLoss,(shrLoss<-0.4?'blocked slots cost ~'+r1(-shrLoss)+' bookings':'little shrinkage loss'),'#dc2626')}
+      ${wfRow('🔎','Actual booked — demand / leads &amp; conversion',r.bk_w,demandDelta,'leads '+r.ld_w+' vs '+Math.round(r.ld_avg)+' norm → ~'+r1(-Math.min(0,leadEffect))+' from leads, ~'+r1(-Math.min(0,convEffect))+' from conversion', demandDelta<-0.4?'#d97706':'#059669')}
+    </div>
+    <div style="font-size:11px;color:#475569;background:#f8fafc;border-radius:8px;padding:9px 12px;line-height:1.6;">
+      ${gap<-1.5?`If <b style="color:#7c3aed">availability</b> (hours) had held you'd have booked ~<b>${r1(cfAvail)}</b>; if <b style="color:#0ea5e9">leads</b> had held, ~<b>${r1(cfLeads)}</b>. Biggest lever this week: <b style="color:#dc2626">${levers[0][1]>0.5?levers[0][0]:'none — broadly on track'}</b>${levers[0][1]>0.5?` (~${r1(levers[0][1])} bookings)`:''}.`:`Booked about where rate × hours predicts — no single factor stands out.`}
+    </div>` : '';
+  return `<div class="card"><div class="sec-h"><span class="sec-num">📊</span>Booking rate &amp; expected — what each factor cost</div>
+    <div class="sec-sub">Bookings per <b>actual bookable ${uShort}</b> (scheduled ${hasHrs?'hours':'days'} <b>minus doctor shrinkage</b>), weekday vs weekend, over the prior ${nW} weeks — then a counterfactual deep-dive: how many bookings you'd have got if availability / shrinkage / leads had each been normal. · ${WEEKS[wkIdx].label}</div>
+    <div style="font-size:10.5px;font-weight:800;color:#94a3b8;text-transform:uppercase;letter-spacing:.04em;margin:2px 0 6px;">1 · This clinic's rate</div>
     <div style="display:flex;gap:9px;flex-wrap:wrap;margin-bottom:10px;">
-      ${tile('Weekday rate',r1(wdRate),unit,'#7c3aed','bookings per weekday '+uName)}
-      ${tile('Weekend rate',r1(weRate),unit,weHotter?'#db2777':'#a855f7',weHotter?'busier — high-demand window':'bookings per weekend '+uName)}
+      ${tile('Weekday rate',r1(wdRate),unit,'#7c3aed','per weekday '+uName)}
+      ${tile('Weekend rate',r1(weRate),unit,weHotter?'#db2777':'#a855f7',weHotter?'busier — high-demand':'per weekend '+uName)}
       ${tile('Overall rate',r1(wkRate),unit,'#475569','blended per '+uName)}
     </div>
+    ${chainRow}
     <div style="display:flex;gap:9px;flex-wrap:wrap;margin-bottom:8px;">
       ${tile('Bookable this week',r1(wdOpen)+' + '+r1(weOpen),' '+uShort,'#0f172a',hasHrs?'wkday + wkend hrs · after shrinkage':'weekday + weekend days')}
       ${tile('Expected',r1(expCap),'','#475569','rate × actual '+(hasHrs?'hours':'days')+' open')}
       ${tile('Actual',r.bk_w,'',gap>=0?'#059669':'#dc2626','booked this week')}
     </div>
-    <div style="font-family:ui-monospace,monospace;font-size:11.5px;background:#0f172a;color:#e2e8f0;border-radius:8px;padding:8px 12px;margin-bottom:10px;line-height:1.5;">
+    <div style="font-family:ui-monospace,monospace;font-size:11.5px;background:#0f172a;color:#e2e8f0;border-radius:8px;padding:8px 12px;margin-bottom:12px;line-height:1.5;">
       Expected = <span style="color:#c4b5fd">${r1(wdRate)}</span>×<span style="color:#c4b5fd">${r1(wdOpen)}</span> wkday-${uShort} + <span style="color:#f0abfc">${r1(weRate)}</span>×<span style="color:#f0abfc">${r1(weOpen)}</span> wkend-${uShort} = <b style="color:#fff">${r1(expCap)}</b> &nbsp;vs&nbsp; actual <b style="color:${gap>=0?'#86efac':'#fca5a5'}">${r.bk_w}</b></div>
     ${weHotter?`<div style="font-size:10.5px;color:#be185d;background:#fdf2f8;border-radius:8px;padding:7px 11px;margin-bottom:9px;">Weekends convert <b>${r1(weRate/Math.max(0.01,wdRate))}×</b> a weekday ${uName} here — the high-demand window.</div>`:''}
-    <div style="font-size:11.5px;background:#f8fafc;border-radius:9px;padding:10px 13px;line-height:1.6;color:#475569;">${verdict}</div>
+    ${waterfall || `<div style="font-size:11.5px;background:#f8fafc;border-radius:9px;padding:10px 13px;line-height:1.6;color:#475569;">${verdict}</div>`}
   </div>`;
 }
 // ═══════════════ MARKETING vs OPS — split the new-booking gap ═══════════════
