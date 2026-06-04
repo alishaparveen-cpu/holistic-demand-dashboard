@@ -182,6 +182,9 @@ html,body{background:#f8fafc;color:var(--ink);font-family:ui-sans-serif,system-u
 <!-- ══ MARKETING CONTROL BOARD (injected by JS) ══ -->
 <div id="marketingBoard" style="margin-bottom:20px;"></div>
 
+<!-- ══ WHAT-IF SIMULATOR (injected by JS) — play with spend & assumptions ══ -->
+<div id="whatIfSim" style="margin-bottom:20px;"></div>
+
 <!-- ══ SPEND & COST CLUSTER (injected by JS) — full cost stack, one place ══ -->
 <div id="spendCostCluster" style="margin-bottom:20px;"></div>
 
@@ -3326,12 +3329,102 @@ function buildBrandSignalSection() {
   });
 }
 
+// ════════════ WHAT-IF SIMULATOR ════════════
+// Play with paid-channel spend + global assumptions; see leads / bookings / revenue / ROAS move
+// live. Unit-safe model: leads scale with spend^elasticity (diminishing returns); revenue is
+// derived from each channel's REAL ROAS×spend, then scaled by the same lead factor and the
+// conversion / revenue-per-consult levers. Baselines = latest week's real L0 numbers.
+let SIM = null;
+function simChannels(){ return [
+  {key:'google', l0:'gmb_google', label:'Google + GMB', color:'#4285F4'},
+  {key:'meta',   l0:'meta',       label:'Meta / FB',     color:'#E1306C'},
+  {key:'practo', l0:'practo',     label:'Practo',        color:'#7C3AED'},
+]; }
+function ensureSim(wkI){
+  if (SIM && SIM.wk===wkI) return;
+  const base=[];
+  simChannels().forEach(c=>{ const d=L0[c.l0]||{};
+    const gAt=k=>{ const v=(d[k]||[])[wkI]; return (v==null||isNaN(v))?null:+v; };
+    // many absolute funnel counts are blank per-channel — fall back to the most recent filled week
+    const gRecent=k=>{ const a=d[k]||[]; for(let i=wkI;i<a.length;i++){ const v=a[i]; if(v!=null&&!isNaN(v)&&+v>0) return +v; } return null; };
+    const spend=gAt('spends'); if(!spend||spend<=0) return;
+    // derive leads/bookings/done from real unit costs (CPL/CPB/CPD) when the absolute counts are empty
+    const cpl=gRecent('cpl'), cpb=gRecent('cpb'), cpd=gRecent('cpd');
+    const leads0 = gRecent('leads_num') || (cpl>0 ? spend/cpl : 0);
+    const book0  = gRecent('bookings')  || (cpb>0 ? spend/cpb : 0);
+    const done0  = gRecent('calls_done_l0') || (cpd>0 ? spend/cpd : 0);
+    base.push({...c, spend0:spend, leads0, book0, done0, roas0:gAt('roas')}); });
+  SIM={ wk:wkI, base, elasticity:0.85, convLift:1, rpcLift:1, mult:{} };
+  base.forEach(b=>SIM.mult[b.key]=1);
+}
+function simCompute(){
+  const e=SIM.elasticity, cL=SIM.convLift, rL=SIM.rpcLift;
+  const rows=SIM.base.map(b=>{ const m=SIM.mult[b.key]??1, mE=Math.pow(m,e);
+    const rev0=(b.roas0!=null)?(b.roas0/100)*b.spend0:null;
+    return {...b, m, spend:b.spend0*m, leads:b.leads0*mE, book:b.book0*mE*cL, done:b.done0*mE*cL,
+      rev0, rev:(rev0!=null)?rev0*mE*cL*rL:null, roas:(b.roas0!=null)?b.roas0*Math.pow(m,e-1)*cL*rL:null }; });
+  const T={spend:0,leads:0,book:0,done:0,rev:0,spend0:0,rev0:0,leads0:0};
+  rows.forEach(r=>{ T.spend+=r.spend; T.leads+=r.leads; T.book+=r.book; T.done+=r.done; if(r.rev!=null)T.rev+=r.rev;
+    T.spend0+=r.spend0; if(r.rev0!=null)T.rev0+=r.rev0; T.leads0+=r.leads0; });
+  T.roas=T.spend>0?T.rev/T.spend*100:null; T.roas0=T.spend0>0?T.rev0/T.spend0*100:null;
+  return {rows,T};
+}
+const _simM=v=> v==null?'—': v>=1e5?'₹'+(v/1e5).toFixed(2)+'L' : v>=1000?'₹'+(v/1000).toFixed(1)+'k' : '₹'+Math.round(v);
+const _simN=v=> v==null?'—': Math.round(v).toLocaleString('en-IN');
+const _simR=v=> v==null?'—': Math.round(v)+'%';
+const _simRoasCol=v=> v==null?'#94a3b8': v>=100?'#059669': v>=70?'#d97706':'#dc2626';
+function simSpend(k,v){ SIM.mult[k]=+v/100; simRefresh(); }
+function simElastic(v){ SIM.elasticity=+v/100; const e=document.getElementById('sim-elastic-val'); if(e)e.textContent=Math.round(+v)+'%'; simRefresh(); }
+function simConv(v){ SIM.convLift=+v/100; const e=document.getElementById('sim-conv-val'); if(e)e.textContent=Math.round(+v)+'%'; simRefresh(); }
+function simRpc(v){ SIM.rpcLift=+v/100; const e=document.getElementById('sim-rpc-val'); if(e)e.textContent=Math.round(+v)+'%'; simRefresh(); }
+function simReset(){ if(SIM){ SIM.base.forEach(b=>SIM.mult[b.key]=1); SIM.elasticity=0.85; SIM.convLift=1; SIM.rpcLift=1; } const el=document.getElementById('whatIfSim'); if(el) el.innerHTML=buildWhatIfInner(); }
+function simRefresh(){ const {rows,T}=simCompute(); const set=(id,v)=>{const e=document.getElementById(id); if(e)e.textContent=v;};
+  set('sim-tot-spend',_simM(T.spend)); set('sim-tot-leads',_simN(T.leads)); set('sim-tot-book',_simN(T.book)); set('sim-tot-rev',_simM(T.rev)); set('sim-tot-roas',_simR(T.roas));
+  const rd=document.getElementById('sim-tot-roas-d'); if(rd){ const d=(T.roas!=null&&T.roas0)?Math.round(T.roas-T.roas0):null; rd.textContent='vs '+_simR(T.roas0)+' base'+(d!=null?' ('+(d>=0?'+':'')+d+'pp)':''); }
+  rows.forEach(r=>{ set('sim-'+r.key+'-spend',_simM(r.spend)); set('sim-'+r.key+'-leads',_simN(r.leads)); set('sim-'+r.key+'-book',_simN(r.book));
+    const e=document.getElementById('sim-'+r.key+'-roas'); if(e){ e.textContent=_simR(r.roas); e.style.color=_simRoasCol(r.roas); } }); }
+function buildWhatIf(wkI){ ensureSim(wkI); if(!SIM.base.length) return '<div class="card" style="color:#94a3b8;padding:14px;">No paid-spend channel has data at this week to simulate.</div>'; return buildWhatIfInner(); }
+function buildWhatIfInner(){
+  const {rows,T}=simCompute();
+  const tile=(lbl,id,val,sub)=>`<div style="background:#fff;border:1px solid var(--line);border-radius:11px;padding:10px 12px;"><div style="font-size:9px;text-transform:uppercase;letter-spacing:.04em;color:#94a3b8;font-weight:700;">${lbl}</div><div style="font-size:20px;font-weight:800;color:#0f172a;" id="${id}">${val}</div><div style="font-size:9px;color:#94a3b8;" ${id==='sim-tot-roas'?'':`id="${id}-d"`}>${sub}</div></div>`;
+  const slider=(lbl,id,min,max,val,oninput,hint)=>`<div style="flex:1;min-width:175px;"><div style="display:flex;justify-content:space-between;font-size:11px;font-weight:700;color:#475569;"><span>${lbl}</span><span id="${id}-val">${Math.round(val)}%</span></div><input type="range" min="${min}" max="${max}" step="1" value="${Math.round(val)}" oninput="${oninput}" style="width:100%;accent-color:#6366f1;margin:3px 0;"><div style="font-size:9px;color:#cbd5e1;">${hint}</div></div>`;
+  const chCard=r=>`<div style="border:1px solid var(--line);border-radius:12px;padding:11px 13px;border-left:4px solid ${r.color};background:#fff;">
+    <div style="display:flex;justify-content:space-between;align-items:baseline;"><span style="font-weight:800;font-size:13px;">${r.label}</span><span id="sim-${r.key}-spend" style="font-weight:800;font-size:13px;">${_simM(r.spend)}</span></div>
+    <input type="range" min="0" max="200" step="5" value="${Math.round(r.m*100)}" oninput="simSpend('${r.key}',this.value)" style="width:100%;accent-color:${r.color};margin:7px 0 3px;">
+    <div style="display:flex;justify-content:space-between;font-size:8px;color:#cbd5e1;margin-bottom:8px;"><span>0</span><span>base ${_simM(r.spend0)}</span><span>2×</span></div>
+    <div style="display:flex;gap:13px;font-size:11px;color:#475569;">
+      <span>Leads <b id="sim-${r.key}-leads">${_simN(r.leads)}</b></span>
+      <span>Book <b id="sim-${r.key}-book">${_simN(r.book)}</b></span>
+      <span>ROAS <b id="sim-${r.key}-roas" style="color:${_simRoasCol(r.roas)}">${_simR(r.roas)}</b></span>
+    </div></div>`;
+  return `<div class="card" style="background:linear-gradient(135deg,#faf5ff,#eff6ff);border:1px solid #e9d5ff;">
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:11px;">
+      <div style="font-size:16px;font-weight:800;">🎛️ What-if simulator <span style="font-size:11px;font-weight:600;color:#7c3aed;">drag spend &amp; assumptions — everything updates live</span></div>
+      <button onclick="simReset()" style="margin-left:auto;font-size:11px;font-weight:700;padding:5px 13px;border-radius:8px;border:1px solid #c4b5fd;background:#fff;cursor:pointer;color:#6d28d9;">↺ Reset</button>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(118px,1fr));gap:9px;margin-bottom:12px;">
+      ${tile('Total spend','sim-tot-spend',_simM(T.spend),'vs '+_simM(T.spend0)+' base')}
+      ${tile('Leads','sim-tot-leads',_simN(T.leads),'vs '+_simN(T.leads0)+' base')}
+      ${tile('Bookings','sim-tot-book',_simN(T.book),'first-touch')}
+      ${tile('Revenue · 1st TP','sim-tot-rev',_simM(T.rev),'vs '+_simM(T.rev0)+' base')}
+      <div style="background:#1e1b4b;border-radius:11px;padding:10px 12px;color:#fff;"><div style="font-size:9px;text-transform:uppercase;letter-spacing:.04em;color:#c7d2fe;font-weight:700;">Blended ROAS</div><div style="font-size:22px;font-weight:800;" id="sim-tot-roas">${_simR(T.roas)}</div><div style="font-size:9px;color:#a5b4fc;" id="sim-tot-roas-d">vs ${_simR(T.roas0)} base</div></div>
+    </div>
+    <div style="display:flex;gap:18px;flex-wrap:wrap;background:#fff;border:1px solid var(--line);border-radius:11px;padding:11px 15px;margin-bottom:12px;">
+      ${slider('Diminishing returns','sim-elastic',50,100,SIM.elasticity*100,'simElastic(this.value)','lower = each extra ₹ buys fewer leads')}
+      ${slider('Lead→book conversion','sim-conv',70,130,SIM.convLift*100,'simConv(this.value)','ops lever — call-handling / lead relevance')}
+      ${slider('Revenue / consult','sim-rpc',70,130,SIM.rpcLift*100,'simRpc(this.value)','pricing / case-mix lever')}
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(228px,1fr));gap:10px;">${rows.map(chCard).join('')}</div>
+    <div style="font-size:10px;color:#94a3b8;margin-top:11px;line-height:1.5;">Model: leads scale with <b>spend^elasticity</b> (diminishing returns); bookings = leads × this channel's real lead→book rate × your conversion lever; revenue = derived from each channel's real ROAS×spend, scaled by the lead factor &amp; revenue lever; ROAS = revenue ÷ spend. Baselines are the latest week's real L0 numbers — a planning sandbox, not a forecast.</div>
+  </div>`;
+}
 function render() {
   if (!L0) return;
   const wkI = viewMode==='monthly' ? activeWkIdxForMonth() : activeWkIdx;
 
   // Marketing control board + trend pulse + funnel break (top of allView)
   document.getElementById('marketingBoard').innerHTML      = buildMarketingControlBoard(wkI);
+  { const we=document.getElementById('whatIfSim'); if(we) we.innerHTML = buildWhatIf(wkI); }
   document.getElementById('spendCostCluster').innerHTML    = buildSpendCostCluster(wkI);
   document.getElementById('costTrendPulse').innerHTML      = buildCostTrendPulse();
   document.getElementById('funnelBreakAnalyzer').innerHTML = buildFunnelBreakAnalyzer(wkI);
