@@ -32,6 +32,18 @@ table.rca td.c,table.rca th.c{text-align:center;}
 .dim-ok{color:var(--green);font-weight:800;}
 .dim-bad{color:var(--red);font-weight:800;}
 .kpi{background:#fff;border:1px solid var(--line);border-radius:13px;padding:14px 16px;}
+/* collapsible diagnostic step */
+.accstep{border:1px solid var(--line);border-radius:13px;margin-bottom:11px;background:#fff;box-shadow:0 1px 3px rgba(15,23,42,.04);overflow:hidden;}
+.accstep>summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:11px;padding:13px 15px;user-select:none;}
+.accstep>summary::-webkit-details-marker{display:none;}
+.accstep>summary:hover{background:#fafbff;}
+.accstep .chev{margin-left:auto;color:#cbd5e1;font-size:13px;transition:transform .18s;flex:none;}
+.accstep[open] .chev{transform:rotate(180deg);}
+.accstep .accbody{padding:2px 15px 15px;}
+.stepbadge{display:inline-flex;align-items:center;justify-content:center;width:25px;height:25px;border-radius:50%;color:#fff;font-size:12.5px;font-weight:800;flex:none;}
+.vchip{border:1px solid var(--line);border-radius:11px;padding:9px 11px;background:#fff;}
+.vchip .vc-l{font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--dim);}
+.vchip .vc-v{font-size:21px;font-weight:800;line-height:1;margin:3px 0 1px;}
 .kpi-l{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--dim);}
 .kpi-v{font-size:30px;font-weight:800;line-height:1.05;margin-top:5px;}
 .kpi-s{font-size:11px;color:var(--muted);margin-top:4px;}
@@ -846,6 +858,37 @@ function availSplitChart(wd, we, hi, normTot, weeks){
     <span><span style="display:inline-block;width:10px;height:10px;background:#c4b5fd;border-radius:2px;vertical-align:middle;margin-right:4px;"></span>Weekend days</span></div>`;
   return `${legend}<svg width="100%" viewBox="0 0 ${w} ${h+2}" style="overflow:visible;">${norm}${bars}</svg>`;
 }
+// Stacked composition bars — N sources stacked per week so the bar HEIGHT = total leads and
+// each colour band = that source's share. No crossing lines (unlike a multi-line). Clickable
+// legend isolates a source. series:[{label,vals(old→new),color}] · toggle = handler name.
+function stackBars(series, hi, weeks, hide, toggle){
+  hide=hide||new Set();
+  const wkOf=i=>(weeks&&weeks[i])?weeks[i]+' · ':'';
+  const vis=series.filter(s=>!hide.has(s.label));
+  const w=340,h=124,padX=8,padB=15,padT=16;
+  const n=series[0].vals.length;
+  const tot=Array.from({length:n},(_,i)=>vis.reduce((a,s)=>a+(s.vals[i]||0),0));
+  const mx=Math.max(1,...tot)*1.16;
+  const bw=(w-2*padX)/n*0.62, slot=(w-2*padX)/n;
+  const X=i=>padX+(i+0.5)/n*(w-2*padX);
+  const base=h-padB, Y=v=>base-(v/mx)*(base-padT);
+  const bars=Array.from({length:n},(_,i)=>{
+    const hl=i===hi; let cum=0; let s='';
+    vis.forEach(sr=>{ const v=sr.vals[i]||0; if(v<=0) return;
+      const y0=Y(cum), y1=Y(cum+v), hgt=y0-y1; cum+=v;
+      s+=`<rect x="${(X(i)-bw/2).toFixed(1)}" y="${y1.toFixed(1)}" width="${bw.toFixed(1)}" height="${hgt.toFixed(1)}" fill="${sr.color}" opacity="${hl?1:.84}" rx="1.5"/>`;
+      if(hgt>=11) s+=`<text x="${X(i).toFixed(1)}" y="${(y1+hgt/2+3).toFixed(1)}" font-size="8" fill="#fff" text-anchor="middle" font-weight="700">${v}</text>`;
+    });
+    s+=`<text x="${X(i).toFixed(1)}" y="${(Y(cum)-4).toFixed(1)}" font-size="9.5" fill="${hl?'#0f172a':'#334155'}" text-anchor="middle" font-weight="800">${cum}</text>`;
+    const bd=vis.map(sr=>`${sr.label.split('+')[0].split(' ')[0]} ${sr.vals[i]||0}`).join(' · ');
+    s+=`<rect x="${(X(i)-slot/2).toFixed(1)}" y="${padT}" width="${slot.toFixed(1)}" height="${(base-padT).toFixed(1)}" fill="transparent"><title>${wkOf(i)}${cum} leads — ${bd}</title></rect>`;
+    return s;
+  }).join('');
+  const legend=series.map(s=>{ const off=hide.has(s.label);
+    const click=toggle?`onclick="event.stopPropagation();${toggle}('${encodeURIComponent(s.label)}')" style="cursor:pointer;`:`style="`;
+    return `<span ${click}font-size:10px;color:#475569;font-weight:600;margin-right:11px;white-space:nowrap;opacity:${off?0.4:1};${off?'text-decoration:line-through;':''}"><span style="display:inline-block;width:10px;height:10px;background:${s.color};vertical-align:middle;border-radius:2px;margin-right:4px;"></span>${s.label} <b style="color:${s.color};">${s.vals[hi]||0}</b></span>`; }).join('');
+  return `<div style="margin-bottom:4px;">${legend}</div><svg width="100%" viewBox="0 0 ${w} ${h+2}" style="overflow:visible;">${bars}</svg>`;
+}
 // Grouped bars — two series side-by-side per week, each labelled on top. For NON-additive
 // metrics like weekday vs weekend booking RATE (which you can't stack).
 function groupBars(series, hi, fmt, normVal, weeks){
@@ -1357,6 +1400,7 @@ function leadLossDrill(r){
     <div style="margin-top:12px;font-size:11.5px;background:#f8fafc;border-radius:9px;padding:10px 13px;line-height:1.6;color:#475569;">${verdict}</div>
   </div>`;
 }
+function accAll(open){ document.querySelectorAll('details.accstep').forEach(d=>{ d.open=open; }); }
 function renderDeepDive(r){
   const wl=WEEKS[wkIdx].label;
   const m=CAUSE[r.cause]||{label:(r.cause==='grew'?'Growing':'Stable'),col:'#059669',bg:'#ecfdf5',owner:'—',desc:'no material booking loss this week'};
@@ -1537,12 +1581,12 @@ function renderDeepDive(r){
   const bkTrend = trend('📅 Bookings', spark(rev(r.bkArr),'#4f46e5',hi,null,r.bkBase), 'screening-call bookings/week (distinct patient × doctor) · dashed = expected');
   const leadsTotalTrend = trend('📈 Total inbound leads', spark(rev(r.ldArr),'#0ea5e9',hi,null,r.ld_avg), 'all sources combined · dashed = recent norm');
   const avgToggle = '<span onclick="event.stopPropagation();toggleLeadsAvg()" style="cursor:pointer;color:'+(leadsAvg?'#4f46e5':'#94a3b8')+';font-weight:700;border:1px solid '+(leadsAvg?'#4f46e5':'var(--line)')+';border-radius:6px;padding:1px 7px;">'+(leadsAvg?'✓ ':'+ ')+'avg line</span>';
-  const leadsBreakdownTrend = trend('🔎 By source', sparkMulti([
-      {vals:rev(r.gmbArr), color:'#6366f1', label:'GMB+Google Ad', width:2},
+  const leadsBreakdownTrend = trend('🔎 By source', stackBars([
+      {vals:rev(r.gmbArr), color:'#6366f1', label:'GMB+Google Ad'},
       {vals:rev(r.orgArr), color:'#10b981', label:'Organic'},
       {vals:rev(r.prArr), color:'#f59e0b', label:'Practo'},
-      {vals:rev(r.fbArr.map((f,i)=>(f||0)+(r.jdArr[i]||0)+(r.othArr[i]||0))), color:'#94a3b8', label:'Others (FB/JD/…)'}], hi, leadsAvg, 'all', leadsHide, 'toggleLeadsLine'),
-    '<b>click a source name</b> to show/hide it (e.g. isolate Organic) · '+avgToggle);
+      {vals:rev(r.fbArr.map((f,i)=>(f||0)+(r.jdArr[i]||0)+(r.othArr[i]||0))), color:'#94a3b8', label:'Others (FB/JD/…)'}], hi, wkS, leadsHide, 'toggleLeadsLine'),
+    'each bar = total leads that week, stacked by source · <b>click a source</b> to isolate it (e.g. Organic only)');
   const availTrend = trend('🩺 Availability — weekday vs weekend', availSplitChart(rev(r.wdArr), rev(r.weArr), hi, r.av_avg),
     'each bar = bookable doctor-days that week, split weekday (dark) + weekend (light) · number on top = total · dashed = norm');
   const schedTrend = hasRoster?trend('🗓️ Scheduled hrs', spark(rev(ros.hrs.map(x=>x==null?0:x)),'#0891b2',hi,null,rh_avg), 'roster bookable hours/week (planned)'):'';
@@ -1610,37 +1654,50 @@ function renderDeepDive(r){
   const vitalsCard = `<div class="card"><div class="sec-h"><span class="sec-num">🩺</span>Vital signs — ${r.clinic}</div>
     <div class="sec-sub">Outcome + the three levers that explain it. Last ${winN} weeks · highlighted = ${wl} · dashed = norm/expected.</div>
     ${winBar}${vitals}</div>`;
-  // ═══════════ CITY-HEAD NARRATIVE — bookings → availability → expected → why (leads → convert / sources) ═══════════
-  const stepHdr=(n,icon,title,sub,col)=>`<div style="display:flex;align-items:center;gap:10px;margin:20px 0 8px;">
-    <span style="display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:50%;background:${col||'#4f46e5'};color:#fff;font-size:13px;font-weight:800;flex:none;">${n}</span>
-    <div><div style="font-size:14px;font-weight:800;color:#0f172a;">${icon} ${title}</div><div style="font-size:11px;color:#94a3b8;">${sub}</div></div></div>`;
-  // STEP 1 — Overview at a glance: new bookings (lead) + all-SC + done + leads + availability bars
-  const step1 = stepHdr(1,'📊','Overview — '+r.clinic,'New-patient bookings (the demand outcome) plus all-SC, calls-done, leads and availability — at a glance.') + `<div class="card">${winBar}
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;">
-      ${vital('🆕','New bookings', new_w,'', newPct, 'first-time patients · vs '+r1(new_n)+' norm', spark(rev(r.bkNewArr),'#4f46e5',hi,null,new_n))}
-      ${vital('📅','All SC bookings', r.bk_w,'', gapPct, 'new + repeat · vs '+exp+' expected', spark(rev(r.bkArr),'#6366f1',hi,null,r.bkBase))}
-      ${vital('📞','Calls done', done_w,'', pctOf(done_w-done_n,done_n), doneRate+'% of '+r.bk_w+' completed', spark(rev(r.bkDoneArr),'#0891b2',hi,null,done_n))}
-      ${vital('🔎','Leads', r.ld_w,'', Math.round(r.dLeadPct), 'inbound demand · vs '+Math.round(r.ld_avg)+' norm', spark(rev(r.ldArr),'#0ea5e9',hi,null,r.ld_avg))}
-      ${vital('🩺','Availability', r1(r.av_w),' d', pctOf(r.dAct,r.av_avg), 'wkday '+r1(r.wd_w)+' + wkend '+r1(r.we_w)+' doctor-days', availSplitChart(rev(r.wdArr), rev(r.weArr), hi, r.av_avg, wkS))}
+  // ═══════════ CITY-HEAD NARRATIVE — compact overview strip + collapsible diagnosis steps ═══════════
+  // compact stat chip for the always-visible overview row (number + delta + tiny sparkline)
+  const vchip=(icon,label,val,suf,delta,sub,chart)=>{
+    const dt=(delta!=null && !isNaN(delta)) ? `<span style="font-size:11.5px;font-weight:800;color:${dCol(delta)};">${delta>0?'+':''}${delta}%</span>` : '';
+    return `<div class="vchip"><div class="vc-l">${icon} ${label}</div>
+      <div style="display:flex;align-items:baseline;gap:6px;flex-wrap:wrap;"><span class="vc-v">${val}${suf?`<span style="font-size:12px;font-weight:600;color:#94a3b8;"> ${suf}</span>`:''}</span>${dt}</div>
+      <div style="font-size:9.5px;color:#94a3b8;margin:1px 0 5px;">${sub}</div>${chart||''}</div>`; };
+  // a collapsible step: header shows title + an inline at-a-glance stat even when closed
+  const acc=(n,icon,title,sub,col,stat,body,open)=>`<details class="accstep"${open?' open':''}>
+    <summary><span class="stepbadge" style="background:${col||'#4f46e5'};">${n}</span>
+      <div style="min-width:0;"><div style="font-size:13.5px;font-weight:800;color:#0f172a;">${icon} ${title}</div><div style="font-size:10.5px;color:#94a3b8;">${sub}</div></div>
+      <div style="margin-left:auto;text-align:right;font-size:11.5px;white-space:nowrap;font-weight:700;padding-left:8px;">${stat||''}</div>
+      <span class="chev">▾</span></summary>
+    <div class="accbody">${body}</div></details>`;
+  // OVERVIEW STRIP — all five at a glance, small; details live one click down in the steps below
+  const ov = `<div class="card" style="margin-bottom:12px;">${winBar}
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(166px,1fr));gap:10px;">
+      ${vchip('🆕','New bookings', new_w,'', newPct, 'first-time · vs '+r1(new_n)+' norm', spark(rev(r.bkNewArr),'#4f46e5',hi,null,new_n))}
+      ${vchip('📅','All SC bookings', r.bk_w,'', gapPct, 'new+repeat · vs '+exp+' exp', spark(rev(r.bkArr),'#6366f1',hi,null,r.bkBase))}
+      ${vchip('📞','Consults done', done_w,'', pctOf(done_w-done_n,done_n), doneRate+'% of '+r.bk_w+' SC completed', spark(rev(r.bkDoneArr),'#0891b2',hi,null,done_n))}
+      ${vchip('🔎','Leads', r.ld_w,'', Math.round(r.dLeadPct), 'inbound · vs '+Math.round(r.ld_avg)+' norm', spark(rev(r.ldArr),'#0ea5e9',hi,null,r.ld_avg))}
+      ${vchip('🩺','Availability', r1(r.av_w),'d', pctOf(r.dAct,r.av_avg), 'wkday '+r1(r.wd_w)+' + wkend '+r1(r.we_w)+' · split below', spark(rev(r.avArr),'#7c3aed',hi,null,r.av_avg))}
     </div></div>`;
-  // STEP 2 — Availability
-  const step2 = stepHdr(2,'🩺','Availability','Bookable doctor-days — weekday vs weekend (the high-demand window).') + availCard;
-  // STEP 3 — Expected from open days (booking rate × days)
-  const step3 = stepHdr(3,'📊','Expected from your open days','At your booking rate × the weekday/weekend days you opened — was there a dip?') + bookingRateCard(r);
   // the "why" fork — leads down (demand/sources) vs leads held (conversion)
   const leadsDown = r.dLeadPct<=-12 || r.leadsBroke;
-  const whyIntro = (gap<-1) ? `<div class="card" style="background:#fff7ed;border-left:4px solid #d97706;margin-top:18px;"><div style="font-size:13px;color:#9a3412;line-height:1.55;"><b>Bookings dipped ${signed(gap)} (${signed(gapPct,'%')}).</b> ${leadsDown?`Same-week leads fell <b>${Math.round(r.dLeadPct)}%</b> — so the cause is upstream in <b>demand / the channels</b>: check the leads (step 4) then the source (step 6).`:`Same-week leads held (<b>${signed(Math.round(r.dLeadPct),'%')}</b>) — so the cause is <b>conversion</b>, not demand: check step 5.`}</div></div>` : '';
-  // STEP 4 — Leads (were they there?)
-  const step4 = stepHdr(4,'🔎','Were the leads there?','Same-week inbound leads that should convert — total, then by source (incl. Practo).') + leadsCard;
-  // STEP 5 — Conversion (leads → booked → done)
+  const whyIntro = (gap<-1) ? `<div class="card" style="background:#fff7ed;border-left:4px solid #d97706;margin:0 0 12px;"><div style="font-size:13px;color:#9a3412;line-height:1.55;"><b>Bookings dipped ${signed(gap)} (${signed(gapPct,'%')}).</b> ${leadsDown?`Same-week leads fell <b>${Math.round(r.dLeadPct)}%</b> — cause is upstream in <b>demand / channels</b>: open <b>step 4</b> (leads) then <b>step 6</b> (source).`:`Same-week leads held (<b>${signed(Math.round(r.dLeadPct),'%')}</b>) — cause is <b>conversion</b>, not demand: open <b>step 5</b>.`}</div></div>` : '';
+  // which step to auto-open = the diagnosed cause
+  const openStep = r.cause==='avail'?2 : r.cause==='leads'?4 : r.cause==='l2b'?5 : 0;
+  // inline at-a-glance stats for each closed step
+  const availStat = `${r1(r.av_w)} d ${deltaTag(pctOf(r.dAct,r.av_avg),'%')}`;
+  const expStat   = `<span style="color:${dCol(gap)}">${signed(gap)} vs ${exp} exp</span>`;
+  const leadStat  = `${r.ld_w} ${deltaTag(Math.round(r.dLeadPct),'%')}`;
+  const convStat  = `<span style="color:${doneRate>=70?'#059669':'#d97706'}">${doneRate}% done</span>`;
+  const srcStat   = `<span style="color:${leadsDown?'#dc2626':'#059669'}">${leadsDown?'leads dropped':'leads held'}</span>`;
   const step5col = !leadsDown && gap<-1 ? '#d97706' : '#4f46e5';
-  const step5 = stepHdr(5,'⛳','Did the leads convert?','Leads → booked → done. Where it leaks: call didn\'t connect · processing · lead relevance.',step5col) + funnelCard(r);
-  // STEP 6 — If leads dropped, which source?
   const step6col = leadsDown ? '#dc2626' : '#4f46e5';
-  const step6 = stepHdr(6,'📉','If leads dropped — which source?','GMB profile (reviews · negatives · profile issues) → Google Ads (clicks · impressions · CTR) → Practo.',step6col) + leadLossDrill(r);
   // marketing-team extras (collapsed) — regression + new/repeat
   const reg=regCard(r), bm=bookTypeMix(r);
-  const marketing = (reg||bm) ? `<details style="margin-top:22px;border:1px dashed var(--line);border-radius:12px;background:#fafbfc;"><summary style="cursor:pointer;padding:12px 16px;font-size:13px;font-weight:700;color:#64748b;">🧪 For the marketing team — statistical model &amp; booking mix (optional)</summary><div style="padding:4px 14px 12px;">${reg||''}${bm||''}</div></details>` : '';
+  const marketing = (reg||bm) ? `<details style="margin-top:6px;border:1px dashed var(--line);border-radius:12px;background:#fafbfc;"><summary style="cursor:pointer;padding:12px 16px;font-size:13px;font-weight:700;color:#64748b;">🧪 For the marketing team — statistical model &amp; booking mix (optional)</summary><div style="padding:4px 14px 12px;">${reg||''}${bm||''}</div></details>` : '';
+  const stepsBar = `<div style="display:flex;align-items:center;gap:8px;margin:2px 0 8px;flex-wrap:wrap;">
+    <span style="font-size:10.5px;color:#94a3b8;font-weight:700;text-transform:uppercase;letter-spacing:.05em;">Diagnosis steps</span>
+    <button onclick="accAll(true)" style="font-size:11px;padding:3px 10px;border-radius:7px;border:1px solid var(--line);background:#fff;color:#475569;cursor:pointer;font-weight:600;">⊞ Expand all</button>
+    <button onclick="accAll(false)" style="font-size:11px;padding:3px 10px;border-radius:7px;border:1px solid var(--line);background:#fff;color:#475569;cursor:pointer;font-weight:600;">⊟ Collapse all</button>
+    <span style="font-size:10px;color:#cbd5e1;">tap a step to expand its chart</span></div>`;
 
   return `<div class="card">
     <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
@@ -1650,14 +1707,14 @@ function renderDeepDive(r){
     </div>
   </div>
   ${verdictBanner}
-  ${step1}
-  ${step2}
-  ${step3}
+  ${ov}
+  ${stepsBar}
+  ${acc(2,'🩺','Availability','Bookable doctor-days — weekday vs weekend (high-demand window).','#7c3aed',availStat,availCard,openStep===2)}
+  ${acc(3,'📊','Expected from your open days','Your booking rate × the weekday/weekend days you opened.','#4f46e5',expStat,bookingRateCard(r),openStep===3)}
   ${whyIntro}
-  ${step4}
-  ${marketingVsOpsCard(r)}
-  ${step5}
-  ${step6}
+  ${acc(4,'🔎','Were the leads there?','Same-week inbound leads — total, then by source (incl. Practo).','#0ea5e9',leadStat,leadsCard,openStep===4)}
+  ${acc(5,'⛳','Did the leads convert?','Leads → booked → done · plus marketing vs ops split.',step5col,convStat,funnelCard(r)+marketingVsOpsCard(r),openStep===5)}
+  ${acc(6,'📉','If leads dropped — which source?','GMB (reviews · negatives) → Google Ads (clicks · CTR) → Practo.',step6col,srcStat,leadLossDrill(r),openStep===6)}
   ${marketing}`;
 }
 function renderOnline(){
