@@ -751,6 +751,25 @@ function availSplitChart(wd, we, hi, normTot){
     <span><span style="display:inline-block;width:10px;height:10px;background:#c4b5fd;border-radius:2px;vertical-align:middle;margin-right:4px;"></span>Weekend days</span></div>`;
   return `${legend}<svg width="100%" viewBox="0 0 ${w} ${h+2}" style="overflow:visible;">${norm}${bars}</svg>`;
 }
+// Grouped bars — two series side-by-side per week, each labelled on top. For NON-additive
+// metrics like weekday vs weekend booking RATE (which you can't stack).
+function groupBars(series, hi, fmt, normVal){
+  const w=340,h=98,padX=8,padB=13,padT=15, n=series[0].vals.length, g=series.length;
+  const all=series.flatMap(s=>s.vals.map(x=>x==null?0:x));
+  const mx=Math.max(1,...all, normVal||0)*1.18;
+  const slot=(w-2*padX)/n, bw=slot*0.74/g, base=h-padB, Y=v=>base-(v/mx)*(base-padT);
+  const normY=(normVal&&normVal>0)?Y(normVal):null;
+  const norm=normY!=null?`<line x1="${padX}" y1="${normY.toFixed(1)}" x2="${w-padX}" y2="${normY.toFixed(1)}" stroke="#94a3b8" stroke-width="1" stroke-dasharray="3 3"/>`:'';
+  let bars='', labels='';
+  for(let i=0;i<n;i++){ const x0=padX+i*slot+slot*0.13;
+    series.forEach((s,j)=>{ const v=s.vals[i]==null?0:s.vals[i]; const x=x0+j*bw, y=Y(v), hl=i===hi;
+      bars+=`<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${(bw*0.86).toFixed(1)}" height="${(base-y).toFixed(1)}" fill="${s.color}" opacity="${hl?1:.72}" rx="1.5"/>`;
+      if(v>0) labels+=`<text x="${(x+bw*0.43).toFixed(1)}" y="${(y-2).toFixed(1)}" font-size="7.5" fill="${s.color}" text-anchor="middle" font-weight="${hl?800:600}">${fmt?fmt(v):v}</text>`;
+    });
+  }
+  const legend=series.map(s=>`<span style="font-size:10px;color:#475569;font-weight:600;margin-right:11px;white-space:nowrap;"><span style="display:inline-block;width:10px;height:10px;background:${s.color};border-radius:2px;vertical-align:middle;margin-right:4px;"></span>${s.label} <b style="color:${s.color}">${fmt?fmt(s.vals[hi]==null?0:s.vals[hi]):(s.vals[hi]||0)}</b></span>`).join('');
+  return `<div style="margin-bottom:3px;">${legend}</div><svg width="100%" viewBox="0 0 ${w} ${h+2}" style="overflow:visible;">${norm}${bars}${labels}</svg>`;
+}
 // Per-day-of-week scheduled-hours bars for the selected week. Each day is a bar
 // filled to its actual scheduled hours; the dashed marker is that day's recent
 // norm — so a day the doctor didn't sit (or got shrunk) is obvious.
@@ -1339,8 +1358,8 @@ function renderDeepDive(r){
   const vitals = `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;">
     ${vital('📅','Bookings', r.bk_w,'', gapPct, 'vs '+exp+' expected', spark(rev(r.bkArr),'#4f46e5',hi,null,r.bkBase))}
     ${vital('🔎','Leads', r.ld_w,'', Math.round(r.dLeadPct), 'demand · vs '+Math.round(r.ld_avg)+' norm', spark(rev(r.ldArr),'#0ea5e9',hi,null,r.ld_avg))}
-    ${vital('🩺','Availability', r1(r.av_w),' d', pctOf(r.dAct,r.av_avg), 'supply · '+r1(r.wd_w)+' wkday + '+r1(r.we_w)+' wkend days', sparkMulti([{vals:rev(r.wdArr),color:'#7c3aed',label:'Weekday',width:1.9},{vals:rev(r.weArr),color:'#db2777',label:'Weekend'}], hi, false, 'hi'))}
-    ${vital('⚡','Booking rate', r1(rate_w),'/day', pctOf(rate_w-rate_n,rate_n), 'efficiency · wkday '+r1(wd_rate_w)+' · wkend '+r1(we_rate_w)+' per open day', sparkMulti([{vals:rev(wdRateArr),color:'#7c3aed',label:'Weekday',width:1.9},{vals:rev(weRateArr),color:'#db2777',label:'Weekend'}], hi, false, 'hi'))}
+    ${vital('🩺','Availability', r1(r.av_w),' d', pctOf(r.dAct,r.av_avg), 'supply · '+r1(r.wd_w)+' wkday + '+r1(r.we_w)+' wkend days', availSplitChart(rev(r.wdArr), rev(r.weArr), hi, r.av_avg))}
+    ${vital('⚡','Booking rate', r1(rate_w),'/day', pctOf(rate_w-rate_n,rate_n), 'efficiency · wkday '+r1(wd_rate_w)+' · wkend '+r1(we_rate_w)+' per open day', groupBars([{vals:rev(wdRateArr),color:'#7c3aed',label:'Weekday'},{vals:rev(weRateArr),color:'#db2777',label:'Weekend'}], hi, r1, rate_n))}
   </div>`;
   const vitalsCard = `<div class="card"><div class="sec-h"><span class="sec-num">🩺</span>Vital signs — ${r.clinic}</div>
     <div class="sec-sub">Outcome + the three levers that explain it. Last ${winN} weeks · highlighted = ${wl} · dashed = norm/expected.</div>
