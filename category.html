@@ -261,6 +261,7 @@ function cityTier(c) {
 
 let DATA = null;
 let CHDATA = null;   // data_channel.json — verified offline channel×category per city/clinic
+let LEADS_TOTAL = null;   // data_leads_total.json — network total inbound leads/week (top of funnel)
 let activeCat    = 'STI';
 let viewMode     = 'abs';
 let activeScope  = 'offline';
@@ -709,7 +710,15 @@ function renderSnapshot(){
     {lbl:'Calls done', v:F.calls_done, col:'#10b981', sub: F.slot_booked?'B2D '+pc(F.calls_done,F.slot_booked)+' of slots booked':''},
     {lbl:catLabel+' calls', v:catOf(F), col:m.color, sub: F.calls_done?catLabel+' = '+pc(catOf(F),F.calls_done)+' of calls done':''},
   ];
-  const fMax=F.slot_booked||1;
+  // Top of funnel: network total inbound leads. Most leads have no clinic tag, so this is only shown
+  // at true network scope (no geo/channel filter) — otherwise network leads would dwarf scoped bookings.
+  const isNetworkScope = (typeof geoMode==='function'? geoMode()==='none' : true) && activeChannel==='ALL';
+  const leadWks = LEADS_TOTAL ? allWeeks.filter(w=>LEADS_TOTAL[w]!=null) : [];
+  const leadsTot = leadWks.length ? leadWks.reduce((s,w)=>s+(LEADS_TOTAL[w]||0),0) : null;
+  if (isNetworkScope && leadsTot!=null) {
+    fStages.unshift({lbl:'Leads', v:leadsTot, col:'#0ea5e9', sub:'all inbound (excl. Practo) · '+pc(F.slot_booked,leadsTot)+' booked a slot'});
+  }
+  const fMax=Math.max(F.slot_booked||1, fStages[0]?.v||0);
   const funnelHTML=`<div class="card"><div class="snap-h">🔻 Demand funnel — ${dlScopeLbl()}${activeChannel!=='ALL'?' · '+activeChannel:''} · ${snapPeriods[0].label} → ${snapPeriods[snapPeriods.length-1].label}</div>
     <div class="snap-funnel">${fStages.map(s=>`<div class="fnl-row"><div class="fnl-bar" style="width:${Math.max(16,s.v/fMax*100)}%;background:${s.col};"><span class="fnl-lbl">${s.lbl}</span><span class="fnl-val">${s.v.toLocaleString()}</span></div><div class="fnl-sub">${s.sub||''}</div></div>`).join('')}</div></div>`;
   // snapshot bar (Weekly/Monthly + date range — no Period/Compare here)
@@ -1601,6 +1610,8 @@ async function init() {
     DATA       = await res.json();
     try { const cr = await fetch('data_channel.json', {cache:'no-store'}); if (cr.ok) CHDATA = await cr.json(); }
     catch(_) { CHDATA = null; }   // channel mix is an enhancement — page still works without it
+    try { const lr = await fetch('data_leads_total.json', {cache:'no-store'}); if (lr.ok) LEADS_TOTAL = (await lr.json()).totals || {}; }
+    catch(_) { LEADS_TOTAL = null; }   // network total leads — top of the demand funnel
     const firstLabel = DATA.week_labels[DATA.weeks[0]] || DATA.weeks[0];
     const lastLabel  = DATA.week_labels[DATA.weeks[DATA.weeks.length-1]] || DATA.weeks[DATA.weeks.length-1];
     const noteEl = document.getElementById('dataNote');
