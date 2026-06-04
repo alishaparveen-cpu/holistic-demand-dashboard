@@ -62,6 +62,15 @@ def city_of(name):
     m = re.match(r'T[12]_([A-Za-z]+(?:_[A-Za-z]+)*)_SH_Exact_Local$', name)
     return m.group(1).replace('_',' ') if m else None
 
+def city_of_any(name):
+    # any local/city T1/T2 campaign → city (before the SH/STD/MH product marker)
+    m = re.match(r'T[12]_(.+?)_(SH|STD|MH)_', name)
+    return m.group(1).replace('_',' ') if m else None
+
+def short_campaign(name, city):
+    # drop the "T1_<City>_" prefix for compact display
+    return re.sub(r'^T[12]_'+re.escape(city.replace(' ','_'))+r'_', '', name)
+
 def derive_suggestion(g):
     bl, rl, ad, lp = g.get('budget_lost') or 0, g.get('rank_lost') or 0, g.get('ad_rel_drag') or 0, g.get('lp_drag') or 0
     if bl >= 0.10 and bl >= rl: return "Increase budget"
@@ -126,6 +135,22 @@ def main():
         if qi.get("creativeQualityScore") == "BELOW_AVERAGE": a['ad_bad'] += imp
         if qi.get("postClickQualityScore") == "BELOW_AVERAGE": a['lp_bad'] += imp
 
+    # 3) ALL enabled search campaigns (last 7 days) → per-city roster: impressions, clicks, CTR, spend, IS
+    crows = gaql(token, c, f"""
+      SELECT campaign.name, metrics.impressions, metrics.clicks, metrics.cost_micros,
+        metrics.search_impression_share
+      FROM campaign
+      WHERE campaign.advertising_channel_type = 'SEARCH' AND campaign.status = 'ENABLED'
+        AND segments.date BETWEEN '{ymd(today - datetime.timedelta(days=7))}' AND '{ymd(today)}'""")
+    camps = defaultdict(lambda: defaultdict(lambda: {'impr':0,'clicks':0,'cost':0,'is':None}))
+    for r in crows:
+        name = r["campaign"]["name"]; cy = city_of_any(name)
+        if not cy: continue
+        m = r.get("metrics", {}); a = camps[cy][name]
+        a['impr'] += int(m.get("impressions",0) or 0); a['clicks'] += int(m.get("clicks",0) or 0)
+        a['cost'] += int(m.get("costMicros",0) or 0)/1e6
+        if m.get("searchImpressionShare") is not None: a['is'] = float(m["searchImpressionShare"])
+
     prev = {}
     if os.path.exists(OUT):
         try: prev = json.load(open(OUT))
@@ -157,6 +182,13 @@ def main():
         p = prev.get(city, {})
         g['qs_prev'] = p.get('qs'); g['ad_rel_drag_prev'] = p.get('ad_rel_drag'); g['lp_drag_prev'] = p.get('lp_drag')
         g['suggestion'] = derive_suggestion(g)
+        # full campaign roster for the city (last 7 days) — impressions, clicks, CTR, spend, IS
+        g['campaigns'] = sorted([
+            {'name': short_campaign(n, city), 'impr': v['impr'], 'clicks': v['clicks'],
+             'ctr': round(v['clicks']/v['impr'],4) if v['impr'] else 0,
+             'cost': round(v['cost'],0), 'is': round(v['is'],4) if v['is'] is not None else None}
+            for n, v in camps.get(city, {}).items()
+        ], key=lambda x: -x['impr'])
         res[city] = g
 
     json.dump(res, open(OUT,'w'), separators=(',',':'))
