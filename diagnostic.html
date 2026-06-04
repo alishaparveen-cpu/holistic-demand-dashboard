@@ -977,6 +977,35 @@ function bookingRateCard(r){
     <div style="font-size:11.5px;background:#f8fafc;border-radius:9px;padding:10px 13px;line-height:1.6;color:#475569;">${verdict}</div>
   </div>`;
 }
+// ═══════════════ MARKETING vs OPS — split the new-booking gap ═══════════════
+// Two-factor decomposition of the new-patient booking change:  new = leads × (new/lead).
+//   marketing (lead volume) = conv_norm · Δleads     →  is demand coming in?
+//   ops (lead→book convert)  = leads_now · Δconv      →  are leads being handled?
+// (Leads here are essentially unique inquiries — the source table is de-duped, ~1% re-inquire —
+//  so there's no meaningful "repeat lead" split; marketing-vs-ops is the useful cut.)
+function marketingVsOpsCard(r){
+  const W=wkIdx, nw=r.bkNewArr||[], dn=r.bkDoneArr||[], bk=r.bkArr||[];
+  const ld_w=r.ld_w||0, ld_n=r.ld_avg||0, new_w=nw[W]||0, new_n=avg(nw.slice(W+1,W+6));
+  if(ld_n<=0 && new_n<=0) return '';
+  const conv_w=ld_w>0?new_w/ld_w:0, conv_n=ld_n>0?new_n/ld_n:0;
+  const mkt=conv_n*(ld_w-ld_n), ops=ld_w*(conv_w-conv_n), gapNew=new_w-new_n;
+  const done_w=dn[W]||0, doneR_w=r.bk_w>0?done_w/r.bk_w:0, doneR_n=(avg(bk.slice(W+1,W+6))>0?avg(dn.slice(W+1,W+6))/avg(bk.slice(W+1,W+6)):0);
+  const segs=[['Marketing · lead volume',mkt,'#0ea5e9'],['Ops · lead→book conversion',ops,'#d97706']];
+  const tot=Math.abs(mkt)+Math.abs(ops)||1;
+  const bar=segs.map(s=>`<div title="${s[0]}: ${signed(r1(s[1]))}" style="width:${Math.abs(s[1])/tot*100}%;background:${s[2]};display:flex;align-items:center;justify-content:center;color:#fff;font-size:10.5px;font-weight:800;">${Math.abs(s[1])/tot>=0.12?signed(r1(s[1])):''}</div>`).join('');
+  const leadLever=Math.abs(mkt)>=Math.abs(ops)?'marketing':'ops';
+  const leadCol=leadLever==='marketing'?'#0ea5e9':'#d97706';
+  const leg=segs.map(s=>`<span style="font-size:11px;color:#475569;margin-right:14px;white-space:nowrap;"><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${s[2]};vertical-align:middle;margin-right:4px;"></span>${s[0]} <b>${signed(r1(s[1]))}</b></span>`).join('');
+  return `<div class="card" style="border-left:4px solid ${leadCol};">
+    <div class="sec-h"><span class="sec-num">🧭</span>Marketing vs Ops — where's the new-booking gap?</div>
+    <div class="sec-sub">Splits the new-patient booking change into <b>lead volume</b> (marketing brings demand) and <b>lead→book conversion</b> (ops handles it). · ${WEEKS[W].label}</div>
+    <div style="display:flex;height:30px;border-radius:8px;overflow:hidden;border:1px solid var(--line);margin:6px 0 8px;">${bar}</div>
+    <div style="margin-bottom:9px;">${leg}</div>
+    <div style="font-size:11.5px;background:#f8fafc;border-radius:9px;padding:10px 13px;line-height:1.65;color:#475569;">
+      New bookings <b>${signed(r1(gapNew))}</b> vs norm. Leads <b>${ld_w}</b> vs ${r1(ld_n)} (${signed(Math.round(r.dLeadPct),'%')}) → <b style="color:#0ea5e9">marketing ${signed(r1(mkt))}</b>. Of leads, <b>${Math.round(conv_w*100)}%</b> became new bookings vs <b>${Math.round(conv_n*100)}%</b> normally → <b style="color:#d97706">ops ${signed(r1(ops))}</b>. Bigger lever: <b style="color:${leadCol}">${leadLever}</b>.${doneR_n>0&&doneR_w<doneR_n-0.05?` Plus only <b>${Math.round(doneR_w*100)}%</b> of booked calls completed (vs ${Math.round(doneR_n*100)}%) — extra <b style="color:#d97706">ops</b> leakage (no-shows / reschedules).`:''}</div>
+    <div style="font-size:10px;color:#94a3b8;margin-top:6px;">Leads are unique inquiries (source table de-duped — only ~1% ever re-inquire), so there's no real "repeat lead" — marketing (volume) vs ops (conversion) is the useful split.</div>
+  </div>`;
+}
 // ═══════════════ LEADS → BOOKED → DONE funnel + booked→done disposition ═══════════════
 // Explains why only N of M booked calls actually completed: rescheduled (delayed, not lost),
 // no-show (confirmation/reminder gap), cancelled (demand quality), or pending (upcoming).
@@ -1616,6 +1645,7 @@ function renderDeepDive(r){
   ${step3}
   ${whyIntro}
   ${step4}
+  ${marketingVsOpsCard(r)}
   ${step5}
   ${step6}
   ${marketing}`;
