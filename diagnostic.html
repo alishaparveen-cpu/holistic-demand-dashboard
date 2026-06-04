@@ -117,7 +117,7 @@ const MIXCOL='#be185d';
 
 // ═══════════════ STATE ═══════════════
 let JDATA=null, SDATA={}, L0=null, PRACTO={}, ROSTER={};   // PRACTO['City|Clinic'] = [7 weekly counts aligned to WEEKS]; ROSTER['City|Clinic']={hrs:[7],we_hrs:[7]} scheduled bookable hours
-let LEADS={}, REVIEWS={}, MKT=null, BOOKTYPE={};   // Redshift leads-by-source · GMB review velocity · Google Ads impression-share · booking-type split
+let LEADS={}, REVIEWS={}, MKT=null, BOOKTYPE={}, GACITY={};   // Redshift leads-by-source · GMB review velocity · Google Ads impression-share · booking-type split · city-level Google Ads health
 function bookTypeArr(city,clinic,field){ const o=BOOKTYPE[city+'|'+clinic]; return o&&o[field] ? o[field].slice(0,WEEKS.length) : Array(WEEKS.length).fill(0); }
 function hasBookType(city,clinic){ return !!BOOKTYPE[city+'|'+clinic]; }
 // align a 12-week newest-first data array (LEADS/REVIEWS) to the diagnostic's WEEKS (also newest-first) → length WEEKS.length
@@ -1083,6 +1083,29 @@ function bookTypeMix(r){
   </div>`;
 }
 // ── Lead-loss drill: GMB profile (reviews/rank) vs Google Ads (impression share) ──
+// City-level Google Ads health tiles (from the weekly export) — IS, rank-lost vs budget-lost,
+// QS + ad-relevance/LP drag, CPC, Util + the marketing team's suggestion. Arrows = W0 vs W1.
+function gaCityPanel(city){
+  const g=GACITY[city]; if(!g) return '';
+  const P=v=>v==null?'—':Math.round(v*100)+'%';
+  const dir=(cur,prev,goodUp)=>{ if(cur==null||prev==null) return ''; const d=cur-prev; if(Math.abs(d)<0.005) return ' <span style="color:#cbd5e1;font-size:9px;">→</span>';
+    const up=d>0, good=goodUp?up:!up; return ` <span style="color:${good?'#059669':'#dc2626'};font-size:9px;">${up?'▲':'▼'}${Math.abs(Math.round(d*100))}</span>`; };
+  const mdir=(cur,prev,goodUp)=>{ if(cur==null||prev==null) return ''; const d=cur-prev; if(Math.abs(d)<0.05) return ' <span style="color:#cbd5e1;font-size:9px;">→</span>';
+    const up=d>0, good=goodUp?up:!up; return ` <span style="color:${good?'#059669':'#dc2626'};font-size:9px;">${up?'▲':'▼'}</span>`; };
+  const tile=(lab,val,col)=>`<div style="background:#fff;border:1px solid #fde0db;border-radius:8px;padding:6px 8px;"><div style="font-size:8px;text-transform:uppercase;color:#b45309;font-weight:700;letter-spacing:.02em;">${lab}</div><div style="font-size:14.5px;font-weight:800;color:${col||'#0f172a'};line-height:1.15;">${val}</div></div>`;
+  const qsCol = g.qs==null?'#0f172a':(g.qs>=7?'#16a34a':g.qs>=5?'#d97706':'#dc2626');
+  return `<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:8px;">
+    ${tile('Impr. share', P(g.is)+dir(g.is,g.is_prev,true), '#16a34a')}
+    ${tile('Rank-lost IS', P(g.rank_lost)+dir(g.rank_lost,g.rank_lost_prev,false), '#dc2626')}
+    ${tile('Budget-lost IS', P(g.budget_lost)+dir(g.budget_lost,g.budget_lost_prev,false))}
+    ${tile('Quality Score', (g.qs==null?'—':r1(g.qs))+dir(g.qs!=null?g.qs/10:null,g.qs_prev!=null?g.qs_prev/10:null,true), qsCol)}
+    ${tile('Ad-rel drag', P(g.ad_rel_drag)+dir(g.ad_rel_drag,g.ad_rel_drag_prev,false))}
+    ${tile('LP drag', P(g.lp_drag)+dir(g.lp_drag,g.lp_drag_prev,false))}
+    ${tile('CPC', (g.cpc==null?'—':'₹'+r1(g.cpc))+mdir(g.cpc,g.cpc_prev,false))}
+    ${tile('Util', P(g.util))}
+  </div>
+  ${g.suggestion?`<div style="font-size:10.5px;background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:6px 9px;color:#9a3412;line-height:1.5;"><b>Marketing's call:</b> ${g.suggestion}.</div>`:''}`;
+}
 function leadLossDrill(r){
   if(!hasLeadDrill(r.city,r.clinic)) return '';
   const W=wkIdx, rev=a=>a.slice(0,WEEKS.length).reverse(), hi=(WEEKS.length-1)-W, sl=a=>a.slice(W+1,W+5);
@@ -1112,6 +1135,7 @@ function leadLossDrill(r){
     : 'GMB and Google Ads leads broadly held this week — lead loss (if any) is elsewhere.';
   const mini=(label,col,sub,svg)=>`<div style="margin-bottom:9px;"><div style="font-size:11.5px;font-weight:700;color:${col};">${label}</div><div style="font-size:9.5px;color:#94a3b8;margin-bottom:2px;">${sub}</div>${svg}</div>`;
   const pctF=v=>Math.round(v)+'%';
+  const gaCity=GACITY[r.city];   // city-level Google Ads health (from weekly export) — clinic-relevant, replaces the account blend
   return `<div class="card"><div class="sec-h"><span class="sec-num">🔎</span>Lead-loss drill — GMB vs Google Ads</div>
     <div class="sec-sub">When inbound leads break, is it the <b>GMB profile</b> (reviews → rank) or <b>Google Ads</b> (impression share / spend)? · leads from Redshift · ${WEEKS[wkIdx].label}</div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;">
@@ -1122,10 +1146,12 @@ function leadLossDrill(r){
         <div style="font-size:10.5px;color:#475569;">Rating ${lastRating!=null?'<b>'+lastRating+'★</b>':'—'}${recentNeg>0?` · <b style="color:#dc2626">${recentNeg} recent negative</b>`:''} · ${vel_n>0.5&&vel_w<vel_n-0.5?'<b style="color:#dc2626">velocity dropping → rank risk</b>':'velocity steady'}.</div>
       </div>
       <div style="background:#fef7f6;border-radius:11px;padding:12px 14px;">
-        <div style="font-size:13px;font-weight:800;color:#DB4437;margin-bottom:8px;">🔍 Google Ads <span style="font-weight:500;color:#94a3b8;font-size:10px;">(network)</span></div>
-        ${mini('Ads leads · '+gads_w+' ('+signed(dGadsP,'%')+')', '#DB4437', 'paid Google Ads leads · dashed = 4-wk avg', spark(rev(gads),'#DB4437',hi,null,gads_n))}
-        ${mini('Impression share', '#f59e0b', 'how often our ad showed — higher is better', spark(rev(isPct),'#f59e0b',hi,pctF))}
-        ${mini('Rank-lost impression share', '#dc2626', 'lost to low Ad Rank (keyword/quality) — lower is better', spark(rev(rlPct),'#dc2626',hi,pctF))}
+        <div style="font-size:13px;font-weight:800;color:#DB4437;margin-bottom:8px;">🔍 Google Ads <span style="font-weight:500;color:#94a3b8;font-size:10px;">${gaCity?'· '+r.city+' (SH local)':'(network)'}</span></div>
+        ${mini('Ads leads · '+gads_w+' ('+signed(dGadsP,'%')+')', '#DB4437', 'paid Google Ads leads (this clinic) · dashed = 4-wk avg', spark(rev(gads),'#DB4437',hi,null,gads_n))}
+        ${gaCity
+          ? `<div style="font-size:9.5px;color:#94a3b8;margin-bottom:4px;">City SH campaign · weekly export · arrows = vs last week</div>${gaCityPanel(r.city)}`
+          : mini('Impression share', '#f59e0b', 'how often our ad showed — higher is better', spark(rev(isPct),'#f59e0b',hi,pctF))
+            + mini('Rank-lost impression share', '#dc2626', 'lost to low Ad Rank (keyword/quality) — lower is better', spark(rev(rlPct),'#dc2626',hi,pctF))}
       </div>
     </div>
     <div style="margin-top:12px;font-size:11.5px;background:#f8fafc;border-radius:9px;padding:10px 13px;line-height:1.6;color:#475569;">${verdict}</div>
@@ -1441,7 +1467,7 @@ function renderOnline(){
 async function init(){
   try{
     const safe=u=>fetch(u,{cache:'no-store'}).catch(()=>({ok:false}));
-    const [jr,sr,lr,pr,rr,ld,rv,mk,bt,dg]=await Promise.all([ fetch('data.json',{cache:'no-store'}), safe(SHEET_URL), safe(L0_URL), safe(PRACTO_URL), safe('data_roster.json'), safe('data_leads.json'), safe('data_reviews.json'), safe('data_marketing.json'), safe('data_booktype.json'), safe('data_diagnostic.json') ]);
+    const [jr,sr,lr,pr,rr,ld,rv,mk,bt,dg,ga]=await Promise.all([ fetch('data.json',{cache:'no-store'}), safe(SHEET_URL), safe(L0_URL), safe(PRACTO_URL), safe('data_roster.json'), safe('data_leads.json'), safe('data_reviews.json'), safe('data_marketing.json'), safe('data_booktype.json'), safe('data_diagnostic.json'), safe('data_ga_city.json') ]);
     if(!jr.ok) throw new Error('data.json not found');
     JDATA=await jr.json();
     // SDATA now comes from Redshift (data_diagnostic.json); the Google Sheet is a fallback only.
@@ -1455,6 +1481,7 @@ async function init(){
     if(rv.ok){ try{ REVIEWS=await rv.json(); }catch(_){ } }
     if(mk.ok){ try{ MKT=await mk.json(); }catch(_){ } }
     if(bt.ok){ try{ BOOKTYPE=await bt.json(); }catch(_){ } }
+    if(ga.ok){ try{ GACITY=await ga.json(); }catch(_){ } }
     const wSel=document.getElementById('weekSelect');
     WEEKS.forEach((w,i)=>{ const o=document.createElement('option'); o.value=i; o.textContent=w.label+(i===0?' (latest)':''); if(i===0)o.selected=true; wSel.appendChild(o); });
     render();
