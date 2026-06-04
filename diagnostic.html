@@ -194,6 +194,7 @@ function geoScopeText(){ const cs=[...geoSel].filter(t=>t[0]==='c').map(t=>t.sli
 function geoLabel(){ if(!geoSel.size) return 'All clinics'; if(geoSel.size===1) return geoScopeText(); return geoSel.size+' selected'; }
 function geoToggle(){ geoOpen=!geoOpen; geoQ=''; renderGeo(); }
 function geoClear(){ geoSel.clear(); selClinic=''; render(); renderGeo(); }
+function drillCity(city){ geoSel.clear(); geoSel.add('c|'+city); selClinic=''; render(); if(typeof renderGeo==='function')renderGeo(); window.scrollTo(0,0); }
 function geoSearchInput(v){ geoQ=(v||'').toLowerCase(); renderGeoList(); }
 function geoPick(tok){ tok=decodeURIComponent(tok); geoSel.has(tok)?geoSel.delete(tok):geoSel.add(tok);
   if(selClinic && geoSel.size){ const [c,cl]=selClinic.split('|'); if(!geoMatchRow({city:c,clinic:cl})) selClinic=''; }
@@ -644,6 +645,27 @@ function cityOverview(R){
     <div class="sec-sub"><b>${list.length}</b> clinic${list.length>1?'s':''} in scope · <b style="color:${affected.length?'#dc2626':'#059669'}">${affected.length} dipped</b> in new-patient bookings this week. Worst-first — click one for the full story.</div>
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(248px,1fr));gap:12px;">${list.map(card).join('')}</div></div>`;
 }
+// All-cities landing: each city's new-patient bookings vs norm, worst-first. Click a city to see its clinics.
+function cityRollup(R){
+  const W=wkIdx, byCity={};
+  R.rows.forEach(r=>{ const c=r.city, nw=r.bkNewArr||[], new_w=nw[W]||0, new_n=avg(nw.slice(W+1,W+6));
+    if(!byCity[c]) byCity[c]={city:c,new_w:0,new_n:0,bk_w:0,n:0,aff:0,newArr:Array(WEEKS.length).fill(0)};
+    const o=byCity[c]; o.new_w+=new_w; o.new_n+=new_n; o.bk_w+=r.bk_w; o.n++;
+    for(let i=0;i<WEEKS.length;i++) o.newArr[i]+=(nw[i]||0);
+    if((new_w-new_n)<=-2 || (new_n>0 && (new_w-new_n)/new_n<=-0.2)) o.aff++; });
+  const list=Object.values(byCity).map(o=>{ o.dN=o.new_w-Math.round(o.new_n); o.dNp=o.new_n>0?Math.round((o.new_w-o.new_n)/o.new_n*100):0; return o; }).sort((a,b)=>a.dN-b.dN);
+  const affCities=list.filter(o=>o.dN<=-2);
+  const card=o=>{ const aff=o.dN<=-2, col=aff?'#dc2626':(o.dN>1?'#059669':'#475569');
+    return `<div onclick="drillCity('${o.city.replace(/'/g,"\\'")}')" style="cursor:pointer;border:1px solid ${aff?'#fecaca':'var(--line)'};background:${aff?'#fef2f2':'#fff'};border-radius:11px;padding:11px 13px;" onmouseover="this.style.boxShadow='0 4px 14px rgba(0,0,0,.08)'" onmouseout="this.style.boxShadow='none'">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;"><div style="font-size:14.5px;font-weight:800;">${o.city}</div><div style="font-size:10px;color:#94a3b8;">${o.n} clinic${o.n>1?'s':''}</div></div>
+      <div style="display:flex;align-items:baseline;gap:7px;margin:5px 0 2px;"><span style="font-size:23px;font-weight:800;color:${col};">${o.new_w}</span><span style="font-size:11px;color:#94a3b8;">new bookings</span><span style="font-size:12px;font-weight:800;color:${dCol(o.dN)};margin-left:auto;">${signed(o.dNp,'%')}</span></div>
+      <div style="font-size:10px;color:#94a3b8;margin-bottom:3px;">vs ${r1(o.new_n)} norm · ${o.bk_w} total SC · <span style="color:${o.aff?'#dc2626':'#059669'};font-weight:700;">${o.aff?'⚠ '+o.aff+' clinic'+(o.aff>1?'s':'')+' dipped':'✓ on track'}</span></div>
+      ${spark(o.newArr.slice(0,WEEKS.length).reverse(),col,(WEEKS.length-1)-W,null,o.new_n)}
+      <div style="font-size:10.5px;color:#4f46e5;font-weight:700;margin-top:7px;">View clinics →</div></div>`; };
+  return `<div class="card"><div class="sec-h"><span class="sec-num">📍</span>By city — where did bookings move?</div>
+    <div class="sec-sub"><b>${list.length}</b> cities · <b style="color:${affCities.length?'#dc2626':'#059669'}">${affCities.length} dipped</b> in new-patient bookings this week. Worst-first — <b>click a city</b> to see its clinics, then drill into one.</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(228px,1fr));gap:12px;">${list.map(card).join('')}</div></div>`;
+}
 function renderOffline(){
   if(!Object.keys(SDATA).length) return '<div class="card">Demand-tracker sheet didn\'t load (leads & availability unavailable). Check the sheet is published.</div>';
   const Rall=rcaOffline();
@@ -771,8 +793,9 @@ function renderOffline(){
     <table class="rca"><thead><tr><th>Cause</th><th class="r">Bookings</th><th>Owner</th><th>Where to start</th></tr></thead><tbody>${bl}</tbody></table>
   </div>`;
 
-  const overview = geoSel.size ? cityOverview(R) : '';
-  const networkLabel = geoSel.size ? `<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#94a3b8;margin:18px 0 8px;">Network breakdown (for reference)</div>` : '';
+  // Landing drill: no scope → cities (cityRollup); a city/clinic picked → that scope's clinics (cityOverview).
+  const overview = geoSel.size ? cityOverview(R) : cityRollup(R);
+  const networkLabel = `<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#94a3b8;margin:18px 0 8px;">Network breakdown${geoSel.size?' (for reference)':' — all clinics &amp; causes'}</div>`;
   return ctrl+fNote+overview+networkLabel+headline+decomp+matrix+bottom;
 }
 
