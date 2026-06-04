@@ -197,7 +197,10 @@ function geoClear(){ geoSel.clear(); selClinic=''; render(); renderGeo(); }
 function drillCity(city){ geoSel.clear(); geoSel.add('c|'+city); selClinic=''; render(); if(typeof renderGeo==='function')renderGeo(); window.scrollTo(0,0); }
 function geoSearchInput(v){ geoQ=(v||'').toLowerCase(); renderGeoList(); }
 function geoPick(tok){ tok=decodeURIComponent(tok); geoSel.has(tok)?geoSel.delete(tok):geoSel.add(tok);
-  if(selClinic && geoSel.size){ const [c,cl]=selClinic.split('|'); if(!geoMatchRow({city:c,clinic:cl})) selClinic=''; }
+  const toks=[...geoSel];
+  if(toks.length===1 && toks[0][0]==='k'){ selClinic=toks[0].slice(2); diagStep=null; }   // single clinic picked → open its deep-dive
+  else if(!geoSel.size) selClinic='';
+  else if(selClinic){ const [c,cl]=selClinic.split('|'); if(!geoMatchRow({city:c,clinic:cl})) selClinic=''; }
   render(); renderGeo(); }
 function renderGeo(){
   const btn=document.getElementById('geoBtn'), panel=document.getElementById('geoPanel'); if(!btn) return;
@@ -544,14 +547,7 @@ function ctrlBar(R){
     ${baseSel}
     ${seg('Tier',[['All','all'],['T1','T1'],['T2','T2']],tierF,'setTierF')}
     ${seg('Maturity',[['All','all'],['Mature','Mature'],['Maturing','Maturing'],['New','New']],matF,'setMatF')}
-    ${seg('Cause',[['All','all'],['Avail','avail'],['L2B','l2b'],['Leads','leads'],['Mixed','mixed']],causeF,'setCauseF')}
-    <button onclick="resetDiagFilters()" title="Reset all filters" style="font-size:11.5px;font-weight:600;color:#4f46e5;background:#eef2ff;border:1px solid #c7d2fe;border-radius:8px;padding:4px 11px;cursor:pointer;white-space:nowrap;">↺ Reset filters</button>
-    <div style="display:flex;align-items:center;gap:6px;margin-left:auto;">
-      <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#94a3b8;">Deep-dive clinic</span>
-      <select onchange="setSelClinic(this.value)" style="font-size:12px;border:1.5px solid ${selClinic?'#4f46e5':'var(--line)'};border-radius:7px;padding:4px 9px;background:#fff;cursor:pointer;max-width:230px;">
-        <option value="">— Network RCA —</option>${clinicOpts}
-      </select>
-    </div>
+    <button onclick="resetDiagFilters()" title="Reset all filters" style="font-size:11.5px;font-weight:600;color:#4f46e5;background:#eef2ff;border:1px solid #c7d2fe;border-radius:8px;padding:4px 11px;cursor:pointer;white-space:nowrap;margin-left:auto;">↺ Reset filters</button>
   </div>`;
 }
 
@@ -645,10 +641,18 @@ function cityOverview(R){
       <div style="display:flex;align-items:baseline;gap:7px;margin:5px 0 2px;"><span style="font-size:22px;font-weight:800;color:${col};">${new_w}</span><span style="font-size:11px;color:#94a3b8;">new bookings</span><span style="font-size:12px;font-weight:800;color:${dCol(dN)};margin-left:auto;">${signed(dNp,'%')}</span></div>
       <div style="font-size:10px;color:#94a3b8;margin-bottom:3px;">vs ${r1(new_n)} norm · ${r.bk_w} total SC · <span style="color:${aff?'#dc2626':'#059669'};font-weight:700;">${aff?'⚠ '+(CAUSE[r.cause]?cap(CAUSE[r.cause].short):'dipped'):'✓ on track'}</span></div>
       ${spark(r.bkNewArr.slice(0,WEEKS.length).reverse(),col,(WEEKS.length-1)-W,null,new_n)}</div>`; };
+  // issue-filter chips (replaces the control-bar Cause filter) — counts = flagged clinics by cause
+  const _named=R.rows.filter(r=>['avail','l2b','leads'].includes(r.cause));
+  const _cnt={all:_named.length, avail:_named.filter(r=>r.cause==='avail').length, leads:_named.filter(r=>r.cause==='leads').length, l2b:_named.filter(r=>r.cause==='l2b').length, mixed:_named.filter(r=>r.mixWith).length};
+  const _chip=(v,l,c)=>{ const on=causeF===v, n=v==='all'?_cnt.all:(v==='mixed'?_cnt.mixed:(_cnt[v]||0));
+    return `<button onclick="setCauseF('${v}')" style="font-size:11.5px;padding:4px 12px;border-radius:18px;border:1.5px solid ${on?(c||'#4f46e5'):'var(--line)'};background:${on?(c||'#4f46e5')+'15':'#fff'};color:${on?(c||'#4f46e5'):'#475569'};font-weight:${on?700:500};cursor:pointer;display:inline-flex;align-items:center;gap:5px;">${l} <span style="opacity:.55;font-weight:600;">${n}</span></button>`; };
+  const chips=`<div style="display:flex;gap:7px;flex-wrap:wrap;align-items:center;margin:8px 0 14px;">
+    <span style="font-size:10.5px;color:#94a3b8;font-weight:700;text-transform:uppercase;letter-spacing:.04em;margin-right:2px;">Filter by issue:</span>
+    ${_chip('all','All',null)}${_chip('avail','Availability',CAUSE.avail.col)}${_chip('leads','Leads',CAUSE.leads.col)}${_chip('l2b','Conversion',CAUSE.l2b.col)}${_chip('mixed','Mix',MIXCOL)}</div>`;
   return `<div class="card"><div class="sec-h"><span class="sec-num">📍</span>Your clinics${geoScopeText()?' — '+geoScopeText():''}</div>
-    <div class="sec-sub"><b>${list.length}</b> clinic${list.length>1?'s':''} in scope · <b style="color:${affected.length?'#dc2626':'#059669'}">${affected.length} dipped</b> on <b>new (first-time)</b> patients this week. Worst-first — click one for the full story.</div>
-    ${(()=>{ const wc=list.filter(x=>x.r.L>0 && x.r.cause && x.r.cause!=='ok').length; return (affected.length>wc) ? `<div style="font-size:10.5px;color:#94a3b8;margin:-4px 0 9px;">Of the ${affected.length} dipped, <b style="color:#d97706">${wc}</b> ${wc===1?'has':'have'} a flagged <b>total-booking-loss cause</b> (in “View clinics by issue” below). The other ${affected.length-wc} dipped on new patients but their <b>total</b> bookings broadly held (repeat/returning patients filled in) — so they're not flagged as a loss.</div>` : ''; })()}
-    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(248px,1fr));gap:12px;">${list.map(card).join('')}</div></div>`;
+    <div class="sec-sub"><b>${list.length}</b> clinic${list.length>1?'s':''} in scope · <b style="color:${affected.length?'#dc2626':'#059669'}">${affected.length} dipped</b> on <b>new (first-time)</b> patients this week. Worst-first — click one to open its deep-dive.</div>
+    ${chips}
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(248px,1fr));gap:12px;">${list.length?list.map(card).join(''):'<div style="color:#94a3b8;padding:18px;">No clinics match this issue filter.</div>'}</div></div>`;
 }
 // All-cities landing: each city's new-patient bookings vs norm, worst-first. Click a city to see its clinics.
 function cityRollup(R){
@@ -804,7 +808,7 @@ function renderOffline(){
       <span style="font-size:10px;color:#94a3b8;">vs each clinic's own ${baseShort()} — shows where losses concentrate · clinics with issues below</span>
     </div>
   </div>`;
-  return ctrl+fNote+overview+networkLabel+compactSummary+matrix;
+  return ctrl+fNote+overview+compactSummary;
 }
 
 // inline SVG trend sparkline with value labels; hiIdx = highlighted (selected) point.
