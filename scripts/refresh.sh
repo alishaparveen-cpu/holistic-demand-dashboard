@@ -25,7 +25,7 @@ echo "── 2/3  Redshift: recent negative reviews"
 if python3 scripts/build_reviews_neg.py; then ok+=("data_reviews_neg.json"); else fail+=("reviews_neg"); fi
 
 echo "── 3/3  Google Ads: city-level health + campaign roster/trends"
-[ -f scripts/.ga_creds.env ] && { set -a; . scripts/.ga_creds.env; set +a; }
+for cf in "$HOME/.allo_ga.env" scripts/.ga_creds.env; do [ -f "$cf" ] && { set -a; . "$cf"; set +a; }; done
 if [ -z "${GOOGLE_ADS_REFRESH_TOKEN:-}" ]; then
   fail+=("google-ads — no creds (set GOOGLE_ADS_* or scripts/.ga_creds.env)")
 elif python3 scripts/pull_ga_city.py; then ok+=("data_ga_city.json"); else fail+=("google-ads pull"); fi
