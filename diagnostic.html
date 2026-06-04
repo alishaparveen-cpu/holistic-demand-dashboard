@@ -234,12 +234,12 @@ function buildSDataFromDiag(diag){
     const city=key.slice(0,bar), clinic=key.slice(bar+1);
     if(!city||!clinic||/online/i.test(clinic)) continue;
     const o=diag[key];
-    (out[city]=out[city]||{})[clinic]={_total:{ allBk:slc(o.allBk), bkWe:slc(o.bkWe), bkNew:slc(o.bkNew), bkRepeat:slc(o.bkRepeat), bkDone:slc(o.bkDone), gmbLeads:slc(o.gmbLeads), avail:slc(o.avail), weekend:slc(o.weekend), docDays:slc(o.docDays) }};
+    (out[city]=out[city]||{})[clinic]={_total:{ allBk:slc(o.allBk), bkWe:slc(o.bkWe), bkNew:slc(o.bkNew), bkRepeat:slc(o.bkRepeat), bkDone:slc(o.bkDone), bkResched:slc(o.bkResched), bkMissed:slc(o.bkMissed), bkCancelled:slc(o.bkCancelled), gmbLeads:slc(o.gmbLeads), avail:slc(o.avail), weekend:slc(o.weekend), docDays:slc(o.docDays) }};
   }
   for(const city of Object.keys(out)){
-    const agg={allBk:Array(W).fill(0),bkWe:Array(W).fill(0),bkNew:Array(W).fill(0),bkRepeat:Array(W).fill(0),bkDone:Array(W).fill(0),gmbLeads:Array(W).fill(0),avail:Array(W).fill(0),weekend:Array(W).fill(0),docDays:Array(W).fill(0)};
+    const agg={allBk:Array(W).fill(0),bkWe:Array(W).fill(0),bkNew:Array(W).fill(0),bkRepeat:Array(W).fill(0),bkDone:Array(W).fill(0),bkResched:Array(W).fill(0),bkMissed:Array(W).fill(0),bkCancelled:Array(W).fill(0),gmbLeads:Array(W).fill(0),avail:Array(W).fill(0),weekend:Array(W).fill(0),docDays:Array(W).fill(0)};
     for(const clinic of Object.keys(out[city])){ const t=out[city][clinic]._total;
-      for(let i=0;i<W;i++){ agg.allBk[i]+=t.allBk[i]; agg.bkWe[i]+=t.bkWe[i]; agg.bkNew[i]+=t.bkNew[i]; agg.bkRepeat[i]+=t.bkRepeat[i]; agg.bkDone[i]+=t.bkDone[i]; agg.avail[i]+=t.avail[i]; agg.weekend[i]+=t.weekend[i]; agg.docDays[i]+=t.docDays[i]; } }
+      for(let i=0;i<W;i++){ agg.allBk[i]+=t.allBk[i]; agg.bkWe[i]+=t.bkWe[i]; agg.bkNew[i]+=t.bkNew[i]; agg.bkRepeat[i]+=t.bkRepeat[i]; agg.bkDone[i]+=t.bkDone[i]; agg.bkResched[i]+=(t.bkResched[i]||0); agg.bkMissed[i]+=(t.bkMissed[i]||0); agg.bkCancelled[i]+=(t.bkCancelled[i]||0); agg.avail[i]+=t.avail[i]; agg.weekend[i]+=t.weekend[i]; agg.docDays[i]+=t.docDays[i]; } }
     out[city]._total=agg;
   }
   return out;
@@ -299,6 +299,7 @@ function rcaClinic(city, clinic){
   const bkWe=d.bkWe||Array(WEEKS.length).fill(0);   // weekend (Sat/Sun) bookings subset
   const bkNew=d.bkNew||Array(WEEKS.length).fill(0), bkRepeat=d.bkRepeat||Array(WEEKS.length).fill(0);  // new+repeat = allBk
   const bkDone=d.bkDone||Array(WEEKS.length).fill(0);   // screening calls actually completed (subset of allBk)
+  const bkResched=d.bkResched||Array(WEEKS.length).fill(0), bkMissed=d.bkMissed||Array(WEEKS.length).fill(0), bkCancelled=d.bkCancelled||Array(WEEKS.length).fill(0);  // booked→done disposition
   const pr=practoArr(city,clinic);                       // Practo leads per week (external sheet)
   // ── leads: prefer Redshift (data_leads.json) over the sheet, so the chart, the
   //    RCA and the lead-loss drill all use ONE source. gmb = GMB+Google Ad. ──
@@ -367,7 +368,7 @@ function rcaClinic(city, clinic){
           gmb_w,gmb_avg,pr_w,pr_avg,wd_w,wd_avg,
           leadsBroke,actBroke,weBroke,availBroke,cause,mixWith,comp,L,mat,note,
           bkPerDay,weLost,wdLost,leadsLoss_gmb,leadsLoss_pr,expectedIfFull,
-          bkArr:bk,bkWeArr:bkWe,bkNewArr:bkNew,bkRepeatArr:bkRepeat,bkDoneArr:bkDone,ldArr:ld,avArr:av,weArr:we,gmbArr:gmb,prArr:pr,wdArr:wd,
+          bkArr:bk,bkWeArr:bkWe,bkNewArr:bkNew,bkRepeatArr:bkRepeat,bkDoneArr:bkDone,bkReschedArr:bkResched,bkMissedArr:bkMissed,bkCancelledArr:bkCancelled,ldArr:ld,avArr:av,weArr:we,gmbArr:gmb,prArr:pr,wdArr:wd,
           orgArr:orgArr, gmbOnlyArr:gmbOnly, gAdArr:gAd, fbArr:fbA, jdArr:jdA, othArr:othA, useRedshiftLeads:useRedshift};
 }
 function allClinicRCA(){
@@ -889,6 +890,44 @@ function bookingRateCard(r){
       Expected = <span style="color:#c4b5fd">${r1(wdRate)}</span>×<span style="color:#c4b5fd">${wdOpen}</span> wkday + <span style="color:#f0abfc">${r1(weRate)}</span>×<span style="color:#f0abfc">${weOpen}</span> wkend = <b style="color:#fff">${r1(expDays)}</b> &nbsp;vs&nbsp; actual <b style="color:${gap>=0?'#86efac':'#fca5a5'}">${r.bk_w}</b></div>
     ${weHotter?`<div style="font-size:10.5px;color:#be185d;background:#fdf2f8;border-radius:8px;padding:7px 11px;margin-bottom:9px;">Weekends convert <b>${r1(weRate/Math.max(0.01,wdRate))}×</b> a weekday here — losing a weekend day costs the most.</div>`:''}
     <div style="font-size:11.5px;background:#f8fafc;border-radius:9px;padding:10px 13px;line-height:1.6;color:#475569;">${verdict}</div>
+  </div>`;
+}
+// ═══════════════ LEADS → BOOKED → DONE funnel + booked→done disposition ═══════════════
+// Explains why only N of M booked calls actually completed: rescheduled (delayed, not lost),
+// no-show (confirmation/reminder gap), cancelled (demand quality), or pending (upcoming).
+function funnelCard(r){
+  const W=wkIdx;
+  const ld=r.ld_w||0, bk=r.bk_w||0, done=(r.bkDoneArr&&r.bkDoneArr[W])||0;
+  const res=(r.bkReschedArr&&r.bkReschedArr[W])||0, mis=(r.bkMissedArr&&r.bkMissedArr[W])||0, can=(r.bkCancelledArr&&r.bkCancelledArr[W])||0;
+  const pend=Math.max(0, bk-done-res-mis-can);
+  if(bk<=0) return '';
+  const l2b=ld>0?Math.round(bk/ld*100):null, b2d=bk>0?Math.round(done/bk*100):0;
+  const stage=(lbl,val,sub,col)=>`<div style="flex:1;min-width:90px;text-align:center;"><div style="font-size:9.5px;text-transform:uppercase;letter-spacing:.04em;color:#94a3b8;font-weight:700;">${lbl}</div><div style="font-size:24px;font-weight:800;color:${col};line-height:1.1;">${val}</div><div style="font-size:9.5px;color:#94a3b8;">${sub}</div></div>`;
+  const arrow=t=>`<div style="align-self:center;text-align:center;color:#cbd5e1;font-size:11px;min-width:54px;">→<div style="font-size:9.5px;color:#64748b;font-weight:700;">${t}</div></div>`;
+  // disposition stacked bar of the booked appointments
+  const segs=[['Done',done,'#059669'],['Rescheduled',res,'#f59e0b'],['No-show',mis,'#dc2626'],['Cancelled',can,'#64748b'],['Pending',pend,'#cbd5e1']].filter(s=>s[1]>0);
+  const bar=segs.map(s=>`<div title="${s[0]}: ${s[1]}" style="width:${s[1]/bk*100}%;background:${s[2]};display:flex;align-items:center;justify-content:center;color:#fff;font-size:10px;font-weight:800;">${s[1]/bk>=0.1?s[1]:''}</div>`).join('');
+  const leg=segs.map(s=>`<span style="font-size:10px;color:#475569;margin-right:12px;white-space:nowrap;"><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${s[2]};vertical-align:middle;margin-right:4px;"></span>${s[0]} <b>${s[1]}</b></span>`).join('');
+  const why=[];
+  if(res>0) why.push(`<b style="color:#d97706">${res} rescheduled</b> — moved to a later week, usually <b>not lost</b>, just delayed (they show up in a future week's "done")`);
+  if(mis>0) why.push(`<b style="color:#dc2626">${mis} no-show</b> — booked but didn't turn up: a <b>confirmation / reminder</b> gap`);
+  if(can>0) why.push(`<b style="color:#475569">${can} cancelled</b> — patient called it off: <b>demand quality / lead relevance</b>`);
+  if(pend>0) why.push(`${pend} still <b>pending</b> — upcoming, or the week isn't closed yet`);
+  return `<div class="card"><div class="sec-h"><span class="sec-num">⛳</span>Leads → booked → done — where it leaks</div>
+    <div class="sec-sub">Why only <b>${done}</b> of <b>${bk}</b> booked calls completed. Same distinct patient×doctor basis · Redshift · ${WEEKS[wkIdx].label}</div>
+    <div style="display:flex;gap:6px;margin:6px 0 12px;">
+      ${stage('Leads', ld, 'inbound', '#0ea5e9')}
+      ${arrow(l2b!=null?l2b+'%':'—')}
+      ${stage('Booked', bk, 'SC appts', '#4f46e5')}
+      ${arrow(b2d+'%')}
+      ${stage('Done', done, 'completed', '#059669')}
+    </div>
+    <div style="font-size:11px;color:#475569;margin-bottom:5px;">Of the <b>${bk}</b> booked, what happened:</div>
+    <div style="display:flex;height:30px;border-radius:8px;overflow:hidden;border:1px solid var(--line);margin-bottom:8px;">${bar}</div>
+    <div style="margin-bottom:10px;">${leg}</div>
+    <div style="font-size:11.5px;background:#f8fafc;border-radius:9px;padding:10px 13px;line-height:1.65;color:#475569;">
+      <b>${bk-done}</b> of ${bk} didn't complete: ${why.length?why.join('; ')+'.':'all booked calls completed.'}
+      ${l2b!=null&&l2b>120?` <span style="color:#94a3b8;">(Booked &gt; leads because repeat/walk-in patients book without a tracked lead.)</span>`:''}</div>
   </div>`;
 }
 // ── chart zoom: each trend cell registers its content; ⛶ opens a large modal ──
@@ -1450,6 +1489,7 @@ function renderDeepDive(r){
   </div>
   ${verdictBanner}
   ${vitalsCard}
+  ${funnelCard(r)}
   ${attribCard}
   <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#94a3b8;margin:18px 0 8px;">Drill down — the culprit lever is open</div>
   ${drills}`;

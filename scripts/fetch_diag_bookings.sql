@@ -17,20 +17,29 @@ flagged AS (
     s.patient_id, s.provider_id,
     (s.created_at = f.first_crt) AS is_new,
     (EXTRACT(DOW FROM s.start_time + INTERVAL '5.5 hours') IN (0,6)) AS is_we,
-    (LOWER(s.status) IN ('completed','reconsulted')) AS is_done
+    (LOWER(s.status) IN ('completed','reconsulted')) AS is_done,
+    (LOWER(s.status) = 'rescheduled') AS is_resched,
+    (LOWER(s.status) = 'missed') AS is_missed,
+    (LOWER(s.status) = 'cancelled') AS is_cancelled
   FROM sc_all s JOIN firsts f ON s.patient_id = f.patient_id
   WHERE s.start_time >= '2026-03-09' AND s.start_time < '2026-06-01'
     AND LOWER(COALESCE(s.locality,'')) <> 'online' AND s.locality IS NOT NULL
 ),
 pairs AS (
   SELECT city, locality, wk, patient_id, provider_id,
-    BOOL_OR(is_new) AS pair_new, BOOL_OR(is_we) AS pair_we, BOOL_OR(is_done) AS pair_done
+    BOOL_OR(is_new) AS pair_new, BOOL_OR(is_we) AS pair_we, BOOL_OR(is_done) AS pair_done,
+    BOOL_OR(is_resched) AS pair_resched, BOOL_OR(is_missed) AS pair_missed, BOOL_OR(is_cancelled) AS pair_cancelled
   FROM flagged GROUP BY 1,2,3,4,5
 )
+-- disposition (distinct patient×doctor, priority done > rescheduled > missed > cancelled > pending),
+-- so done+resched+missed+cancelled+pending = allbk. Explains the booked→done gap.
 SELECT city, locality, wk,
   COUNT(*) AS allbk,
   SUM(CASE WHEN pair_we THEN 1 ELSE 0 END) AS we_allbk,
   SUM(CASE WHEN pair_new THEN 1 ELSE 0 END) AS new_bk,
   SUM(CASE WHEN NOT pair_new THEN 1 ELSE 0 END) AS repeat_bk,
-  SUM(CASE WHEN pair_done THEN 1 ELSE 0 END) AS done_bk
+  SUM(CASE WHEN pair_done THEN 1 ELSE 0 END) AS done_bk,
+  SUM(CASE WHEN NOT pair_done AND pair_resched THEN 1 ELSE 0 END) AS resched_bk,
+  SUM(CASE WHEN NOT pair_done AND NOT pair_resched AND pair_missed THEN 1 ELSE 0 END) AS missed_bk,
+  SUM(CASE WHEN NOT pair_done AND NOT pair_resched AND NOT pair_missed AND pair_cancelled THEN 1 ELSE 0 END) AS cancelled_bk
 FROM pairs GROUP BY 1,2,3 ORDER BY 1,2,3 DESC
