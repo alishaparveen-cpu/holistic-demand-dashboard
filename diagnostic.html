@@ -1590,22 +1590,10 @@ function renderDeepDive(r){
   const reconNote = (hasRoster && rh_w!=null) ? `<div style="font-size:11px;color:#475569;background:#f5f3ff;border:1px solid #ddd6fe;border-radius:9px;padding:9px 12px;margin:2px 0 10px;line-height:1.55;">
       <b>Two layers — different units, both correct.</b> The roster <b>scheduled ${r1(rh_w)}h${_schedDays?` across ${_schedDays} day-slots`:''}</b> (the plan — that's the 7-day × hours view in the day-by-day &amp; hour charts below). The headline <b>${r1(r.av_w)} active doctor-days</b> counts distinct doctor×day that still had a <b>bookable, non-blocked</b> slot <b>after shrinkage</b>. So "${r1(r.av_w)} days" = realized; "${r1(rh_w)}h${_schedDays?` / ${_schedDays} days`:''}" = scheduled. The gap between them is doctor shrinkage — see <b>Slots &amp; shrinkage</b> below.
     </div>` : '';
-  const availCard = `<div class="card"><div class="sec-h"><span class="sec-num">🩺</span>Availability — weekday vs weekend</div>
-    <div class="sec-sub">Realized active <b>doctor-days</b> (post-shrinkage) the clinic was open, split weekday vs weekend. Scheduled roster <b>hours</b> shown lower down.</div>
-    ${reconNote}
-    <div style="font-size:10px;color:#94a3b8;margin:-2px 0 8px;display:flex;gap:14px;flex-wrap:wrap;">
-      <span><span style="display:inline-block;width:18px;height:9px;background:#7c3aed33;border-radius:2px;vertical-align:middle;margin-right:4px;"></span>5-week norm</span>
-      <span><span style="display:inline-block;width:18px;height:9px;background:#7c3aed;border-radius:2px;vertical-align:middle;margin-right:4px;"></span>this week (${wl})</span>
-    </div>
-    ${dayRow('Weekday days', r.wd_avg, r.wd_w, '#7c3aed')}
-    ${dayRow('Weekend days', r.we_avg, r.we_w, '#a855f7')}
-    <div style="font-size:11.5px;color:#475569;margin-top:8px;line-height:1.55;">
-      Total active-days <b>${r1(r.av_avg)} → ${r1(r.av_w)}</b> (${signed(r1(r.dAct))}).
-      ${r.availBroke
-        ? `Days lost: <b style="color:#7c3aed">${r1(r.wdLost)} weekday</b> + <b style="color:#a855f7">${r1(r.weLost)} weekend</b>. ${r.weLost>r.wdLost?'The loss is <b>weekend-weighted</b> — the costliest window.':'The loss is <b>mid-week</b>.'}`
-        : (r.weLost>0.3||r.wdLost>0.3)
-          ? `A slight dip (${[r.wdLost>0.3?r1(r.wdLost)+' weekday':'',r.weLost>0.3?r1(r.weLost)+' weekend':''].filter(Boolean).join(' + ')} day) but <b>within normal week-to-week wobble</b> — too small to count as a real availability loss, so it's not blamed below.`
-          : '<b>Availability held</b> — essentially flat vs norm.'}
+  const availCard = `<div class="card"><div class="sec-h"><span class="sec-num">🩺</span>Availability — roster detail</div>
+    <div class="sec-sub">The weekday/weekend split &amp; doctor-shrinkage charts are in the <b>overview above</b>. This is the deeper roster detail: scheduled hours, the slot-shrinkage chain, day-by-day &amp; hour-of-day. · ${wl}</div>
+    <div style="font-size:11.5px;color:#475569;background:#f5f3ff;border:1px solid #ddd6fe;border-radius:9px;padding:8px 12px;margin-bottom:10px;line-height:1.5;">
+      <b>${r1(r.av_w)} realized active doctor-days</b> (${signed(r1(r.dAct))} vs ${r1(r.av_avg)} norm) — wd ${r1(r.wd_w)} + we ${r1(r.we_w)}.${(r.weLost>0.3)?` Weekend-weighted loss — the costliest window.`:''}${(hasRoster&&rh_w!=null)?` Roster scheduled <b>${r1(rh_w)}h</b>; the gap to realized is doctor shrinkage (below).`:''}
     </div>
     ${rosBlock}
   </div>`;
@@ -1773,16 +1761,23 @@ function renderDeepDive(r){
   const l2bArr = r.bkArr.map((b,i)=>{ const l=r.ldArr[i]||0, nb=(r.bkNewArr[i]||0); return l>0?Math.round(nb/l*100):0; });
   const b2dArr = r.bkArr.map((b,i)=>{ const d=(r.bkDoneArr[i]||0); return b>0?Math.round(d/b*100):0; });
   const l2b_w=l2bArr[wkIdx], b2d_w=b2dArr[wkIdx];
-  // OVERVIEW STRIP — six at a glance in a 3×2 grid; details live in the tabs below
+  // doctor shrinkage (slots blocked) for the overview chip
+  const _shr = ros.shr || {sched:[],shrunk:[],avail:[]};
+  const _shrHas = _shr.sched && _shr.sched.some(x=>x>0);
+  const _scW=_shr.sched[wkIdx]||0, _shW=_shr.shrunk[wkIdx]||0, _shrPct=_scW?Math.round(_shW/_scW*100):0;
+  const _psc=_shr.sched.slice(wkIdx+1,wkIdx+6).reduce((a,b)=>a+(b||0),0), _psh=_shr.shrunk.slice(wkIdx+1,wkIdx+6).reduce((a,b)=>a+(b||0),0);
+  const _shrPctN=_psc?Math.round(_psh/_psc*100):0;
+  const shrChip = _shrHas ? shrinkChart(rev(_shr.sched), rev(_shr.shrunk), rev(_shr.avail), hi) : '<div style="color:#cbd5e1;font-size:10px;padding:18px 0;text-align:center;">No roster / shrinkage data</div>';
+  // OVERVIEW — six at a glance, 2 per row (wider = bigger charts); details in the tabs below
   const ov = `<div class="card" style="margin-bottom:12px;">${winBar}
     <div style="font-size:10.5px;color:#94a3b8;margin:0 0 9px;">📅 Trailing <b>${winN}</b> weeks · ${WEEKS[Math.min(wkIdx+winN-1,WEEKS.length-1)].label} → <b>${wl}</b> · chart dates are week-ending · click ⛶ on any chart to zoom.</div>
-    <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;">
+    <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;">
       ${vchip('🆕','New bookings', new_w,'', newPct, 'first-time · vs '+r1(new_n)+' norm', spark(rev(r.bkNewArr),'#4f46e5',hi,null,new_n))}
       ${vchip('📅','All SC bookings', r.bk_w,'', gapPct, 'new+repeat · vs '+exp+' exp', spark(rev(r.bkArr),'#6366f1',hi,null,r.bkBase))}
-      ${vchip('📞','Consults done', done_w,'', pctOf(done_w-done_n,done_n), doneRate+'% of '+r.bk_w+' SC completed', spark(rev(r.bkDoneArr),'#0891b2',hi,null,done_n))}
       ${vchip('🔎','Leads', r.ld_w,'', Math.round(r.dLeadPct), 'inbound · vs '+Math.round(r.ld_avg)+' norm', spark(rev(r.ldArr),'#0ea5e9',hi,null,r.ld_avg))}
-      ${vchip('🩺','Availability', r1(r.av_w),'d', pctOf(r.dAct,r.av_avg), 'doctor-days · wd '+r1(r.wd_w)+' + we '+r1(r.we_w)+(hasRoster&&rh_w!=null?' · '+r1(rh_w)+'h rostered':''), availSplitChart(rev(r.wdArr), rev(r.weArr), hi, r.av_avg, wkS))}
-      ${vchip('⛳','Conversion', l2b_w,'%', null, 'lead→book '+l2b_w+'% · book→done '+b2d_w+'%', groupBars([{vals:rev(l2bArr),color:'#0ea5e9',label:'Lead→book %'},{vals:rev(b2dArr),color:'#059669',label:'Book→done %'}], hi, v=>v+'%', null, wkS))}
+      ${vchip('📞','Consults done', done_w,'', pctOf(done_w-done_n,done_n), doneRate+'% of '+r.bk_w+' SC completed', spark(rev(r.bkDoneArr),'#0891b2',hi,null,done_n))}
+      ${vchip('🩺','Availability', r1(r.av_w),'d', pctOf(r.dAct,r.av_avg), 'realized doctor-days · wd '+r1(r.wd_w)+' + we '+r1(r.we_w)+(hasRoster&&rh_w!=null?' · '+r1(rh_w)+'h scheduled':''), availSplitChart(rev(r.wdArr), rev(r.weArr), hi, r.av_avg, wkS))}
+      ${vchip('✂️','Doctor shrinkage', _shrPct,'%', null, _shrHas?_shW+' of '+_scW+' slots blocked · norm '+_shrPctN+'%':'no roster data', shrChip)}
     </div></div>`;
   // the "why" fork — leads down (demand/sources) vs leads held (conversion)
   const leadsDown = r.dLeadPct<=-12 || r.leadsBroke;
