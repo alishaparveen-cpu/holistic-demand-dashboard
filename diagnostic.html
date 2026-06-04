@@ -76,7 +76,7 @@ code{background:#f1f5f9;padding:1px 5px;border-radius:4px;font-size:11px;}
     <a href="channel.html" class="nav-link">Channel</a>
     <a href="efficiency.html" class="nav-link">Efficiency</a>
     <a href="comparison.html" class="nav-link">Comparison →</a>
-    <a href="weekly-report.html" class="nav-link">Weekly Report</a><button onclick="location.reload()" title="Reset all filters on this page" style="margin-left:12px;font-size:11.5px;font-weight:600;color:#4f46e5;background:#eef2ff;border:1px solid #c7d2fe;border-radius:8px;padding:3px 10px;cursor:pointer;white-space:nowrap;">↺ Reset filters</button><button id="refreshBtn" onclick="showRefreshHelp()" title="How to refresh this week's data" style="margin-left:8px;font-size:11.5px;font-weight:600;color:#0f766e;background:#ecfeff;border:1px solid #99f6e4;border-radius:8px;padding:3px 10px;cursor:pointer;white-space:nowrap;">↻ Refresh data</button>
+    <a href="weekly-report.html" class="nav-link">Weekly Report</a><button id="refreshBtn" onclick="showRefreshHelp()" title="How to refresh this week's data" style="margin-left:8px;font-size:11.5px;font-weight:600;color:#0f766e;background:#ecfeff;border:1px solid #99f6e4;border-radius:8px;padding:3px 10px;cursor:pointer;white-space:nowrap;">↻ Refresh data</button>
     <div class="ml-2">
       <div class="font-bold text-base">Weekly Demand RCA</div>
       <div class="text-xs text-slate-400">Where did bookings break — leads, availability, or conversion?</div>
@@ -511,6 +511,7 @@ function setBase(b){ baseMode=b; render(); }
 function setCauseF(c){ causeF=c; render(); }
 // does a clinic row match the active Cause filter? (used by the city/clinic landing cards)
 function causeMatch(r){ if(causeF==='all') return true; if(causeF==='mixed') return !!r.mixWith; return r.cause===causeF; }
+function resetDiagFilters(){ geoSel.clear(); selClinic=''; diagStep=null; baseMode='avg8'; tierF='all'; matF='all'; causeF='all'; trendWin=6; render(); if(typeof renderGeo==='function')renderGeo(); window.scrollTo(0,0); }
 function setMatF(m){ matF=m; render(); }
 function setTierF(t){ tierF=t; render(); }
 function setSelClinic(v){ selClinic=v; diagStep=null; render(); window.scrollTo(0,0); }
@@ -544,6 +545,7 @@ function ctrlBar(R){
     ${seg('Tier',[['All','all'],['T1','T1'],['T2','T2']],tierF,'setTierF')}
     ${seg('Maturity',[['All','all'],['Mature','Mature'],['Maturing','Maturing'],['New','New']],matF,'setMatF')}
     ${seg('Cause',[['All','all'],['Avail','avail'],['L2B','l2b'],['Leads','leads'],['Mixed','mixed']],causeF,'setCauseF')}
+    <button onclick="resetDiagFilters()" title="Reset all filters" style="font-size:11.5px;font-weight:600;color:#4f46e5;background:#eef2ff;border:1px solid #c7d2fe;border-radius:8px;padding:4px 11px;cursor:pointer;white-space:nowrap;">↺ Reset filters</button>
     <div style="display:flex;align-items:center;gap:6px;margin-left:auto;">
       <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#94a3b8;">Deep-dive clinic</span>
       <select onchange="setSelClinic(this.value)" style="font-size:12px;border:1.5px solid ${selClinic?'#4f46e5':'var(--line)'};border-radius:7px;padding:4px 9px;background:#fff;cursor:pointer;max-width:230px;">
@@ -644,7 +646,8 @@ function cityOverview(R){
       <div style="font-size:10px;color:#94a3b8;margin-bottom:3px;">vs ${r1(new_n)} norm · ${r.bk_w} total SC · <span style="color:${aff?'#dc2626':'#059669'};font-weight:700;">${aff?'⚠ '+(CAUSE[r.cause]?cap(CAUSE[r.cause].short):'dipped'):'✓ on track'}</span></div>
       ${spark(r.bkNewArr.slice(0,WEEKS.length).reverse(),col,(WEEKS.length-1)-W,null,new_n)}</div>`; };
   return `<div class="card"><div class="sec-h"><span class="sec-num">📍</span>Your clinics${geoScopeText()?' — '+geoScopeText():''}</div>
-    <div class="sec-sub"><b>${list.length}</b> clinic${list.length>1?'s':''} in scope · <b style="color:${affected.length?'#dc2626':'#059669'}">${affected.length} dipped</b> in new-patient bookings this week. Worst-first — click one for the full story.</div>
+    <div class="sec-sub"><b>${list.length}</b> clinic${list.length>1?'s':''} in scope · <b style="color:${affected.length?'#dc2626':'#059669'}">${affected.length} dipped</b> on <b>new (first-time)</b> patients this week. Worst-first — click one for the full story.</div>
+    ${(()=>{ const wc=list.filter(x=>x.r.L>0 && x.r.cause && x.r.cause!=='ok').length; return (affected.length>wc) ? `<div style="font-size:10.5px;color:#94a3b8;margin:-4px 0 9px;">Of the ${affected.length} dipped, <b style="color:#d97706">${wc}</b> ${wc===1?'has':'have'} a flagged <b>total-booking-loss cause</b> (in “View clinics by issue” below). The other ${affected.length-wc} dipped on new patients but their <b>total</b> bookings broadly held (repeat/returning patients filled in) — so they're not flagged as a loss.</div>` : ''; })()}
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(248px,1fr));gap:12px;">${list.map(card).join('')}</div></div>`;
 }
 // All-cities landing: each city's new-patient bookings vs norm, worst-first. Click a city to see its clinics.
@@ -805,7 +808,7 @@ function renderOffline(){
 // refVal (optional) draws a dashed "normal/expected" baseline so the reader can
 // see at a glance how the latest point sits vs the clinic's recent norm.
 function spark(vals, color, hiIdx, fmt, refVal){
-  const w=340,h=66,pad=10;
+  const w=340,h=90,pad=10;
   const valid=vals.filter(x=>x!=null);                 // null = no data that week → render as a gap, not 0
   if(valid.length<2) return '<div style="color:#94a3b8;font-size:11px;">no trend</div>';
   const hasRef = refVal!=null && isFinite(refVal);
