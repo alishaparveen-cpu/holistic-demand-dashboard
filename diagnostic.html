@@ -1025,8 +1025,11 @@ function bookingRateCard(r){
   const ros=rosterArr(r.city,r.clinic);
   const hasHrs = ros.hrs && ros.hrs.some(x=>x!=null && x>0);
   const unit=hasHrs?'/hr':'/day', uName=hasHrs?'bookable hour':'open day', uShort=hasHrs?'h':'d';
-  const capWd=i=> hasHrs ? Math.max(0,(ros.hrs[i]||0)-(ros.we_hrs[i]||0)) : Math.max(0,(r.avArr[i]||0)-(r.weArr[i]||0));
-  const capWe=i=> hasHrs ? (ros.we_hrs[i]||0) : (r.weArr[i]||0);
+  // doctor shrinkage per week (slots blocked / scheduled) — discount scheduled hours to ACTUAL bookable hours
+  const shrFrac=i=>{ const sc=(ros.shr&&ros.shr.sched&&ros.shr.sched[i])||0, sh=(ros.shr&&ros.shr.shrunk&&ros.shr.shrunk[i])||0; return sc>0?Math.min(0.95,sh/sc):0; };
+  const hasShrink = ros.shr && ros.shr.sched && ros.shr.sched.some(x=>x>0);
+  const capWd=i=> hasHrs ? Math.max(0,((ros.hrs[i]||0)-(ros.we_hrs[i]||0)))*(1-shrFrac(i)) : Math.max(0,(r.avArr[i]||0)-(r.weArr[i]||0));
+  const capWe=i=> hasHrs ? (ros.we_hrs[i]||0)*(1-shrFrac(i)) : (r.weArr[i]||0);
   const bkP=sl(r.bkArr), weBkP=sl(r.bkWeArr||[]);
   let wdBk=0,weBk=0,wdCap=0,weCap=0,nW=0;
   for(let k=0;k<bkP.length;k++){ const i=W+1+k, cw=capWd(i), ce=capWe(i); if((cw+ce)<=0) continue;   // skip closed weeks
@@ -1048,16 +1051,23 @@ function bookingRateCard(r){
   const verdict = Math.abs(gap)<1.5
     ? `Bookings landed about where this clinic's rate × ${hasHrs?'hours':'days'}-open predicts (${r1(expCap)}).`
     : `At its normal rates the clinic should book ~<b>${r1(expCap)}</b> on the <b>${r1(wdOpen)} weekday + ${r1(weOpen)} weekend ${uShort}</b> it opened this week; it booked <b>${r.bk_w}</b> (${signed(r1(gap))} vs its ${r1(bkNorm)} norm). Of that gap, ≈<b style="color:#7c3aed">${signed(r1(capEffect))}</b> is ${hasHrs?'hours':'days'}-open and ≈<b style="color:#d97706">${signed(r1(rateEffect))}</b> is rate-per-${uShort} → mostly ${driver}.`;
-  return `<div class="card"><div class="sec-h"><span class="sec-num">📊</span>Booking rate — per bookable ${hasHrs?'hour':'day'}</div>
-    <div class="sec-sub">This clinic's own bookings per <b>${uName}</b>, weekday vs weekend, over the prior ${nW} weeks. ${hasHrs?'Uses roster <b>hours</b> (a day open 3h ≠ open 8h), not just days.':'Roster hours unavailable — falls back to days.'} Separates <b>how much capacity was open</b> from <b>how well each ${uName} converted</b>. · ${WEEKS[wkIdx].label}</div>
+  // this week's scheduled → shrinkage → actual bookable chain (hours path only)
+  const schWd=hasHrs?Math.max(0,(ros.hrs[W]||0)-(ros.we_hrs[W]||0)):0, schWe=hasHrs?(ros.we_hrs[W]||0):0, schTot=schWd+schWe;
+  const shrThis=shrFrac(W), actTot=wdOpen+weOpen;
+  const chainRow = (hasHrs && hasShrink && schTot>0) ? `<div style="font-size:11.5px;background:#f5f3ff;border:1px solid #ddd6fe;border-radius:9px;padding:9px 12px;margin-bottom:10px;line-height:1.6;color:#475569;">
+      <b>Scheduled ${r1(schTot)}h</b> → doctor blocked <b style="color:#dc2626">${Math.round(shrThis*100)}%</b> (shrinkage) → <b style="color:#7c3aed">${r1(actTot)}h actually bookable</b> → at this clinic's rate that's <b>${r1(expCap)}</b> expected bookings. Rates &amp; expected below are all on <b>actual</b> (post-shrinkage) hours.
+    </div>` : '';
+  return `<div class="card"><div class="sec-h"><span class="sec-num">📊</span>Booking rate — per <b>actual</b> bookable ${hasHrs?'hour':'day'}</div>
+    <div class="sec-sub">This clinic's own bookings per <b>actual bookable ${uShort}</b> (scheduled roster ${hasHrs?'hours':'days'} <b>minus doctor shrinkage</b>), weekday vs weekend, over the prior ${nW} weeks. ${hasHrs?'Uses roster <b>hours</b> after shrinkage — a day open 3h ≠ open 8h, and blocked slots don\'t count.':'Roster hours unavailable — falls back to days.'} Separates <b>how much capacity was actually open</b> from <b>how well each ${uName} converted</b>. · ${WEEKS[wkIdx].label}</div>
+    ${chainRow}
     <div style="display:flex;gap:9px;flex-wrap:wrap;margin-bottom:10px;">
       ${tile('Weekday rate',r1(wdRate),unit,'#7c3aed','bookings per weekday '+uName)}
       ${tile('Weekend rate',r1(weRate),unit,weHotter?'#db2777':'#a855f7',weHotter?'busier — high-demand window':'bookings per weekend '+uName)}
       ${tile('Overall rate',r1(wkRate),unit,'#475569','blended per '+uName)}
     </div>
     <div style="display:flex;gap:9px;flex-wrap:wrap;margin-bottom:8px;">
-      ${tile('Open this week',r1(wdOpen)+' + '+r1(weOpen),' '+uShort,'#0f172a',hasHrs?'wkday + wkend hours rostered':'weekday + weekend days')}
-      ${tile('Expected',r1(expCap),'','#475569','rate × '+(hasHrs?'hours':'days')+' open')}
+      ${tile('Bookable this week',r1(wdOpen)+' + '+r1(weOpen),' '+uShort,'#0f172a',hasHrs?'wkday + wkend hrs · after shrinkage':'weekday + weekend days')}
+      ${tile('Expected',r1(expCap),'','#475569','rate × actual '+(hasHrs?'hours':'days')+' open')}
       ${tile('Actual',r.bk_w,'',gap>=0?'#059669':'#dc2626','booked this week')}
     </div>
     <div style="font-family:ui-monospace,monospace;font-size:11.5px;background:#0f172a;color:#e2e8f0;border-radius:8px;padding:8px 12px;margin-bottom:10px;line-height:1.5;">
