@@ -232,12 +232,12 @@ function buildSDataFromDiag(diag){
     const city=key.slice(0,bar), clinic=key.slice(bar+1);
     if(!city||!clinic||/online/i.test(clinic)) continue;
     const o=diag[key];
-    (out[city]=out[city]||{})[clinic]={_total:{ allBk:slc(o.allBk), bkWe:slc(o.bkWe), bkNew:slc(o.bkNew), bkRepeat:slc(o.bkRepeat), gmbLeads:slc(o.gmbLeads), avail:slc(o.avail), weekend:slc(o.weekend), docDays:slc(o.docDays) }};
+    (out[city]=out[city]||{})[clinic]={_total:{ allBk:slc(o.allBk), bkWe:slc(o.bkWe), bkNew:slc(o.bkNew), bkRepeat:slc(o.bkRepeat), bkDone:slc(o.bkDone), gmbLeads:slc(o.gmbLeads), avail:slc(o.avail), weekend:slc(o.weekend), docDays:slc(o.docDays) }};
   }
   for(const city of Object.keys(out)){
-    const agg={allBk:Array(W).fill(0),bkWe:Array(W).fill(0),bkNew:Array(W).fill(0),bkRepeat:Array(W).fill(0),gmbLeads:Array(W).fill(0),avail:Array(W).fill(0),weekend:Array(W).fill(0),docDays:Array(W).fill(0)};
+    const agg={allBk:Array(W).fill(0),bkWe:Array(W).fill(0),bkNew:Array(W).fill(0),bkRepeat:Array(W).fill(0),bkDone:Array(W).fill(0),gmbLeads:Array(W).fill(0),avail:Array(W).fill(0),weekend:Array(W).fill(0),docDays:Array(W).fill(0)};
     for(const clinic of Object.keys(out[city])){ const t=out[city][clinic]._total;
-      for(let i=0;i<W;i++){ agg.allBk[i]+=t.allBk[i]; agg.bkWe[i]+=t.bkWe[i]; agg.bkNew[i]+=t.bkNew[i]; agg.bkRepeat[i]+=t.bkRepeat[i]; agg.avail[i]+=t.avail[i]; agg.weekend[i]+=t.weekend[i]; agg.docDays[i]+=t.docDays[i]; } }
+      for(let i=0;i<W;i++){ agg.allBk[i]+=t.allBk[i]; agg.bkWe[i]+=t.bkWe[i]; agg.bkNew[i]+=t.bkNew[i]; agg.bkRepeat[i]+=t.bkRepeat[i]; agg.bkDone[i]+=t.bkDone[i]; agg.avail[i]+=t.avail[i]; agg.weekend[i]+=t.weekend[i]; agg.docDays[i]+=t.docDays[i]; } }
     out[city]._total=agg;
   }
   return out;
@@ -296,6 +296,7 @@ function rcaClinic(city, clinic){
   const bk=d.allBk, av=d.avail, we=d.weekend;
   const bkWe=d.bkWe||Array(WEEKS.length).fill(0);   // weekend (Sat/Sun) bookings subset
   const bkNew=d.bkNew||Array(WEEKS.length).fill(0), bkRepeat=d.bkRepeat||Array(WEEKS.length).fill(0);  // new+repeat = allBk
+  const bkDone=d.bkDone||Array(WEEKS.length).fill(0);   // screening calls actually completed (subset of allBk)
   const pr=practoArr(city,clinic);                       // Practo leads per week (external sheet)
   // ── leads: prefer Redshift (data_leads.json) over the sheet, so the chart, the
   //    RCA and the lead-loss drill all use ONE source. gmb = GMB+Google Ad. ──
@@ -364,7 +365,7 @@ function rcaClinic(city, clinic){
           gmb_w,gmb_avg,pr_w,pr_avg,wd_w,wd_avg,
           leadsBroke,actBroke,weBroke,availBroke,cause,mixWith,comp,L,mat,note,
           bkPerDay,weLost,wdLost,leadsLoss_gmb,leadsLoss_pr,expectedIfFull,
-          bkArr:bk,bkWeArr:bkWe,bkNewArr:bkNew,bkRepeatArr:bkRepeat,ldArr:ld,avArr:av,weArr:we,gmbArr:gmb,prArr:pr,wdArr:wd,
+          bkArr:bk,bkWeArr:bkWe,bkNewArr:bkNew,bkRepeatArr:bkRepeat,bkDoneArr:bkDone,ldArr:ld,avArr:av,weArr:we,gmbArr:gmb,prArr:pr,wdArr:wd,
           orgArr:orgArr, gmbOnlyArr:gmbOnly, gAdArr:gAd, fbArr:fbA, jdArr:jdA, othArr:othA, useRedshiftLeads:useRedshift};
 }
 function allClinicRCA(){
@@ -1355,6 +1356,9 @@ function renderDeepDive(r){
   const weRateArr = r.bkArr.map((b,i)=>{ const d=r.weArr[i]||0; return d>0?Math.round((_bkWe[i]||0)/d*10)/10:0; });
   const wd_rate_w=(r.av_w-r.we_w)>0?(r.bk_w-(_bkWe[wkIdx]||0))/(r.av_w-r.we_w):0;
   const we_rate_w=r.we_w>0?(_bkWe[wkIdx]||0)/r.we_w:0;
+  // calls done = screening calls actually completed (subset of booked)
+  const _done=r.bkDoneArr||[], done_w=_done[wkIdx]||0, done_n=avg(_done.slice(wkIdx+1,wkIdx+6));
+  const doneRate=r.bk_w>0?Math.round(done_w/r.bk_w*100):0;
   const vital=(icon,title,val,unit,dpct,sub,svg)=>`<div class="card" style="margin:0;">
     <div style="font-size:12px;font-weight:700;color:#0f172a;">${icon} ${title}</div>
     <div style="display:flex;align-items:baseline;gap:8px;margin:1px 0 1px;">
@@ -1363,6 +1367,7 @@ function renderDeepDive(r){
     <div style="font-size:10px;color:#94a3b8;margin-bottom:4px;">${sub}</div>${svg}</div>`;
   const vitals = `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;">
     ${vital('📅','Bookings', r.bk_w,'', gapPct, 'vs '+exp+' expected', spark(rev(r.bkArr),'#4f46e5',hi,null,r.bkBase))}
+    ${vital('📞','Calls done', done_w,'', pctOf(done_w-done_n,done_n), 'completed · '+doneRate+'% of '+r.bk_w+' booked', spark(rev(r.bkDoneArr),'#0891b2',hi,null,done_n))}
     ${vital('🔎','Leads', r.ld_w,'', Math.round(r.dLeadPct), 'demand · vs '+Math.round(r.ld_avg)+' norm', spark(rev(r.ldArr),'#0ea5e9',hi,null,r.ld_avg))}
     ${vital('🩺','Availability', r1(r.av_w),' d', pctOf(r.dAct,r.av_avg), 'supply · '+r1(r.wd_w)+' wkday + '+r1(r.we_w)+' wkend days', availSplitChart(rev(r.wdArr), rev(r.weArr), hi, r.av_avg, wkS))}
     ${vital('⚡','Booking rate', r1(rate_w),'/day', pctOf(rate_w-rate_n,rate_n), 'efficiency · wkday '+r1(wd_rate_w)+' · wkend '+r1(we_rate_w)+' per open day', groupBars([{vals:rev(wdRateArr),color:'#7c3aed',label:'Weekday'},{vals:rev(weRateArr),color:'#db2777',label:'Weekend'}], hi, r1, rate_n, wkS))}
