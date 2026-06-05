@@ -176,28 +176,32 @@ function landSpec(){ const leadsV=landView==='leads'; return {
 function landWinN(){ return trendWin==='all'?WEEKS.length:Math.min(+trendWin||6,WEEKS.length); }
 function landNorm(arr,W){ const N=landWinN(); const w=(arr||[]).slice(W+1,W+1+N).filter(x=>x!=null); return w.length? w.reduce((a,b)=>a+b,0)/w.length : 0; }
 let wkIdx=0;              // selected week index (0 = latest)
-let baseMode='avg8';      // which baseline "Expected" is measured against (see BASE_OPTS) — default 8-wk
+let baseMode='avg6';      // which baseline "Expected" is measured against (see BASE_OPTS) — default 6-wk (matches the 6-week display window)
 // Baseline options for the comparison dropdown. Each defines how "Expected" is
 // computed from the prior weeks (newest-first arrays, W = selected week index)
 // and the window used for the leads/availability dimension baselines.
 const BASE_OPTS=[
-  ['peak','Recent peak','vs its highest of the last 2 weeks'],
-  ['avg8','8-week average','vs its trailing ~8-week mean'],
+  ['avg6','6-week average','vs its trailing 6-week mean (matches the chart window)'],
   ['avg4','4-week average','vs its trailing 4-week mean'],
+  ['avg8','8-week average','vs its trailing ~8-week mean'],
+  ['avg12','12-week average','vs its trailing 12-week mean'],
+  ['peak','Recent peak','vs its highest of the last 2 weeks'],
   ['prev','Last week','vs the immediately preceding week'],
   ['best','Best week','vs its best week on record'],
 ];
 function baseLabel(){ const o=BASE_OPTS.find(x=>x[0]===baseMode); return o?o[1]:'baseline'; }
-function baseShort(){ return baseMode==='peak'?'recent peak':baseMode==='avg4'?'4-wk avg':baseMode==='prev'?'last week':baseMode==='best'?'best week':'8-wk avg'; }
+function baseShort(){ return baseMode==='peak'?'recent peak':baseMode==='avg4'?'4-wk avg':baseMode==='avg8'?'8-wk avg':baseMode==='avg12'?'12-wk avg':baseMode==='prev'?'last week':baseMode==='best'?'best week':'6-wk avg'; }
 // dimension baseline window (leads/availability) — follows the chosen avg window
 // Dimension norm window — varies by the selected comparison so the leads /
 // active-days / weekend deltas (and chips) actually change when you switch it.
 function dimSlice(arr, W){
-  if(baseMode==='avg4') return arr.slice(W+1, W+5);   // 4 wk
-  if(baseMode==='avg8') return arr.slice(W+1, W+9);   // 8 wk
-  if(baseMode==='prev') return arr.slice(W+1, W+2);   // 1 wk
-  if(baseMode==='best') return arr.slice(W+1);        // all prior weeks
-  return arr.slice(W+1, W+6);   // peak → recent ~5-wk (validated default)
+  if(baseMode==='avg4') return arr.slice(W+1, W+5);    // 4 wk
+  if(baseMode==='avg6') return arr.slice(W+1, W+7);    // 6 wk (default)
+  if(baseMode==='avg8') return arr.slice(W+1, W+9);    // 8 wk
+  if(baseMode==='avg12') return arr.slice(W+1, W+13);  // 12 wk
+  if(baseMode==='prev') return arr.slice(W+1, W+2);    // 1 wk
+  if(baseMode==='best') return arr.slice(W+1);         // all prior weeks
+  return arr.slice(W+1, W+6);   // peak → recent ~5-wk
 }
 // "Expected" value for a booking-style series under the current baseMode
 function expectedOf(arr, W){
@@ -205,7 +209,9 @@ function expectedOf(arr, W){
     case 'best': return Math.max(0, ...arr.slice(W+1));
     case 'prev': return arr[W+1]||0;
     case 'avg4': return avg(arr.slice(W+1, W+5));
+    case 'avg6': return avg(arr.slice(W+1, W+7));   // 6-wk avg (default)
     case 'avg8': case 'avg': return avg(arr.slice(W+1, W+9));   // true 8-wk avg
+    case 'avg12': return avg(arr.slice(W+1, W+13));
     case 'peak': default: return Math.max(arr[W+1]||0, arr[W+2]||0);
   }
 }
@@ -559,7 +565,7 @@ function setBase(b){ baseMode=b; render(); }
 function setCauseF(c){ causeF=c; render(); }
 // does a clinic row match the active Cause filter? (used by the city/clinic landing cards)
 function causeMatch(r){ if(causeF==='all') return true; if(causeF==='mixed') return !!r.mixWith; return r.cause===causeF; }
-function resetDiagFilters(){ geoSel.clear(); selClinic=''; diagStep=null; baseMode='avg8'; tierF='all'; matF='all'; causeF='all'; trendWin=6; render(); if(typeof renderGeo==='function')renderGeo(); window.scrollTo(0,0); }
+function resetDiagFilters(){ geoSel.clear(); selClinic=''; diagStep=null; baseMode='avg6'; tierF='all'; matF='all'; causeF='all'; trendWin=6; render(); if(typeof renderGeo==='function')renderGeo(); window.scrollTo(0,0); }
 function setMatF(m){ matF=m; render(); }
 function setTierF(t){ tierF=t; render(); }
 function setSelClinic(v){ selClinic=v; diagStep=null; render(); window.scrollTo(0,0); }
@@ -741,7 +747,7 @@ function renderOffline(){
   // ── 1. Headline ──
   const headline=`<div class="card">
     <div class="sec-h"><span class="sec-num">1</span>Headline — ${wl}</div>
-    <div class="sec-sub">Offline (clinic) bookings read against <b>both</b> baselines. "Flat vs the 8-week average" can hide a give-back from the recent peak.</div>
+    <div class="sec-sub">Offline (clinic) bookings read against <b>both</b> baselines. "Flat vs the trailing average" can hide a give-back from the recent peak.</div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px;">
       <div class="kpi"><div class="kpi-l">Offline bookings · ${wl}</div><div class="kpi-v">${R.netW.toLocaleString()}</div><div class="kpi-s">screening-call bookings (patient × doctor)</div></div>
       <div class="kpi"><div class="kpi-l">vs 8-wk average</div><div class="kpi-v" style="color:${dCol(dAvg)}">${signed(dAvg)}</div><div class="kpi-s">avg ${Math.round(R.netAvg).toLocaleString()}/wk</div></div>
@@ -1251,7 +1257,7 @@ function convDiagnosisCard(r){
     return `<div style="flex:1;min-width:104px;background:#fff;border:1px solid var(--line);border-radius:10px;padding:9px 12px;"><div style="font-size:9px;text-transform:uppercase;letter-spacing:.04em;color:#94a3b8;font-weight:700;">${lbl}</div><div style="font-size:23px;font-weight:800;color:#0f172a;line-height:1.05;">${val}</div><div style="font-size:10px;font-weight:700;color:${col};">${flat?'▬ flat':((up?'▲ ':'▼ ')+dtxt)} vs norm</div></div>`; };
   const edge = gap<-1?'#dc2626':gap>1?'#059669':'#94a3b8';
   const verdict = gap<-1
-    ? `Down <b>${signed(r1(gap))}</b> vs the 8-week norm of ${r1(bk_n)}. Biggest driver: <b style="color:${lever[2]}">${lever[0]}</b>.`
+    ? `Down <b>${signed(r1(gap))}</b> vs its recent norm of ${r1(bk_n)}. Biggest driver: <b style="color:${lever[2]}">${lever[0]}</b>.`
     : gap>1 ? `Up <b style="color:#059669">${signed(r1(gap))}</b> vs norm — booking momentum is positive. Main lift: <b style="color:${lever[2]}">${lever[0]}</b>.`
     : `Holding steady (${signed(r1(gap))} vs norm of ${r1(bk_n)}). No single factor is off.`;
   return `<div class="card" style="border-left:4px solid ${edge};">
