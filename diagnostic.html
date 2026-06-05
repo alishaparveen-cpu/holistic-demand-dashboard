@@ -2080,14 +2080,16 @@ function renderDeepDive(r){
   const step6col = leadsDown ? '#dc2626' : '#4f46e5';
   const reg=regCard(r), bm=bookTypeMix(r);
   // ── horizontal step tabs — one full-width, scrollable section at a time ──
+  // "Expected" tab removed — availability is covered in tab 1; the expected-bookings loss
+  // waterfall ("how much we lost, step by step") now lives in the Model tab.
+  const _modelWaterfall = bookingRateCard(r);
   const tabs=[
     {n:1,icon:'🩺',label:'Availability',col:'#7c3aed',stat:availStat,body:availCard},
-    {n:2,icon:'📊',label:'Expected',col:'#4f46e5',stat:expStat,body:bookingRateCard(r)},
-    {n:3,icon:'🔎',label:'Leads & source',col:'#0ea5e9',stat:leadStat,body:whyIntro+leadsCard+leadLossDrill(r)},
-    {n:4,icon:'⛳',label:'Convert',col:step5col,stat:convStat,body:convDiagnosisCard(r)+funnelMasterCard(r)+funnelNewLeadCard(r)+leadQualityCard(r)+funnelOutcomeCard(r)},
+    {n:2,icon:'🔎',label:'Leads & source',col:'#0ea5e9',stat:leadStat,body:whyIntro+leadsCard+leadLossDrill(r)},
+    {n:3,icon:'⛳',label:'Convert',col:step5col,stat:convStat,body:convDiagnosisCard(r)+funnelMasterCard(r)+funnelNewLeadCard(r)+leadQualityCard(r)+funnelOutcomeCard(r)},
   ];
-  if(reg||bm) tabs.push({n:5,icon:'🧪',label:'Model',col:'#64748b',stat:'',body:(reg||'')+(bm||'')});
-  const causeTab = r.cause==='avail'?1 : r.cause==='leads'?3 : r.cause==='l2b'?4 : 1;
+  if(_modelWaterfall||reg||bm) tabs.push({n:4,icon:'🧪',label:'Model',col:'#64748b',stat:`<span style="color:${dCol(gap)}">${signed(gap)}</span>`,body:(_modelWaterfall||'')+(reg||'')+(bm||'')});
+  const causeTab = r.cause==='avail'?1 : r.cause==='leads'?2 : r.cause==='l2b'?3 : 1;
   const active = (diagStep && tabs.some(t=>t.n===diagStep)) ? diagStep : causeTab;
   const tabBar = `<div class="diagtabs">${tabs.map(t=>{ const on=t.n===active;
     return `<button onclick="setDiagStep(${t.n})" class="diagtab${on?' on':''}" style="${on?`border-color:${t.col};color:${t.col};background:${t.col}0d;`:''}">
@@ -2148,7 +2150,7 @@ function renderOnline(){
 async function init(){
   try{
     const safe=u=>fetch(u,{cache:'no-store'}).catch(()=>({ok:false}));
-    const [jr,sr,lr,pr,rr,ld,rv,mk,bt,dg,ga,nr,gi,la,df,pbk]=await Promise.all([ fetch('data.json',{cache:'no-store'}), safe(SHEET_URL), safe(L0_URL), safe(PRACTO_URL), safe('data_roster.json'), safe('data_leads.json'), safe('data_reviews.json'), safe('data_marketing.json'), safe('data_booktype.json'), safe('data_diagnostic.json'), safe('data_ga_city.json'), safe('data_reviews_neg.json'), safe('data_gmb_insights.json'), safe('data_lead_age.json'), safe('data_demand_funnel.json'), safe('data_practo_booked.json') ]);
+    const [jr,sr,lr,pr,rr,ld,rv,mk,bt,dg,ga,nr,gi,la,df,pbk,pl]=await Promise.all([ fetch('data.json',{cache:'no-store'}), safe(SHEET_URL), safe(L0_URL), safe(PRACTO_URL), safe('data_roster.json'), safe('data_leads.json'), safe('data_reviews.json'), safe('data_marketing.json'), safe('data_booktype.json'), safe('data_diagnostic.json'), safe('data_ga_city.json'), safe('data_reviews_neg.json'), safe('data_gmb_insights.json'), safe('data_lead_age.json'), safe('data_demand_funnel.json'), safe('data_practo_booked.json'), safe('data_practo_leads.json') ]);
     if(!jr.ok) throw new Error('data.json not found');
     JDATA=await jr.json();
     // SDATA now comes from Redshift (data_diagnostic.json); the Google Sheet is a fallback only.
@@ -2156,7 +2158,10 @@ async function init(){
     if(dg.ok){ try{ const _dj=await dg.json(); dataPulled=(_dj._meta&&_dj._meta.pulled)||''; SDATA=buildSDataFromDiag(_dj); diagOk=Object.keys(SDATA).length>0; }catch(e){ console.warn('data_diagnostic.json parse failed',e); } }
     if(!diagOk){ if(sr.ok){ SDATA=parseSheet(parseCSV(await sr.text())); console.warn('fell back to demand-tracker sheet'); } else { console.warn('no SDATA source available'); } }
     if(lr.ok){ L0=parseL0(await lr.text()); } else { console.warn('L0 sheet failed'); }
-    if(pr.ok){ PRACTO=parsePracto(parseCSV(await pr.text())); } else { console.warn('Practo sheet failed'); }
+    // Practo leads: prefer the static file (robust); fall back to the live sheet only if it's missing.
+    let practoStatic=false;
+    if(pl.ok){ try{ const _pj=await pl.json(); delete _pj._meta; PRACTO=_pj; practoStatic=Object.keys(PRACTO).length>0; }catch(_){ } }
+    if(!practoStatic){ if(pr.ok){ try{ PRACTO=parsePracto(parseCSV(await pr.text())); }catch(_){ console.warn('Practo live parse failed'); } } else { console.warn('Practo sheet + static both unavailable'); } }
     if(rr.ok){ try{ ROSTER=await rr.json(); }catch(_){ console.warn('roster parse failed'); } } else { console.warn('data_roster.json failed'); }
     if(ld.ok){ try{ LEADS=await ld.json(); }catch(_){ } }
     if(rv.ok){ try{ REVIEWS=await rv.json(); }catch(_){ } }
