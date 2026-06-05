@@ -2086,7 +2086,10 @@ function renderDeepDive(r){
       <span class="chev">▾</span></summary>
     <div class="accbody">${body}</div></details>`;
   // conversion trends — lead→book% (new bookings / leads) and book→done% per week
-  const l2bArr = r.bkArr.map((b,i)=>{ const l=r.ldArr[i]||0, nb=(r.bkNewArr[i]||0); return l>0?Math.round(nb/l*100):0; });
+  // Lead→book % = clean cohort conversion: of THIS week's leads, how many booked the SAME week
+  // (leadAge 'same' ÷ leads), not new-bookings-this-week ÷ leads (which mixes in lagged conversions).
+  const _l2bHasLA = hasLeadAge(r.city,r.clinic), _l2bSame = _l2bHasLA ? leadAgeArr(r.city,r.clinic,'same') : null;
+  const l2bArr = r.bkArr.map((b,i)=>{ const l=r.ldArr[i]||0, conv = _l2bHasLA ? (_l2bSame[i]||0) : (r.bkNewArr[i]||0); return l>0?Math.min(100,Math.round(conv/l*100)):0; });
   const b2dArr = r.bkArr.map((b,i)=>{ const d=(r.bkDoneArr[i]||0); return b>0?Math.round(d/b*100):0; });
   const l2b_w=l2bArr[wkIdx], b2d_w=b2dArr[wkIdx];
   // doctor shrinkage (slots blocked) for the overview chip
@@ -2106,7 +2109,7 @@ function renderDeepDive(r){
       ${vchip('📞','Consults done', done_w,'', pctOf(done_w-done_n,done_n), doneRate+'% of '+r.bk_w+' scheduled completed', spark(rev(r.bkDoneArr),'#0891b2',hi,null,done_n))}
       ${vchip('🩺','Availability', r1(r.av_w),'d', pctOf(r.dAct,r.av_avg), 'realized doctor-days · wd '+r1(r.wd_w)+' + we '+r1(r.we_w)+(hasRoster&&rh_w!=null?' · '+r1(rh_w)+'h scheduled':''), availSplitChart(rev(r.wdArr), rev(r.weArr), hi, r.av_avg, wkS))}
       ${vchip('✂️','Doctor shrinkage', _shrPct,'%', null, _shrHas?_shW+' of '+_scW+' slots blocked · norm '+_shrPctN+'%':'no roster data', shrChip)}
-      ${vchip('⛳','Lead→book %', l2b_w,'%', null, 'new bookings ÷ leads · vs '+Math.round(avg(l2bArr.slice(wkIdx+1,wkIdx+6)))+'% norm', spark(rev(l2bArr),'#0ea5e9',hi,v=>v+'%',avg(l2bArr.slice(wkIdx+1,wkIdx+6))))}
+      ${vchip('⛳','Lead→book %', l2b_w,'%', null, (_l2bHasLA?'this week’s leads booked same week':'new bookings ÷ leads')+' · vs '+Math.round(avg(l2bArr.slice(wkIdx+1,wkIdx+6)))+'% norm', spark(rev(l2bArr),'#0ea5e9',hi,v=>v+'%',avg(l2bArr.slice(wkIdx+1,wkIdx+6))))}
       ${vchip('✅','Book→done %', b2d_w,'%', null, 'consults done ÷ booked · vs '+Math.round(avg(b2dArr.slice(wkIdx+1,wkIdx+6)))+'% norm', spark(rev(b2dArr),'#059669',hi,v=>v+'%',avg(b2dArr.slice(wkIdx+1,wkIdx+6))))}
     </div></div>`;
   // the "why" fork — leads down (demand/sources) vs leads held (conversion)
