@@ -1217,12 +1217,12 @@ function funnelMasterCard(r){
     <div class="sec-sub">The whole clinic in three steps: total demand in, bookings made, consultations completed. · ${WEEKS[wkIdx].label}</div>
     <div style="display:flex;gap:4px;margin:8px 0 2px;">
       ${_fStage('Leads', ld, 'all demand in', '#0ea5e9')}
-      ${_fConv(l2new!=null?l2new+'%':'—','booked')}
-      ${_fStage('New bookings', newbk, '+'+repbk+' returning = '+bk+' total', '#4f46e5')}
-      ${_fConv(b2d+'%','completed')}
+      ${_fConv(l2new!=null?l2new+'%':'—','new leads → book')}
+      ${_fStage('Booked', bk, newbk+' new + '+repbk+' returning', '#4f46e5')}
+      ${_fConv(b2d+'%','of booked → done')}
       ${_fStage('Done', done, 'consultations', '#059669')}
     </div>
-    ${_fTake(`Of <b>${ld}</b> leads, <b>${newbk}</b> booked first-time (<b>${l2new!=null?l2new+'%':'—'}</b>) and <b>${done}</b> completed. ${ld>0||bk>0?'Biggest leak is '+leak+'.':''}`)}
+    ${_fTake(`<b>${ld}</b> leads → <b>${newbk}</b> booked first-time (<b>${l2new!=null?l2new+'%':'—'}</b>). With <b>${repbk}</b> returning patients, <b>${bk}</b> calls were booked in total — of those, <b>${done}</b> completed (<b>${b2d}%</b>). ${ld>0||bk>0?'Biggest leak is '+leak+'.':''}`)}
   </div>`;
 }
 
@@ -1271,7 +1271,7 @@ function funnelOutcomeCard(r){
     {vals:win(r.bkMissedArr), color:'#dc2626', label:'No-show'},
     {vals:win(r.bkCancelledArr), color:'#64748b', label:'Cancelled'},
   ], hiWin, wkWin, new Set(), null);
-  const worst = mis>=can ? `<b style="color:${agentCol}">no-shows (${mis})</b> — a call-handling / reminder gap (ops lever)` : `<b style="color:${relevCol}">cancellations (${can})</b> — a lead-relevancy / demand-quality signal (marketing lever)`;
+  const worst = mis>=can ? `<b style="color:${agentCol}">no-shows (${mis})</b> — booked but didn't attend (many causes: reminder gaps, travel, change of mind — not only call-handling)` : `<b style="color:${relevCol}">cancellations (${can})</b> — a lead-relevancy / demand-quality signal`;
   return `<div class="card"><div class="sec-h">${_fStep(4,'#d97706')}What happened to the booked calls?</div>
     <div class="sec-sub">Of the <b>${bk}</b> calls booked, how many completed — and where did the rest leak? · ${WEEKS[wkIdx].label}</div>
     <div style="display:flex;height:30px;border-radius:8px;overflow:hidden;border:1px solid var(--line);margin:8px 0 5px;">
@@ -1286,8 +1286,8 @@ function funnelOutcomeCard(r){
     </div>
     <div style="display:flex;gap:8px;margin-bottom:11px;flex-wrap:wrap;">
       ${mtile('Deferred · not lost', deferred, '#0891b2', res+' resched + '+pend+' pending — lands later')}
-      ${mtile('Lead relevancy', relevPct+'%', relevCol, can+' cancelled · marketing lever')}
-      ${mtile('Call-handling · agent', agentPct+'%', agentCol, mis+' no-show · ops lever')}
+      ${mtile('Cancelled', can, relevCol, 'of '+bk+' booked ('+relevPct+'%) · demand-quality / relevancy')}
+      ${mtile('No-shows', mis, agentCol, 'of '+bk+' booked ('+agentPct+'%) · many causes, not only call-handling')}
     </div>
     <div style="font-size:10.5px;font-weight:700;color:#0f172a;margin-bottom:3px;">Booking outcome — weekly trend</div>
     ${dispTrend}
@@ -1298,12 +1298,17 @@ function funnelOutcomeCard(r){
 // ── Lead quality (inbound calls): relevance funnel + call-attempt effort + Practo (demand superset) ──
 function leadQualityCard(r){
   if(!hasDmf(r.city,r.clinic)) return '';
-  const W=wkIdx, rev=a=>(a||[]).slice(0,WEEKS.length).reverse(), hi=(WEEKS.length-1)-W, sl=a=>a.slice(W+1,W+6);
+  const W=wkIdx;
+  const winN = trendWin==='all' ? WEEKS.length : Math.min(+trendWin||6, WEEKS.length);   // shared trend window (default 6w)
+  const rev=a=>(a||[]).slice(0,WEEKS.length).reverse().slice(-winN), hi=(winN-1)-W;
+  const winVals=a=>(a||[]).slice(0,WEEKS.length).slice(W, W+winN);   // the winN weeks shown (newest-first, from selected week)
   const lead=dmfArr(r.city,r.clinic,'all','leads'), rel=dmfArr(r.city,r.clinic,'all','relevant'), bk=dmfArr(r.city,r.clinic,'all','booked');
   const a1=dmfArr(r.city,r.clinic,'all','a1'), a2=dmfArr(r.city,r.clinic,'all','a2'), a3=dmfArr(r.city,r.clinic,'all','a3'), a3p=dmfArr(r.city,r.clinic,'all','a3plus');
   const lead_w=lead[W]||0, rel_w=rel[W]||0, bk_w=bk[W]||0;
-  const relPct=lead_w>0?Math.round(rel_w/lead_w*100):null, bkPct=rel_w>0?Math.round(bk_w/rel_w*100):null;
-  const relPct_n=(()=>{ const l=sl(lead).reduce((a,b)=>a+b,0), rv=sl(rel).reduce((a,b)=>a+b,0); return l>0?Math.round(rv/l*100):null; })();
+  // relevance & booking are independent flags on the SAME inbound calls — both expressed as % of calls (booked is NOT a subset of relevant; flagging is partial)
+  const relPct=lead_w>0?Math.round(rel_w/lead_w*100):null, bkPct=lead_w>0?Math.round(bk_w/lead_w*100):null;
+  const relPct_n=(()=>{ const l=winVals(lead).reduce((a,b)=>a+b,0), rv=winVals(rel).reduce((a,b)=>a+b,0); return l>0?Math.round(rv/l*100):null; })();
+  const bkPct_n=(()=>{ const l=winVals(lead).reduce((a,b)=>a+b,0), bb=winVals(bk).reduce((a,b)=>a+b,0); return l>0?Math.round(bb/l*100):null; })();
   const a1_w=a1[W]||0,a2_w=a2[W]||0,a3_w=a3[W]||0,a3p_w=a3p[W]||0, aTot=a1_w+a2_w+a3_w+a3p_w;
   const prL=dmfArr(r.city,r.clinic,'practo','leads'), prB=dmfArr(r.city,r.clinic,'practo','booked');
   const prL_w=prL[W]||0, prB_w=prB[W]||0, prConv=prL_w>0?Math.round(prB_w/prL_w*100):null, hasPr=prL.some(x=>x>0)||prB.some(x=>x>0);
@@ -1312,18 +1317,17 @@ function leadQualityCard(r){
   const aSeg=(n,c,lbl)=>aTot>0&&n>0?`<div title="${lbl}: ${n}" style="width:${n/aTot*100}%;background:${c};display:flex;align-items:center;justify-content:center;color:#fff;font-size:10px;font-weight:800;">${n/aTot>=0.08?n:''}</div>`:'';
   const tc=(title,svg,sub)=>`<div class="card" style="margin-bottom:0;"><div style="font-size:12px;font-weight:700;margin-bottom:2px;">${title}</div><div style="font-size:10.5px;color:#94a3b8;margin-bottom:8px;">${sub}</div>${svg}</div>`;
   return `<div class="card"><div class="sec-h">${_fStep(3,'#4f46e5')}Inbound phone calls — relevance & call-handling</div>
-    <div class="sec-sub"><b>Inbound-call leads only</b> — where an agent / <b>Sarvam AI</b> flags each call <b>relevant</b> (a genuine prospect) or not. Of the relevant ones, how many booked. · live weekly · ${WEEKS[wkIdx].label}</div>
-    <div style="display:flex;gap:6px;margin:6px 0 9px;">
-      ${stg('Inbound calls', lead_w, 'leads', '#0ea5e9')}
-      ${arr(relPct!=null?relPct+'%':'—')}
-      ${stg('Relevant', rel_w, (relPct_n!=null?'vs '+relPct_n+'% norm':'genuine prospects'), '#4f46e5')}
-      ${arr(bkPct!=null?bkPct+'%':'—')}
-      ${stg('Booked', bk_w, 'of relevant', '#059669')}
+    <div class="sec-sub"><b>Inbound-call leads only</b> — of the calls that came in, how many an agent / <b>Sarvam AI</b> flagged <b>relevant</b>, and how many <b>booked</b>. Both shown as a share of inbound calls. · live weekly · showing last ${winN} wks · ${WEEKS[wkIdx].label}</div>
+    <div style="display:flex;gap:6px;margin:6px 0 9px;align-items:stretch;">
+      ${stg('Inbound calls', lead_w, 'phone leads', '#0ea5e9')}
+      <div style="align-self:center;color:#cbd5e1;font-size:13px;min-width:30px;text-align:center;">⟜</div>
+      ${stg('Relevant', rel_w, (relPct!=null?relPct+'% of calls':'flagged')+(relPct_n!=null?' · norm '+relPct_n+'%':''), '#4f46e5')}
+      ${stg('Booked', bk_w, (bkPct!=null?bkPct+'% of calls':'booked')+(bkPct_n!=null?' · norm '+bkPct_n+'%':''), '#059669')}
     </div>
-    <div style="font-size:9.5px;color:#94a3b8;background:#f8fafc;border:1px dashed var(--line);border-radius:6px;padding:5px 9px;margin-bottom:10px;line-height:1.45;">⚠️ <b>Small subset by design:</b> only <b>inbound phone leads</b> carry a relevance flag, so these counts are far smaller than total bookings. The attempt bar &amp; Practo below cover <b>all</b> bookings that week.</div>
+    <div style="font-size:9.5px;color:#94a3b8;background:#f8fafc;border:1px dashed var(--line);border-radius:6px;padding:5px 9px;margin-bottom:10px;line-height:1.45;">⚠️ <b>Two independent flags, both % of inbound calls:</b> a call can be booked without having been flagged relevant — relevance flagging is <b>partial</b> (manual + recently <b>Sarvam AI</b>), so <b>Booked can exceed Relevant</b>. This is inbound phone leads only — a small subset of total bookings (attempt bar &amp; Practo below cover <b>all</b>).</div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:10px;">
-      ${tc('🎯 Relevant %', spark(rev(lead.map((l,i)=>l>0?Math.round((rel[i]||0)/l*100):0)),'#4f46e5',hi,v=>v+'%',relPct_n), 'share of inbound calls flagged relevant')}
-      ${tc('✅ Booked % of relevant', spark(rev(rel.map((v,i)=>v>0?Math.round((bk[i]||0)/v*100):0)),'#059669',hi,v=>v+'%',null), 'of relevant leads, share that booked')}
+      ${tc('🎯 Relevant %', spark(rev(lead.map((l,i)=>l>0?Math.round((rel[i]||0)/l*100):0)),'#4f46e5',hi,v=>v+'%',relPct_n), 'share of inbound calls flagged relevant · dashed = '+winN+'-wk avg')}
+      ${tc('✅ Booked %', spark(rev(lead.map((l,i)=>l>0?Math.round((bk[i]||0)/l*100):0)),'#059669',hi,v=>v+'%',bkPct_n), 'share of inbound calls that booked · dashed = '+winN+'-wk avg')}
     </div>
     ${aTot>0?`<div style="font-size:10.5px;font-weight:700;color:#0f172a;margin-bottom:3px;">📞 Call-handling effort — <span style="color:#64748b;font-weight:600;">all bookings</span> · attempts to book ${aTot} slots</div>
     <div style="display:flex;height:26px;border-radius:7px;overflow:hidden;border:1px solid var(--line);margin-bottom:4px;">${aSeg(a1_w,'#059669','1st attempt')}${aSeg(a2_w,'#84cc16','2nd attempt')}${aSeg(a3_w,'#f59e0b','3rd attempt')}${aSeg(a3p_w,'#dc2626','4+ attempts')}</div>
@@ -1505,8 +1509,11 @@ function leadBookingTiming(r){
 function bookTypeMix(r){
   const nw=r.bkNewArr, rp=r.bkRepeatArr;
   if(!nw || !nw.some((x,i)=>x||rp[i])) return '';
-  const W=wkIdx, rev=a=>a.slice(0,WEEKS.length).reverse(), hi=(WEEKS.length-1)-W, sl=a=>a.slice(W+1,W+5);
-  const nw_w=nw[W], nw_n=avg(sl(nw)), rp_w=rp[W], rp_n=avg(sl(rp));
+  const W=wkIdx;
+  const winN = trendWin==='all' ? WEEKS.length : Math.min(+trendWin||6, WEEKS.length);   // shared trend window (default 6w)
+  const rev=a=>a.slice(0,WEEKS.length).reverse().slice(-winN), hi=(winN-1)-W;
+  const nrm=a=>{ const w=(a||[]).slice(0,winN).filter(x=>x!=null&&!isNaN(x)); return w.length? w.reduce((s,x)=>s+(+x||0),0)/w.length : 0; };
+  const nw_w=nw[W], nw_n=nrm(nw), rp_w=rp[W], rp_n=nrm(rp);
   const dNw=nw_w-nw_n, dRp=rp_w-rp_n;
   const tot_w=nw_w+rp_w, newShare=tot_w?Math.round(nw_w/tot_w*100):0;
   const newWorse = dNw<=dRp;
@@ -1517,7 +1524,7 @@ function bookTypeMix(r){
   return `<div class="card"><div class="sec-h"><span class="sec-num">📋</span>Booking mix — new vs repeat</div>
     <div class="sec-sub">The headline <b>${tot_w}</b> bookings, split: first-time bookings move with <b>leads/demand</b>, repeat bookings with <b>retention/follow-up</b> — so the split tells you whether to blame leads. · Redshift · ${WEEKS[wkIdx].label}</div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px;">
-      ${mini('🆕 New (first-time) · '+nw_w+' ('+signed(r1(dNw))+')','#4f46e5','first-EVER visit · leads-driven · dashed = 4-wk avg',spark(rev(nw),'#4f46e5',hi,null,nw_n))}
+      ${mini('🆕 New (first-time) · '+nw_w+' ('+signed(r1(dNw))+')','#4f46e5','first-EVER visit · leads-driven · dashed = '+winN+'-wk avg',spark(rev(nw),'#4f46e5',hi,null,nw_n))}
       ${mini('🔁 Repeat (returning) · '+rp_w+' ('+signed(r1(dRp))+')','#0891b2','returning patient · retention / follow-up',spark(rev(rp),'#0891b2',hi,null,rp_n))}
     </div>
     <div style="margin-top:12px;font-size:11.5px;background:#eef2ff;border-radius:9px;padding:8px 13px;line-height:1.5;color:#3730a3;">
@@ -1589,24 +1596,26 @@ function leadLossDrill(r){
   const W=wkIdx;
   const winN = trendWin==='all' ? WEEKS.length : Math.min(+trendWin||6, WEEKS.length);   // shared trend window (default 6w)
   const rev=a=>a.slice(0,WEEKS.length).reverse().slice(-winN), hi=(winN-1)-W, sl=a=>a.slice(W+1,W+5);
+  // norm = average over the weeks actually shown (the displayed window), so the dashed line & % match the view
+  const nrm=a=>{ const w=(a||[]).slice(0,winN).filter(x=>x!=null&&!isNaN(x)); return w.length? w.reduce((s,x)=>s+(+x||0),0)/w.length : 0; };
   const gmb=leadArr(r.city,r.clinic,'gmb'), gads=leadArr(r.city,r.clinic,'google_ad'), org=leadArr(r.city,r.clinic,'organic');
-  const gmb_w=gmb[W], gmb_n=avg(sl(gmb)), gads_w=gads[W], gads_n=avg(sl(gads));
+  const gmb_w=gmb[W], gmb_n=nrm(gmb), gads_w=gads[W], gads_n=nrm(gads);
   const dGmbP=gmb_n?Math.round((gmb_w-gmb_n)/gmb_n*100):0, dGadsP=gads_n?Math.round((gads_w-gads_n)/gads_n*100):0;
   // other sources — Practo, Organic, and a combined "Others" (FB + JustDial + misc)
-  const practo=practoArr(r.city,r.clinic), pr_w=practo[W]||0, pr_n=avg(sl(practo)), dPrP=pr_n?Math.round((pr_w-pr_n)/pr_n*100):0;
-  const prBk=practoBookedArr(r.city,r.clinic), prBk_w=prBk[W]||0, prBk_n=avg(sl(prBk));    // Practo booked (Slot Booked TS)
+  const practo=practoArr(r.city,r.clinic), pr_w=practo[W]||0, pr_n=nrm(practo), dPrP=pr_n?Math.round((pr_w-pr_n)/pr_n*100):0;
+  const prBk=practoBookedArr(r.city,r.clinic), prBk_w=prBk[W]||0, prBk_n=nrm(prBk);    // Practo booked (Slot Booked TS)
   const prConv=pr_w>0?Math.round(prBk_w/pr_w*100):null, hasPrBk=prBk.some(x=>x>0);
-  const org_w=org[W]||0, org_n=avg(sl(org)), dOrgP=org_n?Math.round((org_w-org_n)/org_n*100):0;
+  const org_w=org[W]||0, org_n=nrm(org), dOrgP=org_n?Math.round((org_w-org_n)/org_n*100):0;
   const fb=leadArr(r.city,r.clinic,'fb'), jd=leadArr(r.city,r.clinic,'justdial'), othRaw=leadArr(r.city,r.clinic,'others');
-  const oth=othRaw.map((o,i)=>(o||0)+(fb[i]||0)+(jd[i]||0)); const oth_w=oth[W]||0, oth_n=avg(sl(oth)), dOthP=oth_n?Math.round((oth_w-oth_n)/oth_n*100):0;
+  const oth=othRaw.map((o,i)=>(o||0)+(fb[i]||0)+(jd[i]||0)); const oth_w=oth[W]||0, oth_n=nrm(oth), dOthP=oth_n?Math.round((oth_w-oth_n)/oth_n*100):0;
   const hasPracto=practo.some(x=>x>0), hasOther=oth.some(x=>x>0)||org.some(x=>x>0);
   const rvN=reviewArr(r.city,r.clinic,'n'), rvNeg=reviewArr(r.city,r.clinic,'neg'), rvRate=reviewArr(r.city,r.clinic,'rating');
-  const vel_w=rvN[W]||0, vel_n=avg(sl(rvN)), recentNeg=(rvNeg[W]||0)+(rvNeg[W+1]||0), lastRating=rvRate.slice(W).find(x=>x!=null);
+  const vel_w=rvN[W]||0, vel_n=nrm(rvN), recentNeg=(rvNeg[W]||0)+(rvNeg[W+1]||0), lastRating=rvRate.slice(W).find(x=>x!=null);
   const isPct=mktArr('search_is').map(x=>x==null?null:x*100), rlPct=mktArr('rank_lost_is').map(x=>x==null?null:x*100);
   const clicks=mktArr('clicks'), impr=mktArr('impressions');
-  const is_w=isPct[W], is_n=avg(sl(isPct).filter(x=>x!=null));
+  const is_w=isPct[W], is_n=nrm(isPct);
   const gmbWorse = dGmbP <= dGadsP;
-  const rl_w=rlPct[W], rl_n=avg(sl(rlPct).filter(x=>x!=null));
+  const rl_w=rlPct[W], rl_n=nrm(rlPct);
   // "likely driver" bits must match whichever channel fell more
   const bits=[];
   if(gmbWorse){
@@ -1633,7 +1642,7 @@ function leadLossDrill(r){
   const winBar=`<div style="display:flex;align-items:center;gap:6px;margin:6px 0 2px;flex-wrap:wrap;">
     <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#94a3b8;">Trend window</span>
     ${winOpts.map(([l,v])=>{ const on=(trendWin==='all'&&v===WEEKS.length)||(+trendWin===v); return `<button onclick="setTrendWin(${v===WEEKS.length?"'all'":v})" style="font-size:11px;padding:3px 10px;border-radius:7px;border:1.5px solid ${on?'#4f46e5':'var(--line)'};background:${on?'#eef2ff':'#fff'};color:${on?'#4338ca':'#475569'};font-weight:${on?700:500};cursor:pointer;">${l}</button>`; }).join('')}
-    <span style="font-size:10px;color:#cbd5e1;margin-left:2px;">showing last ${winN} wks · norm = 4-wk avg</span>
+    <span style="font-size:10px;color:#cbd5e1;margin-left:2px;">showing last ${winN} wks · norm = ${winN}-wk avg</span>
   </div>`;
   return `<div class="card"><div class="sec-h"><span class="sec-num">🔎</span>Lead-loss drill — by source</div>
     <div class="sec-sub">When inbound leads break, which source? <b>GMB profile</b> (reviews → rank) · <b>Google Ads</b> (impression share / spend) · <b>Practo</b> · <b>Organic &amp; others</b>. · leads from Redshift · ${WEEKS[wkIdx].label}</div>
@@ -1642,17 +1651,17 @@ function leadLossDrill(r){
       <div style="background:#eef2ff;border-radius:11px;padding:12px 14px;">
         <div style="font-size:13px;font-weight:800;color:#4338ca;margin-bottom:8px;">📍 GMB profile <span style="font-weight:500;color:#94a3b8;font-size:10px;">${hasGmbIns(r.city,r.clinic)?'· live Insights':''}</span></div>
         ${hasGmbIns(r.city,r.clinic)?(()=>{ const gs=gmbInsArr(r.city,r.clinic,'searches'), gix=gmbInsArr(r.city,r.clinic,'interactions');
-          const sw=gs[W]||0, sn=avg(sl(gs)), iw=gix[W]||0, iN=avg(sl(gix)); const dsp=sn?Math.round((sw-sn)/sn*100):0, dip=iN?Math.round((iw-iN)/iN*100):0;
-          return mini('Searches · '+sw.toLocaleString()+' ('+signed(dsp,'%')+')', '#7c3aed', 'GMB+Google impressions — how often the listing was seen · dashed = 4-wk avg', spark(rev(gs),'#7c3aed',hi,null,sn))
-            + mini('Interactions · '+iw+' ('+signed(dip,'%')+')', '#0d9488', 'calls + directions + website taps on the profile · dashed = 4-wk avg', spark(rev(gix),'#0d9488',hi,null,iN)); })():''}
-        ${mini('GMB leads · '+gmb_w+' ('+signed(dGmbP,'%')+')', '#6366f1', 'profile clicks + inbound calls → tracked leads · dashed = 4-wk avg', spark(rev(gmb),'#6366f1',hi,null,gmb_n))}
+          const sw=gs[W]||0, sn=nrm(gs), iw=gix[W]||0, iN=nrm(gix); const dsp=sn?Math.round((sw-sn)/sn*100):0, dip=iN?Math.round((iw-iN)/iN*100):0;
+          return mini('Searches · '+sw.toLocaleString()+' ('+signed(dsp,'%')+')', '#7c3aed', 'GMB+Google impressions — how often the listing was seen · dashed = '+winN+'-wk avg', spark(rev(gs),'#7c3aed',hi,null,sn))
+            + mini('Interactions · '+iw+' ('+signed(dip,'%')+')', '#0d9488', 'calls + directions + website taps on the profile · dashed = '+winN+'-wk avg', spark(rev(gix),'#0d9488',hi,null,iN)); })():''}
+        ${mini('GMB leads · '+gmb_w+' ('+signed(dGmbP,'%')+')', '#6366f1', 'profile clicks + inbound calls → tracked leads · dashed = '+winN+'-wk avg', spark(rev(gmb),'#6366f1',hi,null,gmb_n))}
         ${mini('Review velocity · '+vel_w+'/wk', '#0891b2', 'reviews/week — a primary GMB-rank driver', spark(rev(rvN),'#0891b2',hi,null,vel_n))}
         <div style="font-size:10.5px;color:#475569;">Rating ${lastRating!=null?'<b>'+lastRating+'★</b>':'—'} · ${vel_n>0.5&&vel_w<vel_n-0.5?'<b style="color:#dc2626">velocity dropping → rank risk</b>':'velocity steady'}.</div>
         ${negReviewsBlock(r.city, r.clinic)}
       </div>
       <div style="background:#fef7f6;border-radius:11px;padding:12px 14px;">
         <div style="font-size:13px;font-weight:800;color:#DB4437;margin-bottom:8px;">🔍 Google Ads <span style="font-weight:500;color:#94a3b8;font-size:10px;">${gaCity?'· '+r.city+' (SH local)':'(network)'}</span></div>
-        ${mini('Ads leads · '+gads_w+' ('+signed(dGadsP,'%')+')', '#DB4437', 'paid Google Ads leads (this clinic) · dashed = 4-wk avg', spark(rev(gads),'#DB4437',hi,null,gads_n))}
+        ${mini('Ads leads · '+gads_w+' ('+signed(dGadsP,'%')+')', '#DB4437', 'paid Google Ads leads (this clinic) · dashed = '+winN+'-wk avg', spark(rev(gads),'#DB4437',hi,null,gads_n))}
         ${gaCity
           ? `<div style="font-size:9.5px;color:#94a3b8;margin-bottom:4px;">City SH campaign · weekly export · arrows = vs last week</div>${gaCityPanel(r.city)}`
           : mini('Impression share', '#f59e0b', 'how often our ad showed — higher is better', spark(rev(isPct),'#f59e0b',hi,pctF))
@@ -1660,14 +1669,14 @@ function leadLossDrill(r){
       </div>
       ${(hasPracto||hasOther)?`<div style="background:#f0fdf4;border-radius:11px;padding:12px 14px;">
         <div style="font-size:13px;font-weight:800;color:#047857;margin-bottom:8px;">🌐 Practo · Organic · Others</div>
-        ${hasPracto?mini('Practo leads · '+pr_w+' ('+signed(dPrP,'%')+')', '#f59e0b', 'Practo profile leads · dashed = 4-wk avg', spark(rev(practo),'#f59e0b',hi,null,pr_n)):''}
+        ${hasPracto?mini('Practo leads · '+pr_w+' ('+signed(dPrP,'%')+')', '#f59e0b', 'Practo profile leads · dashed = '+winN+'-wk avg', spark(rev(practo),'#f59e0b',hi,null,pr_n)):''}
         ${hasPrBk?mini('Practo slot-booked (online) · '+prBk_w, '#ea580c', 'Practo’s own instant online slot-booking only — phone follow-up bookings aren’t counted here', spark(rev(prBk),'#ea580c',hi,null,prBk_n))
           +`<div style="font-size:9.5px;color:#b45309;background:#fffbeb;border:1px dashed #fde68a;border-radius:6px;padding:5px 8px;margin:-4px 0 9px;line-height:1.45;">⚠️ Partial signal — Practo only began populating this since <b>May 2026</b>, so earlier weeks read 0 (not tracked, not zero). Most Practo conversions happen by <b>phone follow-up</b> and book through the main pipeline, so this <b>undercounts</b> true Practo bookings.</div>`:''}
-        ${mini('Organic · '+org_w+' ('+signed(dOrgP,'%')+')', '#10b981', 'SEO / direct (non-paid) · dashed = 4-wk avg', spark(rev(org),'#10b981',hi,null,org_n))}
-        ${mini('Others · '+oth_w+' ('+signed(dOthP,'%')+')', '#94a3b8', 'FB + JustDial + misc · dashed = 4-wk avg', spark(rev(oth),'#94a3b8',hi,null,oth_n))}
+        ${mini('Organic · '+org_w+' ('+signed(dOrgP,'%')+')', '#10b981', 'SEO / direct (non-paid) · dashed = '+winN+'-wk avg', spark(rev(org),'#10b981',hi,null,org_n))}
+        ${mini('Others · '+oth_w+' ('+signed(dOthP,'%')+')', '#94a3b8', 'FB + JustDial + misc · dashed = '+winN+'-wk avg', spark(rev(oth),'#94a3b8',hi,null,oth_n))}
       </div>`:''}
     </div>
-    <div style="margin-top:12px;font-size:11.5px;background:#f8fafc;border-radius:9px;padding:10px 13px;line-height:1.6;color:#475569;">${verdict}${extraDrops.length?` Also down vs their 4-wk avg: <b>${extraDrops.join(', ')}</b>.`:''}</div>
+    <div style="margin-top:12px;font-size:11.5px;background:#f8fafc;border-radius:9px;padding:10px 13px;line-height:1.6;color:#475569;">${verdict}${extraDrops.length?` Also down vs their ${winN}-wk avg: <b>${extraDrops.join(', ')}</b>.`:''}</div>
   </div>`;
 }
 function accAll(open){ document.querySelectorAll('details.accstep').forEach(d=>{ d.open=open; }); }
@@ -1678,6 +1687,7 @@ function renderDeepDive(r){
   const winN = trendWin==='all' ? WEEKS.length : Math.min(+trendWin, WEEKS.length);
   const hi = (winN-1) - wkIdx;   // highlight index within the window (<0 ⇒ selected week is older than the window)
   const rev=a=>a.slice(0,WEEKS.length).reverse().slice(-winN);
+  const wAvg=a=>{ const w=(a||[]).slice(0,winN).filter(x=>x!=null&&!isNaN(x)); return w.length? w.reduce((s,x)=>s+(+x||0),0)/w.length : 0; };   // norm = avg over displayed window
   const wkS=WEEKS.map(w=>w.label.replace(/ \d{4}/,'')).slice(0,WEEKS.length).reverse().slice(-winN);
   const kpi=(l,v,s,c)=>`<div class="kpi"><div class="kpi-l">${l}</div><div class="kpi-v" style="color:${c||'#0f172a'};font-size:26px;">${v}</div><div class="kpi-s">${s}</div></div>`;
   _zoomCharts={}; _zoomSeq=0;
@@ -1843,7 +1853,7 @@ function renderDeepDive(r){
   </div>`;
   // ── individual trend charts (each registers its own zoom) ──
   const bkTrend = trend('📅 Bookings', spark(rev(r.bkArr),'#4f46e5',hi,null,r.bkBase), 'screening-call bookings/week (distinct patient × doctor) · dashed = expected');
-  const leadsTotalTrend = trend('📈 Total inbound leads', spark(rev(r.ldArr),'#0ea5e9',hi,null,r.ld_avg), 'all sources combined · dashed = recent norm');
+  const leadsTotalTrend = trend('📈 Total inbound leads', spark(rev(r.ldArr),'#0ea5e9',hi,null,wAvg(r.ldArr)), 'all sources combined · dashed = '+winN+'-wk avg');
   const avgToggle = '<span onclick="event.stopPropagation();toggleLeadsAvg()" style="cursor:pointer;color:'+(leadsAvg?'#4f46e5':'#94a3b8')+';font-weight:700;border:1px solid '+(leadsAvg?'#4f46e5':'var(--line)')+';border-radius:6px;padding:1px 7px;">'+(leadsAvg?'✓ ':'+ ')+'avg line</span>';
   const leadsBreakdownTrend = trend('🔎 By source', stackBars([
       {vals:rev(r.gmbArr), color:'#6366f1', label:'GMB+Google Ad'},
@@ -1851,8 +1861,8 @@ function renderDeepDive(r){
       {vals:rev(r.prArr), color:'#f59e0b', label:'Practo'},
       {vals:rev(r.fbArr.map((f,i)=>(f||0)+(r.jdArr[i]||0)+(r.othArr[i]||0))), color:'#94a3b8', label:'Others (FB/JD/…)'}], hi, wkS, leadsHide, 'toggleLeadsLine'),
     'each bar = total leads that week, stacked by source · <b>click a source</b> to isolate it (e.g. Organic only)');
-  const availTrend = trend('🩺 Availability — weekday vs weekend', availSplitChart(rev(r.wdArr), rev(r.weArr), hi, r.av_avg),
-    'each bar = bookable doctor-days that week, split weekday (dark) + weekend (light) · number on top = total · dashed = norm');
+  const availTrend = trend('🩺 Availability — weekday vs weekend', availSplitChart(rev(r.wdArr), rev(r.weArr), hi, wAvg(r.avArr)),
+    'each bar = bookable doctor-days that week, split weekday (dark) + weekend (light) · number on top = total · dashed = '+winN+'-wk avg');
   const schedTrend = hasRoster?trend('🗓️ Scheduled hrs', spark(rev(ros.hrs.map(x=>x==null?0:x)),'#0891b2',hi,null,rh_avg), 'roster bookable hours/week (planned)'):'';
   const verdictBlock = `<div style="margin-top:12px;font-size:11.5px;background:${r.mixWith?MIXCOL+'12':m.bg};border-radius:9px;padding:10px 13px;line-height:1.6;color:#475569;">
       <b style="color:${r.mixWith?MIXCOL:m.col};">Verdict — ${r.mixWith?'Mix ('+cap(CAUSE[r.cause].short)+' + '+CAUSE[r.mixWith].short+')':m.label}.</b>
