@@ -142,6 +142,9 @@ function hasGmbIns(city,clinic){ return !!GMBINS[city+'|'+clinic]; }
 let LEADAGE={};   // data_lead_age.json — bookings split by lead age (same/last/older week)
 function leadAgeArr(city,clinic,field){ const o=LEADAGE[city+'|'+clinic]; return o&&o[field] ? o[field].slice(0,WEEKS.length) : Array(WEEKS.length).fill(0); }
 function hasLeadAge(city,clinic){ return !!LEADAGE[city+'|'+clinic]; }
+let DMF={};   // data_demand_funnel.json — inbound-call relevance funnel + call attempts (demand_data_week_superset)
+function dmfArr(city,clinic,group,field){ const o=DMF[city+'|'+clinic]; const g=o&&o[group]; return g&&g[field] ? g[field].slice(0,WEEKS.length) : Array(WEEKS.length).fill(0); }
+function hasDmf(city,clinic){ return !!DMF[city+'|'+clinic]; }
 // clinic city (Redshift spelling) → Google Ads campaign city spelling
 const GA_CITY_ALIAS={'Hubli':'Hubballi','Mangaluru':'Mangalore','Visakhapatnam':'Vizag'};
 function gaForCity(city){ return GACITY[GA_CITY_ALIAS[city]||city]; }
@@ -1218,7 +1221,42 @@ function funnelCard(r){
     <div style="font-size:10.5px;font-weight:700;color:#0f172a;margin-bottom:3px;">Booking outcome — weekly trend</div>
     ${dispTrend}
     <div style="font-size:8.5px;color:#cbd5e1;display:flex;justify-content:space-between;margin-top:2px;">${wkWin.map((l,i)=>`<span style="${i===hiWin?'color:#475569;font-weight:700;':''}">${l}</span>`).join('')}</div>
-    <div style="font-size:10px;color:#94a3b8;margin-top:8px;line-height:1.5;"><b style="color:#0891b2">Deferred</b> lands later (not lost) · <b style="color:${relevCol}">cancels</b> = relevancy/demand (marketing) · <b style="color:${agentCol}">no-shows</b> = call-handling (ops). Relevancy proxied by cancellations until a lead-disposition pull lands.</div>
+    <div style="font-size:10px;color:#94a3b8;margin-top:8px;line-height:1.5;"><b style="color:#0891b2">Deferred</b> lands later (not lost) · <b style="color:${relevCol}">cancels</b> = relevancy/demand (marketing) · <b style="color:${agentCol}">no-shows</b> = call-handling (ops).</div>
+  </div>`;
+}
+// ── Lead quality (inbound calls): relevance funnel + call-attempt effort + Practo (demand superset) ──
+function leadQualityCard(r){
+  if(!hasDmf(r.city,r.clinic)) return '';
+  const W=wkIdx, rev=a=>(a||[]).slice(0,WEEKS.length).reverse(), hi=(WEEKS.length-1)-W, sl=a=>a.slice(W+1,W+6);
+  const lead=dmfArr(r.city,r.clinic,'all','leads'), rel=dmfArr(r.city,r.clinic,'all','relevant'), bk=dmfArr(r.city,r.clinic,'all','booked');
+  const a1=dmfArr(r.city,r.clinic,'all','a1'), a2=dmfArr(r.city,r.clinic,'all','a2'), a3=dmfArr(r.city,r.clinic,'all','a3'), a3p=dmfArr(r.city,r.clinic,'all','a3plus');
+  const lead_w=lead[W]||0, rel_w=rel[W]||0, bk_w=bk[W]||0;
+  const relPct=lead_w>0?Math.round(rel_w/lead_w*100):null, bkPct=rel_w>0?Math.round(bk_w/rel_w*100):null;
+  const relPct_n=(()=>{ const l=sl(lead).reduce((a,b)=>a+b,0), rv=sl(rel).reduce((a,b)=>a+b,0); return l>0?Math.round(rv/l*100):null; })();
+  const a1_w=a1[W]||0,a2_w=a2[W]||0,a3_w=a3[W]||0,a3p_w=a3p[W]||0, aTot=a1_w+a2_w+a3_w+a3p_w;
+  const prL=dmfArr(r.city,r.clinic,'practo','leads'), prB=dmfArr(r.city,r.clinic,'practo','booked');
+  const prL_w=prL[W]||0, prB_w=prB[W]||0, prConv=prL_w>0?Math.round(prB_w/prL_w*100):null, hasPr=prL.some(x=>x>0)||prB.some(x=>x>0);
+  const stg=(lbl,val,sub,col)=>`<div style="flex:1;min-width:80px;text-align:center;"><div style="font-size:9px;text-transform:uppercase;letter-spacing:.04em;color:#94a3b8;font-weight:700;">${lbl}</div><div style="font-size:23px;font-weight:800;color:${col};line-height:1.1;">${val}</div><div style="font-size:9px;color:#94a3b8;">${sub}</div></div>`;
+  const arr=(t)=>`<div style="align-self:center;text-align:center;color:#cbd5e1;font-size:11px;min-width:50px;">→<div style="font-size:10px;color:#64748b;font-weight:800;">${t}</div></div>`;
+  const aSeg=(n,c,lbl)=>aTot>0&&n>0?`<div title="${lbl}: ${n}" style="width:${n/aTot*100}%;background:${c};display:flex;align-items:center;justify-content:center;color:#fff;font-size:10px;font-weight:800;">${n/aTot>=0.08?n:''}</div>`:'';
+  const tc=(title,svg,sub)=>`<div class="card" style="margin-bottom:0;"><div style="font-size:12px;font-weight:700;margin-bottom:2px;">${title}</div><div style="font-size:10.5px;color:#94a3b8;margin-bottom:8px;">${sub}</div>${svg}</div>`;
+  return `<div class="card"><div class="sec-h"><span class="sec-num">🎯</span>Lead quality — inbound calls (relevance)</div>
+    <div class="sec-sub"><b>Inbound-call leads only</b> — where an agent / <b>Sarvam AI</b> flags each call <b>relevant</b> (a genuine prospect) or not. Of the relevant ones, how many booked. · live weekly · ${WEEKS[wkIdx].label}</div>
+    <div style="display:flex;gap:6px;margin:6px 0 9px;">
+      ${stg('Inbound calls', lead_w, 'leads', '#0ea5e9')}
+      ${arr(relPct!=null?relPct+'%':'—')}
+      ${stg('Relevant', rel_w, (relPct_n!=null?'vs '+relPct_n+'% norm':'genuine prospects'), '#4f46e5')}
+      ${arr(bkPct!=null?bkPct+'%':'—')}
+      ${stg('Booked', bk_w, 'of relevant', '#059669')}
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:10px;">
+      ${tc('🎯 Relevant %', spark(rev(lead.map((l,i)=>l>0?Math.round((rel[i]||0)/l*100):0)),'#4f46e5',hi,v=>v+'%',relPct_n), 'share of inbound calls flagged relevant')}
+      ${tc('✅ Booked % of relevant', spark(rev(rel.map((v,i)=>v>0?Math.round((bk[i]||0)/v*100):0)),'#059669',hi,v=>v+'%',null), 'of relevant leads, share that booked')}
+    </div>
+    ${aTot>0?`<div style="font-size:10.5px;font-weight:700;color:#0f172a;margin-bottom:3px;">📞 Call-handling effort — attempts to book ${aTot} slots</div>
+    <div style="display:flex;height:26px;border-radius:7px;overflow:hidden;border:1px solid var(--line);margin-bottom:4px;">${aSeg(a1_w,'#059669','1st attempt')}${aSeg(a2_w,'#84cc16','2nd attempt')}${aSeg(a3_w,'#f59e0b','3rd attempt')}${aSeg(a3p_w,'#dc2626','4+ attempts')}</div>
+    <div style="font-size:10px;color:#475569;margin-bottom:10px;"><b style="color:#059669">${a1_w}</b> booked 1st try · <b style="color:#65a30d">${a2_w}</b> 2nd · <b style="color:#d97706">${a3_w}</b> 3rd · <b style="color:#dc2626">${a3p_w}</b> 4+ tries. ${aTot>0&&(a3_w+a3p_w)/aTot>=0.25?'<b style="color:#dc2626">Many leads need 3+ calls to reach</b> — a call-handling / connect-rate issue (ops lever).':'Most leads booked in 1–2 attempts — connect rate is healthy.'}</div>`:''}
+    ${hasPr?`<div style="font-size:11px;color:#475569;background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:8px 11px;">🟧 <b>Practo</b>: ${prL_w} leads → <b style="color:#ea580c">${prB_w} booked</b>${prConv!=null?' ('+prConv+'%)':''} this week.</div>`:''}
   </div>`;
 }
 // ── chart zoom: each trend cell registers its content; ⛶ opens a large modal ──
@@ -1856,7 +1894,7 @@ function renderDeepDive(r){
     {n:1,icon:'🩺',label:'Availability',col:'#7c3aed',stat:availStat,body:availCard},
     {n:2,icon:'📊',label:'Expected',col:'#4f46e5',stat:expStat,body:bookingRateCard(r)},
     {n:3,icon:'🔎',label:'Leads & source',col:'#0ea5e9',stat:leadStat,body:whyIntro+leadsCard+leadLossDrill(r)},
-    {n:4,icon:'⛳',label:'Convert',col:step5col,stat:convStat,body:funnelCard(r)+marketingVsOpsCard(r)},
+    {n:4,icon:'⛳',label:'Convert',col:step5col,stat:convStat,body:funnelCard(r)+leadQualityCard(r)+marketingVsOpsCard(r)},
   ];
   if(reg||bm) tabs.push({n:5,icon:'🧪',label:'Model',col:'#64748b',stat:'',body:(reg||'')+(bm||'')});
   const causeTab = r.cause==='avail'?1 : r.cause==='leads'?3 : r.cause==='l2b'?4 : 1;
@@ -1920,7 +1958,7 @@ function renderOnline(){
 async function init(){
   try{
     const safe=u=>fetch(u,{cache:'no-store'}).catch(()=>({ok:false}));
-    const [jr,sr,lr,pr,rr,ld,rv,mk,bt,dg,ga,nr,gi,la]=await Promise.all([ fetch('data.json',{cache:'no-store'}), safe(SHEET_URL), safe(L0_URL), safe(PRACTO_URL), safe('data_roster.json'), safe('data_leads.json'), safe('data_reviews.json'), safe('data_marketing.json'), safe('data_booktype.json'), safe('data_diagnostic.json'), safe('data_ga_city.json'), safe('data_reviews_neg.json'), safe('data_gmb_insights.json'), safe('data_lead_age.json') ]);
+    const [jr,sr,lr,pr,rr,ld,rv,mk,bt,dg,ga,nr,gi,la,df]=await Promise.all([ fetch('data.json',{cache:'no-store'}), safe(SHEET_URL), safe(L0_URL), safe(PRACTO_URL), safe('data_roster.json'), safe('data_leads.json'), safe('data_reviews.json'), safe('data_marketing.json'), safe('data_booktype.json'), safe('data_diagnostic.json'), safe('data_ga_city.json'), safe('data_reviews_neg.json'), safe('data_gmb_insights.json'), safe('data_lead_age.json'), safe('data_demand_funnel.json') ]);
     if(!jr.ok) throw new Error('data.json not found');
     JDATA=await jr.json();
     // SDATA now comes from Redshift (data_diagnostic.json); the Google Sheet is a fallback only.
@@ -1938,6 +1976,7 @@ async function init(){
     if(nr.ok){ try{ NEGREV=await nr.json(); }catch(_){ } }
     if(gi.ok){ try{ GMBINS=await gi.json(); }catch(_){ } }
     if(la.ok){ try{ LEADAGE=await la.json(); }catch(_){ } }
+    if(df.ok){ try{ DMF=await df.json(); }catch(_){ } }
     const wSel=document.getElementById('weekSelect');
     WEEKS.forEach((w,i)=>{ const o=document.createElement('option'); o.value=i; o.textContent=w.label+(i===0?' (latest)':''); if(i===0)o.selected=true; wSel.appendChild(o); });
     render(); updateRefreshBadge();
