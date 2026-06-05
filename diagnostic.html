@@ -167,7 +167,7 @@ function landSpec(){ const leadsV=landView==='leads'; return {
   leadsV,
   arr: r => (leadsV ? (r.ldArr||[]) : (r.bkNewArr||[])),
   noun: leadsV ? 'leads' : 'new bookings',
-  totalNoun: leadsV ? 'new booked' : 'total SC',
+  totalNoun: leadsV ? 'new booked' : 'total scheduled',
   totalVal: r => leadsV ? ((r.bkNewArr&&r.bkNewArr[wkIdx])||0) : (r.bk_w||0),
   cityTitle: leadsV ? 'By city — where did leads move?' : 'By city — where did bookings move?',
   clinicVerb: leadsV ? 'leads' : 'new (first-time) patients',
@@ -1979,7 +1979,7 @@ function renderDeepDive(r){
   </div>`;
   // ── individual trend charts (each registers its own zoom) ──
   const bkTrend = trend('📅 Bookings', spark(rev(r.bkArr),'#4f46e5',hi,null,r.bkBase), 'screening-call bookings/week (distinct patient × doctor) · dashed = expected');
-  const leadsTotalTrend = trend('📈 Total inbound leads', spark(rev(r.ldArr),'#0ea5e9',hi,null,wAvg(r.ldArr)), 'all sources combined · dashed = '+winN+'-wk avg');
+  const leadsTotalTrend = trend('📈 Google + GMB leads', spark(rev(r.gmbArr),'#6366f1',hi,null,wAvg(r.gmbArr)), 'GMB profile + Google Ads (your main owned + paid channel) · dashed = '+winN+'-wk avg');
   const avgToggle = '<span onclick="event.stopPropagation();toggleLeadsAvg()" style="cursor:pointer;color:'+(leadsAvg?'#4f46e5':'#94a3b8')+';font-weight:700;border:1px solid '+(leadsAvg?'#4f46e5':'var(--line)')+';border-radius:6px;padding:1px 7px;">'+(leadsAvg?'✓ ':'+ ')+'avg line</span>';
   const leadsBreakdownTrend = trend('🔎 By source', stackBars([
       {vals:rev(r.gmbArr), color:'#6366f1', label:'GMB+Google Ad'},
@@ -1996,8 +1996,8 @@ function renderDeepDive(r){
       Owner: <b>${r.mixWith?CAUSE[r.cause].owner+' + '+CAUSE[r.mixWith].owner:m.owner}</b>.
     </div>`;
   // ── dedicated Leads card: Total on top, source breakdown below ──
-  const leadsCard = `<div class="card"><div class="sec-h"><span class="sec-num">🔎</span>Leads — total inbound</div>
-    <div class="sec-sub">Total inbound leads (the size of demand). The source split &amp; lead-loss drill are below. · ${r.useRedshiftLeads?'Redshift':'sheet'} · last ${winN} weeks · highlighted = ${wl}.</div>
+  const leadsCard = `<div class="card"><div class="sec-h"><span class="sec-num">🔎</span>Leads — Google + GMB</div>
+    <div class="sec-sub"><b>Google + GMB leads</b> — your main owned + paid channel. Practo, organic &amp; others (and the full source split / lead-loss drill) are below. · ${r.useRedshiftLeads?'Redshift':'sheet'} · last ${winN} weeks · highlighted = ${wl}.</div>
     ${winBar}
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:14px;">${leadsTotalTrend}</div>
   </div>`;
@@ -2023,7 +2023,7 @@ function renderDeepDive(r){
   const verdictBanner = `<div class="card" style="border-left:5px solid ${statusCol};background:${statusCol}0d;">
     <div style="font-size:15.5px;font-weight:800;color:#0f172a;line-height:1.45;">
       ${r.clinic} booked <span style="color:${statusCol}">${new_w}</span> new patients <b style="color:${dCol(new_w-Math.round(new_n))}">(${signed(new_w-Math.round(new_n))} vs ${r1(new_n)} norm)</b> in ${wl}.
-      <span style="font-weight:600;color:#64748b;font-size:13px;">${r.bk_w} total SC bookings vs ${exp} expected (${signed(gap)}).</span></div>
+      <span style="font-weight:600;color:#64748b;font-size:13px;">${r.bk_w} total scheduled bookings vs ${exp} expected (${signed(gap)}).</span></div>
     <div style="font-size:12.5px;color:#475569;margin-top:5px;line-height:1.5;">
       Primary cause: <b style="color:${statusCol}">${causePhrase}</b>${r.mixWith?` (mix with ${CAUSE[r.mixWith].short})`:''}.${r.note?` <span style="color:#94a3b8;">${r.note}.</span>`:''}
       ${drillHint?`<span style="color:#94a3b8;"> → see the <b>${drillHint}</b> drill below.</span>`:''}</div>
@@ -2087,9 +2087,9 @@ function renderDeepDive(r){
     <div style="font-size:10.5px;color:#94a3b8;margin:0 0 9px;">📅 Trailing <b>${winN}</b> weeks · ${WEEKS[Math.min(wkIdx+winN-1,WEEKS.length-1)].label} → <b>${wl}</b> · chart dates are week-ending · click ⛶ on any chart to zoom.</div>
     <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;">
       ${vchip('🆕','New bookings', new_w,'', newPct, 'first-time · vs '+r1(new_n)+' norm', spark(rev(r.bkNewArr),'#4f46e5',hi,null,new_n))}
-      ${vchip('📅','All SC bookings', r.bk_w,'', gapPct, 'new+repeat · vs '+exp+' exp', spark(rev(r.bkArr),'#6366f1',hi,null,r.bkBase))}
+      ${vchip('📅','All scheduled bookings', r.bk_w,'', gapPct, 'new+repeat · vs '+exp+' exp', spark(rev(r.bkArr),'#6366f1',hi,null,r.bkBase))}
       ${vchip('🔎','Leads', r.ld_w,'', Math.round(r.dLeadPct), 'inbound · vs '+Math.round(r.ld_avg)+' norm', spark(rev(r.ldArr),'#0ea5e9',hi,null,r.ld_avg))}
-      ${vchip('📞','Consults done', done_w,'', pctOf(done_w-done_n,done_n), doneRate+'% of '+r.bk_w+' SC completed', spark(rev(r.bkDoneArr),'#0891b2',hi,null,done_n))}
+      ${vchip('📞','Consults done', done_w,'', pctOf(done_w-done_n,done_n), doneRate+'% of '+r.bk_w+' scheduled completed', spark(rev(r.bkDoneArr),'#0891b2',hi,null,done_n))}
       ${vchip('🩺','Availability', r1(r.av_w),'d', pctOf(r.dAct,r.av_avg), 'realized doctor-days · wd '+r1(r.wd_w)+' + we '+r1(r.we_w)+(hasRoster&&rh_w!=null?' · '+r1(rh_w)+'h scheduled':''), availSplitChart(rev(r.wdArr), rev(r.weArr), hi, r.av_avg, wkS))}
       ${vchip('✂️','Doctor shrinkage', _shrPct,'%', null, _shrHas?_shW+' of '+_scW+' slots blocked · norm '+_shrPctN+'%':'no roster data', shrChip)}
       ${vchip('⛳','Lead→book %', l2b_w,'%', null, 'new bookings ÷ leads · vs '+Math.round(avg(l2bArr.slice(wkIdx+1,wkIdx+6)))+'% norm', spark(rev(l2bArr),'#0ea5e9',hi,v=>v+'%',avg(l2bArr.slice(wkIdx+1,wkIdx+6))))}
