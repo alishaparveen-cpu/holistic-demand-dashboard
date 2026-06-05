@@ -150,6 +150,8 @@ function practoBkTrueArr(city,clinic){ const a=PRACTOBK[city+'|'+clinic]; if(!a)
 function hasPractoBkTrue(city,clinic){ return !!PRACTOBK[city+'|'+clinic]; }
 let LEADMAT={};   // data_lead_maturation.json — Google/GMB/Organic lead→booking maturation curve (cumulative % by lag), clinic + network
 function leadMat(city,clinic){ return LEADMAT[city+'|'+clinic] || (LEADMAT._meta&&LEADMAT._meta.network) || null; }
+let PRACTODOC={};   // data_practo_by_doctor.json — Practo leads/booked per clinic split by Doctor Name
+function practoByDoctor(city,clinic){ return PRACTODOC[city+'|'+clinic] || null; }
 // clinic city (Redshift spelling) → Google Ads campaign city spelling
 const GA_CITY_ALIAS={'Hubli':'Hubballi','Mangaluru':'Mangalore','Visakhapatnam':'Vizag'};
 function gaForCity(city){ return GACITY[GA_CITY_ALIAS[city]||city]; }
@@ -1778,17 +1780,19 @@ function leadLossDrill(r){
         <div style="font-size:10.5px;color:#475569;">Rating ${lastRating!=null?'<b>'+lastRating+'★</b>':'—'} · ${vel_n>0.5&&vel_w<vel_n-0.5?'<b style="color:#dc2626">velocity dropping → rank risk</b>':'velocity steady'}.</div>
         ${negReviewsBlock(r.city, r.clinic)}
       </div>
-      <div style="background:#fef7f6;border-radius:11px;padding:12px 14px;">
-        <div style="font-size:13px;font-weight:800;color:#DB4437;margin-bottom:8px;">🔍 Google Ads <span style="font-weight:500;color:#94a3b8;font-size:10px;">${gaCity?'· '+r.city+' (SH local)':'(network)'}</span></div>
-        ${mini('Ads leads · '+gads_w+' ('+signed(dGadsP,'%')+')', '#DB4437', 'paid Google Ads leads (this clinic) · dashed = '+winN+'-wk avg', spark(rev(gads),'#DB4437',hi,null,gads_n))}
-        ${gaCity
-          ? `<div style="font-size:9.5px;color:#94a3b8;margin-bottom:4px;">City SH campaign · weekly export · arrows = vs last week</div>${gaCityPanel(r.city)}`
-          : mini('Impression share', '#f59e0b', 'how often our ad showed — higher is better', spark(rev(isPct),'#f59e0b',hi,pctF))
-            + mini('Rank-lost impression share', '#dc2626', 'lost to low Ad Rank (keyword/quality) — lower is better', spark(rev(rlPct),'#dc2626',hi,pctF))}
-      </div>
       ${(hasPracto||hasOther)?`<div style="background:#f0fdf4;border-radius:11px;padding:12px 14px;">
         <div style="font-size:13px;font-weight:800;color:#047857;margin-bottom:8px;">🌐 Practo · Organic · Others</div>
         ${hasPracto?mini('Practo leads · '+pr_w+' ('+signed(dPrP,'%')+')', '#f59e0b', 'Practo profile leads · dashed = '+winN+'-wk avg', spark(rev(practo),'#f59e0b',hi,null,pr_n)):''}
+        ${(()=>{ const bd=practoByDoctor(r.city,r.clinic); if(!bd) return '';
+          const docs=Object.keys(bd).map(d=>({d, w:bd[d].leads[W]||0, tot:bd[d].leads.slice(0,winN).reduce((a,b)=>a+b,0)})).filter(x=>x.tot>0).sort((a,b)=>b.w-a.w||b.tot-a.tot);
+          if(!docs.length) return '';
+          const mx=Math.max(...docs.map(x=>x.w),1);
+          return `<details style="margin:-2px 0 9px;"><summary style="cursor:pointer;font-size:10px;font-weight:700;color:#b45309;padding:3px 0;">Practo leads by doctor — ${WEEKS[W].label} (click)</summary>
+            <div style="padding:4px 0 2px;">${docs.map(x=>`<div style="display:flex;align-items:center;gap:6px;margin-bottom:3px;font-size:10px;">
+              <span style="flex:0 0 42%;color:#475569;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${x.d}">${x.d.replace(/^Dr\.?\s*/,'')}</span>
+              <span style="flex:1;height:9px;background:#fff7ed;border-radius:3px;overflow:hidden;"><span style="display:block;height:100%;width:${x.w/mx*100}%;background:#f59e0b;"></span></span>
+              <span style="flex:0 0 auto;font-weight:800;color:#0f172a;">${x.w}</span></div>`).join('')}</div>
+            <div style="font-size:9px;color:#94a3b8;">this week's Practo profile leads, by doctor · ${docs.length} with leads</div></details>`; })()}
         ${hasPrBkT?mini('Practo booked · '+prBkT_w+' ('+signed(dPrBkT,'%')+')', '#ea580c', 'patients who booked a consult whose phone is a Practo lead — incl. phone follow-up · dashed = '+winN+'-wk avg', spark(rev(prBkT),'#ea580c',hi,null,prBkT_n))
           +`<div style="font-size:9.5px;color:#475569;background:#fff7ed;border:1px solid #fed7aa;border-radius:6px;padding:5px 8px;margin:-4px 0 9px;line-height:1.45;">✅ <b>True Practo bookings</b> (phone-matched to the main appointments pipeline)${hasPrBk?` · of which <b>${prBk_w}</b> via Practo’s own online slot-booking this week`:''}.</div>`
           : (hasPrBk?mini('Practo slot-booked (online) · '+prBk_w, '#ea580c', 'Practo’s own instant online slot-booking only — phone follow-up not counted · dashed = '+winN+'-wk avg', spark(rev(prBk),'#ea580c',hi,null,prBk_n)):'')}
@@ -1994,6 +1998,8 @@ function renderDeepDive(r){
   // ── individual trend charts (each registers its own zoom) ──
   const bkTrend = trend('📅 Bookings', spark(rev(r.bkArr),'#4f46e5',hi,null,r.bkBase), 'screening-call bookings/week (distinct patient × doctor) · dashed = expected');
   const leadsTotalTrend = trend('📈 Google + GMB leads', spark(rev(r.gmbArr),'#6366f1',hi,null,wAvg(r.gmbArr)), 'GMB profile + Google Ads (your main owned + paid channel) · dashed = '+winN+'-wk avg');
+  const _gadArr = leadArr(r.city,r.clinic,'google_ad');
+  const gAdLeadsTrend = trend('🔍 Google Ad leads', spark(rev(_gadArr),'#DB4437',hi,null,wAvg(_gadArr)), 'paid Google Ads leads only (campaign performance detail is in the Marketing tab) · dashed = '+winN+'-wk avg');
   const avgToggle = '<span onclick="event.stopPropagation();toggleLeadsAvg()" style="cursor:pointer;color:'+(leadsAvg?'#4f46e5':'#94a3b8')+';font-weight:700;border:1px solid '+(leadsAvg?'#4f46e5':'var(--line)')+';border-radius:6px;padding:1px 7px;">'+(leadsAvg?'✓ ':'+ ')+'avg line</span>';
   const leadsBreakdownTrend = trend('🔎 By source', stackBars([
       {vals:rev(r.gmbArr), color:'#6366f1', label:'GMB+Google Ad'},
@@ -2013,7 +2019,7 @@ function renderDeepDive(r){
   const leadsCard = `<div class="card"><div class="sec-h"><span class="sec-num">🔎</span>Leads — Google + GMB</div>
     <div class="sec-sub"><b>Google + GMB leads</b> — your main owned + paid channel. Practo, organic &amp; others (and the full source split / lead-loss drill) are below. · ${r.useRedshiftLeads?'Redshift':'sheet'} · last ${winN} weeks · highlighted = ${wl}.</div>
     ${winBar}
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:14px;">${leadsTotalTrend}</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:14px;">${leadsTotalTrend}${gAdLeadsTrend}</div>
   </div>`;
   const bkTrendCard = `<div class="card"><div class="sec-h"><span class="sec-num">📈</span>Bookings — trend &amp; verdict</div>
     <div class="sec-sub">Last <b>${winN}</b> weeks · highlighted point = <b>${wl}</b> · dashed = expected.</div>
@@ -2195,7 +2201,7 @@ function renderOnline(){
 async function init(){
   try{
     const safe=u=>fetch(u,{cache:'no-store'}).catch(()=>({ok:false}));
-    const [jr,sr,lr,pr,rr,ld,rv,mk,bt,dg,ga,nr,gi,la,df,pbk,pl,lm]=await Promise.all([ fetch('data.json',{cache:'no-store'}), safe(SHEET_URL), safe(L0_URL), safe(PRACTO_URL), safe('data_roster.json'), safe('data_leads.json'), safe('data_reviews.json'), safe('data_marketing.json'), safe('data_booktype.json'), safe('data_diagnostic.json'), safe('data_ga_city.json'), safe('data_reviews_neg.json'), safe('data_gmb_insights.json'), safe('data_lead_age.json'), safe('data_demand_funnel.json'), safe('data_practo_booked.json'), safe('data_practo_leads.json'), safe('data_lead_maturation.json') ]);
+    const [jr,sr,lr,pr,rr,ld,rv,mk,bt,dg,ga,nr,gi,la,df,pbk,pl,lm,pd]=await Promise.all([ fetch('data.json',{cache:'no-store'}), safe(SHEET_URL), safe(L0_URL), safe(PRACTO_URL), safe('data_roster.json'), safe('data_leads.json'), safe('data_reviews.json'), safe('data_marketing.json'), safe('data_booktype.json'), safe('data_diagnostic.json'), safe('data_ga_city.json'), safe('data_reviews_neg.json'), safe('data_gmb_insights.json'), safe('data_lead_age.json'), safe('data_demand_funnel.json'), safe('data_practo_booked.json'), safe('data_practo_leads.json'), safe('data_lead_maturation.json'), safe('data_practo_by_doctor.json') ]);
     if(!jr.ok) throw new Error('data.json not found');
     JDATA=await jr.json();
     // SDATA now comes from Redshift (data_diagnostic.json); the Google Sheet is a fallback only.
@@ -2219,6 +2225,7 @@ async function init(){
     if(df.ok){ try{ DMF=await df.json(); }catch(_){ } }
     if(pbk.ok){ try{ PRACTOBK=await pbk.json(); }catch(_){ } }
     if(lm.ok){ try{ LEADMAT=await lm.json(); }catch(_){ } }
+    if(pd.ok){ try{ PRACTODOC=await pd.json(); }catch(_){ } }
     const wSel=document.getElementById('weekSelect');
     WEEKS.forEach((w,i)=>{ const o=document.createElement('option'); o.value=i; o.textContent=w.label+(i===0?' (latest)':''); if(i===0)o.selected=true; wSel.appendChild(o); });
     render(); updateRefreshBadge();

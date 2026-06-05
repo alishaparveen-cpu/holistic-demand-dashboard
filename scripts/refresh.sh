@@ -50,7 +50,7 @@ echo "Refreshed: ${ok[*]:-none}"
 [ ${#fail[@]} -gt 0 ] && printf 'Skipped/failed:\n  - %s\n' "${fail[@]}"
 
 # ── deploy: commit only the data files that changed, then push main ──
-CHANGED=$(git status --porcelain data_diagnostic.json data_reviews_neg.json data_ga_city.json data_leads_total.json data_gmb_insights.json data_lead_age.json data_demand_funnel.json data_practo_booked.json data_practo_leads.json data_lead_maturation.json | awk '{print $2}')
+CHANGED=$(git status --porcelain data_diagnostic.json data_reviews_neg.json data_ga_city.json data_leads_total.json data_gmb_insights.json data_lead_age.json data_demand_funnel.json data_practo_booked.json data_practo_leads.json data_practo_by_doctor.json data_lead_maturation.json | awk '{print $2}')
 if [ -z "$CHANGED" ]; then echo "No data changes — nothing to deploy."; exit 0; fi
 echo; echo "Deploying: $CHANGED"
 git add $CHANGED

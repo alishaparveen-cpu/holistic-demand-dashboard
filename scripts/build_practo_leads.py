@@ -21,7 +21,7 @@ def main():
     req = urllib.request.Request(url, headers={"User-Agent":"Mozilla/5.0"})
     with urllib.request.urlopen(req, timeout=90) as r:
         rows = list(csv.reader(io.StringIO(r.read().decode("utf-8", errors="replace"))))
-    D = {}
+    D = {}; BYDOC = {}
     for c in rows[1:]:
         if len(c) < 9: continue
         p = (c[0] or "").strip().split("-")            # DD-MM-YYYY
@@ -32,17 +32,31 @@ def main():
         if mon not in idx: continue
         clinic, city = (c[7] or "").strip(), (c[8] or "").strip()
         if not clinic: continue
-        o = D.setdefault(f"{city}|{clinic}", {"leads":[0]*12, "booked":[0]*12})
-        i = idx[mon]; o["leads"][i] += 1
+        i = idx[mon]
         bts = (c[4] or "").strip(); m = re.search(r"(\d{4})", bts)
-        if bts and "1899" not in bts and m and int(m.group(1)) >= 2000: o["booked"][i] += 1
+        is_booked = bool(bts and "1899" not in bts and m and int(m.group(1)) >= 2000)
+        o = D.setdefault(f"{city}|{clinic}", {"leads":[0]*12, "booked":[0]*12})
+        o["leads"][i] += 1
+        if is_booked: o["booked"][i] += 1
+        # per-doctor breakdown (Doctor Name = col 3)
+        doc = (c[3] or "").strip() or "(unassigned)"
+        dk = f"{city}|{clinic}"
+        dd = BYDOC.setdefault(dk, {}).setdefault(doc, {"leads":[0]*12, "booked":[0]*12})
+        dd["leads"][i] += 1
+        if is_booked: dd["booked"][i] += 1
     out = {"_meta":{"source":"RD_Practo_Leads sheet (static build — replaces fragile live fetch)",
                     "weeks":WEEKS, "fields":"leads=Practo profile leads/wk; booked=Practo online slot-booked (Slot Booked TS)"}}
     out.update(D)
     json.dump(out, open(os.path.join(ROOT,"data_practo_leads.json"),"w"), separators=(",",":"))
     print(f"data_practo_leads.json · {len(D)} clinics")
+    docOut = {"_meta":{"source":"RD_Practo_Leads sheet · per-doctor (Doctor Name col)", "weeks":WEEKS}}
+    docOut.update(BYDOC)
+    json.dump(docOut, open(os.path.join(ROOT,"data_practo_by_doctor.json"),"w"), separators=(",",":"))
+    print(f"data_practo_by_doctor.json · {len(BYDOC)} clinics")
     v = D.get("Chennai|Velachery")
     if v: print("Chennai|Velachery leads (newest-first):", v["leads"])
+    dv = BYDOC.get("Chennai|Velachery")
+    if dv: print("Velachery by doctor (this-wk leads):", {k: w["leads"][0] for k,w in dv.items()})
 
 if __name__ == "__main__":
     main()
