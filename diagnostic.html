@@ -594,6 +594,7 @@ function causePill(c, mixWith){
 
 function render(){
   const el=document.getElementById('mainContent');
+  _calc={}; _calcSeq=0;   // reset calc-popover registry for this render
   if(!JDATA){ el.innerHTML='<div class="loading-msg">Loading…</div>'; return; }
   try{ el.innerHTML = scope==='offline' ? renderOffline() : renderOnline(); }
   catch(e){ el.innerHTML=`<div class="loading-msg" style="color:#dc2626">RCA error: ${e.message}</div>`; console.error(e); }
@@ -1118,6 +1119,19 @@ function bookingRateCard(r){
   const leadsLoss=Math.max(0, Math.min(rateGap, leadShort*convPerLead));   // leads share of the rate gap
   const convLoss=Math.max(0, rateGap-leadsLoss);          // conversion / call-handling share
   const E_afterLeads=E_actual-leadsLoss;
+  // ── "how it's calculated" popovers for each waterfall step ──
+  const _shrChip=calcChip('Bookings lost to doctor shrinkage', `
+    <p><b>What it answers:</b> if the doctor hadn’t blocked slots, how many more bookings could this week have held?</p>
+    ${calcStep(`scheduled hours <b>${r1(schTot)}h</b> × your usual rate <b>${r1(wkRate)}/${uShort}</b> = <b>${r1(E_sched)}</b> expected<br>actually-bookable hours <b>${r1(actTot)}h</b> → <b>${r1(E_actual)}</b> expected<br><b>loss = ${r1(E_sched)} − ${r1(E_actual)} = ${r1(shrinkageLoss)}</b>`)}
+    <p>Shrinkage this week was <b>${Math.round(shrThis*100)}%</b> of scheduled slots (doctor <code>appointment_blocks</code>).</p>${calcBasis()}`);
+  const _leadsChip=calcChip('Bookings lost to fewer leads', `
+    <p><b>What it answers:</b> you got fewer inbound leads than normal — how many bookings did that cost?</p>
+    ${calcStep(`bookings per lead = normal bookings <b>${r1(bkNorm)}</b> ÷ normal leads <b>${r1(r.ld_avg)}</b> = <b>${(convPerLead).toFixed(2)}</b> per lead${bkNorm/Math.max(r.ld_avg,1)>1.2?' (capped at 1.20)':''}<br>fewer leads = norm <b>${Math.round(r.ld_avg)}</b> − this week <b>${r.ld_w}</b> = <b>${r1(leadShort)}</b><br><b>loss = ${r1(leadShort)} × ${(convPerLead).toFixed(2)} = ${r1(leadShort*convPerLead)}</b>${leadsLoss<leadShort*convPerLead-0.05?` → capped to <b>${r1(leadsLoss)}</b> (can’t exceed the week’s total shortfall)`:''}`)}
+    <p>So each missing lead costs ≈ <b>${(convPerLead).toFixed(2)}</b> bookings — your clinic’s own lead→booking conversion (<b>${Math.round(convPerLead*100)}%</b>), measured over the selected window, <i>not</i> a flat assumption.</p>${calcBasis()}`);
+  const _convChip=calcChip('Bookings lost to conversion / call-handling', `
+    <p><b>What it answers:</b> leads &amp; hours were there, but fewer booked than usual — the residual gap.</p>
+    ${calcStep(`rate gap = expected <b>${r1(E_actual)}</b> − booked <b>${r.bk_w}</b> = <b>${r1(rateGap)}</b><br>of which fewer-leads explains <b>${r1(leadsLoss)}</b><br><b>conversion = ${r1(rateGap)} − ${r1(leadsLoss)} = ${r1(convLoss)}</b>`)}
+    <p>This is the leftover after availability and leads — i.e. call-handling / scheduling / connect-rate (an ops lever).</p>${calcBasis()}`);
   const wfRow=(icon,label,val,delta,note,col)=>`<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid #f1f5f9;">
     <div style="flex:none;font-size:14px;width:20px;text-align:center;">${icon}</div>
     <div style="flex:1;min-width:0;"><div style="font-size:12px;font-weight:700;color:#0f172a;">${label}</div>${note?`<div style="font-size:9.5px;color:#94a3b8;line-height:1.35;">${note}</div>`:''}</div>
@@ -1128,9 +1142,9 @@ function bookingRateCard(r){
     <div style="font-size:10px;color:#94a3b8;margin-bottom:6px;">Start from your scheduled hours, then peel off each loss: shrinkage → leads → conversion → what you actually booked.</div>
     <div style="border:1px solid var(--line);border-radius:10px;padding:3px 13px;background:#fff;margin-bottom:9px;">
       ${wfRow('🗓️','At this week\'s scheduled hours ('+r1(schTot)+'h)',r1(E_sched),null,'if every scheduled hour booked at your usual rate ('+r1(wkRate)+'/'+uShort+') — before any shrinkage','#0f172a')}
-      ${wfRow('✂️','− Doctor shrinkage ('+Math.round(shrThis*100)+'% → '+r1(actTot)+'h bookable)',r1(E_actual),-shrinkageLoss, (shrinkageLoss>0.4?'blocked slots cost ~'+r1(shrinkageLoss)+' bookings':'minimal — little shrinkage this week'), shrinkageLoss>0.4?'#dc2626':'#475569')}
-      ${wfRow('🔎','− Fewer leads'+(leadsLoss>0.4?'':' — leads held ✓'),r1(E_afterLeads),-leadsLoss, (leadsLoss>0.4?'leads '+r.ld_w+' vs '+Math.round(r.ld_avg)+' norm → ~'+r1(leadsLoss)+' fewer bookings (a marketing lever)':'leads '+r.ld_w+' ≈ '+Math.round(r.ld_avg)+' norm — leads were not the issue'), leadsLoss>0.4?'#0ea5e9':'#475569')}
-      ${wfRow('⚙️','− Conversion / call-handling'+(convLoss>0.4?'':' — held ✓'),r.bk_w,-convLoss, (convLoss>0.4?'leads came but fewer booked per hour → ~'+r1(convLoss)+' fewer (an ops lever)':(rateGap<0.4?'converted about as usual':'converted about as usual')), convLoss>0.4?'#d97706':'#475569')}
+      ${wfRow('✂️','− Doctor shrinkage ('+Math.round(shrThis*100)+'% → '+r1(actTot)+'h bookable)'+_shrChip,r1(E_actual),-shrinkageLoss, (shrinkageLoss>0.4?'blocked slots cost ~'+r1(shrinkageLoss)+' bookings':'minimal — little shrinkage this week'), shrinkageLoss>0.4?'#dc2626':'#475569')}
+      ${wfRow('🔎','− Fewer leads'+(leadsLoss>0.4?'':' — leads held ✓')+_leadsChip,r1(E_afterLeads),-leadsLoss, (leadsLoss>0.4?'leads '+r.ld_w+' vs '+Math.round(r.ld_avg)+' norm · ~'+(convPerLead).toFixed(2)+' bookings/lead → ~'+r1(leadsLoss)+' fewer bookings (a marketing lever)':'leads '+r.ld_w+' ≈ '+Math.round(r.ld_avg)+' norm — leads were not the issue'), leadsLoss>0.4?'#0ea5e9':'#475569')}
+      ${wfRow('⚙️','− Conversion / call-handling'+(convLoss>0.4?'':' — held ✓')+_convChip,r.bk_w,-convLoss, (convLoss>0.4?'leads came but fewer booked per hour → ~'+r1(convLoss)+' fewer (an ops lever)':(rateGap<0.4?'converted about as usual':'converted about as usual')), convLoss>0.4?'#d97706':'#475569')}
     </div>
     <div style="font-size:11px;color:#475569;background:#f8fafc;border-radius:8px;padding:9px 12px;line-height:1.6;">
       ${(shrinkageLoss+rateGap)>1.5?`Biggest lever this week: <b style="color:${wfLevers[0][2]}">${wfLevers[0][0]}</b> (~<b>${r1(wfLevers[0][1])}</b> bookings). Fix that alone and you'd book ~<b>${r1(r.bk_w+wfLevers[0][1])}</b>.`:`Booked about where scheduled hours × your rate predicts — no single factor stands out this week.`}
@@ -1359,6 +1373,23 @@ function leadQualityCard(r){
   </div>`;
 }
 // ── chart zoom: each trend cell registers its content; ⛶ opens a large modal ──
+// ── "How it's calculated" popovers — any formula/figure can register an ⓘ that opens a modal
+//    showing the inputs, the formula, the numbers plugged in, and which norm window it used.
+let _calc={}, _calcSeq=0;
+function calcChip(title, body){ const id='c'+(_calcSeq++); _calc[id]={title,body};
+  return `<button onclick="event.stopPropagation();showCalc('${id}')" title="How this is calculated" style="border:1px solid var(--line);background:#fff;border-radius:999px;width:16px;height:16px;min-width:16px;cursor:pointer;font-size:10px;font-style:italic;font-weight:800;line-height:1;color:#6366f1;padding:0;vertical-align:middle;margin-left:5px;font-family:Georgia,serif;">i</button>`; }
+function showCalc(id){ const c=_calc[id]; if(!c) return;
+  let ov=document.getElementById('calcOverlay');
+  if(!ov){ ov=document.createElement('div'); ov.id='calcOverlay'; ov.onclick=e=>{ if(e.target===ov) ov.remove(); };
+    ov.style.cssText='position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;';
+    document.body.appendChild(ov); }
+  ov.innerHTML=`<div style="background:#fff;border-radius:14px;max-width:540px;width:100%;max-height:86vh;overflow:auto;padding:18px 22px;box-shadow:0 24px 70px rgba(0,0,0,.32);">
+    <div style="display:flex;justify-content:space-between;align-items:start;gap:10px;margin-bottom:12px;"><div style="font-size:15px;font-weight:800;color:#0f172a;line-height:1.3;">🧮 ${c.title}</div>
+    <button onclick="document.getElementById('calcOverlay').remove()" style="border:none;background:#f1f5f9;border-radius:8px;width:28px;height:28px;min-width:28px;cursor:pointer;font-size:15px;color:#64748b;">✕</button></div>
+    <div style="font-size:12.5px;color:#334155;line-height:1.7;">${c.body}</div></div>`; }
+// reusable bits for calc bodies
+function calcStep(html){ return `<div style="background:#f8fafc;border:1px solid var(--line);border-radius:8px;padding:8px 11px;margin:6px 0;font-family:ui-monospace,Menlo,monospace;font-size:11.5px;color:#0f172a;line-height:1.55;">${html}</div>`; }
+function calcBasis(){ return `<div style="font-size:11px;color:#475569;background:#eef2ff;border:1px solid #ddd6fe;border-radius:8px;padding:8px 11px;margin-top:8px;line-height:1.5;">📐 <b>Norm window:</b> this uses your <b>“Compare vs” = ${baseLabel()}</b> setting (top of the page). Switch it to 4-week, last week, recent peak, etc. and every norm &amp; loss here recalculates instantly.</div>`; }
 let _zoomCharts={}, _zoomSeq=0;
 function zoomTrend(id){
   const z=_zoomCharts[id]; if(!z) return;
@@ -1734,7 +1765,7 @@ function renderDeepDive(r){
     </div>`; };
   // ── scheduled bookable hours from roster (Redshift) — planned capacity vs realized days ──
   const ros=rosterArr(r.city,r.clinic);
-  const rsl=a=>a.slice(wkIdx+1,wkIdx+6).filter(x=>x!=null);
+  const rsl=a=>dimSlice(a,wkIdx).filter(x=>x!=null);   // roster norm follows the selected "Compare vs" window
   const rh_w=ros.hrs[wkIdx], rh_avg=avg(rsl(ros.hrs)), rwe_w=ros.we_hrs[wkIdx], rwe_avg=avg(rsl(ros.we_hrs));
   const hasRoster=ros.hrs.some(x=>x!=null);
   // per-day-of-week scheduled hours for the selected week + its recent norm
@@ -1745,31 +1776,20 @@ function renderDeepDive(r){
   // hour-of-day coverage for the selected week
   const hodWk = (ros.hod && ros.hod[wkIdx]) ? ros.hod[wkIdx] : null;
   const hasHod = hodWk && hodWk.some(x=>x>0);
+  // day-by-day & hour-of-day reduced to a single line (the graphs added clutter, not decisions)
+  const _openDays = hasDow ? ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].filter((d,i)=>(dowWk[i]||0)>0) : [];
+  const _hodRange = (()=>{ if(!hasHod) return ''; const idxs=hodWk.map((v,i)=>v>0?i:-1).filter(i=>i>=0); if(!idxs.length) return '';
+    const fmt=h=>{ const ap=h<12?'a':'p', hh=h%12||12; return hh+ap; }; return fmt(HOD_HOURS[idxs[0]])+'–'+fmt(HOD_HOURS[idxs[idxs.length-1]]+1); })();
   const dayBlock = hasDow ? `
-    <div style="margin-top:10px;">
-      <div style="font-size:11px;font-weight:700;color:#0f172a;margin-bottom:1px;">This week, day by day <span style="font-weight:500;color:#94a3b8;">— scheduled vs actually-bookable hours</span></div>
-      <div style="font-size:10px;color:#94a3b8;margin-bottom:7px;"><b>Why this matters:</b> demand isn't flat across the week — losing a day patients want (often weekends) costs more bookings than a quiet day. <b>Solid</b> = hours actually bookable after the doctor blocked slots · <b>striped top</b> = scheduled but blocked (shrinkage) · dashed line = that day's recent norm.</div>
-      <div style="font-size:9.5px;color:#475569;margin-bottom:5px;display:flex;gap:14px;flex-wrap:wrap;">
-        <span><span style="display:inline-block;width:11px;height:9px;background:#7c3aed;border-radius:2px;vertical-align:middle;margin-right:4px;"></span>Bookable (after shrinkage)</span>
-        <span><span style="display:inline-block;width:11px;height:9px;border-radius:2px;vertical-align:middle;margin-right:4px;background:repeating-linear-gradient(135deg,#7c3aed40,#7c3aed40 3px,#7c3aed14 3px,#7c3aed14 6px);"></span>Scheduled but blocked</span>
-      </div>
-      ${dayBarsChart(dowWk, dowNorm, (ros.shr&&ros.shr.sched&&ros.shr.sched[wkIdx]>0)?((ros.shr.shrunk[wkIdx]||0)/ros.shr.sched[wkIdx]):0)}
-      ${(()=>{ const sc=(ros.shr&&ros.shr.sched&&ros.shr.sched[wkIdx])||0, sh=(ros.shr&&ros.shr.shrunk&&ros.shr.shrunk[wkIdx])||0, p=sc?Math.round(sh/sc*100):0;
-        return p>=8 ? `<div style="font-size:10.5px;color:#d97706;margin-top:7px;">⚠ The doctor blocked <b>~${p}%</b> of scheduled slots this week — so actual bookable time was below the schedule shown. <span style="color:#94a3b8;">(week-level shrinkage applied evenly across days — exact per-day split isn't tracked.)</span></div>`
-          : '<div style="font-size:10.5px;color:#059669;margin-top:7px;">Low shrinkage — actual bookable time closely matched the schedule.</div>'; })()}
-      ${zeroDays.length?`<div style="font-size:10.5px;color:#dc2626;margin-top:4px;"><b>No cover on ${zeroDays.join(', ')}</b> this week — ${zeroDays.length>1?'days':'a day'} the clinic normally sits. That's where the lost slots are.</div>`:''}
-    </div>
-    ${hasHod?`<div style="margin-top:12px;">
-      <div style="font-size:11px;font-weight:700;color:#0f172a;margin-bottom:1px;">By hour of day <span style="font-weight:500;color:#94a3b8;">— when was the clinic actually open?</span></div>
-      <div style="font-size:10px;color:#94a3b8;margin-bottom:7px;">Which clock-hours had bookable slots this week (and on how many days).</div>
-      ${hourCoverageChart(hodWk)}
-    </div>`:''}` : '';
+    <div style="font-size:10.5px;color:#475569;margin-top:9px;padding-top:8px;border-top:1px dashed var(--line);line-height:1.55;">
+      📅 <b>Open ${_openDays.join(', ')||'—'}</b>${_hodRange?' · '+_hodRange:''} this week.${zeroDays.length?` <span style="color:#dc2626;font-weight:700;">No cover on ${zeroDays.join(', ')}</span> (normally open — that's where the lost slots are).`:''} <span style="color:#94a3b8;">Per-day &amp; per-hour breakdown isn't shown as charts — the loss is quantified in the ladder above.</span>
+    </div>` : '';
   // ── slots & shrinkage (doctor-blocked slots — appointment_blocks model) ──
   const shr = ros.shr || {sched:[],shrunk:[],avail:[]};
   const sc_w=shr.sched[wkIdx]||0, sh_w=shr.shrunk[wkIdx]||0, av_w=shr.avail[wkIdx]||0;
   const hasShr = shr.sched.some(x=>x>0);
   const shrPct_w = sc_w? sh_w/sc_w*100 : 0;
-  const priorSc=shr.sched.slice(wkIdx+1,wkIdx+6), priorSh=shr.shrunk.slice(wkIdx+1,wkIdx+6);
+  const priorSc=dimSlice(shr.sched,wkIdx), priorSh=dimSlice(shr.shrunk,wkIdx);   // shrinkage norm follows "Compare vs"
   const scN=priorSc.reduce((a,b)=>a+b,0), shN=priorSh.reduce((a,b)=>a+b,0);
   const shrPct_n = scN? shN/scN*100 : 0;
   const shrColor = shrPct_w>=40?'#dc2626':shrPct_w>=20?'#d97706':'#059669';
@@ -1804,11 +1824,35 @@ function renderDeepDive(r){
   const reconNote = (hasRoster && rh_w!=null) ? `<div style="font-size:11px;color:#475569;background:#f5f3ff;border:1px solid #ddd6fe;border-radius:9px;padding:9px 12px;margin:2px 0 10px;line-height:1.55;">
       <b>Two layers — different units, both correct.</b> The roster <b>scheduled ${r1(rh_w)}h${_schedDays?` across ${_schedDays} day-slots`:''}</b> (the plan — that's the 7-day × hours view in the day-by-day &amp; hour charts below). The headline <b>${r1(r.av_w)} active doctor-days</b> counts distinct doctor×day that still had a <b>bookable, non-blocked</b> slot <b>after shrinkage</b>. So "${r1(r.av_w)} days" = realized; "${r1(rh_w)}h${_schedDays?` / ${_schedDays} days`:''}" = scheduled. The gap between them is doctor shrinkage — see <b>Slots &amp; shrinkage</b> below.
     </div>` : '';
-  const availCard = `<div class="card"><div class="sec-h"><span class="sec-num">🩺</span>Availability — roster detail</div>
-    <div class="sec-sub">The weekday/weekend split &amp; doctor-shrinkage charts are in the <b>overview above</b>. This is the deeper roster detail: scheduled hours, the slot-shrinkage chain, day-by-day &amp; hour-of-day. · ${wl}</div>
+  // ── simplified availability ladder: normal vs this week, step by step, ending in bookings lost ──
+  const _lr=(label,norm,now,suffix,goodHigher,strong)=>{ const d=now-norm, eps=(suffix==='%'?1:0.3), flat=Math.abs(d)<eps;
+    const good=goodHigher? d>=0 : d<=0, col=flat?'#64748b':(good?'#059669':'#dc2626'), f=v=>r1(v)+(suffix||'');
+    return `<div style="display:flex;align-items:center;gap:8px;padding:7px 2px;border-bottom:1px solid #f1f5f9;font-size:11.5px;">
+      <span style="flex:1;color:#334155;font-weight:${strong?800:600};">${label}</span>
+      <span style="color:#94a3b8;white-space:nowrap;">norm <b style="color:#475569;">${f(norm)}</b> → this wk <b style="color:${col};">${f(now)}</b></span>
+      <span style="width:54px;text-align:right;font-weight:800;color:${col};">${flat?'—':(d>0?'+':'')+r1(d)+(suffix||'')}</span></div>`; };
+  const _availLossChip=calcChip('Bookings lost to availability', `
+    <p><b>What it answers:</b> the active-day shortfall this week, converted into bookings — weighting <b>weekends 1.5×</b> because they’re higher-demand.</p>
+    ${calcStep(`bookings per active doctor-day = normal bookings <b>${r1(r.bk_avg)}</b> ÷ normal active-days <b>${r1(r.av_avg)}</b> = <b>${r1(r.bkPerDay)}</b><br>weekday-days lost <b>${r1(r.wdLost)}</b> · weekend-days lost <b>${r1(r.weLost)}</b> (×1.5)<br><b>loss = (${r1(r.wdLost)} + ${r1(r.weLost)}×1.5) × ${r1(r.bkPerDay)} = ${r1((r.wdLost+r.weLost*1.5)*r.bkPerDay)}</b>${r.comp.avail< (r.wdLost+r.weLost*1.5)*r.bkPerDay-0.05?` → capped to <b>${r1(r.comp.avail)}</b> (can’t exceed the week’s total shortfall of ${r1(r.L)})`:''}`)}
+    <p>Only counted when availability actually broke its threshold — sub-threshold wobble is treated as noise, not a cause.</p>${calcBasis()}`);
+  const ladder = `
+    <div style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:#94a3b8;margin:2px 0 4px;">Normal (${baseLabel()}) → this week ${calcChip('How this availability ladder reads', `<p>Each row compares this week to your clinic’s own <b>${baseLabel()}</b> norm. Green = better, red = worse. The norm window follows the <b>“Compare vs”</b> selector at the top — change it and every row re-computes.</p><p><b>Active doctor-days</b> = distinct doctor×day with a bookable slot. <b>Scheduled hours</b> = the roster plan. <b>Shrinkage</b> = % of scheduled slots the doctor blocked. The last row turns the day shortfall into lost bookings.</p>`)}</div>
+    <div style="border:1px solid var(--line);border-radius:10px;padding:3px 12px;background:#fff;margin-bottom:10px;">
+      ${_lr('🗓️ Active weekday-days', r.wd_avg, r.wd_w, '', true)}
+      ${_lr('🌤️ Active weekend-days', r.we_avg, r.we_w, '', true)}
+      ${(hasRoster&&rh_w!=null)?_lr('⏱️ Scheduled hours · weekday', Math.max(0,rh_avg-rwe_avg), Math.max(0,rh_w-(rwe_w||0)), 'h', true):''}
+      ${(hasRoster&&rh_w!=null)?_lr('⏱️ Scheduled hours · weekend', rwe_avg, rwe_w||0, 'h', true):''}
+      ${hasShr?_lr('✂️ Doctor shrinkage (blocked %)', shrPct_n, shrPct_w, '%', false):''}
+      <div style="display:flex;align-items:center;gap:8px;padding:9px 2px;font-size:12px;">
+        <span style="flex:1;color:#7c3aed;font-weight:800;">↳ Bookings lost to availability${_availLossChip}</span>
+        <span style="font-size:19px;font-weight:800;color:${r.comp.avail>=0.5?'#7c3aed':'#94a3b8'};">${r.comp.avail>=0.5?'~'+r1(r.comp.avail):'~0'}</span></div>
+    </div>`;
+  const availCard = `<div class="card"><div class="sec-h"><span class="sec-num">🩺</span>Availability — normal vs this week</div>
+    <div class="sec-sub">Read top-down: your usual active days &amp; hours, what happened this week, the shrinkage, and how many bookings the gap cost. · vs ${baseLabel()} · ${wl}</div>
     <div style="font-size:11.5px;color:#475569;background:#f5f3ff;border:1px solid #ddd6fe;border-radius:9px;padding:8px 12px;margin-bottom:10px;line-height:1.5;">
-      <b>${r1(r.av_w)} realized active doctor-days</b> (${signed(r1(r.dAct))} vs ${r1(r.av_avg)} norm) — wd ${r1(r.wd_w)} + we ${r1(r.we_w)}.${(r.weLost>0.3)?` Weekend-weighted loss — the costliest window.`:''}${(hasRoster&&rh_w!=null)?` Roster scheduled <b>${r1(rh_w)}h</b>; the gap to realized is doctor shrinkage (below).`:''}
+      <b>${r1(r.av_w)} active doctor-days</b> this week (${signed(r1(r.dAct))} vs ${r1(r.av_avg)} norm) — wd ${r1(r.wd_w)} + we ${r1(r.we_w)}.${(r.weLost>0.3)?` <b style="color:#7c3aed">Weekend-weighted loss</b> — the costliest window.`:''}
     </div>
+    ${ladder}
     ${rosBlock}
   </div>`;
   let attribCard='';
