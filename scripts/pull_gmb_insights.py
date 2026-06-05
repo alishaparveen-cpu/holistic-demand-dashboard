@@ -72,16 +72,27 @@ def main():
     diag = json.load(open(os.path.join(ROOT,"data_diagnostic.json")))
     keys = [k for k in diag if k!="_meta"]                      # "City|Clinic"
     loc_by_clinic = { k.split("|")[1].strip().lower(): k for k in keys }
+    # city → key, ONLY for single-clinic cities. Many Allo listings are titled by CITY
+    # ("Allo Health, Nashik …") not by locality ("Trimurti Chowk"), so a locality-only match misses them.
+    from collections import defaultdict
+    _bycity = defaultdict(list)
+    for k in keys: _bycity[k.split("|")[0].strip().lower()].append(k)
+    city_single = { c: ks[0] for c, ks in _bycity.items() if len(ks)==1 }
     locs = list_locations(at)
     print(f"GBP locations: {len(locs)} · clinic keys: {len(keys)}", flush=True)
     out, matched, miss = {"_meta":{"source":"Google Business Profile Performance API","weeks":WEEKS,
             "fields":"searches=impressions(search+maps); interactions=calls+website+directions"}}, 0, []
     for L in locs:
-        m = re.search(r"Allo Health,?\s*([^-–|]+)", L.get("title",""))
-        if not m: continue
-        loc = m.group(1).strip().lower()
-        key = loc_by_clinic.get(loc) or next((v for kk,v in loc_by_clinic.items() if kk==loc or kk in loc or loc in kk), None)
-        if not key: miss.append(L.get("title","")[:40]); continue
+        title = L.get("title","")
+        # location token = first segment after the brand; handles both
+        # "Allo Health, <loc> - <tagline>" and "Allo Health - <city> | <tagline>".
+        t = re.sub(r"\ballo health\b", "", title, flags=re.I)
+        parts = [p.strip().lower() for p in re.split(r"[,\-–|]", t) if p.strip()]
+        if not parts: continue
+        cand = parts[0]
+        key = loc_by_clinic.get(cand) or city_single.get(cand) \
+              or next((v for kk,v in loc_by_clinic.items() if kk and (kk==cand or kk in cand or cand in kk)), None)
+        if not key: miss.append(title[:50]); continue
         num = L["name"].split("/")[-1]
         try:
             p = perf(num, at)
@@ -89,7 +100,11 @@ def main():
             p = None
         if p: out[key]=p; matched+=1; print(f"  {key}: searches wk0={p['searches'][0]} interactions wk0={p['interactions'][0]}", flush=True)
     json.dump(out, open(os.path.join(ROOT,"data_gmb_insights.json"),"w"), separators=(",",":"))
-    print(f"\nmatched {matched} clinics · unmatched titles: {len(miss)}")
+    covered = set(k for k in out if k!="_meta")
+    no_listing = sorted(set(keys) - covered)
+    print(f"\nmatched {matched} clinics · unmatched GBP titles: {len(miss)}")
+    if miss: print("  unmatched listing titles:", miss)
+    if no_listing: print(f"  clinics with NO GBP insights ({len(no_listing)}):", no_listing)
 
 if __name__ == "__main__":
     main()
