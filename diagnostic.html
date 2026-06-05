@@ -1167,24 +1167,100 @@ function marketingVsOpsCard(r){
 // ═══════════════ LEADS → BOOKED → DONE funnel + booked→done disposition ═══════════════
 // Explains why only N of M booked calls actually completed: rescheduled (delayed, not lost),
 // no-show (confirmation/reminder gap), cancelled (demand quality), or pending (upcoming).
-function funnelCard(r){
-  const W=wkIdx;
-  const ld=r.ld_w||0, bk=r.bk_w||0, done=(r.bkDoneArr&&r.bkDoneArr[W])||0;
+// ═══ shared funnel helpers (used by the Convert-tab story cards) ═══
+function _fStep(n,col){ return `<span style="display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:50%;background:${col};color:#fff;font-size:13px;font-weight:800;margin-right:9px;flex:0 0 auto;">${n}</span>`; }
+function _fStage(lbl,val,sub,col){ return `<div style="flex:1;min-width:80px;text-align:center;"><div style="font-size:9px;text-transform:uppercase;letter-spacing:.04em;color:#94a3b8;font-weight:700;">${lbl}</div><div style="font-size:27px;font-weight:800;color:${col};line-height:1.02;">${val}</div><div style="font-size:9px;color:#94a3b8;">${sub}</div></div>`; }
+function _fConv(pct,lbl){ return `<div style="align-self:center;text-align:center;min-width:56px;"><div style="font-size:14px;font-weight:800;color:#475569;line-height:1;">${pct}</div><div style="font-size:8px;color:#94a3b8;text-transform:uppercase;letter-spacing:.03em;">${lbl}</div><div style="font-size:15px;color:#cbd5e1;line-height:.9;">▸</div></div>`; }
+function _fTake(txt){ return `<div style="font-size:11px;background:#f8fafc;border:1px solid var(--line);border-radius:8px;padding:8px 11px;margin-top:9px;color:#475569;line-height:1.55;"><b style="color:#0f172a;">⮕ This week:</b> ${txt}</div>`; }
+
+// ═══ Convert tab — DIAGNOSIS BANNER: "what happened this week", in one glance ═══
+function convDiagnosisCard(r){
+  const W=wkIdx, sl=a=>(a||[]).slice(W+1,W+6);
+  const bk_w=r.bk_w||0, ld_w=r.ld_w||0; if(bk_w<=0 && ld_w<=0) return '';
+  const bk_n=avg(sl(r.bkArr));
+  const done_w=(r.bkDoneArr&&r.bkDoneArr[W])||0, ld_n=r.ld_avg||0;
+  const newbk=(r.bkNewArr&&r.bkNewArr[W])||0, new_n=avg(sl(r.bkNewArr));
+  const conv_w=ld_w>0?newbk/ld_w:0, conv_n=ld_n>0?new_n/ld_n:0;
+  const rep_w=(r.bkRepeatArr&&r.bkRepeatArr[W])||0, rep_n=avg(sl(r.bkRepeatArr));
+  const bkA_n=avg(sl(r.bkArr)), b2d_w=bk_w>0?done_w/bk_w:0, b2d_n=bkA_n>0?avg(sl(r.bkDoneArr))/bkA_n:0;
+  const mkt=conv_n*(ld_w-ld_n), ops=ld_w*(conv_w-conv_n), retention=rep_w-rep_n, gap=bk_w-bk_n;
+  const segs=[['fewer leads (marketing)',mkt,'#0ea5e9'],['lead→book conversion (ops)',ops,'#d97706'],['returning-patient retention',retention,'#0891b2']];
+  const lever=segs.slice().sort((a,b)=>Math.abs(b[1])-Math.abs(a[1]))[0];
+  const tile=(lbl,val,dlt,dtxt)=>{ const up=dlt>=0, flat=Math.abs(dlt)<0.5, col=flat?'#64748b':(up?'#059669':'#dc2626');
+    return `<div style="flex:1;min-width:104px;background:#fff;border:1px solid var(--line);border-radius:10px;padding:9px 12px;"><div style="font-size:9px;text-transform:uppercase;letter-spacing:.04em;color:#94a3b8;font-weight:700;">${lbl}</div><div style="font-size:23px;font-weight:800;color:#0f172a;line-height:1.05;">${val}</div><div style="font-size:10px;font-weight:700;color:${col};">${flat?'▬ flat':((up?'▲ ':'▼ ')+dtxt)} vs norm</div></div>`; };
+  const edge = gap<-1?'#dc2626':gap>1?'#059669':'#94a3b8';
+  const verdict = gap<-1
+    ? `Down <b>${signed(r1(gap))}</b> vs the 8-week norm of ${r1(bk_n)}. Biggest driver: <b style="color:${lever[2]}">${lever[0]}</b>.`
+    : gap>1 ? `Up <b style="color:#059669">${signed(r1(gap))}</b> vs norm — booking momentum is positive. Main lift: <b style="color:${lever[2]}">${lever[0]}</b>.`
+    : `Holding steady (${signed(r1(gap))} vs norm of ${r1(bk_n)}). No single factor is off.`;
+  return `<div class="card" style="border-left:4px solid ${edge};">
+    <div class="sec-h"><span class="sec-num">📋</span>What happened this week — ${r.clinic}</div>
+    <div class="sec-sub">The one-glance read before the funnels below break down <b>where</b>. · Redshift · ${WEEKS[wkIdx].label}</div>
+    <div style="display:flex;gap:8px;margin:6px 0 10px;flex-wrap:wrap;">
+      ${tile('Booked', bk_w, gap, signed(r1(gap)))}
+      ${tile('Lead → Book', Math.round(conv_w*100)+'%', (conv_w-conv_n)*100, signed(Math.round((conv_w-conv_n)*100),'pt'))}
+      ${tile('Book → Done', Math.round(b2d_w*100)+'%', (b2d_w-b2d_n)*100, signed(Math.round((b2d_w-b2d_n)*100),'pt'))}
+    </div>
+    <div style="font-size:11.5px;background:#f8fafc;border-radius:9px;padding:10px 13px;line-height:1.6;color:#475569;">${verdict} The four funnels below trace it step by step — total demand, fresh leads, inbound calls, and what happened to booked calls.</div>
+  </div>`;
+}
+
+// ═══ FUNNEL ① — the master funnel: Leads → Booked → Done ═══
+function funnelMasterCard(r){
+  const W=wkIdx; const ld=r.ld_w||0, bk=r.bk_w||0, done=(r.bkDoneArr&&r.bkDoneArr[W])||0;
   const newbk=(r.bkNewArr&&r.bkNewArr[W])||0, repbk=Math.max(0,bk-newbk);
+  if(bk<=0) return '';
+  const l2new=ld>0?Math.round(newbk/ld*100):null, b2d=bk>0?Math.round(done/bk*100):0;
+  const drop1=l2new!=null?100-l2new:null, drop2=100-b2d;
+  const leak = (drop1!=null && drop1>=drop2) ? `the <b>lead→booking</b> step — ${100-(l2new||0)}% of new leads didn't book` : `the <b>booking→done</b> step — ${100-b2d}% of booked calls didn't complete`;
+  return `<div class="card"><div class="sec-h">${_fStep(1,'#0ea5e9')}The clinic funnel — Leads → Booked → Done</div>
+    <div class="sec-sub">The whole clinic in three steps: total demand in, bookings made, consultations completed. · ${WEEKS[wkIdx].label}</div>
+    <div style="display:flex;gap:4px;margin:8px 0 2px;">
+      ${_fStage('Leads', ld, 'all demand in', '#0ea5e9')}
+      ${_fConv(l2new!=null?l2new+'%':'—','booked')}
+      ${_fStage('New bookings', newbk, '+'+repbk+' returning = '+bk+' total', '#4f46e5')}
+      ${_fConv(b2d+'%','completed')}
+      ${_fStage('Done', done, 'consultations', '#059669')}
+    </div>
+    ${_fTake(`Of <b>${ld}</b> leads, <b>${newbk}</b> booked first-time (<b>${l2new!=null?l2new+'%':'—'}</b>) and <b>${done}</b> completed. ${ld>0||bk>0?'Biggest leak is '+leak+'.':''}`)}
+  </div>`;
+}
+
+// ═══ FUNNEL ② — new (fresh) demand: did this week's leads convert, or is it backlog? ═══
+function funnelNewLeadCard(r){
+  const W=wkIdx;
+  const s=leadAgeArr(r.city,r.clinic,'same')[W]||0, l=leadAgeArr(r.city,r.clinic,'last')[W]||0, o=leadAgeArr(r.city,r.clinic,'older')[W]||0, t=s+l+o;
+  if(!hasLeadAge(r.city,r.clinic)||t<=0) return '';
+  const seg=(n,c,ttl)=>`<div title="${ttl}" style="width:${n/t*100}%;background:${c};color:#fff;font-size:11px;font-weight:800;display:flex;align-items:center;justify-content:center;">${n/t>=0.07?n:''}</div>`;
+  const freshPct=Math.round(s/t*100), backlog=o+l;
+  const verdict = freshPct>=55 ? `Mostly <b style="color:#059669">fresh</b> — ${freshPct}% of this week's bookings came from leads that arrived this week. Demand is converting quickly.`
+    : (o/t>=0.35 ? `Heavy <b style="color:#64748b">backlog</b> — ${Math.round(o/t*100)}% came from leads 2+ weeks old. Follow-up is slow; fresh leads are waiting.`
+    : `A <b style="color:#d97706">1-week lag</b> dominates — leads take about a week to book. Tighten follow-up to pull bookings forward.`);
+  return `<div class="card"><div class="sec-h">${_fStep(2,'#059669')}Fresh demand — which leads actually booked?</div>
+    <div class="sec-sub">Of the calls booked this week, how old was the lead behind each one — booked the <b>same week</b> it came in, a <b>week later</b>, or from <b>older backlog</b>? · ${WEEKS[wkIdx].label}</div>
+    <div style="display:flex;height:30px;border-radius:8px;overflow:hidden;border:1px solid var(--line);margin:8px 0 6px;">
+      ${seg(s,'#059669','from THIS week’s leads')}${seg(l,'#f59e0b','from LAST week’s leads (1-wk lag)')}${seg(o,'#94a3b8','from OLDER leads (2+ wks)')}
+    </div>
+    <div style="display:flex;gap:14px;font-size:10px;color:#475569;margin-bottom:2px;flex-wrap:wrap;">
+      <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#059669;vertical-align:middle;margin-right:4px;"></span><b style="color:#059669">${s}</b> this-week (fresh)</span>
+      <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#f59e0b;vertical-align:middle;margin-right:4px;"></span><b style="color:#d97706">${l}</b> last-week (1-wk lag)</span>
+      <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#94a3b8;vertical-align:middle;margin-right:4px;"></span><b style="color:#64748b">${o}</b> older (backlog)</span>
+    </div>
+    ${_fTake(verdict)}
+  </div>`;
+}
+
+// ═══ FUNNEL ④ — booked → outcome: where booked calls leaked (done / resched / no-show / cancel) ═══
+function funnelOutcomeCard(r){
+  const W=wkIdx; const bk=r.bk_w||0, done=(r.bkDoneArr&&r.bkDoneArr[W])||0;
   const res=(r.bkReschedArr&&r.bkReschedArr[W])||0, mis=(r.bkMissedArr&&r.bkMissedArr[W])||0, can=(r.bkCancelledArr&&r.bkCancelledArr[W])||0;
   const pend=Math.max(0, bk-done-res-mis-can);
   if(bk<=0) return '';
-  const l2new=ld>0?Math.round(newbk/ld*100):null;        // NEW-lead → first-time booking (the conversion we care about)
-  const b2d=bk>0?Math.round(done/bk*100):0;
-  const deferred=res+pend;                                // not lost — lands in a later week
-  const relevPct=bk>0?Math.round(can/bk*100):0;          // cancelled = lead-relevancy / demand-quality proxy (lower better)
-  const agentPct=bk>0?Math.round(mis/bk*100):0;          // no-show = call-handling / reminder gap, our side (lower better)
+  const deferred=res+pend, relevPct=bk>0?Math.round(can/bk*100):0, agentPct=bk>0?Math.round(mis/bk*100):0;
   const relevCol=relevPct>=15?'#dc2626':relevPct>=8?'#d97706':'#059669';
   const agentCol=agentPct>=15?'#dc2626':agentPct>=8?'#d97706':'#059669';
-  const stage=(lbl,val,sub,col)=>`<div style="flex:1;min-width:78px;text-align:center;"><div style="font-size:9px;text-transform:uppercase;letter-spacing:.04em;color:#94a3b8;font-weight:700;">${lbl}</div><div style="font-size:23px;font-weight:800;color:${col};line-height:1.1;">${val}</div><div style="font-size:9px;color:#94a3b8;">${sub}</div></div>`;
-  const arrow=(t,sub)=>`<div style="align-self:center;text-align:center;color:#cbd5e1;font-size:11px;min-width:54px;">→<div style="font-size:10px;color:#64748b;font-weight:800;">${t}</div><div style="font-size:8px;color:#94a3b8;">${sub||''}</div></div>`;
   const mtile=(lbl,val,col,sub)=>`<div style="flex:1;min-width:118px;background:#fff;border:1px solid var(--line);border-radius:10px;padding:8px 11px;"><div style="font-size:9px;text-transform:uppercase;letter-spacing:.04em;color:#94a3b8;font-weight:700;">${lbl}</div><div style="font-size:19px;font-weight:800;color:${col};line-height:1.15;">${val}</div><div style="font-size:9px;color:#94a3b8;line-height:1.3;">${sub}</div></div>`;
-  // weekly disposition trend — stacked bars: done / rescheduled / no-show / cancelled over the window
+  const oseg=(n,c,ttl)=>n>0?`<div title="${ttl}: ${n}" style="width:${n/bk*100}%;background:${c};color:#fff;font-size:10px;font-weight:800;display:flex;align-items:center;justify-content:center;">${n/bk>=0.07?n:''}</div>`:'';
   const rev=a=>(a||[]).slice(0,WEEKS.length).reverse();
   const winN=trendWin==='all'?WEEKS.length:Math.min(+trendWin||6,WEEKS.length);
   const win=a=>rev(a).slice(-winN), hiWin=winN-1;
@@ -1195,33 +1271,28 @@ function funnelCard(r){
     {vals:win(r.bkMissedArr), color:'#dc2626', label:'No-show'},
     {vals:win(r.bkCancelledArr), color:'#64748b', label:'Cancelled'},
   ], hiWin, wkWin, new Set(), null);
-  return `<div class="card"><div class="sec-h"><span class="sec-num">⛳</span>Did the leads convert?</div>
-    <div class="sec-sub">Did <b>new (first-time) leads</b> convert — and where did booked calls leak? · Redshift · last ${winN} wks · highlighted = ${WEEKS[wkIdx].label}</div>
-    <div style="display:flex;gap:6px;margin:6px 0 10px;">
-      ${stage('Leads', ld, 'inbound', '#0ea5e9')}
-      ${arrow(l2new!=null?l2new+'%':'—','→ book')}
-      ${stage('New book', newbk, '+'+repbk+' rep = '+bk, '#4f46e5')}
-      ${arrow(b2d+'%','→ done')}
-      ${stage('Done', done, 'completed', '#059669')}
+  const worst = mis>=can ? `<b style="color:${agentCol}">no-shows (${mis})</b> — a call-handling / reminder gap (ops lever)` : `<b style="color:${relevCol}">cancellations (${can})</b> — a lead-relevancy / demand-quality signal (marketing lever)`;
+  return `<div class="card"><div class="sec-h">${_fStep(4,'#d97706')}What happened to the booked calls?</div>
+    <div class="sec-sub">Of the <b>${bk}</b> calls booked, how many completed — and where did the rest leak? · ${WEEKS[wkIdx].label}</div>
+    <div style="display:flex;height:30px;border-radius:8px;overflow:hidden;border:1px solid var(--line);margin:8px 0 5px;">
+      ${oseg(done,'#059669','Done')}${oseg(res,'#f59e0b','Rescheduled')}${oseg(pend,'#0891b2','Pending/upcoming')}${oseg(mis,'#dc2626','No-show')}${oseg(can,'#64748b','Cancelled')}
     </div>
-    ${(()=>{ const s=leadAgeArr(r.city,r.clinic,'same')[W]||0, l=leadAgeArr(r.city,r.clinic,'last')[W]||0, o=leadAgeArr(r.city,r.clinic,'older')[W]||0, t=s+l+o;
-      if(!hasLeadAge(r.city,r.clinic)||t<=0) return '';
-      return `<div style="font-size:10.5px;font-weight:700;color:#0f172a;margin:2px 0 4px;">Which leads booked this week? <span style="font-weight:500;color:#94a3b8;">— by lead age (when the lead first came in)</span></div>
-        <div style="display:flex;height:24px;border-radius:7px;overflow:hidden;border:1px solid var(--line);margin-bottom:5px;">
-          <div title="from THIS week's leads" style="width:${s/t*100}%;background:#059669;color:#fff;font-size:10px;font-weight:800;display:flex;align-items:center;justify-content:center;">${s/t>=0.08?s:''}</div>
-          <div title="from LAST week's leads (1-wk lag)" style="width:${l/t*100}%;background:#f59e0b;color:#fff;font-size:10px;font-weight:800;display:flex;align-items:center;justify-content:center;">${l/t>=0.08?l:''}</div>
-          <div title="from OLDER leads (2+ wks backlog)" style="width:${o/t*100}%;background:#94a3b8;color:#fff;font-size:10px;font-weight:800;display:flex;align-items:center;justify-content:center;">${o/t>=0.08?o:''}</div>
-        </div>
-        <div style="font-size:10px;color:#475569;margin-bottom:11px;line-height:1.5;"><span style="color:#059669;font-weight:700;">${s} from this-week leads</span> (${Math.round(s/t*100)}% — fresh demand converting now) · <span style="color:#d97706;font-weight:700;">${l} last-week</span> (1-wk lag) · <span style="color:#64748b;font-weight:700;">${o} older</span> (2+ wk backlog). <span style="color:#94a3b8;">A high lagged/backlog share = slow follow-up; mostly fresh = leads convert quickly.</span></div>`; })()}
+    <div style="display:flex;gap:14px;font-size:10px;color:#475569;margin-bottom:9px;flex-wrap:wrap;">
+      <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#059669;vertical-align:middle;margin-right:4px;"></span><b style="color:#059669">${done}</b> done</span>
+      <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#f59e0b;vertical-align:middle;margin-right:4px;"></span><b style="color:#d97706">${res}</b> resched</span>
+      <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#0891b2;vertical-align:middle;margin-right:4px;"></span><b style="color:#0891b2">${pend}</b> pending</span>
+      <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#dc2626;vertical-align:middle;margin-right:4px;"></span><b style="color:#dc2626">${mis}</b> no-show</span>
+      <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#64748b;vertical-align:middle;margin-right:4px;"></span><b style="color:#64748b">${can}</b> cancelled</span>
+    </div>
     <div style="display:flex;gap:8px;margin-bottom:11px;flex-wrap:wrap;">
-      ${mtile('Deferred · not lost', deferred, '#0891b2', res+' resched + '+pend+' pending')}
+      ${mtile('Deferred · not lost', deferred, '#0891b2', res+' resched + '+pend+' pending — lands later')}
       ${mtile('Lead relevancy', relevPct+'%', relevCol, can+' cancelled · marketing lever')}
       ${mtile('Call-handling · agent', agentPct+'%', agentCol, mis+' no-show · ops lever')}
     </div>
     <div style="font-size:10.5px;font-weight:700;color:#0f172a;margin-bottom:3px;">Booking outcome — weekly trend</div>
     ${dispTrend}
     <div style="font-size:8.5px;color:#cbd5e1;display:flex;justify-content:space-between;margin-top:2px;">${wkWin.map((l,i)=>`<span style="${i===hiWin?'color:#475569;font-weight:700;':''}">${l}</span>`).join('')}</div>
-    <div style="font-size:10px;color:#94a3b8;margin-top:8px;line-height:1.5;"><b style="color:#0891b2">Deferred</b> lands later (not lost) · <b style="color:${relevCol}">cancels</b> = relevancy/demand (marketing) · <b style="color:${agentCol}">no-shows</b> = call-handling (ops).</div>
+    ${_fTake(`<b>${done}</b> of ${bk} completed. <b style="color:#0891b2">${deferred}</b> are deferred (not lost — they land later). The leak to watch is ${worst}.`)}
   </div>`;
 }
 // ── Lead quality (inbound calls): relevance funnel + call-attempt effort + Practo (demand superset) ──
@@ -1240,7 +1311,7 @@ function leadQualityCard(r){
   const arr=(t)=>`<div style="align-self:center;text-align:center;color:#cbd5e1;font-size:11px;min-width:50px;">→<div style="font-size:10px;color:#64748b;font-weight:800;">${t}</div></div>`;
   const aSeg=(n,c,lbl)=>aTot>0&&n>0?`<div title="${lbl}: ${n}" style="width:${n/aTot*100}%;background:${c};display:flex;align-items:center;justify-content:center;color:#fff;font-size:10px;font-weight:800;">${n/aTot>=0.08?n:''}</div>`:'';
   const tc=(title,svg,sub)=>`<div class="card" style="margin-bottom:0;"><div style="font-size:12px;font-weight:700;margin-bottom:2px;">${title}</div><div style="font-size:10.5px;color:#94a3b8;margin-bottom:8px;">${sub}</div>${svg}</div>`;
-  return `<div class="card"><div class="sec-h"><span class="sec-num">🎯</span>Lead quality — inbound calls (relevance)</div>
+  return `<div class="card"><div class="sec-h">${_fStep(3,'#4f46e5')}Inbound phone calls — relevance & call-handling</div>
     <div class="sec-sub"><b>Inbound-call leads only</b> — where an agent / <b>Sarvam AI</b> flags each call <b>relevant</b> (a genuine prospect) or not. Of the relevant ones, how many booked. · live weekly · ${WEEKS[wkIdx].label}</div>
     <div style="display:flex;gap:6px;margin:6px 0 9px;">
       ${stg('Inbound calls', lead_w, 'leads', '#0ea5e9')}
@@ -1895,7 +1966,7 @@ function renderDeepDive(r){
     {n:1,icon:'🩺',label:'Availability',col:'#7c3aed',stat:availStat,body:availCard},
     {n:2,icon:'📊',label:'Expected',col:'#4f46e5',stat:expStat,body:bookingRateCard(r)},
     {n:3,icon:'🔎',label:'Leads & source',col:'#0ea5e9',stat:leadStat,body:whyIntro+leadsCard+leadLossDrill(r)},
-    {n:4,icon:'⛳',label:'Convert',col:step5col,stat:convStat,body:funnelCard(r)+leadQualityCard(r)+marketingVsOpsCard(r)},
+    {n:4,icon:'⛳',label:'Convert',col:step5col,stat:convStat,body:convDiagnosisCard(r)+funnelMasterCard(r)+funnelNewLeadCard(r)+leadQualityCard(r)+funnelOutcomeCard(r)},
   ];
   if(reg||bm) tabs.push({n:5,icon:'🧪',label:'Model',col:'#64748b',stat:'',body:(reg||'')+(bm||'')});
   const causeTab = r.cause==='avail'?1 : r.cause==='leads'?3 : r.cause==='l2b'?4 : 1;
