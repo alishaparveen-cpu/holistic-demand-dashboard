@@ -1247,28 +1247,52 @@ function convDiagnosisCard(r){
       ${tile('Lead → Book', Math.round(conv_w*100)+'%', (conv_w-conv_n)*100, signed(Math.round((conv_w-conv_n)*100),'pt'))}
       ${tile('Book → Done', Math.round(b2d_w*100)+'%', (b2d_w-b2d_n)*100, signed(Math.round((b2d_w-b2d_n)*100),'pt'))}
     </div>
-    <div style="font-size:11.5px;background:#f8fafc;border-radius:9px;padding:10px 13px;line-height:1.6;color:#475569;">${verdict} The four funnels below trace it step by step — total demand, fresh leads, inbound calls, and what happened to booked calls.</div>
+    <div style="font-size:11.5px;background:#f8fafc;border-radius:9px;padding:10px 13px;line-height:1.6;color:#475569;">${verdict} The three funnels below trace it step by step — new demand (leads → bookings → done), inbound calls, and what happened to booked calls.</div>
   </div>`;
 }
 
-// ═══ FUNNEL ① — the master funnel: Leads → Booked → Done ═══
+// ═══ FUNNEL ① — new-demand funnel: New leads → New bookings → Done (with returning shown separately, lead-age cohort nested) ═══
 function funnelMasterCard(r){
   const W=wkIdx; const ld=r.ld_w||0, bk=r.bk_w||0, done=(r.bkDoneArr&&r.bkDoneArr[W])||0;
   const newbk=(r.bkNewArr&&r.bkNewArr[W])||0, repbk=Math.max(0,bk-newbk);
   if(bk<=0) return '';
-  const l2new=ld>0?Math.round(newbk/ld*100):null, b2d=bk>0?Math.round(done/bk*100):0;
-  const drop1=l2new!=null?100-l2new:null, drop2=100-b2d;
-  const leak = (drop1!=null && drop1>=drop2) ? `the <b>lead→booking</b> step — ${100-(l2new||0)}% of new leads didn't book` : `the <b>booking→done</b> step — ${100-b2d}% of booked calls didn't complete`;
-  return `<div class="card"><div class="sec-h">${_fStep(1,'#0ea5e9')}The clinic funnel — Leads → Booked → Done</div>
-    <div class="sec-sub">The whole clinic in three steps: total demand in, bookings made, consultations completed. · ${WEEKS[wkIdx].label}</div>
+  const b2d=bk>0?Math.round(done/bk*100):0;
+  // lead-age cohort of THIS week's new bookings (same-week / last-week / older). Sum ≈ new bookings.
+  const hasCoh=hasLeadAge(r.city,r.clinic);
+  const cs=hasCoh?(leadAgeArr(r.city,r.clinic,'same')[W]||0):0, cl=hasCoh?(leadAgeArr(r.city,r.clinic,'last')[W]||0):0, co=hasCoh?(leadAgeArr(r.city,r.clinic,'older')[W]||0):0, ct=cs+cl+co;
+  // honest conversion: of THIS week's new leads, how many booked SAME week (≤100%, no lag inflation)
+  const sameWeekPct = ld>0 ? Math.min(100,Math.round(cs/ld*100)) : null;
+  const seg=(n,c,ttl)=>n>0?`<div title="${ttl}" style="width:${n/ct*100}%;background:${c};color:#fff;font-size:11px;font-weight:800;display:flex;align-items:center;justify-content:center;">${n/ct>=0.07?n:''}</div>`:'';
+  const freshPct=ct>0?Math.round(cs/ct*100):0;
+  const cohVerdict = freshPct>=55 ? `Mostly <b style="color:#059669">fresh</b> — ${freshPct}% of these new bookings came from leads that arrived this week. Demand converts quickly.`
+    : (ct>0&&co/ct>=0.35 ? `Heavy <b style="color:#64748b">backlog</b> — ${Math.round(co/ct*100)}% came from leads 2+ weeks old. Follow-up is slow.`
+    : `A <b style="color:#d97706">1-week lag</b> dominates — leads take ~a week to book. Tighten follow-up to pull bookings forward.`);
+  const cohortDetail = (hasCoh && ct>0) ? `
+    <details style="margin-top:9px;">
+      <summary style="cursor:pointer;font-size:11.5px;font-weight:700;color:#4338ca;padding:6px 0;">Where did these ${newbk} new bookings come from? <span style="font-weight:500;color:#94a3b8;">— by lead age (click to expand)</span></summary>
+      <div style="padding-top:6px;">
+        <div style="font-size:10.5px;color:#94a3b8;margin-bottom:6px;">Each new booking traced to when its lead first arrived — booked the <b>same week</b>, a <b>week later</b>, or from <b>older backlog</b>.</div>
+        <div style="display:flex;height:28px;border-radius:8px;overflow:hidden;border:1px solid var(--line);margin-bottom:6px;">${seg(cs,'#059669','from THIS week’s leads')}${seg(cl,'#f59e0b','from LAST week’s leads')}${seg(co,'#94a3b8','from OLDER leads')}</div>
+        <div style="display:flex;gap:14px;font-size:10px;color:#475569;margin-bottom:2px;flex-wrap:wrap;">
+          <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#059669;vertical-align:middle;margin-right:4px;"></span><b style="color:#059669">${cs}</b> this-week (fresh)</span>
+          <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#f59e0b;vertical-align:middle;margin-right:4px;"></span><b style="color:#d97706">${cl}</b> last-week (lag)</span>
+          <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#94a3b8;vertical-align:middle;margin-right:4px;"></span><b style="color:#64748b">${co}</b> older (backlog)</span>
+        </div>
+        ${_fTake(cohVerdict)}
+      </div>
+    </details>` : '';
+  return `<div class="card"><div class="sec-h">${_fStep(1,'#0ea5e9')}New-demand funnel — New leads → New bookings → Done</div>
+    <div class="sec-sub"><b>Leads = new inbound leads</b> this week; <b>new bookings</b> = first-time patients. Returning patients are shown separately below. · ${WEEKS[wkIdx].label}</div>
     <div style="display:flex;gap:4px;margin:8px 0 2px;">
-      ${_fStage('Leads', ld, 'all demand in', '#0ea5e9')}
-      ${_fConv(l2new!=null?l2new+'%':'—','new leads → book')}
-      ${_fStage('Booked', bk, newbk+' new + '+repbk+' returning', '#4f46e5')}
-      ${_fConv(b2d+'%','of booked → done')}
-      ${_fStage('Done', done, 'consultations', '#059669')}
+      ${_fStage('New leads', ld, 'inbound this week', '#0ea5e9')}
+      ${_fConv(sameWeekPct!=null?sameWeekPct+'%':'—','booked same week')}
+      ${_fStage('New bookings', newbk, hasCoh?'~'+cs+' fresh · ~'+(cl+co)+' lagged':'first-time', '#4f46e5')}
+      ${_fConv(b2d+'%','all booked → done')}
+      ${_fStage('Done', done, 'consultations (all)', '#059669')}
     </div>
-    ${_fTake(`<b>${ld}</b> leads → <b>${newbk}</b> booked first-time (<b>${l2new!=null?l2new+'%':'—'}</b>). With <b>${repbk}</b> returning patients, <b>${bk}</b> calls were booked in total — of those, <b>${done}</b> completed (<b>${b2d}%</b>). ${ld>0||bk>0?'Biggest leak is '+leak+'.':''}`)}
+    <div style="font-size:10.5px;color:#475569;background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:7px 11px;margin-top:8px;line-height:1.5;">🔁 <b>+ ${repbk} returning patients</b> re-booked this week (old demand) → total booked <b>${bk}</b>. <span style="color:#94a3b8;">The <b>Done (${done})</b> figure is the total — a new-vs-returning split of completions isn't tracked in the data yet.</span></div>
+    ${cohortDetail}
+    ${_fTake(`<b>${ld}</b> new leads → <b>${newbk}</b> first-time bookings${hasCoh?` (~<b>${cs}</b> booked same week ≈ ${sameWeekPct}% of this week's leads; the rest from earlier leads)`:''}. Plus <b>${repbk}</b> returning → <b>${bk}</b> total booked; <b>${done}</b> completed (<b>${b2d}%</b>).`)}
   </div>`;
 }
 
@@ -1318,7 +1342,7 @@ function funnelOutcomeCard(r){
     {vals:win(r.bkCancelledArr), color:'#64748b', label:'Cancelled'},
   ], hiWin, wkWin, new Set(), null);
   const worst = mis>=can ? `<b style="color:${agentCol}">no-shows (${mis})</b> — booked but didn't attend (many causes: reminder gaps, travel, change of mind — not only call-handling)` : `<b style="color:${relevCol}">cancellations (${can})</b> — a lead-relevancy / demand-quality signal`;
-  return `<div class="card"><div class="sec-h">${_fStep(4,'#d97706')}What happened to the booked calls?</div>
+  return `<div class="card"><div class="sec-h">${_fStep(3,'#d97706')}What happened to the booked calls?</div>
     <div class="sec-sub">Of the <b>${bk}</b> calls booked, how many completed — and where did the rest leak? · ${WEEKS[wkIdx].label}</div>
     <div style="display:flex;height:30px;border-radius:8px;overflow:hidden;border:1px solid var(--line);margin:8px 0 5px;">
       ${oseg(done,'#059669','Done')}${oseg(res,'#f59e0b','Rescheduled')}${oseg(pend,'#0891b2','Pending/upcoming')}${oseg(mis,'#dc2626','No-show')}${oseg(can,'#64748b','Cancelled')}
@@ -1363,7 +1387,7 @@ function leadQualityCard(r){
   const arr=(t)=>`<div style="align-self:center;text-align:center;color:#cbd5e1;font-size:11px;min-width:50px;">→<div style="font-size:10px;color:#64748b;font-weight:800;">${t}</div></div>`;
   const aSeg=(n,c,lbl)=>aTot>0&&n>0?`<div title="${lbl}: ${n}" style="width:${n/aTot*100}%;background:${c};display:flex;align-items:center;justify-content:center;color:#fff;font-size:10px;font-weight:800;">${n/aTot>=0.08?n:''}</div>`:'';
   const tc=(title,svg,sub)=>`<div class="card" style="margin-bottom:0;"><div style="font-size:12px;font-weight:700;margin-bottom:2px;">${title}</div><div style="font-size:10.5px;color:#94a3b8;margin-bottom:8px;">${sub}</div>${svg}</div>`;
-  return `<div class="card"><div class="sec-h">${_fStep(3,'#4f46e5')}Inbound phone calls — relevance & call-handling</div>
+  return `<div class="card"><div class="sec-h">${_fStep(2,'#4f46e5')}Inbound phone calls — relevance & call-handling</div>
     <div class="sec-sub"><b>Inbound-call leads only</b> — of the calls that came in, how many an agent / <b>Sarvam AI</b> flagged <b>relevant</b>, and how many <b>booked</b>. Both shown as a share of inbound calls. · live weekly · showing last ${winN} wks · ${WEEKS[wkIdx].label}</div>
     <div style="display:flex;gap:6px;margin:6px 0 9px;align-items:stretch;">
       ${stg('Inbound calls', lead_w, 'phone leads', '#0ea5e9')}
@@ -2086,7 +2110,7 @@ function renderDeepDive(r){
   const tabs=[
     {n:1,icon:'🩺',label:'Availability',col:'#7c3aed',stat:availStat,body:availCard},
     {n:2,icon:'🔎',label:'Leads & source',col:'#0ea5e9',stat:leadStat,body:whyIntro+leadsCard+leadLossDrill(r)},
-    {n:3,icon:'⛳',label:'Convert',col:step5col,stat:convStat,body:convDiagnosisCard(r)+funnelMasterCard(r)+funnelNewLeadCard(r)+leadQualityCard(r)+funnelOutcomeCard(r)},
+    {n:3,icon:'⛳',label:'Convert',col:step5col,stat:convStat,body:convDiagnosisCard(r)+funnelMasterCard(r)+leadQualityCard(r)+funnelOutcomeCard(r)},
   ];
   if(_modelWaterfall||reg||bm) tabs.push({n:4,icon:'🧪',label:'Model',col:'#64748b',stat:`<span style="color:${dCol(gap)}">${signed(gap)}</span>`,body:(_modelWaterfall||'')+(reg||'')+(bm||'')});
   const causeTab = r.cause==='avail'?1 : r.cause==='leads'?2 : r.cause==='l2b'?3 : 1;
