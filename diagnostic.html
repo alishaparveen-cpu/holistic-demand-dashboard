@@ -145,6 +145,9 @@ function hasLeadAge(city,clinic){ return !!LEADAGE[city+'|'+clinic]; }
 let DMF={};   // data_demand_funnel.json — inbound-call relevance funnel + call attempts (demand_data_week_superset)
 function dmfArr(city,clinic,group,field){ const o=DMF[city+'|'+clinic]; const g=o&&o[group]; return g&&g[field] ? g[field].slice(0,WEEKS.length) : Array(WEEKS.length).fill(0); }
 function hasDmf(city,clinic){ return !!DMF[city+'|'+clinic]; }
+let PRACTOBK={};   // data_practo_booked.json — TRUE Practo bookings (phone-match vs appointments), per clinic/week
+function practoBkTrueArr(city,clinic){ const a=PRACTOBK[city+'|'+clinic]; if(!a) return Array(WEEKS.length).fill(0); const b=a.slice(0,WEEKS.length); while(b.length<WEEKS.length)b.push(0); return b; }
+function hasPractoBkTrue(city,clinic){ return !!PRACTOBK[city+'|'+clinic]; }
 // clinic city (Redshift spelling) → Google Ads campaign city spelling
 const GA_CITY_ALIAS={'Hubli':'Hubballi','Mangaluru':'Mangalore','Visakhapatnam':'Vizag'};
 function gaForCity(city){ return GACITY[GA_CITY_ALIAS[city]||city]; }
@@ -1311,6 +1314,7 @@ function leadQualityCard(r){
   const bkPct_n=(()=>{ const l=winVals(lead).reduce((a,b)=>a+b,0), bb=winVals(bk).reduce((a,b)=>a+b,0); return l>0?Math.round(bb/l*100):null; })();
   const a1_w=a1[W]||0,a2_w=a2[W]||0,a3_w=a3[W]||0,a3p_w=a3p[W]||0, aTot=a1_w+a2_w+a3_w+a3p_w;
   const prL=dmfArr(r.city,r.clinic,'practo','leads'), prB=dmfArr(r.city,r.clinic,'practo','booked');
+  const prBkT=practoBkTrueArr(r.city,r.clinic), prBkT_w=prBkT[W]||0, hasPrBkT=hasPractoBkTrue(r.city,r.clinic);
   const prL_w=prL[W]||0, prB_w=prB[W]||0, prConv=prL_w>0?Math.round(prB_w/prL_w*100):null, hasPr=prL.some(x=>x>0)||prB.some(x=>x>0);
   const stg=(lbl,val,sub,col)=>`<div style="flex:1;min-width:80px;text-align:center;"><div style="font-size:9px;text-transform:uppercase;letter-spacing:.04em;color:#94a3b8;font-weight:700;">${lbl}</div><div style="font-size:23px;font-weight:800;color:${col};line-height:1.1;">${val}</div><div style="font-size:9px;color:#94a3b8;">${sub}</div></div>`;
   const arr=(t)=>`<div style="align-self:center;text-align:center;color:#cbd5e1;font-size:11px;min-width:50px;">→<div style="font-size:10px;color:#64748b;font-weight:800;">${t}</div></div>`;
@@ -1332,7 +1336,7 @@ function leadQualityCard(r){
     ${aTot>0?`<div style="font-size:10.5px;font-weight:700;color:#0f172a;margin-bottom:3px;">📞 Call-handling effort — <span style="color:#64748b;font-weight:600;">all bookings</span> · attempts to book ${aTot} slots</div>
     <div style="display:flex;height:26px;border-radius:7px;overflow:hidden;border:1px solid var(--line);margin-bottom:4px;">${aSeg(a1_w,'#059669','1st attempt')}${aSeg(a2_w,'#84cc16','2nd attempt')}${aSeg(a3_w,'#f59e0b','3rd attempt')}${aSeg(a3p_w,'#dc2626','4+ attempts')}</div>
     <div style="font-size:10px;color:#475569;margin-bottom:10px;"><b style="color:#059669">${a1_w}</b> booked 1st try · <b style="color:#65a30d">${a2_w}</b> 2nd · <b style="color:#d97706">${a3_w}</b> 3rd · <b style="color:#dc2626">${a3p_w}</b> 4+ tries. ${aTot>0&&(a3_w+a3p_w)/aTot>=0.25?'<b style="color:#dc2626">Many leads need 3+ calls to reach</b> — a call-handling / connect-rate issue (ops lever).':'Most leads booked in 1–2 attempts — connect rate is healthy.'}</div>`:''}
-    ${hasPr?`<div style="font-size:11px;color:#475569;background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:8px 11px;">🟧 <b>Practo</b>: ${prL_w} leads → <b style="color:#ea580c">${prB_w} booked</b>${prConv!=null?' ('+prConv+'%)':''} this week.</div>`:''}
+    ${(hasPr||hasPrBkT)?`<div style="font-size:11px;color:#475569;background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:8px 11px;">🟧 <b>Practo this week</b>: ${hasPr?prL_w+' profile leads · ':''}<b style="color:#ea580c">${hasPrBkT?prBkT_w:prB_w} booked</b> ${hasPrBkT?'(true — phone-matched to appointments, incl. follow-up)':'(Practo online slot-booking)'}.</div>`:''}
   </div>`;
 }
 // ── chart zoom: each trend cell registers its content; ⛶ opens a large modal ──
@@ -1603,8 +1607,10 @@ function leadLossDrill(r){
   const dGmbP=gmb_n?Math.round((gmb_w-gmb_n)/gmb_n*100):0, dGadsP=gads_n?Math.round((gads_w-gads_n)/gads_n*100):0;
   // other sources — Practo, Organic, and a combined "Others" (FB + JustDial + misc)
   const practo=practoArr(r.city,r.clinic), pr_w=practo[W]||0, pr_n=nrm(practo), dPrP=pr_n?Math.round((pr_w-pr_n)/pr_n*100):0;
-  const prBk=practoBookedArr(r.city,r.clinic), prBk_w=prBk[W]||0, prBk_n=nrm(prBk);    // Practo booked (Slot Booked TS)
+  const prBk=practoBookedArr(r.city,r.clinic), prBk_w=prBk[W]||0, prBk_n=nrm(prBk);    // Practo online slot-booked (Slot Booked TS)
   const prConv=pr_w>0?Math.round(prBk_w/pr_w*100):null, hasPrBk=prBk.some(x=>x>0);
+  const prBkT=practoBkTrueArr(r.city,r.clinic), prBkT_w=prBkT[W]||0, prBkT_n=nrm(prBkT);   // TRUE Practo booked (phone-match)
+  const hasPrBkT=hasPractoBkTrue(r.city,r.clinic), dPrBkT=prBkT_n?Math.round((prBkT_w-prBkT_n)/prBkT_n*100):0;
   const org_w=org[W]||0, org_n=nrm(org), dOrgP=org_n?Math.round((org_w-org_n)/org_n*100):0;
   const fb=leadArr(r.city,r.clinic,'fb'), jd=leadArr(r.city,r.clinic,'justdial'), othRaw=leadArr(r.city,r.clinic,'others');
   const oth=othRaw.map((o,i)=>(o||0)+(fb[i]||0)+(jd[i]||0)); const oth_w=oth[W]||0, oth_n=nrm(oth), dOthP=oth_n?Math.round((oth_w-oth_n)/oth_n*100):0;
@@ -1670,8 +1676,9 @@ function leadLossDrill(r){
       ${(hasPracto||hasOther)?`<div style="background:#f0fdf4;border-radius:11px;padding:12px 14px;">
         <div style="font-size:13px;font-weight:800;color:#047857;margin-bottom:8px;">🌐 Practo · Organic · Others</div>
         ${hasPracto?mini('Practo leads · '+pr_w+' ('+signed(dPrP,'%')+')', '#f59e0b', 'Practo profile leads · dashed = '+winN+'-wk avg', spark(rev(practo),'#f59e0b',hi,null,pr_n)):''}
-        ${hasPrBk?mini('Practo slot-booked (online) · '+prBk_w, '#ea580c', 'Practo’s own instant online slot-booking only — phone follow-up bookings aren’t counted here', spark(rev(prBk),'#ea580c',hi,null,prBk_n))
-          +`<div style="font-size:9.5px;color:#b45309;background:#fffbeb;border:1px dashed #fde68a;border-radius:6px;padding:5px 8px;margin:-4px 0 9px;line-height:1.45;">⚠️ Partial signal — Practo only began populating this since <b>May 2026</b>, so earlier weeks read 0 (not tracked, not zero). Most Practo conversions happen by <b>phone follow-up</b> and book through the main pipeline, so this <b>undercounts</b> true Practo bookings.</div>`:''}
+        ${hasPrBkT?mini('Practo booked · '+prBkT_w+' ('+signed(dPrBkT,'%')+')', '#ea580c', 'patients who booked a consult whose phone is a Practo lead — incl. phone follow-up · dashed = '+winN+'-wk avg', spark(rev(prBkT),'#ea580c',hi,null,prBkT_n))
+          +`<div style="font-size:9.5px;color:#475569;background:#fff7ed;border:1px solid #fed7aa;border-radius:6px;padding:5px 8px;margin:-4px 0 9px;line-height:1.45;">✅ <b>True Practo bookings</b> (phone-matched to the main appointments pipeline)${hasPrBk?` · of which <b>${prBk_w}</b> via Practo’s own online slot-booking this week`:''}.</div>`
+          : (hasPrBk?mini('Practo slot-booked (online) · '+prBk_w, '#ea580c', 'Practo’s own instant online slot-booking only — phone follow-up not counted · dashed = '+winN+'-wk avg', spark(rev(prBk),'#ea580c',hi,null,prBk_n)):'')}
         ${mini('Organic · '+org_w+' ('+signed(dOrgP,'%')+')', '#10b981', 'SEO / direct (non-paid) · dashed = '+winN+'-wk avg', spark(rev(org),'#10b981',hi,null,org_n))}
         ${mini('Others · '+oth_w+' ('+signed(dOthP,'%')+')', '#94a3b8', 'FB + JustDial + misc · dashed = '+winN+'-wk avg', spark(rev(oth),'#94a3b8',hi,null,oth_n))}
       </div>`:''}
@@ -2050,7 +2057,7 @@ function renderOnline(){
 async function init(){
   try{
     const safe=u=>fetch(u,{cache:'no-store'}).catch(()=>({ok:false}));
-    const [jr,sr,lr,pr,rr,ld,rv,mk,bt,dg,ga,nr,gi,la,df]=await Promise.all([ fetch('data.json',{cache:'no-store'}), safe(SHEET_URL), safe(L0_URL), safe(PRACTO_URL), safe('data_roster.json'), safe('data_leads.json'), safe('data_reviews.json'), safe('data_marketing.json'), safe('data_booktype.json'), safe('data_diagnostic.json'), safe('data_ga_city.json'), safe('data_reviews_neg.json'), safe('data_gmb_insights.json'), safe('data_lead_age.json'), safe('data_demand_funnel.json') ]);
+    const [jr,sr,lr,pr,rr,ld,rv,mk,bt,dg,ga,nr,gi,la,df,pbk]=await Promise.all([ fetch('data.json',{cache:'no-store'}), safe(SHEET_URL), safe(L0_URL), safe(PRACTO_URL), safe('data_roster.json'), safe('data_leads.json'), safe('data_reviews.json'), safe('data_marketing.json'), safe('data_booktype.json'), safe('data_diagnostic.json'), safe('data_ga_city.json'), safe('data_reviews_neg.json'), safe('data_gmb_insights.json'), safe('data_lead_age.json'), safe('data_demand_funnel.json'), safe('data_practo_booked.json') ]);
     if(!jr.ok) throw new Error('data.json not found');
     JDATA=await jr.json();
     // SDATA now comes from Redshift (data_diagnostic.json); the Google Sheet is a fallback only.
@@ -2069,6 +2076,7 @@ async function init(){
     if(gi.ok){ try{ GMBINS=await gi.json(); }catch(_){ } }
     if(la.ok){ try{ LEADAGE=await la.json(); }catch(_){ } }
     if(df.ok){ try{ DMF=await df.json(); }catch(_){ } }
+    if(pbk.ok){ try{ PRACTOBK=await pbk.json(); }catch(_){ } }
     const wSel=document.getElementById('weekSelect');
     WEEKS.forEach((w,i)=>{ const o=document.createElement('option'); o.value=i; o.textContent=w.label+(i===0?' (latest)':''); if(i===0)o.selected=true; wSel.appendChild(o); });
     render(); updateRefreshBadge();
