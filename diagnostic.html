@@ -446,10 +446,25 @@ function rcaClinic(city, clinic){
   const L = Math.max(0,-dBk);                                   // magnitude of the loss
   const bkPerDay  = av_avg>0 ? bk_avg/av_avg : 0;               // bookings per active doctor-day
   const bkPerLead = ld_avg>0 ? bk_avg/ld_avg : 0;              // bookings per inbound lead
-  const weLost = Math.max(0, we_avg - we_w);                   // weekend days lost (high-demand → weighted 1.5×)
+  const weLost = Math.max(0, we_avg - we_w);                   // weekend days lost
   const wdLost = Math.max(0, wd_avg - wd_w);                   // weekday days lost
+  // ── hour-rate availability loss: bookable-HOUR shortfall vs the selected norm × this clinic's own
+  //    per-hour weekday/weekend rates (same basis as the Expected model). Weekends weighted by their
+  //    higher rate — no arbitrary multiplier. Falls back to days when roster hours are absent. ──
+  const _ros=rosterArr(city,clinic), _hasHrs=_ros.hrs && _ros.hrs.some(x=>x!=null&&x>0);
+  const _shrF=i=>{ const sc=(_ros.shr&&_ros.shr.sched&&_ros.shr.sched[i])||0, sh=(_ros.shr&&_ros.shr.shrunk&&_ros.shr.shrunk[i])||0; return sc>0?Math.min(0.95,sh/sc):0; };
+  const _cWd=i=> _hasHrs ? Math.max(0,((_ros.hrs[i]||0)-(_ros.we_hrs[i]||0)))*(1-_shrF(i)) : Math.max(0,(av[i]||0)-(we[i]||0));
+  const _cWe=i=> _hasHrs ? (_ros.we_hrs[i]||0)*(1-_shrF(i)) : (we[i]||0);
+  let _wdBk=0,_weBk=0,_wdCap=0,_weCap=0;
+  for(let k=1;k<=8;k++){ const i=W+k; if(i>=WEEKS.length) break; const cw=_cWd(i),ce=_cWe(i); if(cw+ce<=0) continue; const b=(bk[i]||0), wb=((bkWe||[])[i]||0); _wdBk+=(b-wb); _weBk+=wb; _wdCap+=cw; _weCap+=ce; }
+  const _wdRate=_wdCap>0?_wdBk/_wdCap:0, _weRate=_weCap>0?_weBk/_weCap:0;
+  const _wdAll=WEEKS.map((_,i)=>_cWd(i)), _weAll=WEEKS.map((_,i)=>_cWe(i));
+  const _nrmH=arr=>{ const w=dimSlice(arr,W).filter(x=>x!=null); return w.length? w.reduce((a,b)=>a+b,0)/w.length:0; };
+  const _normWd=_nrmH(_wdAll), _normWe=_nrmH(_weAll), _wdNow=_cWd(W), _weNow=_cWe(W);
+  const _wdShort=Math.max(0,_normWd-_wdNow), _weShort=Math.max(0,_normWe-_weNow);
+  const availHr={loss:_wdRate*_wdShort+_weRate*_weShort, wdRate:_wdRate, weRate:_weRate, normWd:_normWd, wdNow:_wdNow, normWe:_normWe, weNow:_weNow, wdShort:_wdShort, weShort:_weShort, U:_hasHrs?'h':'d'};
   // only attribute to a dimension that actually BROKE (passed its threshold) — sub-threshold wobble is noise, not a cause
-  let availLoss = availBroke ? Math.min(L, (weLost*1.5 + wdLost) * bkPerDay) : 0;
+  let availLoss = availBroke ? Math.min(L, availHr.loss) : 0;
   let leadsLoss = leadsBroke ? Math.max(0, Math.min(L-availLoss, Math.max(0, ld_avg-ld_w) * bkPerLead)) : 0;
   let l2bLoss   = Math.max(0, L - availLoss - leadsLoss);       // residual = conversion / call-handling
   const comp = {avail:availLoss, leads:leadsLoss, l2b:l2bLoss};
@@ -479,7 +494,7 @@ function rcaClinic(city, clinic){
   return {city,clinic,bk_w,bk_peak,bk_avg,bkBase,dBk,ld_w,ld_avg,dLeadPct,av_w,av_avg,dAct,we_w,we_avg,dWe,
           gmb_w,gmb_avg,pr_w,pr_avg,wd_w,wd_avg,
           leadsBroke,actBroke,weBroke,availBroke,cause,mixWith,comp,L,mat,note,
-          bkPerDay,weLost,wdLost,leadsLoss_gmb,leadsLoss_pr,expectedIfFull,
+          bkPerDay,weLost,wdLost,leadsLoss_gmb,leadsLoss_pr,expectedIfFull,availHr,
           bkArr:bk,bkWeArr:bkWe,bkNewArr:bkNew,bkRepeatArr:bkRepeat,bkDoneArr:bkDone,bkReschedArr:bkResched,bkMissedArr:bkMissed,bkCancelledArr:bkCancelled,ldArr:ld,avArr:av,weArr:we,gmbArr:gmb,prArr:pr,wdArr:wd,
           orgArr:orgArr, gmbOnlyArr:gmbOnly, gAdArr:gAd, fbArr:fbA, jdArr:jdA, othArr:othA, useRedshiftLeads:useRedshift};
 }
@@ -1865,25 +1880,14 @@ function renderDeepDive(r){
       <span style="flex:1;color:#334155;font-weight:${strong?800:600};">${label}</span>
       <span style="color:#94a3b8;white-space:nowrap;">norm <b style="color:#475569;">${f(norm)}</b> → this wk <b style="color:${col};">${f(now)}</b></span>
       <span style="width:54px;text-align:right;font-weight:800;color:${col};">${flat?'—':(d>0?'+':'')+r1(d)+(suffix||'')}</span></div>`; };
-  // hour-rate availability loss — bookable-hour shortfall vs the selected norm × this clinic's own per-hour weekday/weekend rates (same rates as the Expected model)
-  const _avHr=(()=>{
-    const hasHrs = ros.hrs && ros.hrs.some(x=>x!=null && x>0);
-    const shrF=i=>{ const sc=(ros.shr&&ros.shr.sched&&ros.shr.sched[i])||0, sh=(ros.shr&&ros.shr.shrunk&&ros.shr.shrunk[i])||0; return sc>0?Math.min(0.95,sh/sc):0; };
-    const cWd=i=> hasHrs ? Math.max(0,((ros.hrs[i]||0)-(ros.we_hrs[i]||0)))*(1-shrF(i)) : Math.max(0,(r.avArr[i]||0)-(r.weArr[i]||0));
-    const cWe=i=> hasHrs ? (ros.we_hrs[i]||0)*(1-shrF(i)) : (r.weArr[i]||0);
-    let wdBk=0,weBk=0,wdCap=0,weCap=0;                                  // per-hour rate from the recent stable window
-    for(let k=1;k<=8;k++){ const i=wkIdx+k; if(i>=WEEKS.length) break; const cw=cWd(i),ce=cWe(i); if(cw+ce<=0) continue; const b=(r.bkArr[i]||0), wb=((r.bkWeArr||[])[i]||0); wdBk+=(b-wb); weBk+=wb; wdCap+=cw; weCap+=ce; }
-    const wdRate=wdCap>0?wdBk/wdCap:0, weRate=weCap>0?weBk/weCap:0;
-    const wdAll=WEEKS.map((_,i)=>cWd(i)), weAll=WEEKS.map((_,i)=>cWe(i));  // normal bookable hours over the selected window
-    const nrmH=arr=>{ const w=dimSlice(arr,wkIdx).filter(x=>x!=null); return w.length? w.reduce((a,b)=>a+b,0)/w.length:0; };
-    const normWd=nrmH(wdAll), normWe=nrmH(weAll), wdNow=cWd(wkIdx), weNow=cWe(wkIdx);
-    const wdShort=Math.max(0,normWd-wdNow), weShort=Math.max(0,normWe-weNow);
-    return {hasHrs,wdRate,weRate,normWd,wdNow,normWe,weNow,wdShort,weShort,loss:wdRate*wdShort+weRate*weShort,U:hasHrs?'h':'d'};
-  })();
+  // hour-rate availability loss is computed once in the model (r.availHr); the displayed value is the
+  // gated/capped model figure (r.comp.avail) so the ladder, the attribution card & cause-classification all match.
+  const _avHr=r.availHr||{loss:0,wdRate:0,weRate:0,normWd:0,wdNow:0,normWe:0,weNow:0,wdShort:0,weShort:0,U:'h'};
+  const _availShown=r.comp?r.comp.avail:0;
   const _availLossChip=calcChip('Bookings lost to availability (hour-rate)', `
     <p><b>What it answers:</b> the <b>bookable-hour shortfall</b> vs your ${baseLabel()} norm, converted to bookings using this clinic’s own per-hour <b>weekday &amp; weekend</b> rates — the same rates the Expected-bookings model uses.</p>
-    ${calcStep(`weekday rate = <b>${_avHr.wdRate.toFixed(2)}</b> bookings/${_avHr.U} · weekend rate = <b>${_avHr.weRate.toFixed(2)}</b> bookings/${_avHr.U}<br>weekday ${_avHr.U}: norm <b>${r1(_avHr.normWd)}</b> → this wk <b>${r1(_avHr.wdNow)}</b> = <b>${r1(_avHr.wdShort)}</b> short<br>weekend ${_avHr.U}: norm <b>${r1(_avHr.normWe)}</b> → this wk <b>${r1(_avHr.weNow)}</b> = <b>${r1(_avHr.weShort)}</b> short<br><b>loss = ${_avHr.wdRate.toFixed(2)}×${r1(_avHr.wdShort)} + ${_avHr.weRate.toFixed(2)}×${r1(_avHr.weShort)} = ${r1(_avHr.loss)}</b>`)}
-    <p>Weekends carry more weight automatically because their per-hour rate is higher — no arbitrary multiplier. If this week’s hours met or beat the norm, the shortfall (and the loss) is <b>0</b>.</p>${calcBasis()}`);
+    ${calcStep(`weekday rate = <b>${_avHr.wdRate.toFixed(2)}</b> bookings/${_avHr.U} · weekend rate = <b>${_avHr.weRate.toFixed(2)}</b> bookings/${_avHr.U}<br>weekday ${_avHr.U}: norm <b>${r1(_avHr.normWd)}</b> → this wk <b>${r1(_avHr.wdNow)}</b> = <b>${r1(_avHr.wdShort)}</b> short<br>weekend ${_avHr.U}: norm <b>${r1(_avHr.normWe)}</b> → this wk <b>${r1(_avHr.weNow)}</b> = <b>${r1(_avHr.weShort)}</b> short<br><b>raw loss = ${_avHr.wdRate.toFixed(2)}×${r1(_avHr.wdShort)} + ${_avHr.weRate.toFixed(2)}×${r1(_avHr.weShort)} = ${r1(_avHr.loss)}</b>${_availShown<_avHr.loss-0.05?` → counted as <b>${r1(_availShown)}</b> (gated to the threshold &amp; capped at the week's total shortfall)`:''}`)}
+    <p>Weekends carry more weight automatically because their per-hour rate is higher — no arbitrary multiplier. This is the <b>same figure</b> the “Where the lost bookings went” card uses. If this week’s hours met or beat the norm, the loss is <b>0</b>.</p>${calcBasis()}`);
   const ladder = `
     <div style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:#94a3b8;margin:2px 0 4px;">Normal (${baseLabel()}) → this week ${calcChip('How this availability ladder reads', `<p>Each row compares this week to your clinic’s own <b>${baseLabel()}</b> norm. Green = better, red = worse. The norm window follows the <b>“Compare vs”</b> selector at the top — change it and every row re-computes.</p><p><b>Active doctor-days</b> = distinct doctor×day with a bookable slot. <b>Scheduled hours</b> = the roster plan. <b>Shrinkage</b> = % of scheduled slots the doctor blocked. The last row turns the day shortfall into lost bookings.</p>`)}</div>
     <div style="border:1px solid var(--line);border-radius:10px;padding:3px 12px;background:#fff;margin-bottom:10px;">
@@ -1894,7 +1898,7 @@ function renderDeepDive(r){
       ${hasShr?_lr('✂️ Doctor shrinkage (blocked %)', shrPct_n, shrPct_w, '%', false):''}
       <div style="display:flex;align-items:center;gap:8px;padding:9px 2px;font-size:12px;">
         <span style="flex:1;color:#7c3aed;font-weight:800;">↳ Bookings lost to availability <span style="font-weight:500;color:#94a3b8;">(hour-rate)</span>${_availLossChip}</span>
-        <span style="font-size:19px;font-weight:800;color:${_avHr.loss>=0.5?'#7c3aed':'#94a3b8'};">${_avHr.loss>=0.5?'~'+r1(_avHr.loss):'~0'}</span></div>
+        <span style="font-size:19px;font-weight:800;color:${_availShown>=0.5?'#7c3aed':'#94a3b8'};">${_availShown>=0.5?'~'+r1(_availShown):'~0'}</span></div>
     </div>`;
   const availCard = `<div class="card"><div class="sec-h"><span class="sec-num">🩺</span>Availability — normal vs this week</div>
     <div class="sec-sub">Read top-down: your usual active days &amp; hours, what happened this week, the shrinkage, and how many bookings the gap cost. · vs ${baseLabel()} · ${wl}</div>
