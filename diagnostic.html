@@ -1285,6 +1285,7 @@ function funnelMasterCard(r){
   const cs=hasCoh?(leadAgeArr(r.city,r.clinic,'same')[W]||0):0, cl=hasCoh?(leadAgeArr(r.city,r.clinic,'last')[W]||0):0, co=hasCoh?(leadAgeArr(r.city,r.clinic,'older')[W]||0):0, ct=cs+cl+co;
   // honest conversion: of THIS week's new leads, how many booked SAME week (≤100%, no lag inflation)
   const sameWeekPct = ld>0 ? Math.min(100,Math.round(cs/ld*100)) : null;
+  const unbooked = Math.max(0, ld-cs);   // this week's leads not yet booked (may convert in later weeks)
   const seg=(n,c,ttl)=>n>0?`<div title="${ttl}" style="width:${n/ct*100}%;background:${c};color:#fff;font-size:11px;font-weight:800;display:flex;align-items:center;justify-content:center;">${n/ct>=0.07?n:''}</div>`:'';
   const freshPct=ct>0?Math.round(cs/ct*100):0;
   const cohVerdict = freshPct>=55 ? `Mostly <b style="color:#059669">fresh</b> — ${freshPct}% of these new bookings came from leads that arrived this week. Demand converts quickly.`
@@ -1304,18 +1305,19 @@ function funnelMasterCard(r){
         ${_fTake(cohVerdict)}
       </div>
     </details>` : '';
-  return `<div class="card"><div class="sec-h">${_fStep(1,'#0ea5e9')}New-demand funnel — New leads → New bookings → Done</div>
-    <div class="sec-sub"><b>Leads = new inbound leads</b> this week; <b>new bookings</b> = first-time patients. Returning patients are shown separately below. · ${WEEKS[wkIdx].label}</div>
+  return `<div class="card"><div class="sec-h">${_fStep(1,'#0ea5e9')}New-demand funnel — New leads → Booked → Done</div>
+    <div class="sec-sub">Of the <b>new inbound leads created this week</b>, how many booked the <b>same week</b> (a clean cohort conversion — same numerator &amp; denominator). Lagged &amp; returning bookings are noted separately. · ${WEEKS[wkIdx].label}</div>
     <div style="display:flex;gap:4px;margin:8px 0 2px;">
-      ${_fStage('New leads', ld, 'inbound this week', '#0ea5e9')}
-      ${_fConv(sameWeekPct!=null?sameWeekPct+'%':'—','booked same week')}
-      ${_fStage('New bookings', newbk, hasCoh?'~'+cs+' fresh · ~'+(cl+co)+' lagged':'first-time', '#4f46e5')}
-      ${_fConv(b2d+'%','all booked → done')}
+      ${_fStage('New leads', ld, 'created this week', '#0ea5e9')}
+      ${_fConv(hasCoh&&sameWeekPct!=null?'~'+sameWeekPct+'%':'—','of leads booked')}
+      ${_fStage(hasCoh?'Booked same wk':'New bookings', hasCoh?cs:newbk, hasCoh?'from this week’s leads':'first-time', '#4f46e5')}
+      ${_fConv(b2d+'%','of all booked → done')}
       ${_fStage('Done', done, hasDoneSplit?doneNew+' new + '+doneRep+' returning':'consultations (all)', '#059669')}
     </div>
-    <div style="font-size:10.5px;color:#475569;background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:7px 11px;margin-top:8px;line-height:1.5;">🔁 <b>+ ${repbk} returning patients</b> re-booked this week (old demand) → total booked <b>${bk}</b>.${hasDoneSplit?` Of the <b>${done}</b> completed, <b style="color:#4f46e5">${doneNew} were new patients</b> and <b style="color:#0891b2">${doneRep} returning</b>.`:''}</div>
+    <div style="font-size:10.5px;color:#475569;background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:7px 11px;margin-top:8px;line-height:1.5;">
+      ${hasCoh&&unbooked>0?`⏳ <b>${unbooked}</b> of this week's leads haven't booked yet — leads keep converting in later weeks, so this same-week rate is a <b>floor</b> (it rises as the cohort matures). `:''}This week also booked ~<b>${cl+co}</b> from earlier leads' lag + <b>${repbk}</b> returning → <b>${bk}</b> total booked.${hasDoneSplit?` Of <b>${done}</b> done: <b style="color:#4f46e5">${doneNew} new</b> · <b style="color:#0891b2">${doneRep} returning</b>.`:''}</div>
     ${cohortDetail}
-    ${_fTake(`<b>${ld}</b> new leads → <b>${newbk}</b> first-time bookings${hasCoh?` (~<b>${cs}</b> booked same week ≈ ${sameWeekPct}% of this week's leads; the rest from earlier leads)`:''}. Plus <b>${repbk}</b> returning → <b>${bk}</b> total booked; <b>${done}</b> completed (<b>${b2d}%</b>)${hasDoneSplit?` — <b>${doneNew}</b> new &amp; <b>${doneRep}</b> returning`:''}.`)}
+    ${_fTake(`Of this week's <b>${ld}</b> new leads, ${hasCoh?`~<b>${cs}</b> booked the same week (<b>~${sameWeekPct}%</b> — a clean cohort conversion)${unbooked>0?`; ${unbooked} still open`:''}`:`<b>${newbk}</b> first-time bookings`}. This week's <b>${bk}</b> total bookings → <b>${done}</b> completed (<b>${b2d}%</b>)${hasDoneSplit?`, <b>${doneNew}</b> new &amp; <b>${doneRep}</b> returning`:''}.`)}
   </div>`;
 }
 
