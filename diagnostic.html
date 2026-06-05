@@ -148,6 +148,8 @@ function hasDmf(city,clinic){ return !!DMF[city+'|'+clinic]; }
 let PRACTOBK={};   // data_practo_booked.json — TRUE Practo bookings (phone-match vs appointments), per clinic/week
 function practoBkTrueArr(city,clinic){ const a=PRACTOBK[city+'|'+clinic]; if(!a) return Array(WEEKS.length).fill(0); const b=a.slice(0,WEEKS.length); while(b.length<WEEKS.length)b.push(0); return b; }
 function hasPractoBkTrue(city,clinic){ return !!PRACTOBK[city+'|'+clinic]; }
+let LEADMAT={};   // data_lead_maturation.json — Google/GMB/Organic lead→booking maturation curve (cumulative % by lag), clinic + network
+function leadMat(city,clinic){ return LEADMAT[city+'|'+clinic] || (LEADMAT._meta&&LEADMAT._meta.network) || null; }
 // clinic city (Redshift spelling) → Google Ads campaign city spelling
 const GA_CITY_ALIAS={'Hubli':'Hubballi','Mangaluru':'Mangalore','Visakhapatnam':'Vizag'};
 function gaForCity(city){ return GACITY[GA_CITY_ALIAS[city]||city]; }
@@ -1317,6 +1319,8 @@ function funnelMasterCard(r){
     <div style="font-size:10.5px;color:#475569;background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:7px 11px;margin-top:8px;line-height:1.5;">
       ${hasCoh&&unbooked>0?`⏳ <b>${unbooked}</b> of this week's leads haven't booked yet — leads keep converting in later weeks, so this same-week rate is a <b>floor</b> (it rises as the cohort matures). `:''}This week also booked ~<b>${cl+co}</b> from earlier leads' lag + <b>${repbk}</b> returning → <b>${bk}</b> total booked.${hasDoneSplit?` Of <b>${done}</b> done: <b style="color:#4f46e5">${doneNew} new</b> · <b style="color:#0891b2">${doneRep} returning</b>.`:''}</div>
     ${cohortDetail}
+    ${(()=>{ const m=leadMat(r.city,r.clinic); if(!m||!m.sameWeek) return ''; const isClinic=!!LEADMAT[r.city+'|'+r.clinic];
+      return `<div style="font-size:10.5px;color:#475569;background:#ecfdf5;border:1px solid #a7f3d0;border-radius:8px;padding:7px 11px;margin-top:8px;line-height:1.5;">📈 <b>Conversion benchmark — Google · GMB · Organic leads</b> ${isClinic?'(this clinic)':'(network avg)'}: ~<b>${Math.round(m.sameWeek)}%</b> book the <b>same week</b>, maturing to ~<b>${Math.round(m.mature)}%</b> within a month — these channels convert nearly fully. <span style="color:#94a3b8;">The headline same-week rate above is lower because it includes <b>Practo</b> leads, which mostly don't book through a tracked channel (see the lead-loss drill).</span></div>`; })()}
     ${_fTake(`Of this week's <b>${ld}</b> new leads, ${hasCoh?`~<b>${cs}</b> booked the same week (<b>~${sameWeekPct}%</b> — a clean cohort conversion)${unbooked>0?`; ${unbooked} still open`:''}`:`<b>${newbk}</b> first-time bookings`}. This week's <b>${bk}</b> total bookings → <b>${done}</b> completed (<b>${b2d}%</b>)${hasDoneSplit?`, <b>${doneNew}</b> new &amp; <b>${doneRep}</b> returning`:''}.`)}
   </div>`;
 }
@@ -2188,7 +2192,7 @@ function renderOnline(){
 async function init(){
   try{
     const safe=u=>fetch(u,{cache:'no-store'}).catch(()=>({ok:false}));
-    const [jr,sr,lr,pr,rr,ld,rv,mk,bt,dg,ga,nr,gi,la,df,pbk,pl]=await Promise.all([ fetch('data.json',{cache:'no-store'}), safe(SHEET_URL), safe(L0_URL), safe(PRACTO_URL), safe('data_roster.json'), safe('data_leads.json'), safe('data_reviews.json'), safe('data_marketing.json'), safe('data_booktype.json'), safe('data_diagnostic.json'), safe('data_ga_city.json'), safe('data_reviews_neg.json'), safe('data_gmb_insights.json'), safe('data_lead_age.json'), safe('data_demand_funnel.json'), safe('data_practo_booked.json'), safe('data_practo_leads.json') ]);
+    const [jr,sr,lr,pr,rr,ld,rv,mk,bt,dg,ga,nr,gi,la,df,pbk,pl,lm]=await Promise.all([ fetch('data.json',{cache:'no-store'}), safe(SHEET_URL), safe(L0_URL), safe(PRACTO_URL), safe('data_roster.json'), safe('data_leads.json'), safe('data_reviews.json'), safe('data_marketing.json'), safe('data_booktype.json'), safe('data_diagnostic.json'), safe('data_ga_city.json'), safe('data_reviews_neg.json'), safe('data_gmb_insights.json'), safe('data_lead_age.json'), safe('data_demand_funnel.json'), safe('data_practo_booked.json'), safe('data_practo_leads.json'), safe('data_lead_maturation.json') ]);
     if(!jr.ok) throw new Error('data.json not found');
     JDATA=await jr.json();
     // SDATA now comes from Redshift (data_diagnostic.json); the Google Sheet is a fallback only.
@@ -2211,6 +2215,7 @@ async function init(){
     if(la.ok){ try{ LEADAGE=await la.json(); }catch(_){ } }
     if(df.ok){ try{ DMF=await df.json(); }catch(_){ } }
     if(pbk.ok){ try{ PRACTOBK=await pbk.json(); }catch(_){ } }
+    if(lm.ok){ try{ LEADMAT=await lm.json(); }catch(_){ } }
     const wSel=document.getElementById('weekSelect');
     WEEKS.forEach((w,i)=>{ const o=document.createElement('option'); o.value=i; o.textContent=w.label+(i===0?' (latest)':''); if(i===0)o.selected=true; wSel.appendChild(o); });
     render(); updateRefreshBadge();
