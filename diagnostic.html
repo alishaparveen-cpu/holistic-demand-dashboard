@@ -1841,10 +1841,25 @@ function renderDeepDive(r){
       <span style="flex:1;color:#334155;font-weight:${strong?800:600};">${label}</span>
       <span style="color:#94a3b8;white-space:nowrap;">norm <b style="color:#475569;">${f(norm)}</b> → this wk <b style="color:${col};">${f(now)}</b></span>
       <span style="width:54px;text-align:right;font-weight:800;color:${col};">${flat?'—':(d>0?'+':'')+r1(d)+(suffix||'')}</span></div>`; };
-  const _availLossChip=calcChip('Bookings lost to availability', `
-    <p><b>What it answers:</b> the active-day shortfall this week, converted into bookings — weighting <b>weekends 1.5×</b> because they’re higher-demand.</p>
-    ${calcStep(`bookings per active doctor-day = normal bookings <b>${r1(r.bk_avg)}</b> ÷ normal active-days <b>${r1(r.av_avg)}</b> = <b>${r1(r.bkPerDay)}</b><br>weekday-days lost <b>${r1(r.wdLost)}</b> · weekend-days lost <b>${r1(r.weLost)}</b> (×1.5)<br><b>loss = (${r1(r.wdLost)} + ${r1(r.weLost)}×1.5) × ${r1(r.bkPerDay)} = ${r1((r.wdLost+r.weLost*1.5)*r.bkPerDay)}</b>${r.comp.avail< (r.wdLost+r.weLost*1.5)*r.bkPerDay-0.05?` → capped to <b>${r1(r.comp.avail)}</b> (can’t exceed the week’s total shortfall of ${r1(r.L)})`:''}`)}
-    <p>Only counted when availability actually broke its threshold — sub-threshold wobble is treated as noise, not a cause.</p>${calcBasis()}`);
+  // hour-rate availability loss — bookable-hour shortfall vs the selected norm × this clinic's own per-hour weekday/weekend rates (same rates as the Expected model)
+  const _avHr=(()=>{
+    const hasHrs = ros.hrs && ros.hrs.some(x=>x!=null && x>0);
+    const shrF=i=>{ const sc=(ros.shr&&ros.shr.sched&&ros.shr.sched[i])||0, sh=(ros.shr&&ros.shr.shrunk&&ros.shr.shrunk[i])||0; return sc>0?Math.min(0.95,sh/sc):0; };
+    const cWd=i=> hasHrs ? Math.max(0,((ros.hrs[i]||0)-(ros.we_hrs[i]||0)))*(1-shrF(i)) : Math.max(0,(r.avArr[i]||0)-(r.weArr[i]||0));
+    const cWe=i=> hasHrs ? (ros.we_hrs[i]||0)*(1-shrF(i)) : (r.weArr[i]||0);
+    let wdBk=0,weBk=0,wdCap=0,weCap=0;                                  // per-hour rate from the recent stable window
+    for(let k=1;k<=8;k++){ const i=wkIdx+k; if(i>=WEEKS.length) break; const cw=cWd(i),ce=cWe(i); if(cw+ce<=0) continue; const b=(r.bkArr[i]||0), wb=((r.bkWeArr||[])[i]||0); wdBk+=(b-wb); weBk+=wb; wdCap+=cw; weCap+=ce; }
+    const wdRate=wdCap>0?wdBk/wdCap:0, weRate=weCap>0?weBk/weCap:0;
+    const wdAll=WEEKS.map((_,i)=>cWd(i)), weAll=WEEKS.map((_,i)=>cWe(i));  // normal bookable hours over the selected window
+    const nrmH=arr=>{ const w=dimSlice(arr,wkIdx).filter(x=>x!=null); return w.length? w.reduce((a,b)=>a+b,0)/w.length:0; };
+    const normWd=nrmH(wdAll), normWe=nrmH(weAll), wdNow=cWd(wkIdx), weNow=cWe(wkIdx);
+    const wdShort=Math.max(0,normWd-wdNow), weShort=Math.max(0,normWe-weNow);
+    return {hasHrs,wdRate,weRate,normWd,wdNow,normWe,weNow,wdShort,weShort,loss:wdRate*wdShort+weRate*weShort,U:hasHrs?'h':'d'};
+  })();
+  const _availLossChip=calcChip('Bookings lost to availability (hour-rate)', `
+    <p><b>What it answers:</b> the <b>bookable-hour shortfall</b> vs your ${baseLabel()} norm, converted to bookings using this clinic’s own per-hour <b>weekday &amp; weekend</b> rates — the same rates the Expected-bookings model uses.</p>
+    ${calcStep(`weekday rate = <b>${_avHr.wdRate.toFixed(2)}</b> bookings/${_avHr.U} · weekend rate = <b>${_avHr.weRate.toFixed(2)}</b> bookings/${_avHr.U}<br>weekday ${_avHr.U}: norm <b>${r1(_avHr.normWd)}</b> → this wk <b>${r1(_avHr.wdNow)}</b> = <b>${r1(_avHr.wdShort)}</b> short<br>weekend ${_avHr.U}: norm <b>${r1(_avHr.normWe)}</b> → this wk <b>${r1(_avHr.weNow)}</b> = <b>${r1(_avHr.weShort)}</b> short<br><b>loss = ${_avHr.wdRate.toFixed(2)}×${r1(_avHr.wdShort)} + ${_avHr.weRate.toFixed(2)}×${r1(_avHr.weShort)} = ${r1(_avHr.loss)}</b>`)}
+    <p>Weekends carry more weight automatically because their per-hour rate is higher — no arbitrary multiplier. If this week’s hours met or beat the norm, the shortfall (and the loss) is <b>0</b>.</p>${calcBasis()}`);
   const ladder = `
     <div style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:#94a3b8;margin:2px 0 4px;">Normal (${baseLabel()}) → this week ${calcChip('How this availability ladder reads', `<p>Each row compares this week to your clinic’s own <b>${baseLabel()}</b> norm. Green = better, red = worse. The norm window follows the <b>“Compare vs”</b> selector at the top — change it and every row re-computes.</p><p><b>Active doctor-days</b> = distinct doctor×day with a bookable slot. <b>Scheduled hours</b> = the roster plan. <b>Shrinkage</b> = % of scheduled slots the doctor blocked. The last row turns the day shortfall into lost bookings.</p>`)}</div>
     <div style="border:1px solid var(--line);border-radius:10px;padding:3px 12px;background:#fff;margin-bottom:10px;">
@@ -1854,8 +1869,8 @@ function renderDeepDive(r){
       ${(hasRoster&&rh_w!=null)?_lr('⏱️ Scheduled hours · weekend', rwe_avg, rwe_w||0, 'h', true):''}
       ${hasShr?_lr('✂️ Doctor shrinkage (blocked %)', shrPct_n, shrPct_w, '%', false):''}
       <div style="display:flex;align-items:center;gap:8px;padding:9px 2px;font-size:12px;">
-        <span style="flex:1;color:#7c3aed;font-weight:800;">↳ Bookings lost to availability${_availLossChip}</span>
-        <span style="font-size:19px;font-weight:800;color:${r.comp.avail>=0.5?'#7c3aed':'#94a3b8'};">${r.comp.avail>=0.5?'~'+r1(r.comp.avail):'~0'}</span></div>
+        <span style="flex:1;color:#7c3aed;font-weight:800;">↳ Bookings lost to availability <span style="font-weight:500;color:#94a3b8;">(hour-rate)</span>${_availLossChip}</span>
+        <span style="font-size:19px;font-weight:800;color:${_avHr.loss>=0.5?'#7c3aed':'#94a3b8'};">${_avHr.loss>=0.5?'~'+r1(_avHr.loss):'~0'}</span></div>
     </div>`;
   const availCard = `<div class="card"><div class="sec-h"><span class="sec-num">🩺</span>Availability — normal vs this week</div>
     <div class="sec-sub">Read top-down: your usual active days &amp; hours, what happened this week, the shrinkage, and how many bookings the gap cost. · vs ${baseLabel()} · ${wl}</div>
