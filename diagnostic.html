@@ -1586,7 +1586,9 @@ function negReviewsBlock(city, clinic){
 }
 function leadLossDrill(r){
   if(!hasLeadDrill(r.city,r.clinic)) return '';
-  const W=wkIdx, rev=a=>a.slice(0,WEEKS.length).reverse(), hi=(WEEKS.length-1)-W, sl=a=>a.slice(W+1,W+5);
+  const W=wkIdx;
+  const winN = trendWin==='all' ? WEEKS.length : Math.min(+trendWin||6, WEEKS.length);   // shared trend window (default 6w)
+  const rev=a=>a.slice(0,WEEKS.length).reverse().slice(-winN), hi=(winN-1)-W, sl=a=>a.slice(W+1,W+5);
   const gmb=leadArr(r.city,r.clinic,'gmb'), gads=leadArr(r.city,r.clinic,'google_ad'), org=leadArr(r.city,r.clinic,'organic');
   const gmb_w=gmb[W], gmb_n=avg(sl(gmb)), gads_w=gads[W], gads_n=avg(sl(gads));
   const dGmbP=gmb_n?Math.round((gmb_w-gmb_n)/gmb_n*100):0, dGadsP=gads_n?Math.round((gads_w-gads_n)/gads_n*100):0;
@@ -1627,8 +1629,15 @@ function leadLossDrill(r){
   if(hasPracto && pr_n>1 && dPrP<=-15) extraDrops.push(`Practo ${signed(dPrP,'%')}`);
   if(org_n>1 && dOrgP<=-15) extraDrops.push(`Organic ${signed(dOrgP,'%')}`);
   if(oth_n>1 && dOthP<=-15) extraDrops.push(`Others ${signed(dOthP,'%')}`);
+  const winOpts=[['4w',4],['6w',6],['8w',8],['12w',WEEKS.length]];
+  const winBar=`<div style="display:flex;align-items:center;gap:6px;margin:6px 0 2px;flex-wrap:wrap;">
+    <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#94a3b8;">Trend window</span>
+    ${winOpts.map(([l,v])=>{ const on=(trendWin==='all'&&v===WEEKS.length)||(+trendWin===v); return `<button onclick="setTrendWin(${v===WEEKS.length?"'all'":v})" style="font-size:11px;padding:3px 10px;border-radius:7px;border:1.5px solid ${on?'#4f46e5':'var(--line)'};background:${on?'#eef2ff':'#fff'};color:${on?'#4338ca':'#475569'};font-weight:${on?700:500};cursor:pointer;">${l}</button>`; }).join('')}
+    <span style="font-size:10px;color:#cbd5e1;margin-left:2px;">showing last ${winN} wks · norm = 4-wk avg</span>
+  </div>`;
   return `<div class="card"><div class="sec-h"><span class="sec-num">🔎</span>Lead-loss drill — by source</div>
     <div class="sec-sub">When inbound leads break, which source? <b>GMB profile</b> (reviews → rank) · <b>Google Ads</b> (impression share / spend) · <b>Practo</b> · <b>Organic &amp; others</b>. · leads from Redshift · ${WEEKS[wkIdx].label}</div>
+    ${winBar}
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;">
       <div style="background:#eef2ff;border-radius:11px;padding:12px 14px;">
         <div style="font-size:13px;font-weight:800;color:#4338ca;margin-bottom:8px;">📍 GMB profile <span style="font-weight:500;color:#94a3b8;font-size:10px;">${hasGmbIns(r.city,r.clinic)?'· live Insights':''}</span></div>
@@ -1652,7 +1661,8 @@ function leadLossDrill(r){
       ${(hasPracto||hasOther)?`<div style="background:#f0fdf4;border-radius:11px;padding:12px 14px;">
         <div style="font-size:13px;font-weight:800;color:#047857;margin-bottom:8px;">🌐 Practo · Organic · Others</div>
         ${hasPracto?mini('Practo leads · '+pr_w+' ('+signed(dPrP,'%')+')', '#f59e0b', 'Practo profile leads · dashed = 4-wk avg', spark(rev(practo),'#f59e0b',hi,null,pr_n)):''}
-        ${hasPrBk?mini('Practo booked · '+prBk_w+(prConv!=null?' ('+prConv+'% of leads)':''), '#ea580c', 'Practo leads with a slot booked · dashed = 4-wk avg', spark(rev(prBk),'#ea580c',hi,null,prBk_n)):''}
+        ${hasPrBk?mini('Practo slot-booked (online) · '+prBk_w, '#ea580c', 'Practo’s own instant online slot-booking only — phone follow-up bookings aren’t counted here', spark(rev(prBk),'#ea580c',hi,null,prBk_n))
+          +`<div style="font-size:9.5px;color:#b45309;background:#fffbeb;border:1px dashed #fde68a;border-radius:6px;padding:5px 8px;margin:-4px 0 9px;line-height:1.45;">⚠️ Partial signal — Practo only began populating this since <b>May 2026</b>, so earlier weeks read 0 (not tracked, not zero). Most Practo conversions happen by <b>phone follow-up</b> and book through the main pipeline, so this <b>undercounts</b> true Practo bookings.</div>`:''}
         ${mini('Organic · '+org_w+' ('+signed(dOrgP,'%')+')', '#10b981', 'SEO / direct (non-paid) · dashed = 4-wk avg', spark(rev(org),'#10b981',hi,null,org_n))}
         ${mini('Others · '+oth_w+' ('+signed(dOthP,'%')+')', '#94a3b8', 'FB + JustDial + misc · dashed = 4-wk avg', spark(rev(oth),'#94a3b8',hi,null,oth_n))}
       </div>`:''}
