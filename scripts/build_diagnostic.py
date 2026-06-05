@@ -25,15 +25,16 @@ def main():
     def ensure(k):
         return D.setdefault(k, {f: [0]*12 for f in
             ['allBk','bkWe','bkNew','bkRepeat','bkDone','bkResched','bkMissed','bkCancelled',
-             'avail','weekend','docDays','gmbLeads']})
+             'bkDoneNew','bkDoneRepeat','avail','weekend','docDays','gmbLeads']})
     # bookings + disposition
     for p in q("fetch_diag_bookings.sql"):
         if len(p) < 10: continue
-        city, loc, wk, bk, we, nw, rp, done, res, mis, can = (p + ['0'])[:11]
+        city, loc, wk, bk, we, nw, rp, done, res, mis, can, dnew, drep = (p + ['0','0','0'])[:13]
         if wk not in WI: continue
         o = ensure(f"{city}|{loc}"); i = WI[wk]
         o['allBk'][i]=int(bk); o['bkWe'][i]=int(we); o['bkNew'][i]=int(nw); o['bkRepeat'][i]=int(rp)
         o['bkDone'][i]=int(done); o['bkResched'][i]=int(res); o['bkMissed'][i]=int(mis); o['bkCancelled'][i]=int(can)
+        o['bkDoneNew'][i]=int(dnew); o['bkDoneRepeat'][i]=int(drep)
     # availability (post-shrinkage active doctor-days)
     for p in q("fetch_diag_avail.sql"):
         if len(p) < 5: continue

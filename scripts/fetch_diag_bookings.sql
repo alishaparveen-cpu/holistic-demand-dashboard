@@ -41,5 +41,7 @@ SELECT city, locality, wk,
   SUM(CASE WHEN pair_done THEN 1 ELSE 0 END) AS done_bk,
   SUM(CASE WHEN NOT pair_done AND pair_resched THEN 1 ELSE 0 END) AS resched_bk,
   SUM(CASE WHEN NOT pair_done AND NOT pair_resched AND pair_missed THEN 1 ELSE 0 END) AS missed_bk,
-  SUM(CASE WHEN NOT pair_done AND NOT pair_resched AND NOT pair_missed AND pair_cancelled THEN 1 ELSE 0 END) AS cancelled_bk
+  SUM(CASE WHEN NOT pair_done AND NOT pair_resched AND NOT pair_missed AND pair_cancelled THEN 1 ELSE 0 END) AS cancelled_bk,
+  SUM(CASE WHEN pair_done AND pair_new THEN 1 ELSE 0 END) AS done_new_bk,
+  SUM(CASE WHEN pair_done AND NOT pair_new THEN 1 ELSE 0 END) AS done_repeat_bk
 FROM pairs GROUP BY 1,2,3 ORDER BY 1,2,3 DESC

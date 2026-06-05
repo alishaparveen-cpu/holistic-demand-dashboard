@@ -347,12 +347,12 @@ function buildSDataFromDiag(diag){
     const city=key.slice(0,bar), clinic=key.slice(bar+1);
     if(!city||!clinic||/online/i.test(clinic)) continue;
     const o=diag[key];
-    (out[city]=out[city]||{})[clinic]={_total:{ allBk:slc(o.allBk), bkWe:slc(o.bkWe), bkNew:slc(o.bkNew), bkRepeat:slc(o.bkRepeat), bkDone:slc(o.bkDone), bkResched:slc(o.bkResched), bkMissed:slc(o.bkMissed), bkCancelled:slc(o.bkCancelled), gmbLeads:slc(o.gmbLeads), avail:slc(o.avail), weekend:slc(o.weekend), docDays:slc(o.docDays) }};
+    (out[city]=out[city]||{})[clinic]={_total:{ allBk:slc(o.allBk), bkWe:slc(o.bkWe), bkNew:slc(o.bkNew), bkRepeat:slc(o.bkRepeat), bkDone:slc(o.bkDone), bkDoneNew:slc(o.bkDoneNew), bkDoneRepeat:slc(o.bkDoneRepeat), bkResched:slc(o.bkResched), bkMissed:slc(o.bkMissed), bkCancelled:slc(o.bkCancelled), gmbLeads:slc(o.gmbLeads), avail:slc(o.avail), weekend:slc(o.weekend), docDays:slc(o.docDays) }};
   }
   for(const city of Object.keys(out)){
-    const agg={allBk:Array(W).fill(0),bkWe:Array(W).fill(0),bkNew:Array(W).fill(0),bkRepeat:Array(W).fill(0),bkDone:Array(W).fill(0),bkResched:Array(W).fill(0),bkMissed:Array(W).fill(0),bkCancelled:Array(W).fill(0),gmbLeads:Array(W).fill(0),avail:Array(W).fill(0),weekend:Array(W).fill(0),docDays:Array(W).fill(0)};
+    const agg={allBk:Array(W).fill(0),bkWe:Array(W).fill(0),bkNew:Array(W).fill(0),bkRepeat:Array(W).fill(0),bkDone:Array(W).fill(0),bkDoneNew:Array(W).fill(0),bkDoneRepeat:Array(W).fill(0),bkResched:Array(W).fill(0),bkMissed:Array(W).fill(0),bkCancelled:Array(W).fill(0),gmbLeads:Array(W).fill(0),avail:Array(W).fill(0),weekend:Array(W).fill(0),docDays:Array(W).fill(0)};
     for(const clinic of Object.keys(out[city])){ const t=out[city][clinic]._total;
-      for(let i=0;i<W;i++){ agg.allBk[i]+=t.allBk[i]; agg.bkWe[i]+=t.bkWe[i]; agg.bkNew[i]+=t.bkNew[i]; agg.bkRepeat[i]+=t.bkRepeat[i]; agg.bkDone[i]+=t.bkDone[i]; agg.bkResched[i]+=(t.bkResched[i]||0); agg.bkMissed[i]+=(t.bkMissed[i]||0); agg.bkCancelled[i]+=(t.bkCancelled[i]||0); agg.avail[i]+=t.avail[i]; agg.weekend[i]+=t.weekend[i]; agg.docDays[i]+=t.docDays[i]; } }
+      for(let i=0;i<W;i++){ agg.allBk[i]+=t.allBk[i]; agg.bkWe[i]+=t.bkWe[i]; agg.bkNew[i]+=t.bkNew[i]; agg.bkRepeat[i]+=t.bkRepeat[i]; agg.bkDone[i]+=t.bkDone[i]; agg.bkDoneNew[i]+=(t.bkDoneNew[i]||0); agg.bkDoneRepeat[i]+=(t.bkDoneRepeat[i]||0); agg.bkResched[i]+=(t.bkResched[i]||0); agg.bkMissed[i]+=(t.bkMissed[i]||0); agg.bkCancelled[i]+=(t.bkCancelled[i]||0); agg.avail[i]+=t.avail[i]; agg.weekend[i]+=t.weekend[i]; agg.docDays[i]+=t.docDays[i]; } }
     out[city]._total=agg;
   }
   return out;
@@ -417,6 +417,7 @@ function rcaClinic(city, clinic){
   const bkWe=d.bkWe||Array(WEEKS.length).fill(0);   // weekend (Sat/Sun) bookings subset
   const bkNew=d.bkNew||Array(WEEKS.length).fill(0), bkRepeat=d.bkRepeat||Array(WEEKS.length).fill(0);  // new+repeat = allBk
   const bkDone=d.bkDone||Array(WEEKS.length).fill(0);   // screening calls actually completed (subset of allBk)
+  const bkDoneNew=d.bkDoneNew||Array(WEEKS.length).fill(0), bkDoneRepeat=d.bkDoneRepeat||Array(WEEKS.length).fill(0);  // done split: new (first-time) vs returning patients
   const bkResched=d.bkResched||Array(WEEKS.length).fill(0), bkMissed=d.bkMissed||Array(WEEKS.length).fill(0), bkCancelled=d.bkCancelled||Array(WEEKS.length).fill(0);  // booked→done disposition
   const pr=practoArr(city,clinic);                       // Practo leads per week (external sheet)
   // ── leads: prefer Redshift (data_leads.json) over the sheet, so the chart, the
@@ -501,7 +502,7 @@ function rcaClinic(city, clinic){
           gmb_w,gmb_avg,pr_w,pr_avg,wd_w,wd_avg,
           leadsBroke,actBroke,weBroke,availBroke,cause,mixWith,comp,L,mat,note,
           bkPerDay,weLost,wdLost,leadsLoss_gmb,leadsLoss_pr,expectedIfFull,availHr,
-          bkArr:bk,bkWeArr:bkWe,bkNewArr:bkNew,bkRepeatArr:bkRepeat,bkDoneArr:bkDone,bkReschedArr:bkResched,bkMissedArr:bkMissed,bkCancelledArr:bkCancelled,ldArr:ld,avArr:av,weArr:we,gmbArr:gmb,prArr:pr,wdArr:wd,
+          bkArr:bk,bkWeArr:bkWe,bkNewArr:bkNew,bkRepeatArr:bkRepeat,bkDoneArr:bkDone,bkDoneNewArr:bkDoneNew,bkDoneRepeatArr:bkDoneRepeat,bkReschedArr:bkResched,bkMissedArr:bkMissed,bkCancelledArr:bkCancelled,ldArr:ld,avArr:av,weArr:we,gmbArr:gmb,prArr:pr,wdArr:wd,
           orgArr:orgArr, gmbOnlyArr:gmbOnly, gAdArr:gAd, fbArr:fbA, jdArr:jdA, othArr:othA, useRedshiftLeads:useRedshift};
 }
 function allClinicRCA(){
@@ -1278,6 +1279,7 @@ function funnelMasterCard(r){
   const newbk=(r.bkNewArr&&r.bkNewArr[W])||0, repbk=Math.max(0,bk-newbk);
   if(bk<=0) return '';
   const b2d=bk>0?Math.round(done/bk*100):0;
+  const doneNew=(r.bkDoneNewArr&&r.bkDoneNewArr[W])||0, doneRep=(r.bkDoneRepeatArr&&r.bkDoneRepeatArr[W])||0, hasDoneSplit=(r.bkDoneNewArr&&(doneNew||doneRep))>0;
   // lead-age cohort of THIS week's new bookings (same-week / last-week / older). Sum ≈ new bookings.
   const hasCoh=hasLeadAge(r.city,r.clinic);
   const cs=hasCoh?(leadAgeArr(r.city,r.clinic,'same')[W]||0):0, cl=hasCoh?(leadAgeArr(r.city,r.clinic,'last')[W]||0):0, co=hasCoh?(leadAgeArr(r.city,r.clinic,'older')[W]||0):0, ct=cs+cl+co;
@@ -1309,11 +1311,11 @@ function funnelMasterCard(r){
       ${_fConv(sameWeekPct!=null?sameWeekPct+'%':'—','booked same week')}
       ${_fStage('New bookings', newbk, hasCoh?'~'+cs+' fresh · ~'+(cl+co)+' lagged':'first-time', '#4f46e5')}
       ${_fConv(b2d+'%','all booked → done')}
-      ${_fStage('Done', done, 'consultations (all)', '#059669')}
+      ${_fStage('Done', done, hasDoneSplit?doneNew+' new + '+doneRep+' returning':'consultations (all)', '#059669')}
     </div>
-    <div style="font-size:10.5px;color:#475569;background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:7px 11px;margin-top:8px;line-height:1.5;">🔁 <b>+ ${repbk} returning patients</b> re-booked this week (old demand) → total booked <b>${bk}</b>. <span style="color:#94a3b8;">The <b>Done (${done})</b> figure is the total — a new-vs-returning split of completions isn't tracked in the data yet.</span></div>
+    <div style="font-size:10.5px;color:#475569;background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:7px 11px;margin-top:8px;line-height:1.5;">🔁 <b>+ ${repbk} returning patients</b> re-booked this week (old demand) → total booked <b>${bk}</b>.${hasDoneSplit?` Of the <b>${done}</b> completed, <b style="color:#4f46e5">${doneNew} were new patients</b> and <b style="color:#0891b2">${doneRep} returning</b>.`:''}</div>
     ${cohortDetail}
-    ${_fTake(`<b>${ld}</b> new leads → <b>${newbk}</b> first-time bookings${hasCoh?` (~<b>${cs}</b> booked same week ≈ ${sameWeekPct}% of this week's leads; the rest from earlier leads)`:''}. Plus <b>${repbk}</b> returning → <b>${bk}</b> total booked; <b>${done}</b> completed (<b>${b2d}%</b>).`)}
+    ${_fTake(`<b>${ld}</b> new leads → <b>${newbk}</b> first-time bookings${hasCoh?` (~<b>${cs}</b> booked same week ≈ ${sameWeekPct}% of this week's leads; the rest from earlier leads)`:''}. Plus <b>${repbk}</b> returning → <b>${bk}</b> total booked; <b>${done}</b> completed (<b>${b2d}%</b>)${hasDoneSplit?` — <b>${doneNew}</b> new &amp; <b>${doneRep}</b> returning`:''}.`)}
   </div>`;
 }
 
