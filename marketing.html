@@ -65,6 +65,18 @@ function spark(vals,color,hi){ vals=(vals||[]).map(v=>+v||0); if(!vals.length) r
   const d=pts.map((p,i)=>(i?'L':'M')+p[0].toFixed(1)+' '+p[1].toFixed(1)).join(' ');
   const dots=pts.map((p,i)=>`<circle cx="${p[0].toFixed(1)}" cy="${p[1].toFixed(1)}" r="${i===hi?3.5:2}" fill="${i===hi?color:'#fff'}" stroke="${color}" stroke-width="1.5"/>`).join('');
   return `<svg width="100%" viewBox="0 0 ${w} ${h}" style="overflow:visible;"><path d="${d}" fill="none" stroke="${color}" stroke-width="2"/>${dots}</svg>`; }
+// Labeled trend: numeric value above each point + week-ending date on the x-axis. fmt formats the value.
+function lbTrend(vals,labels,color,fmt){ vals=(vals||[]).map(v=>+v||0); if(!vals.length) return '';
+  fmt=fmt||(v=>Math.round(v)+'%');
+  const n=vals.length, w=Math.max(220,n*30), h=72, mx=Math.max(...vals,1), mn=Math.min(...vals,0), rng=(mx-mn)||1;
+  const px=i=>14+i*(w-28)/Math.max(1,n-1), py=v=>h-22-(v-mn)/rng*(h-40);
+  const pts=vals.map((v,i)=>[px(i),py(v)]);
+  const d=pts.map((p,i)=>(i?'L':'M')+p[0].toFixed(1)+' '+p[1].toFixed(1)).join(' ');
+  const step=Math.ceil(n/8);   // thin x-axis labels so they don't overlap
+  const dots=pts.map((p,i)=>`<circle cx="${p[0].toFixed(1)}" cy="${p[1].toFixed(1)}" r="${i===n-1?3.5:2.2}" fill="${i===n-1?color:'#fff'}" stroke="${color}" stroke-width="1.5"/>`).join('');
+  const vlabels=pts.map((p,i)=>`<text x="${p[0].toFixed(1)}" y="${(p[1]-6).toFixed(1)}" font-size="9" font-weight="700" fill="#334155" text-anchor="middle">${fmt(vals[i])}</text>`).join('');
+  const xlabels=(labels||[]).map((l,i)=>(i%step===0||i===n-1)?`<text x="${px(i).toFixed(1)}" y="${h-4}" font-size="8" fill="#94a3b8" text-anchor="middle">${l}</text>`:'').join('');
+  return `<svg width="100%" viewBox="0 0 ${w} ${h}" preserveAspectRatio="xMidYMid meet" style="overflow:visible;max-height:78px"><path d="${d}" fill="none" stroke="${color}" stroke-width="2"/>${dots}${vlabels}${xlabels}</svg>`; }
 function dir(cur,prev,goodUp){ if(cur==null||prev==null) return ''; const dd=cur-prev; if(Math.abs(dd)<0.005) return ' <span style="color:#cbd5e1;font-size:9px;">→</span>';
   const up=dd>0, good=goodUp?up:!up; return ` <span style="color:${good?'#059669':'#dc2626'};font-size:9px;">${up?'▲':'▼'}${Math.abs(Math.round(dd*100))}</span>`; }
 function tile(lab,val,col){ return `<div class="gtile"><div class="gl">${lab}</div><div class="gv" style="color:${col||'#0f172a'}">${val}</div></div>`; }
@@ -171,6 +183,8 @@ function campaignIntel(){
     const stg=(n,l,s,c)=>`<div style="flex:1;text-align:center;min-width:60px;"><div style="font-size:20px;font-weight:800;color:${c};">${n.toLocaleString()}</div><div style="font-size:10px;font-weight:700;color:#475569;">${l}</div><div style="font-size:9px;color:#94a3b8;">${s||''}</div></div>`;
     const ar='<div style="align-self:center;color:#cbd5e1;">→</div>';
     const lbSeries=sl(d.leads).map((v,i)=>{const bk=sl(d.booked)[i]; return v>0?Math.round(bk/v*100):0;});
+    const _M=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const wkEnd=weeks.slice(nW-wn).map(w=>{const dt=new Date(w+'T00:00:00');dt.setDate(dt.getDate()+6);return dt.getDate()+' '+_M[dt.getMonth()];});
     return `<div class="card" style="margin-bottom:0;">
       <div style="font-size:14px;font-weight:800;color:#0f172a;">${k}</div>
       <div style="font-size:10px;color:#94a3b8;margin-bottom:8px;">${wlabel} · spend ₹${Math.round(cost).toLocaleString()}</div>
@@ -183,7 +197,7 @@ function campaignIntel(){
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;">
         ${tile('CPC',cpc?'₹'+Math.round(cpc):'—')}${tile('CPL',cpl?'₹'+Math.round(cpl):'—')}${tile('CPB',cpb?'₹'+Math.round(cpb):'—')}
       </div>
-      <div style="font-size:9px;color:#94a3b8;margin:7px 0 1px;">Lead→Book % · weekly</div>${spark(lbSeries,'#16a34a',lbSeries.length-1)}
+      <div style="font-size:9px;color:#94a3b8;margin:7px 0 1px;">Lead→Book % per week · x-axis = week ending</div>${lbTrend(lbSeries,wkEnd,'#16a34a',v=>v+'%')}
     </div>`; };
   const cards=ciSel.map(card).join('') || `<div style="color:#94a3b8;padding:14px;">Pick at least one ${ciMode} below to compare.</div>`;
   return `<div class="card">
