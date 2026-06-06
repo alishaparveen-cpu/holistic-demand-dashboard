@@ -1817,6 +1817,8 @@ function renderDeepDive(r){
   const wAvg=a=>{ const w=(a||[]).slice(0,winN).filter(x=>x!=null&&!isNaN(x)); return w.length? w.reduce((s,x)=>s+(+x||0),0)/w.length : 0; };   // norm = avg over displayed window
   const wkS=WEEKS.map(w=>w.label.replace(/ \d{4}/,'')).slice(0,WEEKS.length).reverse().slice(-winN);
   const kpi=(l,v,s,c)=>`<div class="kpi"><div class="kpi-l">${l}</div><div class="kpi-v" style="color:${c||'#0f172a'};font-size:26px;">${v}</div><div class="kpi-s">${s}</div></div>`;
+  // inline "Compare vs" selector — same global control as the top of the page, surfaced where the norms are read
+  const cmpMini=`<select onchange="setBase(this.value)" title="Norm window — same as the Compare-vs control at the top" style="font-size:10px;border:1px solid #c7d2fe;border-radius:6px;padding:1px 5px;background:#fff;color:#4338ca;font-weight:700;cursor:pointer;vertical-align:middle;">${BASE_OPTS.map(([v,l])=>`<option value="${v}" ${baseMode===v?'selected':''}>${l}</option>`).join('')}</select>`;
   _zoomCharts={}; _zoomSeq=0;
   const weeksRow=wkS.map((l,i)=>`<span style="${i===hi?'color:#475569;font-weight:700;':''}">${l}</span>`).join('');
   // compact week axis for the vital mini-charts: week-ENDING day (Mon+6), month shown only when it changes
@@ -1910,7 +1912,7 @@ function renderDeepDive(r){
     ${calcStep(`weekday rate = <b>${_avHr.wdRate.toFixed(2)}</b> bookings/${_avHr.U} · weekend rate = <b>${_avHr.weRate.toFixed(2)}</b> bookings/${_avHr.U}<br>weekday ${_avHr.U}: norm <b>${r1(_avHr.normWd)}</b> → this wk <b>${r1(_avHr.wdNow)}</b> = <b>${r1(_avHr.wdShort)}</b> short<br>weekend ${_avHr.U}: norm <b>${r1(_avHr.normWe)}</b> → this wk <b>${r1(_avHr.weNow)}</b> = <b>${r1(_avHr.weShort)}</b> short<br><b>raw loss = ${_avHr.wdRate.toFixed(2)}×${r1(_avHr.wdShort)} + ${_avHr.weRate.toFixed(2)}×${r1(_avHr.weShort)} = ${r1(_avHr.loss)}</b>${_availShown<_avHr.loss-0.05?` → counted as <b>${r1(_availShown)}</b> (gated to the threshold &amp; capped at the week's total shortfall)`:''}`)}
     <p>Weekends carry more weight automatically because their per-hour rate is higher — no arbitrary multiplier. This is the <b>same figure</b> the “Where the lost bookings went” card uses. If this week’s hours met or beat the norm, the loss is <b>0</b>.</p>${calcBasis()}`);
   const ladder = `
-    <div style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:#94a3b8;margin:2px 0 4px;">Normal (${baseLabel()}) → this week ${calcChip('How this availability ladder reads', `<p>Each row compares this week to your clinic’s own <b>${baseLabel()}</b> norm. Green = better, red = worse. The norm window follows the <b>“Compare vs”</b> selector at the top — change it and every row re-computes.</p><p><b>Active doctor-days</b> = distinct doctor×day with a bookable slot. <b>Scheduled hours</b> = the roster plan. <b>Shrinkage</b> = % of scheduled slots the doctor blocked. The last row turns the day shortfall into lost bookings.</p>`)}</div>
+    <div style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:#94a3b8;margin:2px 0 4px;display:flex;align-items:center;gap:6px;flex-wrap:wrap;">Normal → this week · norm: ${cmpMini} ${calcChip('How this availability ladder reads', `<p>Each row compares this week to your clinic’s own <b>${baseLabel()}</b> norm. Green = better, red = worse. The norm window follows the <b>“Compare vs”</b> selector at the top — change it and every row re-computes.</p><p><b>Active doctor-days</b> = distinct doctor×day with a bookable slot. <b>Scheduled hours</b> = the roster plan. <b>Shrinkage</b> = % of scheduled slots the doctor blocked. The last row turns the day shortfall into lost bookings.</p>`)}</div>
     <div style="border:1px solid var(--line);border-radius:10px;padding:3px 12px;background:#fff;margin-bottom:10px;">
       ${_lr('🗓️ Active weekday-days', r.wd_avg, r.wd_w, '', true)}
       ${_lr('🌤️ Active weekend-days', r.we_avg, r.we_w, '', true)}
@@ -2018,9 +2020,41 @@ function renderDeepDive(r){
       In ${wl}: leads ${dimCell(r.leadsBroke,Math.round(r.dLeadPct),'%')} · active-days ${dimCell(r.actBroke,r1(r.dAct))} · weekend ${dimCell(r.weBroke,r1(r.dWe))}.
       Owner: <b>${r.mixWith?CAUSE[r.cause].owner+' + '+CAUSE[r.mixWith].owner:m.owner}</b>.
     </div>`;
-  // ── dedicated Leads card: Total on top, source breakdown below ──
-  const leadsCard = `<div class="card"><div class="sec-h"><span class="sec-num">🔎</span>Leads — Google + GMB</div>
-    <div class="sec-sub"><b>Google + GMB leads</b> — your main owned + paid channel. Practo, organic &amp; others (and the full source split / lead-loss drill) are below. · ${r.useRedshiftLeads?'Redshift':'sheet'} · last ${winN} weeks · highlighted = ${wl}.</div>
+  // ── leads ladder: normal vs this week, by channel (mirrors the availability ladder) ──
+  const _W=wkIdx;
+  const _gmbB=leadArr(r.city,r.clinic,'gmb'), _gadB=leadArr(r.city,r.clinic,'google_ad');
+  const _ggB=_gmbB.map((v,i)=>(v||0)+(_gadB[i]||0));
+  const _prB=practoArr(r.city,r.clinic);
+  const _llr=(label,arr,strong)=>{ const norm=expectedOf(arr,_W), now=arr[_W]||0, d=now-Math.round(norm), flat=Math.abs(now-norm)<0.5;
+    const good=(now-norm)>=0, col=flat?'#64748b':(good?'#059669':'#dc2626');
+    return `<div style="display:flex;align-items:center;gap:8px;padding:7px 2px;border-bottom:1px solid #f1f5f9;font-size:11.5px;">
+      <span style="flex:1;color:#334155;font-weight:${strong?800:600};">${label}</span>
+      <span style="color:#94a3b8;white-space:nowrap;">norm <b style="color:#475569;">${r1(norm)}</b> → this wk <b style="color:${col};">${now}</b></span>
+      <span style="width:54px;text-align:right;font-weight:800;color:${col};">${flat?'—':(d>0?'+':'')+d}</span></div>`; };
+  const _prDoc=(()=>{ const bd=practoByDoctor(r.city,r.clinic); if(!bd) return '';
+    const docs=Object.keys(bd).map(d=>({d,w:bd[d].leads[_W]||0,n:expectedOf(bd[d].leads,_W)})).filter(x=>x.w>0||x.n>=0.5).sort((a,b)=>b.w-a.w);
+    if(!docs.length) return '';
+    return `<details style="margin:2px 0 2px 12px;"><summary style="cursor:pointer;font-size:10px;font-weight:700;color:#b45309;padding:3px 0;">↳ Practo leads by doctor — ${WEEKS[_W].label} (click)</summary>
+      <div style="padding:4px 0 2px;">${docs.map(x=>{const dd=x.w-Math.round(x.n),fl=Math.abs(x.w-x.n)<0.5,c=fl?'#64748b':(x.w>=x.n?'#059669':'#dc2626');
+        return `<div style="display:flex;gap:6px;font-size:10px;padding:2px 0;border-bottom:1px solid #f8fafc;"><span style="flex:1;color:#475569;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${x.d}">${x.d.replace(/^Dr\.?\s*/,'')}</span><span style="color:#94a3b8;white-space:nowrap;">norm <b style="color:#475569;">${r1(x.n)}</b> → <b style="color:${c};">${x.w}</b> <b style="color:${c};">${fl?'—':(dd>0?'+':'')+dd}</b></span></div>`;}).join('')}</div></details>`; })();
+  const _leadLoss=(r.leadsLoss_gmb||0)+(r.leadsLoss_pr||0);
+  const _leadLossChip=calcChip('Bookings lost to leads', `<p>The <b>lead shortfall</b> vs your ${baseLabel()} norm, converted to bookings at this clinic's lead→booking rate — the same figure the "Where the lost bookings went" card attributes to leads. Split: ~${r1(r.leadsLoss_gmb||0)} from GMB+Google, ~${r1(r.leadsLoss_pr||0)} from Practo. <b>0</b> if leads met or beat the norm.</p>${calcBasis()}`);
+  const leadsLadder=`
+    <div style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:#94a3b8;margin:2px 0 4px;display:flex;align-items:center;gap:6px;flex-wrap:wrap;">Normal → this week · norm: ${cmpMini} ${calcChip('How this leads ladder reads', `<p>Each row compares this week's leads to your clinic's own <b>${baseLabel()}</b> norm. Green = more leads than usual, red = fewer. The norm window follows the <b>"Compare vs"</b> selector at the top.</p><p><b>Google + GMB</b> = GMB profile leads + Google Ads leads (your main owned + paid channel). <b>Practo</b> can be opened by doctor. The last row turns the lead shortfall into lost bookings.</p>`)}</div>
+    <div style="border:1px solid var(--line);border-radius:10px;padding:3px 12px;background:#fff;margin-bottom:10px;">
+      ${_llr('🔎 Google + GMB leads',_ggB,true)}
+      ${_llr('🔍 Google Ads leads',_gadB,false)}
+      ${_llr('📍 GMB leads',_gmbB,false)}
+      ${_llr('⭐ Practo leads',_prB,false)}
+      ${_prDoc}
+      <div style="display:flex;align-items:center;gap:8px;padding:9px 2px;font-size:12px;">
+        <span style="flex:1;color:#0ea5e9;font-weight:800;">↳ Bookings lost to leads ${_leadLossChip}</span>
+        <span style="font-size:19px;font-weight:800;color:${_leadLoss>=0.5?'#0ea5e9':'#94a3b8'};">${_leadLoss>=0.5?'~'+r1(_leadLoss):'~0'}</span></div>
+    </div>`;
+  // ── dedicated Leads card: ladder on top, then trend charts ──
+  const leadsCard = `<div class="card"><div class="sec-h"><span class="sec-num">🔎</span>Leads — normal vs this week</div>
+    <div class="sec-sub">Your usual leads by channel vs <b>${baseLabel()}</b>, and how many bookings the gap cost. Source split / lead-loss drill is below. · ${r.useRedshiftLeads?'Redshift':'sheet'} · ${wl}.</div>
+    ${leadsLadder}
     ${winBar}
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:14px;">${leadsTotalTrend}${gAdLeadsTrend}</div>
   </div>`;
