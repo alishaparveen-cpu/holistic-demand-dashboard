@@ -165,8 +165,27 @@ def build_callback():
     tn=sum(v["noshows"][0] for v in D.values()); tc=sum(v["called_back"][0] for v in D.values())
     print(f"data_callback.json · {len(D)} clinics · wk0 network called-back {tc}/{tn} = {round(tc/tn*100) if tn else 0}%")
 
+def build_leadage_channel():
+    # data_leadage_channel.json: { "City|Clinic": { channel: { bucket: [12] } } } + 'all' channel
+    AGES=["b0_same","b1_lastwk","b2_2to4wk","b3_1to3mo","b4_3moplus"]
+    D={}
+    for c in q("fetch_leadage_channel.sql"):
+        if len(c) < 6: continue
+        city,clinic,wk,ch,bk,n = c[0],c[1],c[2],c[3],c[4],num(c[5])
+        if wk not in WI or bk not in AGES: continue
+        key=f"{city}|{clinic}"
+        o=D.setdefault(key,{})
+        for cc in (ch,'all'):
+            seg=o.setdefault(cc,{a:[0]*12 for a in AGES})
+            seg[bk][WI[wk]]+=n
+    out={"_meta":{"weeks":WEEKS,"source":"main_source_wise_leads — lead-age buckets split by channel","note":"Practo excluded (external feed). 'all' = sum of channels."}}
+    out.update(D)
+    json.dump(out, open(os.path.join(ROOT,"data_leadage_channel.json"),"w"), separators=(",",":"))
+    b=D.get("Bangalore|Bellandur",{})
+    print(f"data_leadage_channel.json · {len(D)} clinics · Bellandur channels: {list(b.keys())}")
+
 if __name__ == "__main__":
-    for fn in (build_reminders, build_sarvam, build_conversion, build_doctor, build_status_who, build_retention, build_callback):
+    for fn in (build_reminders, build_sarvam, build_conversion, build_doctor, build_status_who, build_retention, build_callback, build_leadage_channel):
         try: fn()
         except SystemExit as e: print(f"  [skip] {fn.__name__}: {e}")
         except Exception as e: print(f"  [skip] {fn.__name__}: {type(e).__name__}: {e}")
