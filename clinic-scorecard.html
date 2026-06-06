@@ -456,7 +456,7 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--navy);font-
 
 <script>
 /* ── DATA ── */
-let WEEKS=[], WEEK_LABELS=[], currentWeek=7;
+let WEEKS=[], WEEK_LABELS=[], WEEK_MON=[], currentWeek=7;
 let SC=null, LEADS=null, ROSTER=null, REM={}, SARVAM=null, CONV={}, DOCTOR={}, MKT=null, SWHO={}, RETEN={}, CALLBACK={}, PRACTO={}, LAGE={}, L2C=null, DAILY={}, LEADCONV=null, CONTACTMODE=null, BHOD=null, D=null;
 let ageChannel='all';
 const RET_MATURE_IDX=9;   // newest-first 12-week idx whose 60-day retention window has fully elapsed
@@ -469,6 +469,7 @@ function pctSer(num,den){ return num.map((n,i)=>{ const d=den[i]||0; return d>0?
 function buildWeeks(){
   const W12=(SC._meta&&SC._meta.weeks)||["2026-05-25","2026-05-18","2026-05-11","2026-05-04","2026-04-27","2026-04-20","2026-04-13","2026-04-06","2026-03-30","2026-03-23","2026-03-16","2026-03-09"];
   const last=W12.slice(0,NW).reverse();
+  WEEK_MON=last;   // Monday (week-start) date strings, oldest→newest, aligned to currentWeek index
   WEEKS=last.map(w=>{const d=new Date(w+'T00:00:00');d.setDate(d.getDate()+6);return d.getDate()+' '+_M[d.getMonth()];});
   WEEK_LABELS=last.map(w=>{const d=new Date(w+'T00:00:00');d.setDate(d.getDate()+6);return 'Week ending '+d.getDate()+' '+_M[d.getMonth()];});
   currentWeek=NW-1;
@@ -1475,19 +1476,23 @@ function renderLeadConv(){
   const called=rows.filter(r=>/call/i.test(r.m)).reduce((a,r)=>({l:a.l+r.leads,b:a.b+r.booked}),{l:0,b:0});
   const unc=rows.filter(r=>!/call/i.test(r.m)).reduce((a,r)=>({l:a.l+r.leads,b:a.b+r.booked}),{l:0,b:0});
   const cP=called.l?Math.round(called.b/called.l*100):0, uP=unc.l?Math.round(unc.b/unc.l*100):0;
-  // CLINIC-ACCURATE: of patients who booked at the SELECTED clinic(s), how did they originally reach us?
+  // CLINIC-ACCURATE: of patients who booked at the SELECTED clinic(s) THIS WEEK, how did they originally reach us?
   let cmBlock='';
   if(CONTACTMODE&&CONTACTMODE.by_clinic){
-    const agg={}; SEL.forEach(k=>{ const m=CONTACTMODE.by_clinic[k]; if(m) Object.entries(m).forEach(([mode,n])=>{agg[mode]=(agg[mode]||0)+n;}); });
-    const ord=['Call','Website','WhatsApp','Practo','Other','Unknown'];
+    const monSel=WEEK_MON[currentWeek];               // selected week's Monday key
+    const sumWk=mon=>{ const agg={}; SEL.forEach(k=>{ const wk=(CONTACTMODE.by_clinic[k]||{})[mon]; if(wk) Object.entries(wk).forEach(([mode,n])=>{agg[mode]=(agg[mode]||0)+n;}); }); return agg; };
+    const agg=sumWk(monSel);
+    const ord=['Call','Website','WhatsApp','Practo','Walk-in/Ops','Other','Unknown'];
     const entries=ord.filter(m=>agg[m]).map(m=>[m,agg[m]]);
     const tot=entries.reduce((a,[,n])=>a+n,0);
-    if(tot>0){ const cic={Call:'📞',Website:'🌐',WhatsApp:'💬',Practo:'⭐',Other:'•',Unknown:'?'};
-      const bars=entries.map(([m,n])=>{const p=Math.round(n/tot*100);
-        return `<div style="display:flex;align-items:center;gap:8px;font-size:11.5px;padding:3px 0"><span style="flex:0 0 120px;color:#334155">${cic[m]||''} ${m}</span><span style="flex:1;height:14px;background:#f1f5f9;border-radius:4px;overflow:hidden"><span style="display:block;height:100%;width:${p}%;background:#6366f1"></span></span><span style="flex:0 0 70px;text-align:right;font-weight:700">${n.toLocaleString()} · ${p}%</span></div>`;}).join('');
+    if(tot>0){ const cic={Call:'📞',Website:'🌐',WhatsApp:'💬',Practo:'⭐','Walk-in/Ops':'🏥',Other:'•',Unknown:'?'};
+      // weekly trend per mode over the displayed weeks (for the mini sparkline)
+      const modeSeries=m=>WEEK_MON.map(mon=>{const a=sumWk(mon); return a[m]||0;});
+      const bars=entries.map(([m,n])=>{const p=Math.round(n/tot*100); const ser=modeSeries(m);
+        return `<div style="display:flex;align-items:center;gap:8px;font-size:11.5px;padding:3px 0"><span style="flex:0 0 110px;color:#334155">${cic[m]||''} ${m}</span><span style="flex:1;height:14px;background:#f1f5f9;border-radius:4px;overflow:hidden"><span style="display:block;height:100%;width:${p}%;background:#6366f1"></span></span><span style="flex:0 0 64px;text-align:right;font-weight:700">${n.toLocaleString()} · ${p}%</span><span style="flex:0 0 64px">${sparkSVG(ser,'#6366f1',false)}</span></div>`;}).join('');
       cmBlock=`<div style="margin-top:14px;border-top:1px dashed var(--bdr);padding-top:10px">
         <div style="font-size:12px;font-weight:600;color:var(--navy)">📍 How patients who booked here originally reached us <span style="color:#16a34a;font-weight:700">● CLINIC-LEVEL</span></div>
-        <div style="font-size:11px;color:var(--gray);margin:2px 0 8px">For the selected clinic(s), the original contact mode of the ${tot.toLocaleString()} patients who booked (last 4 weeks). Clinic-accurate — the booking carries the clinic. (Note: callers convert far better, so they're over-represented here vs the all-leads mix.)</div>
+        <div style="font-size:11px;color:var(--gray);margin:2px 0 8px">For the selected clinic(s), the original contact mode (from <code>lead.origin</code> at creation) of the <b>${tot.toLocaleString()}</b> patients who booked in <b>${WEEK_LABELS[currentWeek]||'this week'}</b>. Use the week selector at the top to change the week; sparkline = weekly trend. Walk-in/Ops = staff-created (retool).</div>
         ${bars}</div>`;
     }
   }
