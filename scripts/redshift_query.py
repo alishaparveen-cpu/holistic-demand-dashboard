@@ -5,8 +5,13 @@ Usage:  python3 scripts/redshift_query.py < query.sql"""
 import boto3, os, time, sys
 
 def run(sql):
-    cli = boto3.Session(profile_name=os.environ.get("AWS_PROFILE", "redshift-data")) \
-              .client("redshift-data", region_name="ap-south-1")
+    region = os.environ.get("AWS_REGION", "ap-south-1")
+    prof = os.environ.get("AWS_PROFILE")
+    # Use the named SSO profile locally; fall back to default/env credentials (e.g. CI IAM keys).
+    if prof:
+        cli = boto3.Session(profile_name=prof).client("redshift-data", region_name=region)
+    else:
+        cli = boto3.client("redshift-data", region_name=region)
     qid = cli.execute_statement(ClusterIdentifier="warehouse", Database="allo_prod",
                                 DbUser="redshift_admin", Sql=sql)["Id"]
     while True:
