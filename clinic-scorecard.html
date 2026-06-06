@@ -337,6 +337,9 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--navy);font-
   </div>
 </div>
 
+<!-- PEAK BOOKING SLOTS (hour × day heatmap) -->
+<div id="bhodPanel" style="margin-bottom:16px"></div>
+
 <!-- LEAD → CONVERSION (network) -->
 <div id="leadConvPanel" style="margin-bottom:16px"></div>
 
@@ -454,7 +457,7 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--navy);font-
 <script>
 /* ── DATA ── */
 let WEEKS=[], WEEK_LABELS=[], currentWeek=7;
-let SC=null, LEADS=null, ROSTER=null, REM={}, SARVAM=null, CONV={}, DOCTOR={}, MKT=null, SWHO={}, RETEN={}, CALLBACK={}, PRACTO={}, LAGE={}, L2C=null, DAILY={}, LEADCONV=null, CONTACTMODE=null, D=null;
+let SC=null, LEADS=null, ROSTER=null, REM={}, SARVAM=null, CONV={}, DOCTOR={}, MKT=null, SWHO={}, RETEN={}, CALLBACK={}, PRACTO={}, LAGE={}, L2C=null, DAILY={}, LEADCONV=null, CONTACTMODE=null, BHOD=null, D=null;
 let ageChannel='all';
 const RET_MATURE_IDX=9;   // newest-first 12-week idx whose 60-day retention window has fully elapsed
 let SEL=[];                                   // selected clinic keys (City|Clinic) — aggregated/summed
@@ -1422,8 +1425,33 @@ function renderAll() {
   renderH();
   renderG();
   renderLeadConv();
+  renderBHOD();
   renderPills();
   document.getElementById('weekLabel').textContent=WEEK_LABELS[currentWeek];
+}
+/* ── Peak booking slots: hour × day heatmap (for roster planning) ── */
+function renderBHOD(){
+  const el=document.getElementById('bhodPanel'); if(!el) return;
+  if(!BHOD||!BHOD.by_clinic){ el.innerHTML=''; return; }
+  const grid={}; let maxC=0,total=0; const hours=new Set();
+  SEL.forEach(k=>{ const c=BHOD.by_clinic[k]; if(!c) return;
+    Object.entries(c).forEach(([dw,hrs])=>Object.entries(hrs).forEach(([h,v])=>{
+      const key=dw+'_'+h; grid[key]=(grid[key]||0)+v[0]; hours.add(+h); total+=v[0]; if(grid[key]>maxC)maxC=grid[key]; })); });
+  if(total===0){ el.innerHTML=''; return; }
+  const hrs=[...hours].sort((a,b)=>a-b);
+  const days=[['1','Mon'],['2','Tue'],['3','Wed'],['4','Thu'],['5','Fri'],['6','Sat'],['0','Sun']];
+  const dn={'0':'Sun','1':'Mon','2':'Tue','3':'Wed','4':'Thu','5':'Fri','6':'Sat'};
+  const hl=h=>{const x=+h;return (x%12||12)+(x<12?'a':'p');};
+  let peak={c:0}; Object.entries(grid).forEach(([key,c])=>{ if(c>peak.c){const a=key.split('_');peak={c,dw:a[0],h:a[1]};} });
+  const cell=(dw,h)=>{ const c=grid[dw+'_'+h]||0,a=maxC>0?c/maxC:0;
+    return `<td title="${dn[dw]} ${hl(h)} · ${c} bookings" style="width:26px;height:22px;text-align:center;font-size:9px;background:${c===0?'#f8fafc':'rgba(79,70,229,'+(0.12+a*0.85)+')'};color:${a>0.5?'#fff':'#475569'};border-radius:3px">${c||''}</td>`; };
+  const head=`<tr><td></td>${hrs.map(h=>`<td style="font-size:8.5px;color:#94a3b8;text-align:center">${hl(h)}</td>`).join('')}</tr>`;
+  const rows=days.map(([dw,lbl])=>`<tr><td style="font-size:10px;color:#64748b;font-weight:600;padding-right:6px;text-align:right">${lbl}</td>${hrs.map(h=>cell(dw,h)).join('')}</tr>`).join('');
+  el.innerHTML=`<div class="sec" style="padding:16px 18px">
+    <div style="font-size:13px;font-weight:600;color:var(--navy)">🕐 Peak booking slots — hour × day</div>
+    <div style="font-size:11px;color:var(--gray);margin:2px 0 10px">When the selected clinic(s)' bookings actually land, by weekday × hour (IST · last 8 weeks). <b>For roster planning</b> — keep dark cells covered, avoid blocking peak hours. ${peak.c?`Busiest slot: <b>${dn[peak.dw]} ${hl(peak.h)}</b> (${peak.c} bookings).`:''}</div>
+    <div style="overflow-x:auto"><table style="border-spacing:2px;border-collapse:separate"><tbody>${head}${rows}</tbody></table></div>
+  </div>`;
 }
 /* ── Lead → conversion by contact mode + source (network) ── */
 function renderLeadConv(){
@@ -1573,7 +1601,7 @@ function applySelection(){
 (async function(){
   try{
     const _cb='?t='+Date.now();   // cache-bust so data rebuilds always show fresh
-    const [sc,lj,ros,rem,sar,cnv,doc,mkt,swho,ret,cbk,prc,lage,l2c,daily,lcv,cmd]=await Promise.all([
+    const [sc,lj,ros,rem,sar,cnv,doc,mkt,swho,ret,cbk,prc,lage,l2c,daily,lcv,cmd,bhod]=await Promise.all([
       fetch('data_scorecard.json'+_cb).then(r=>r.json()),
       fetch('data_leads.json'+_cb).then(r=>r.json()),
       fetch('data_roster.json'+_cb).then(r=>r.json()),
@@ -1591,8 +1619,9 @@ function applySelection(){
       fetch('data_daily.json'+_cb).then(r=>r.ok?r.json():{}).catch(()=>({})),
       fetch('data_lead_conv.json'+_cb).then(r=>r.ok?r.json():null).catch(()=>null),
       fetch('data_contact_mode.json'+_cb).then(r=>r.ok?r.json():null).catch(()=>null),
+      fetch('data_booking_hod.json'+_cb).then(r=>r.ok?r.json():null).catch(()=>null),
     ]);
-    SC=sc; LEADS=lj; ROSTER=ros; REM=rem||{}; SARVAM=sar; CONV=cnv||{}; DOCTOR=doc||{}; MKT=mkt; SWHO=swho||{}; RETEN=ret||{}; CALLBACK=cbk||{}; PRACTO=prc||{}; LAGE=lage||{}; L2C=l2c; DAILY=daily||{}; LEADCONV=lcv; CONTACTMODE=cmd;
+    SC=sc; LEADS=lj; ROSTER=ros; REM=rem||{}; SARVAM=sar; CONV=cnv||{}; DOCTOR=doc||{}; MKT=mkt; SWHO=swho||{}; RETEN=ret||{}; CALLBACK=cbk||{}; PRACTO=prc||{}; LAGE=lage||{}; L2C=l2c; DAILY=daily||{}; LEADCONV=lcv; CONTACTMODE=cmd; BHOD=bhod;
     buildWeeks();
     CLINICS=Object.keys(SC).filter(k=>k!=='_meta').sort();
     CITIES={}; CLINICS.forEach(k=>{const c=k.split('|')[0]; (CITIES[c]=CITIES[c]||[]).push(k);});

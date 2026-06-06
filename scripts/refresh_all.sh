@@ -41,6 +41,7 @@ step "Phase-2 metrics (build_phase2)"     python3 scripts/build_phase2.py
 step "Diagnostic RCA (build_diagnostic)"  python3 scripts/build_diagnostic.py
 step "Lead→conversion (build_lead_conv)"  python3 scripts/build_lead_conv.py
 step "Contact mode (build_contact_mode)"  python3 scripts/build_contact_mode.py
+step "Booking hour×day (build_booking_hod)" python3 scripts/build_booking_hod.py
 
 echo "── Optional / API ──"
 step "GMB insights (pull_gmb_insights)"   python3 scripts/pull_gmb_insights.py
