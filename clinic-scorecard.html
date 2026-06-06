@@ -185,14 +185,6 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--navy);font-
   </div>
 </div>
 
-<!-- ACTIONS -->
-<div class="actions" id="actionsBar">
-  <div class="act-title"><i class="ti ti-urgent" style="font-size:12px;margin-right:3px"></i>Top actions this week</div>
-  <div class="act-item"><div class="act-n">1</div><span id="act1"></span></div>
-  <div class="act-item"><div class="act-n">2</div><span id="act2"></span></div>
-  <div class="act-item"><div class="act-n">3</div><span id="act3"></span></div>
-</div>
-
 <!-- KPI CARDS -->
 <div class="kpi-grid" id="kpiGrid"></div>
 <!-- KPI expanded chart panel -->
@@ -431,6 +423,7 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--navy);font-
     <div class="sec-right"><span class="pill p-a" id="secH-flag"></span><i class="ti ti-chevron-down chevron open" id="secH-chev"></i></div>
   </div>
   <div class="sec-body" id="secH-body">
+    <div style="font-size:10px;color:var(--a);font-weight:600;margin-bottom:6px;text-transform:uppercase;letter-spacing:.3px"><i class="ti ti-clock-pause" style="font-size:11px"></i> Shows the latest <span id="cvMatWk">mature</span> week (not the current week) — its full 30-day conversion window has elapsed</div>
     <div class="funnel">
       <div class="f-s"><div class="f-n" id="cvSc">—</div><div class="f-l">Completed SCs</div></div>
       <div class="f-a"><i class="ti ti-arrow-right"></i></div>
@@ -468,6 +461,14 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--navy);font-
     </div>
   </div>
   <div class="sec-body" id="secG-body"></div>
+</div>
+
+<!-- ACTIONS (at the end, under Fixes) -->
+<div class="actions" id="actionsBar" style="margin-top:16px">
+  <div class="act-title"><i class="ti ti-urgent" style="font-size:12px;margin-right:3px"></i>Top actions this week</div>
+  <div class="act-item"><div class="act-n">1</div><span id="act1"></span></div>
+  <div class="act-item"><div class="act-n">2</div><span id="act2"></span></div>
+  <div class="act-item"><div class="act-n">3</div><span id="act3"></span></div>
 </div>
 
 </div>
@@ -770,8 +771,8 @@ function renderA() {
   tbody.innerHTML='';
   let idx=0;
   const groupHdr=(txt,sub)=>{ const tr=document.createElement('tr'); tr.innerHTML=`<td colspan="7" style="padding:9px 12px 4px;background:#f8fafc;border-bottom:1px solid var(--bdr)"><span style="font-size:10px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;color:var(--navy)">${txt}</span> <span style="font-size:10px;color:var(--gray)">${sub}</span></td>`; tbody.appendChild(tr); };
-  // status breakdown (exhaustive, sums to the segment total) for new / fu / total — with % trend per status
-  const segHTML=(seg)=>{
+  // status breakdown (exhaustive, sums to the segment total) for new / fu / total — with clickable % trend per status
+  const segHTML=(seg,panelId)=>{
     let series, baseSer, lbl;
     if(seg==='total'){ series={done:D.done,missed:D.noshows,rp:D.resched_patient,rn:D.resched_noshow,can:D.cancelled,sch:D.scheduled}; baseSer=D.bookings.total; lbl='all'; }
     else { const s=(D.statusWho||{})[seg]||{}; const g=f=>s[f]||Array(NW).fill(0); series={done:g('done'),missed:g('missed'),rp:g('resched_patient'),rn:g('resched_noshow'),can:g('cancelled'),sch:g('scheduled')}; baseSer=g('total'); lbl=(seg==='new'?'new':'follow-up'); }
@@ -783,10 +784,12 @@ function renderA() {
       ['Rescheduled — by patient',series.rp,COLORS.a],['Rescheduled — after no-show',series.rn,COLORS.gr],
       ['Cancelled',series.can,COLORS.b],['Still scheduled / in-progress',series.sch,COLORS.n],
     ];
-    return `<div style="font-size:11px;font-weight:600;color:var(--navy);margin-bottom:6px">What happened to these ${base} ${lbl} bookings — status &amp; 8-week % trend (sums to ${base})</div>
+    SEGREG[panelId]=rs.map(([l,ser_,c])=>({label:l, ps:pctSeries(ser_), color:c}));
+    return `<div style="font-size:11px;font-weight:600;color:var(--navy);margin-bottom:6px">What happened to these ${base} ${lbl} bookings — status &amp; 8-week % trend (sums to ${base}) · <span style="color:var(--p)">click a trend to expand</span></div>
       <table class="tbl" style="margin:0;background:#fff;border-radius:8px"><thead><tr><th>Status</th><th class="num">Count</th><th class="num">% of ${lbl}</th><th style="width:90px">% trend (8w)</th></tr></thead><tbody>`
-      + rs.map(([l,ser_,c])=>{const ps=pctSeries(ser_); return `<tr><td>${l}</td><td class="num"><strong>${ser_[w]||0}</strong></td><td class="num" style="color:${c};font-weight:600">${pc(ser_[w]||0)}</td><td>${sparkSVG(ps,c,false)}</td></tr>`;}).join('')
-      + `<tr style="border-top:2px solid var(--bdr)"><td style="color:var(--gray)">Total</td><td class="num"><strong>${base}</strong></td><td class="num">100%</td><td></td></tr></tbody></table>`;
+      + rs.map(([l,ser_,c],si)=>{const ps=pctSeries(ser_); return `<tr><td>${l}</td><td class="num"><strong>${ser_[w]||0}</strong></td><td class="num" style="color:${c};font-weight:600">${pc(ser_[w]||0)}</td><td style="cursor:pointer" title="Click to expand % trend" onclick="event.stopPropagation();segTrend('${panelId}',${si})">${sparkSVG(ps,c,false)}</td></tr>`;}).join('')
+      + `<tr style="border-top:2px solid var(--bdr)"><td style="color:var(--gray)">Total</td><td class="num"><strong>${base}</strong></td><td class="num">100%</td><td></td></tr></tbody></table>`
+      + `<div class="row-chart-wrap" id="${panelId}-sc" style="background:#fff;margin-top:6px;border-radius:8px"><div class="chart-box-lbl" id="${panelId}-sc-lbl" style="padding:6px 0">% trend</div><div class="row-chart-inner"><canvas id="${panelId}-sc-canvas" role="img">status % trend</canvas></div></div>`;
   };
   const dataRow=(r)=>{
     const i=idx++; const val=r.series[w], prev=(w>0?r.series[w-1]:val), a=avg4(r.series,w), w2=wow(r.series,w);
@@ -805,7 +808,7 @@ function renderA() {
     tbody.appendChild(tr);
     tr.querySelector('.aSpark').addEventListener('click',e=>{ e.stopPropagation(); toggleRowChart(rowId,chId,canId,[{label:r.label,data:r.series,color:r.color}],{},null); });
     const pr=document.createElement('tr');
-    pr.innerHTML=`<td colspan="7" style="padding:0"><div class="row-chart-wrap" id="${panelId}">${segHTML(r.seg)}</div></td>`;
+    pr.innerHTML=`<td colspan="7" style="padding:0"><div class="row-chart-wrap" id="${panelId}">${segHTML(r.seg,panelId)}</div></td>`;
     tbody.appendChild(pr);
     const cpr=document.createElement('tr');
     cpr.innerHTML=`<td colspan="7" style="padding:0"><div class="row-chart-wrap" id="${chId}"><div class="chart-box-lbl" style="padding:0 0 6px">${r.label} — 8-week trend</div><div class="row-chart-inner"><canvas id="${canId}" role="img" aria-label="${r.label} trend">${r.label} trend.</canvas></div></div></td>`;
@@ -863,6 +866,7 @@ function renderH() {
   const w=currentWeek, mi=lastMatureIdx();
   renderRetention();
   const cv=D.conv||{}, comp=cv.completed||[], conv=cv.converted||[], rate=cv.rate||[];
+  { const e=document.getElementById('cvMatWk'); if(e) e.textContent=WEEK_LABELS[Math.min(NW-1,mi)]||'mature'; }
   document.getElementById('cvSc').textContent=comp[mi]||0;
   document.getElementById('cvConv').textContent=conv[mi]||0;
   document.getElementById('cvRate').textContent=(rate[mi]||0)+'%';
@@ -1300,6 +1304,23 @@ function renderAllCharts() {
 }
 
 /* ── SECTION TOGGLE ── */
+const SEGREG={};   // panelId -> [{label, ps(%series), color}] for the status breakdown trends
+function segTrend(panelId, idx){
+  const reg=SEGREG[panelId]; if(!reg||!reg[idx]) return;
+  const r=reg[idx], wrap=document.getElementById(panelId+'-sc'), lbl=document.getElementById(panelId+'-sc-lbl'), canId=panelId+'-sc-canvas';
+  if(wrap.classList.contains('open') && wrap.dataset.idx===String(idx)){ wrap.classList.remove('open'); destroyChart(canId); return; }
+  wrap.classList.add('open'); wrap.dataset.idx=String(idx);
+  lbl.textContent=r.label+' — % of segment, 8-week trend';
+  setTimeout(()=>makeChart(canId,[{label:r.label+' %',data:r.ps,color:r.color,fill:true}],{min:0}),50);
+}
+function collapseAllSections(){
+  document.querySelectorAll('.sec-body').forEach(b=>b.classList.add('closed'));
+  document.querySelectorAll('.sec .chevron').forEach(c=>c.classList.remove('open'));
+}
+function expandAllSections(){
+  document.querySelectorAll('.sec-body').forEach(b=>b.classList.remove('closed'));
+  document.querySelectorAll('.sec .chevron').forEach(c=>c.classList.add('open'));
+}
 function toggleSec(id) {
   const body=document.getElementById(id+'-body');
   const chev=document.getElementById(id+'-chev');
@@ -1431,6 +1452,7 @@ function applySelection(){
     SEL=[CLINICS.includes('Bangalore|Bellandur')?'Bangalore|Bellandur':CLINICS[0]];
     PEND=new Set(SEL);
     applySelection();
+    collapseAllSections();   // start collapsed — expand on demand
   }catch(e){
     document.body.insertAdjacentHTML('afterbegin','<div style="background:#fef2f2;color:#991b1b;padding:12px;font:13px Inter">Failed to load data: '+e.message+'</div>');
     console.error(e);
