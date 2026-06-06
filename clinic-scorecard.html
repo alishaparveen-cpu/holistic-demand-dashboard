@@ -248,6 +248,14 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--navy);font-
       <thead><tr><th>Booking type</th><th class="num">This week</th><th class="num">Last week</th><th class="num">4-wk avg</th><th class="num">WoW Δ</th><th style="width:100px">Trend (8w)</th><th>Note</th></tr></thead>
       <tbody id="tblA-body"></tbody>
     </table>
+    <div style="margin-top:16px">
+      <div style="font-size:11px;font-weight:500;color:var(--gray);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">Status rate within New vs Follow-up <span style="font-weight:400;text-transform:none">— count and % of each segment, this week</span></div>
+      <table class="tbl" id="tblAW">
+        <thead><tr><th>Status</th><th class="num">New (n)</th><th class="num">New %</th><th class="num">Follow-up (n)</th><th class="num">Follow-up %</th><th class="num">Total (n)</th><th class="num">Total %</th></tr></thead>
+        <tbody id="tblAW-body"></tbody>
+      </table>
+      <div class="ins ins-b" id="awInsight" style="margin-top:10px;margin-bottom:0"><i class="ti ti-bulb"></i><span></span></div>
+    </div>
   </div>
 </div>
 
@@ -476,7 +484,7 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--navy);font-
 <script>
 /* ── DATA ── */
 let WEEKS=[], WEEK_LABELS=[], currentWeek=7;
-let SC=null, LEADS=null, ROSTER=null, REM={}, SARVAM=null, CONV={}, DOCTOR={}, MKT=null, D=null;
+let SC=null, LEADS=null, ROSTER=null, REM={}, SARVAM=null, CONV={}, DOCTOR={}, MKT=null, SWHO={}, D=null;
 let SEL=[];                                   // selected clinic keys (City|Clinic) — aggregated/summed
 let CLINICS=[], CITIES={};                    // all keys; city -> [keys]
 const NW=8;                                   // weeks shown (last 8 of the 12 pulled)
@@ -543,6 +551,9 @@ function buildD(){
     resched_patient:rPat, resched_noshow:rNo, recovered:rec,
     leadage,
     conv:{ completed:cA('completed_sc'), converted:cA('converted'), rate:pctSer(cA('converted'),cA('completed_sc')) },
+    statusWho: (()=>{ const SUB=['total','done','missed','resched_patient','resched_noshow'];
+      const seg=s=>{ const o={}; SUB.forEach(f=>o[f]=sumS(k=>(((SWHO[k]||{})[s]||{})[f]))); return o; };
+      return { new:seg('new'), fu:seg('fu') }; })(),
     dow: (()=>{ const DD=['Mon','Tue','Wed','Thu','Fri','Sat','Sun']; const o={}; DD.forEach(d=>o[d]={booked:0,done:0,missed:0});
       SEL.forEach(k=>{ const dw=(SC[k]||{}).dow||{}; DD.forEach(d=>{ if(dw[d]){o[d].booked+=dw[d].booked||0;o[d].done+=dw[d].done||0;o[d].missed+=dw[d].missed||0;} }); }); return o; })(),
   };
@@ -784,6 +795,46 @@ function renderA() {
   else read=`Follow-ups moved more than new bookings — this is a retention/continuation shift, not new demand.`;
   if(wrap) wrap.className='ins '+(tb.pct<0?'ins-r':tb.pct>0?'ins-b':'ins-n');
   document.getElementById('insA1').innerHTML=`<strong>Total bookings ${tb.str} WoW (${D.bookings.total[w-1]} → ${D.bookings.total[w]}).</strong> New first-time ${newWord}, follow-ups ${fuWord}. ${read} Click any row for its 8-week trend.`;
+  renderAW();
+}
+
+/* ── RENDER Status × New/Follow-up crosstab ── */
+function renderAW(){
+  const tb=document.getElementById('tblAW-body'); if(!tb) return;
+  const w=currentWeek, sw=D.statusWho; if(!sw||!sw.new){ tb.innerHTML=''; return; }
+  const nN=sw.new.total[w]||0, nF=sw.fu.total[w]||0, nT=nN+nF;
+  const segVal=(seg,f)=>seg[f][w]||0;
+  // cancelled/scheduled remainder per segment
+  const other=seg=>Math.max(0, segVal(seg,'total')-segVal(seg,'done')-segVal(seg,'missed')-segVal(seg,'resched_patient')-segVal(seg,'resched_noshow'));
+  const statuses=[
+    {label:'Completed', f:'done', col:COLORS.g},
+    {label:'No-show (missed)', f:'missed', col:COLORS.r},
+    {label:'Rescheduled — by patient', f:'resched_patient', col:COLORS.a},
+    {label:'Rescheduled — after no-show', f:'resched_noshow', col:COLORS.gr},
+    {label:'Cancelled / still scheduled', f:'__other', col:COLORS.n},
+  ];
+  const get=(seg,f)=> f==='__other'?other(seg):segVal(seg,f);
+  const pc=(a,b)=>b>0?Math.round(a/b*100)+'%':'—';
+  tb.innerHTML='';
+  statuses.forEach(s=>{
+    const vn=get(sw.new,s.f), vf=get(sw.fu,s.f), vt=vn+vf;
+    const tr=document.createElement('tr');
+    tr.innerHTML=`<td><strong>${s.label}</strong></td>
+      <td class="num">${vn}</td><td class="num" style="color:${s.col};font-weight:600">${pc(vn,nN)}</td>
+      <td class="num">${vf}</td><td class="num" style="color:${s.col};font-weight:600">${pc(vf,nF)}</td>
+      <td class="num"><strong>${vt}</strong></td><td class="num" style="font-weight:600">${pc(vt,nT)}</td>`;
+    tb.appendChild(tr);
+  });
+  // totals row
+  const trT=document.createElement('tr'); trT.style.borderTop='2px solid var(--bdr)';
+  trT.innerHTML=`<td style="color:var(--gray)">All bookings</td><td class="num"><strong>${nN}</strong></td><td class="num">100%</td><td class="num"><strong>${nF}</strong></td><td class="num">100%</td><td class="num"><strong>${nT}</strong></td><td class="num">100%</td>`;
+  tb.appendChild(trT);
+  // insight: compare completion & reschedule between segments
+  const doneN=pc(get(sw.new,'done'),nN), doneF=pc(get(sw.fu,'done'),nF);
+  const rpN=get(sw.new,'resched_patient'), rpF=get(sw.fu,'resched_patient');
+  const rpNp=nN>0?Math.round(rpN/nN*100):0, rpFp=nF>0?Math.round(rpF/nF*100):0;
+  const msN=nN>0?Math.round(get(sw.new,'missed')/nN*100):0, msF=nF>0?Math.round(get(sw.fu,'missed')/nF*100):0;
+  document.getElementById('awInsight').querySelector('span').innerHTML=`<strong>New patients complete at ${doneN} vs ${doneF} for follow-ups.</strong> Reschedules-by-patient differ sharply: ${rpNp}% of new vs ${rpFp}% of follow-ups — ${rpFp>rpNp?'returning patients move appointments far more (treatment-plan churn), so chasing them on confirmation pays off most':'new patients reschedule more, a first-visit commitment gap'}. No-show: ${msN}% new vs ${msF}% follow-up.`;
 }
 
 /* ── RENDER no-show-rate by day of week ── */
@@ -1301,7 +1352,7 @@ function applySelection(){
 }
 (async function(){
   try{
-    const [sc,lj,ros,rem,sar,cnv,doc,mkt]=await Promise.all([
+    const [sc,lj,ros,rem,sar,cnv,doc,mkt,swho]=await Promise.all([
       fetch('data_scorecard.json').then(r=>r.json()),
       fetch('data_leads.json').then(r=>r.json()),
       fetch('data_roster.json').then(r=>r.json()),
@@ -1310,8 +1361,9 @@ function applySelection(){
       fetch('data_conversion.json').then(r=>r.ok?r.json():{}).catch(()=>({})),
       fetch('data_doctor.json').then(r=>r.ok?r.json():{}).catch(()=>({})),
       fetch('data_marketing.json').then(r=>r.ok?r.json():null).catch(()=>null),
+      fetch('data_status_who.json').then(r=>r.ok?r.json():{}).catch(()=>({})),
     ]);
-    SC=sc; LEADS=lj; ROSTER=ros; REM=rem||{}; SARVAM=sar; CONV=cnv||{}; DOCTOR=doc||{}; MKT=mkt;
+    SC=sc; LEADS=lj; ROSTER=ros; REM=rem||{}; SARVAM=sar; CONV=cnv||{}; DOCTOR=doc||{}; MKT=mkt; SWHO=swho||{};
     buildWeeks();
     CLINICS=Object.keys(SC).filter(k=>k!=='_meta').sort();
     CITIES={}; CLINICS.forEach(k=>{const c=k.split('|')[0]; (CITIES[c]=CITIES[c]||[]).push(k);});
