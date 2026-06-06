@@ -178,9 +178,11 @@ function landSpec(){ const leadsV=landView==='leads'; return {
   cityTitle: leadsV ? 'By city — where did leads move?' : 'By city — where did bookings move?',
   clinicVerb: leadsV ? 'leads' : 'new (first-time) patients',
   affNoun: leadsV ? 'leads' : 'new-patient bookings' }; }
-// landing window: drives BOTH the card sparkline display and the norm (avg of the prior N weeks). Follows the shared trendWin (default 6w).
+// landing sparkline display window — number of weeks the card chart shows. Follows the Compare-vs
+// baseline (synced into trendWin by setBase) so a single control governs the whole page.
 function landWinN(){ return trendWin==='all'?WEEKS.length:Math.min(+trendWin||6,WEEKS.length); }
-function landNorm(arr,W){ const N=landWinN(); const w=(arr||[]).slice(W+1,W+1+N).filter(x=>x!=null); return w.length? w.reduce((a,b)=>a+b,0)/w.length : 0; }
+// landing card NORM = the same "Expected" the deep-dive uses, so changing "Compare vs" moves the cards.
+function landNorm(arr,W){ return expectedOf(arr, W); }
 let wkIdx=0;              // selected week index (0 = latest)
 let baseMode='avg6';      // which baseline "Expected" is measured against (see BASE_OPTS) — default 6-wk (matches the 6-week display window)
 // Baseline options for the comparison dropdown. Each defines how "Expected" is
@@ -568,7 +570,8 @@ function rcaOnline(){
 // ═══════════════ RENDER ═══════════════
 function setScope(s){ scope=s; document.getElementById('scOffline').classList.toggle('on',s==='offline'); document.getElementById('scOnline').classList.toggle('on',s==='online'); render(); }
 function setWeek(i){ wkIdx=i; render(); }
-function setBase(b){ baseMode=b; render(); }
+// Single page-wide control: "Compare vs" sets the norm AND the matching display window.
+function setBase(b){ baseMode=b; trendWin = b==='avg4'?4 : b==='avg8'?8 : b==='avg12'?12 : b==='best'?'all' : 6; render(); }
 function setCauseF(c){ causeF=c; render(); }
 // does a clinic row match the active Cause filter? (used by the city/clinic landing cards)
 function causeMatch(r){ if(causeF==='all') return true; if(causeF==='mixed') return !!r.mixWith; return r.cause===causeF; }
@@ -862,17 +865,15 @@ function renderOffline(){
   const lvBtn=(v,icon,lbl,sub)=>{ const on=landView===v; return `<button onclick="setLandView('${v}')" style="flex:1;min-width:150px;text-align:left;border:1.5px solid ${on?'#4f46e5':'var(--line)'};background:${on?'#eef2ff':'#fff'};border-radius:10px;padding:8px 13px;cursor:pointer;">
     <div style="font-size:13px;font-weight:800;color:${on?'#4338ca':'#0f172a'};">${icon} ${lbl}</div>
     <div style="font-size:10px;color:#94a3b8;margin-top:1px;">${sub}</div></button>`; };
-  const _lwN=landWinN();
-  const _winOpts=[['4w',4],['6w',6],['8w',8],['12w',WEEKS.length]];
+  // Window & norm now follow the single "Compare vs" control (top of page) — show it as a read-only hint.
   const winSel=`<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-left:auto;">
-    <span style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#94a3b8;">Window &amp; norm</span>
-    ${_winOpts.map(([l,v])=>{ const on=(trendWin==='all'&&v===WEEKS.length)||(+trendWin===v); return `<button onclick="setTrendWin(${v===WEEKS.length?"'all'":v})" style="font-size:11px;padding:3px 10px;border-radius:7px;border:1.5px solid ${on?'#4f46e5':'var(--line)'};background:${on?'#eef2ff':'#fff'};color:${on?'#4338ca':'#475569'};font-weight:${on?700:500};cursor:pointer;">${l}</button>`; }).join('')}</div>`;
+    <span style="font-size:10.5px;color:#94a3b8;">Norm &amp; window follow <b style="color:#4338ca;">“Compare vs” = ${baseLabel()}</b> (top)</span></div>`;
   const landToggle=`<div style="display:flex;gap:9px;flex-wrap:wrap;align-items:center;margin:14px 0 4px;">
     <span style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#94a3b8;align-self:center;">View</span>
     ${lvBtn('bookings','🗓','Bookings first','new-patient bookings as the headline')}
     ${lvBtn('leads','🔎','Leads first','inbound leads as the headline')}
     ${winSel}</div>
-    <div style="font-size:10px;color:#94a3b8;margin:0 0 10px;">Cards show the last <b>${_lwN}</b> weeks; the dashed line &amp; <b>“vs … norm”</b> are the <b>${_lwN}-week average</b>. Change the window to recompute both.</div>`;
+    <div style="font-size:10px;color:#94a3b8;margin:0 0 10px;">Cards show the last <b>${landWinN()}</b> weeks; the dashed line &amp; <b>“vs … norm”</b> are the <b>${baseLabel()}</b>. Change <b>“Compare vs”</b> (top) to recompute both.</div>`;
   // Landing drill: no scope → cities (cityRollup); a city/clinic picked → that scope's clinics (cityOverview).
   const overview = landToggle + (geoSel.size ? cityOverview(R) : cityRollup(R));
   const networkLabel = `<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#94a3b8;margin:18px 0 8px;">Network breakdown${geoSel.size?' (for reference)':' — all clinics &amp; causes'}</div>`;
@@ -1763,9 +1764,9 @@ function leadLossDrill(r){
   if(oth_n>1 && dOthP<=-15) extraDrops.push(`Others ${signed(dOthP,'%')}`);
   const winOpts=[['4w',4],['6w',6],['8w',8],['12w',WEEKS.length]];
   const winBar=`<div style="display:flex;align-items:center;gap:6px;margin:6px 0 2px;flex-wrap:wrap;">
-    <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#94a3b8;">Trend window</span>
+    <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#94a3b8;">Chart zoom</span>
     ${winOpts.map(([l,v])=>{ const on=(trendWin==='all'&&v===WEEKS.length)||(+trendWin===v); return `<button onclick="setTrendWin(${v===WEEKS.length?"'all'":v})" style="font-size:11px;padding:3px 10px;border-radius:7px;border:1.5px solid ${on?'#4f46e5':'var(--line)'};background:${on?'#eef2ff':'#fff'};color:${on?'#4338ca':'#475569'};font-weight:${on?700:500};cursor:pointer;">${l}</button>`; }).join('')}
-    <span style="font-size:10px;color:#cbd5e1;margin-left:2px;">showing last ${winN} wks · norm = ${winN}-wk avg</span>
+    <span style="font-size:10px;color:#cbd5e1;margin-left:2px;">chart zoom · showing last ${winN} wks · norm follows “Compare vs” (${baseLabel()})</span>
   </div>`;
   return `<div class="card"><div class="sec-h"><span class="sec-num">🔎</span>Lead-loss drill — by source</div>
     <div class="sec-sub">When inbound leads break, which source? <b>GMB profile</b> (reviews → rank) · <b>Google Ads</b> (impression share / spend) · <b>Practo</b> · <b>Organic &amp; others</b>. · leads from Redshift · ${WEEKS[wkIdx].label}</div>
@@ -1993,7 +1994,7 @@ function renderDeepDive(r){
   const rate_n = r.av_avg>0 ? r.bk_avg/r.av_avg : 0;
   const winOpts=[['4w',4],['6w',6],['8w',8],['12w',12],['All',WEEKS.length]].filter(o=>o[1]<=WEEKS.length||o[0]==='All');
   const winBar=`<div style="display:flex;align-items:center;gap:6px;margin:2px 0 4px;flex-wrap:wrap;">
-    <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#94a3b8;">Window</span>
+    <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#94a3b8;">Chart zoom</span>
     ${winOpts.map(([l,v])=>{ const on=(trendWin==='all'&&v===WEEKS.length)||(+trendWin===v); return `<button onclick="setTrendWin(${v===WEEKS.length?"'all'":v})" style="font-size:11px;padding:3px 10px;border-radius:7px;border:1.5px solid ${on?'#4f46e5':'var(--line)'};background:${on?'#eef2ff':'#fff'};color:${on?'#4338ca':'#475569'};font-weight:${on?700:500};cursor:pointer;">${l}</button>`; }).join('')}
     <span style="font-size:10px;color:#cbd5e1;margin-left:4px;">${WEEKS.length} weeks of history available</span>
   </div>`;
