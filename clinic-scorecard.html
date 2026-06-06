@@ -92,9 +92,10 @@ function render(){
     </tbody></table></div>`;
   // ── Block 2 ──
   const ageRow=(lab,v,sub)=>`<tr><td>${lab}${sub?`<div style="font-size:9px;color:#94a3b8;">${sub}</div>`:''}</td><td>${v}</td><td>${ageTot>0?Math.round(v/ageTot*100):0}%</td></tr>`;
-  const b2=`<div class="card"><div class="bh"><span class="bnum">2</span>New bookings by lead age</div>
-    <div class="bsub">Is the drop a <b>demand</b> problem (fewer fresh leads converting) or a <b>reactivation</b> problem (old pipeline not worked)? · ${ageTot} bookings traced to lead-creation date this week.</div>
-    <table class="sc"><thead><tr><th>Lead age</th><th>Bookings</th><th>% of total</th></tr></thead><tbody>
+  const untraced=Math.max(0,(total[W]||0)-ageTot);
+  const b2=`<div class="card"><div class="bh"><span class="bnum">2</span>Bookings by lead age <span style="font-size:10px;font-weight:600;color:#94a3b8;">(lead-traced subset)</span></div>
+    <div class="bsub">Is the drop a <b>demand</b> problem (fresh leads) or a <b>reactivation</b> problem (old pipeline)? · <b>${ageTot}</b> of this week's <b>${total[W]||0}</b> bookings could be matched to a tracked lead. <span style="color:#b45309;">⚠️ The other ~${untraced} (follow-ups, walk-in, direct, untracked) aren't in the lead-attribution table — so this <b>won't equal Block 1's new bookings</b>, and it counts follow-ups by their original lead's age.</span></div>
+    <table class="sc"><thead><tr><th>Lead age</th><th>Bookings</th><th>% of traced</th></tr></thead><tbody>
       ${ageRow('Lead created this week', ageW[0],'fresh demand')}
       ${ageRow('Lead created last week', ageW[1],'7–14 days')}
       ${ageRow('Lead created 2–4 weeks ago', ageW[2])}
@@ -106,8 +107,8 @@ function render(){
   const chRow=([lab,lk,bk])=>{ const lead=lk.reduce((s,k)=>s+((lj[k]||[])[W]||0),0); const book=bk.reduce((s,k)=>s+(((sc.channel||{})[k]||[])[W]||0),0);
     const c2b=lead>0?Math.round(book/lead*100):null; const ld1=lk.reduce((s,k)=>s+((lj[k]||[])[1]||0),0); const dwow=lead-ld1;
     return `<tr><td>${lab}</td><td>${lead}</td><td>${book}</td><td>${c2b==null?'—':(c2b>100?'<span style="color:#94a3b8" title="bookings counted on a different basis than leads">'+c2b+'%*</span>':c2b+'%')}</td><td style="color:${dwow>0?'#059669':dwow<0?'#dc2626':'#94a3b8'};">${dwow>0?'+':''}${dwow}</td></tr>`; };
-  const b3=`<div class="card"><div class="bh"><span class="bnum">3</span>New bookings by channel</div>
-    <div class="bsub">Did <b>volume</b> drop (fewer leads) or <b>conversion</b> drop (same leads, fewer booked)? · <span style="color:#94a3b8;">leads = tracked inbound; bookings = source-attributed (different basis, so C2B can read &gt;100% — marked *).</span></div>
+  const b3=`<div class="card" style="border-color:#fed7aa;"><div class="bh"><span class="bnum">3</span>Bookings by channel <span style="font-size:10px;font-weight:600;color:#b45309;">⚠️ C2B unreliable</span></div>
+    <div class="bsub" style="color:#b45309;">⚠️ <b>Read C2B with caution:</b> leads come from one table and bookings from another, with different channel taxonomy — so C2B can read far above 100% (e.g. organic). Treat the <b>Leads</b> and <b>Bookings</b> columns as separate volume signals, not a clean ratio, until channel attribution is unified.</div>
     <table class="sc"><thead><tr><th>Channel</th><th>Leads</th><th>Bookings</th><th>C2B%</th><th>Leads WoW</th></tr></thead><tbody>${CH.map(chRow).join('')}</tbody></table></div>`;
   // ── Block 4 — B2D by booking type ──
   const b2dRow=(lab,bk,dn)=>`<tr><td>${lab}</td><td>${bk}</td><td>${dn}</td><td><b style="color:${b2dcol(pct(dn,bk))}">${pct(dn,bk)}%</b></td></tr>`;
@@ -137,10 +138,15 @@ function render(){
 
   el.innerHTML=`<div style="font-size:11px;color:#94a3b8;margin-bottom:10px;">${CUR.split('|')[1]}, ${CUR.split('|')[0]} · week ${wkLabel(WEEKS[0])} (vs prior &amp; 4-wk avg)</div>
     ${flagBlock}${b1}${b2}${b3}${b4}${b5}${bDow}
-    <div class="card" style="background:#eef2ff;border-color:#ddd6fe;"><div class="bh" style="color:#3730a3;">✅ Now live · one gap left</div>
-      <div style="font-size:11.5px;color:#475569;line-height:1.7;">Reschedule split, finer lead-age (5 buckets), per-channel bookings, B2D-by-type, no-show recovery, and day-of-week are all <b>live from Redshift</b>.<br>
-      <b>Still needs a source:</b> "no-show <b>called back</b>" (call-log system) — recovery here is inferred from appointment status history, not call attempts.<br>
-      <span style="color:#94a3b8;">Note: this view is <b>appointment-event</b> based (each reschedule is an event), so totals run higher than the diagnostic's distinct-booking counts.</span></div></div>`;
+    <div class="card" style="background:#fffbeb;border-color:#fde68a;"><div class="bh" style="color:#92400e;">📐 Data basis &amp; honest caveats</div>
+      <div style="font-size:11.5px;color:#475569;line-height:1.7;">This view combines <b>two source systems that don't fully reconcile</b> — read each block knowing which:
+      <table style="width:100%;border-collapse:collapse;font-size:11px;margin:8px 0;">
+        <tr style="border-bottom:1px solid #fde68a;"><td style="padding:4px 6px;font-weight:700;">✅ Reliable</td><td style="padding:4px 6px;">Blocks <b>1, 4</b> &amp; <b>Day-of-week</b> — all from the <b>appointments</b> system (one source). The reschedule split uses <code>previous_status</code> (last transition).</td></tr>
+        <tr style="border-bottom:1px solid #fde68a;"><td style="padding:4px 6px;font-weight:700;color:#b45309;">⚠️ Subset</td><td style="padding:4px 6px;"><b>Block 2</b> (lead age) — only bookings matched to a <b>tracked lead</b> in a separate attribution table, so it's <b>lower</b> than Block 1's bookings (walk-in/direct/untracked excluded) and includes follow-ups by their original lead's age.</td></tr>
+        <tr style="border-bottom:1px solid #fde68a;"><td style="padding:4px 6px;font-weight:700;color:#dc2626;">⚠️ Weak</td><td style="padding:4px 6px;"><b>Block 3</b> C2B% — leads and bookings come from different tables with mismatched channel names, so the ratio is unreliable (can exceed 100%). Volume columns are still usable.</td></tr>
+        <tr><td style="padding:4px 6px;font-weight:700;color:#d97706;">⚠️ Undercount</td><td style="padding:4px 6px;"><b>Block 5</b> recovery — inferred from status history (no call-log). <code>previous_status</code> only sees the <b>immediately</b> prior state, so no-show→rescheduled→completed journeys are missed. Recovery is understated; "called back" needs a call-log source.</td></tr>
+      </table>
+      <span style="color:#94a3b8;">Also: appointment-<b>event</b> basis (each reschedule is an event), so totals run higher than the diagnostic's distinct-booking counts. To fully fix Blocks 2–3 &amp; 5, eng needs to unify lead→booking attribution onto the appointments table and add a call-log feed.</span></div></div>`;
 }
 (async()=>{
   try{
