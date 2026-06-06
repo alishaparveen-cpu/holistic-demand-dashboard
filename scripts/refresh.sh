@@ -28,6 +28,7 @@ if python3 scripts/build_demand_superset.py; then ok+=("data_demand_funnel.json"
 if python3 scripts/build_practo_booked.py; then ok+=("data_practo_booked.json"); else fail+=("practo_booked"); fi
 if python3 scripts/build_practo_leads.py; then ok+=("data_practo_leads.json"); else fail+=("practo_leads"); fi
 if python3 scripts/build_scorecard.py; then ok+=("data_scorecard.json"); else fail+=("scorecard"); fi
+if python3 scripts/build_phase2.py; then ok+=("data_reminders.json+data_sarvam.json"); else fail+=("phase2"); fi
 if python3 scripts/build_lead_maturation.py; then ok+=("data_lead_maturation.json"); else fail+=("lead_maturation"); fi
 # Negatives come LIVE from the Google Business Profile API (warehouse external_reviews ETL stopped 2026-05-06).
 [ -f "$HOME/.allo_gbp.env" ] && { set -a; . "$HOME/.allo_gbp.env"; set +a; }

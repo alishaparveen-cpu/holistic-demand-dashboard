@@ -142,17 +142,32 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--navy);font-
   <a href="diagnostic.html" style="color:#64748b;text-decoration:none;padding:4px 8px;border-radius:6px;">Diagnostic</a>
   <a href="marketing.html" style="color:#64748b;text-decoration:none;padding:4px 8px;border-radius:6px;">Marketing</a>
   <span style="color:#0f172a;font-weight:700;padding:4px 8px;background:#fff;border-radius:6px;">Clinic Scorecard</span>
-  <span style="margin-left:8px;font-size:10px;font-weight:700;color:#9a3412;background:#fff7ed;border:1px solid #fed7aa;border-radius:6px;padding:2px 8px;">PROTOTYPE · trends · live data</span>
+  <span style="margin-left:8px;font-size:10px;font-weight:700;color:#9a3412;background:#fff7ed;border:1px solid #fed7aa;border-radius:6px;padding:2px 8px;">PROTOTYPE · trends · live + Phase 2</span>
 </div>
 <!-- TOP BAR -->
 <div class="topbar">
   <div class="clinic-info">
-    <div class="name"><i class="ti ti-building-hospital" style="font-size:15px;margin-right:6px"></i>
-      <select id="clinicSel" onchange="selectClinic(this.value)" style="font-family:'Inter',sans-serif;font-size:16px;font-weight:600;color:#fff;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.2);border-radius:7px;padding:3px 8px;cursor:pointer;"></select>
+    <div class="name" style="position:relative">
+      <i class="ti ti-building-hospital" style="font-size:15px;margin-right:6px"></i>
+      <button id="selBtn" onclick="toggleSelPanel(event)" style="font-family:'Inter',sans-serif;font-size:16px;font-weight:600;color:#fff;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.25);border-radius:7px;padding:4px 12px;cursor:pointer;display:inline-flex;align-items:center;gap:8px">
+        <span id="selBtnLabel">Select clinics…</span><i class="ti ti-chevron-down" style="font-size:12px"></i>
+      </button>
+      <div id="selPanel" style="display:none;position:absolute;top:42px;left:24px;z-index:50;background:#fff;color:#0f172a;border:1px solid #e2e8f0;border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,.18);width:360px;max-height:440px;overflow:hidden">
+        <div style="padding:10px;border-bottom:1px solid #eef2f6;display:flex;gap:6px;align-items:center">
+          <input id="selSearch" oninput="renderSelList()" placeholder="Search city or clinic…" style="flex:1;font-size:12px;border:1px solid #e2e8f0;border-radius:6px;padding:6px 8px;outline:none">
+          <button onclick="selPreset('all')" style="font-size:11px;border:1px solid #e2e8f0;background:#f8fafc;border-radius:6px;padding:5px 8px;cursor:pointer">All</button>
+          <button onclick="selPreset('none')" style="font-size:11px;border:1px solid #e2e8f0;background:#f8fafc;border-radius:6px;padding:5px 8px;cursor:pointer">Clear</button>
+        </div>
+        <div id="selList" style="overflow-y:auto;max-height:340px;padding:4px 0"></div>
+        <div style="padding:8px 10px;border-top:1px solid #eef2f6;display:flex;justify-content:space-between;align-items:center">
+          <span id="selCount" style="font-size:11px;color:#64748b"></span>
+          <button onclick="applySelection();toggleSelPanel()" style="font-size:12px;font-weight:600;background:#0f172a;color:#fff;border:none;border-radius:6px;padding:6px 14px;cursor:pointer">Apply</button>
+        </div>
+      </div>
     </div>
     <div class="meta">
       <span><i class="ti ti-map-pin" style="font-size:11px;margin-right:2px"></i><span id="cmCity">—</span></span>
-      <span><i class="ti ti-database" style="font-size:11px;margin-right:2px"></i>Live Redshift · appointments + roster + leads</span>
+      <span><i class="ti ti-database" style="font-size:11px;margin-right:2px"></i>Live Redshift · appointments + roster + leads + reminders</span>
     </div>
   </div>
   <div style="display:flex;align-items:center;gap:10px">
@@ -322,6 +337,10 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--navy);font-
     <div class="ins ins-a" id="insE1"><i class="ti ti-alert-triangle"></i><span></span></div>
     <div class="ins ins-n"><i class="ti ti-info-circle"></i><span><strong>Why no lead→booking C2B%?</strong> This clinic feed has no trustworthy top-of-funnel inquiry count. The only lead table (<code>main_source_wise_leads</code>) logs ~40–65% of <em>booked</em> patients by source — it under-counts bookings and has no record of inquiries that never booked, so any "C2B" off it comes out above 100% (nonsense). A real conversion rate needs the call-log (<code>exotel_calls</code>, 1.7M rows) and chatbot inquiry events joined in — that's Phase 2. <strong>Everything in this funnel is live appointment data.</strong></span></div>
     <div id="tblE" style="display:none"><tbody id="tblE-body"></tbody></div>
+    <div style="margin-top:16px">
+      <div style="font-size:11px;font-weight:500;color:var(--gray);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">Inbound-call quality <span style="color:#d97706;font-weight:700">● PHASE 2 · NETWORK SNAPSHOT</span> <span style="font-weight:400;text-transform:none">Sarvam AI call analysis</span></div>
+      <div id="sarvamPanel"></div>
+    </div>
   </div>
 </div>
 
@@ -359,8 +378,18 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--navy);font-
       <div style="font-size:10px;color:var(--gray);margin-top:6px">Re-booked = no-show appointments whose next state was <code>rescheduled</code>. Recovered = no-show appointments later <code>completed</code> (via <code>previous_status</code>). Both live.</div>
     </div>
     <div style="margin-top:14px">
-      <div style="font-size:11px;font-weight:500;color:var(--gray);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">No-show reasons (doctor / ops / patient fault)</div>
-      <div class="ins ins-n" style="margin-bottom:0;align-items:flex-start"><i class="ti ti-tool"></i><span><strong>Phase 2 — not capturable today.</strong> <code>appointments.reason</code> is empty for no-shows, so structured reason categories (no reminder sent / doctor cancelled / patient forgot / chose not to come) can't be shown without fabricating them. The honest paths: derive reminder-sent attribution from <code>whatsapp</code> reminder delivery, and mine qualitative reasons from the Sarvam call transcripts (<code>call_analyses</code>). Until that's built, no reason split is shown.</span></div>
+      <div style="font-size:11px;font-weight:500;color:var(--gray);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">Were no-shows reminded? <span style="color:#16a34a;font-weight:700">● PHASE 2 · LIVE</span> <span style="font-weight:400;text-transform:none">whatsapp reminder delivery</span></div>
+      <div class="funnel">
+        <div class="f-s"><div class="f-n" id="rmNs">—</div><div class="f-l">No-shows</div></div>
+        <div class="f-a"><i class="ti ti-arrow-right"></i></div>
+        <div class="f-s"><div class="f-n" id="rmNsSent">—</div><div class="f-l">Reminder sent</div><div class="f-r" id="rmNsSentR">—</div></div>
+        <div class="f-a"><i class="ti ti-arrow-right"></i></div>
+        <div class="f-s"><div class="f-n" id="rmNsDel">—</div><div class="f-l">Delivered</div><div class="f-r" id="rmNsDelR">—</div></div>
+        <div class="f-a"><i class="ti ti-arrow-right"></i></div>
+        <div class="f-s"><div class="f-n" id="rmNsRead">—</div><div class="f-l">Read</div><div class="f-r" id="rmNsReadR">—</div></div>
+      </div>
+      <div class="ins ins-b" id="rmInsight" style="margin-top:10px"><i class="ti ti-bulb"></i><span></span></div>
+      <div style="font-size:10px;color:var(--gray);margin-top:4px">Reminder = a <code>whatsapp</code> message with <code>reference_entity=appointment</code> and a <code>%reminder%</code> template, joined to this clinic's no-show appointments. The remaining gap (no-shows who got reminders but still didn't attend) is a <em>patient-side / timing</em> problem, not a reminder-delivery one — structured per-patient reasons still need the Sarvam transcript mine (<code>call_analyses</code>).</div>
     </div>
   </div>
 </div>
@@ -389,7 +418,9 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--navy);font-
 <script>
 /* ── DATA ── */
 let WEEKS=[], WEEK_LABELS=[], currentWeek=7;
-let SC=null, LEADS=null, ROSTER=null, CUR='Bangalore|Bellandur', D=null;
+let SC=null, LEADS=null, ROSTER=null, REM={}, SARVAM=null, D=null;
+let SEL=[];                                   // selected clinic keys (City|Clinic) — aggregated/summed
+let CLINICS=[], CITIES={};                    // all keys; city -> [keys]
 const NW=8;                                   // weeks shown (last 8 of the 12 pulled)
 const _M=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 function ser(a){ return (a||Array(12).fill(0)).slice(0,NW).reverse(); }   // newest-first 12 → oldest-first NW
@@ -401,18 +432,32 @@ function buildWeeks(){
   WEEK_LABELS=last.map(w=>{const d=new Date(w+'T00:00:00');d.setDate(d.getDate()+6);return 'Week ending '+d.getDate()+' '+_M[d.getMonth()];});
   currentWeek=NW-1;
 }
+// element-wise sum of a 12-week array across the SELECTED clinics
+function sum12(getter){ const acc=Array(12).fill(0); SEL.forEach(k=>{const a=getter(k)||[]; for(let i=0;i<12;i++) acc[i]+=(a[i]||0);}); return acc; }
+function sumS(getter){ return ser(sum12(getter)); }     // → oldest-first NW window
 function buildD(){
-  const sc=SC[CUR]||{}, disp=sc.disp||{}, lj=LEADS[CUR]||{}, shr=(ROSTER[CUR]||{}).shr||{};
-  const dA=f=>ser(disp[f]), lA=f=>ser(lj[f]);
+  const dA=f=>sumS(k=>((SC[k]||{}).disp||{})[f]);
+  const lA=f=>sumS(k=>(LEADS[k]||{})[f]);
+  const rA=f=>sumS(k=>(REM[k]||{})[f]);
+  const shrA=f=>sumS(k=>((ROSTER[k]||{}).shr||{})[f]);
   const total=dA('total'), nw=dA('new_bk'), fu=dA('followup_bk'), miss=dA('missed'),
         done=dA('done'), dnew=dA('done_new'), dfu=dA('done_followup'),
         rPat=dA('resched_patient'), rNo=dA('resched_noshow'), rec=dA('recovered_done');
-  const sched=ser(shr.sched), avail=ser(shr.avail);
+  const sched=shrA('sched'), avail=shrA('avail');
   const gAd=lA('google_ad'), gmb=lA('gmb'), fb=lA('fb'), org=lA('organic'), jd=lA('justdial'), oth=lA('others');
   const leadTot=gAd.map((v,i)=>v+gmb[i]+fb[i]+org[i]+jd[i]+oth[i]);
-  const cb=k=>ser((sc.channel||{})[k]);
-  const chanBkTot=Object.keys(sc.channel||{}).map(k=>ser(sc.channel[k])).reduce((acc,a)=>acc.map((v,i)=>v+a[i]),Array(NW).fill(0));
+  // channel sources: union across selected clinics
+  const chanSrcs=new Set(); SEL.forEach(k=>Object.keys((SC[k]||{}).channel||{}).forEach(s=>chanSrcs.add(s)));
+  const cb=src=>sumS(k=>((SC[k]||{}).channel||{})[src]);
+  const srcMix={}; chanSrcs.forEach(s=>srcMix[s]=cb(s));
+  const chanBkTot=Object.values(srcMix).reduce((acc,a)=>acc.map((v,i)=>v+a[i]),Array(NW).fill(0));
   const bFb=cb('fb').map((v,i)=>v+cb('instagram')[i]);
+  // reminder funnel (Phase 2 · whatsapp)
+  const remSent=rA('rem_sent'), remDel=rA('rem_delivered'), remRead=rA('rem_read'), remTot=rA('total');
+  const nsTot=rA('ns_total'), nsSent=rA('ns_sent'), nsDel=rA('ns_delivered'), nsRead=rA('ns_read');
+  // lead-age (raw 12, summed — render applies ser)
+  const LAB=['b0_same','b1_lastwk','b2_2to4wk','b3_1to3mo','b4_3moplus'];
+  const leadage={}; LAB.forEach(b=>leadage[b]=sum12(k=>((SC[k]||{}).leadage||{})[b]));
   const kept=done.map((d,i)=>d+miss[i]);                 // reached a show/no-show decision (not resched/cancelled)
   const leak=total.map((t,i)=>Math.max(0,t-kept[i]));    // rescheduled / cancelled / still-scheduled
   D={
@@ -430,9 +475,13 @@ function buildD(){
     noshowRate: kept.map((k,i)=> k>0?Math.round(miss[i]/k*100):0),
     keptRate: pctSer(kept,total),
     coverage: pctSer(chanBkTot,total),
-    srcMix: Object.fromEntries(Object.keys(sc.channel||{}).map(k=>[k,ser(sc.channel[k])])),
+    srcMix,
+    reminders:{ total:remTot, sent:remSent, delivered:remDel, read:remRead,
+                sentRate:pctSer(remSent,remTot), delRate:pctSer(remDel,remTot),
+                ns_total:nsTot, ns_sent:nsSent, ns_delivered:nsDel, ns_read:nsRead,
+                ns_sentRate:pctSer(nsSent,nsTot), ns_delRate:pctSer(nsDel,nsTot) },
     resched_patient:rPat, resched_noshow:rNo, recovered:rec,
-    leadage: sc.leadage||{}, dow: sc.dow||{},
+    leadage,
   };
 }
 
@@ -658,6 +707,26 @@ function renderA() {
   document.getElementById('insA1').innerHTML=`<strong>Total bookings ${tb.str} WoW (${D.bookings.total[w-1]} → ${D.bookings.total[w]}).</strong> New first-time ${newWord}, follow-ups ${fuWord}. ${read} Click any row for its 8-week trend.`;
 }
 
+/* ── RENDER Sarvam inbound-call quality (network / selected-city snapshot) ── */
+function renderSarvam() {
+  const el=document.getElementById('sarvamPanel'); if(!el) return;
+  if(!SARVAM || !SARVAM.network){ el.innerHTML='<div class="ins ins-n" style="margin:0"><i class="ti ti-tool"></i><span>Sarvam call-analysis snapshot not loaded.</span></div>'; return; }
+  // aggregate did_we_do_it for the selected cities (fall back to network)
+  const cities=[...new Set(SEL.map(k=>k.split('|')[0]))].filter(c=>SARVAM.by_city && SARVAM.by_city[c]);
+  let agg={YES:0,PARTIALLY:0,NO:0,total:0}, scopeLbl;
+  if(cities.length){ cities.forEach(c=>{const o=SARVAM.by_city[c]; agg.YES+=o.YES||0; agg.PARTIALLY+=o.PARTIALLY||0; agg.NO+=o.NO||0; agg.total+=o.total||0;}); scopeLbl=cities.length===1?cities[0]:cities.length+' selected cities'; }
+  else { const n=SARVAM.network.ddwi||{}; agg={YES:n.YES||0,PARTIALLY:n.PARTIALLY||0,NO:n.NO||0,total:SARVAM.network.our||SARVAM.network.total||0}; scopeLbl='whole network'; }
+  const t=agg.total||1, pc=x=>Math.round(x/t*100);
+  const tile=(lbl,v,col,sub)=>`<div style="flex:1;background:#fff;border:1px solid var(--bdr);border-radius:8px;padding:10px 12px"><div style="font-size:10px;color:var(--gray);text-transform:uppercase;letter-spacing:.3px">${lbl}</div><div style="font-size:22px;font-weight:700;color:${col}">${pc(v)}%</div><div style="font-size:10px;color:var(--gray)">${v.toLocaleString()} ${sub}</div></div>`;
+  el.innerHTML=`
+    <div style="display:flex;gap:8px;margin-bottom:8px">
+      ${tile('Booked on call (YES)',agg.YES,'#16a34a','calls')}
+      ${tile('Partial',agg.PARTIALLY,'#d97706','calls')}
+      ${tile('Missed (NO)',agg.NO,'#dc2626','calls')}
+    </div>
+    <div class="ins ins-n" style="margin:0;align-items:flex-start"><i class="ti ti-info-circle"></i><span>Of <strong>${agg.total.toLocaleString()}</strong> analyzed inbound calls in <strong>${scopeLbl}</strong>, the agent fully completed the booking on <strong>${pc(agg.YES)}%</strong>, partially on ${pc(agg.PARTIALLY)}%, and missed it on <strong>${pc(agg.NO)}%</strong>. The NO + Partial bucket is recoverable inbound demand — better slot offering & closing on the call. <strong>Caveat:</strong> this is a recent ~2-week network snapshot (analysis batch dated, not call-dated) and is call-grain, so it isn't a per-clinic-week trend like the rest of this page. Source: <code>call_analyses</code> (Sarvam <code>did_we_do_it</code>).</span></div>`;
+}
+
 /* ── RENDER SECTION B: fault attribution (live signals + honest Phase-2 flags) ── */
 function renderB() {
   const w=currentWeek;
@@ -669,10 +738,14 @@ function renderB() {
     `Utilization ${util}% — ${util>=90?'demand exceeds supply, every cut slot ≈ a lost booking':util>=70?'healthy band':'spare capacity, drop is demand-side not supply'}`,
     `Doctor-side cancellations vs patient: <span style="color:var(--gray)">Phase 2 — needs cancel-actor field</span>`,
   ];
+  const rm=D.reminders||{}, nsT=(rm.ns_total||[])[w]||0, nsS=(rm.ns_sent||[])[w]||0, nsD=(rm.ns_delivered||[])[w]||0;
+  const remNote = nsT>0
+    ? `<span style="color:${nsS>=nsT?'var(--g)':'var(--r)'}">${nsS}/${nsT} no-shows DID get a reminder (${Math.round(nsS/nsT*100)}%), ${nsD} delivered</span> — reminders are <strong>not</strong> the gap`
+    : `No no-shows this week to check reminders against`;
   const opsLines=[
     `No-shows this week: ${ns} · recovered (later done): ${recd} · re-booked: ${reb}`,
-    `Reminder sent / not sent per no-show: <span style="color:var(--gray)">Phase 2 — derive from whatsapp delivery</span>`,
-    `Reactivation call attempts on aged leads: <span style="color:var(--gray)">Phase 2 — exotel_calls join</span>`,
+    `Reminder reality (live · whatsapp): ${remNote}`,
+    `Reactivation call attempts on aged leads: <span style="color:var(--gray)">Phase 2 — exotel_calls link too sparse (~2% carry appointment_id)</span>`,
   ];
   const patLines=[
     `No-show reason split (forgot / chose-not / emergency): <span style="color:var(--gray)">Phase 2 — appointments.reason empty; mine Sarvam transcripts</span>`,
@@ -812,6 +885,19 @@ function renderF() {
     tbody.appendChild(pr);
   });
   document.getElementById('complByType').innerHTML=`<strong>Completion by booking type</strong> (done ÷ all bookings of that type, so reschedules depress it): New first-time ${D.b2d.new_first[w]}% · Follow-up ${D.b2d.followup[w]}%. Show-up by type isn't shown — the feed doesn't split no-shows by new vs follow-up.`;
+  // Phase-2 reminder reality funnel (live · whatsapp)
+  const rm=D.reminders||{}, nT=(rm.ns_total||[])[w]||0, nS=(rm.ns_sent||[])[w]||0, nD=(rm.ns_delivered||[])[w]||0, nR=(rm.ns_read||[])[w]||0;
+  const pr=(a,b)=>b>0?Math.round(a/b*100)+'%':'—';
+  document.getElementById('rmNs').textContent=nT;
+  document.getElementById('rmNsSent').textContent=nS; document.getElementById('rmNsSentR').textContent=pr(nS,nT);
+  document.getElementById('rmNsDel').textContent=nD;  document.getElementById('rmNsDelR').textContent=pr(nD,nT);
+  document.getElementById('rmNsRead').textContent=nR; document.getElementById('rmNsReadR').textContent=pr(nR,nT);
+  const ins=document.getElementById('rmInsight');
+  if(nT===0){ ins.className='ins ins-n'; ins.querySelector('span').innerHTML='No no-shows in this selection/week to evaluate.'; }
+  else { const sentPct=Math.round(nS/nT*100);
+    ins.className='ins '+(sentPct>=80?'ins-b':'ins-a');
+    ins.querySelector('span').innerHTML=`<strong>${sentPct}% of no-shows (${nS}/${nT}) received a reminder; ${pr(nD,nT)} were delivered.</strong> ${sentPct>=80?'Reminders are reaching almost every no-show — so missed appointments are a patient-side / slot-timing issue, <em>not</em> a reminder-coverage gap. Chasing "send more reminders" won\'t move this; the lever is timing, confirmation calls, and slot fit.':'A meaningful share of no-shows had no reminder logged — worth auditing the reminder trigger for this clinic.'}`;
+  }
   // no-show recovery funnel (LIVE from previous_status transitions)
   const ns=D.noshows[w], reb=D.resched_noshow[w], recd=D.recovered[w];
   document.getElementById('fnNoshow').textContent=ns;
@@ -902,6 +988,7 @@ function renderAll() {
   renderF();
   updateActions();
   renderG();
+  renderSarvam();
   renderPills();
   document.getElementById('weekLabel').textContent=WEEK_LABELS[currentWeek];
 }
@@ -941,27 +1028,66 @@ function renderPills(){
   addPill('secF','p-a',`Recovery ${D.recovery[w]}%`);
 }
 
-/* ── CLINIC SELECTOR + LOADER ── */
-function selectClinic(key){
-  CUR=key; buildD();
-  const [city,loc]=key.split('|');
-  document.getElementById('cmCity').textContent=city+' · '+loc;
-  renderAll();
+/* ── MULTISELECT (city + clinic, auto-sum) ── */
+let PEND=new Set();   // pending selection while panel open
+function toggleSelPanel(e){ if(e)e.stopPropagation(); const p=document.getElementById('selPanel'); const open=p.style.display==='none'; if(open){ PEND=new Set(SEL); renderSelList(); } p.style.display=open?'block':'none'; }
+document.addEventListener('click',e=>{ const p=document.getElementById('selPanel'); if(p&&p.style.display==='block'&&!p.contains(e.target)&&e.target.id!=='selBtn'&&!document.getElementById('selBtn').contains(e.target)) p.style.display='none'; });
+function selPreset(which){ PEND = which==='all' ? new Set(CLINICS) : new Set(); renderSelList(); }
+function toggleCity(city){ const ks=CITIES[city]; const allOn=ks.every(k=>PEND.has(k)); ks.forEach(k=>allOn?PEND.delete(k):PEND.add(k)); renderSelList(); }
+function toggleClinicSel(k){ PEND.has(k)?PEND.delete(k):PEND.add(k); renderSelList(); }
+function renderSelList(){
+  const term=(document.getElementById('selSearch').value||'').toLowerCase();
+  const list=document.getElementById('selList'); let h='';
+  Object.keys(CITIES).sort().forEach(city=>{
+    const ks=CITIES[city].filter(k=>!term||city.toLowerCase().includes(term)||k.split('|')[1].toLowerCase().includes(term));
+    if(!ks.length) return;
+    const on=ks.filter(k=>PEND.has(k)).length, all=on===ks.length&&on>0, some=on>0&&!all;
+    h+=`<div style="padding:6px 10px;background:#f8fafc;display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:600;font-size:12px" onclick="toggleCity('${city.replace(/'/g,"\\'")}')">
+      <span style="width:14px;height:14px;border:1.5px solid ${all||some?'#0f172a':'#cbd5e1'};border-radius:3px;background:${all?'#0f172a':some?'#94a3b8':'#fff'};display:inline-block;color:#fff;font-size:10px;text-align:center;line-height:13px">${all?'✓':some?'–':''}</span>
+      ${city} <span style="color:#94a3b8;font-weight:400">(${on}/${ks.length})</span></div>`;
+    ks.forEach(k=>{ const c=PEND.has(k);
+      h+=`<div style="padding:5px 10px 5px 32px;display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px" onclick="toggleClinicSel('${k.replace(/'/g,"\\'")}')">
+        <span style="width:13px;height:13px;border:1.5px solid ${c?'#0f172a':'#cbd5e1'};border-radius:3px;background:${c?'#0f172a':'#fff'};display:inline-block;color:#fff;font-size:9px;text-align:center;line-height:12px">${c?'✓':''}</span>
+        ${k.split('|')[1]}</div>`;
+    });
+  });
+  list.innerHTML=h||'<div style="padding:14px;color:#94a3b8;font-size:12px">No match</div>';
+  document.getElementById('selCount').textContent=`${PEND.size} clinic${PEND.size===1?'':'s'} selected`;
+}
+function selectionLabel(){
+  if(!SEL.length) return 'No clinics';
+  const cities=[...new Set(SEL.map(k=>k.split('|')[0]))];
+  const fullCities=cities.filter(c=>CITIES[c].every(k=>SEL.includes(k)));
+  if(SEL.length===CLINICS.length) return `All clinics · network (${SEL.length})`;
+  if(SEL.length===1) return `${SEL[0].split('|')[1]} · ${SEL[0].split('|')[0]}`;
+  if(fullCities.length===cities.length && cities.length<=2) return cities.join(' + ')+` · all ${SEL.length} clinics`;
+  return `${SEL.length} clinics · ${cities.length} ${cities.length===1?'city':'cities'}`;
+}
+function applySelection(){
+  SEL = CLINICS.filter(k=>PEND.has(k));
+  if(!SEL.length) SEL=[CLINICS.includes('Bangalore|Bellandur')?'Bangalore|Bellandur':CLINICS[0]];
+  document.getElementById('selBtnLabel').textContent=selectionLabel();
+  const cities=[...new Set(SEL.map(k=>k.split('|')[0]))];
+  document.getElementById('cmCity').textContent = SEL.length===1 ? SEL[0].replace('|',' · ')
+     : `${SEL.length} clinics · ${cities.length} ${cities.length===1?'city':'cities'}`;
+  buildD(); renderAll();
 }
 (async function(){
   try{
-    const [sc,lj,ros]=await Promise.all([
+    const [sc,lj,ros,rem,sar]=await Promise.all([
       fetch('data_scorecard.json').then(r=>r.json()),
       fetch('data_leads.json').then(r=>r.json()),
       fetch('data_roster.json').then(r=>r.json()),
+      fetch('data_reminders.json').then(r=>r.ok?r.json():{}).catch(()=>({})),
+      fetch('data_sarvam.json').then(r=>r.ok?r.json():null).catch(()=>null),
     ]);
-    SC=sc; LEADS=lj; ROSTER=ros;
+    SC=sc; LEADS=lj; ROSTER=ros; REM=rem||{}; SARVAM=sar;
     buildWeeks();
-    const keys=Object.keys(SC).filter(k=>k!=='_meta').sort();
-    if(!keys.includes(CUR)) CUR=keys.includes('Bangalore|Bellandur')?'Bangalore|Bellandur':keys[0];
-    const selEl=document.getElementById('clinicSel');
-    selEl.innerHTML=keys.map(k=>`<option value="${k}"${k===CUR?' selected':''}>${k.split('|')[1]} · ${k.split('|')[0]}</option>`).join('');
-    selectClinic(CUR);
+    CLINICS=Object.keys(SC).filter(k=>k!=='_meta').sort();
+    CITIES={}; CLINICS.forEach(k=>{const c=k.split('|')[0]; (CITIES[c]=CITIES[c]||[]).push(k);});
+    SEL=[CLINICS.includes('Bangalore|Bellandur')?'Bangalore|Bellandur':CLINICS[0]];
+    PEND=new Set(SEL);
+    applySelection();
   }catch(e){
     document.body.insertAdjacentHTML('afterbegin','<div style="background:#fef2f2;color:#991b1b;padding:12px;font:13px Inter">Failed to load data: '+e.message+'</div>');
     console.error(e);
