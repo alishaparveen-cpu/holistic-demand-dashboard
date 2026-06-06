@@ -210,7 +210,7 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--navy);font-
       <div class="sec-ltr">A</div>
       <div>
         <div class="sec-title">Total bookings — breakdown by type</div>
-        <div class="sec-sub">New first-time · Follow-up · Rescheduled · No-show recovery · Click any row for trend</div>
+        <div class="sec-sub">Who booked (New + Follow-up = Total) · then a separate status overlay (reschedules) that does NOT add to the total · Click any row for trend</div>
       </div>
     </div>
     <div class="sec-right">
@@ -662,25 +662,31 @@ function renderKPIs() {
 /* ── RENDER TABLE A ── */
 function renderA() {
   const w=currentWeek;
-  const rows = [
-    {label:'Total bookings', series:D.bookings.total, color:COLORS.p, note:'All types combined'},
-    {label:'New first-time', series:D.bookings.new_first, color:COLORS.r, note:'Real new demand — what marketing drives', flag:true},
-    {label:'Follow-up', series:D.bookings.followup, color:COLORS.g, note:'Existing patients continuing treatment'},
-    {label:'Rescheduled (patient)', series:D.bookings.reschedule, color:COLORS.a, note:'NOT new demand — just moved appointments'},
-    {label:'No-show rebooked', series:D.bookings.noshow_reb, color:COLORS.gr, note:'Recycled failed appointments — drags B2D%'},
+  const newV=D.bookings.new_first[w], fuV=D.bookings.followup[w], totV=D.bookings.total[w];
+  const sumOK = (newV+fuV)===totV;
+  // GROUP 1 — partitions the total (every booking is new OR follow-up)
+  const whoRows = [
+    {label:'Total bookings', series:D.bookings.total, color:COLORS.p, note:'Every booking is counted once below', bold:true},
+    {label:'New first-time', series:D.bookings.new_first, color:COLORS.r, note:'Patient’s all-time first SC — real new demand', indent:true},
+    {label:'Follow-up', series:D.bookings.followup, color:COLORS.g, note:'Returning patient — not new demand', indent:true},
+  ];
+  // GROUP 2 — status overlay; these OVERLAP the bookings above, they do NOT add to the total
+  const statRows = [
+    {label:'Rescheduled by patient', series:D.bookings.reschedule, color:COLORS.a, note:'Status = rescheduled (patient moved it). Already inside the total above.'},
+    {label:'Rescheduled after no-show', series:D.bookings.noshow_reb, color:COLORS.gr, note:'Was missed, then re-booked. Also inside the total above.'},
   ];
   const tbody = document.getElementById('tblA-body');
   tbody.innerHTML='';
-  rows.forEach((r,i)=>{
-    const val=r.series[w], prev=r.series[w-1]||val, a=avg4(r.series,w);
-    const w2=wow(r.series,w);
+  let idx=0;
+  const groupHdr=(txt,sub)=>{ const tr=document.createElement('tr'); tr.innerHTML=`<td colspan="7" style="padding:9px 12px 4px;background:#f8fafc;border-bottom:1px solid var(--bdr)"><span style="font-size:10px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;color:var(--navy)">${txt}</span> <span style="font-size:10px;color:var(--gray)">${sub}</span></td>`; tbody.appendChild(tr); };
+  const dataRow=(r)=>{
+    const i=idx++; const val=r.series[w], prev=(w>0?r.series[w-1]:val), a=avg4(r.series,w), w2=wow(r.series,w);
     const rowId='rA-'+i, panelId='pA-'+i, canId='cA-'+i;
-    const tr=document.createElement('tr');
-    tr.className='clickable';tr.id=rowId;
-    tr.setAttribute('data-panel',panelId);
+    const tr=document.createElement('tr'); tr.className='clickable'; tr.id=rowId; tr.setAttribute('data-panel',panelId);
     tr.onclick=()=>toggleRowChart(rowId,panelId,canId,[{label:r.label,data:r.series,color:r.color}],{},null);
+    const lblStyle=r.indent?'padding-left:22px':''; const strongOpen=r.bold?'<strong>':''; const strongClose=r.bold?'</strong>':'';
     tr.innerHTML=`
-      <td><strong>${r.label}</strong></td>
+      <td style="${lblStyle}">${strongOpen}${r.label}${strongClose}</td>
       <td class="num"><strong>${val}</strong></td>
       <td class="num">${prev}</td>
       <td class="num">${a}</td>
@@ -694,7 +700,9 @@ function renderA() {
       <div class="row-chart-inner"><canvas id="${canId}" role="img" aria-label="${r.label} trend">${r.label} trend chart.</canvas></div>
     </div></td>`;
     tbody.appendChild(pr);
-  });
+  };
+  groupHdr('Who booked','New + Follow-up = Total '+(sumOK?'✓':'')); whoRows.forEach(dataRow);
+  groupHdr('Status overlay','A different cut — these overlap the bookings above, they do NOT add to the total'); statRows.forEach(dataRow);
   // update insight (data-driven, no assumed direction)
   const nb=wow(D.bookings.new_first,w), fu=wow(D.bookings.followup,w), tb=wow(D.bookings.total,w);
   const wrap=document.getElementById('insA1').closest('.ins');
