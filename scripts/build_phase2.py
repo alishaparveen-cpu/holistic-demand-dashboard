@@ -85,7 +85,28 @@ def build_conversion():
     tot_sc=sum(v["completed_sc"][4] for v in D.values()); tot_cv=sum(v["converted"][4] for v in D.values())
     print(f"data_conversion.json · {len(D)} clinics · wk4(uncensored) network {tot_cv}/{tot_sc} = {round(tot_cv/tot_sc*100) if tot_sc else 0}% SC->treatment")
 
+def build_doctor():
+    D = {}
+    FIELDS = ["sched","shrunk","avail","total","done","missed"]
+    for c in q("fetch_doctor.sql"):
+        if len(c) < 10: continue
+        city,clinic,doctor,wk = c[0],c[1],c[2],c[3]
+        if wk not in WI: continue
+        o = D.setdefault(f"{city}|{clinic}", {}).setdefault(doctor, {f:[0]*12 for f in FIELDS})
+        for j,f in enumerate(FIELDS): o[f][WI[wk]] = num(c[4+j])
+    out = {"_meta":{"weeks":WEEKS,
+        "source":"allo_consultations.roster_slots + appointments, per provider (allo_persons.providers.name)",
+        "note":"per clinic/doctor weekly: sched/shrunk/avail slots + total/done/missed SC appointments. Roster from 2026-04-13."}}
+    out.update(D)
+    json.dump(out, open(os.path.join(ROOT,"data_doctor.json"),"w"), separators=(",",":"))
+    nd=sum(len(v) for v in D.values())
+    print(f"data_doctor.json · {len(D)} clinics · {nd} clinic-doctors")
+    b=D.get("Bangalore|Indiranagar")
+    if b:
+        for dn,dv in list(b.items())[:4]: print(f"  Indiranagar · {dn}: sched {dv['sched'][0]} avail {dv['avail'][0]} done {dv['done'][0]} missed {dv['missed'][0]}")
+
 if __name__ == "__main__":
     build_reminders()
     build_sarvam()
     build_conversion()
+    build_doctor()

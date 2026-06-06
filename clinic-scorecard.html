@@ -280,7 +280,7 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--navy);font-
       <div class="sec-ltr">C</div>
       <div>
         <div class="sec-title">Doctor availability &amp; slot supply</div>
-        <div class="sec-sub">Scheduled vs available vs booked · Utilization trend · Click any row for trend</div>
+        <div class="sec-sub">Scheduled vs available vs booked · Utilization trend · Per-doctor split (single clinic) · Click any row for trend</div>
       </div>
     </div>
     <div class="sec-right">
@@ -295,7 +295,8 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--navy);font-
       <thead><tr><th>Metric</th><th class="num">This week</th><th class="num">Last week</th><th class="num">WoW Δ</th><th style="width:100px">Trend (8w)</th><th>Diagnosis</th></tr></thead>
       <tbody id="tblC-body"></tbody>
     </table>
-    <div class="ins ins-n" style="margin-bottom:0"><i class="ti ti-info-circle"></i><span><strong>How to read utilization:</strong> Above 90% = demand exceeds supply (add slots). 70–90% = healthy. Below 70% = demand problem or wasted slots. High utilization + falling bookings = always a slot supply problem.</span></div>
+    <div class="ins ins-n" style="margin-bottom:0"><i class="ti ti-info-circle"></i><span><strong>How to read utilization:</strong> Above 90% = demand exceeds supply (add slots). 70–90% = healthy. Below 70% = demand problem or wasted slots. High utilization + falling bookings = always a slot supply problem. (1 roster slot ≈ 1 screening call — both ~10–15 min — so this is a like-for-like ratio.)</span></div>
+    <div id="docSplit" style="margin-top:14px"></div>
   </div>
 </div>
 
@@ -474,7 +475,7 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--navy);font-
 <script>
 /* ── DATA ── */
 let WEEKS=[], WEEK_LABELS=[], currentWeek=7;
-let SC=null, LEADS=null, ROSTER=null, REM={}, SARVAM=null, CONV={}, D=null;
+let SC=null, LEADS=null, ROSTER=null, REM={}, SARVAM=null, CONV={}, DOCTOR={}, D=null;
 let SEL=[];                                   // selected clinic keys (City|Clinic) — aggregated/summed
 let CLINICS=[], CITIES={};                    // all keys; city -> [keys]
 const NW=8;                                   // weeks shown (last 8 of the 12 pulled)
@@ -947,6 +948,36 @@ function renderC() {
   else { cls='ins-a'; msg=`Utilization ${utl}% — spare capacity. A booking drop is a demand problem (or wasted held slots), not the doctor's availability. Scheduled slots ${sl.str} WoW.`; }
   wrap.className='ins '+cls;
   document.getElementById('insC1').textContent=msg;
+  renderDocSplit();
+}
+
+/* ── DOCTOR SPLIT (availability + outcomes per doctor; single-clinic only) ── */
+function renderDocSplit(){
+  const el=document.getElementById('docSplit'); if(!el) return;
+  if(SEL.length!==1){ el.innerHTML='<div class="ins ins-n" style="margin:0"><i class="ti ti-users"></i><span>Select a single clinic to see the per-doctor split (availability & outcomes).</span></div>'; return; }
+  const docs=DOCTOR[SEL[0]]; if(!docs||!Object.keys(docs).length){ el.innerHTML='<div class="ins ins-n" style="margin:0"><i class="ti ti-users"></i><span>No per-doctor roster data for this clinic (roster covers from mid-Apr).</span></div>'; return; }
+  const w=currentWeek, pct=(a,b)=>b>0?Math.round(a/b*100):0;
+  const rows=Object.keys(docs).map(name=>{
+    const v=docs[name], at=f=>ser(v[f])[w];
+    const sched=at('sched'),shrunk=at('shrunk'),avail=at('avail'),total=at('total'),done=at('done'),missed=at('missed');
+    return {name, sched,shrunk,avail,total,done,missed, shrinkR:pct(shrunk,sched), util:pct(total,avail), showup:pct(done,done+missed)};
+  }).filter(r=>r.sched>0||r.total>0).sort((a,b)=>b.done-a.done);
+  if(!rows.length){ el.innerHTML='<div class="ins ins-n" style="margin:0"><i class="ti ti-users"></i><span>No doctor activity this week at this clinic.</span></div>'; return; }
+  let h=`<div style="font-size:11px;font-weight:500;color:var(--gray);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">Per-doctor split — this week</div>
+    <table class="tbl"><thead><tr><th>Doctor</th><th class="num">Sched</th><th class="num">Shrinkage</th><th class="num">Avail</th><th class="num">Booked</th><th class="num">Util%</th><th class="num">Done</th><th class="num">No-show</th><th class="num">Show-up%</th></tr></thead><tbody>`;
+  rows.forEach(r=>{
+    const fShr=r.shrinkR>=25, fShow=(r.done+r.missed)>0&&r.showup<70;
+    h+=`<tr><td><strong>${r.name}</strong></td><td class="num">${r.sched}</td>
+      <td class="num ${fShr?'dn':''}">${r.shrunk} (${r.shrinkR}%)${fShr?' ⚠':''}</td>
+      <td class="num">${r.avail}</td><td class="num">${r.total}</td><td class="num">${r.util}%</td>
+      <td class="num"><strong>${r.done}</strong></td><td class="num">${r.missed}</td>
+      <td class="num ${fShow?'dn':''}">${(r.done+r.missed)>0?r.showup+'%':'—'}${fShow?' ⚠':''}</td></tr>`;
+  });
+  h+=`</tbody></table>`;
+  const worstShr=rows.reduce((m,r)=>r.shrinkR>m.shrinkR?r:m,rows[0]);
+  const topDoc=rows[0];
+  h+=`<div class="ins ins-b" style="margin-top:8px;margin-bottom:0"><i class="ti ti-bulb"></i><span><strong>${topDoc.name}</strong> carries the most done consults (${topDoc.done}). ${worstShr.shrinkR>=25?`<strong>${worstShr.name}</strong> has the highest shrinkage (${worstShr.shrinkR}% of scheduled slots blocked) — recover those before adding hours.`:'Shrinkage is reasonable across doctors.'} Per-doctor roster slots from <code>roster_slots.provider_id</code>; outcomes from <code>appointments.provider_id</code>.</span></div>`;
+  el.innerHTML=h;
 }
 
 /* ── RENDER TABLE D ── */
@@ -1235,15 +1266,16 @@ function applySelection(){
 }
 (async function(){
   try{
-    const [sc,lj,ros,rem,sar,cnv]=await Promise.all([
+    const [sc,lj,ros,rem,sar,cnv,doc]=await Promise.all([
       fetch('data_scorecard.json').then(r=>r.json()),
       fetch('data_leads.json').then(r=>r.json()),
       fetch('data_roster.json').then(r=>r.json()),
       fetch('data_reminders.json').then(r=>r.ok?r.json():{}).catch(()=>({})),
       fetch('data_sarvam.json').then(r=>r.ok?r.json():null).catch(()=>null),
       fetch('data_conversion.json').then(r=>r.ok?r.json():{}).catch(()=>({})),
+      fetch('data_doctor.json').then(r=>r.ok?r.json():{}).catch(()=>({})),
     ]);
-    SC=sc; LEADS=lj; ROSTER=ros; REM=rem||{}; SARVAM=sar; CONV=cnv||{};
+    SC=sc; LEADS=lj; ROSTER=ros; REM=rem||{}; SARVAM=sar; CONV=cnv||{}; DOCTOR=doc||{};
     buildWeeks();
     CLINICS=Object.keys(SC).filter(k=>k!=='_meta').sort();
     CITIES={}; CLINICS.forEach(k=>{const c=k.split('|')[0]; (CITIES[c]=CITIES[c]||[]).push(k);});
