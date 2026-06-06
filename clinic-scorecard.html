@@ -258,28 +258,6 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--navy);font-
   </div>
 </div>
 
-<!-- SECTION B: FAULT ATTRIBUTION -->
-<div class="sec" id="secB">
-  <div class="sec-hdr" onclick="toggleSec('secB')">
-    <div class="sec-left">
-      <div class="sec-ltr">B</div>
-      <div>
-        <div class="sec-title">Fault attribution</div>
-        <div class="sec-sub">Doctor fault · Allo/Ops fault · Patient fault</div>
-      </div>
-    </div>
-    <div class="sec-right">
-      <span class="pill p-r">Doctor: 8 slots cut</span>
-      <span class="pill p-a">Ops: reminders failed</span>
-      <i class="ti ti-chevron-down chevron open" id="secB-chev"></i>
-    </div>
-  </div>
-  <div class="sec-body" id="secB-body">
-    <div class="ins ins-b"><i class="ti ti-info-circle"></i><span>Check fault attribution before diagnosing demand. A supply cut by the doctor looks identical to a demand drop in the total number — only attribution separates them. Cards below use live signals where available; ops-side specifics (reminders, call attempts) are flagged Phase 2.</span></div>
-    <div class="attr-g" id="secB-grid"></div>
-  </div>
-</div>
-
 <!-- SECTION C: DOCTOR SLOTS -->
 <div class="sec" id="secC">
   <div class="sec-hdr" onclick="toggleSec('secC')">
@@ -771,7 +749,7 @@ function renderA() {
   };
   const dataRow=(r)=>{
     const i=idx++; const val=r.series[w], prev=(w>0?r.series[w-1]:val), a=avg4(r.series,w), w2=wow(r.series,w);
-    const rowId='rA-'+i, panelId='pA-'+i;
+    const rowId='rA-'+i, panelId='pA-'+i, chId='pAc-'+i, canId='cA-'+i;
     const tr=document.createElement('tr'); tr.className='clickable'; tr.id=rowId; tr.setAttribute('data-panel',panelId);
     tr.onclick=()=>{ const p=document.getElementById(panelId); if(p){ const open=p.classList.toggle('open'); const chev=tr.querySelector('.aChev'); if(chev) chev.style.transform=open?'rotate(180deg)':''; } };
     const lblStyle=r.indent?'padding-left:22px':''; const strongOpen=r.bold?'<strong>':''; const strongClose=r.bold?'</strong>':'';
@@ -781,12 +759,16 @@ function renderA() {
       <td class="num">${prev}</td>
       <td class="num">${a}</td>
       <td class="num ${w2.dir}">${w2.str}</td>
-      <td>${sparkSVG(r.series,r.color,false)}</td>
-      <td style="font-size:11px;color:var(--gray)">${r.note} <span style="color:var(--p)">· click to break down by status</span></td>`;
+      <td class="aSpark" style="cursor:pointer" title="Click for 8-week trend chart">${sparkSVG(r.series,r.color,false)}<div style="font-size:9px;color:var(--p);text-align:center;margin-top:-2px">trend ▸</div></td>
+      <td style="font-size:11px;color:var(--gray)">${r.note} <span style="color:var(--p)">· row → status · trend → chart</span></td>`;
     tbody.appendChild(tr);
+    tr.querySelector('.aSpark').addEventListener('click',e=>{ e.stopPropagation(); toggleRowChart(rowId,chId,canId,[{label:r.label,data:r.series,color:r.color}],{},null); });
     const pr=document.createElement('tr');
     pr.innerHTML=`<td colspan="7" style="padding:0"><div class="row-chart-wrap" id="${panelId}">${segHTML(r.seg)}</div></td>`;
     tbody.appendChild(pr);
+    const cpr=document.createElement('tr');
+    cpr.innerHTML=`<td colspan="7" style="padding:0"><div class="row-chart-wrap" id="${chId}"><div class="chart-box-lbl" style="padding:0 0 6px">${r.label} — 8-week trend</div><div class="row-chart-inner"><canvas id="${canId}" role="img" aria-label="${r.label} trend">${r.label} trend.</canvas></div></div></td>`;
+    tbody.appendChild(cpr);
   };
   groupHdr('Who booked — New + Follow-up = Total '+(sumOK?'✓':''),'Click any row to expand its status breakdown (Completed / No-show / Rescheduled / Cancelled)'); whoRows.forEach(dataRow);
   // update insight (data-driven, no assumed direction)
@@ -970,38 +952,6 @@ function renderSarvam() {
       ${tile('Missed (NO)',agg.NO,'#dc2626','calls')}
     </div>
     <div class="ins ins-n" style="margin:0;align-items:flex-start"><i class="ti ti-info-circle"></i><span>Of <strong>${agg.total.toLocaleString()}</strong> analyzed inbound calls in <strong>${scopeLbl}</strong>, the agent fully completed the booking on <strong>${pc(agg.YES)}%</strong>, partially on ${pc(agg.PARTIALLY)}%, and missed it on <strong>${pc(agg.NO)}%</strong>. The NO + Partial bucket is recoverable inbound demand — better slot offering & closing on the call. <strong>Caveat:</strong> this is a recent ~2-week network snapshot (analysis batch dated, not call-dated) and is call-grain, so it isn't a per-clinic-week trend like the rest of this page. Source: <code>call_analyses</code> (Sarvam <code>did_we_do_it</code>).</span></div>`;
-}
-
-/* ── RENDER SECTION B: fault attribution (live signals + honest Phase-2 flags) ── */
-function renderB() {
-  const w=currentWeek;
-  const slotPrev=D.slots.scheduled[w-1]||D.slots.scheduled[w], slotNow=D.slots.scheduled[w], slotDrop=slotPrev-slotNow;
-  const util=D.slots.utilization[w];
-  const ns=D.noshows[w], recd=D.recovered[w], reb=D.resched_noshow[w];
-  const docLines=[
-    `Scheduled slots: ${slotPrev} → ${slotNow} this week (${slotDrop>0?'−'+slotDrop:slotDrop===0?'no change':'+'+(-slotDrop)})`,
-    `Utilization ${util}% — ${util>=90?'demand exceeds supply, every cut slot ≈ a lost booking':util>=70?'healthy band':'spare capacity, drop is demand-side not supply'}`,
-    `Doctor-side cancellations vs patient: <span style="color:var(--gray)">Phase 2 — needs cancel-actor field</span>`,
-  ];
-  const rm=D.reminders||{}, nsT=(rm.ns_total||[])[w]||0, nsS=(rm.ns_sent||[])[w]||0, nsD=(rm.ns_delivered||[])[w]||0;
-  const remNote = nsT>0
-    ? `<span style="color:${nsS>=nsT?'var(--g)':'var(--r)'}">${nsS}/${nsT} no-shows DID get a reminder (${Math.round(nsS/nsT*100)}%), ${nsD} delivered</span> — reminders are <strong>not</strong> the gap`
-    : `No no-shows this week to check reminders against`;
-  const opsLines=[
-    `No-shows this week: ${ns} · recovered (later done): ${recd} · re-booked: ${reb}`,
-    `Reminder reality (live · whatsapp): ${remNote}`,
-    `Reactivation call attempts on aged leads: <span style="color:var(--gray)">Phase 2 — exotel_calls link too sparse (~2% carry appointment_id)</span>`,
-  ];
-  const patLines=[
-    `No-show reason split (forgot / chose-not / emergency): <span style="color:var(--gray)">Phase 2 — appointments.reason empty; mine Sarvam transcripts</span>`,
-    `Re-booked after no-show (patient re-engaged): ${reb}`,
-    `Recovery rate ${D.recovery[w]}% of no-shows eventually re-booked/done`,
-  ];
-  const card=(cls,col,icon,title,lines)=>`<div class="attr ${cls}"><div class="attr-title" style="color:${col}"><i class="ti ${icon}" style="font-size:13px"></i>${title}</div>${lines.map(l=>`<div class="attr-li"><i class="ti ti-point" style="font-size:11px;color:${col}"></i>${l}</div>`).join('')}</div>`;
-  document.getElementById('secB-grid').innerHTML=
-    card('attr-r','var(--r)','ti-stethoscope','Doctor / supply',docLines)+
-    card('attr-a','var(--a)','ti-building','Allo / Ops',opsLines)+
-    card('attr-gr','var(--g)','ti-user','Patient',patLines);
 }
 
 /* ── RENDER TABLE C ── */
@@ -1273,7 +1223,6 @@ function toggleSec(id) {
 function renderAll() {
   renderKPIs();
   renderA();
-  renderB();
   renderC();
   renderD();
   renderE();
