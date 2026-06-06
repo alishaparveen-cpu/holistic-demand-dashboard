@@ -27,7 +27,8 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--navy);font-
 .vt-btn.on{background:rgba(255,255,255,.15);color:#fff}
 
 /* KPI CARDS */
-.kpi-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:16px}
+.kpi-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:10px;margin-bottom:16px}
+@media(max-width:1100px){.kpi-grid{grid-template-columns:repeat(3,1fr)}}
 .kpi-card{background:var(--card);border:1px solid var(--bdr);border-radius:11px;padding:14px 16px;cursor:pointer;transition:all .18s;position:relative}
 .kpi-card:hover{border-color:#C4B5FD;box-shadow:0 0 0 3px rgba(124,58,237,.06)}
 .kpi-card.active{border-color:var(--p);box-shadow:0 0 0 3px rgba(124,58,237,.08)}
@@ -310,10 +311,6 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--navy);font-
       <div style="font-size:11px;font-weight:500;color:var(--gray);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">Lead age at time of booking — click any bucket to see trend</div>
       <div class="age-g" id="ageGrid"></div>
       <div class="ins ins-n" id="ageInsight" style="margin-top:10px;margin-bottom:0"><i class="ti ti-bulb"></i><span></span></div>
-    </div>
-    <div style="margin-top:14px">
-      <div style="font-size:11px;font-weight:500;color:var(--gray);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">Unconverted lead pool · contact rate</div>
-      <div class="ins ins-n" style="margin-bottom:0;align-items:flex-start"><i class="ti ti-info-circle"></i><span><strong>Resolved — there is no unconverted-lead pool in this data.</strong> The lead table (<code>main_source_wise_leads</code>) only contains patients who <em>booked</em> — every row carries a <code>call_booking_ts</code> — so there's no uncontacted backlog here to size or measure a contact rate against. The call-log (<code>exotel_calls</code>) <em>is</em> now joined where it's meaningful: <strong>no-show call-back rate</strong> (Section F) and <strong>booked-patient call coverage</strong> (~90%). A true top-of-funnel "inquiry pool" would need chatbot/web-enquiry events that aren't in this warehouse.</span></div>
     </div>
   </div>
 </div>
@@ -674,7 +671,7 @@ function toggleRowChart(rowId, chartId, canvasId, datasets, opts, btnCell) {
 }
 
 /* ── KPI CHART ── */
-function showKpiChart(key, title, series, note, color) {
+function showKpiChart(key, title, series, note, color, dsets) {
   const panel = document.getElementById('kpiChartPanel');
   const titleEl = document.getElementById('kpiChartTitle');
   const noteEl = document.getElementById('kpiChartNote');
@@ -690,7 +687,8 @@ function showKpiChart(key, title, series, note, color) {
   titleEl.textContent=title+' — 8-week trend';
   noteEl.textContent=note;
   panel.style.display='block';
-  setTimeout(()=>makeChart('kpiChartCanvas',[{label:title,data:series,color:color,fill:true}]),50);
+  const datasets = (dsets && dsets.length) ? dsets : [{label:title,data:series,color:color,fill:true}];
+  setTimeout(()=>makeChart('kpiChartCanvas',datasets),50);
 }
 function closeKpiChart() {
   document.getElementById('kpiChartPanel').style.display='none';
@@ -712,9 +710,12 @@ function renderKPIs() {
      note:'Inbound leads across all channels incl. Practo (Section D). Marketing-attributed demand into the clinic.'},
     {key:'b2d', label:'Book → Done', series:D.completion, unit:'%', color:COLORS.a,
      note:'Book→Done = completed ÷ all bookings. Dragged down by reschedule/cancel leakage — see the funnel in Section E (Kept→Done show-up is separate, ~higher).'},
+    {key:'showup', label:'Show rate', series:D.showup, unit:'%', color:COLORS.g,
+     note:'Show-up = completed ÷ (completed + missed). Of appointments that were actually kept (not rescheduled/cancelled away), how many the patient attended. The true attendance signal, separate from Book→Done.'},
     {key:'avail', label:'Availability (days)', series:av.total, color:COLORS.t,
      sub:`${av.weekday[w]||0} weekday · ${av.weekend[w]||0} weekend`,
-     note:'Days the clinic had bookable doctor slots this week, split weekday vs weekend (roster). More open days = more capacity for demand.'},
+     dsets:[{label:'Weekday days',data:av.weekday,color:COLORS.t,fill:false},{label:'Weekend days',data:av.weekend,color:COLORS.a,fill:false}],
+     note:'Days the clinic had bookable doctor slots this week, split weekday vs weekend (roster). Expanded chart shows weekday and weekend trends separately.'},
   ];
   const grid = document.getElementById('kpiGrid');
   grid.innerHTML = '';
@@ -729,7 +730,7 @@ function renderKPIs() {
     const div = document.createElement('div');
     div.className='kpi-card';
     div.id='kpi-'+k.key;
-    div.onclick=()=>showKpiChart(k.key,k.label,s,k.note,k.color);
+    div.onclick=()=>showKpiChart(k.key,k.label,s,k.note,k.color,k.dsets);
     const subLine = k.sub ? `<div class="kpi-wow fl" style="color:var(--gray)"><i class="ti ti-calendar" style="font-size:11px"></i>${k.sub}</div>`
                           : `<div class="kpi-wow ${dir}"><i class="ti ti-trending-${dir==='up'?'up':dir==='dn'?'down':'flat'}" style="font-size:11px"></i>${pct===null?'—':sign+pct+'% vs last week'}</div>`;
     div.innerHTML=`
@@ -1030,21 +1031,33 @@ function renderDocSplit(){
     return {name, sched,shrunk,avail,total,done,missed, shrinkR:pct(shrunk,sched), util:pct(total,avail), showup:pct(done,done+missed)};
   }).filter(r=>r.sched>0||r.total>0).sort((a,b)=>b.done-a.done);
   if(!rows.length){ el.innerHTML='<div class="ins ins-n" style="margin:0"><i class="ti ti-users"></i><span>No doctor activity this week at this clinic.</span></div>'; return; }
-  let h=`<div style="font-size:11px;font-weight:500;color:var(--gray);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">Per-doctor split — this week</div>
-    <table class="tbl"><thead><tr><th>Doctor</th><th class="num">Sched</th><th class="num">Shrinkage</th><th class="num">Avail</th><th class="num">Booked</th><th class="num">Util%</th><th class="num">Done</th><th class="num">No-show</th><th class="num">Show-up%</th></tr></thead><tbody>`;
-  rows.forEach(r=>{
+  el.innerHTML=`<div style="font-size:11px;font-weight:500;color:var(--gray);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">Per-doctor split — this week <span style="font-weight:400;text-transform:none">· click a doctor for their 8-week trend</span></div>
+    <table class="tbl" id="tblDoc"><thead><tr><th>Doctor</th><th class="num">Sched</th><th class="num">Shrinkage</th><th class="num">Avail</th><th class="num">Booked</th><th class="num">Util%</th><th class="num">Done</th><th class="num">No-show</th><th class="num">Show-up%</th></tr></thead><tbody id="tblDoc-body"></tbody></table>
+    <div class="ins ins-b" id="docInsight" style="margin-top:8px;margin-bottom:0"><i class="ti ti-bulb"></i><span></span></div>`;
+  const tb=document.getElementById('tblDoc-body');
+  rows.forEach((r,i)=>{
     const fShr=r.shrinkR>=25, fShow=(r.done+r.missed)>0&&r.showup<70;
-    h+=`<tr><td><strong>${r.name}</strong></td><td class="num">${r.sched}</td>
+    const v=docs[r.name], did='rDoc-'+i, pid='pDoc-'+i, cid='cDoc-'+i;
+    const tr=document.createElement('tr'); tr.className='clickable'; tr.id=did; tr.setAttribute('data-panel',pid);
+    const bookedSer=ser(v.total), doneSer=ser(v.done), schedSer=ser(v.sched);
+    tr.onclick=()=>toggleRowChart(did,pid,cid,[
+      {label:'Booked',data:bookedSer,color:COLORS.p},
+      {label:'Done',data:doneSer,color:COLORS.g},
+      {label:'Scheduled slots',data:schedSer,color:COLORS.r,dash:[4,3]}
+    ],{},null);
+    tr.innerHTML=`<td><strong>${r.name}</strong> <i class="ti ti-chevron-down" style="font-size:10px;color:var(--p)"></i></td><td class="num">${r.sched}</td>
       <td class="num ${fShr?'dn':''}">${r.shrunk} (${r.shrinkR}%)${fShr?' ⚠':''}</td>
       <td class="num">${r.avail}</td><td class="num">${r.total}</td><td class="num">${r.util}%</td>
       <td class="num"><strong>${r.done}</strong></td><td class="num">${r.missed}</td>
-      <td class="num ${fShow?'dn':''}">${(r.done+r.missed)>0?r.showup+'%':'—'}${fShow?' ⚠':''}</td></tr>`;
+      <td class="num ${fShow?'dn':''}">${(r.done+r.missed)>0?r.showup+'%':'—'}${fShow?' ⚠':''}</td>`;
+    tb.appendChild(tr);
+    const pr=document.createElement('tr');
+    pr.innerHTML=`<td colspan="9" style="padding:0"><div class="row-chart-wrap" id="${pid}"><div class="chart-box-lbl" style="padding:0 0 6px">${r.name} — Booked vs Done vs Scheduled slots — 8w</div><div class="row-chart-inner"><canvas id="${cid}" role="img" aria-label="${r.name} trend">${r.name} trend.</canvas></div></div></td>`;
+    tb.appendChild(pr);
   });
-  h+=`</tbody></table>`;
   const worstShr=rows.reduce((m,r)=>r.shrinkR>m.shrinkR?r:m,rows[0]);
   const topDoc=rows[0];
-  h+=`<div class="ins ins-b" style="margin-top:8px;margin-bottom:0"><i class="ti ti-bulb"></i><span><strong>${topDoc.name}</strong> carries the most done consults (${topDoc.done}). ${worstShr.shrinkR>=25?`<strong>${worstShr.name}</strong> has the highest shrinkage (${worstShr.shrinkR}% of scheduled slots blocked) — recover those before adding hours.`:'Shrinkage is reasonable across doctors.'} Per-doctor roster slots from <code>roster_slots.provider_id</code>; outcomes from <code>appointments.provider_id</code>.</span></div>`;
-  el.innerHTML=h;
+  document.getElementById('docInsight').querySelector('span').innerHTML=`<strong>${topDoc.name}</strong> carries the most done consults (${topDoc.done}). ${worstShr.shrinkR>=25?`<strong>${worstShr.name}</strong> has the highest shrinkage (${worstShr.shrinkR}% of scheduled slots blocked) — recover those before adding hours.`:'Shrinkage is reasonable across doctors.'} Click any doctor for their 8-week trend. Roster slots from <code>roster_slots.provider_id</code>; outcomes from <code>appointments.provider_id</code>.`;
 }
 
 /* ── RENDER TABLE D ── */
@@ -1094,11 +1107,17 @@ function renderD() {
     div.className='age-b'+(a.flag?' flagged':'');
     div.id='age-box-'+i;
     div.onclick=()=>{
-      // show chart in panel below age grid
+      let panel=document.getElementById('age-panel');
+      // toggle: clicking the already-open bucket folds it
+      if(panel && panel.dataset.openIdx===String(i)){
+        destroyChart('age-canvas-'+i); panel.remove();
+        document.querySelectorAll('.age-b').forEach(b=>b.style.borderColor='');
+        return;
+      }
       document.querySelectorAll('.age-b').forEach(b=>b.style.borderColor='');
       div.style.borderColor=a.color;
-      let panel=document.getElementById('age-panel');
       if(!panel){panel=document.createElement('div');panel.id='age-panel';panel.className='row-chart-wrap open';panel.style.borderRadius='8px';panel.style.marginTop='8px';agegrid.parentNode.insertBefore(panel,agegrid.nextSibling);}
+      panel.dataset.openIdx=String(i);
       panel.innerHTML=`<div class="chart-box-lbl" style="padding:0 0 6px">${a.label} — bookings from this age cohort — 8w</div><div class="row-chart-inner"><canvas id="age-canvas-${i}" role="img" aria-label="${a.label} lead age trend">${a.label} trend.</canvas></div>`;
       panel.classList.add('open');
       setTimeout(()=>makeChart('age-canvas-'+i,[{label:a.label,data:a.series,color:a.color,fill:true}]),50);
