@@ -209,17 +209,23 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--navy);font-
     <div class="sec-left">
       <div class="sec-ltr" style="background:#0f172a">▦</div>
       <div>
-        <div class="sec-title">Clinic comparison — this week</div>
-        <div class="sec-sub">Per-clinic leaderboard for the selected set · sortable · worst performers flagged</div>
+        <div class="sec-title">Comparison — this week</div>
+        <div class="sec-sub">Leaderboard for the selected set · roll up by city or drill to clinics · worst performers flagged</div>
       </div>
     </div>
-    <div class="sec-right"><span class="pill p-a" id="secCmp-flag"></span><i class="ti ti-chevron-down chevron open" id="secCmp-chev"></i></div>
+    <div class="sec-right">
+      <span class="view-toggle" id="cmpToggle" style="margin-right:8px" onclick="event.stopPropagation()">
+        <button class="vt-btn" id="cmp-clinic" onclick="setCmpMode('clinic')">By clinic</button>
+        <button class="vt-btn" id="cmp-city" onclick="setCmpMode('city')">By city</button>
+      </span>
+      <span class="pill p-a" id="secCmp-flag"></span><i class="ti ti-chevron-down chevron open" id="secCmp-chev"></i>
+    </div>
   </div>
   <div class="sec-body" id="secCmp-body">
     <table class="tbl" id="tblCmp">
       <thead><tr>
-        <th>Clinic</th><th class="num">Bookings</th><th class="num">Done</th><th class="num">No-show</th>
-        <th class="num">Show-up%</th><th class="num">Resched/cancel%</th><th class="num">Shrinkage%</th><th class="num">Done WoW</th>
+        <th id="cmpCol0">Clinic</th><th class="num">Bookings</th><th class="num">Done</th><th class="num">No-show</th>
+        <th class="num">Show-up%</th><th class="num">Resched/cancel%</th><th class="num">Shrinkage%</th><th class="num">SC→Tx%</th><th class="num">Done WoW</th>
       </tr></thead>
       <tbody id="tblCmp-body"></tbody>
     </table>
@@ -867,39 +873,60 @@ function renderH() {
 }
 
 /* ── RENDER CLINIC COMPARISON (city-lead leaderboard, multi-select only) ── */
-function compClinic(k){
-  const w=currentWeek, d=f=>ser(((SC[k]||{}).disp||{})[f]);
-  const total=d('total'), done=d('done'), miss=d('missed');
-  const kept=done.map((x,i)=>x+miss[i]); const leak=total.map((t,i)=>Math.max(0,t-kept[i]));
-  const shr=(ROSTER[k]||{}).shr||{}; const sched=ser(shr.sched), avail=ser(shr.avail);
-  const shrunk=sched.map((s,i)=>Math.max(0,s-avail[i]));
+let cmpMode='auto';   // 'auto' | 'clinic' | 'city'
+function setCmpMode(m){ cmpMode=m; renderCompare(); }
+// aggregate raw counts across a set of clinic keys → one comparison row
+function compAgg(keys){
+  const w=currentWeek, mi=lastMatureIdx();
+  const atW=getter=>keys.reduce((s,k)=>s+((ser(getter(k))[w])||0),0);
+  const atI=(getter,idx)=>keys.reduce((s,k)=>s+((ser(getter(k))[idx])||0),0);
+  const dG=f=>k=>((SC[k]||{}).disp||{})[f];
+  const total=atW(dG('total')), done=atW(dG('done')), miss=atW(dG('missed'));
+  const doneSeries=(()=>{const a=Array(NW).fill(0);keys.forEach(k=>{const s=ser(((SC[k]||{}).disp||{}).done);for(let i=0;i<NW;i++)a[i]+=(s[i]||0);});return a;})();
+  const sched=atW(k=>((ROSTER[k]||{}).shr||{}).sched), avail=atW(k=>((ROSTER[k]||{}).shr||{}).avail);
+  const kept=done+miss, leak=Math.max(0,total-kept), shrunk=Math.max(0,sched-avail);
+  const cvC=atI(k=>(CONV[k]||{}).completed_sc,mi), cvV=atI(k=>(CONV[k]||{}).converted,mi);
   const pct=(a,b)=>b>0?Math.round(a/b*100):0;
-  return { key:k, name:k.split('|')[1], city:k.split('|')[0],
-    bookings:total[w], done:done[w], noshow:miss[w],
-    showup:pct(done[w],kept[w]), leak:pct(leak[w],total[w]), shrink:pct(shrunk[w],sched[w]),
-    doneWow:wow(done,w) };
+  return { bookings:total, done, noshow:miss, showup:pct(done,kept), leak:pct(leak,total),
+    shrink:pct(shrunk,sched), conv:pct(cvV,cvC), doneWow:wow(doneSeries,w) };
 }
 function renderCompare(){
   const sec=document.getElementById('secCmp');
   if(SEL.length<2){ sec.style.display='none'; return; }
   sec.style.display='';
-  const rows=SEL.map(compClinic).sort((a,b)=>b.done-a.done);
+  const cities=[...new Set(SEL.map(k=>k.split('|')[0]))];
+  const multiCity = cities.length>1;
+  // resolve mode: auto → city when the selection spans many clinics across >1 city
+  const mode = cmpMode==='auto' ? (multiCity && SEL.length>10 ? 'city' : 'clinic') : (cmpMode==='city' && !multiCity ? 'clinic' : cmpMode);
+  document.getElementById('cmp-clinic').classList.toggle('on', mode==='clinic');
+  document.getElementById('cmp-city').classList.toggle('on', mode==='city');
+  document.getElementById('cmpToggle').style.display = multiCity ? '' : 'none';
+  document.getElementById('cmpCol0').textContent = mode==='city' ? 'City' : 'Clinic';
+  let rows;
+  if(mode==='city'){
+    rows=cities.map(c=>{ const keys=SEL.filter(k=>k.split('|')[0]===c); return Object.assign(compAgg(keys),{name:c, sub:keys.length+' clinic'+(keys.length>1?'s':'')}); });
+  } else {
+    rows=SEL.map(k=>Object.assign(compAgg([k]),{name:k.split('|')[1], sub:k.split('|')[0]}));
+  }
+  rows.sort((a,b)=>b.done-a.done);
   const worstShow=rows.reduce((m,r)=>r.showup<m.showup?r:m,rows[0]);
   const worstLeak=rows.reduce((m,r)=>r.leak>m.leak?r:m,rows[0]);
   const tb=document.getElementById('tblCmp-body'); tb.innerHTML='';
   rows.forEach(r=>{
-    const flagShow=r.showup<70, flagLeak=r.leak>=50, flagShr=r.shrink>=25;
+    const flagShow=r.showup<70, flagLeak=r.leak>=50, flagShr=r.shrink>=25, flagConv=r.conv>0&&r.conv<22;
     const tr=document.createElement('tr');
-    tr.innerHTML=`<td><strong>${r.name}</strong> <span style="color:var(--gray);font-size:10px">${r.city}</span></td>
+    tr.innerHTML=`<td><strong>${r.name}</strong> <span style="color:var(--gray);font-size:10px">${r.sub}</span></td>
       <td class="num">${r.bookings}</td><td class="num"><strong>${r.done}</strong></td><td class="num">${r.noshow}</td>
       <td class="num ${flagShow?'dn':''}">${r.showup}%${flagShow?' ⚠':''}</td>
       <td class="num ${flagLeak?'dn':''}">${r.leak}%${flagLeak?' ⚠':''}</td>
       <td class="num ${flagShr?'dn':''}">${r.shrink}%${flagShr?' ⚠':''}</td>
+      <td class="num ${flagConv?'dn':''}">${r.conv?r.conv+'%':'—'}${flagConv?' ⚠':''}</td>
       <td class="num ${r.doneWow.dir}">${r.doneWow.str}</td>`;
     tb.appendChild(tr);
   });
-  document.getElementById('secCmp-flag').textContent=`${rows.length} clinics`;
-  document.getElementById('cmpInsight').querySelector('span').innerHTML=`<strong>${rows[0].name}</strong> has the most done consults (${rows[0].done}). Lowest show-up: <strong>${worstShow.name}</strong> (${worstShow.showup}%). Highest reschedule/cancel leakage: <strong>${worstLeak.name}</strong> (${worstLeak.leak}%). Sort your attention by the ⚠ flags — those are the clinics to call first.`;
+  document.getElementById('secCmp-flag').textContent = mode==='city' ? `${rows.length} cities` : `${rows.length} clinics`;
+  const unit = mode==='city'?'city':'clinic';
+  document.getElementById('cmpInsight').querySelector('span').innerHTML=`<strong>${rows[0].name}</strong> leads on done consults (${rows[0].done}). Lowest show-up: <strong>${worstShow.name}</strong> (${worstShow.showup}%). Highest reschedule/cancel leakage: <strong>${worstLeak.name}</strong> (${worstLeak.leak}%). The ⚠ flags are where to look first${mode==='city'?' — switch to “By clinic” to drill in':''}. <span style="color:var(--gray)">SC→Tx% = screening-call→treatment conversion (latest mature week).</span>`;
 }
 
 /* ── RENDER Sarvam inbound-call quality (network / selected-city snapshot) ── */
