@@ -183,6 +183,13 @@ function landSpec(){
 function landWinN(){ return trendWin==='all'?WEEKS.length:Math.min(+trendWin||6,WEEKS.length); }
 // landing card NORM = the same "Expected" the deep-dive uses, so changing "Compare vs" moves the cards.
 function landNorm(arr,W){ return expectedOf(arr, W); }
+// capacity baseline: scale the clinic's capacity-expected bookings (velExp, on all-bookings) to whatever
+// metric the card shows. Leads aren't hour-bound → fall back to the normal norm.
+function landNormVel(r, arr, W){
+  if(baseMode!=='vel' || landView==='leads' || !r) return landNorm(arr, W);
+  const mNorm=avg(dimSlice(arr,W)), ratio=r.bk_avg>0 ? mNorm/r.bk_avg : 0;
+  return (r.velExp||0)*ratio;
+}
 let wkIdx=0;              // selected week index (0 = latest)
 let baseMode='avg6';      // which baseline "Expected" is measured against (see BASE_OPTS) — default 6-wk (matches the 6-week display window)
 // Baseline options for the comparison dropdown. Each defines how "Expected" is
@@ -196,15 +203,16 @@ const BASE_OPTS=[
   ['peak','Recent peak','vs its highest of the last 2 weeks'],
   ['prev','Last week','vs the immediately preceding week'],
   ['best','Best week','vs its best week on record'],
+  ['vel','Expected · capacity (hr-rate)','vs this clinic’s per-hour weekday/weekend booking rate × this week’s ACTUAL bookable hours — isolates the gap that fewer hours do NOT explain'],
 ];
 function baseLabel(){ const o=BASE_OPTS.find(x=>x[0]===baseMode); return o?o[1]:'baseline'; }
-function baseShort(){ return baseMode==='peak'?'recent peak':baseMode==='avg4'?'4-wk avg':baseMode==='avg8'?'8-wk avg':baseMode==='avg12'?'12-wk avg':baseMode==='prev'?'last week':baseMode==='best'?'best week':'6-wk avg'; }
+function baseShort(){ return baseMode==='vel'?'capacity exp':baseMode==='peak'?'recent peak':baseMode==='avg4'?'4-wk avg':baseMode==='avg8'?'8-wk avg':baseMode==='avg12'?'12-wk avg':baseMode==='prev'?'last week':baseMode==='best'?'best week':'6-wk avg'; }
 // dimension baseline window (leads/availability) — follows the chosen avg window
 // Dimension norm window — varies by the selected comparison so the leads /
 // active-days / weekend deltas (and chips) actually change when you switch it.
 function dimSlice(arr, W){
   if(baseMode==='avg4') return arr.slice(W+1, W+5);    // 4 wk
-  if(baseMode==='avg6') return arr.slice(W+1, W+7);    // 6 wk (default)
+  if(baseMode==='avg6'||baseMode==='vel') return arr.slice(W+1, W+7);    // 6 wk (default; vel uses 6wk for dimension norms + per-hour rates)
   if(baseMode==='avg8') return arr.slice(W+1, W+9);    // 8 wk
   if(baseMode==='avg12') return arr.slice(W+1, W+13);  // 12 wk
   if(baseMode==='prev') return arr.slice(W+1, W+2);    // 1 wk
@@ -219,6 +227,7 @@ function expectedOf(arr, W){
     case 'avg4': return avg(arr.slice(W+1, W+5));
     case 'avg6': return avg(arr.slice(W+1, W+7));   // 6-wk avg (default)
     case 'avg8': case 'avg': return avg(arr.slice(W+1, W+9));   // true 8-wk avg
+    case 'vel': return avg(arr.slice(W+1, W+7));   // generic fallback (6-wk); bookings get the true capacity override in rcaClinic
     case 'avg12': return avg(arr.slice(W+1, W+13));
     case 'peak': default: return Math.max(arr[W+1]||0, arr[W+2]||0);
   }
@@ -442,7 +451,23 @@ function rcaClinic(city, clinic){
   const bk_w=bk[W], bk_peak=Math.max(bk[W+1]||0, bk[W+2]||0), bk_avg=avg(sl(bk));
   const ld_w=ld[W], ld_avg=avg(sl(ld)), av_w=av[W], av_avg=avg(sl(av)), we_w=we[W], we_avg=avg(sl(we)), wd_w=wd[W], wd_avg=avg(sl(wd));
   const gmb_w=gmb[W], gmb_avg=avg(sl(gmb)), pr_w=pr[W], pr_avg=avg(sl(pr));
-  const bkBase = expectedOf(bk, W);                      // "Expected" under the chosen baseline
+  // ── per-hour weekday/weekend booking rates × bookable hours — computed here (before bkBase) so the
+  //    "Expected · capacity" baseline can use them. Weekends weighted by their higher rate (no multiplier). ──
+  const _ros=rosterArr(city,clinic), _hasHrs=_ros.hrs && _ros.hrs.some(x=>x!=null&&x>0);
+  const _shrF=i=>{ const sc=(_ros.shr&&_ros.shr.sched&&_ros.shr.sched[i])||0, sh=(_ros.shr&&_ros.shr.shrunk&&_ros.shr.shrunk[i])||0; return sc>0?Math.min(0.95,sh/sc):0; };
+  const _cWd=i=> _hasHrs ? Math.max(0,((_ros.hrs[i]||0)-(_ros.we_hrs[i]||0)))*(1-_shrF(i)) : Math.max(0,(av[i]||0)-(we[i]||0));
+  const _cWe=i=> _hasHrs ? (_ros.we_hrs[i]||0)*(1-_shrF(i)) : (we[i]||0);
+  let _wdBk=0,_weBk=0,_wdCap=0,_weCap=0;
+  for(let k=1;k<=8;k++){ const i=W+k; if(i>=WEEKS.length) break; const cw=_cWd(i),ce=_cWe(i); if(cw+ce<=0) continue; const b=(bk[i]||0), wb=((bkWe||[])[i]||0); _wdBk+=(b-wb); _weBk+=wb; _wdCap+=cw; _weCap+=ce; }
+  const _wdRate=_wdCap>0?_wdBk/_wdCap:0, _weRate=_weCap>0?_weBk/_weCap:0;
+  const _wdAll=WEEKS.map((_,i)=>_cWd(i)), _weAll=WEEKS.map((_,i)=>_cWe(i));
+  const _nrmH=arr=>{ const w=dimSlice(arr,W).filter(x=>x!=null); return w.length? w.reduce((a,b)=>a+b,0)/w.length:0; };
+  const _normWd=_nrmH(_wdAll), _normWe=_nrmH(_weAll), _wdNow=_cWd(W), _weNow=_cWe(W);
+  const _wdShort=Math.max(0,_normWd-_wdNow), _weShort=Math.max(0,_normWe-_weNow);
+  const availHr={loss:_wdRate*_wdShort+_weRate*_weShort, wdRate:_wdRate, weRate:_weRate, normWd:_normWd, wdNow:_wdNow, normWe:_normWe, weNow:_weNow, wdShort:_wdShort, weShort:_weShort, U:_hasHrs?'h':'d'};
+  // capacity-adjusted expected bookings = per-hour rate × THIS week's actual bookable hours (weekday + weekend)
+  const velExp = _wdRate*_wdNow + _weRate*_weNow;
+  const bkBase = baseMode==='vel' ? velExp : expectedOf(bk, W);   // "Expected" under the chosen baseline
   const dBk = bk_w - bkBase;
   const dLeadPct=ld_avg? (ld_w-ld_avg)/ld_avg*100 : 0;
   const dAct=av_w-av_avg, dWe=we_w-we_avg;
@@ -466,21 +491,7 @@ function rcaClinic(city, clinic){
   const bkPerLead = ld_avg>0 ? Math.min(1, bkNew_avg/ld_avg) : 0;
   const weLost = Math.max(0, we_avg - we_w);                   // weekend days lost
   const wdLost = Math.max(0, wd_avg - wd_w);                   // weekday days lost
-  // ── hour-rate availability loss: bookable-HOUR shortfall vs the selected norm × this clinic's own
-  //    per-hour weekday/weekend rates (same basis as the Expected model). Weekends weighted by their
-  //    higher rate — no arbitrary multiplier. Falls back to days when roster hours are absent. ──
-  const _ros=rosterArr(city,clinic), _hasHrs=_ros.hrs && _ros.hrs.some(x=>x!=null&&x>0);
-  const _shrF=i=>{ const sc=(_ros.shr&&_ros.shr.sched&&_ros.shr.sched[i])||0, sh=(_ros.shr&&_ros.shr.shrunk&&_ros.shr.shrunk[i])||0; return sc>0?Math.min(0.95,sh/sc):0; };
-  const _cWd=i=> _hasHrs ? Math.max(0,((_ros.hrs[i]||0)-(_ros.we_hrs[i]||0)))*(1-_shrF(i)) : Math.max(0,(av[i]||0)-(we[i]||0));
-  const _cWe=i=> _hasHrs ? (_ros.we_hrs[i]||0)*(1-_shrF(i)) : (we[i]||0);
-  let _wdBk=0,_weBk=0,_wdCap=0,_weCap=0;
-  for(let k=1;k<=8;k++){ const i=W+k; if(i>=WEEKS.length) break; const cw=_cWd(i),ce=_cWe(i); if(cw+ce<=0) continue; const b=(bk[i]||0), wb=((bkWe||[])[i]||0); _wdBk+=(b-wb); _weBk+=wb; _wdCap+=cw; _weCap+=ce; }
-  const _wdRate=_wdCap>0?_wdBk/_wdCap:0, _weRate=_weCap>0?_weBk/_weCap:0;
-  const _wdAll=WEEKS.map((_,i)=>_cWd(i)), _weAll=WEEKS.map((_,i)=>_cWe(i));
-  const _nrmH=arr=>{ const w=dimSlice(arr,W).filter(x=>x!=null); return w.length? w.reduce((a,b)=>a+b,0)/w.length:0; };
-  const _normWd=_nrmH(_wdAll), _normWe=_nrmH(_weAll), _wdNow=_cWd(W), _weNow=_cWe(W);
-  const _wdShort=Math.max(0,_normWd-_wdNow), _weShort=Math.max(0,_normWe-_weNow);
-  const availHr={loss:_wdRate*_wdShort+_weRate*_weShort, wdRate:_wdRate, weRate:_weRate, normWd:_normWd, wdNow:_wdNow, normWe:_normWe, weNow:_weNow, wdShort:_wdShort, weShort:_weShort, U:_hasHrs?'h':'d'};
+  // (per-hour rates + availHr + velExp are computed ABOVE, before bkBase, so the capacity baseline can use them)
   // only attribute to a dimension that actually BROKE (passed its threshold) — sub-threshold wobble is noise, not a cause
   let availLoss = availBroke ? Math.min(L, availHr.loss) : 0;
   let leadsLoss = leadsBroke ? Math.max(0, Math.min(L-availLoss, Math.max(0, ld_avg-ld_w) * bkPerLead)) : 0;
@@ -512,7 +523,7 @@ function rcaClinic(city, clinic){
   return {city,clinic,bk_w,bk_peak,bk_avg,bkBase,dBk,ld_w,ld_avg,dLeadPct,av_w,av_avg,dAct,we_w,we_avg,dWe,
           gmb_w,gmb_avg,pr_w,pr_avg,wd_w,wd_avg,
           leadsBroke,actBroke,weBroke,availBroke,cause,mixWith,comp,L,mat,note,
-          bkPerDay,bkPerLead,bkNew_avg,weLost,wdLost,leadsLoss_gmb,leadsLoss_pr,expectedIfFull,availHr,
+          bkPerDay,bkPerLead,bkNew_avg,velExp,weLost,wdLost,leadsLoss_gmb,leadsLoss_pr,expectedIfFull,availHr,
           bkArr:bk,bkWeArr:bkWe,bkNewArr:bkNew,bkRepeatArr:bkRepeat,bkDoneArr:bkDone,bkDoneNewArr:bkDoneNew,bkDoneRepeatArr:bkDoneRepeat,bkReschedArr:bkResched,bkMissedArr:bkMissed,bkCancelledArr:bkCancelled,ldArr:ld,avArr:av,weArr:we,gmbArr:gmb,prArr:pr,wdArr:wd,
           orgArr:orgArr, gmbOnlyArr:gmbOnly, gAdArr:gAd, fbArr:fbA, jdArr:jdA, othArr:othA, useRedshiftLeads:useRedshift};
 }
@@ -702,7 +713,7 @@ function miniClinicCard(r){
 // City-head landing: the scoped clinics ranked worst-first by new-patient booking drop, click to drill.
 function cityOverview(R){
   const W=wkIdx, sp=landSpec(), N=landWinN();
-  const list=R.rows.filter(causeMatch).map(r=>{ const arr=sp.arr(r); const new_w=arr[W]||0, new_n=landNorm(arr, W); const dN=new_w-Math.round(new_n);
+  const list=R.rows.filter(causeMatch).map(r=>{ const arr=sp.arr(r); const new_w=arr[W]||0, new_n=landNormVel(r, arr, W); const dN=new_w-Math.round(new_n);
     const dNp=new_n>0?Math.round((new_w-new_n)/new_n*100):0; return {r,arr,new_w,new_n,dN,dNp}; }).sort((a,b)=>a.dN-b.dN);
   const isAff=x=> x.dN<=-2 || (x.new_n>0 && (x.new_w-x.new_n)/x.new_n<=-0.2);
   const affected=list.filter(isAff);
@@ -728,7 +739,7 @@ function cityOverview(R){
 // All-cities landing: each city's new-patient bookings vs norm, worst-first. Click a city to see its clinics.
 function cityRollup(R){
   const W=wkIdx, byCity={}, sp=landSpec(), N=landWinN();
-  R.rows.filter(causeMatch).forEach(r=>{ const c=r.city, arr=sp.arr(r), new_w=arr[W]||0, new_n=landNorm(arr, W);
+  R.rows.filter(causeMatch).forEach(r=>{ const c=r.city, arr=sp.arr(r), new_w=arr[W]||0, new_n=landNormVel(r, arr, W);
     if(!byCity[c]) byCity[c]={city:c,new_w:0,new_n:0,tot:0,n:0,aff:0,newArr:Array(WEEKS.length).fill(0)};
     const o=byCity[c]; o.new_w+=new_w; o.new_n+=new_n; o.tot+=sp.totalVal(r); o.n++;
     for(let i=0;i<WEEKS.length;i++) o.newArr[i]+=(arr[i]||0);
