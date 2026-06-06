@@ -291,8 +291,8 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--navy);font-
     <div class="sec-left">
       <div class="sec-ltr">D</div>
       <div>
-        <div class="sec-title">Booking source mix &amp; lead age</div>
-        <div class="sec-sub">Which channel booked patients came from (partial coverage) · how stale the lead was when it booked · Click any row for 8-week trend</div>
+        <div class="sec-title">Leads by channel &amp; lead age</div>
+        <div class="sec-sub">Inbound leads split by channel (Google + GMB, Practo, Meta, Organic…) like the Diagnostic tab · how stale the lead was when it booked · Click any row for 8-week trend</div>
       </div>
     </div>
     <div class="sec-right">
@@ -300,9 +300,9 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--navy);font-
     </div>
   </div>
   <div class="sec-body" id="secD-body">
-    <div class="ins ins-a"><i class="ti ti-alert-triangle"></i><span><strong>Read as a mix, not a funnel.</strong> Only bookings that carry a source tag in <code>main_source_wise_leads</code> appear here — typically ~40–65% of all bookings; the rest are walk-in/direct/untagged. This is <em>not</em> a top-of-funnel lead count, so it can't give a true lead→booking rate (see Section E). Use it to see <em>where attributable demand shifts</em>, week to week.</span></div>
+    <div class="ins ins-b"><i class="ti ti-info-circle"></i><span><strong>Leads by channel</strong> from <code>main_source_wise_leads</code> (Google Ads / GMB / Meta / Organic / Justdial) plus the <strong>Practo</strong> marketplace feed — the same channel cut as the Diagnostic tab. Use it to see which channel's demand is moving week to week. Click any channel for its 8-week trend.</span></div>
     <table class="tbl" id="tblD">
-      <thead><tr><th>Source</th><th class="num">Bookings this wk</th><th class="num">Last wk</th><th class="num">WoW Δ</th><th style="width:100px">Trend (8w)</th><th>Note</th></tr></thead>
+      <thead><tr><th>Channel</th><th class="num">Leads this wk</th><th class="num">Last wk</th><th class="num">WoW Δ</th><th style="width:100px">Trend (8w)</th><th>Note</th></tr></thead>
       <tbody id="tblD-body"></tbody>
     </table>
     <div style="margin-top:14px">
@@ -466,7 +466,7 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--navy);font-
 <script>
 /* ── DATA ── */
 let WEEKS=[], WEEK_LABELS=[], currentWeek=7;
-let SC=null, LEADS=null, ROSTER=null, REM={}, SARVAM=null, CONV={}, DOCTOR={}, MKT=null, SWHO={}, RETEN={}, CALLBACK={}, D=null;
+let SC=null, LEADS=null, ROSTER=null, REM={}, SARVAM=null, CONV={}, DOCTOR={}, MKT=null, SWHO={}, RETEN={}, CALLBACK={}, PRACTO={}, D=null;
 const RET_MATURE_IDX=9;   // newest-first 12-week idx whose 60-day retention window has fully elapsed
 let SEL=[];                                   // selected clinic keys (City|Clinic) — aggregated/summed
 let CLINICS=[], CITIES={};                    // all keys; city -> [keys]
@@ -496,7 +496,8 @@ function buildD(){
   const sched=shrA('sched'), avail=shrA('avail');
   const shrunk=sched.map((s,i)=>Math.max(0,s-avail[i]));   // held/blocked internally (scheduled − available)
   const gAd=lA('google_ad'), gmb=lA('gmb'), fb=lA('fb'), org=lA('organic'), jd=lA('justdial'), oth=lA('others');
-  const leadTot=gAd.map((v,i)=>v+gmb[i]+fb[i]+org[i]+jd[i]+oth[i]);
+  const practo=sumS(k=>(PRACTO[k]||{}).leads);
+  const leadTot=gAd.map((v,i)=>v+gmb[i]+fb[i]+org[i]+jd[i]+oth[i]+practo[i]);
   // channel sources: union across selected clinics
   const chanSrcs=new Set(); SEL.forEach(k=>Object.keys((SC[k]||{}).channel||{}).forEach(s=>chanSrcs.add(s)));
   const cb=src=>sumS(k=>((SC[k]||{}).channel||{})[src]);
@@ -514,7 +515,7 @@ function buildD(){
   D={
     bookings:{ total, new_first:nw, followup:fu, reschedule:rPat, noshow_reb:rNo },
     slots:{ scheduled:sched, shrunk, available:avail, booked:total, utilization:pctSer(total,avail), shrinkRate:pctSer(shrunk,sched) },
-    leads:{ total:leadTot, google:gAd, gmb, meta:fb, organic:org, other:jd.map((v,i)=>v+oth[i]) },
+    leads:{ total:leadTot, google_gmb:gAd.map((v,i)=>v+gmb[i]), google:gAd, gmb, meta:fb, practo, organic:org, other:jd.map((v,i)=>v+oth[i]) },
     c2b:{ overall:pctSer(chanBkTot,leadTot), google:pctSer(cb('google'),gAd.map((v,i)=>v+gmb[i])), meta:pctSer(bFb,fb), organic:pctSer(cb('organic'),org) },
     done, kept, leak,
     showup: pctSer(done,kept),                            // did they turn up (of kept appts) — the real show-up rate
@@ -1023,21 +1024,28 @@ function renderDocSplit(){
 /* ── RENDER TABLE D ── */
 function renderD() {
   const w=currentWeek;
-  const w0=currentWeek;
-  const sm=D.srcMix||{};
-  const LBL={google:'Google',organic:'Organic / Direct',fb:'Meta / FB',instagram:'Instagram',others:'Other / untagged'};
-  const COL={google:COLORS.p,organic:COLORS.a,fb:COLORS.b,instagram:COLORS.t,others:COLORS.gr};
-  const rows=[{label:'Tagged bookings (total)',series:D.chanBkTot,color:COLORS.r,note:`Bookings carrying a source — ${D.coverage[w0]}% of all ${D.bookings.total[w0]} bookings this week`}]
-    .concat(Object.keys(sm).map(k=>({label:LBL[k]||k,series:sm[k],color:COL[k]||COLORS.gr,note:'Share of source-tagged bookings'})));
+  const L=D.leads||{};
+  const rows=[
+    {label:'Total leads', series:L.total, color:COLORS.r, note:'All channels (incl. Practo)', bold:true},
+    {label:'Google + GMB', series:L.google_gmb, color:COLORS.p, note:'Combined search/maps demand'},
+    {label:'Google Ads', series:L.google, color:COLORS.p, note:'Paid search', indent:true},
+    {label:'GMB', series:L.gmb, color:COLORS.t, note:'Maps / Business Profile — highest intent', indent:true},
+    {label:'Meta / FB', series:L.meta, color:COLORS.b, note:'Paid social'},
+    {label:'Practo', series:L.practo, color:COLORS.a, note:'Practo marketplace leads'},
+    {label:'Organic / Direct', series:L.organic, color:COLORS.g, note:'SEO, brand, direct'},
+    {label:'Justdial / Other', series:L.other, color:COLORS.gr, note:'Directories & misc'},
+  ];
   const tbody=document.getElementById('tblD-body');tbody.innerHTML='';
   rows.forEach((r,i)=>{
-    const val=r.series[w],prev=r.series[w-1]||val;
-    const w2=wow(r.series,w);
+    const s=r.series||Array(NW).fill(0);
+    const val=s[w],prev=s[w-1]||val;
+    const w2=wow(s,w);
     const rowId='rD-'+i,panelId='pD-'+i,canId='cD-'+i;
     const tr=document.createElement('tr');tr.className='clickable';tr.id=rowId;
     tr.setAttribute('data-panel',panelId);
-    tr.onclick=()=>toggleRowChart(rowId,panelId,canId,[{label:r.label+' leads',data:r.series,color:r.color}],{},null);
-    tr.innerHTML=`<td>${r.label}</td><td class="num"><strong>${val}</strong></td><td class="num">${prev}</td><td class="num ${w2.dir}">${w2.str}</td><td>${sparkSVG(r.series,r.color,false)}</td><td style="font-size:11px;color:var(--gray)">${r.note||'—'}</td>`;
+    tr.onclick=()=>toggleRowChart(rowId,panelId,canId,[{label:r.label+' leads',data:s,color:r.color}],{},null);
+    const lbl=r.bold?`<strong>${r.label}</strong>`:r.label; const pad=r.indent?'padding-left:22px':'';
+    tr.innerHTML=`<td style="${pad}">${lbl}</td><td class="num"><strong>${val}</strong></td><td class="num">${prev}</td><td class="num ${w2.dir}">${w2.str}</td><td>${sparkSVG(s,r.color,false)}</td><td style="font-size:11px;color:var(--gray)">${r.note||'—'}</td>`;
     tbody.appendChild(tr);
     const pr=document.createElement('tr');
     pr.innerHTML=`<td colspan="6" style="padding:0"><div class="row-chart-wrap" id="${panelId}"><div class="chart-box-lbl" style="padding:0 0 6px">${r.label} lead volume — 8w</div><div class="row-chart-inner"><canvas id="${canId}" role="img" aria-label="${r.label} trend">${r.label} trend.</canvas></div></div></td>`;
@@ -1283,7 +1291,7 @@ function renderPills(){
   addPill('secC', utl>=90?'p-r':'p-a', `Utilization ${utl}%`);
   addPill('secC', shrR>=25?'p-r':shrR>=15?'p-a':'p-g', `Shrinkage ${shrR}%`);
   if(sl.dir!=='fl') addPill('secC', sl.dir==='dn'?'p-r':'p-g', `Slots ${sl.str}`);
-  addPill('secD','p-a',`${D.coverage[w]}% bookings tagged`);
+  { const lt=wow(D.leads.total,w); addPill('secD', lt.dir==='dn'?'p-r':lt.dir==='up'?'p-g':'p-a', `Leads ${D.leads.total[w]} · ${lt.str} WoW`); }
   const leak=100-D.keptRate[w]; addPill('secE', leak>=40?'p-r':leak>=25?'p-a':'p-g', `${leak}% resched/cancel`);
   const su=D.showup[w]; addPill('secF', su<80?'p-r':'p-g', `Show-up ${su}%`);
   addPill('secF','p-a',`No-show ${D.noshowRate[w]}%`);
@@ -1336,7 +1344,7 @@ function applySelection(){
 }
 (async function(){
   try{
-    const [sc,lj,ros,rem,sar,cnv,doc,mkt,swho,ret,cbk]=await Promise.all([
+    const [sc,lj,ros,rem,sar,cnv,doc,mkt,swho,ret,cbk,prc]=await Promise.all([
       fetch('data_scorecard.json').then(r=>r.json()),
       fetch('data_leads.json').then(r=>r.json()),
       fetch('data_roster.json').then(r=>r.json()),
@@ -1348,8 +1356,9 @@ function applySelection(){
       fetch('data_status_who.json').then(r=>r.ok?r.json():{}).catch(()=>({})),
       fetch('data_retention.json').then(r=>r.ok?r.json():{}).catch(()=>({})),
       fetch('data_callback.json').then(r=>r.ok?r.json():{}).catch(()=>({})),
+      fetch('data_practo_leads.json').then(r=>r.ok?r.json():{}).catch(()=>({})),
     ]);
-    SC=sc; LEADS=lj; ROSTER=ros; REM=rem||{}; SARVAM=sar; CONV=cnv||{}; DOCTOR=doc||{}; MKT=mkt; SWHO=swho||{}; RETEN=ret||{}; CALLBACK=cbk||{};
+    SC=sc; LEADS=lj; ROSTER=ros; REM=rem||{}; SARVAM=sar; CONV=cnv||{}; DOCTOR=doc||{}; MKT=mkt; SWHO=swho||{}; RETEN=ret||{}; CALLBACK=cbk||{}; PRACTO=prc||{};
     buildWeeks();
     CLINICS=Object.keys(SC).filter(k=>k!=='_meta').sort();
     CITIES={}; CLINICS.forEach(k=>{const c=k.split('|')[0]; (CITIES[c]=CITIES[c]||[]).push(k);});
