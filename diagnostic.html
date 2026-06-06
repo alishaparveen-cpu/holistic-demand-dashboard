@@ -865,9 +865,7 @@ function renderOffline(){
   const lvBtn=(v,icon,lbl,sub)=>{ const on=landView===v; return `<button onclick="setLandView('${v}')" style="flex:1;min-width:128px;text-align:left;border:1.5px solid ${on?'#4f46e5':'var(--line)'};background:${on?'#eef2ff':'#fff'};border-radius:10px;padding:8px 13px;cursor:pointer;">
     <div style="font-size:13px;font-weight:800;color:${on?'#4338ca':'#0f172a'};">${icon} ${lbl}</div>
     <div style="font-size:10px;color:#94a3b8;margin-top:1px;">${sub}</div></button>`; };
-  // Window & norm now follow the single "Compare vs" control (top of page) — show it as a read-only hint.
-  const winSel=`<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-left:auto;">
-    <span style="font-size:10.5px;color:#94a3b8;">Norm &amp; window follow <b style="color:#4338ca;">“Compare vs” = ${baseLabel()}</b> (top)</span></div>`;
+  const winSel='';   // norm/window hint removed — the four view tabs use the space instead
   const landToggle=`<div style="display:flex;gap:9px;flex-wrap:wrap;align-items:center;margin:14px 0 4px;">
     <span style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#94a3b8;align-self:center;">View</span>
     ${lvBtn('bookings','🗓','Bookings first','new-patient bookings as the headline')}
@@ -1797,15 +1795,17 @@ function leadLossDrill(r){
         <div style="font-size:13px;font-weight:800;color:#047857;margin-bottom:8px;">🌐 Practo · Organic · Others</div>
         ${hasPracto?mini('Practo leads · '+pr_w+' ('+signed(dPrP,'%')+')', '#f59e0b', 'Practo profile leads · dashed = '+winN+'-wk avg', spark(rev(practo),'#f59e0b',hi,null,pr_n)):''}
         ${(()=>{ const bd=practoByDoctor(r.city,r.clinic); if(!bd) return '';
-          const docs=Object.keys(bd).map(d=>({d, w:bd[d].leads[W]||0, tot:bd[d].leads.slice(0,winN).reduce((a,b)=>a+b,0)})).filter(x=>x.tot>0).sort((a,b)=>b.w-a.w||b.tot-a.tot);
+          const docs=Object.keys(bd).map(d=>({d, w:bd[d].leads[W]||0, tot:bd[d].leads.slice(0,winN).reduce((a,b)=>a+b,0), arr:bd[d].leads})).filter(x=>x.tot>0).sort((a,b)=>b.w-a.w||b.tot-a.tot);
           if(!docs.length) return '';
           const mx=Math.max(...docs.map(x=>x.w),1);
-          return `<details style="margin:-2px 0 9px;"><summary style="cursor:pointer;font-size:10px;font-weight:700;color:#b45309;padding:3px 0;">Practo leads by doctor — ${WEEKS[W].label} (click)</summary>
-            <div style="padding:4px 0 2px;">${docs.map(x=>`<div style="display:flex;align-items:center;gap:6px;margin-bottom:3px;font-size:10px;">
-              <span style="flex:0 0 42%;color:#475569;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${x.d}">${x.d.replace(/^Dr\.?\s*/,'')}</span>
-              <span style="flex:1;height:9px;background:#fff7ed;border-radius:3px;overflow:hidden;"><span style="display:block;height:100%;width:${x.w/mx*100}%;background:#f59e0b;"></span></span>
-              <span style="flex:0 0 auto;font-weight:800;color:#0f172a;">${x.w}</span></div>`).join('')}</div>
-            <div style="font-size:9px;color:#94a3b8;">this week's Practo profile leads, by doctor · ${docs.length} with leads</div></details>`; })()}
+          return `<details style="margin:-2px 0 9px;"><summary style="cursor:pointer;font-size:10px;font-weight:700;color:#b45309;padding:3px 0;">Practo leads by doctor — ${WEEKS[W].label} (click a doctor for trend)</summary>
+            <div style="padding:4px 0 2px;">${docs.map(x=>{ const dn=nrm(x.arr);
+              return `<details style="margin-bottom:2px;"><summary style="cursor:pointer;list-style:none;display:flex;align-items:center;gap:6px;font-size:10px;padding:1px 0;">
+                <span style="flex:0 0 40%;color:#475569;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${x.d}">▸ ${x.d.replace(/^Dr\.?\s*/,'')}</span>
+                <span style="flex:1;height:9px;background:#fff7ed;border-radius:3px;overflow:hidden;"><span style="display:block;height:100%;width:${x.w/mx*100}%;background:#f59e0b;"></span></span>
+                <span style="flex:0 0 auto;font-weight:800;color:#0f172a;">${x.w}</span></summary>
+                <div style="padding:2px 0 7px 8px;"><div style="font-size:8.5px;color:#94a3b8;margin-bottom:1px;">weekly Practo leads · ${x.tot} in last ${winN}w · dashed = ${winN}-wk avg</div>${spark(rev(x.arr),'#f59e0b',hi,null,dn)}</div></details>`; }).join('')}</div>
+            <div style="font-size:9px;color:#94a3b8;">this week's Practo profile leads, by doctor · click a doctor for their trend · ${docs.length} with leads</div></details>`; })()}
         ${hasPrBkT?mini('Practo booked · '+prBkT_w+' ('+signed(dPrBkT,'%')+')', '#ea580c', 'patients who booked a consult whose phone is a Practo lead — incl. phone follow-up · dashed = '+winN+'-wk avg', spark(rev(prBkT),'#ea580c',hi,null,prBkT_n))
           +`<div style="font-size:9.5px;color:#475569;background:#fff7ed;border:1px solid #fed7aa;border-radius:6px;padding:5px 8px;margin:-4px 0 9px;line-height:1.45;">✅ <b>True Practo bookings</b> (phone-matched to the main appointments pipeline)${hasPrBk?` · of which <b>${prBk_w}</b> via Practo’s own online slot-booking this week`:''}.</div>`
           : (hasPrBk?mini('Practo slot-booked (online) · '+prBk_w, '#ea580c', 'Practo’s own instant online slot-booking only — phone follow-up not counted · dashed = '+winN+'-wk avg', spark(rev(prBk),'#ea580c',hi,null,prBk_n)):'')}
@@ -2048,7 +2048,12 @@ function renderDeepDive(r){
       <div style="padding:4px 0 2px;">${docs.map(x=>{const dd=x.w-Math.round(x.n),fl=Math.abs(x.w-x.n)<0.5,c=fl?'#64748b':(x.w>=x.n?'#059669':'#dc2626');
         return `<div style="display:flex;gap:6px;font-size:10px;padding:2px 0;border-bottom:1px solid #f8fafc;"><span style="flex:1;color:#475569;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${x.d}">${x.d.replace(/^Dr\.?\s*/,'')}</span><span style="color:#94a3b8;white-space:nowrap;">norm <b style="color:#475569;">${r1(x.n)}</b> → <b style="color:${c};">${x.w}</b> <b style="color:${c};">${fl?'—':(dd>0?'+':'')+dd}</b></span></div>`;}).join('')}</div></details>`; })();
   const _leadLoss=(r.leadsLoss_gmb||0)+(r.leadsLoss_pr||0);
-  const _leadLossChip=calcChip('Bookings lost to leads', `<p>The <b>lead shortfall</b> vs your ${baseLabel()} norm, converted to bookings at this clinic's lead→booking rate — the same figure the "Where the lost bookings went" card attributes to leads. Split: ~${r1(r.leadsLoss_gmb||0)} from GMB+Google, ~${r1(r.leadsLoss_pr||0)} from Practo. <b>0</b> if leads met or beat the norm.</p>${calcBasis()}`);
+  const _leadShort=Math.max(0,(r.ld_avg||0)-(r.ld_w||0));
+  const _convPerLead=Math.min(1.20, r.ld_avg>0?(r.bk_avg/r.ld_avg):0);
+  const _leadLossChip=calcChip('Bookings lost to leads', `
+    <p><b>What it answers:</b> the <b>lead shortfall</b> vs your ${baseLabel()} norm, converted to bookings at this clinic's own <b>lead→booking</b> rate — the same rate the Expected-bookings model uses.</p>
+    ${calcStep(`bookings per lead = normal bookings <b>${r1(r.bk_avg)}</b> ÷ normal leads <b>${r1(r.ld_avg)}</b> = <b>${_convPerLead.toFixed(2)}</b> per lead${(r.ld_avg>0&&r.bk_avg/r.ld_avg>1.2)?' (capped at 1.20)':''}<br>fewer leads = norm <b>${Math.round(r.ld_avg)}</b> − this wk <b>${r.ld_w}</b> = <b>${r1(_leadShort)}</b> short<br><b>raw loss = ${r1(_leadShort)} × ${_convPerLead.toFixed(2)} = ${r1(_leadShort*_convPerLead)}</b>${_leadLoss<_leadShort*_convPerLead-0.05?` → counted as <b>${r1(_leadLoss)}</b> (gated to the threshold &amp; capped at the week's total shortfall)`:''}`)}
+    <p>Split by which source dropped: ~<b>${r1(r.leadsLoss_gmb||0)}</b> from GMB+Google, ~<b>${r1(r.leadsLoss_pr||0)}</b> from Practo. Weighted by each source's own drop. If leads met or beat the norm, the loss is <b>0</b>.</p>${calcBasis()}`);
   const leadsLadder=`
     <div style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:#94a3b8;margin:2px 0 4px;display:flex;align-items:center;gap:6px;flex-wrap:wrap;">Normal → this week · norm: ${cmpMini} ${calcChip('How this leads ladder reads', `<p>Each row compares this week's leads to your clinic's own <b>${baseLabel()}</b> norm. Green = more leads than usual, red = fewer. The norm window follows the <b>"Compare vs"</b> selector at the top.</p><p><b>Google + GMB</b> = GMB profile leads + Google Ads leads (your main owned + paid channel). <b>Practo</b> can be opened by doctor. The last row turns the lead shortfall into lost bookings.</p>`)}</div>
     <div style="border:1px solid var(--line);border-radius:10px;padding:3px 12px;background:#fff;margin-bottom:10px;">
