@@ -22,7 +22,9 @@ SELECT s.city, s.locality AS clinic,
   SUM(CASE WHEN s.st='rescheduled' AND s.prev='missed' THEN 1 ELSE 0 END) AS resched_noshow,
   SUM(CASE WHEN s.st='rescheduled' AND s.prev<>'missed' THEN 1 ELSE 0 END) AS resched_patient,
   -- no-show RECOVERY proxy: appointments now completed whose immediately-prior state was 'missed'
-  SUM(CASE WHEN s.st IN ('completed','reconsulted') AND s.prev='missed' THEN 1 ELSE 0 END) AS recovered_done
+  SUM(CASE WHEN s.st IN ('completed','reconsulted') AND s.prev='missed' THEN 1 ELSE 0 END) AS recovered_done,
+  SUM(CASE WHEN s.st='cancelled' THEN 1 ELSE 0 END) AS cancelled,
+  SUM(CASE WHEN s.st IN ('scheduled','confirmed','in_progress','provider_joined') THEN 1 ELSE 0 END) AS scheduled
 FROM sc_all s JOIN firsts f ON s.patient_id=f.patient_id
 WHERE s.start_time >= '2026-03-09' AND s.start_time < '2026-06-01'
   AND LOWER(COALESCE(s.locality,''))<>'online' AND s.locality IS NOT NULL

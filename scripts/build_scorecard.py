@@ -26,9 +26,9 @@ def main():
     D = {}
     def clin(k): return D.setdefault(k, {})
     # ── dispositions ──
-    DFIELDS = ["total","new_bk","followup_bk","done","done_new","done_followup","missed","resched_noshow","resched_patient","recovered_done"]
+    DFIELDS = ["total","new_bk","followup_bk","done","done_new","done_followup","missed","resched_noshow","resched_patient","recovered_done","cancelled","scheduled"]
     for c in q("fetch_scorecard.sql"):
-        if len(c) < 13: continue
+        if len(c) < 15: continue
         city,clinic,wk = c[0],c[1],c[2]
         if wk not in WI: continue
         o = clin(f"{city}|{clinic}").setdefault("disp", {f:[0]*12 for f in DFIELDS})

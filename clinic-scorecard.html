@@ -7,6 +7,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 <link href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 :root{--bg:#F1F5F9;--card:#fff;--navy:#1E293B;--navy2:#334155;--gray:#64748B;--grl:#94A3B8;--bdr:#E2E8F0;--p:#7C3AED;--pl:#EDE9FE;--r:#DC2626;--rl:#FEF2F2;--rb:#FEE2E2;--a:#D97706;--al:#FFFBEB;--ab:#FEF3C7;--g:#16A34A;--gl:#F0FDF4;--gb:#DCFCE7;--t:#0D9488;--b:#2563EB;--bl:#EFF6FF}
@@ -492,7 +493,8 @@ function buildD(){
   const shrA=f=>sumS(k=>((ROSTER[k]||{}).shr||{})[f]);
   const total=dA('total'), nw=dA('new_bk'), fu=dA('followup_bk'), miss=dA('missed'),
         done=dA('done'), dnew=dA('done_new'), dfu=dA('done_followup'),
-        rPat=dA('resched_patient'), rNo=dA('resched_noshow'), rec=dA('recovered_done');
+        rPat=dA('resched_patient'), rNo=dA('resched_noshow'), rec=dA('recovered_done'),
+        cancelled=dA('cancelled'), scheduled=dA('scheduled');
   const sched=shrA('sched'), avail=shrA('avail');
   const shrunk=sched.map((s,i)=>Math.max(0,s-avail[i]));   // held/blocked internally (scheduled − available)
   const gAd=lA('google_ad'), gmb=lA('gmb'), fb=lA('fb'), org=lA('organic'), jd=lA('justdial'), oth=lA('others');
@@ -532,7 +534,7 @@ function buildD(){
                 sentRate:pctSer(remSent,remTot), delRate:pctSer(remDel,remTot),
                 ns_total:nsTot, ns_sent:nsSent, ns_delivered:nsDel, ns_read:nsRead,
                 ns_sentRate:pctSer(nsSent,nsTot), ns_delRate:pctSer(nsDel,nsTot) },
-    resched_patient:rPat, resched_noshow:rNo, recovered:rec,
+    resched_patient:rPat, resched_noshow:rNo, recovered:rec, cancelled, scheduled,
     leadage,
     conv:{ completed:cA('completed_sc'), converted:cA('converted'), rate:pctSer(cA('converted'),cA('completed_sc')) },
     retention: (()=>{ const F=['cohort','d0','d1','d2','d3plus','total_tx']; const o={}; F.forEach(f=>o[f]=sum12(k=>(RETEN[k]||{})[f])); return o; })(),
@@ -540,7 +542,7 @@ function buildD(){
     availDays: (()=>{ const wd=Array(12).fill(0), we=Array(12).fill(0);   // active days/wk, weekday vs weekend (dow = [Sun..Sat] hours)
       SEL.forEach(k=>{ const dw=(ROSTER[k]||{}).dow||[]; for(let i=0;i<12;i++){ const day=dw[i]||[]; for(let j=0;j<7;j++){ if((day[j]||0)>0){ (j===0||j===6) ? we[i]++ : wd[i]++; } } } });
       return { weekday:ser(wd), weekend:ser(we), total:ser(wd.map((v,i)=>v+we[i])) }; })(),
-    statusWho: (()=>{ const SUB=['total','done','missed','resched_patient','resched_noshow'];
+    statusWho: (()=>{ const SUB=['total','done','missed','resched_patient','resched_noshow','cancelled','scheduled'];
       const seg=s=>{ const o={}; SUB.forEach(f=>o[f]=sumS(k=>(((SWHO[k]||{})[s]||{})[f]))); return o; };
       return { new:seg('new'), fu:seg('fu') }; })(),
     dow: (()=>{ const DD=['Mon','Tue','Wed','Thu','Fri','Sat','Sun']; const o={}; DD.forEach(d=>o[d]={booked:0,done:0,missed:0});
@@ -604,6 +606,7 @@ function makeChart(canvasId, datasets, opts) {
   if(!ctx) return;
   var scaleY = {grid:{color:'rgba(0,0,0,.04)'},ticks:{font:{size:10}}};
   if(opts && opts.min !== undefined) { scaleY.min = opts.min; scaleY.max = opts.max; }
+  var multi = datasets.length>1;
   openCharts[canvasId] = new Chart(ctx, {
     type:'line',
     data:{
@@ -614,15 +617,24 @@ function makeChart(canvasId, datasets, opts) {
           borderColor:d.color,backgroundColor:d.color+'18',
           borderWidth:2,fill:d.fill||false,tension:0.3,
           pointRadius:3,pointHoverRadius:5,
-          borderDash:d.dash||[]
+          borderDash:d.dash||[],
+          _dlColor:d.color
         };
       })
     },
     options:{
       responsive:true,
       maintainAspectRatio:false,
+      layout:{padding:{top:18}},
       plugins:{
-        legend:{display:datasets.length>1,labels:{font:{size:10},boxWidth:8,padding:10}},
+        legend:{display:multi,labels:{font:{size:10},boxWidth:8,padding:10}},
+        // show the number above every point
+        datalabels:{
+          align:'top', anchor:'end', offset:2,
+          color:function(c){return c.dataset._dlColor||'#475569';},
+          font:{size:9,weight:'600'},
+          formatter:function(v){return v;}
+        },
         tooltip:{mode:'index',intersect:false,callbacks:{
           afterLabel:function(context){
             var i=context.dataIndex;
@@ -634,7 +646,8 @@ function makeChart(canvasId, datasets, opts) {
         }}
       },
       scales:{x:{grid:{display:false},ticks:{font:{size:10}}},y:scaleY}
-    }
+    },
+    plugins: (window.ChartDataLabels?[window.ChartDataLabels]:[])
   });
 }
 
@@ -744,18 +757,23 @@ function renderA() {
   tbody.innerHTML='';
   let idx=0;
   const groupHdr=(txt,sub)=>{ const tr=document.createElement('tr'); tr.innerHTML=`<td colspan="7" style="padding:9px 12px 4px;background:#f8fafc;border-bottom:1px solid var(--bdr)"><span style="font-size:10px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;color:var(--navy)">${txt}</span> <span style="font-size:10px;color:var(--gray)">${sub}</span></td>`; tbody.appendChild(tr); };
-  // status breakdown (exhaustive, sums to the segment total) for new / fu / total
+  // status breakdown (exhaustive, sums to the segment total) for new / fu / total — with % trend per status
   const segHTML=(seg)=>{
-    let g, base, lbl;
-    if(seg==='total'){ g={done:D.done[w]||0,missed:D.noshows[w]||0,rp:D.resched_patient[w]||0,rn:D.resched_noshow[w]||0}; base=D.bookings.total[w]||0; lbl='all'; }
-    else { const s=(D.statusWho||{})[seg]||{}, at=fn=>(s[fn]?s[fn][w]:0)||0; g={done:at('done'),missed:at('missed'),rp:at('resched_patient'),rn:at('resched_noshow')}; base=at('total'); lbl=(seg==='new'?'new':'follow-up'); }
-    const other=Math.max(0,base-g.done-g.missed-g.rp-g.rn);
+    let series, baseSer, lbl;
+    if(seg==='total'){ series={done:D.done,missed:D.noshows,rp:D.resched_patient,rn:D.resched_noshow,can:D.cancelled,sch:D.scheduled}; baseSer=D.bookings.total; lbl='all'; }
+    else { const s=(D.statusWho||{})[seg]||{}; const g=f=>s[f]||Array(NW).fill(0); series={done:g('done'),missed:g('missed'),rp:g('resched_patient'),rn:g('resched_noshow'),can:g('cancelled'),sch:g('scheduled')}; baseSer=g('total'); lbl=(seg==='new'?'new':'follow-up'); }
+    const base=baseSer[w]||0;
+    const pctSeries=cnt=>cnt.map((n,i)=>{const b=baseSer[i]||0; return b>0?Math.round(n/b*100):0;});
     const pc=n=>base>0?Math.round(n/base*100)+'%':'—';
-    const rs=[['Completed',g.done,COLORS.g],['No-show (missed)',g.missed,COLORS.r],['Rescheduled — by patient',g.rp,COLORS.a],['Rescheduled — after no-show',g.rn,COLORS.gr],['Cancelled / still scheduled',other,COLORS.n]];
-    return `<div style="font-size:11px;font-weight:600;color:var(--navy);margin-bottom:6px">What happened to these ${base} ${lbl} bookings — status (sums to ${base})</div>
-      <table class="tbl" style="margin:0;background:#fff;border-radius:8px"><thead><tr><th>Status</th><th class="num">Count</th><th class="num">% of ${lbl}</th></tr></thead><tbody>`
-      + rs.map(([l,n,c])=>`<tr><td>${l}</td><td class="num"><strong>${n}</strong></td><td class="num" style="color:${c};font-weight:600">${pc(n)}</td></tr>`).join('')
-      + `<tr style="border-top:2px solid var(--bdr)"><td style="color:var(--gray)">Total</td><td class="num"><strong>${base}</strong></td><td class="num">100%</td></tr></tbody></table>`;
+    const rs=[
+      ['Completed',series.done,COLORS.g],['No-show (missed)',series.missed,COLORS.r],
+      ['Rescheduled — by patient',series.rp,COLORS.a],['Rescheduled — after no-show',series.rn,COLORS.gr],
+      ['Cancelled',series.can,COLORS.b],['Still scheduled / in-progress',series.sch,COLORS.n],
+    ];
+    return `<div style="font-size:11px;font-weight:600;color:var(--navy);margin-bottom:6px">What happened to these ${base} ${lbl} bookings — status &amp; 8-week % trend (sums to ${base})</div>
+      <table class="tbl" style="margin:0;background:#fff;border-radius:8px"><thead><tr><th>Status</th><th class="num">Count</th><th class="num">% of ${lbl}</th><th style="width:90px">% trend (8w)</th></tr></thead><tbody>`
+      + rs.map(([l,ser_,c])=>{const ps=pctSeries(ser_); return `<tr><td>${l}</td><td class="num"><strong>${ser_[w]||0}</strong></td><td class="num" style="color:${c};font-weight:600">${pc(ser_[w]||0)}</td><td>${sparkSVG(ps,c,false)}</td></tr>`;}).join('')
+      + `<tr style="border-top:2px solid var(--bdr)"><td style="color:var(--gray)">Total</td><td class="num"><strong>${base}</strong></td><td class="num">100%</td><td></td></tr></tbody></table>`;
   };
   const dataRow=(r)=>{
     const i=idx++; const val=r.series[w], prev=(w>0?r.series[w-1]:val), a=avg4(r.series,w), w2=wow(r.series,w);
@@ -1352,19 +1370,20 @@ function applySelection(){
 }
 (async function(){
   try{
+    const _cb='?t='+Date.now();   // cache-bust so data rebuilds always show fresh
     const [sc,lj,ros,rem,sar,cnv,doc,mkt,swho,ret,cbk,prc]=await Promise.all([
-      fetch('data_scorecard.json').then(r=>r.json()),
-      fetch('data_leads.json').then(r=>r.json()),
-      fetch('data_roster.json').then(r=>r.json()),
-      fetch('data_reminders.json').then(r=>r.ok?r.json():{}).catch(()=>({})),
-      fetch('data_sarvam.json').then(r=>r.ok?r.json():null).catch(()=>null),
-      fetch('data_conversion.json').then(r=>r.ok?r.json():{}).catch(()=>({})),
-      fetch('data_doctor.json').then(r=>r.ok?r.json():{}).catch(()=>({})),
-      fetch('data_marketing.json').then(r=>r.ok?r.json():null).catch(()=>null),
-      fetch('data_status_who.json').then(r=>r.ok?r.json():{}).catch(()=>({})),
-      fetch('data_retention.json').then(r=>r.ok?r.json():{}).catch(()=>({})),
-      fetch('data_callback.json').then(r=>r.ok?r.json():{}).catch(()=>({})),
-      fetch('data_practo_leads.json').then(r=>r.ok?r.json():{}).catch(()=>({})),
+      fetch('data_scorecard.json'+_cb).then(r=>r.json()),
+      fetch('data_leads.json'+_cb).then(r=>r.json()),
+      fetch('data_roster.json'+_cb).then(r=>r.json()),
+      fetch('data_reminders.json'+_cb).then(r=>r.ok?r.json():{}).catch(()=>({})),
+      fetch('data_sarvam.json'+_cb).then(r=>r.ok?r.json():null).catch(()=>null),
+      fetch('data_conversion.json'+_cb).then(r=>r.ok?r.json():{}).catch(()=>({})),
+      fetch('data_doctor.json'+_cb).then(r=>r.ok?r.json():{}).catch(()=>({})),
+      fetch('data_marketing.json'+_cb).then(r=>r.ok?r.json():null).catch(()=>null),
+      fetch('data_status_who.json'+_cb).then(r=>r.ok?r.json():{}).catch(()=>({})),
+      fetch('data_retention.json'+_cb).then(r=>r.ok?r.json():{}).catch(()=>({})),
+      fetch('data_callback.json'+_cb).then(r=>r.ok?r.json():{}).catch(()=>({})),
+      fetch('data_practo_leads.json'+_cb).then(r=>r.ok?r.json():{}).catch(()=>({})),
     ]);
     SC=sc; LEADS=lj; ROSTER=ros; REM=rem||{}; SARVAM=sar; CONV=cnv||{}; DOCTOR=doc||{}; MKT=mkt; SWHO=swho||{}; RETEN=ret||{}; CALLBACK=cbk||{}; PRACTO=prc||{};
     buildWeeks();

@@ -24,6 +24,8 @@ SELECT city, clinic, wk,
   SUM(CASE WHEN st IN ('completed','reconsulted') THEN 1 ELSE 0 END) AS done,
   SUM(CASE WHEN st='missed' THEN 1 ELSE 0 END) AS missed,
   SUM(CASE WHEN st='rescheduled' AND prev<>'missed' THEN 1 ELSE 0 END) AS resched_patient,
-  SUM(CASE WHEN st='rescheduled' AND prev='missed' THEN 1 ELSE 0 END) AS resched_noshow
+  SUM(CASE WHEN st='rescheduled' AND prev='missed' THEN 1 ELSE 0 END) AS resched_noshow,
+  SUM(CASE WHEN st='cancelled' THEN 1 ELSE 0 END) AS cancelled,
+  SUM(CASE WHEN st IN ('scheduled','confirmed','in_progress','provider_joined') THEN 1 ELSE 0 END) AS scheduled
 FROM j
 GROUP BY 1,2,3,4 ORDER BY 1,2,3,4;
