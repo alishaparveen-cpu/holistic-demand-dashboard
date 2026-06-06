@@ -345,10 +345,11 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--navy);font-
   </div>
   <div class="sec-body" id="secE-body">
     <div style="margin-bottom:16px">
-      <div style="font-size:11px;font-weight:500;color:var(--gray);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">L2C — Lead → Call funnel <span style="color:#d97706;font-weight:700">● NETWORK</span> <span style="font-weight:400;text-transform:none">latest week · the call team's reach</span></div>
+      <div style="font-size:11px;font-weight:500;color:var(--gray);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">L2C — Lead → Call funnel <span style="color:#d97706;font-weight:700">● NETWORK · OUTBOUND</span> <span style="font-weight:400;text-transform:none">the call team dialling leads (inbound patient calls = Sarvam panel below)</span></div>
       <div class="funnel" id="l2cFunnel"></div>
       <div class="ins ins-a" id="l2cInsight" style="margin-top:10px;margin-bottom:0"><i class="ti ti-bulb"></i><span></span></div>
-      <div style="font-size:10px;color:var(--gray);margin-top:4px">Leads = unique phone numbers in <code>allo_persons.lead</code> this week. Called/Connected = matched to outbound <code>exotel_calls</code> within 14 days; Booked = phone matched a Screening Call within 14 days (can happen without an outbound connect — inbound/self-book). <strong>Network-level</strong> — lead clinic-code is present on only ~⅓ of leads, so this doesn't filter by the clinic selector. Replaces the stale LeadSquared sheet sync (stopped Sep 2024).</div>
+      <table class="tbl" id="tblL2C" style="margin-top:10px"><thead><tr><th>Metric</th><th class="num">This wk</th><th class="num">Last wk</th><th class="num">WoW Δ</th><th style="width:100px">8-week trend</th></tr></thead><tbody id="tblL2C-body"></tbody></table>
+      <div style="font-size:10px;color:var(--gray);margin-top:4px">Leads = unique phones in <code>allo_persons.lead</code>. Called/Connected = matched to <strong>outbound</strong> <code>exotel_calls</code> within 14d (the L2C team dialling out); Booked = phone matched a Screening Call within 14d. <strong>Network-level</strong> — lead clinic-code is on only ~⅓ of leads, so this doesn't filter by the clinic selector. Replaces the LeadSquared sheet sync (stale since Sep 2024). Deeper splits (by lead source/city, time-to-first-call, attempts, inbound-vs-outbound) need a fresh data pull.</div>
     </div>
     <hr style="border:none;border-top:1px solid var(--bdr);margin:0 0 14px">
     <div style="margin-bottom:12px">
@@ -1202,6 +1203,21 @@ function renderL2C(){
   const ins=document.getElementById('l2cInsight');
   ins.className='ins '+(l2cPct<50?'ins-r':l2cPct<70?'ins-a':'ins-b');
   ins.querySelector('span').innerHTML=`<strong>Only ${l2cPct}% of this week's ${leads.toLocaleString('en-IN')} leads were called</strong> (${called.toLocaleString('en-IN')}) — ${100-l2cPct}% of leads never got an outbound call. Of those called, ${pc(conn,called)} connected. <strong>The biggest leak is leads never dialled</strong>, not the connect rate. (${booked.toLocaleString('en-IN')} of all leads booked a screening call within 14 days.)`;
+  // 8-week trend table (newest-first → oldest-first 8)
+  const tb=document.getElementById('tblL2C-body'); if(tb){
+    const s=a=>(a||[]).slice(0,8).reverse();
+    const lead8=s(n.leads), call8=s(n.called), conn8=s(n.connected), book8=s(n.booked);
+    const pctS=(num,den)=>num.map((v,j)=>den[j]>0?Math.round(v/den[j]*100):0);
+    const rows=[
+      {label:'Leads', series:lead8, color:COLORS.r, fmt:v=>v.toLocaleString('en-IN')},
+      {label:'L2C % (called ÷ leads)', series:pctS(call8,lead8), color:COLORS.a, fmt:v=>v+'%'},
+      {label:'Connect % (connected ÷ called)', series:pctS(conn8,call8), color:COLORS.t, fmt:v=>v+'%'},
+      {label:'Lead→Book % (booked ÷ leads)', series:pctS(book8,lead8), color:COLORS.g, fmt:v=>v+'%'},
+    ];
+    const W=7;
+    tb.innerHTML=rows.map(r=>{const v=r.series[W],p=r.series[W-1]||v,w2=wow(r.series,W);
+      return `<tr><td>${r.label}</td><td class="num"><strong>${r.fmt(v)}</strong></td><td class="num">${r.fmt(p)}</td><td class="num ${w2.dir}">${w2.str}</td><td>${sparkSVG(r.series,r.color,false)}</td></tr>`;}).join('');
+  }
 }
 function renderE() {
   const w=currentWeek;
