@@ -152,6 +152,40 @@ function hasPractoBkTrue(city,clinic){ return !!PRACTOBK[city+'|'+clinic]; }
 let LEADMAT={};   // data_lead_maturation.json — Google/GMB/Organic lead→booking maturation curve (cumulative % by lag), clinic + network
 function leadMat(city,clinic){ return LEADMAT[city+'|'+clinic] || (LEADMAT._meta&&LEADMAT._meta.network) || null; }
 let PRACTODOC={};   // data_practo_by_doctor.json — Practo leads/booked per clinic split by Doctor Name
+let LEADCONV=null;  // data_lead_conv.json — lead→booking conversion by contact mode + source (network)
+// Lead→conversion panel: how leads we engage convert to bookings, by contact mode + source. Network-level.
+function leadConvCard(){
+  if(!LEADCONV||!LEADCONV.by_mode) return '';
+  const wk=LEADCONV.weeks.length-1;
+  const rows=Object.entries(LEADCONV.by_mode).map(([m,d])=>({m,leads:d.leads[wk],booked:d.booked[wk],
+    series:d.leads.map((l,i)=>l>0?Math.round(d.booked[i]/l*100):0)})).sort((a,b)=>b.leads-a.leads);
+  const maxL=Math.max(...rows.map(r=>r.leads),1);
+  const col=p=>p>=35?'#16a34a':p>=15?'#d97706':'#dc2626';
+  const ic={'Inbound call':'📞','Outbound call':'📲','WhatsApp':'💬','Website self-serve':'🌐','Other':'•'};
+  const bar=r=>{ const p=r.leads>0?Math.round(r.booked/r.leads*100):0;
+    return `<div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid #f1f5f9;">
+      <span style="flex:0 0 150px;font-size:12px;color:#334155;font-weight:600;">${ic[r.m]||''} ${r.m}</span>
+      <span style="flex:1;position:relative;height:20px;background:#f8fafc;border-radius:5px;overflow:hidden;">
+        <span style="position:absolute;left:0;top:0;height:100%;width:${r.leads/maxL*100}%;background:#e0e7ff;"></span>
+        <span style="position:absolute;left:0;top:0;height:100%;width:${r.booked/maxL*100}%;background:${col(p)};"></span>
+        <span style="position:absolute;left:6px;top:2px;font-size:10px;color:#475569;">${r.leads.toLocaleString()} leads → ${r.booked.toLocaleString()} booked</span></span>
+      <span style="flex:0 0 44px;text-align:right;font-size:13px;font-weight:800;color:${col(p)};">${p}%</span></div>`; };
+  const src=(LEADCONV.by_source||[]).map(s=>{ const p=s.leads>0?Math.round(s.booked/s.leads*100):0;
+    return `<tr><td style="padding:3px 6px;">${s.src}</td><td style="padding:3px 6px;text-align:right;">${s.leads.toLocaleString()}</td><td style="padding:3px 6px;text-align:right;">${s.booked.toLocaleString()}</td><td style="padding:3px 6px;text-align:right;font-weight:800;color:${col(p)};">${p}%</td></tr>`; }).join('');
+  // headline insight: called vs uncalled
+  const called=rows.filter(r=>/call/i.test(r.m)).reduce((a,r)=>({l:a.l+r.leads,b:a.b+r.booked}),{l:0,b:0});
+  const uncalled=rows.filter(r=>!/call/i.test(r.m)).reduce((a,r)=>({l:a.l+r.leads,b:a.b+r.booked}),{l:0,b:0});
+  const cP=called.l?Math.round(called.b/called.l*100):0, uP=uncalled.l?Math.round(uncalled.b/uncalled.l*100):0;
+  return `<div class="card">
+    <div class="sec-h"><span class="sec-num">🔗</span>Lead → conversion — how we engage leads</div>
+    <div class="sec-sub">Of the leads we get, how many <b>book</b>? Grouped by how the lead was engaged (priority: inbound call &gt; outbound call &gt; WhatsApp &gt; website self-serve). Booked = matched to a screening call within 14 days. · <b>network-level</b> (the lead end carries no clinic) · ${WEEKS[wkIdx]?WEEKS[wkIdx].label:''}</div>
+    <div style="font-size:11.5px;color:#334155;background:#eff6ff;border:1px solid #bfdbfe;border-radius:9px;padding:9px 12px;margin-bottom:10px;line-height:1.55;">
+      <b>Leads that get on a call convert at ${cP}%</b> (${called.b.toLocaleString()}/${called.l.toLocaleString()}); leads that <b>don't</b> (WhatsApp / uncalled website) convert at just <b>${uP}%</b> (${uncalled.b.toLocaleString()}/${uncalled.l.toLocaleString()}). <b>The lever is calling the uncalled WhatsApp &amp; website leads</b> — that's where the booked demand is leaking.</div>
+    ${rows.map(bar).join('')}
+    <details style="margin-top:10px;"><summary style="cursor:pointer;font-size:11.5px;font-weight:700;color:#4338ca;">By source — conversion by channel (last 4 weeks)</summary>
+      <table style="width:100%;font-size:11px;border-collapse:collapse;margin-top:6px;"><thead><tr style="color:#94a3b8;font-weight:700;"><td style="padding:3px 6px;">Source</td><td style="padding:3px 6px;text-align:right;">Leads</td><td style="padding:3px 6px;text-align:right;">Booked</td><td style="padding:3px 6px;text-align:right;">Conv%</td></tr></thead><tbody>${src}</tbody></table></details>
+  </div>`;
+}
 function practoByDoctor(city,clinic){ return PRACTODOC[city+'|'+clinic] || null; }
 // clinic city (Redshift spelling) → Google Ads campaign city spelling
 const GA_CITY_ALIAS={'Hubli':'Hubballi','Mangaluru':'Mangalore','Visakhapatnam':'Vizag'};
@@ -903,7 +937,7 @@ function renderOffline(){
       <span style="font-size:10px;color:#94a3b8;">vs each clinic's own ${baseShort()} — shows where losses concentrate · clinics with issues below</span>
     </div>
   </div>`;
-  return ctrl+fNote+overview+compactSummary;
+  return ctrl+fNote+overview+leadConvCard()+compactSummary;
 }
 
 // inline SVG trend sparkline with value labels; hiIdx = highlighted (selected) point.
@@ -2268,7 +2302,7 @@ function renderOnline(){
 async function init(){
   try{
     const safe=u=>fetch(u,{cache:'no-store'}).catch(()=>({ok:false}));
-    const [jr,sr,lr,pr,rr,ld,rv,mk,bt,dg,ga,nr,gi,la,df,pbk,pl,lm,pd]=await Promise.all([ fetch('data.json',{cache:'no-store'}), safe(SHEET_URL), safe(L0_URL), safe(PRACTO_URL), safe('data_roster.json'), safe('data_leads.json'), safe('data_reviews.json'), safe('data_marketing.json'), safe('data_booktype.json'), safe('data_diagnostic.json'), safe('data_ga_city.json'), safe('data_reviews_neg.json'), safe('data_gmb_insights.json'), safe('data_lead_age.json'), safe('data_demand_funnel.json'), safe('data_practo_booked.json'), safe('data_practo_leads.json'), safe('data_lead_maturation.json'), safe('data_practo_by_doctor.json') ]);
+    const [jr,sr,lr,pr,rr,ld,rv,mk,bt,dg,ga,nr,gi,la,df,pbk,pl,lm,pd,lc]=await Promise.all([ fetch('data.json',{cache:'no-store'}), safe(SHEET_URL), safe(L0_URL), safe(PRACTO_URL), safe('data_roster.json'), safe('data_leads.json'), safe('data_reviews.json'), safe('data_marketing.json'), safe('data_booktype.json'), safe('data_diagnostic.json'), safe('data_ga_city.json'), safe('data_reviews_neg.json'), safe('data_gmb_insights.json'), safe('data_lead_age.json'), safe('data_demand_funnel.json'), safe('data_practo_booked.json'), safe('data_practo_leads.json'), safe('data_lead_maturation.json'), safe('data_practo_by_doctor.json'), safe('data_lead_conv.json') ]);
     if(!jr.ok) throw new Error('data.json not found');
     JDATA=await jr.json();
     // SDATA now comes from Redshift (data_diagnostic.json); the Google Sheet is a fallback only.
@@ -2293,6 +2327,7 @@ async function init(){
     if(pbk.ok){ try{ PRACTOBK=await pbk.json(); }catch(_){ } }
     if(lm.ok){ try{ LEADMAT=await lm.json(); }catch(_){ } }
     if(pd.ok){ try{ PRACTODOC=await pd.json(); }catch(_){ } }
+    if(lc&&lc.ok){ try{ LEADCONV=await lc.json(); }catch(_){ } }
     const wSel=document.getElementById('weekSelect');
     WEEKS.forEach((w,i)=>{ const o=document.createElement('option'); o.value=i; o.textContent=w.label+(i===0?' (latest)':''); if(i===0)o.selected=true; wSel.appendChild(o); });
     render(); updateRefreshBadge();
