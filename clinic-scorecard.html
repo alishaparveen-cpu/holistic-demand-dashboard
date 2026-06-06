@@ -444,6 +444,7 @@ function buildD(){
         done=dA('done'), dnew=dA('done_new'), dfu=dA('done_followup'),
         rPat=dA('resched_patient'), rNo=dA('resched_noshow'), rec=dA('recovered_done');
   const sched=shrA('sched'), avail=shrA('avail');
+  const shrunk=sched.map((s,i)=>Math.max(0,s-avail[i]));   // held/blocked internally (scheduled − available)
   const gAd=lA('google_ad'), gmb=lA('gmb'), fb=lA('fb'), org=lA('organic'), jd=lA('justdial'), oth=lA('others');
   const leadTot=gAd.map((v,i)=>v+gmb[i]+fb[i]+org[i]+jd[i]+oth[i]);
   // channel sources: union across selected clinics
@@ -462,7 +463,7 @@ function buildD(){
   const leak=total.map((t,i)=>Math.max(0,t-kept[i]));    // rescheduled / cancelled / still-scheduled
   D={
     bookings:{ total, new_first:nw, followup:fu, reschedule:rPat, noshow_reb:rNo },
-    slots:{ scheduled:sched, available:avail, booked:total, utilization:pctSer(total,avail) },
+    slots:{ scheduled:sched, shrunk, available:avail, booked:total, utilization:pctSer(total,avail), shrinkRate:pctSer(shrunk,sched) },
     leads:{ total:leadTot, google:gAd, gmb, meta:fb, organic:org, other:jd.map((v,i)=>v+oth[i]) },
     c2b:{ overall:pctSer(chanBkTot,leadTot), google:pctSer(cb('google'),gAd.map((v,i)=>v+gmb[i])), meta:pctSer(bFb,fb), organic:pctSer(cb('organic'),org) },
     done, kept, leak,
@@ -770,9 +771,11 @@ function renderB() {
 /* ── RENDER TABLE C ── */
 function renderC() {
   const w=currentWeek;
+  const w0=currentWeek, shr=D.slots.shrunk[w0], shrR=D.slots.shrinkRate[w0];
   const rows=[
     {label:'Slots scheduled by doctor',series:D.slots.scheduled,color:COLORS.r,note:"Doctor's own availability — if this dropped, check with doctor immediately",flag:true},
-    {label:'Slots available for booking',series:D.slots.available,color:COLORS.a,note:'After internal holds and blocks'},
+    {label:'Shrinkage (held / blocked)',series:D.slots.shrunk,color:COLORS.gr,note:`Scheduled − available = internal holds, breaks, admin blocks. ${shrR}% of scheduled slots this week (${shr} slots) — recover these before asking for more doctor hours.`},
+    {label:'Slots available for booking',series:D.slots.available,color:COLORS.a,note:'What patients could actually book = scheduled − shrinkage'},
     {label:'Slots actually booked',series:D.slots.booked,color:COLORS.p,note:'Demand from patients'},
     {label:'Utilization % (booked/available)',series:D.slots.utilization,color:COLORS.t,unit:'%',note:'Above 90% = demand exceeds supply. Fix: add slots. Below 70% = demand problem.'},
   ];
@@ -1026,8 +1029,9 @@ function renderPills(){
   // Section headers: rewrite the right-side pill clusters in place
   document.querySelectorAll('#secB .sec-right .pill, #secC .sec-right .pill, #secD .sec-right .pill, #secE .sec-right .pill, #secF .sec-right .pill, #secG .sec-right .pill').forEach(p=>p.remove());
   const addPill=(secId,cls,txt)=>{const sr=document.querySelector('#'+secId+' .sec-right'); if(sr){const s=document.createElement('span'); s.className='pill '+cls; s.textContent=txt; sr.insertBefore(s,sr.firstChild);} };
-  const utl=D.slots.utilization[w], sl=wow(D.slots.scheduled,w);
+  const utl=D.slots.utilization[w], sl=wow(D.slots.scheduled,w), shrR=D.slots.shrinkRate[w];
   addPill('secC', utl>=90?'p-r':'p-a', `Utilization ${utl}%`);
+  addPill('secC', shrR>=25?'p-r':shrR>=15?'p-a':'p-g', `Shrinkage ${shrR}%`);
   if(sl.dir!=='fl') addPill('secC', sl.dir==='dn'?'p-r':'p-g', `Slots ${sl.str}`);
   addPill('secD','p-a',`${D.coverage[w]}% bookings tagged`);
   const leak=100-D.keptRate[w]; addPill('secE', leak>=40?'p-r':leak>=25?'p-a':'p-g', `${leak}% resched/cancel`);
