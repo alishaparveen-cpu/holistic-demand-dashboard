@@ -59,6 +59,11 @@ const r1=v=>v==null?'—':(Math.round(v*10)/10);
 const P=v=>v==null?'—':Math.round(v*100)+'%';
 let GA=null, GAF=null, GAF2=null, SORT='spend';
 let ciMode='city', ciWin=8, ciSel=[];   // campaign-intelligence: group-by, window weeks, selected segments
+let ciReg={};   // per-card metric series registry (idx -> {wk, series}) for the clickable charts
+function ciShowChart(idx,m){ const r=ciReg[idx]; if(!r||!r.series[m]) return; const s=r.series[m];
+  const el=document.getElementById('cichart'+idx), tt=document.getElementById('citt'+idx);
+  if(el) el.innerHTML=lbTrend(s.v,r.wk,s.c,s.f);
+  if(tt) tt.innerHTML='<b style="color:'+s.c+'">'+m+'</b> per week · click any metric above · x-axis = week ending'; }
 function spark(vals,color,hi){ vals=(vals||[]).map(v=>+v||0); if(!vals.length) return '';
   const w=240,h=40,mx=Math.max(...vals,1),mn=Math.min(...vals,0),rng=(mx-mn)||1;
   const pts=vals.map((v,i)=>[8+i*(w-16)/Math.max(1,vals.length-1), h-4-(v-mn)/rng*(h-12)]);
@@ -176,30 +181,47 @@ function campaignIntel(){
   const modeBtn=(v,l)=>`<button class="sortbtn ${ciMode===v?'on':''}" onclick="ciSetMode('${v}')">${l}</button>`;
   const winBtn=(v,l)=>`<button class="sortbtn ${ciWin===v?'on':''}" onclick="ciSetWin(${v==='all'?"'all'":v})">${l}</button>`;
   const chips=keys.map(k=>`<button onclick="ciToggle('${k.replace(/'/g,"\\'")}')" style="font-size:11px;padding:3px 10px;border-radius:16px;border:1.5px solid ${ciSel.includes(k)?'#4f46e5':'var(--line)'};background:${ciSel.includes(k)?'#eef2ff':'#fff'};color:${ciSel.includes(k)?'#4338ca':'#64748b'};font-weight:${ciSel.includes(k)?700:500};cursor:pointer;">${k}</button>`).join('');
-  const card=k=>{ const d=dim[k]; if(!d) return '';
+  const card=(k,idx)=>{ const d=dim[k]; if(!d) return '';
     const clicks=sum(sl(d.clicks)), leads=sum(sl(d.leads)), booked=sum(sl(d.booked)), cost=sum(sl(d.cost));
     const cl=clicks>0?leads/clicks*100:0, lb=leads>0?booked/leads*100:0, cb=clicks>0?booked/clicks*100:0;
     const cpc=clicks>0?cost/clicks:0, cpl=leads>0?cost/leads:0, cpb=booked>0?cost/booked:0;
-    const stg=(n,l,s,c)=>`<div style="flex:1;text-align:center;min-width:60px;"><div style="font-size:20px;font-weight:800;color:${c};">${n.toLocaleString()}</div><div style="font-size:10px;font-weight:700;color:#475569;">${l}</div><div style="font-size:9px;color:#94a3b8;">${s||''}</div></div>`;
-    const ar='<div style="align-self:center;color:#cbd5e1;">→</div>';
-    const lbSeries=sl(d.leads).map((v,i)=>{const bk=sl(d.booked)[i]; return v>0?Math.round(bk/v*100):0;});
     const _M=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
     const wkEnd=weeks.slice(nW-wn).map(w=>{const dt=new Date(w+'T00:00:00');dt.setDate(dt.getDate()+6);return dt.getDate()+' '+_M[dt.getMonth()];});
+    // weekly series for every metric → each tile is clickable to chart it
+    const C=sl(d.clicks),L=sl(d.leads),Bk=sl(d.booked),Co=sl(d.cost);
+    const pctS=(n2,dn)=>n2.map((v,i)=>dn[i]>0?v/dn[i]*100:0), divS=(n2,dn)=>n2.map((v,i)=>dn[i]>0?v/dn[i]:0);
+    const series={
+      'Clicks':{v:C,c:'#6366f1',f:x=>Math.round(x).toLocaleString()},
+      'Leads':{v:L,c:'#0d9488',f:x=>Math.round(x).toLocaleString()},
+      'Booked':{v:Bk,c:'#16a34a',f:x=>Math.round(x).toLocaleString()},
+      'Spend':{v:Co,c:'#7c3aed',f:x=>'₹'+Math.round(x).toLocaleString()},
+      'Click→Lead':{v:pctS(L,C),c:'#d97706',f:x=>Math.round(x*10)/10+'%'},
+      'Lead→Book':{v:pctS(Bk,L),c:'#16a34a',f:x=>Math.round(x)+'%'},
+      'Click→Book':{v:pctS(Bk,C),c:'#0ea5e9',f:x=>Math.round(x*10)/10+'%'},
+      'CPC':{v:divS(Co,C),c:'#7c3aed',f:x=>'₹'+Math.round(x)},
+      'CPL':{v:divS(Co,L),c:'#7c3aed',f:x=>'₹'+Math.round(x)},
+      'CPB':{v:divS(Co,Bk),c:'#7c3aed',f:x=>'₹'+Math.round(x)},
+    };
+    ciReg[idx]={wk:wkEnd,series};
+    const stg=(n,l,s,c,m)=>`<div onclick="ciShowChart(${idx},'${m}')" title="Click to chart ${m}" style="flex:1;text-align:center;min-width:60px;cursor:pointer;border-radius:7px;padding:2px 0;" onmouseover="this.style.background='#eef2ff'" onmouseout="this.style.background='transparent'"><div style="font-size:20px;font-weight:800;color:${c};">${n.toLocaleString()}</div><div style="font-size:10px;font-weight:700;color:#475569;">${l}</div><div style="font-size:9px;color:#94a3b8;">${s||''}</div></div>`;
+    const ctile=(lab,val,m)=>`<div onclick="ciShowChart(${idx},'${m}')" title="Click to chart ${lab}" class="gtile" style="cursor:pointer;flex:1;min-width:62px;"><div class="gl">${lab}</div><div class="gv">${val}</div></div>`;
+    const ar='<div style="align-self:center;color:#cbd5e1;">→</div>';
     return `<div class="card" style="margin-bottom:0;">
       <div style="font-size:14px;font-weight:800;color:#0f172a;">${k}</div>
       <div style="font-size:10px;color:#94a3b8;margin-bottom:8px;">${wlabel} · spend ₹${Math.round(cost).toLocaleString()}</div>
       <div style="display:flex;gap:3px;background:#fafafa;border:1px solid var(--line);border-radius:9px;padding:10px 6px;">
-        ${stg(clicks,'Clicks','','#6366f1')}${ar}${stg(leads,'Leads',(Math.round(cl*10)/10)+'% of clk','#0d9488')}${ar}${stg(booked,'Booked',Math.round(lb)+'% of lds','#16a34a')}
+        ${stg(clicks,'Clicks','','#6366f1','Clicks')}${ar}${stg(leads,'Leads',(Math.round(cl*10)/10)+'% of clk','#0d9488','Leads')}${ar}${stg(booked,'Booked',Math.round(lb)+'% of lds','#16a34a','Booked')}
       </div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:7px;">
-        ${tile('Click→Lead',(Math.round(cl*10)/10)+'%')}${tile('Lead→Book',Math.round(lb)+'%')}${tile('Click→Book',(Math.round(cb*10)/10)+'%')}
+        ${ctile('Click→Lead',(Math.round(cl*10)/10)+'%','Click→Lead')}${ctile('Lead→Book',Math.round(lb)+'%','Lead→Book')}${ctile('Click→Book',(Math.round(cb*10)/10)+'%','Click→Book')}
       </div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;">
-        ${tile('CPC',cpc?'₹'+Math.round(cpc):'—')}${tile('CPL',cpl?'₹'+Math.round(cpl):'—')}${tile('CPB',cpb?'₹'+Math.round(cpb):'—')}
+        ${ctile('CPC',cpc?'₹'+Math.round(cpc):'—','CPC')}${ctile('CPL',cpl?'₹'+Math.round(cpl):'—','CPL')}${ctile('CPB',cpb?'₹'+Math.round(cpb):'—','CPB')}
       </div>
-      <div style="font-size:9px;color:#94a3b8;margin:7px 0 1px;">Lead→Book % per week · x-axis = week ending</div>${lbTrend(lbSeries,wkEnd,'#16a34a',v=>v+'%')}
+      <div id="citt${idx}" style="font-size:9px;color:#94a3b8;margin:7px 0 1px;"><b style="color:#16a34a">Lead→Book</b> per week · click any metric above · x-axis = week ending</div>
+      <div id="cichart${idx}">${lbTrend(series['Lead→Book'].v,wkEnd,series['Lead→Book'].c,series['Lead→Book'].f)}</div>
     </div>`; };
-  const cards=ciSel.map(card).join('') || `<div style="color:#94a3b8;padding:14px;">Pick at least one ${ciMode} below to compare.</div>`;
+  const cards=ciSel.map((k,i)=>card(k,i)).join('') || `<div style="color:#94a3b8;padding:14px;">Pick at least one ${ciMode} below to compare.</div>`;
   return `<div class="card">
     <div class="sec-h">⛳ Campaign Intelligence — clicks → leads → bookings</div>
     <div class="sec-sub">Precise funnel — clicks &amp; leads are campaign-tagged so they align. Compare ${ciMode==='city'?'cities':'categories'} over any window. Leads = gclid-attributed; Booked = matched to a screening call within 14d. · pulled ${GAF2._meta&&GAF2._meta.pulled||''}</div>
