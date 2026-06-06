@@ -11,4 +11,5 @@ SELECT
   COUNT(*) AS n
 FROM allo_analytics.call_analyses
 WHERE deleted_at IS NULL AND created_at >= '2026-05-25'
+  AND analysis IS NOT NULL AND json_serialize(analysis) <> 'null'
 GROUP BY 1,2,3,4,5;

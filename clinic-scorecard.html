@@ -456,6 +456,11 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--navy);font-
       <tbody id="tblH-body"></tbody>
     </table>
     <div style="font-size:10px;color:var(--gray);margin-top:6px"><strong>Right-censoring:</strong> conversion counts Follow-Up/Therapy booked within 30 days of the screening call, so the most recent ~4 weeks are still accumulating and read artificially low. The headline uses the latest <em>fully-elapsed</em> week; maturing weeks are dashed on the trend. Source: <code>appointments</code> (Screening Call → Follow Up / Therapy).</div>
+    <div style="margin-top:16px">
+      <div style="font-size:11px;font-weight:500;color:var(--gray);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">Retention depth — do converted patients keep coming? <span style="font-weight:400;text-transform:none">completed-SC cohort, treatment visits within 60 days</span></div>
+      <div id="retBars" style="display:flex;gap:6px;margin-bottom:8px"></div>
+      <div class="ins ins-b" id="retInsight" style="margin:0"><i class="ti ti-bulb"></i><span></span></div>
+    </div>
   </div>
 </div>
 
@@ -483,7 +488,8 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--navy);font-
 <script>
 /* ── DATA ── */
 let WEEKS=[], WEEK_LABELS=[], currentWeek=7;
-let SC=null, LEADS=null, ROSTER=null, REM={}, SARVAM=null, CONV={}, DOCTOR={}, MKT=null, SWHO={}, D=null;
+let SC=null, LEADS=null, ROSTER=null, REM={}, SARVAM=null, CONV={}, DOCTOR={}, MKT=null, SWHO={}, RETEN={}, D=null;
+const RET_MATURE_IDX=9;   // newest-first 12-week idx whose 60-day retention window has fully elapsed
 let SEL=[];                                   // selected clinic keys (City|Clinic) — aggregated/summed
 let CLINICS=[], CITIES={};                    // all keys; city -> [keys]
 const NW=8;                                   // weeks shown (last 8 of the 12 pulled)
@@ -550,6 +556,7 @@ function buildD(){
     resched_patient:rPat, resched_noshow:rNo, recovered:rec,
     leadage,
     conv:{ completed:cA('completed_sc'), converted:cA('converted'), rate:pctSer(cA('converted'),cA('completed_sc')) },
+    retention: (()=>{ const F=['cohort','d0','d1','d2','d3plus','total_tx']; const o={}; F.forEach(f=>o[f]=sum12(k=>(RETEN[k]||{})[f])); return o; })(),
     statusWho: (()=>{ const SUB=['total','done','missed','resched_patient','resched_noshow'];
       const seg=s=>{ const o={}; SUB.forEach(f=>o[f]=sumS(k=>(((SWHO[k]||{})[s]||{})[f]))); return o; };
       return { new:seg('new'), fu:seg('fu') }; })(),
@@ -831,6 +838,7 @@ function renderDow(){
 /* ── RENDER SECTION H: SC → treatment conversion (revenue funnel) ── */
 function renderH() {
   const w=currentWeek, mi=lastMatureIdx();
+  renderRetention();
   const cv=D.conv||{}, comp=cv.completed||[], conv=cv.converted||[], rate=cv.rate||[];
   document.getElementById('cvSc').textContent=comp[mi]||0;
   document.getElementById('cvConv').textContent=conv[mi]||0;
@@ -870,6 +878,21 @@ function renderH() {
   const r0=rate[mi]||0, lbl=WEEK_LABELS[mi]||'';
   ins.className='ins '+(r0>=22?'ins-b':r0>=15?'ins-a':'ins-r');
   ins.querySelector('span').innerHTML=`<strong>${r0}% of completed screening calls converted to ongoing treatment</strong> in the latest fully-measured week (${lbl}): ${conv[mi]||0} of ${comp[mi]||0}. ${r0>=22?'Healthy hand-off from free call to paid care.':'Below the ~22% network norm — the SC→treatment hand-off is where revenue is leaking. Coach agents on closing the next appointment on the call, not just completing the screening.'} Recent weeks read lower only because their 30-day window is still open.`;
+}
+
+/* ── RENDER retention depth (mature cohort, ~10 wks back) ── */
+function renderRetention(){
+  const bars=document.getElementById('retBars'); if(!bars) return;
+  const rt=D.retention; const mi=RET_MATURE_IDX;
+  if(!rt||!rt.cohort){ bars.innerHTML=''; return; }
+  const c=rt.cohort[mi]||0, d0=rt.d0[mi]||0, d1=rt.d1[mi]||0, d2=rt.d2[mi]||0, d3=rt.d3plus[mi]||0, tv=rt.total_tx[mi]||0;
+  if(c===0){ bars.innerHTML='<div style="font-size:11px;color:var(--gray)">No mature retention cohort for this selection.</div>'; document.getElementById('retInsight').querySelector('span').textContent=''; return; }
+  const seg=[['0 visits',d0,COLORS.n],['1 visit',d1,COLORS.a],['2 visits',d2,COLORS.t],['3+ visits',d3,COLORS.g]];
+  const pc=n=>Math.round(n/c*100);
+  bars.innerHTML=seg.map(([l,n,col])=>`<div style="flex:1;text-align:center"><div style="font-size:18px;font-weight:700;color:${col}">${pc(n)}%</div><div style="font-size:13px;color:var(--navy)">${n}</div><div style="font-size:10px;color:var(--gray)">${l}</div></div>`).join('');
+  const retained=c-d0, retRate=pc(retained), avg=(tv/c).toFixed(2);
+  const lbl=WEEK_LABELS[Math.min(NW-1,mi)]||'~10 weeks ago';
+  document.getElementById('retInsight').querySelector('span').innerHTML=`<strong>${retRate}% of completed-SC patients came back for ≥1 treatment visit within 60 days</strong> (cohort of ${c} from ~10 weeks ago — the latest with a fully-elapsed 60-day window), averaging ${avg} treatment visits each. ${d3>0?`${pc(d3)}% became regulars (3+ visits).`:''} This is the retention/LTV signal beyond the first conversion — recent cohorts are still maturing so aren't shown.`;
 }
 
 /* ── RENDER CLINIC COMPARISON (city-lead leaderboard, multi-select only) ── */
@@ -1346,7 +1369,7 @@ function applySelection(){
 }
 (async function(){
   try{
-    const [sc,lj,ros,rem,sar,cnv,doc,mkt,swho]=await Promise.all([
+    const [sc,lj,ros,rem,sar,cnv,doc,mkt,swho,ret]=await Promise.all([
       fetch('data_scorecard.json').then(r=>r.json()),
       fetch('data_leads.json').then(r=>r.json()),
       fetch('data_roster.json').then(r=>r.json()),
@@ -1356,8 +1379,9 @@ function applySelection(){
       fetch('data_doctor.json').then(r=>r.ok?r.json():{}).catch(()=>({})),
       fetch('data_marketing.json').then(r=>r.ok?r.json():null).catch(()=>null),
       fetch('data_status_who.json').then(r=>r.ok?r.json():{}).catch(()=>({})),
+      fetch('data_retention.json').then(r=>r.ok?r.json():{}).catch(()=>({})),
     ]);
-    SC=sc; LEADS=lj; ROSTER=ros; REM=rem||{}; SARVAM=sar; CONV=cnv||{}; DOCTOR=doc||{}; MKT=mkt; SWHO=swho||{};
+    SC=sc; LEADS=lj; ROSTER=ros; REM=rem||{}; SARVAM=sar; CONV=cnv||{}; DOCTOR=doc||{}; MKT=mkt; SWHO=swho||{}; RETEN=ret||{};
     buildWeeks();
     CLINICS=Object.keys(SC).filter(k=>k!=='_meta').sort();
     CITIES={}; CLINICS.forEach(k=>{const c=k.split('|')[0]; (CITIES[c]=CITIES[c]||[]).push(k);});

@@ -129,9 +129,27 @@ def build_status_who():
         print(f"  Bellandur wk0 — NEW: total {n['total'][0]} done {n['done'][0]} missed {n['missed'][0]} rp {n['resched_patient'][0]}")
         print(f"  Bellandur wk0 — FU : total {fu['total'][0]} done {fu['done'][0]} missed {fu['missed'][0]} rp {fu['resched_patient'][0]}")
 
+def build_retention():
+    D = {}
+    FIELDS = ["cohort","d0","d1","d2","d3plus","total_tx"]
+    for c in q("fetch_retention.sql"):
+        if len(c) < 9: continue
+        city,clinic,wk = c[0],c[1],c[2]
+        if wk not in WI: continue
+        o = D.setdefault(f"{city}|{clinic}", {f:[0]*12 for f in FIELDS})
+        for j,f in enumerate(FIELDS): o[f][WI[wk]] = num(c[3+j])
+    out = {"_meta":{"weeks":WEEKS,
+        "source":"allo_consultations.appointments — completed SC cohort → completed Follow Up/Therapy within 60 days",
+        "note":"retained = cohort patients with >=1 treatment visit in 60d. Recent ~9 weeks right-censored (60d window); flagged in UI.",
+        "censored_weeks":9}}
+    out.update(D)
+    json.dump(out, open(os.path.join(ROOT,"data_retention.json"),"w"), separators=(",",":"))
+    # mature week 9 (index 9 = ~10 wks ago, fully elapsed)
+    mi=9; tc=sum(v["cohort"][mi] for v in D.values()); tr=sum(v["cohort"][mi]-v["d0"][mi] for v in D.values())
+    print(f"data_retention.json · {len(D)} clinics · wk{mi} network retained {tr}/{tc} = {round(tr/tc*100) if tc else 0}%")
+
 if __name__ == "__main__":
-    build_reminders()
-    build_sarvam()
-    build_conversion()
-    build_doctor()
-    build_status_who()
+    for fn in (build_reminders, build_sarvam, build_conversion, build_doctor, build_status_who, build_retention):
+        try: fn()
+        except SystemExit as e: print(f"  [skip] {fn.__name__}: {e}")
+        except Exception as e: print(f"  [skip] {fn.__name__}: {type(e).__name__}: {e}")
