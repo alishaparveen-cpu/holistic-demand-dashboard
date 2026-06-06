@@ -180,9 +180,20 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--navy);font-
     </div>
     <div class="view-toggle">
       <button class="vt-btn on" id="vt-week" onclick="setView('week')">This week</button>
+      <button class="vt-btn" id="vt-wtd" onclick="setView('wtd')">To date</button>
       <button class="vt-btn" id="vt-trend" onclick="setView('trend')">All trends</button>
     </div>
   </div>
+</div>
+
+<!-- WEEK-TO-DATE PANEL (shown in 'To date' mode) -->
+<div id="wtdPanel" style="display:none;background:#fff;border:1px solid var(--bdr);border-radius:11px;padding:14px 16px;margin-bottom:16px">
+  <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:10px">
+    <div style="font-size:13px;font-weight:700;color:var(--navy)"><i class="ti ti-calendar-stats" style="font-size:14px;margin-right:4px"></i>Week to date <span id="wtdRange" style="font-weight:400;color:var(--gray)"></span></div>
+    <div style="font-size:11px;color:var(--gray)" id="wtdElapsed"></div>
+  </div>
+  <div class="kpi-grid" id="wtdGrid" style="margin-bottom:0"></div>
+  <div class="ins ins-b" id="wtdInsight" style="margin-top:12px;margin-bottom:0"><i class="ti ti-bulb"></i><span></span></div>
 </div>
 
 <!-- KPI CARDS -->
@@ -475,7 +486,7 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--navy);font-
 <script>
 /* ── DATA ── */
 let WEEKS=[], WEEK_LABELS=[], currentWeek=7;
-let SC=null, LEADS=null, ROSTER=null, REM={}, SARVAM=null, CONV={}, DOCTOR={}, MKT=null, SWHO={}, RETEN={}, CALLBACK={}, PRACTO={}, LAGE={}, L2C=null, D=null;
+let SC=null, LEADS=null, ROSTER=null, REM={}, SARVAM=null, CONV={}, DOCTOR={}, MKT=null, SWHO={}, RETEN={}, CALLBACK={}, PRACTO={}, LAGE={}, L2C=null, DAILY={}, D=null;
 let ageChannel='all';
 const RET_MATURE_IDX=9;   // newest-first 12-week idx whose 60-day retention window has fully elapsed
 let SEL=[];                                   // selected clinic keys (City|Clinic) — aggregated/summed
@@ -1312,18 +1323,54 @@ let trendMode = false;
 function setView(v) {
   trendMode = v==='trend';
   document.getElementById('vt-week').className='vt-btn'+(v==='week'?' on':'');
+  document.getElementById('vt-wtd').className='vt-btn'+(v==='wtd'?' on':'');
   document.getElementById('vt-trend').className='vt-btn'+(v==='trend'?' on':'');
+  document.getElementById('wtdPanel').style.display = v==='wtd' ? 'block' : 'none';
+  if(v==='wtd') renderWTD();
   if(trendMode) {
-    // open all row panels and render charts
-    document.querySelectorAll('.row-chart-wrap').forEach(p=>{
-      p.classList.add('open');
-    });
+    document.querySelectorAll('.row-chart-wrap').forEach(p=>{ p.classList.add('open'); });
     renderAllCharts();
   } else {
     document.querySelectorAll('.row-chart-wrap').forEach(p=>p.classList.remove('open'));
     document.querySelectorAll('.row-expanded').forEach(r=>r.classList.remove('row-expanded'));
     Object.keys(openCharts).forEach(k=>{if(k!=='kpiChartCanvas'){destroyChart(k);}});
   }
+}
+/* ── Week-to-date: current week (Mon→today) vs SAME weekday range last week ── */
+function renderWTD(){
+  const asOf=(DAILY._meta&&DAILY._meta.as_of)||'2026-06-06';
+  const d0=new Date(asOf+'T00:00:00');
+  const dow=(d0.getDay()+6)%7;                 // 0=Mon … 6=Sun
+  const mon=new Date(d0); mon.setDate(d0.getDate()-dow);   // Monday of current week
+  const iso=dt=>`${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}`;
+  const days=[]; for(let i=0;i<=dow;i++){ const x=new Date(mon); x.setDate(mon.getDate()+i); days.push(iso(x)); }
+  const prevDays=days.map(s=>{ const x=new Date(s+'T00:00:00'); x.setDate(x.getDate()-7); return iso(x); });
+  const sumRange=(dates)=>{ const s=[0,0,0,0]; SEL.forEach(k=>{ const cd=DAILY[k]||{}; dates.forEach(dt=>{ const r=cd[dt]; if(r) for(let i=0;i<4;i++)s[i]+=(r[i]||0); }); }); return s; };
+  const cur=sumRange(days), prev=sumRange(prevDays);
+  const fmtRange=(a,b)=>{const M=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];const x=new Date(a+'T00:00:00'),y=new Date(b+'T00:00:00');return `${x.getDate()} ${M[x.getMonth()]} – ${y.getDate()} ${M[y.getMonth()]}`;};
+  document.getElementById('wtdRange').textContent='· '+fmtRange(days[0],days[days.length-1]);
+  document.getElementById('wtdElapsed').textContent=`${days.length} of 7 days elapsed · compared to the same ${days.length} days last week (${fmtRange(prevDays[0],prevDays[prevDays.length-1])})`;
+  const showup=(d,m)=> (d+m)>0?Math.round(d/(d+m)*100):0;
+  const cards=[
+    {lbl:'Bookings', cur:cur[0], prev:prev[0]},
+    {lbl:'New', cur:cur[1], prev:prev[1]},
+    {lbl:'Done', cur:cur[2], prev:prev[2]},
+    {lbl:'No-show', cur:cur[3], prev:prev[3]},
+    {lbl:'Show-up%', cur:showup(cur[2],cur[3]), prev:showup(prev[2],prev[3]), unit:'%'},
+  ];
+  const grid=document.getElementById('wtdGrid'); grid.innerHTML='';
+  cards.forEach(c=>{
+    const pct=c.prev>0?Math.round((c.cur-c.prev)/c.prev*100):null;
+    const dir=pct===null?'fl':pct<0?'dn':pct>0?'up':'fl';
+    const div=document.createElement('div'); div.className='kpi-card'; div.style.cursor='default';
+    div.innerHTML=`<div class="kpi-lbl"><i class="ti ti-calendar-stats" style="font-size:11px"></i>${c.lbl}</div>
+      <div class="kpi-val">${c.cur}${c.unit||''}</div>
+      <div class="kpi-wow ${dir}"><i class="ti ti-trending-${dir==='up'?'up':dir==='dn'?'down':'flat'}" style="font-size:11px"></i>${pct===null?'—':(pct>=0?'+':'')+pct+'% vs last wk'} <span style="color:var(--gray)">(${c.prev}${c.unit||''})</span></div>`;
+    grid.appendChild(div);
+  });
+  const bk=cards[0], nw=cards[1];
+  const bkPct=bk.prev>0?Math.round((bk.cur-bk.prev)/bk.prev*100):0, nwPct=nw.prev>0?Math.round((nw.cur-nw.prev)/nw.prev*100):0;
+  document.getElementById('wtdInsight').querySelector('span').innerHTML=`<strong>Through ${days.length} of 7 days, bookings are ${bkPct>=0?'+':''}${bkPct}% vs the same ${days.length} days last week</strong> (${bk.cur} vs ${bk.prev}); new ${nwPct>=0?'+':''}${nwPct}%. This is a like-for-like ${days.length}-day comparison — fair to read mid-week, unlike comparing a partial week to a full one. Daily Screening-Call data; the rest of the page stays on completed weeks.`;
 }
 
 function renderAllCharts() {
@@ -1473,7 +1520,7 @@ function applySelection(){
 (async function(){
   try{
     const _cb='?t='+Date.now();   // cache-bust so data rebuilds always show fresh
-    const [sc,lj,ros,rem,sar,cnv,doc,mkt,swho,ret,cbk,prc,lage,l2c]=await Promise.all([
+    const [sc,lj,ros,rem,sar,cnv,doc,mkt,swho,ret,cbk,prc,lage,l2c,daily]=await Promise.all([
       fetch('data_scorecard.json'+_cb).then(r=>r.json()),
       fetch('data_leads.json'+_cb).then(r=>r.json()),
       fetch('data_roster.json'+_cb).then(r=>r.json()),
@@ -1488,8 +1535,9 @@ function applySelection(){
       fetch('data_practo_leads.json'+_cb).then(r=>r.ok?r.json():{}).catch(()=>({})),
       fetch('data_leadage_channel.json'+_cb).then(r=>r.ok?r.json():{}).catch(()=>({})),
       fetch('data_l2c.json'+_cb).then(r=>r.ok?r.json():null).catch(()=>null),
+      fetch('data_daily.json'+_cb).then(r=>r.ok?r.json():{}).catch(()=>({})),
     ]);
-    SC=sc; LEADS=lj; ROSTER=ros; REM=rem||{}; SARVAM=sar; CONV=cnv||{}; DOCTOR=doc||{}; MKT=mkt; SWHO=swho||{}; RETEN=ret||{}; CALLBACK=cbk||{}; PRACTO=prc||{}; LAGE=lage||{}; L2C=l2c;
+    SC=sc; LEADS=lj; ROSTER=ros; REM=rem||{}; SARVAM=sar; CONV=cnv||{}; DOCTOR=doc||{}; MKT=mkt; SWHO=swho||{}; RETEN=ret||{}; CALLBACK=cbk||{}; PRACTO=prc||{}; LAGE=lage||{}; L2C=l2c; DAILY=daily||{};
     buildWeeks();
     CLINICS=Object.keys(SC).filter(k=>k!=='_meta').sort();
     CITIES={}; CLINICS.forEach(k=>{const c=k.split('|')[0]; (CITIES[c]=CITIES[c]||[]).push(k);});

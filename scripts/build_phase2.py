@@ -200,8 +200,21 @@ def build_l2c():
     json.dump(out, open(os.path.join(ROOT,"data_l2c.json"),"w"), separators=(",",":"))
     print(f"data_l2c.json · wk0 leads {o['leads'][0]} called {o['called'][0]} connected {o['connected'][0]} booked {o['booked'][0]}")
 
+def build_daily():
+    # data_daily.json: per clinic, date -> [total,new,done,missed] for the WTD view
+    D={}
+    for c in q("fetch_daily.sql"):
+        if len(c) < 7: continue
+        D.setdefault(f"{c[0]}|{c[1]}", {})[c[2]] = [num(c[3]),num(c[4]),num(c[5]),num(c[6])]
+    import datetime as _dt
+    out={"_meta":{"as_of":"2026-06-06","fields":["total","new","done","missed"],
+        "source":"allo_consultations.appointments daily (Screening Call) — WTD vs same-range-last-week"}}
+    out.update(D)
+    json.dump(out, open(os.path.join(ROOT,"data_daily.json"),"w"), separators=(",",":"))
+    print(f"data_daily.json · {len(D)} clinics")
+
 if __name__ == "__main__":
-    for fn in (build_reminders, build_sarvam, build_conversion, build_doctor, build_status_who, build_retention, build_callback, build_leadage_channel, build_l2c):
+    for fn in (build_reminders, build_sarvam, build_conversion, build_doctor, build_status_who, build_retention, build_callback, build_leadage_channel, build_l2c, build_daily):
         try: fn()
         except SystemExit as e: print(f"  [skip] {fn.__name__}: {e}")
         except Exception as e: print(f"  [skip] {fn.__name__}: {type(e).__name__}: {e}")
