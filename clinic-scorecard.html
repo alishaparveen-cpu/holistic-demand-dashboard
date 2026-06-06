@@ -333,6 +333,13 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--navy);font-
     </div>
   </div>
   <div class="sec-body" id="secE-body">
+    <div style="margin-bottom:16px">
+      <div style="font-size:11px;font-weight:500;color:var(--gray);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">L2C — Lead → Call funnel <span style="color:#d97706;font-weight:700">● NETWORK</span> <span style="font-weight:400;text-transform:none">latest week · the call team's reach</span></div>
+      <div class="funnel" id="l2cFunnel"></div>
+      <div class="ins ins-a" id="l2cInsight" style="margin-top:10px;margin-bottom:0"><i class="ti ti-bulb"></i><span></span></div>
+      <div style="font-size:10px;color:var(--gray);margin-top:4px">Leads = unique phone numbers in <code>allo_persons.lead</code> this week. Called/Connected = matched to outbound <code>exotel_calls</code> within 14 days; Booked = phone matched a Screening Call within 14 days (can happen without an outbound connect — inbound/self-book). <strong>Network-level</strong> — lead clinic-code is present on only ~⅓ of leads, so this doesn't filter by the clinic selector. Replaces the stale LeadSquared sheet sync (stopped Sep 2024).</div>
+    </div>
+    <hr style="border:none;border-top:1px solid var(--bdr);margin:0 0 14px">
     <div style="margin-bottom:12px">
       <div style="font-size:11px;font-weight:500;color:var(--gray);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">Live funnel — the reliable part</div>
       <div class="funnel">
@@ -476,7 +483,7 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--navy);font-
 <script>
 /* ── DATA ── */
 let WEEKS=[], WEEK_LABELS=[], currentWeek=7;
-let SC=null, LEADS=null, ROSTER=null, REM={}, SARVAM=null, CONV={}, DOCTOR={}, MKT=null, SWHO={}, RETEN={}, CALLBACK={}, PRACTO={}, LAGE={}, D=null;
+let SC=null, LEADS=null, ROSTER=null, REM={}, SARVAM=null, CONV={}, DOCTOR={}, MKT=null, SWHO={}, RETEN={}, CALLBACK={}, PRACTO={}, LAGE={}, L2C=null, D=null;
 let ageChannel='all';
 const RET_MATURE_IDX=9;   // newest-first 12-week idx whose 60-day retention window has fully elapsed
 let SEL=[];                                   // selected clinic keys (City|Clinic) — aggregated/summed
@@ -1157,8 +1164,28 @@ function renderD() {
 function setAgeChannel(ch){ ageChannel=ch; renderD(); const s=document.getElementById('ageChanSel'); if(s)s.value=ch; }
 
 /* ── RENDER SECTION E: honest booked→done funnel ── */
+function renderL2C(){
+  const el=document.getElementById('l2cFunnel'); if(!el) return;
+  if(!L2C||!L2C.net){ el.innerHTML='<div style="font-size:11px;color:var(--gray)">L2C data not loaded.</div>'; return; }
+  const n=L2C.net, i=0;  // latest week (newest-first idx 0)
+  const leads=n.leads[i], called=n.called[i], conn=n.connected[i], booked=n.booked[i];
+  const pc=(a,b)=>b>0?Math.round(a/b*100)+'%':'—';
+  const stage=(num,lbl,sub)=>`<div class="f-s"><div class="f-n">${num.toLocaleString('en-IN')}</div><div class="f-l">${lbl}</div>${sub?`<div class="f-r">${sub}</div>`:''}</div>`;
+  el.innerHTML = stage(leads,'Leads','')
+    + '<div class="f-a"><i class="ti ti-arrow-right"></i></div>'
+    + stage(called,'Called',pc(called,leads)+' L2C')
+    + '<div class="f-a"><i class="ti ti-arrow-right"></i></div>'
+    + stage(conn,'Connected',pc(conn,called)+' of called')
+    + '<div class="f-a"><i class="ti ti-arrow-right"></i></div>'
+    + stage(booked,'Booked',pc(booked,leads)+' of leads');
+  const l2cPct=leads>0?Math.round(called/leads*100):0;
+  const ins=document.getElementById('l2cInsight');
+  ins.className='ins '+(l2cPct<50?'ins-r':l2cPct<70?'ins-a':'ins-b');
+  ins.querySelector('span').innerHTML=`<strong>Only ${l2cPct}% of this week's ${leads.toLocaleString('en-IN')} leads were called</strong> (${called.toLocaleString('en-IN')}) — ${100-l2cPct}% of leads never got an outbound call. Of those called, ${pc(conn,called)} connected. <strong>The biggest leak is leads never dialled</strong>, not the connect rate. (${booked.toLocaleString('en-IN')} of all leads booked a screening call within 14 days.)`;
+}
 function renderE() {
   const w=currentWeek;
+  renderL2C();
   const fB=D.bookings.total[w], fK=D.kept[w], fD=D.done[w];
   document.getElementById('fnBooked').textContent=fB;
   document.getElementById('fnKept').textContent=fK;
@@ -1430,7 +1457,7 @@ function applySelection(){
 (async function(){
   try{
     const _cb='?t='+Date.now();   // cache-bust so data rebuilds always show fresh
-    const [sc,lj,ros,rem,sar,cnv,doc,mkt,swho,ret,cbk,prc,lage]=await Promise.all([
+    const [sc,lj,ros,rem,sar,cnv,doc,mkt,swho,ret,cbk,prc,lage,l2c]=await Promise.all([
       fetch('data_scorecard.json'+_cb).then(r=>r.json()),
       fetch('data_leads.json'+_cb).then(r=>r.json()),
       fetch('data_roster.json'+_cb).then(r=>r.json()),
@@ -1444,8 +1471,9 @@ function applySelection(){
       fetch('data_callback.json'+_cb).then(r=>r.ok?r.json():{}).catch(()=>({})),
       fetch('data_practo_leads.json'+_cb).then(r=>r.ok?r.json():{}).catch(()=>({})),
       fetch('data_leadage_channel.json'+_cb).then(r=>r.ok?r.json():{}).catch(()=>({})),
+      fetch('data_l2c.json'+_cb).then(r=>r.ok?r.json():null).catch(()=>null),
     ]);
-    SC=sc; LEADS=lj; ROSTER=ros; REM=rem||{}; SARVAM=sar; CONV=cnv||{}; DOCTOR=doc||{}; MKT=mkt; SWHO=swho||{}; RETEN=ret||{}; CALLBACK=cbk||{}; PRACTO=prc||{}; LAGE=lage||{};
+    SC=sc; LEADS=lj; ROSTER=ros; REM=rem||{}; SARVAM=sar; CONV=cnv||{}; DOCTOR=doc||{}; MKT=mkt; SWHO=swho||{}; RETEN=ret||{}; CALLBACK=cbk||{}; PRACTO=prc||{}; LAGE=lage||{}; L2C=l2c;
     buildWeeks();
     CLINICS=Object.keys(SC).filter(k=>k!=='_meta').sort();
     CITIES={}; CLINICS.forEach(k=>{const c=k.split('|')[0]; (CITIES[c]=CITIES[c]||[]).push(k);});

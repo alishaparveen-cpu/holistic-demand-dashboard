@@ -184,8 +184,24 @@ def build_leadage_channel():
     b=D.get("Bangalore|Bellandur",{})
     print(f"data_leadage_channel.json · {len(D)} clinics · Bellandur channels: {list(b.keys())}")
 
+def build_l2c():
+    # data_l2c.json: NETWORK weekly L2C funnel (leads->called->connected, +booked)
+    F=["leads","called","connected","booked"]
+    o={f:[0]*12 for f in F}
+    for c in q("fetch_l2c.sql"):
+        if len(c) < 5: continue
+        wk=c[0]
+        if wk not in WI: continue
+        for j,f in enumerate(F): o[f][WI[wk]]=num(c[1+j])
+    out={"_meta":{"weeks":WEEKS,"scope":"network",
+        "source":"allo_persons.lead (deduped phone) + exotel_calls (outbound) + Screening Call appointments",
+        "note":"Network only — lead clinic-code is present on ~1/3 of leads so per-clinic isn't reliable. called/connected within 14d of lead; booked = phone matched a SC appt within 14d (can occur without an outbound connect)."},
+        "net":o}
+    json.dump(out, open(os.path.join(ROOT,"data_l2c.json"),"w"), separators=(",",":"))
+    print(f"data_l2c.json · wk0 leads {o['leads'][0]} called {o['called'][0]} connected {o['connected'][0]} booked {o['booked'][0]}")
+
 if __name__ == "__main__":
-    for fn in (build_reminders, build_sarvam, build_conversion, build_doctor, build_status_who, build_retention, build_callback, build_leadage_channel):
+    for fn in (build_reminders, build_sarvam, build_conversion, build_doctor, build_status_who, build_retention, build_callback, build_leadage_channel, build_l2c):
         try: fn()
         except SystemExit as e: print(f"  [skip] {fn.__name__}: {e}")
         except Exception as e: print(f"  [skip] {fn.__name__}: {type(e).__name__}: {e}")
