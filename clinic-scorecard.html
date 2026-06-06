@@ -142,7 +142,7 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--navy);font-
   <a href="diagnostic.html" style="color:#64748b;text-decoration:none;padding:4px 8px;border-radius:6px;">Diagnostic</a>
   <a href="marketing.html" style="color:#64748b;text-decoration:none;padding:4px 8px;border-radius:6px;">Marketing</a>
   <span style="color:#0f172a;font-weight:700;padding:4px 8px;background:#fff;border-radius:6px;">Clinic Scorecard</span>
-  <span style="margin-left:8px;font-size:10px;font-weight:700;color:#9a3412;background:#fff7ed;border:1px solid #fed7aa;border-radius:6px;padding:2px 8px;">PROTOTYPE · trends · live + Phase 2</span>
+  <span style="margin-left:8px;font-size:10px;font-weight:700;color:#9a3412;background:#fff7ed;border:1px solid #fed7aa;border-radius:6px;padding:2px 8px;">PROTOTYPE · trends · live + Phase 2 + revenue</span>
 </div>
 <!-- TOP BAR -->
 <div class="topbar">
@@ -415,6 +415,11 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--navy);font-
       <div class="ins ins-b" id="rmInsight" style="margin-top:10px"><i class="ti ti-bulb"></i><span></span></div>
       <div style="font-size:10px;color:var(--gray);margin-top:4px">Reminder = a <code>whatsapp</code> message with <code>reference_entity=appointment</code> and a <code>%reminder%</code> template, joined to this clinic's no-show appointments. The remaining gap (no-shows who got reminders but still didn't attend) is a <em>patient-side / timing</em> problem, not a reminder-delivery one — structured per-patient reasons still need the Sarvam transcript mine (<code>call_analyses</code>).</div>
     </div>
+    <div style="margin-top:14px">
+      <div style="font-size:11px;font-weight:500;color:var(--gray);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">No-show rate by day of week <span style="font-weight:400;text-transform:none">(last ~8 weeks) — spot a consistently bad day</span></div>
+      <div id="dowGrid" style="display:flex;gap:6px"></div>
+      <div class="ins ins-n" id="dowInsight" style="margin-top:10px;margin-bottom:0"><i class="ti ti-calendar"></i><span></span></div>
+    </div>
   </div>
 </div>
 
@@ -536,6 +541,8 @@ function buildD(){
     resched_patient:rPat, resched_noshow:rNo, recovered:rec,
     leadage,
     conv:{ completed:cA('completed_sc'), converted:cA('converted'), rate:pctSer(cA('converted'),cA('completed_sc')) },
+    dow: (()=>{ const DD=['Mon','Tue','Wed','Thu','Fri','Sat','Sun']; const o={}; DD.forEach(d=>o[d]={booked:0,done:0,missed:0});
+      SEL.forEach(k=>{ const dw=(SC[k]||{}).dow||{}; DD.forEach(d=>{ if(dw[d]){o[d].booked+=dw[d].booked||0;o[d].done+=dw[d].done||0;o[d].missed+=dw[d].missed||0;} }); }); return o; })(),
   };
 }
 const CENSORED_WEEKS = 4;   // newest N weeks' 30-day conversion window not fully elapsed → display idx NW-CENSORED..NW-1
@@ -769,6 +776,24 @@ function renderA() {
   else read=`Follow-ups moved more than new bookings — this is a retention/continuation shift, not new demand.`;
   if(wrap) wrap.className='ins '+(tb.pct<0?'ins-r':tb.pct>0?'ins-b':'ins-n');
   document.getElementById('insA1').innerHTML=`<strong>Total bookings ${tb.str} WoW (${D.bookings.total[w-1]} → ${D.bookings.total[w]}).</strong> New first-time ${newWord}, follow-ups ${fuWord}. ${read} Click any row for its 8-week trend.`;
+}
+
+/* ── RENDER no-show-rate by day of week ── */
+function renderDow(){
+  const grid=document.getElementById('dowGrid'); if(!grid) return;
+  const DD=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'], dow=D.dow||{};
+  const rates=DD.map(d=>{const o=dow[d]||{booked:0,missed:0}; const base=o.booked||0; return {d, rate: base>0?Math.round(o.missed/base*100):0, booked:base, missed:o.missed||0};});
+  const withData=rates.filter(r=>r.booked>0);
+  const maxR=Math.max(1,...withData.map(r=>r.rate));
+  grid.innerHTML=rates.map(r=>{
+    const col=r.booked===0?'#e2e8f0':r.rate>=maxR&&maxR>0?'#dc2626':r.rate>=maxR*0.7?'#d97706':'#16a34a';
+    const h=r.booked===0?6:Math.max(6,Math.round(r.rate/maxR*46));
+    return `<div style="flex:1;text-align:center"><div style="height:52px;display:flex;align-items:flex-end;justify-content:center"><div title="${r.missed}/${r.booked} missed" style="width:60%;height:${h}px;background:${col};border-radius:3px 3px 0 0"></div></div><div style="font-size:13px;font-weight:700;color:${col}">${r.booked?r.rate+'%':'—'}</div><div style="font-size:10px;color:var(--gray)">${r.d}</div></div>`;
+  }).join('');
+  const ins=document.getElementById('dowInsight'); if(!withData.length){ins.querySelector('span').textContent='No weekday data for this selection.';return;}
+  const worst=withData.reduce((m,r)=>r.rate>m.rate?r:m,withData[0]);
+  const best=withData.reduce((m,r)=>r.rate<m.rate?r:m,withData[0]);
+  ins.querySelector('span').innerHTML=`<strong>${worst.d} is the worst day for no-shows (${worst.rate}%)</strong>, ${best.d} the best (${best.rate}%). If one day stands out consistently, it's usually a slot-timing or doctor-pattern issue on that day — check the roster and reminder timing for ${worst.d}.`;
 }
 
 /* ── RENDER SECTION H: SC → treatment conversion (revenue funnel) ── */
@@ -1024,6 +1049,7 @@ function renderF() {
   document.getElementById('rmNsSent').textContent=nS; document.getElementById('rmNsSentR').textContent=pr(nS,nT);
   document.getElementById('rmNsDel').textContent=nD;  document.getElementById('rmNsDelR').textContent=pr(nD,nT);
   document.getElementById('rmNsRead').textContent=nR; document.getElementById('rmNsReadR').textContent=pr(nR,nT);
+  renderDow();
   const ins=document.getElementById('rmInsight');
   if(nT===0){ ins.className='ins ins-n'; ins.querySelector('span').innerHTML='No no-shows in this selection/week to evaluate.'; }
   else { const sentPct=Math.round(nS/nT*100);
