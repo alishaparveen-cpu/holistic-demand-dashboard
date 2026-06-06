@@ -234,7 +234,7 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--navy);font-
       <div class="sec-ltr">A</div>
       <div>
         <div class="sec-title">Total bookings — breakdown by type</div>
-        <div class="sec-sub">Who booked (New + Follow-up = Total) · then a separate status overlay (reschedules) that does NOT add to the total · Click any row for trend</div>
+        <div class="sec-sub">Two complete cuts of the same bookings, each summing to Total: WHO booked (New + Follow-up) and WHAT happened (status) · Click any row for trend</div>
       </div>
     </div>
     <div class="sec-right">
@@ -735,11 +735,17 @@ function renderA() {
     {label:'New first-time', series:D.bookings.new_first, color:COLORS.r, note:'Patient’s all-time first SC — real new demand', indent:true},
     {label:'Follow-up', series:D.bookings.followup, color:COLORS.g, note:'Returning patient — not new demand', indent:true},
   ];
-  // GROUP 2 — status overlay; these OVERLAP the bookings above, they do NOT add to the total
+  // GROUP 2 — EXHAUSTIVE status partition: every booking has exactly one status → sums to Total
+  const stDone=D.done, stMiss=D.noshows, stRp=D.resched_patient, stRn=D.resched_noshow;
+  const stOther=D.bookings.total.map((t,i)=>Math.max(0,t-(stDone[i]||0)-(stMiss[i]||0)-(stRp[i]||0)-(stRn[i]||0)));
   const statRows = [
-    {label:'Rescheduled by patient', series:D.bookings.reschedule, color:COLORS.a, note:'Status = rescheduled (patient moved it). Already inside the total above.'},
-    {label:'Rescheduled after no-show', series:D.bookings.noshow_reb, color:COLORS.gr, note:'Was missed, then re-booked. Also inside the total above.'},
+    {label:'Completed', series:stDone, color:COLORS.g, note:'Patient attended & consulted', indent:true},
+    {label:'No-show (missed)', series:stMiss, color:COLORS.r, note:'Booked but did not attend', indent:true},
+    {label:'Rescheduled — by patient', series:stRp, color:COLORS.a, note:'Patient moved it to another time (status = rescheduled, prev ≠ missed)', indent:true},
+    {label:'Rescheduled — after no-show', series:stRn, color:COLORS.gr, note:'Missed, then re-booked — recovery (prev = missed)', indent:true},
+    {label:'Cancelled / still scheduled', series:stOther, color:COLORS.n, note:'Cancelled, or not yet resolved at data pull', indent:true},
   ];
+  const statSum = (stDone[w]||0)+(stMiss[w]||0)+(stRp[w]||0)+(stRn[w]||0)+(stOther[w]||0);
   const tbody = document.getElementById('tblA-body');
   tbody.innerHTML='';
   let idx=0;
@@ -767,7 +773,7 @@ function renderA() {
     tbody.appendChild(pr);
   };
   groupHdr('Who booked','New + Follow-up = Total '+(sumOK?'✓':'')); whoRows.forEach(dataRow);
-  groupHdr('Status overlay','A different cut — these overlap the bookings above, they do NOT add to the total'); statRows.forEach(dataRow);
+  groupHdr('What happened — status of every booking','Completed + No-show + Rescheduled + Cancelled/scheduled = Total '+(statSum===totV?'✓':`(${statSum} vs ${totV})`)); statRows.forEach(dataRow);
   // update insight (data-driven, no assumed direction)
   const nb=wow(D.bookings.new_first,w), fu=wow(D.bookings.followup,w), tb=wow(D.bookings.total,w);
   const wrap=document.getElementById('insA1').closest('.ins');
@@ -1114,16 +1120,30 @@ function renderF() {
 /* ── UPDATE ACTIONS ── */
 function updateActions() {
   const w=currentWeek;
-  const acts=[];
+  const cand=[];  // {pri, html} — lower pri = more urgent
   const slotDrop=(D.slots.scheduled[w-1]||0)-D.slots.scheduled[w], utl=D.slots.utilization[w];
-  if(slotDrop>0 && utl>=85) acts.push(`<strong>Doctor / supply:</strong> Scheduled slots fell ${D.slots.scheduled[w-1]} → ${D.slots.scheduled[w]} (−${slotDrop}) at ${utl}% utilization — supply is the binding constraint, every cut slot ≈ a lost booking. Review the roster with the doctor.`);
-  else if(utl<70) acts.push(`<strong>Demand vs supply:</strong> Utilization is only ${utl}% — there's spare capacity, so a booking shortfall is a demand problem, not the doctor's availability. Focus on lead/source mix (Section D), not the roster.`);
+  if(slotDrop>0 && utl>=85) cand.push({pri:1,html:`<strong>Doctor / supply:</strong> Scheduled slots fell ${D.slots.scheduled[w-1]} → ${D.slots.scheduled[w]} (−${slotDrop}) at ${utl}% utilization — supply is the binding constraint, every cut slot ≈ a lost booking. Review the roster with the doctor.`});
+  else if(utl<70) cand.push({pri:3,html:`<strong>Demand vs supply:</strong> Utilization is only ${utl}% — there's spare capacity, so a booking shortfall is a demand problem, not the doctor's availability. Focus on lead/source mix (Section D), not the roster.`});
   const nb=wow(D.bookings.new_first,w);
-  if(nb.pct<0) acts.push(`<strong>Demand:</strong> New first-time bookings ${nb.str} WoW (${D.bookings.new_first[w-1]} → ${D.bookings.new_first[w]}). Follow-ups are ${wow(D.bookings.followup,w).str} — so this is acquisition, not retention. Check the booking-source mix (Section D) for which channel pulled back.`);
+  if(nb.pct<0) cand.push({pri:2,html:`<strong>Demand:</strong> New first-time bookings ${nb.str} WoW (${D.bookings.new_first[w-1]} → ${D.bookings.new_first[w]}). Follow-ups are ${wow(D.bookings.followup,w).str} — so this is acquisition, not retention. Check the booking-source mix (Section D) for which channel pulled back.`});
   const b2d=D.b2d.overall[w];
-  if(b2d<75) acts.push(`<strong>Ops / show-up:</strong> Overall B2D is ${b2d}% (below 75%). ${D.noshows[w]} no-shows this week; ${D.recovered[w]} recovered so far. Tighten reminders & same-day call-backs — reason capture is Phase 2 (see Section F).`);
-  if(!acts.length) acts.push('<strong>Stable week:</strong> No metric is below its flag threshold. Use the trends toggle to scan for slow drifts.');
-  ['act1','act2','act3'].forEach((id,i)=>{document.getElementById(id).innerHTML=acts[i]||'<span style="color:var(--gray)">—</span>';});
+  if(b2d<75) cand.push({pri:1,html:`<strong>Ops / show-up:</strong> Show-up is ${b2d}% (below 75%). ${D.noshows[w]} no-shows this week; ${D.recovered[w]} recovered. Tighten reminders & same-day call-backs (see Section F).`});
+  const leak=100-D.keptRate[w];
+  if(leak>=40) cand.push({pri:2,html:`<strong>Leakage:</strong> ${leak}% of bookings (${D.leak[w]}) were rescheduled or cancelled before the appointment — demand moving, not no-shows. Tighten confirmation & slot-fit at booking (see Section E/F).`});
+  const shrR=D.slots.shrinkRate?D.slots.shrinkRate[w]:0;
+  if(shrR>=25) cand.push({pri:2,html:`<strong>Shrinkage:</strong> ${shrR}% of scheduled slots (${D.slots.shrunk[w]}) are blocked by internal holds. Recover these before asking for more doctor hours (Section C).`});
+  const mi=lastMatureIdx(), cvR=(D.conv&&D.conv.rate)?D.conv.rate[mi]:null;
+  if(cvR!==null && cvR<22) cand.push({pri:3,html:`<strong>Revenue:</strong> SC→treatment conversion is ${cvR}% (latest mature week, below the ~22% norm). The free-call→paid-care hand-off is where revenue leaks — coach agents to close the next appointment on the call (Section H).`});
+  const rec=D.recovery?D.recovery[w]:0;
+  if(D.noshows[w]>=3 && rec<40) cand.push({pri:3,html:`<strong>Recovery:</strong> Only ${rec}% of no-shows were re-booked/recovered. A same-week call-back on missed appointments is low-cost recovered demand (Section F).`});
+  cand.sort((a,b)=>a.pri-b.pri);
+  if(!cand.length) cand.push({pri:9,html:'<strong>Stable week:</strong> No metric is below its flag threshold. Use the “All trends” toggle to scan for slow drifts.'});
+  const top=cand.slice(0,3);
+  ['act1','act2','act3'].forEach((id,i)=>{
+    const item=document.getElementById(id).closest('.act-item');
+    if(top[i]){ document.getElementById(id).innerHTML=top[i].html; if(item)item.style.display=''; }
+    else if(item){ item.style.display='none'; }
+  });
 }
 
 /* ── WEEK NAVIGATION ── */
