@@ -203,6 +203,30 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--navy);font-
   <div id="kpiChartNote" style="font-size:11px;color:var(--gray);margin-top:8px;line-height:1.6;padding:8px 10px;background:#F8FAFC;border-radius:6px"></div>
 </div>
 
+<!-- CLINIC COMPARISON (city-lead view, only when >1 clinic selected) -->
+<div class="sec" id="secCmp" style="display:none">
+  <div class="sec-hdr" onclick="toggleSec('secCmp')">
+    <div class="sec-left">
+      <div class="sec-ltr" style="background:#0f172a">▦</div>
+      <div>
+        <div class="sec-title">Clinic comparison — this week</div>
+        <div class="sec-sub">Per-clinic leaderboard for the selected set · sortable · worst performers flagged</div>
+      </div>
+    </div>
+    <div class="sec-right"><span class="pill p-a" id="secCmp-flag"></span><i class="ti ti-chevron-down chevron open" id="secCmp-chev"></i></div>
+  </div>
+  <div class="sec-body" id="secCmp-body">
+    <table class="tbl" id="tblCmp">
+      <thead><tr>
+        <th>Clinic</th><th class="num">Bookings</th><th class="num">Done</th><th class="num">No-show</th>
+        <th class="num">Show-up%</th><th class="num">Resched/cancel%</th><th class="num">Shrinkage%</th><th class="num">Done WoW</th>
+      </tr></thead>
+      <tbody id="tblCmp-body"></tbody>
+    </table>
+    <div class="ins ins-b" id="cmpInsight" style="margin-top:10px;margin-bottom:0"><i class="ti ti-bulb"></i><span></span></div>
+  </div>
+</div>
+
 <!-- SECTION A: BOOKINGS -->
 <div class="sec" id="secA">
   <div class="sec-hdr" onclick="toggleSec('secA')">
@@ -394,6 +418,33 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--navy);font-
   </div>
 </div>
 
+<!-- SECTION H: REVENUE FUNNEL (SC -> treatment) -->
+<div class="sec" id="secH">
+  <div class="sec-hdr" onclick="toggleSec('secH')">
+    <div class="sec-left">
+      <div class="sec-ltr" style="background:#16a34a">₹</div>
+      <div>
+        <div class="sec-title">Revenue funnel — screening call → ongoing treatment</div>
+        <div class="sec-sub">Did the free first call convert to Follow-Up / Therapy within 30 days? The metric that turns demand into revenue</div>
+      </div>
+    </div>
+    <div class="sec-right"><span class="pill p-a" id="secH-flag"></span><i class="ti ti-chevron-down chevron open" id="secH-chev"></i></div>
+  </div>
+  <div class="sec-body" id="secH-body">
+    <div class="funnel">
+      <div class="f-s"><div class="f-n" id="cvSc">—</div><div class="f-l">Completed SCs</div></div>
+      <div class="f-a"><i class="ti ti-arrow-right"></i></div>
+      <div class="f-s"><div class="f-n" id="cvConv">—</div><div class="f-l">Converted to treatment</div><div class="f-r" id="cvRate">—</div></div>
+    </div>
+    <div class="ins ins-b" id="cvInsight" style="margin-top:10px"><i class="ti ti-bulb"></i><span></span></div>
+    <table class="tbl" id="tblH" style="margin-top:6px">
+      <thead><tr><th>Metric</th><th class="num">Latest mature wk</th><th class="num">4-wk avg (mature)</th><th style="width:120px">Trend (8w · last 4 maturing)</th><th>Note</th></tr></thead>
+      <tbody id="tblH-body"></tbody>
+    </table>
+    <div style="font-size:10px;color:var(--gray);margin-top:6px"><strong>Right-censoring:</strong> conversion counts Follow-Up/Therapy booked within 30 days of the screening call, so the most recent ~4 weeks are still accumulating and read artificially low. The headline uses the latest <em>fully-elapsed</em> week; maturing weeks are dashed on the trend. Source: <code>appointments</code> (Screening Call → Follow Up / Therapy).</div>
+  </div>
+</div>
+
 <!-- SECTION G: FIXES -->
 <div class="sec" id="secG">
   <div class="sec-hdr" onclick="toggleSec('secG')">
@@ -418,7 +469,7 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--navy);font-
 <script>
 /* ── DATA ── */
 let WEEKS=[], WEEK_LABELS=[], currentWeek=7;
-let SC=null, LEADS=null, ROSTER=null, REM={}, SARVAM=null, D=null;
+let SC=null, LEADS=null, ROSTER=null, REM={}, SARVAM=null, CONV={}, D=null;
 let SEL=[];                                   // selected clinic keys (City|Clinic) — aggregated/summed
 let CLINICS=[], CITIES={};                    // all keys; city -> [keys]
 const NW=8;                                   // weeks shown (last 8 of the 12 pulled)
@@ -439,6 +490,7 @@ function buildD(){
   const dA=f=>sumS(k=>((SC[k]||{}).disp||{})[f]);
   const lA=f=>sumS(k=>(LEADS[k]||{})[f]);
   const rA=f=>sumS(k=>(REM[k]||{})[f]);
+  const cA=f=>sumS(k=>(CONV[k]||{})[f]);
   const shrA=f=>sumS(k=>((ROSTER[k]||{}).shr||{})[f]);
   const total=dA('total'), nw=dA('new_bk'), fu=dA('followup_bk'), miss=dA('missed'),
         done=dA('done'), dnew=dA('done_new'), dfu=dA('done_followup'),
@@ -483,8 +535,11 @@ function buildD(){
                 ns_sentRate:pctSer(nsSent,nsTot), ns_delRate:pctSer(nsDel,nsTot) },
     resched_patient:rPat, resched_noshow:rNo, recovered:rec,
     leadage,
+    conv:{ completed:cA('completed_sc'), converted:cA('converted'), rate:pctSer(cA('converted'),cA('completed_sc')) },
   };
 }
+const CENSORED_WEEKS = 4;   // newest N weeks' 30-day conversion window not fully elapsed → display idx NW-CENSORED..NW-1
+function lastMatureIdx(){ return Math.max(0, NW-1-CENSORED_WEEKS); }
 
 const COLORS = {p:'#7C3AED',r:'#DC2626',a:'#D97706',g:'#16A34A',t:'#0D9488',b:'#2563EB',gr:'#94A3B8',n:'#CBD5E1'};
 let activeKpiKey = null;
@@ -714,6 +769,72 @@ function renderA() {
   else read=`Follow-ups moved more than new bookings — this is a retention/continuation shift, not new demand.`;
   if(wrap) wrap.className='ins '+(tb.pct<0?'ins-r':tb.pct>0?'ins-b':'ins-n');
   document.getElementById('insA1').innerHTML=`<strong>Total bookings ${tb.str} WoW (${D.bookings.total[w-1]} → ${D.bookings.total[w]}).</strong> New first-time ${newWord}, follow-ups ${fuWord}. ${read} Click any row for its 8-week trend.`;
+}
+
+/* ── RENDER SECTION H: SC → treatment conversion (revenue funnel) ── */
+function renderH() {
+  const w=currentWeek, mi=lastMatureIdx();
+  const cv=D.conv||{}, comp=cv.completed||[], conv=cv.converted||[], rate=cv.rate||[];
+  document.getElementById('cvSc').textContent=comp[mi]||0;
+  document.getElementById('cvConv').textContent=conv[mi]||0;
+  document.getElementById('cvRate').textContent=(rate[mi]||0)+'%';
+  // mature 4-wk avg (indices mi-3..mi)
+  const matAvg=arr=>{const s=arr.slice(Math.max(0,mi-3),mi+1); return s.length?Math.round(s.reduce((a,b)=>a+b,0)/s.length):0;};
+  const rows=[
+    {label:'Completed screening calls', series:comp, val:comp[mi]||0, avg:matAvg(comp), color:COLORS.b, note:'Free first consults that happened'},
+    {label:'Converted to treatment', series:conv, val:conv[mi]||0, avg:matAvg(conv), color:COLORS.g, note:'Same patient booked Follow-Up/Therapy within 30 days'},
+    {label:'Conversion rate', series:rate, val:(rate[mi]||0)+'%', avg:matAvg(rate)+'%', color:COLORS.p, note:'The lever between demand and revenue — coach SC agents on the hand-off'},
+  ];
+  const tb=document.getElementById('tblH-body'); tb.innerHTML='';
+  rows.forEach((r,i)=>{
+    const rowId='rH-'+i, panelId='pH-'+i, canId='cH-'+i;
+    const tr=document.createElement('tr'); tr.className='clickable'; tr.id=rowId; tr.setAttribute('data-panel',panelId);
+    tr.onclick=()=>toggleRowChart(rowId,panelId,canId,[{label:r.label,data:r.series,color:r.color}],{},null);
+    tr.innerHTML=`<td><strong>${r.label}</strong></td><td class="num"><strong>${r.val}</strong></td><td class="num">${r.avg}</td><td>${sparkSVG(r.series,r.color,false)}</td><td style="font-size:11px;color:var(--gray)">${r.note}</td>`;
+    tb.appendChild(tr);
+    const pr=document.createElement('tr'); pr.innerHTML=`<td colspan="5" style="padding:0"><div class="row-chart-wrap" id="${panelId}"><div class="chart-box-lbl" style="padding:0 0 6px">${r.label} — 8w (last 4 weeks still maturing)</div><div class="row-chart-inner"><canvas id="${canId}" role="img">${r.label}</canvas></div></div></td>`;
+    tb.appendChild(pr);
+  });
+  const ins=document.getElementById('cvInsight');
+  const r0=rate[mi]||0, lbl=WEEK_LABELS[mi]||'';
+  ins.className='ins '+(r0>=22?'ins-b':r0>=15?'ins-a':'ins-r');
+  ins.querySelector('span').innerHTML=`<strong>${r0}% of completed screening calls converted to ongoing treatment</strong> in the latest fully-measured week (${lbl}): ${conv[mi]||0} of ${comp[mi]||0}. ${r0>=22?'Healthy hand-off from free call to paid care.':'Below the ~22% network norm — the SC→treatment hand-off is where revenue is leaking. Coach agents on closing the next appointment on the call, not just completing the screening.'} Recent weeks read lower only because their 30-day window is still open.`;
+}
+
+/* ── RENDER CLINIC COMPARISON (city-lead leaderboard, multi-select only) ── */
+function compClinic(k){
+  const w=currentWeek, d=f=>ser(((SC[k]||{}).disp||{})[f]);
+  const total=d('total'), done=d('done'), miss=d('missed');
+  const kept=done.map((x,i)=>x+miss[i]); const leak=total.map((t,i)=>Math.max(0,t-kept[i]));
+  const shr=(ROSTER[k]||{}).shr||{}; const sched=ser(shr.sched), avail=ser(shr.avail);
+  const shrunk=sched.map((s,i)=>Math.max(0,s-avail[i]));
+  const pct=(a,b)=>b>0?Math.round(a/b*100):0;
+  return { key:k, name:k.split('|')[1], city:k.split('|')[0],
+    bookings:total[w], done:done[w], noshow:miss[w],
+    showup:pct(done[w],kept[w]), leak:pct(leak[w],total[w]), shrink:pct(shrunk[w],sched[w]),
+    doneWow:wow(done,w) };
+}
+function renderCompare(){
+  const sec=document.getElementById('secCmp');
+  if(SEL.length<2){ sec.style.display='none'; return; }
+  sec.style.display='';
+  const rows=SEL.map(compClinic).sort((a,b)=>b.done-a.done);
+  const worstShow=rows.reduce((m,r)=>r.showup<m.showup?r:m,rows[0]);
+  const worstLeak=rows.reduce((m,r)=>r.leak>m.leak?r:m,rows[0]);
+  const tb=document.getElementById('tblCmp-body'); tb.innerHTML='';
+  rows.forEach(r=>{
+    const flagShow=r.showup<70, flagLeak=r.leak>=50, flagShr=r.shrink>=25;
+    const tr=document.createElement('tr');
+    tr.innerHTML=`<td><strong>${r.name}</strong> <span style="color:var(--gray);font-size:10px">${r.city}</span></td>
+      <td class="num">${r.bookings}</td><td class="num"><strong>${r.done}</strong></td><td class="num">${r.noshow}</td>
+      <td class="num ${flagShow?'dn':''}">${r.showup}%${flagShow?' ⚠':''}</td>
+      <td class="num ${flagLeak?'dn':''}">${r.leak}%${flagLeak?' ⚠':''}</td>
+      <td class="num ${flagShr?'dn':''}">${r.shrink}%${flagShr?' ⚠':''}</td>
+      <td class="num ${r.doneWow.dir}">${r.doneWow.str}</td>`;
+    tb.appendChild(tr);
+  });
+  document.getElementById('secCmp-flag').textContent=`${rows.length} clinics`;
+  document.getElementById('cmpInsight').querySelector('span').innerHTML=`<strong>${rows[0].name}</strong> has the most done consults (${rows[0].done}). Lowest show-up: <strong>${worstShow.name}</strong> (${worstShow.showup}%). Highest reschedule/cancel leakage: <strong>${worstLeak.name}</strong> (${worstLeak.leak}%). Sort your attention by the ⚠ flags — those are the clinics to call first.`;
 }
 
 /* ── RENDER Sarvam inbound-call quality (network / selected-city snapshot) ── */
@@ -998,6 +1119,8 @@ function renderAll() {
   renderE();
   renderF();
   updateActions();
+  renderCompare();
+  renderH();
   renderG();
   renderSarvam();
   renderPills();
@@ -1086,14 +1209,15 @@ function applySelection(){
 }
 (async function(){
   try{
-    const [sc,lj,ros,rem,sar]=await Promise.all([
+    const [sc,lj,ros,rem,sar,cnv]=await Promise.all([
       fetch('data_scorecard.json').then(r=>r.json()),
       fetch('data_leads.json').then(r=>r.json()),
       fetch('data_roster.json').then(r=>r.json()),
       fetch('data_reminders.json').then(r=>r.ok?r.json():{}).catch(()=>({})),
       fetch('data_sarvam.json').then(r=>r.ok?r.json():null).catch(()=>null),
+      fetch('data_conversion.json').then(r=>r.ok?r.json():{}).catch(()=>({})),
     ]);
-    SC=sc; LEADS=lj; ROSTER=ros; REM=rem||{}; SARVAM=sar;
+    SC=sc; LEADS=lj; ROSTER=ros; REM=rem||{}; SARVAM=sar; CONV=cnv||{};
     buildWeeks();
     CLINICS=Object.keys(SC).filter(k=>k!=='_meta').sort();
     CITIES={}; CLINICS.forEach(k=>{const c=k.split('|')[0]; (CITIES[c]=CITIES[c]||[]).push(k);});

@@ -65,6 +65,27 @@ def build_sarvam():
     print(f"data_sarvam.json · {net['total']} calls · YES {d.get('YES',0)} ({round(d.get('YES',0)/tot*100)}%) "
           f"PARTIALLY {d.get('PARTIALLY',0)} NO {d.get('NO',0)} · {len(bycity)} our-cities")
 
+def build_conversion():
+    D = {}
+    FIELDS = ["completed_sc","converted"]
+    for c in q("fetch_conversion.sql"):
+        if len(c) < 5: continue
+        city,clinic,wk = c[0],c[1],c[2]
+        if wk not in WI: continue
+        o = D.setdefault(f"{city}|{clinic}", {f:[0]*12 for f in FIELDS})
+        o["completed_sc"][WI[wk]] = num(c[3]); o["converted"][WI[wk]] = num(c[4])
+    # right-censoring: weeks whose 30-day window hasn't fully elapsed as of the data date (2026-06-06)
+    # weeks[0..3] (May 25, 18, 11, 04) are within 30 days of 06-06 -> partially censored
+    out = {"_meta":{"weeks":WEEKS,
+        "source":"allo_consultations.appointments — completed Screening Call -> Follow Up/Therapy within 30 days",
+        "note":"converted = completed-SC patients who booked Follow Up/Therapy within 30d. Recent weeks are right-censored (30d window not fully elapsed); flagged in UI.",
+        "censored_weeks":4}}
+    out.update(D)
+    json.dump(out, open(os.path.join(ROOT,"data_conversion.json"),"w"), separators=(",",":"))
+    tot_sc=sum(v["completed_sc"][4] for v in D.values()); tot_cv=sum(v["converted"][4] for v in D.values())
+    print(f"data_conversion.json · {len(D)} clinics · wk4(uncensored) network {tot_cv}/{tot_sc} = {round(tot_cv/tot_sc*100) if tot_sc else 0}% SC->treatment")
+
 if __name__ == "__main__":
     build_reminders()
     build_sarvam()
+    build_conversion()
