@@ -25,6 +25,8 @@ html,body{background:#f8fafc;color:var(--ink);font-family:ui-sans-serif,system-u
 .gtile .gv{font-size:14.5px;font-weight:800;line-height:1.15;}
 .sortbtn{font-size:11px;padding:4px 11px;border-radius:7px;border:1.5px solid var(--line);background:#fff;color:#475569;font-weight:600;cursor:pointer;}
 .sortbtn.on{border-color:#4f46e5;background:#eef2ff;color:#4338ca;font-weight:700;}
+.mtab{font-size:8.5px;padding:2px 8px;border-radius:6px;border:1px solid var(--line);background:#fff;color:#64748b;font-weight:700;cursor:pointer;}
+.mtab.on{border-color:#6366f1;background:#eef2ff;color:#4338ca;}
 </style>
 </head>
 <body class="min-h-screen">
@@ -65,6 +67,23 @@ function spark(vals,color,hi){ vals=(vals||[]).map(v=>+v||0); if(!vals.length) r
 function dir(cur,prev,goodUp){ if(cur==null||prev==null) return ''; const dd=cur-prev; if(Math.abs(dd)<0.005) return ' <span style="color:#cbd5e1;font-size:9px;">→</span>';
   const up=dd>0, good=goodUp?up:!up; return ` <span style="color:${good?'#059669':'#dc2626'};font-size:9px;">${up?'▲':'▼'}${Math.abs(Math.round(dd*100))}</span>`; }
 function tile(lab,val,col){ return `<div class="gtile"><div class="gl">${lab}</div><div class="gv" style="color:${col||'#0f172a'}">${val}</div></div>`; }
+// Switchable trend: Impressions / Clicks / CTR (all present in the GA pull). Scoped per-campaign.
+function metricSwitch(tr,hi,nwk){
+  const last=a=>{ const v=(a||[]); return v.length?v[v.length-1]:0; };
+  const ms=[
+    {k:'Impressions',col:'#6366f1',vals:tr.impr||[],fmt:v=>Math.round(v).toLocaleString()},
+    {k:'Clicks',col:'#0d9488',vals:tr.clicks||[],fmt:v=>Math.round(v).toLocaleString()},
+    {k:'CTR',col:'#d97706',vals:(tr.ctr||[]).map(v=>v*100),fmt:v=>Math.round(v*10)/10+'%'},
+  ];
+  const tabs=ms.map((m,i)=>`<button class="mtab ${i===0?'on':''}" onclick="campMetric(this,${i})">${m.k}</button>`).join('');
+  const charts=ms.map((m,i)=>`<div class="mchart" style="display:${i===0?'block':'none'}">
+    <div style="font-size:8.5px;color:#94a3b8;margin-bottom:1px;">${m.k} · last ${nwk} wks · now <b style="color:${m.col}">${m.fmt(last(m.vals))}</b></div>
+    ${spark(m.vals,m.col,hi)}</div>`).join('');
+  return `<div class="mwrap"><div style="display:flex;gap:4px;margin-bottom:3px;">${tabs}</div>${charts}</div>`;
+}
+function campMetric(btn,i){ const w=btn.closest('.mwrap');
+  w.querySelectorAll('.mtab').forEach((b,j)=>b.classList.toggle('on',j===i));
+  w.querySelectorAll('.mchart').forEach((c,j)=>c.style.display=j===i?'block':'none'); }
 function cityCard(city,g){
   const qsCol=g.qs==null?'#0f172a':(g.qs>=7?'#16a34a':g.qs>=5?'#d97706':'#dc2626');
   const isCol=g.is==null?'#0f172a':(g.is>=0.6?'#16a34a':g.is>=0.4?'#d97706':'#dc2626');
@@ -97,7 +116,7 @@ function cityCard(city,g){
             <span style="flex:.7;text-align:right;">${Math.round((cm.ctr||0)*1000)/10}%</span>
             <span style="flex:.9;text-align:right;">₹${Math.round(cm.cost||0).toLocaleString()}</span>
             <span style="flex:.6;text-align:right;">${cm.is!=null?Math.round(cm.is*100)+'%':'—'}</span></summary>
-          <div style="padding:3px 4px 8px;"><div style="font-size:8.5px;color:#94a3b8;margin-bottom:1px;">Impressions · last ${wks.length} wks</div>${cm.trend?spark(cm.trend.impr,'#6366f1',hiC):'<span style="font-size:9px;color:#cbd5e1;">no trend</span>'}</div>
+          <div style="padding:3px 4px 8px;">${cm.trend?metricSwitch(cm.trend,hiC,wks.length):'<span style="font-size:9px;color:#cbd5e1;">no trend</span>'}</div>
         </details>`; }).join('')}
     </details>`:''}
   </div>`;
