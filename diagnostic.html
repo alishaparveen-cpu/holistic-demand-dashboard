@@ -155,7 +155,7 @@ let PRACTODOC={};   // data_practo_by_doctor.json — Practo leads/booked per cl
 let LEADCONV=null;  // data_lead_conv.json — lead→booking conversion by contact mode + source (network)
 let AVAILHOD=null;  // data_avail_hod.json — per-clinic dow×hour bookings + slots/shrinkage (hour-granular availability)
 function availHodArr(city,clinic){ return AVAILHOD&&AVAILHOD.by_clinic ? AVAILHOD.by_clinic[city+'|'+clinic] : null; }
-// Two heatmaps (bookings + doctor shrinkage) by dow×hour + the hour-granular availability loss.
+// Heatmaps by dow×hour: bookings (volume), UTILIZATION (booked÷available = how busy), shrinkage. + hour loss.
 function availHeatmaps(r){
   const m=availHodArr(r.city,r.clinic); if(!m) return '';
   const hours=new Set(); Object.values(m).forEach(hrs=>Object.keys(hrs).forEach(h=>hours.add(+h)));
@@ -163,23 +163,28 @@ function availHeatmaps(r){
   const days=[['1','Mon'],['2','Tue'],['3','Wed'],['4','Thu'],['5','Fri'],['6','Sat'],['0','Sun']];
   const dn={'0':'Sun','1':'Mon','2':'Tue','3':'Wed','4':'Thu','5':'Fri','6':'Sat'};
   const hl=h=>{const x=+h;return (x%12||12)+(x<12?'a':'p');};
-  let maxB=0,maxX=0,loss=0,peakB={c:0};
+  let maxB=0,maxX=0,loss=0,peakB={c:0},peakU={u:-1};
   days.forEach(([dw])=>hrs.forEach(h=>{ const c=(m[dw]||{})[h]||{}; const b=c.b||0,x=c.x||0,a=c.a||0;
-    if(b>maxB){maxB=b;} if(b>peakB.c){peakB={c:b,dw,h};} if(x>maxX)maxX=x; if(a>0) loss+=(b/a)*x; }));
-  const grid=(valFn,maxV,rgb)=>{
+    if(b>maxB)maxB=b; if(b>peakB.c)peakB={c:b,dw,h}; if(x>maxX)maxX=x;
+    if(a>0){ loss+=(b/a)*x; const u=b/a; if(a>=3 && u>peakU.u) peakU={u,dw,h,b,a}; } }));
+  const grid=(valFn,maxV,rgb,suf)=>{
     const head=`<tr><td></td>${hrs.map(h=>`<td style="font-size:7px;color:#cbd5e1;text-align:center">${hl(h)}</td>`).join('')}</tr>`;
-    const rows=days.map(([dw,lbl])=>`<tr><td style="font-size:8.5px;color:#64748b;font-weight:600;padding-right:4px;text-align:right">${lbl}</td>${hrs.map(h=>{const c=(m[dw]||{})[h]||{};const v=valFn(c);const al=maxV>0?v/maxV:0;
-      return `<td title="${dn[dw]} ${hl(h)}" style="width:18px;height:15px;text-align:center;font-size:7.5px;background:${v===0?'#f8fafc':'rgba('+rgb+','+(0.14+al*0.85)+')'};color:${al>0.55?'#fff':'#64748b'};border-radius:2px">${v||''}</td>`;}).join('')}</tr>`).join('');
+    const rows=days.map(([dw,lbl])=>`<tr><td style="font-size:8.5px;color:#64748b;font-weight:600;padding-right:4px;text-align:right">${lbl}</td>${hrs.map(h=>{const c=(m[dw]||{})[h]||{};const v=valFn(c);const al=maxV>0?Math.min(1,v/maxV):0;
+      return `<td title="${dn[dw]} ${hl(h)}" style="width:18px;height:15px;text-align:center;font-size:7px;background:${v===0?'#f8fafc':'rgba('+rgb+','+(0.14+al*0.85)+')'};color:${al>0.55?'#fff':'#64748b'};border-radius:2px">${v?v+(suf||''):''}</td>`;}).join('')}</tr>`).join('');
     return `<table style="border-spacing:1.5px;border-collapse:separate"><tbody>${head}${rows}</tbody></table>`;
   };
+  const util=c=>c.a>0?Math.round(c.b/c.a*100):0;
   return `<div style="margin-top:12px;border-top:1px dashed var(--line);padding-top:10px;">
-    <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:#94a3b8;margin-bottom:6px;">Peak slots vs doctor shrinkage — hour × day <span style="font-weight:500;text-transform:none;">(IST · 8wk)</span></div>
-    <div style="display:flex;gap:18px;flex-wrap:wrap;">
-      <div><div style="font-size:10px;color:#4338ca;font-weight:700;margin-bottom:3px;">📅 Bookings ${peakB.c?`· peak ${dn[peakB.dw]} ${hl(peakB.h)}`:''}</div>${grid(c=>c.b||0,maxB,'79,70,229')}</div>
+    <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:#94a3b8;margin-bottom:6px;">When are doctors busiest? — hour × day <span style="font-weight:500;text-transform:none;">(IST · 8wk)</span></div>
+    ${peakU.u>=0?`<div style="font-size:11.5px;color:#0f766e;background:#f0fdfa;border:1px solid #99f6e4;border-radius:9px;padding:8px 12px;margin-bottom:10px;"><b>Busiest slot: ${dn[peakU.dw]} ${hl(peakU.h)} at ${Math.round(peakU.u*100)}% utilization</b> (${peakU.b} booked of ${peakU.a} available). Utilization = booked ÷ available slots — that's the real "how busy", not just volume.</div>`:''}
+    <div style="display:flex;gap:16px;flex-wrap:wrap;">
+      <div><div style="font-size:10px;color:#0d9488;font-weight:700;margin-bottom:3px;">⚡ Utilization (booked ÷ available)</div>${grid(util,100,'13,148,136','%')}</div>
+      <div><div style="font-size:10px;color:#4338ca;font-weight:700;margin-bottom:3px;">📅 Bookings (volume) ${peakB.c?`· peak ${dn[peakB.dw]} ${hl(peakB.h)}`:''}</div>${grid(c=>c.b||0,maxB,'79,70,229')}</div>
       <div><div style="font-size:10px;color:#dc2626;font-weight:700;margin-bottom:3px;">✂️ Doctor shrinkage (blocked slots)</div>${grid(c=>c.x||0,maxX,'220,38,38')}</div>
     </div>
+    <div style="font-size:10.5px;color:#94a3b8;margin-top:6px;">Volume shows <i>where bookings land</i>; utilization shows <i>where slots are full</i> — a clinic can be high-volume but under-utilized (lots of empty slots) or low-volume but maxed out.</div>
     <div style="font-size:11.5px;color:#334155;background:#f5f3ff;border:1px solid #ddd6fe;border-radius:9px;padding:9px 12px;margin-top:10px;line-height:1.5;">
-      <b>~${Math.round(loss)} bookings lost to availability over 8 weeks (~${Math.round(loss/8)}/wk)</b> — computed <b>hour by hour</b>: each blocked slot × that exact hour's realized booking-rate (bookings ÷ available slots). This is sharper than the weekday/weekend average because blocking a <b>4pm</b> slot costs far more than a dead 11am one.
+      <b>~${Math.round(loss)} bookings lost to availability over 8 weeks (~${Math.round(loss/8)}/wk)</b> — each blocked slot × that exact hour's utilization (bookings ÷ available). So a block at a <b>${peakU.u>=0?Math.round(peakU.u*100)+'%'+'-full':'high-util'}</b> hour costs real bookings; a block at a near-empty hour costs ~nothing.
       <div style="color:#7c2d12;margin-top:5px;font-size:10.5px;">⚠ Caveat: this assumes demand would have filled those slots. If <b>leads</b> also fell that week, some of the gap is missing demand, not blocked supply — the two can't be fully separated from this view alone.</div>
     </div>
   </div>`;
