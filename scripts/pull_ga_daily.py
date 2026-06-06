@@ -44,9 +44,18 @@ def gaql(token, c, query):
     return out
 
 def parse_name(name):
-    m = re.match(r'T[12]_(.+?)_(SH|STD|MH)_', name)
-    if not m: return (None, None)
-    return (m.group(1).replace('_',' '), m.group(2))
+    # city: T1/T2_<City>_... → city; otherwise a national/online campaign
+    m = re.match(r'T[12]_([A-Za-z]+(?:_[A-Za-z]+)*?)_(?:SH|STD|MH|ED|PE)_', name)
+    city = m.group(1).replace('_',' ') if m else 'National / Online'
+    u = name.upper()
+    if re.search(r'(^|_)MH(_|$)', u) or 'MENTAL' in u: prod='MH'
+    elif re.search(r'(^|_)STD(_|$)', u): prod='STD'
+    elif re.search(r'(^|_)ED(_|$)', u): prod='ED'
+    elif re.search(r'(^|_)PE(_|$)', u): prod='PE'
+    elif 'BRAND' in u: prod='Brand'
+    elif re.search(r'(^|_)SH(_|$)', u): prod='SH'
+    else: prod='Other'
+    return (city, prod)
 
 def main():
     c = _creds(); token = _access_token(c)
