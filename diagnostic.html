@@ -460,7 +460,10 @@ function rcaClinic(city, clinic){
   // ── Attribution: split the booking loss into availability / leads / conversion ──
   const L = Math.max(0,-dBk);                                   // magnitude of the loss
   const bkPerDay  = av_avg>0 ? bk_avg/av_avg : 0;               // bookings per active doctor-day
-  const bkPerLead = ld_avg>0 ? bk_avg/ld_avg : 0;              // bookings per inbound lead
+  const bkNew_avg = avg(sl(bkNew));                             // normal NEW (first-time) bookings — what leads actually create
+  // leads create NEW bookings, not reschedules/repeats — so the lead→booking rate must use NEW bookings.
+  // (allBk/leads can exceed 1, which is impossible for a real conversion rate.) Cap at 1 as a safety bound.
+  const bkPerLead = ld_avg>0 ? Math.min(1, bkNew_avg/ld_avg) : 0;
   const weLost = Math.max(0, we_avg - we_w);                   // weekend days lost
   const wdLost = Math.max(0, wd_avg - wd_w);                   // weekday days lost
   // ── hour-rate availability loss: bookable-HOUR shortfall vs the selected norm × this clinic's own
@@ -509,7 +512,7 @@ function rcaClinic(city, clinic){
   return {city,clinic,bk_w,bk_peak,bk_avg,bkBase,dBk,ld_w,ld_avg,dLeadPct,av_w,av_avg,dAct,we_w,we_avg,dWe,
           gmb_w,gmb_avg,pr_w,pr_avg,wd_w,wd_avg,
           leadsBroke,actBroke,weBroke,availBroke,cause,mixWith,comp,L,mat,note,
-          bkPerDay,weLost,wdLost,leadsLoss_gmb,leadsLoss_pr,expectedIfFull,availHr,
+          bkPerDay,bkPerLead,bkNew_avg,weLost,wdLost,leadsLoss_gmb,leadsLoss_pr,expectedIfFull,availHr,
           bkArr:bk,bkWeArr:bkWe,bkNewArr:bkNew,bkRepeatArr:bkRepeat,bkDoneArr:bkDone,bkDoneNewArr:bkDoneNew,bkDoneRepeatArr:bkDoneRepeat,bkReschedArr:bkResched,bkMissedArr:bkMissed,bkCancelledArr:bkCancelled,ldArr:ld,avArr:av,weArr:we,gmbArr:gmb,prArr:pr,wdArr:wd,
           orgArr:orgArr, gmbOnlyArr:gmbOnly, gAdArr:gAd, fbArr:fbA, jdArr:jdA, othArr:othA, useRedshiftLeads:useRedshift};
 }
@@ -1153,7 +1156,7 @@ function bookingRateCard(r){
   const E_actual=expCap;                                  // after shrinkage (actual bookable hours)
   const shrinkageLoss=Math.max(0, E_sched-E_actual);      // bookings lost to doctor shrinkage
   const rateGap=Math.max(0, E_actual-r.bk_w);             // booked fewer than the norm rate predicts (demand/conversion)
-  const convPerLead=r.ld_avg>0?Math.min(1.2, bkNorm/r.ld_avg):0;
+  const convPerLead=r.bkPerLead||0;   // NEW bookings per lead — leads create new bookings, not reschedules/repeats
   const leadShort=Math.max(0, r.ld_avg-r.ld_w);
   const leadsLoss=Math.max(0, Math.min(rateGap, leadShort*convPerLead));   // leads share of the rate gap
   const convLoss=Math.max(0, rateGap-leadsLoss);          // conversion / call-handling share
@@ -1165,8 +1168,8 @@ function bookingRateCard(r){
     <p>Shrinkage this week was <b>${Math.round(shrThis*100)}%</b> of scheduled slots (doctor <code>appointment_blocks</code>).</p>${calcBasis()}`);
   const _leadsChip=calcChip('Bookings lost to fewer leads', `
     <p><b>What it answers:</b> you got fewer inbound leads than normal — how many bookings did that cost?</p>
-    ${calcStep(`bookings per lead = normal bookings <b>${r1(bkNorm)}</b> ÷ normal leads <b>${r1(r.ld_avg)}</b> = <b>${(convPerLead).toFixed(2)}</b> per lead${bkNorm/Math.max(r.ld_avg,1)>1.2?' (capped at 1.20)':''}<br>fewer leads = norm <b>${Math.round(r.ld_avg)}</b> − this week <b>${r.ld_w}</b> = <b>${r1(leadShort)}</b><br><b>loss = ${r1(leadShort)} × ${(convPerLead).toFixed(2)} = ${r1(leadShort*convPerLead)}</b>${leadsLoss<leadShort*convPerLead-0.05?` → capped to <b>${r1(leadsLoss)}</b> (can’t exceed the week’s total shortfall)`:''}`)}
-    <p>So each missing lead costs ≈ <b>${(convPerLead).toFixed(2)}</b> bookings — your clinic’s own lead→booking conversion (<b>${Math.round(convPerLead*100)}%</b>), measured over the selected window, <i>not</i> a flat assumption.</p>${calcBasis()}`);
+    ${calcStep(`new bookings per lead = normal <b>new</b> bookings <b>${r1(r.bkNew_avg)}</b> ÷ normal leads <b>${r1(r.ld_avg)}</b> = <b>${(convPerLead).toFixed(2)}</b> per lead${(r.ld_avg>0&&r.bkNew_avg/r.ld_avg>1)?' (capped at 1.00)':''}<br>fewer leads = norm <b>${Math.round(r.ld_avg)}</b> − this week <b>${r.ld_w}</b> = <b>${r1(leadShort)}</b><br><b>loss = ${r1(leadShort)} × ${(convPerLead).toFixed(2)} = ${r1(leadShort*convPerLead)}</b>${leadsLoss<leadShort*convPerLead-0.05?` → capped to <b>${r1(leadsLoss)}</b> (can’t exceed the week’s total shortfall)`:''}`)}
+    <p>Leads create <b>new</b> first-time bookings, not reschedules/repeats — so each missing lead costs ≈ <b>${(convPerLead).toFixed(2)}</b> new bookings, your clinic’s own lead→new-booking conversion (<b>${Math.round(convPerLead*100)}%</b>) over the selected window, <i>not</i> a flat assumption.</p>${calcBasis()}`);
   const _convChip=calcChip('Bookings lost to conversion / call-handling', `
     <p><b>What it answers:</b> leads &amp; hours were there, but fewer booked than usual — the residual gap.</p>
     ${calcStep(`rate gap = expected <b>${r1(E_actual)}</b> − booked <b>${r.bk_w}</b> = <b>${r1(rateGap)}</b><br>of which fewer-leads explains <b>${r1(leadsLoss)}</b><br><b>conversion = ${r1(rateGap)} − ${r1(leadsLoss)} = ${r1(convLoss)}</b>`)}
@@ -2049,10 +2052,11 @@ function renderDeepDive(r){
         return `<div style="display:flex;gap:6px;font-size:10px;padding:2px 0;border-bottom:1px solid #f8fafc;"><span style="flex:1;color:#475569;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${x.d}">${x.d.replace(/^Dr\.?\s*/,'')}</span><span style="color:#94a3b8;white-space:nowrap;">norm <b style="color:#475569;">${r1(x.n)}</b> → <b style="color:${c};">${x.w}</b> <b style="color:${c};">${fl?'—':(dd>0?'+':'')+dd}</b></span></div>`;}).join('')}</div></details>`; })();
   const _leadLoss=(r.leadsLoss_gmb||0)+(r.leadsLoss_pr||0);
   const _leadShort=Math.max(0,(r.ld_avg||0)-(r.ld_w||0));
-  const _convPerLead=Math.min(1.20, r.ld_avg>0?(r.bk_avg/r.ld_avg):0);
+  const _convPerLead=r.bkPerLead||0;   // NEW bookings per lead (from the model)
+  const _rawNew=r.ld_avg>0?(r.bkNew_avg/r.ld_avg):0;
   const _leadLossChip=calcChip('Bookings lost to leads', `
-    <p><b>What it answers:</b> the <b>lead shortfall</b> vs your ${baseLabel()} norm, converted to bookings at this clinic's own <b>lead→booking</b> rate — the same rate the Expected-bookings model uses.</p>
-    ${calcStep(`bookings per lead = normal bookings <b>${r1(r.bk_avg)}</b> ÷ normal leads <b>${r1(r.ld_avg)}</b> = <b>${_convPerLead.toFixed(2)}</b> per lead${(r.ld_avg>0&&r.bk_avg/r.ld_avg>1.2)?' (capped at 1.20)':''}<br>fewer leads = norm <b>${Math.round(r.ld_avg)}</b> − this wk <b>${r.ld_w}</b> = <b>${r1(_leadShort)}</b> short<br><b>raw loss = ${r1(_leadShort)} × ${_convPerLead.toFixed(2)} = ${r1(_leadShort*_convPerLead)}</b>${_leadLoss<_leadShort*_convPerLead-0.05?` → counted as <b>${r1(_leadLoss)}</b> (gated to the threshold &amp; capped at the week's total shortfall)`:''}`)}
+    <p><b>What it answers:</b> the <b>lead shortfall</b> vs your ${baseLabel()} norm, converted to bookings at this clinic's <b>lead→<u>new</u>-booking</b> rate. Leads create <b>new</b> first-time bookings — not reschedules or repeat-patient visits — so the rate uses NEW bookings only (total-bookings ÷ leads can exceed 1, which is impossible for a real conversion rate).</p>
+    ${calcStep(`new bookings per lead = normal <b>new</b> bookings <b>${r1(r.bkNew_avg)}</b> ÷ normal leads <b>${r1(r.ld_avg)}</b> = <b>${_convPerLead.toFixed(2)}</b> per lead${_rawNew>1?' (capped at 1.00)':''}<br>fewer leads = norm <b>${Math.round(r.ld_avg)}</b> − this wk <b>${r.ld_w}</b> = <b>${r1(_leadShort)}</b> short<br><b>raw loss = ${r1(_leadShort)} × ${_convPerLead.toFixed(2)} = ${r1(_leadShort*_convPerLead)}</b>${_leadLoss<_leadShort*_convPerLead-0.05?` → counted as <b>${r1(_leadLoss)}</b> (gated to the threshold &amp; capped at the week's total shortfall)`:''}`)}
     <p>Split by which source dropped: ~<b>${r1(r.leadsLoss_gmb||0)}</b> from GMB+Google, ~<b>${r1(r.leadsLoss_pr||0)}</b> from Practo. Weighted by each source's own drop. If leads met or beat the norm, the loss is <b>0</b>.</p>${calcBasis()}`);
   const leadsLadder=`
     <div style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:#94a3b8;margin:2px 0 4px;display:flex;align-items:center;gap:6px;flex-wrap:wrap;">Normal → this week · norm: ${cmpMini} ${calcChip('How this leads ladder reads', `<p>Each row compares this week's leads to your clinic's own <b>${baseLabel()}</b> norm. Green = more leads than usual, red = fewer. The norm window follows the <b>"Compare vs"</b> selector at the top.</p><p><b>Google + GMB</b> = GMB profile leads + Google Ads leads (your main owned + paid channel). <b>Practo</b> can be opened by doctor. The last row turns the lead shortfall into lost bookings.</p>`)}</div>
