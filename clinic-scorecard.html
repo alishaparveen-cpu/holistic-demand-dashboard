@@ -337,6 +337,9 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--navy);font-
   </div>
 </div>
 
+<!-- LEAD → CONVERSION (network) -->
+<div id="leadConvPanel" style="margin-bottom:16px"></div>
+
 <!-- SECTION F: B2D -->
 <div class="sec" id="secF">
   <div class="sec-hdr" onclick="toggleSec('secF')">
@@ -451,7 +454,7 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--navy);font-
 <script>
 /* ── DATA ── */
 let WEEKS=[], WEEK_LABELS=[], currentWeek=7;
-let SC=null, LEADS=null, ROSTER=null, REM={}, SARVAM=null, CONV={}, DOCTOR={}, MKT=null, SWHO={}, RETEN={}, CALLBACK={}, PRACTO={}, LAGE={}, L2C=null, DAILY={}, D=null;
+let SC=null, LEADS=null, ROSTER=null, REM={}, SARVAM=null, CONV={}, DOCTOR={}, MKT=null, SWHO={}, RETEN={}, CALLBACK={}, PRACTO={}, LAGE={}, L2C=null, DAILY={}, LEADCONV=null, D=null;
 let ageChannel='all';
 const RET_MATURE_IDX=9;   // newest-first 12-week idx whose 60-day retention window has fully elapsed
 let SEL=[];                                   // selected clinic keys (City|Clinic) — aggregated/summed
@@ -1418,8 +1421,41 @@ function renderAll() {
   renderCompare();
   renderH();
   renderG();
+  renderLeadConv();
   renderPills();
   document.getElementById('weekLabel').textContent=WEEK_LABELS[currentWeek];
+}
+/* ── Lead → conversion by contact mode + source (network) ── */
+function renderLeadConv(){
+  const el=document.getElementById('leadConvPanel'); if(!el) return;
+  if(!LEADCONV||!LEADCONV.by_mode){ el.innerHTML=''; return; }
+  const wk=LEADCONV.weeks.length-1;
+  const rows=Object.entries(LEADCONV.by_mode).map(([m,d])=>({m,leads:d.leads[wk],booked:d.booked[wk]})).sort((a,b)=>b.leads-a.leads);
+  const maxL=Math.max(...rows.map(r=>r.leads),1);
+  const col=p=>p>=35?'#16a34a':p>=15?'#d97706':'#dc2626';
+  const ic={'Inbound call':'📞','Outbound call':'📲','WhatsApp':'💬','Website self-serve':'🌐','Other':'•'};
+  const bar=r=>{ const p=r.leads>0?Math.round(r.booked/r.leads*100):0;
+    return `<div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid #f1f5f9;font-size:12px">
+      <span style="flex:0 0 150px;color:#334155;font-weight:600">${ic[r.m]||''} ${r.m}</span>
+      <span style="flex:1;position:relative;height:20px;background:#f8fafc;border-radius:5px;overflow:hidden">
+        <span style="position:absolute;left:0;top:0;height:100%;width:${r.leads/maxL*100}%;background:#e0e7ff"></span>
+        <span style="position:absolute;left:0;top:0;height:100%;width:${r.booked/maxL*100}%;background:${col(p)}"></span>
+        <span style="position:absolute;left:6px;top:2px;font-size:10px;color:#475569">${r.leads.toLocaleString()} → ${r.booked.toLocaleString()} booked</span></span>
+      <span style="flex:0 0 44px;text-align:right;font-weight:800;color:${col(p)}">${p}%</span></div>`; };
+  const src=(LEADCONV.by_source||[]).map(s=>{ const p=s.leads>0?Math.round(s.booked/s.leads*100):0;
+    return `<tr><td>${s.src}</td><td class="num">${s.leads.toLocaleString()}</td><td class="num">${s.booked.toLocaleString()}</td><td class="num" style="font-weight:800;color:${col(p)}">${p}%</td></tr>`; }).join('');
+  const called=rows.filter(r=>/call/i.test(r.m)).reduce((a,r)=>({l:a.l+r.leads,b:a.b+r.booked}),{l:0,b:0});
+  const unc=rows.filter(r=>!/call/i.test(r.m)).reduce((a,r)=>({l:a.l+r.leads,b:a.b+r.booked}),{l:0,b:0});
+  const cP=called.l?Math.round(called.b/called.l*100):0, uP=unc.l?Math.round(unc.b/unc.l*100):0;
+  el.innerHTML=`<div class="sec" style="padding:16px 18px">
+    <div style="font-size:13px;font-weight:600;color:var(--navy);margin-bottom:2px">🔗 Lead → conversion — how we engage leads <span style="color:#d97706;font-weight:700">● NETWORK</span></div>
+    <div style="font-size:11px;color:var(--gray);margin-bottom:10px">Of leads we get, how many <b>book</b>, by how the lead was engaged (priority: inbound call › outbound › WhatsApp › website). Booked = matched to a screening call within 14d. <b>Network-level</b> — the lead end carries no clinic, so this is the same for every clinic.</div>
+    <div style="font-size:11.5px;color:#334155;background:#eff6ff;border:1px solid #bfdbfe;border-radius:9px;padding:9px 12px;margin-bottom:10px;line-height:1.5">
+      <b>Leads on a call convert at ${cP}%</b> (${called.b.toLocaleString()}/${called.l.toLocaleString()}); WhatsApp / uncalled-website convert at <b>${uP}%</b> (${unc.b.toLocaleString()}/${unc.l.toLocaleString()}). <b>The lever is calling the uncalled leads.</b></div>
+    ${rows.map(bar).join('')}
+    <details style="margin-top:10px"><summary style="cursor:pointer;font-size:11px;color:var(--p);font-weight:700">By source — conversion by channel (last 4 weeks)</summary>
+      <table class="tbl" style="margin-top:6px"><thead><tr><th>Source</th><th class="num">Leads</th><th class="num">Booked</th><th class="num">Conv%</th></tr></thead><tbody>${src}</tbody></table></details>
+  </div>`;
 }
 
 /* ── RENDER SECTION G: prioritised fixes derived from live signals ── */
@@ -1520,7 +1556,7 @@ function applySelection(){
 (async function(){
   try{
     const _cb='?t='+Date.now();   // cache-bust so data rebuilds always show fresh
-    const [sc,lj,ros,rem,sar,cnv,doc,mkt,swho,ret,cbk,prc,lage,l2c,daily]=await Promise.all([
+    const [sc,lj,ros,rem,sar,cnv,doc,mkt,swho,ret,cbk,prc,lage,l2c,daily,lcv]=await Promise.all([
       fetch('data_scorecard.json'+_cb).then(r=>r.json()),
       fetch('data_leads.json'+_cb).then(r=>r.json()),
       fetch('data_roster.json'+_cb).then(r=>r.json()),
@@ -1536,8 +1572,9 @@ function applySelection(){
       fetch('data_leadage_channel.json'+_cb).then(r=>r.ok?r.json():{}).catch(()=>({})),
       fetch('data_l2c.json'+_cb).then(r=>r.ok?r.json():null).catch(()=>null),
       fetch('data_daily.json'+_cb).then(r=>r.ok?r.json():{}).catch(()=>({})),
+      fetch('data_lead_conv.json'+_cb).then(r=>r.ok?r.json():null).catch(()=>null),
     ]);
-    SC=sc; LEADS=lj; ROSTER=ros; REM=rem||{}; SARVAM=sar; CONV=cnv||{}; DOCTOR=doc||{}; MKT=mkt; SWHO=swho||{}; RETEN=ret||{}; CALLBACK=cbk||{}; PRACTO=prc||{}; LAGE=lage||{}; L2C=l2c; DAILY=daily||{};
+    SC=sc; LEADS=lj; ROSTER=ros; REM=rem||{}; SARVAM=sar; CONV=cnv||{}; DOCTOR=doc||{}; MKT=mkt; SWHO=swho||{}; RETEN=ret||{}; CALLBACK=cbk||{}; PRACTO=prc||{}; LAGE=lage||{}; L2C=l2c; DAILY=daily||{}; LEADCONV=lcv;
     buildWeeks();
     CLINICS=Object.keys(SC).filter(k=>k!=='_meta').sort();
     CITIES={}; CLINICS.forEach(k=>{const c=k.split('|')[0]; (CITIES[c]=CITIES[c]||[]).push(k);});
