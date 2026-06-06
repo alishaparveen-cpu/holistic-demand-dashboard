@@ -156,36 +156,44 @@ let LEADCONV=null;  // data_lead_conv.json — lead→booking conversion by cont
 let AVAILHOD=null;  // data_avail_hod.json — per-clinic dow×hour bookings + slots/shrinkage (hour-granular availability)
 function availHodArr(city,clinic){ return AVAILHOD&&AVAILHOD.by_clinic ? AVAILHOD.by_clinic[city+'|'+clinic] : null; }
 // Heatmaps by dow×hour: bookings (volume), UTILIZATION (booked÷available = how busy), shrinkage. + hour loss.
-function availHeatmaps(r){
+// Windows over the last winN weeks (follows the view's window control) — data carries per-week arrays.
+function availHeatmaps(r, winN){
   const m=availHodArr(r.city,r.clinic); if(!m) return '';
+  const nWk=(AVAILHOD&&AVAILHOD.weeks?AVAILHOD.weeks.length:12), WN=Math.min(winN||8,nWk);
+  const slL=arr=>{ arr=arr||[]; let s=0; for(let i=Math.max(0,arr.length-WN);i<arr.length;i++) s+=arr[i]||0; return s; };
+  const cv=(dw,h)=>{ const c=(m[dw]||{})[h]||{}; return {b:slL(c.b),x:slL(c.x),a:slL(c.a),s:slL(c.s)}; };
   const hours=new Set(); Object.values(m).forEach(hrs=>Object.keys(hrs).forEach(h=>hours.add(+h)));
   const hrs=[...hours].sort((a,b)=>a-b); if(!hrs.length) return '';
   const days=[['1','Mon'],['2','Tue'],['3','Wed'],['4','Thu'],['5','Fri'],['6','Sat'],['0','Sun']];
   const dn={'0':'Sun','1':'Mon','2':'Tue','3':'Wed','4':'Thu','5':'Fri','6':'Sat'};
   const hl=h=>{const x=+h;return (x%12||12)+(x<12?'a':'p');};
+  const minA=Math.max(2,Math.ceil(WN*0.5));   // ignore noisy near-empty cells for the "busiest" pick
   let maxB=0,maxX=0,loss=0,peakB={c:0},peakU={u:-1};
-  days.forEach(([dw])=>hrs.forEach(h=>{ const c=(m[dw]||{})[h]||{}; const b=c.b||0,x=c.x||0,a=c.a||0;
+  days.forEach(([dw])=>hrs.forEach(h=>{ const c=cv(dw,h); const b=c.b,x=c.x,a=c.a;
     if(b>maxB)maxB=b; if(b>peakB.c)peakB={c:b,dw,h}; if(x>maxX)maxX=x;
-    if(a>0){ loss+=(b/a)*x; const u=b/a; if(a>=3 && u>peakU.u) peakU={u,dw,h,b,a}; } }));
+    if(a>0){ loss+=(b/a)*x; const u=b/a; if(a>=minA && u>peakU.u) peakU={u,dw,h,b,a}; } }));
   const grid=(valFn,maxV,rgb,suf)=>{
     const head=`<tr><td></td>${hrs.map(h=>`<td style="font-size:7px;color:#cbd5e1;text-align:center">${hl(h)}</td>`).join('')}</tr>`;
-    const rows=days.map(([dw,lbl])=>`<tr><td style="font-size:8.5px;color:#64748b;font-weight:600;padding-right:4px;text-align:right">${lbl}</td>${hrs.map(h=>{const c=(m[dw]||{})[h]||{};const v=valFn(c);const al=maxV>0?Math.min(1,v/maxV):0;
+    const rows=days.map(([dw,lbl])=>`<tr><td style="font-size:8.5px;color:#64748b;font-weight:600;padding-right:4px;text-align:right">${lbl}</td>${hrs.map(h=>{const v=valFn(cv(dw,h));const al=maxV>0?Math.min(1,v/maxV):0;
       return `<td title="${dn[dw]} ${hl(h)}" style="width:18px;height:15px;text-align:center;font-size:7px;background:${v===0?'#f8fafc':'rgba('+rgb+','+(0.14+al*0.85)+')'};color:${al>0.55?'#fff':'#64748b'};border-radius:2px">${v?v+(suf||''):''}</td>`;}).join('')}</tr>`).join('');
     return `<table style="border-spacing:1.5px;border-collapse:separate"><tbody>${head}${rows}</tbody></table>`;
   };
   const util=c=>c.a>0?Math.round(c.b/c.a*100):0;
+  const winBtns=[1,2,4,8,12].filter(v=>v<=nWk).map(v=>`<button onclick="setTrendWin(${v})" style="font-size:10px;padding:2px 8px;border-radius:6px;border:1.5px solid ${WN===v?'#0d9488':'var(--line)'};background:${WN===v?'#f0fdfa':'#fff'};color:${WN===v?'#0f766e':'#64748b'};font-weight:${WN===v?700:500};cursor:pointer;">${v}w</button>`).join('');
   return `<div style="margin-top:12px;border-top:1px dashed var(--line);padding-top:10px;">
-    <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:#94a3b8;margin-bottom:6px;">When are doctors busiest? — hour × day <span style="font-weight:500;text-transform:none;">(IST · 8wk)</span></div>
-    ${peakU.u>=0?`<div style="font-size:11.5px;color:#0f766e;background:#f0fdfa;border:1px solid #99f6e4;border-radius:9px;padding:8px 12px;margin-bottom:10px;"><b>Busiest slot: ${dn[peakU.dw]} ${hl(peakU.h)} at ${Math.round(peakU.u*100)}% utilization</b> (${peakU.b} booked of ${peakU.a} available). Utilization = booked ÷ available slots — that's the real "how busy", not just volume.</div>`:''}
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
+      <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:#94a3b8;">When are doctors busiest? — hour × day <span style="font-weight:500;text-transform:none;">(IST)</span></span>
+      <span style="display:flex;gap:4px;align-items:center;"><span style="font-size:9px;color:#cbd5e1;font-weight:700;text-transform:uppercase;">Window</span>${winBtns}</span></div>
+    ${peakU.u>=0?`<div style="font-size:11.5px;color:#0f766e;background:#f0fdfa;border:1px solid #99f6e4;border-radius:9px;padding:8px 12px;margin-bottom:10px;"><b>Busiest slot: ${dn[peakU.dw]} ${hl(peakU.h)} at ${Math.round(peakU.u*100)}% utilization</b> (${peakU.b} booked of ${peakU.a} available, last ${WN}w). Utilization = booked ÷ available slots — that's the real "how busy", not just volume.</div>`:''}
     <div style="display:flex;gap:16px;flex-wrap:wrap;">
       <div><div style="font-size:10px;color:#0d9488;font-weight:700;margin-bottom:3px;">⚡ Utilization (booked ÷ available)</div>${grid(util,100,'13,148,136','%')}</div>
-      <div><div style="font-size:10px;color:#4338ca;font-weight:700;margin-bottom:3px;">📅 Bookings (volume) ${peakB.c?`· peak ${dn[peakB.dw]} ${hl(peakB.h)}`:''}</div>${grid(c=>c.b||0,maxB,'79,70,229')}</div>
-      <div><div style="font-size:10px;color:#dc2626;font-weight:700;margin-bottom:3px;">✂️ Doctor shrinkage (blocked slots)</div>${grid(c=>c.x||0,maxX,'220,38,38')}</div>
+      <div><div style="font-size:10px;color:#4338ca;font-weight:700;margin-bottom:3px;">📅 Bookings (volume) ${peakB.c?`· peak ${dn[peakB.dw]} ${hl(peakB.h)}`:''}</div>${grid(c=>c.b,maxB,'79,70,229')}</div>
+      <div><div style="font-size:10px;color:#dc2626;font-weight:700;margin-bottom:3px;">✂️ Doctor shrinkage (blocked slots)</div>${grid(c=>c.x,maxX,'220,38,38')}</div>
     </div>
-    <div style="font-size:10.5px;color:#94a3b8;margin-top:6px;">Volume shows <i>where bookings land</i>; utilization shows <i>where slots are full</i> — a clinic can be high-volume but under-utilized (lots of empty slots) or low-volume but maxed out.</div>
+    <div style="font-size:10.5px;color:#94a3b8;margin-top:6px;">Last <b>${WN} week${WN>1?'s':''}</b> (change with Window above). Volume = <i>where bookings land</i>; utilization = <i>where slots are full</i>.</div>
     <div style="font-size:11.5px;color:#334155;background:#f5f3ff;border:1px solid #ddd6fe;border-radius:9px;padding:9px 12px;margin-top:10px;line-height:1.5;">
-      <b>~${Math.round(loss)} bookings lost to availability over 8 weeks (~${Math.round(loss/8)}/wk)</b> — each blocked slot × that exact hour's utilization (bookings ÷ available). So a block at a <b>${peakU.u>=0?Math.round(peakU.u*100)+'%'+'-full':'high-util'}</b> hour costs real bookings; a block at a near-empty hour costs ~nothing.
-      <div style="color:#7c2d12;margin-top:5px;font-size:10.5px;">⚠ Caveat: this assumes demand would have filled those slots. If <b>leads</b> also fell that week, some of the gap is missing demand, not blocked supply — the two can't be fully separated from this view alone.</div>
+      <b>~${Math.round(loss)} bookings lost to availability over ${WN}w (~${Math.round(loss/WN)}/wk)</b> — each blocked slot × that exact hour's utilization (bookings ÷ available). A block at a <b>${peakU.u>=0?Math.round(peakU.u*100)+'%-full':'high-util'}</b> hour costs real bookings; a block at a near-empty hour costs ~nothing.
+      <div style="color:#7c2d12;margin-top:5px;font-size:10.5px;">⚠ Caveat: assumes demand would have filled those slots. If <b>leads</b> also fell, some of the gap is missing demand, not blocked supply.</div>
     </div>
   </div>`;
 }
@@ -2023,7 +2031,7 @@ function renderDeepDive(r){
       <b>${r1(r.av_w)} active doctor-days</b> this week (${signed(r1(r.dAct))} vs ${r1(r.av_avg)} norm) — wd ${r1(r.wd_w)} + we ${r1(r.we_w)}.${(r.weLost>0.3)?` <b style="color:#7c3aed">Weekend-weighted loss</b> — the costliest window.`:''}
     </div>
     ${ladder}
-    ${availHeatmaps(r)}
+    ${availHeatmaps(r, winN)}
     <details style="margin-top:2px;">
       <summary style="cursor:pointer;font-size:11.5px;font-weight:700;color:#4338ca;padding:7px 0;outline:none;">Roster &amp; slot-shrinkage detail <span style="font-weight:500;color:#94a3b8;">— scheduled slots, weekly shrinkage trend, days open</span></summary>
       <div style="padding-top:4px;">${rosBlock}</div>
