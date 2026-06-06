@@ -454,7 +454,7 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--navy);font-
 <script>
 /* ── DATA ── */
 let WEEKS=[], WEEK_LABELS=[], currentWeek=7;
-let SC=null, LEADS=null, ROSTER=null, REM={}, SARVAM=null, CONV={}, DOCTOR={}, MKT=null, SWHO={}, RETEN={}, CALLBACK={}, PRACTO={}, LAGE={}, L2C=null, DAILY={}, LEADCONV=null, D=null;
+let SC=null, LEADS=null, ROSTER=null, REM={}, SARVAM=null, CONV={}, DOCTOR={}, MKT=null, SWHO={}, RETEN={}, CALLBACK={}, PRACTO={}, LAGE={}, L2C=null, DAILY={}, LEADCONV=null, CONTACTMODE=null, D=null;
 let ageChannel='all';
 const RET_MATURE_IDX=9;   // newest-first 12-week idx whose 60-day retention window has fully elapsed
 let SEL=[];                                   // selected clinic keys (City|Clinic) — aggregated/summed
@@ -1447,6 +1447,22 @@ function renderLeadConv(){
   const called=rows.filter(r=>/call/i.test(r.m)).reduce((a,r)=>({l:a.l+r.leads,b:a.b+r.booked}),{l:0,b:0});
   const unc=rows.filter(r=>!/call/i.test(r.m)).reduce((a,r)=>({l:a.l+r.leads,b:a.b+r.booked}),{l:0,b:0});
   const cP=called.l?Math.round(called.b/called.l*100):0, uP=unc.l?Math.round(unc.b/unc.l*100):0;
+  // CLINIC-ACCURATE: of patients who booked at the SELECTED clinic(s), how did they originally reach us?
+  let cmBlock='';
+  if(CONTACTMODE&&CONTACTMODE.by_clinic){
+    const agg={}; SEL.forEach(k=>{ const m=CONTACTMODE.by_clinic[k]; if(m) Object.entries(m).forEach(([mode,n])=>{agg[mode]=(agg[mode]||0)+n;}); });
+    const ord=['Call','Website','WhatsApp','Practo','Other','Unknown'];
+    const entries=ord.filter(m=>agg[m]).map(m=>[m,agg[m]]);
+    const tot=entries.reduce((a,[,n])=>a+n,0);
+    if(tot>0){ const cic={Call:'📞',Website:'🌐',WhatsApp:'💬',Practo:'⭐',Other:'•',Unknown:'?'};
+      const bars=entries.map(([m,n])=>{const p=Math.round(n/tot*100);
+        return `<div style="display:flex;align-items:center;gap:8px;font-size:11.5px;padding:3px 0"><span style="flex:0 0 120px;color:#334155">${cic[m]||''} ${m}</span><span style="flex:1;height:14px;background:#f1f5f9;border-radius:4px;overflow:hidden"><span style="display:block;height:100%;width:${p}%;background:#6366f1"></span></span><span style="flex:0 0 70px;text-align:right;font-weight:700">${n.toLocaleString()} · ${p}%</span></div>`;}).join('');
+      cmBlock=`<div style="margin-top:14px;border-top:1px dashed var(--bdr);padding-top:10px">
+        <div style="font-size:12px;font-weight:600;color:var(--navy)">📍 How patients who booked here originally reached us <span style="color:#16a34a;font-weight:700">● CLINIC-LEVEL</span></div>
+        <div style="font-size:11px;color:var(--gray);margin:2px 0 8px">For the selected clinic(s), the original contact mode of the ${tot.toLocaleString()} patients who booked (last 4 weeks). Clinic-accurate — the booking carries the clinic. (Note: callers convert far better, so they're over-represented here vs the all-leads mix.)</div>
+        ${bars}</div>`;
+    }
+  }
   el.innerHTML=`<div class="sec" style="padding:16px 18px">
     <div style="font-size:13px;font-weight:600;color:var(--navy);margin-bottom:2px">🔗 Lead → conversion — how we engage leads <span style="color:#d97706;font-weight:700">● NETWORK</span></div>
     <div style="font-size:11px;color:var(--gray);margin-bottom:10px">Of leads we get, how many <b>book</b>, by how the lead was engaged (priority: inbound call › outbound › WhatsApp › website). Booked = matched to a screening call within 14d. <b>Network-level</b> — the lead end carries no clinic, so this is the same for every clinic.</div>
@@ -1455,6 +1471,7 @@ function renderLeadConv(){
     ${rows.map(bar).join('')}
     <details style="margin-top:10px"><summary style="cursor:pointer;font-size:11px;color:var(--p);font-weight:700">By source — conversion by channel (last 4 weeks)</summary>
       <table class="tbl" style="margin-top:6px"><thead><tr><th>Source</th><th class="num">Leads</th><th class="num">Booked</th><th class="num">Conv%</th></tr></thead><tbody>${src}</tbody></table></details>
+    ${cmBlock}
   </div>`;
 }
 
@@ -1556,7 +1573,7 @@ function applySelection(){
 (async function(){
   try{
     const _cb='?t='+Date.now();   // cache-bust so data rebuilds always show fresh
-    const [sc,lj,ros,rem,sar,cnv,doc,mkt,swho,ret,cbk,prc,lage,l2c,daily,lcv]=await Promise.all([
+    const [sc,lj,ros,rem,sar,cnv,doc,mkt,swho,ret,cbk,prc,lage,l2c,daily,lcv,cmd]=await Promise.all([
       fetch('data_scorecard.json'+_cb).then(r=>r.json()),
       fetch('data_leads.json'+_cb).then(r=>r.json()),
       fetch('data_roster.json'+_cb).then(r=>r.json()),
@@ -1573,8 +1590,9 @@ function applySelection(){
       fetch('data_l2c.json'+_cb).then(r=>r.ok?r.json():null).catch(()=>null),
       fetch('data_daily.json'+_cb).then(r=>r.ok?r.json():{}).catch(()=>({})),
       fetch('data_lead_conv.json'+_cb).then(r=>r.ok?r.json():null).catch(()=>null),
+      fetch('data_contact_mode.json'+_cb).then(r=>r.ok?r.json():null).catch(()=>null),
     ]);
-    SC=sc; LEADS=lj; ROSTER=ros; REM=rem||{}; SARVAM=sar; CONV=cnv||{}; DOCTOR=doc||{}; MKT=mkt; SWHO=swho||{}; RETEN=ret||{}; CALLBACK=cbk||{}; PRACTO=prc||{}; LAGE=lage||{}; L2C=l2c; DAILY=daily||{}; LEADCONV=lcv;
+    SC=sc; LEADS=lj; ROSTER=ros; REM=rem||{}; SARVAM=sar; CONV=cnv||{}; DOCTOR=doc||{}; MKT=mkt; SWHO=swho||{}; RETEN=ret||{}; CALLBACK=cbk||{}; PRACTO=prc||{}; LAGE=lage||{}; L2C=l2c; DAILY=daily||{}; LEADCONV=lcv; CONTACTMODE=cmd;
     buildWeeks();
     CLINICS=Object.keys(SC).filter(k=>k!=='_meta').sort();
     CITIES={}; CLINICS.forEach(k=>{const c=k.split('|')[0]; (CITIES[c]=CITIES[c]||[]).push(k);});
