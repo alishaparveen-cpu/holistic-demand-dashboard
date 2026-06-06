@@ -148,8 +148,25 @@ def build_retention():
     mi=9; tc=sum(v["cohort"][mi] for v in D.values()); tr=sum(v["cohort"][mi]-v["d0"][mi] for v in D.values())
     print(f"data_retention.json · {len(D)} clinics · wk{mi} network retained {tr}/{tc} = {round(tr/tc*100) if tc else 0}%")
 
+def build_callback():
+    D = {}
+    FIELDS = ["noshows","called_back"]
+    for c in q("fetch_callback.sql"):
+        if len(c) < 5: continue
+        city,clinic,wk = c[0],c[1],c[2]
+        if wk not in WI: continue
+        o = D.setdefault(f"{city}|{clinic}", {f:[0]*12 for f in FIELDS})
+        o["noshows"][WI[wk]] = num(c[3]); o["called_back"][WI[wk]] = num(c[4])
+    out = {"_meta":{"weeks":WEEKS,
+        "source":"allo_consultations.appointments (missed) + allo_persons.patient.phone_no joined to allo_vendors.exotel_calls (outbound, within 7d after)",
+        "note":"called_back = no-show patients who received an outbound call within 7 days of the missed appointment"}}
+    out.update(D)
+    json.dump(out, open(os.path.join(ROOT,"data_callback.json"),"w"), separators=(",",":"))
+    tn=sum(v["noshows"][0] for v in D.values()); tc=sum(v["called_back"][0] for v in D.values())
+    print(f"data_callback.json · {len(D)} clinics · wk0 network called-back {tc}/{tn} = {round(tc/tn*100) if tn else 0}%")
+
 if __name__ == "__main__":
-    for fn in (build_reminders, build_sarvam, build_conversion, build_doctor, build_status_who, build_retention):
+    for fn in (build_reminders, build_sarvam, build_conversion, build_doctor, build_status_who, build_retention, build_callback):
         try: fn()
         except SystemExit as e: print(f"  [skip] {fn.__name__}: {e}")
         except Exception as e: print(f"  [skip] {fn.__name__}: {type(e).__name__}: {e}")

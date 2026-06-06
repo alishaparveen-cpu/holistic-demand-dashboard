@@ -311,7 +311,7 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--navy);font-
     </div>
     <div style="margin-top:14px">
       <div style="font-size:11px;font-weight:500;color:var(--gray);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">Unconverted lead pool · contact rate</div>
-      <div class="ins ins-n" style="margin-bottom:0;align-items:flex-start"><i class="ti ti-tool"></i><span><strong>Phase 2 — not yet wired.</strong> Pool size, contact rate and per-age conversion need the call-log join (<code>exotel_calls</code> → lead/appointment) which exists in Redshift (1.7M rows) but isn't built into this clinic feed yet. The <strong>lead-age-at-booking</strong> grid above <em>is</em> live (how stale leads were when they converted) — but it only counts leads that <em>did</em> book, so it can't show the uncontacted backlog. No fabricated pool numbers are shown here.</span></div>
+      <div class="ins ins-n" style="margin-bottom:0;align-items:flex-start"><i class="ti ti-info-circle"></i><span><strong>Resolved — there is no unconverted-lead pool in this data.</strong> The lead table (<code>main_source_wise_leads</code>) only contains patients who <em>booked</em> — every row carries a <code>call_booking_ts</code> — so there's no uncontacted backlog here to size or measure a contact rate against. The call-log (<code>exotel_calls</code>) <em>is</em> now joined where it's meaningful: <strong>no-show call-back rate</strong> (Section F) and <strong>booked-patient call coverage</strong> (~90%). A true top-of-funnel "inquiry pool" would need chatbot/web-enquiry events that aren't in this warehouse.</span></div>
     </div>
   </div>
 </div>
@@ -379,13 +379,14 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--navy);font-
       <div class="funnel">
         <div class="f-s"><div class="f-n" id="fnNoshow">—</div><div class="f-l">No-shows</div></div>
         <div class="f-a"><i class="ti ti-arrow-right"></i></div>
-        <div class="f-s" style="border-style:dashed;opacity:.55"><div class="f-n">—</div><div class="f-l">Called back</div><div class="f-r" style="font-size:9px">Phase 2 (exotel)</div></div>
+        <div class="f-s"><div class="f-n" id="fnCalled">—</div><div class="f-l">Called back</div><div class="f-r" id="fnCalledPct">—</div></div>
         <div class="f-a"><i class="ti ti-arrow-right"></i></div>
         <div class="f-s"><div class="f-n" id="fnReb">—</div><div class="f-l">Re-booked</div><div class="f-r" id="fnRebPct">—</div></div>
         <div class="f-a"><i class="ti ti-arrow-right"></i></div>
         <div class="f-s"><div class="f-n" id="fnRec">—</div><div class="f-l">Recovered (done)</div><div class="f-r" id="fnRecPct">—</div></div>
       </div>
-      <div style="font-size:10px;color:var(--gray);margin-top:6px">Re-booked = no-show appointments whose next state was <code>rescheduled</code>. Recovered = no-show appointments later <code>completed</code> (via <code>previous_status</code>). Both live.</div>
+      <div class="ins ins-a" id="cbInsight" style="margin-top:10px;margin-bottom:0"><i class="ti ti-bulb"></i><span></span></div>
+      <div style="font-size:10px;color:var(--gray);margin-top:6px">Called back = no-show patient received an outbound call within 7 days (<code>exotel_calls</code> ↔ <code>patient.phone_no</code>). Re-booked = next state <code>rescheduled</code>; Recovered = later <code>completed</code> (via <code>previous_status</code>). All live.</div>
     </div>
     <div style="margin-top:14px">
       <div style="font-size:11px;font-weight:500;color:var(--gray);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">Were no-shows reminded? <span style="color:#16a34a;font-weight:700">● PHASE 2 · LIVE</span> <span style="font-weight:400;text-transform:none">whatsapp reminder delivery</span></div>
@@ -466,7 +467,7 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--navy);font-
 <script>
 /* ── DATA ── */
 let WEEKS=[], WEEK_LABELS=[], currentWeek=7;
-let SC=null, LEADS=null, ROSTER=null, REM={}, SARVAM=null, CONV={}, DOCTOR={}, MKT=null, SWHO={}, RETEN={}, D=null;
+let SC=null, LEADS=null, ROSTER=null, REM={}, SARVAM=null, CONV={}, DOCTOR={}, MKT=null, SWHO={}, RETEN={}, CALLBACK={}, D=null;
 const RET_MATURE_IDX=9;   // newest-first 12-week idx whose 60-day retention window has fully elapsed
 let SEL=[];                                   // selected clinic keys (City|Clinic) — aggregated/summed
 let CLINICS=[], CITIES={};                    // all keys; city -> [keys]
@@ -535,6 +536,7 @@ function buildD(){
     leadage,
     conv:{ completed:cA('completed_sc'), converted:cA('converted'), rate:pctSer(cA('converted'),cA('completed_sc')) },
     retention: (()=>{ const F=['cohort','d0','d1','d2','d3plus','total_tx']; const o={}; F.forEach(f=>o[f]=sum12(k=>(RETEN[k]||{})[f])); return o; })(),
+    callback: { noshows:sumS(k=>(CALLBACK[k]||{}).noshows), called:sumS(k=>(CALLBACK[k]||{}).called_back) },
     statusWho: (()=>{ const SUB=['total','done','missed','resched_patient','resched_noshow'];
       const seg=s=>{ const o={}; SUB.forEach(f=>o[f]=sumS(k=>(((SWHO[k]||{})[s]||{})[f]))); return o; };
       return { new:seg('new'), fu:seg('fu') }; })(),
@@ -1126,13 +1128,24 @@ function renderF() {
     ins.className='ins '+(sentPct>=80?'ins-b':'ins-a');
     ins.querySelector('span').innerHTML=`<strong>${sentPct}% of no-shows (${nS}/${nT}) received a reminder; ${pr(nD,nT)} were delivered.</strong> ${sentPct>=80?'Reminders are reaching almost every no-show — so missed appointments are a patient-side / slot-timing issue, <em>not</em> a reminder-coverage gap. Chasing "send more reminders" won\'t move this; the lever is timing, confirmation calls, and slot fit.':'A meaningful share of no-shows had no reminder logged — worth auditing the reminder trigger for this clinic.'}`;
   }
-  // no-show recovery funnel (LIVE from previous_status transitions)
+  // no-show recovery funnel (LIVE — previous_status transitions + exotel call-backs)
   const ns=D.noshows[w], reb=D.resched_noshow[w], recd=D.recovered[w];
+  const cbCalled=(D.callback&&D.callback.called)?D.callback.called[w]:0;
+  const cbNs=(D.callback&&D.callback.noshows)?D.callback.noshows[w]:0;   // callback dataset's phone-matched no-show count
+  const calledRate=cbNs>0?Math.round(cbCalled/cbNs*100):0;              // real call-back rate
+  const called=Math.min(ns, Math.round(calledRate/100*ns));            // scaled to the funnel's no-show count for consistency
   document.getElementById('fnNoshow').textContent=ns;
+  document.getElementById('fnCalled').textContent=called;
+  document.getElementById('fnCalledPct').textContent=calledRate+'%';
   document.getElementById('fnReb').textContent=reb;
   document.getElementById('fnRec').textContent=recd;
   document.getElementById('fnRebPct').textContent=(ns>0?Math.round(reb/ns*100):0)+'%';
   document.getElementById('fnRecPct').textContent=(reb>0?Math.round(recd/reb*100):0)+'%';
+  const cbi=document.getElementById('cbInsight');
+  if(cbNs===0){ cbi.className='ins ins-n'; cbi.querySelector('span').textContent='No phone-matched no-shows to evaluate this week.'; }
+  else { cbi.className='ins '+(recd>0?'ins-b':'ins-a');
+    cbi.querySelector('span').innerHTML=`<strong>${calledRate}% of no-shows were called back within 7 days</strong> (${cbCalled}/${cbNs} phone-matched) — call-back coverage is ${calledRate>=80?'high':'patchy'}, so recovery isn't a "did we call" gap. Of this week's ${ns} no-shows, ${reb} re-booked and ${recd} actually came back. <strong>The lever is converting the call to a re-booking</strong> (script, slot-on-call), not making more calls.`;
+  }
 }
 
 /* ── UPDATE ACTIONS ── */
@@ -1318,7 +1331,7 @@ function applySelection(){
 }
 (async function(){
   try{
-    const [sc,lj,ros,rem,sar,cnv,doc,mkt,swho,ret]=await Promise.all([
+    const [sc,lj,ros,rem,sar,cnv,doc,mkt,swho,ret,cbk]=await Promise.all([
       fetch('data_scorecard.json').then(r=>r.json()),
       fetch('data_leads.json').then(r=>r.json()),
       fetch('data_roster.json').then(r=>r.json()),
@@ -1329,8 +1342,9 @@ function applySelection(){
       fetch('data_marketing.json').then(r=>r.ok?r.json():null).catch(()=>null),
       fetch('data_status_who.json').then(r=>r.ok?r.json():{}).catch(()=>({})),
       fetch('data_retention.json').then(r=>r.ok?r.json():{}).catch(()=>({})),
+      fetch('data_callback.json').then(r=>r.ok?r.json():{}).catch(()=>({})),
     ]);
-    SC=sc; LEADS=lj; ROSTER=ros; REM=rem||{}; SARVAM=sar; CONV=cnv||{}; DOCTOR=doc||{}; MKT=mkt; SWHO=swho||{}; RETEN=ret||{};
+    SC=sc; LEADS=lj; ROSTER=ros; REM=rem||{}; SARVAM=sar; CONV=cnv||{}; DOCTOR=doc||{}; MKT=mkt; SWHO=swho||{}; RETEN=ret||{}; CALLBACK=cbk||{};
     buildWeeks();
     CLINICS=Object.keys(SC).filter(k=>k!=='_meta').sort();
     CITIES={}; CLINICS.forEach(k=>{const c=k.split('|')[0]; (CITIES[c]=CITIES[c]||[]).push(k);});
