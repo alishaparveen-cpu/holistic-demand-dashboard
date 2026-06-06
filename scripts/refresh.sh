@@ -27,6 +27,7 @@ if python3 scripts/build_lead_age.py; then ok+=("data_lead_age.json"); else fail
 if python3 scripts/build_demand_superset.py; then ok+=("data_demand_funnel.json"); else fail+=("demand_funnel"); fi
 if python3 scripts/build_practo_booked.py; then ok+=("data_practo_booked.json"); else fail+=("practo_booked"); fi
 if python3 scripts/build_practo_leads.py; then ok+=("data_practo_leads.json"); else fail+=("practo_leads"); fi
+if python3 scripts/build_scorecard.py; then ok+=("data_scorecard.json"); else fail+=("scorecard"); fi
 if python3 scripts/build_lead_maturation.py; then ok+=("data_lead_maturation.json"); else fail+=("lead_maturation"); fi
 # Negatives come LIVE from the Google Business Profile API (warehouse external_reviews ETL stopped 2026-05-06).
 [ -f "$HOME/.allo_gbp.env" ] && { set -a; . "$HOME/.allo_gbp.env"; set +a; }
@@ -50,7 +51,7 @@ echo "Refreshed: ${ok[*]:-none}"
 [ ${#fail[@]} -gt 0 ] && printf 'Skipped/failed:\n  - %s\n' "${fail[@]}"
 
 # ── deploy: commit only the data files that changed, then push main ──
-CHANGED=$(git status --porcelain data_diagnostic.json data_reviews_neg.json data_ga_city.json data_leads_total.json data_gmb_insights.json data_lead_age.json data_demand_funnel.json data_practo_booked.json data_practo_leads.json data_practo_by_doctor.json data_lead_maturation.json | awk '{print $2}')
+CHANGED=$(git status --porcelain data_diagnostic.json data_reviews_neg.json data_ga_city.json data_leads_total.json data_gmb_insights.json data_lead_age.json data_demand_funnel.json data_practo_booked.json data_practo_leads.json data_practo_by_doctor.json data_scorecard.json data_lead_maturation.json | awk '{print $2}')
 if [ -z "$CHANGED" ]; then echo "No data changes — nothing to deploy."; exit 0; fi
 echo; echo "Deploying: $CHANGED"
 git add $CHANGED

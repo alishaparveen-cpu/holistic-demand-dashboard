@@ -45,113 +45,112 @@ select{font-size:13px;border:1.5px solid #4f46e5;border-radius:7px;padding:5px 1
   <div id="main"><div class="loading-msg">Loading…</div></div>
 </div>
 <script>
-let DIAG=null, LA=null, LEADS=null, PR=null, CUR='Bangalore|Bellandur';
+let DIAG=null, SC=null, LEADS=null, CUR='Bangalore|Bellandur';
 const WEEKS=["2026-05-25","2026-05-18","2026-05-11","2026-05-04","2026-04-27","2026-04-20","2026-04-13","2026-04-06","2026-03-30","2026-03-23","2026-03-16","2026-03-09"];
+const DOWO=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
 const wkLabel=w=>{ const d=new Date(w+'T00:00:00'), e=new Date(d); e.setDate(d.getDate()+6); const M=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']; return `${d.getDate()} ${M[d.getMonth()]}–${e.getDate()} ${M[e.getMonth()]}`; };
-const A=(o,f)=>(o&&o[f])?o[f]:Array(12).fill(0);
-const sum=a=>a.reduce((s,x)=>s+(+x||0),0);
+const sum=a=>(a||[]).reduce((s,x)=>s+(+x||0),0);
+function dispA(sc,f){ return (sc&&sc.disp&&sc.disp[f])?sc.disp[f]:Array(12).fill(0); }
 function stat(arr){ const now=arr[0]||0, last=arr[1]||0, avg4=Math.round(sum(arr.slice(1,5))/4*10)/10, d=now-last, dp=last>0?Math.round(d/last*100):(now>0?100:0); return {now,last,avg4,d,dp}; }
-const cN=v=>v==null?'—':v;
 const wowCell=s=>{ const col=s.d>0?'#059669':s.d<0?'#dc2626':'#94a3b8'; return `<span style="color:${col};font-weight:700;">${s.d>0?'+':''}${s.d} <span style="font-size:9px;">(${s.dp>0?'+':''}${s.dp}%)</span></span>`; };
-function row(label, arr, need){ const s=stat(arr); return `<tr><td>${label}${need?`<span class="need">🔧 ${need}</span>`:''}</td><td>${s.now}</td><td>${s.last}</td><td>${s.avg4}</td><td>${wowCell(s)}</td></tr>`; }
+function row(label, arr, sub){ const s=stat(arr); return `<tr><td>${label}${sub?`<div style="font-size:9px;color:#94a3b8;font-weight:400;">${sub}</div>`:''}</td><td>${s.now}</td><td>${s.last}</td><td>${s.avg4}</td><td>${wowCell(s)}</td></tr>`; }
 function pct(n,d){ return d>0?Math.round(n/d*100):0; }
+const b2dcol=p=>p>=70?'#059669':p>=50?'#d97706':'#dc2626';
 
 function render(){
   const el=document.getElementById('main');
-  const o=DIAG[CUR]; if(!o){ el.innerHTML='<div class="loading-msg">No data for this clinic.</div>'; return; }
-  const la=LA[CUR]||{}, lj=LEADS[CUR]||{}, pj=PR[CUR]||null;
-  const allBk=A(o,'allBk'), nw=A(o,'bkNew'), rep=A(o,'bkRepeat'), res=A(o,'bkResched'), mis=A(o,'bkMissed'), don=A(o,'bkDone'), dnw=A(o,'bkDoneNew'), drep=A(o,'bkDoneRepeat');
-  const sSame=A(la,'same'), sLast=A(la,'last'), sOld=A(la,'older');
-  const W=0; // this week = idx 0
-  // ── Block 6 flags (computed first so they sit on top) ──
-  const flags=[];
-  const newS=stat(nw); if(newS.dp<=-20) flags.push(['🔴','#fef2f2','#991b1b',`New bookings down <b>${newS.dp}%</b> WoW (${newS.last}→${newS.now})`]);
-  const b2d=pct(don[W],allBk[W]); if(b2d<70) flags.push(['🔴','#fef2f2','#991b1b',`B2D% is <b>${b2d}%</b> — below the 70% bar`]);
-  const nsRate=pct(mis[W],allBk[W]); if(nsRate>30) flags.push(['🔴','#fef2f2','#991b1b',`No-show rate <b>${nsRate}%</b> — above 30%`]);
-  if((A(lj,'gmb')[W]||0)===0) flags.push(['🟡','#fffbeb','#92400e',`Zero GMB leads this week`]);
-  if((sOld[W]||0)===0 && sum(sOld.slice(1,6))>0) flags.push(['🟡','#fffbeb','#92400e',`No bookings from older leads (30d+) — old pipeline not being worked`]);
-  if(b2d>=85) flags.push(['🟢','#f0fdf4','#166534',`B2D% strong at <b>${b2d}%</b> — call out good ops`]);
+  const sc=SC[CUR]; if(!sc){ el.innerHTML='<div class="loading-msg">No scorecard data for this clinic.</div>'; return; }
+  const lj=LEADS[CUR]||{}, W=0;
+  const total=dispA(sc,'total'), nw=dispA(sc,'new_bk'), fu=dispA(sc,'followup_bk'), don=dispA(sc,'done'),
+        dnew=dispA(sc,'done_new'), dfu=dispA(sc,'done_followup'), mis=dispA(sc,'missed'),
+        rPat=dispA(sc,'resched_patient'), rNo=dispA(sc,'resched_noshow'), rec=dispA(sc,'recovered_done');
+  const la=sc.leadage||{}, AG=['b0_same','b1_lastwk','b2_2to4wk','b3_1to3mo','b4_3moplus'];
+  const ageW=AG.map(a=>(la[a]||[])[W]||0), ageTot=ageW.reduce((a,b)=>a+b,0);
+  const b2d=pct(don[W],total[W]), nsRate=pct(mis[W],total[W]);
+  const recBase=mis[W]||0, recd=(rNo[W]||0)+(rec[W]||0), recRate=recBase>0?Math.round(recd/recBase*100):null;
+  // ── Block 6 flags ──
+  const flags=[]; const newS=stat(nw);
+  if(newS.dp<=-20) flags.push(['🔴','#fef2f2','#991b1b',`New bookings down <b>${newS.dp}%</b> WoW (${newS.last}→${newS.now})`]);
+  if(b2d<70) flags.push(['🔴','#fef2f2','#991b1b',`B2D% is <b>${b2d}%</b> — below the 70% bar`]);
+  if(nsRate>30) flags.push(['🔴','#fef2f2','#991b1b',`No-show rate <b>${nsRate}%</b> — above 30%`]);
+  if(recRate!=null && recRate<50 && recBase>=3) flags.push(['🟡','#fffbeb','#92400e',`No-show recovery only <b>${recRate}%</b> — calling team not working it`]);
+  if(((lj.gmb||[])[W]||0)===0) flags.push(['🟡','#fffbeb','#92400e',`Zero GMB leads this week`]);
+  if(ageTot>0 && (ageW[3]+ageW[4])===0 && sum(AG.slice(3).map(a=>sum((la[a]||[]).slice(1,6))))>0) flags.push(['🟡','#fffbeb','#92400e',`No bookings from 1mo+ old leads — old pipeline not being worked`]);
+  if(recRate!=null && recRate>=70) flags.push(['🟢','#f0fdf4','#166534',`No-show recovery strong at <b>${recRate}%</b> — good ops`]);
+  if(b2d>=85) flags.push(['🟢','#f0fdf4','#166534',`B2D% strong at <b>${b2d}%</b>`]);
   const flagBlock = flags.length ? `<div class="card">${flags.map(f=>`<div class="flag" style="background:${f[1]};color:${f[2]};">${f[0]} ${f[3]}</div>`).join('')}</div>`
     : `<div class="card"><div class="flag" style="background:#f0fdf4;color:#166534;">🟢 No red/amber flags this week.</div></div>`;
-
-  // ── Block 1 — Bookings overview ──
-  const b1 = `<div class="card"><div class="bh"><span class="bnum">1</span>Bookings overview</div>
-    <div class="bsub">Did bookings drop — and which <b>type</b>? Patient-requested reschedules are a demand signal; no-show reschedules are a quality failure being recycled (split needs a pull).</div>
+  // ── Block 1 ──
+  const b1=`<div class="card"><div class="bh"><span class="bnum">1</span>Bookings overview</div>
+    <div class="bsub">Did bookings drop — and which <b>type</b>? Patient-requested reschedules are demand; no-show-recycled reschedules are a quality failure being recycled. <span style="color:#94a3b8;">Appointment-event basis.</span></div>
     <table class="sc"><thead><tr><th>Metric</th><th>This wk</th><th>Last wk</th><th>4-wk avg</th><th>WoW △</th></tr></thead><tbody>
-      ${row('Total bookings', allBk)}
+      ${row('Total bookings', total)}
       ${row('New (first-time)', nw)}
-      ${row('Follow-up (returning)', rep)}
-      ${row('Rescheduled — all', res)}
-      <tr><td style="color:#94a3b8;">↳ Patient-requested vs No-show recycled<span class="need">🔧 reschedule-reason pull</span></td><td colspan="4" style="text-align:left;color:#cbd5e1;font-style:italic;">split not in data yet</td></tr>
+      ${row('Follow-up (returning)', fu)}
+      ${row('Rescheduled — patient-requested', rPat,'demand signal')}
+      ${row('Rescheduled — no-show recycled', rNo,'quality failure recycled')}
     </tbody></table></div>`;
-
-  // ── Block 2 — New bookings by lead age ──
-  const ageTot = (sSame[W]||0)+(sLast[W]||0)+(sOld[W]||0);
-  const ageRow=(lab,v)=>`<tr><td>${lab}</td><td>${v}</td><td>${ageTot>0?Math.round(v/ageTot*100):0}%</td></tr>`;
-  const b2 = `<div class="card"><div class="bh"><span class="bnum">2</span>New bookings by lead age</div>
-    <div class="bsub">Is the drop a <b>demand</b> problem (fewer fresh leads converting) or a <b>reactivation</b> problem (old pipeline not worked)? · ${ageTot} new bookings traced to lead-creation date this week.</div>
-    <table class="sc"><thead><tr><th>Lead age</th><th>Bookings</th><th>% of new</th></tr></thead><tbody>
-      ${ageRow('Lead created this week (fresh)', sSame[W]||0)}
-      ${ageRow('Lead created last week (7–14d)', sLast[W]||0)}
-      ${ageRow('Lead created 2+ weeks ago (older)', sOld[W]||0)}
-      <tr><td style="color:#94a3b8;">Finer 2–4wk / 1–3mo / 3+mo split<span class="need">🔧 finer lead-age pull</span></td><td colspan="2" style="text-align:left;color:#cbd5e1;font-style:italic;">3 buckets today; 5 needs a pull</td></tr>
+  // ── Block 2 ──
+  const ageRow=(lab,v,sub)=>`<tr><td>${lab}${sub?`<div style="font-size:9px;color:#94a3b8;">${sub}</div>`:''}</td><td>${v}</td><td>${ageTot>0?Math.round(v/ageTot*100):0}%</td></tr>`;
+  const b2=`<div class="card"><div class="bh"><span class="bnum">2</span>New bookings by lead age</div>
+    <div class="bsub">Is the drop a <b>demand</b> problem (fewer fresh leads converting) or a <b>reactivation</b> problem (old pipeline not worked)? · ${ageTot} bookings traced to lead-creation date this week.</div>
+    <table class="sc"><thead><tr><th>Lead age</th><th>Bookings</th><th>% of total</th></tr></thead><tbody>
+      ${ageRow('Lead created this week', ageW[0],'fresh demand')}
+      ${ageRow('Lead created last week', ageW[1],'7–14 days')}
+      ${ageRow('Lead created 2–4 weeks ago', ageW[2])}
+      ${ageRow('Lead created 1–3 months ago', ageW[3],'reactivation')}
+      ${ageRow('Lead created 3+ months ago', ageW[4],'deep backlog')}
     </tbody></table></div>`;
-
-  // ── Block 3 — New bookings by channel (leads available; bookings/C2B need a pull) ──
-  const ch=[['Google Ads','google_ad'],['GMB','gmb'],['Meta / FB','fb'],['Organic','organic'],['JustDial','justdial'],['Other / Direct','others']];
-  const chRows = ch.map(([lab,k])=>{ const s=stat(A(lj,k)); return `<tr><td>${lab}</td><td>${s.now}</td><td style="color:#cbd5e1;">—</td><td style="color:#cbd5e1;">—</td><td>${wowCell(s)}</td></tr>`; }).join('');
-  const prNow = pj? (pj.leads&&pj.leads[W])||0 : null;
-  const b3 = `<div class="card"><div class="bh"><span class="bnum">3</span>New bookings by channel</div>
-    <div class="bsub">Did <b>volume</b> drop (fewer leads from a channel) or <b>conversion</b> drop (same leads, fewer booked)? · <b class="need">🔧 bookings &amp; C2B per channel need a pull</b> — leads shown today.</div>
-    <table class="sc"><thead><tr><th>Channel</th><th>Leads</th><th>Bookings</th><th>C2B%</th><th>Leads WoW</th></tr></thead><tbody>
-      ${chRows}
-      <tr><td>Practo</td><td>${prNow==null?'—':prNow}</td><td style="color:#cbd5e1;">—</td><td style="color:#cbd5e1;">—</td><td style="color:#cbd5e1;">—</td></tr>
-      <tr><td style="color:#94a3b8;">WhatsApp chatbot<span class="need">🔧 not tracked</span></td><td colspan="4" style="text-align:left;color:#cbd5e1;font-style:italic;">channel not in lead data</td></tr>
-    </tbody></table></div>`;
-
+  // ── Block 3 — channel: leads (data_leads) vs bookings (source-attributed) ──
+  const CH=[['Google (Ads+GMB)',['gmb','google_ad'],['google']],['Organic',['organic'],['organic']],['Meta / FB',['fb'],['fb','instagram']],['JustDial',['justdial'],['justdial']],['Other / Direct',['others'],['others','newspaper','youtube','(none)']]];
+  const chRow=([lab,lk,bk])=>{ const lead=lk.reduce((s,k)=>s+((lj[k]||[])[W]||0),0); const book=bk.reduce((s,k)=>s+(((sc.channel||{})[k]||[])[W]||0),0);
+    const c2b=lead>0?Math.round(book/lead*100):null; const ld1=lk.reduce((s,k)=>s+((lj[k]||[])[1]||0),0); const dwow=lead-ld1;
+    return `<tr><td>${lab}</td><td>${lead}</td><td>${book}</td><td>${c2b==null?'—':(c2b>100?'<span style="color:#94a3b8" title="bookings counted on a different basis than leads">'+c2b+'%*</span>':c2b+'%')}</td><td style="color:${dwow>0?'#059669':dwow<0?'#dc2626':'#94a3b8'};">${dwow>0?'+':''}${dwow}</td></tr>`; };
+  const b3=`<div class="card"><div class="bh"><span class="bnum">3</span>New bookings by channel</div>
+    <div class="bsub">Did <b>volume</b> drop (fewer leads) or <b>conversion</b> drop (same leads, fewer booked)? · <span style="color:#94a3b8;">leads = tracked inbound; bookings = source-attributed (different basis, so C2B can read &gt;100% — marked *).</span></div>
+    <table class="sc"><thead><tr><th>Channel</th><th>Leads</th><th>Bookings</th><th>C2B%</th><th>Leads WoW</th></tr></thead><tbody>${CH.map(chRow).join('')}</tbody></table></div>`;
   // ── Block 4 — B2D by booking type ──
-  const b2dRow=(lab,bk,dn,need)=>`<tr><td>${lab}${need?`<span class="need">🔧 ${need}</span>`:''}</td><td>${bk}</td><td>${dn}</td><td><b style="color:${pct(dn,bk)>=70?'#059669':pct(dn,bk)>=50?'#d97706':'#dc2626'}">${pct(dn,bk)}%</b></td></tr>`;
-  const b4 = `<div class="card"><div class="bh"><span class="bnum">4</span>Book→Done (B2D) by booking type</div>
-    <div class="bsub">If overall B2D dropped, <b>which patient type</b> stopped showing? No-show-rescheduled usually has the lowest B2D — rising volume there drags the average without a real quality problem.</div>
+  const b2dRow=(lab,bk,dn)=>`<tr><td>${lab}</td><td>${bk}</td><td>${dn}</td><td><b style="color:${b2dcol(pct(dn,bk))}">${pct(dn,bk)}%</b></td></tr>`;
+  const b4=`<div class="card"><div class="bh"><span class="bnum">4</span>Book→Done (B2D) by booking type</div>
+    <div class="bsub">If overall B2D dropped, <b>which patient type</b> stopped showing? No-show-recycled usually has the lowest B2D — rising volume there drags the average without a real quality problem.</div>
     <table class="sc"><thead><tr><th>Booking type</th><th>Booked</th><th>Done</th><th>B2D%</th></tr></thead><tbody>
-      ${b2dRow('New first-time', nw[W]||0, dnw[W]||0)}
-      ${b2dRow('Follow-up (returning)', rep[W]||0, drep[W]||0)}
-      <tr><td style="color:#94a3b8;">Rescheduled (patient) · No-show rescheduled<span class="need">🔧 done-by-reschedule-type pull</span></td><td colspan="3" style="text-align:left;color:#cbd5e1;font-style:italic;">not split in data yet</td></tr>
+      ${b2dRow('New first-time', nw[W]||0, dnew[W]||0)}
+      ${b2dRow('Follow-up (returning)', fu[W]||0, dfu[W]||0)}
+      <tr><td colspan="4" style="text-align:left;font-size:10px;color:#94a3b8;">Rescheduled appointments transition to a new slot, so their completion shows under New/Follow-up above (not double-counted).</td></tr>
     </tbody></table></div>`;
-
-  // ── Block 5 — No-show & recovery ──
-  const b5 = `<div class="card"><div class="bh"><span class="bnum">5</span>No-show &amp; recovery</div>
-    <div class="bsub">Are no-shows being <b>recovered</b>? High recovery = not a crisis, just volume. Low recovery = the calling team isn't working it. <b class="need">🔧 call-log &amp; recovery need a pull</b>.</div>
-    <table class="sc"><thead><tr><th>Metric</th><th>This wk</th><th>Last wk</th><th>△</th></tr></thead><tbody>
+  // ── Block 5 — no-show & recovery ──
+  const b5=`<div class="card"><div class="bh"><span class="bnum">5</span>No-show &amp; recovery</div>
+    <div class="bsub">Are no-shows being <b>recovered</b>? High recovery = not a crisis, just volume. Low = calling team isn't working it. <span style="color:#94a3b8;">Recovery = no-show that was rescheduled or later completed (via status history). "Called back" needs a call-log source.</span></div>
+    <table class="sc"><thead><tr><th>Metric</th><th>This wk</th><th>Last wk</th><th>4-wk avg</th><th>WoW △</th></tr></thead><tbody>
       ${row('Total no-shows', mis)}
-      <tr><td style="color:#94a3b8;">Called back · Rescheduled · Net recovered · Recovery %<span class="need">🔧 call-log pull</span></td><td colspan="3" style="text-align:left;color:#cbd5e1;font-style:italic;">no call-log source connected</td></tr>
+      ${row('No-show → rescheduled', rNo)}
+      ${row('No-show → completed (recovered)', rec)}
+      <tr><td>Recovery rate</td><td colspan="3" style="text-align:left;"><b style="color:${recRate==null?'#94a3b8':recRate>=70?'#059669':recRate>=50?'#d97706':'#dc2626'}">${recRate==null?'—':recRate+'%'}</b> <span style="font-size:9px;color:#94a3b8;">(rescheduled + completed) ÷ no-shows</span></td><td></td></tr>
     </tbody></table></div>`;
+  // ── Day of week ──
+  const dow=sc.dow||{}; const dowMaxNs=Math.max(...DOWO.map(d=>pct((dow[d]||{}).missed,(dow[d]||{}).booked)),0);
+  const dowRows=DOWO.map(d=>{ const x=dow[d]||{booked:0,done:0,missed:0}; const bd=pct(x.done,x.booked), ns=pct(x.missed,x.booked); const worst=ns===dowMaxNs&&ns>0;
+    return `<tr${worst?' style="background:#fef2f2;"':''}><td>${d}${worst?' <span style="font-size:9px;color:#dc2626;font-weight:700;">worst no-show</span>':''}</td><td>${x.booked}</td><td><b style="color:${b2dcol(bd)}">${bd}%</b></td><td><b style="color:${ns>=30?'#dc2626':ns>=20?'#d97706':'#64748b'}">${ns}%</b></td></tr>`; }).join('');
+  const bDow=`<div class="card"><div class="bh"><span class="bnum">+</span>Day-of-week B2D &amp; no-show <span style="font-size:10px;font-weight:600;color:#94a3b8;">(last ~8 weeks)</span></div>
+    <div class="bsub">A consistent bad day (e.g. Mon AM, Sun PM) is an <b>ops</b> fix — doctor availability or patient behaviour — not a demand problem.</div>
+    <table class="sc"><thead><tr><th>Day</th><th>Booked</th><th>B2D%</th><th>No-show%</th></tr></thead><tbody>${dowRows}</tbody></table></div>`;
 
-  // ── Day-of-week B2D (needs pull) ──
-  const bDow = `<div class="card" style="border-style:dashed;background:#fafafa;"><div class="bh"><span class="bnum">+</span>Day-of-week B2D <span class="need">🔧 appointments-by-day pull</span></div>
-    <div class="bsub">Some clinics have a consistent no-show day (e.g. Mon AM, Sun PM) — an <b>ops</b> fix, not a demand one. Needs a per-day appointment-status pull.</div></div>`;
-
-  el.innerHTML = `
-    <div style="font-size:11px;color:#94a3b8;margin-bottom:10px;">${CUR.split('|')[1]}, ${CUR.split('|')[0]} · week ${wkLabel(WEEKS[0])} (vs prior &amp; 4-wk avg)</div>
+  el.innerHTML=`<div style="font-size:11px;color:#94a3b8;margin-bottom:10px;">${CUR.split('|')[1]}, ${CUR.split('|')[0]} · week ${wkLabel(WEEKS[0])} (vs prior &amp; 4-wk avg)</div>
     ${flagBlock}${b1}${b2}${b3}${b4}${b5}${bDow}
-    <div class="card" style="background:#eef2ff;border-color:#ddd6fe;"><div class="bh" style="color:#3730a3;">🔧 What needs an engineering data pull</div>
-      <div style="font-size:11.5px;color:#475569;line-height:1.7;">
-        1. <b>Reschedule reason</b> — split patient-requested vs no-show-recycled (Block 1 &amp; 4).<br>
-        2. <b>Finer lead-age buckets</b> — 2–4wk / 1–3mo / 3+mo (Block 2).<br>
-        3. <b>Bookings &amp; C2B by channel</b> — attribute each booking to its lead channel (Block 3); add WhatsApp chatbot.<br>
-        4. <b>Call log / no-show recovery</b> — called-back, rescheduled, showed, recovery % by channel (Block 5).<br>
-        5. <b>Day-of-week B2D</b> — per-day appointment status.<br>
-        <span style="color:#94a3b8;">Hardest join (flag to eng): linking each booking to <b>when its original lead was created</b>, not last-touched.</span>
-      </div></div>`;
+    <div class="card" style="background:#eef2ff;border-color:#ddd6fe;"><div class="bh" style="color:#3730a3;">✅ Now live · one gap left</div>
+      <div style="font-size:11.5px;color:#475569;line-height:1.7;">Reschedule split, finer lead-age (5 buckets), per-channel bookings, B2D-by-type, no-show recovery, and day-of-week are all <b>live from Redshift</b>.<br>
+      <b>Still needs a source:</b> "no-show <b>called back</b>" (call-log system) — recovery here is inferred from appointment status history, not call attempts.<br>
+      <span style="color:#94a3b8;">Note: this view is <b>appointment-event</b> based (each reschedule is an event), so totals run higher than the diagnostic's distinct-booking counts.</span></div></div>`;
 }
 (async()=>{
   try{
     const safe=u=>fetch(u,{cache:'no-store'}).then(r=>r.ok?r.json():null).catch(()=>null);
-    [DIAG,LA,LEADS,PR]=await Promise.all([safe('data_diagnostic.json'),safe('data_lead_age.json'),safe('data_leads.json'),safe('data_practo_leads.json')]);
-    if(!DIAG) throw new Error('data_diagnostic.json not found');
+    [DIAG,SC,LEADS]=await Promise.all([safe('data_diagnostic.json'),safe('data_scorecard.json'),safe('data_leads.json')]);
+    if(!SC) throw new Error('data_scorecard.json not found — run scripts/build_scorecard.py');
     const sel=document.getElementById('clinicSel');
-    sel.innerHTML=Object.keys(DIAG).filter(k=>k!=='_meta').sort().map(k=>`<option value="${k}" ${k===CUR?'selected':''}>${k.replace('|',' · ')}</option>`).join('');
-    if(!DIAG[CUR]){ CUR=Object.keys(DIAG).find(k=>k!=='_meta'); sel.value=CUR; }
+    const keys=Object.keys(SC).filter(k=>k!=='_meta').sort();
+    sel.innerHTML=keys.map(k=>`<option value="${k}" ${k===CUR?'selected':''}>${k.replace('|',' · ')}</option>`).join('');
+    if(!SC[CUR]){ CUR=keys[0]; sel.value=CUR; }
     render();
   }catch(e){ document.getElementById('main').innerHTML='<div class="loading-msg" style="color:#dc2626">'+e.message+'</div>'; }
 })();
