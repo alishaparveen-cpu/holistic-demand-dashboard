@@ -166,17 +166,18 @@ function hasLeadDrill(city,clinic){ return !!LEADS[city+'|'+clinic]; }
 const HOD_HOURS=[9,10,11,12,13,14,15,16,17,18,19,20,21];   // hour-of-day buckets in data_roster.json
 function rosterArr(city,clinic){ return ROSTER[city+'|'+clinic] || {hrs:Array(WEEKS.length).fill(null), we_hrs:Array(WEEKS.length).fill(null), dow:Array(WEEKS.length).fill(null).map(()=>Array(7).fill(0)), hod:Array(WEEKS.length).fill(null).map(()=>Array(HOD_HOURS.length).fill(0)), shr:{sched:Array(WEEKS.length).fill(0),shrunk:Array(WEEKS.length).fill(0),avail:Array(WEEKS.length).fill(0)}}; }
 let scope='offline';      // 'offline' | 'online'
-let landView='bookings';  // landing lens: 'bookings' (new-patient bookings first) | 'leads' (leads first). Deep-dive is identical.
+let landView='bookings';  // landing lens: 'bookings' (new) | 'leads' | 'calls' (calls done) | 'total' (total bookings). Deep-dive is identical.
 function setLandView(v){ landView=v; render(); }
-function landSpec(){ const leadsV=landView==='leads'; return {
-  leadsV,
-  arr: r => (leadsV ? (r.ldArr||[]) : (r.bkNewArr||[])),
-  noun: leadsV ? 'leads' : 'new bookings',
-  totalNoun: leadsV ? 'new booked' : 'total scheduled',
-  totalVal: r => leadsV ? ((r.bkNewArr&&r.bkNewArr[wkIdx])||0) : (r.bk_w||0),
-  cityTitle: leadsV ? 'By city — where did leads move?' : 'By city — where did bookings move?',
-  clinicVerb: leadsV ? 'leads' : 'new (first-time) patients',
-  affNoun: leadsV ? 'leads' : 'new-patient bookings' }; }
+function landSpec(){
+  const SPECS={
+    bookings:{arr:r=>r.bkNewArr||[], noun:'new bookings', totalNoun:'total scheduled', totalVal:r=>r.bk_w||0, cityTitle:'By city — where did new bookings move?', clinicVerb:'new (first-time) patients', affNoun:'new-patient bookings'},
+    leads:{arr:r=>r.ldArr||[], noun:'leads', totalNoun:'new booked', totalVal:r=>(r.bkNewArr&&r.bkNewArr[wkIdx])||0, cityTitle:'By city — where did leads move?', clinicVerb:'leads', affNoun:'leads'},
+    calls:{arr:r=>r.bkDoneArr||[], noun:'calls done', totalNoun:'total scheduled', totalVal:r=>r.bk_w||0, cityTitle:'By city — where did completed calls move?', clinicVerb:'completed screening calls', affNoun:'completed calls'},
+    total:{arr:r=>r.bkArr||[], noun:'total bookings', totalNoun:'of which done', totalVal:r=>(r.bkDoneArr&&r.bkDoneArr[wkIdx])||0, cityTitle:'By city — where did bookings move?', clinicVerb:'total bookings', affNoun:'total bookings'},
+  };
+  const s=SPECS[landView]||SPECS.bookings;
+  return Object.assign({leadsV:landView==='leads'}, s);
+}
 // landing sparkline display window — number of weeks the card chart shows. Follows the Compare-vs
 // baseline (synced into trendWin by setBase) so a single control governs the whole page.
 function landWinN(){ return trendWin==='all'?WEEKS.length:Math.min(+trendWin||6,WEEKS.length); }
@@ -861,7 +862,7 @@ function renderOffline(){
   </div>`;
 
   // Landing lens toggle — city heads can read the same drill either bookings-first or leads-first. Deep-dive is identical.
-  const lvBtn=(v,icon,lbl,sub)=>{ const on=landView===v; return `<button onclick="setLandView('${v}')" style="flex:1;min-width:150px;text-align:left;border:1.5px solid ${on?'#4f46e5':'var(--line)'};background:${on?'#eef2ff':'#fff'};border-radius:10px;padding:8px 13px;cursor:pointer;">
+  const lvBtn=(v,icon,lbl,sub)=>{ const on=landView===v; return `<button onclick="setLandView('${v}')" style="flex:1;min-width:128px;text-align:left;border:1.5px solid ${on?'#4f46e5':'var(--line)'};background:${on?'#eef2ff':'#fff'};border-radius:10px;padding:8px 13px;cursor:pointer;">
     <div style="font-size:13px;font-weight:800;color:${on?'#4338ca':'#0f172a'};">${icon} ${lbl}</div>
     <div style="font-size:10px;color:#94a3b8;margin-top:1px;">${sub}</div></button>`; };
   // Window & norm now follow the single "Compare vs" control (top of page) — show it as a read-only hint.
@@ -870,6 +871,8 @@ function renderOffline(){
   const landToggle=`<div style="display:flex;gap:9px;flex-wrap:wrap;align-items:center;margin:14px 0 4px;">
     <span style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#94a3b8;align-self:center;">View</span>
     ${lvBtn('bookings','🗓','Bookings first','new-patient bookings as the headline')}
+    ${lvBtn('total','📋','Total bookings','all SC bookings (new + repeat)')}
+    ${lvBtn('calls','✅','Calls done','completed screening calls')}
     ${lvBtn('leads','🔎','Leads first','inbound leads as the headline')}
     ${winSel}</div>
     <div style="font-size:10px;color:#94a3b8;margin:0 0 10px;">Cards show the last <b>${landWinN()}</b> weeks; the dashed line &amp; <b>“vs … norm”</b> are the <b>${baseLabel()}</b>. Change <b>“Compare vs”</b> (top) to recompute both.</div>`;
@@ -1773,11 +1776,19 @@ function leadLossDrill(r){
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;">
       <div style="background:#eef2ff;border-radius:11px;padding:12px 14px;">
         <div style="font-size:13px;font-weight:800;color:#4338ca;margin-bottom:8px;">📍 GMB profile <span style="font-weight:500;color:#94a3b8;font-size:10px;">${hasGmbIns(r.city,r.clinic)?'· live Insights':''}</span></div>
-        ${hasGmbIns(r.city,r.clinic)?(()=>{ const gs=gmbInsArr(r.city,r.clinic,'searches'), gix=gmbInsArr(r.city,r.clinic,'interactions');
+        ${(()=>{
+          const stepB=(num,den,lbl)=>{ const p=den>0?Math.round(num/den*1000)/10:null;
+            return `<div style="text-align:center;font-size:9.5px;color:#94a3b8;margin:1px 0 4px;">↓ <b style="color:#334155;">${p==null?'—':p+'%'}</b> <span style="color:#cbd5e1;">${lbl}</span></div>`; };
+          const leadsMini=mini('GMB leads · '+gmb_w+' ('+signed(dGmbP,'%')+')', '#6366f1', 'profile clicks + inbound calls → tracked leads · dashed = '+winN+'-wk avg', spark(rev(gmb),'#6366f1',hi,null,gmb_n));
+          if(!hasGmbIns(r.city,r.clinic)) return leadsMini;
+          const gs=gmbInsArr(r.city,r.clinic,'searches'), gix=gmbInsArr(r.city,r.clinic,'interactions');
           const sw=gs[W]||0, sn=nrm(gs), iw=gix[W]||0, iN=nrm(gix); const dsp=sn?Math.round((sw-sn)/sn*100):0, dip=iN?Math.round((iw-iN)/iN*100):0;
           return mini('Searches · '+sw.toLocaleString()+' ('+signed(dsp,'%')+')', '#7c3aed', 'GMB+Google impressions — how often the listing was seen · dashed = '+winN+'-wk avg', spark(rev(gs),'#7c3aed',hi,null,sn))
-            + mini('Interactions · '+iw+' ('+signed(dip,'%')+')', '#0d9488', 'calls + directions + website taps on the profile · dashed = '+winN+'-wk avg', spark(rev(gix),'#0d9488',hi,null,iN)); })():''}
-        ${mini('GMB leads · '+gmb_w+' ('+signed(dGmbP,'%')+')', '#6366f1', 'profile clicks + inbound calls → tracked leads · dashed = '+winN+'-wk avg', spark(rev(gmb),'#6366f1',hi,null,gmb_n))}
+            + stepB(iw,sw,'searches → interaction')
+            + mini('Interactions · '+iw+' ('+signed(dip,'%')+')', '#0d9488', 'calls + directions + website taps on the profile · dashed = '+winN+'-wk avg', spark(rev(gix),'#0d9488',hi,null,iN))
+            + stepB(gmb_w,iw,'interaction → tracked lead')
+            + leadsMini;
+        })()}
         ${mini('Review velocity · '+vel_w+'/wk', '#0891b2', 'reviews/week — a primary GMB-rank driver', spark(rev(rvN),'#0891b2',hi,null,vel_n))}
         <div style="font-size:10.5px;color:#475569;">Rating ${lastRating!=null?'<b>'+lastRating+'★</b>':'—'} · ${vel_n>0.5&&vel_w<vel_n-0.5?'<b style="color:#dc2626">velocity dropping → rank risk</b>':'velocity steady'}.</div>
         ${negReviewsBlock(r.city, r.clinic)}
