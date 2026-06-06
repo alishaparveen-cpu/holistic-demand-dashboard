@@ -537,6 +537,9 @@ function buildD(){
     conv:{ completed:cA('completed_sc'), converted:cA('converted'), rate:pctSer(cA('converted'),cA('completed_sc')) },
     retention: (()=>{ const F=['cohort','d0','d1','d2','d3plus','total_tx']; const o={}; F.forEach(f=>o[f]=sum12(k=>(RETEN[k]||{})[f])); return o; })(),
     callback: { noshows:sumS(k=>(CALLBACK[k]||{}).noshows), called:sumS(k=>(CALLBACK[k]||{}).called_back) },
+    availDays: (()=>{ const wd=Array(12).fill(0), we=Array(12).fill(0);   // active days/wk, weekday vs weekend (dow = [Sun..Sat] hours)
+      SEL.forEach(k=>{ const dw=(ROSTER[k]||{}).dow||[]; for(let i=0;i<12;i++){ const day=dw[i]||[]; for(let j=0;j<7;j++){ if((day[j]||0)>0){ (j===0||j===6) ? we[i]++ : wd[i]++; } } } });
+      return { weekday:ser(wd), weekend:ser(we), total:ser(wd.map((v,i)=>v+we[i])) }; })(),
     statusWho: (()=>{ const SUB=['total','done','missed','resched_patient','resched_noshow'];
       const seg=s=>{ const o={}; SUB.forEach(f=>o[f]=sumS(k=>(((SWHO[k]||{})[s]||{})[f]))); return o; };
       return { new:seg('new'), fu:seg('fu') }; })(),
@@ -686,23 +689,26 @@ function closeKpiChart() {
 /* ── RENDER KPI CARDS ── */
 function renderKPIs() {
   const w = currentWeek;
+  const av=D.availDays||{total:[],weekday:[],weekend:[]};
   const kpis = [
-    {key:'total_bk', label:'Total bookings', series:D.bookings.total, color:COLORS.p,
-     note:'Total bookings are a blended number. Always decompose into booking type before acting on a drop.'},
-    {key:'new_bk', label:'New first-time', series:D.bookings.new_first, color:COLORS.r,
-     note:'New first-time bookings are the real new demand proxy. Follow-up and reschedule are not new patients.'},
-    {key:'showup', label:'Show-up rate', series:D.showup, unit:'%', color:COLORS.a,
-     note:'Show-up = completed ÷ (completed + missed) — of appointments that were actually kept (not rescheduled/cancelled away), how many the patient attended. Below ~80% is a flag. This is separate from completion (done ÷ all bookings), which also gets dragged down by reschedules — see Section F.'},
-    {key:'noshow', label:'No-show rate', series:D.noshowRate, unit:'%', color:COLORS.b,
-     note:'No-show rate = missed ÷ booked (live from appointments). Rising no-shows drag B2D regardless of how many bookings you add. True lead→booking C2B is not shown — this feed has no reliable top-of-funnel inquiry count (see Section E).'},
-    {key:'recovery', label:'Recovery rate', series:D.recovery, unit:'%', color:COLORS.t,
-     note:'Recovery rate below 55% means no-shows are not being called back aggressively enough or the script is not working.'},
+    {key:'total_bk', label:'All bookings', series:D.bookings.total, color:COLORS.p,
+     note:'All bookings this week (every type). A blended number — decompose into New vs Follow-up and by status before acting (Section A).'},
+    {key:'new_bk', label:'New bookings', series:D.bookings.new_first, color:COLORS.r,
+     note:'New first-time bookings — the real new-demand proxy. Follow-up and reschedule are not new patients.'},
+    {key:'leads', label:'Leads', series:D.leads.total, color:COLORS.b,
+     note:'Inbound leads across all channels incl. Practo (Section D). Marketing-attributed demand into the clinic.'},
+    {key:'b2d', label:'Book → Done', series:D.completion, unit:'%', color:COLORS.a,
+     note:'Book→Done = completed ÷ all bookings. Dragged down by reschedule/cancel leakage — see the funnel in Section E (Kept→Done show-up is separate, ~higher).'},
+    {key:'avail', label:'Availability (days)', series:av.total, color:COLORS.t,
+     sub:`${av.weekday[w]||0} weekday · ${av.weekend[w]||0} weekend`,
+     note:'Days the clinic had bookable doctor slots this week, split weekday vs weekend (roster). More open days = more capacity for demand.'},
   ];
   const grid = document.getElementById('kpiGrid');
   grid.innerHTML = '';
   kpis.forEach(k=>{
-    const val = k.series[w];
-    const prev = (w>0?k.series[w-1]:val);
+    const s=k.series||Array(NW).fill(0);
+    const val = s[w];
+    const prev = (w>0?s[w-1]:val);
     const pct = prev>0 ? Math.round((val-prev)/prev*100) : null;
     const dir = pct===null?'fl':pct<0?'dn':pct>0?'up':'fl';
     const sign = pct>=0?'+':'';
@@ -710,12 +716,14 @@ function renderKPIs() {
     const div = document.createElement('div');
     div.className='kpi-card';
     div.id='kpi-'+k.key;
-    div.onclick=()=>showKpiChart(k.key,k.label,k.series,k.note,k.color);
+    div.onclick=()=>showKpiChart(k.key,k.label,s,k.note,k.color);
+    const subLine = k.sub ? `<div class="kpi-wow fl" style="color:var(--gray)"><i class="ti ti-calendar" style="font-size:11px"></i>${k.sub}</div>`
+                          : `<div class="kpi-wow ${dir}"><i class="ti ti-trending-${dir==='up'?'up':dir==='dn'?'down':'flat'}" style="font-size:11px"></i>${pct===null?'—':sign+pct+'% vs last week'}</div>`;
     div.innerHTML=`
       <div class="kpi-lbl"><i class="ti ti-chart-line" style="font-size:11px"></i>${k.label}</div>
       <div class="kpi-val">${val}${unit}</div>
-      <div class="kpi-wow ${dir}"><i class="ti ti-trending-${dir==='up'?'up':dir==='dn'?'down':'flat'}" style="font-size:11px"></i>${pct===null?'—':sign+pct+'% vs last week'}</div>
-      ${sparkSVG(k.series,k.color,true)}
+      ${subLine}
+      ${sparkSVG(s,k.color,true)}
       <div class="expand-hint">Click for trend <i class="ti ti-arrow-down" style="font-size:10px"></i></div>`;
     grid.appendChild(div);
   });
