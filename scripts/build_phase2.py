@@ -185,20 +185,24 @@ def build_leadage_channel():
     print(f"data_leadage_channel.json · {len(D)} clinics · Bellandur channels: {list(b.keys())}")
 
 def build_l2c():
-    # data_l2c.json: NETWORK weekly L2C funnel (leads->called->connected, +booked)
-    F=["leads","called","connected","booked"]
-    o={f:[0]*12 for f in F}
+    # data_l2c.json: NETWORK weekly funnel (in/out split) + by-source + by-city + TAT
+    NF=["leads","out_reached","out_conn","in_reached","in_conn","any_reached","any_conn","booked"]
+    net={f:[0]*12 for f in NF}
     for c in q("fetch_l2c.sql"):
-        if len(c) < 5: continue
-        wk=c[0]
-        if wk not in WI: continue
-        for j,f in enumerate(F): o[f][WI[wk]]=num(c[1+j])
-    out={"_meta":{"weeks":WEEKS,"scope":"network",
-        "source":"allo_persons.lead (deduped phone) + exotel_calls (outbound) + Screening Call appointments",
-        "note":"Network only — lead clinic-code is present on ~1/3 of leads so per-clinic isn't reliable. called/connected within 14d of lead; booked = phone matched a SC appt within 14d (can occur without an outbound connect)."},
-        "net":o}
+        if len(c) < 9: continue
+        if c[0] not in WI: continue
+        for j,f in enumerate(NF): net[f][WI[c[0]]]=num(c[1+j])
+    by_source=[{"src":c[0],"leads":num(c[1]),"reached":num(c[2]),"connected":num(c[3]),"booked":num(c[4])}
+               for c in q("fetch_l2c_source.sql") if len(c)>=5]
+    by_city=[{"city":c[0],"leads":num(c[1]),"reached":num(c[2]),"connected":num(c[3]),"booked":num(c[4])}
+             for c in q("fetch_l2c_city.sql") if len(c)>=5]
+    tat={c[0]:num(c[1]) for c in q("fetch_l2c_tat.sql") if len(c)>=2}
+    out={"_meta":{"weeks":WEEKS,"scope":"network","window4":"2026-04-27..2026-05-25",
+        "source":"allo_persons.lead + exotel_calls (in & out) + Screening Call appts",
+        "note":"reached/connected within 14d (in=lead called us, out=team dialled). booked=phone matched SC within 14d. by_city is a ~9% subset (most leads lack city). by_source over last 4 wks."},
+        "net":net, "by_source":by_source, "by_city":by_city, "tat":tat}
     json.dump(out, open(os.path.join(ROOT,"data_l2c.json"),"w"), separators=(",",":"))
-    print(f"data_l2c.json · wk0 leads {o['leads'][0]} called {o['called'][0]} connected {o['connected'][0]} booked {o['booked'][0]}")
+    print(f"data_l2c.json · wk0 leads {net['leads'][0]} any_reached {net['any_reached'][0]} any_conn {net['any_conn'][0]} booked {net['booked'][0]} · {len(by_source)} sources · {len(by_city)} cities")
 
 def build_daily():
     # data_daily.json: per clinic, date -> [total,new,done,missed] for the WTD view
