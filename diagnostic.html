@@ -154,6 +154,8 @@ function leadMat(city,clinic){ return LEADMAT[city+'|'+clinic] || (LEADMAT._meta
 let PRACTODOC={};   // data_practo_by_doctor.json — Practo leads/booked per clinic split by Doctor Name
 let LEADCONV=null;  // data_lead_conv.json — lead→booking conversion by contact mode + source (network)
 let AVAILHOD=null;  // data_avail_hod.json — per-clinic dow×hour bookings + slots/shrinkage (hour-granular availability)
+let hodRate=false;  // heatmap value mode: false=total over window, true=per-week average
+function setHodRate(v){ hodRate=v; render(); }
 function availHodArr(city,clinic){ return AVAILHOD&&AVAILHOD.by_clinic ? AVAILHOD.by_clinic[city+'|'+clinic] : null; }
 // Heatmaps by dow×hour: bookings (volume), UTILIZATION (booked÷available = how busy), shrinkage. + hour loss.
 // Windows over the last winN weeks (follows the view's window control) — data carries per-week arrays.
@@ -179,18 +181,21 @@ function availHeatmaps(r, winN){
     return `<table style="border-spacing:1.5px;border-collapse:separate"><tbody>${head}${rows}</tbody></table>`;
   };
   const util=c=>c.a>0?Math.round(c.b/c.a*100):0;
+  const rk=hodRate?1/WN:1, rnum=x=>{ const v=x*rk; return hodRate?Math.round(v*10)/10:Math.round(v); };
   const winBtns=[1,2,4,8,12].filter(v=>v<=nWk).map(v=>`<button onclick="setTrendWin(${v})" style="font-size:10px;padding:2px 8px;border-radius:6px;border:1.5px solid ${WN===v?'#0d9488':'var(--line)'};background:${WN===v?'#f0fdfa':'#fff'};color:${WN===v?'#0f766e':'#64748b'};font-weight:${WN===v?700:500};cursor:pointer;">${v}w</button>`).join('');
+  const rateBtn=(v,l)=>`<button onclick="setHodRate(${v})" style="font-size:10px;padding:2px 8px;border-radius:6px;border:1.5px solid ${hodRate===v?'#4338ca':'var(--line)'};background:${hodRate===v?'#eef2ff':'#fff'};color:${hodRate===v?'#4338ca':'#64748b'};font-weight:${hodRate===v?700:500};cursor:pointer;">${l}</button>`;
   return `<div style="margin-top:12px;border-top:1px dashed var(--line);padding-top:10px;">
-    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px;">
       <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:#94a3b8;">When are doctors busiest? — hour × day <span style="font-weight:500;text-transform:none;">(IST)</span></span>
-      <span style="display:flex;gap:4px;align-items:center;"><span style="font-size:9px;color:#cbd5e1;font-weight:700;text-transform:uppercase;">Window</span>${winBtns}</span></div>
+      <span style="display:flex;gap:4px;align-items:center;"><span style="font-size:9px;color:#cbd5e1;font-weight:700;text-transform:uppercase;">Window</span>${winBtns}</span>
+      <span style="display:flex;gap:4px;align-items:center;"><span style="font-size:9px;color:#cbd5e1;font-weight:700;text-transform:uppercase;">Bookings/Shrinkage</span>${rateBtn(false,'Total')}${rateBtn(true,'/week')}</span></div>
     ${peakU.u>=0?`<div style="font-size:11.5px;color:#0f766e;background:#f0fdfa;border:1px solid #99f6e4;border-radius:9px;padding:8px 12px;margin-bottom:10px;"><b>Busiest slot: ${dn[peakU.dw]} ${hl(peakU.h)} at ${Math.round(peakU.u*100)}% utilization</b> (${peakU.b} booked of ${peakU.a} available, last ${WN}w). Utilization = booked ÷ available slots — that's the real "how busy", not just volume.</div>`:''}
     <div style="display:flex;gap:16px;flex-wrap:wrap;">
       <div><div style="font-size:10px;color:#0d9488;font-weight:700;margin-bottom:3px;">⚡ Utilization (booked ÷ available)</div>${grid(util,100,'13,148,136','%')}</div>
-      <div><div style="font-size:10px;color:#4338ca;font-weight:700;margin-bottom:3px;">📅 Bookings (volume) ${peakB.c?`· peak ${dn[peakB.dw]} ${hl(peakB.h)}`:''}</div>${grid(c=>c.b,maxB,'79,70,229')}</div>
-      <div><div style="font-size:10px;color:#dc2626;font-weight:700;margin-bottom:3px;">✂️ Doctor shrinkage (blocked slots)</div>${grid(c=>c.x,maxX,'220,38,38')}</div>
+      <div><div style="font-size:10px;color:#4338ca;font-weight:700;margin-bottom:3px;">📅 Bookings ${hodRate?'(per week)':'(volume)'} ${peakB.c?`· peak ${dn[peakB.dw]} ${hl(peakB.h)}`:''}</div>${grid(c=>rnum(c.b),maxB*rk||1,'79,70,229')}</div>
+      <div><div style="font-size:10px;color:#dc2626;font-weight:700;margin-bottom:3px;">✂️ Doctor shrinkage ${hodRate?'(blocked/week)':'(blocked slots)'}</div>${grid(c=>rnum(c.x),maxX*rk||1,'220,38,38')}</div>
     </div>
-    <div style="font-size:10.5px;color:#94a3b8;margin-top:6px;">Last <b>${WN} week${WN>1?'s':''}</b> (change with Window above). Volume = <i>where bookings land</i>; utilization = <i>where slots are full</i>.</div>
+    <div style="font-size:10.5px;color:#94a3b8;margin-top:6px;">Last <b>${WN} week${WN>1?'s':''}</b> (change with Window). Bookings/Shrinkage show <b>${hodRate?'per-week average':'window total'}</b> (toggle above); utilization is always a rate. Volume = <i>where bookings land</i>; utilization = <i>where slots are full</i>.</div>
     <div style="font-size:11.5px;color:#334155;background:#f5f3ff;border:1px solid #ddd6fe;border-radius:9px;padding:9px 12px;margin-top:10px;line-height:1.5;">
       <b>~${Math.round(loss)} bookings lost to availability over ${WN}w (~${Math.round(loss/WN)}/wk)</b> — each blocked slot × that exact hour's utilization (bookings ÷ available). A block at a <b>${peakU.u>=0?Math.round(peakU.u*100)+'%-full':'high-util'}</b> hour costs real bookings; a block at a near-empty hour costs ~nothing.
       <div style="color:#7c2d12;margin-top:5px;font-size:10.5px;">⚠ Caveat: assumes demand would have filled those slots. If <b>leads</b> also fell, some of the gap is missing demand, not blocked supply.</div>
