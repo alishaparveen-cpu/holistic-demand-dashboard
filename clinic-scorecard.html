@@ -234,7 +234,7 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--navy);font-
       <div class="sec-ltr">A</div>
       <div>
         <div class="sec-title">Total bookings — breakdown by type</div>
-        <div class="sec-sub">Two complete cuts of the same bookings, each summing to Total: WHO booked (New + Follow-up) and WHAT happened (status) · Click any row for trend</div>
+        <div class="sec-sub">New + Follow-up = Total · click any row to expand its exhaustive status breakdown (Completed / No-show / Rescheduled / Cancelled, summing to that segment)</div>
       </div>
     </div>
     <div class="sec-right">
@@ -248,14 +248,7 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--navy);font-
       <thead><tr><th>Booking type</th><th class="num">This week</th><th class="num">Last week</th><th class="num">4-wk avg</th><th class="num">WoW Δ</th><th style="width:100px">Trend (8w)</th><th>Note</th></tr></thead>
       <tbody id="tblA-body"></tbody>
     </table>
-    <div style="margin-top:16px">
-      <div style="font-size:11px;font-weight:500;color:var(--gray);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">Status rate within New vs Follow-up <span style="font-weight:400;text-transform:none">— count and % of each segment, this week</span></div>
-      <table class="tbl" id="tblAW">
-        <thead><tr><th>Status</th><th class="num">New (n)</th><th class="num">New %</th><th class="num">Follow-up (n)</th><th class="num">Follow-up %</th><th class="num">Total (n)</th><th class="num">Total %</th></tr></thead>
-        <tbody id="tblAW-body"></tbody>
-      </table>
-      <div class="ins ins-b" id="awInsight" style="margin-top:10px;margin-bottom:0"><i class="ti ti-bulb"></i><span></span></div>
-    </div>
+    <div class="ins ins-b" id="awInsight" style="margin-top:12px;margin-bottom:0"><i class="ti ti-bulb"></i><span></span></div>
   </div>
 </div>
 
@@ -740,51 +733,49 @@ function renderA() {
   const w=currentWeek;
   const newV=D.bookings.new_first[w], fuV=D.bookings.followup[w], totV=D.bookings.total[w];
   const sumOK = (newV+fuV)===totV;
-  // GROUP 1 — partitions the total (every booking is new OR follow-up)
+  // WHO booked = New + Follow-up = Total. Each row expands to its OWN exhaustive status breakdown.
   const whoRows = [
-    {label:'Total bookings', series:D.bookings.total, color:COLORS.p, note:'Every booking is counted once below', bold:true},
-    {label:'New first-time', series:D.bookings.new_first, color:COLORS.r, note:'Patient’s all-time first SC — real new demand', indent:true},
-    {label:'Follow-up', series:D.bookings.followup, color:COLORS.g, note:'Returning patient — not new demand', indent:true},
+    {label:'Total bookings', series:D.bookings.total, color:COLORS.p, seg:'total', note:'All bookings this week', bold:true},
+    {label:'New first-time', series:D.bookings.new_first, color:COLORS.r, seg:'new', note:'Patient’s all-time first SC — real new demand', indent:true},
+    {label:'Follow-up', series:D.bookings.followup, color:COLORS.g, seg:'fu', note:'Returning patient — not new demand', indent:true},
   ];
-  // GROUP 2 — EXHAUSTIVE status partition: every booking has exactly one status → sums to Total
-  const stDone=D.done, stMiss=D.noshows, stRp=D.resched_patient, stRn=D.resched_noshow;
-  const stOther=D.bookings.total.map((t,i)=>Math.max(0,t-(stDone[i]||0)-(stMiss[i]||0)-(stRp[i]||0)-(stRn[i]||0)));
-  const statRows = [
-    {label:'Completed', series:stDone, color:COLORS.g, note:'Patient attended & consulted', indent:true},
-    {label:'No-show (missed)', series:stMiss, color:COLORS.r, note:'Booked but did not attend', indent:true},
-    {label:'Rescheduled — by patient', series:stRp, color:COLORS.a, note:'Patient moved it to another time (status = rescheduled, prev ≠ missed)', indent:true},
-    {label:'Rescheduled — after no-show', series:stRn, color:COLORS.gr, note:'Missed, then re-booked — recovery (prev = missed)', indent:true},
-    {label:'Cancelled / still scheduled', series:stOther, color:COLORS.n, note:'Cancelled, or not yet resolved at data pull', indent:true},
-  ];
-  const statSum = (stDone[w]||0)+(stMiss[w]||0)+(stRp[w]||0)+(stRn[w]||0)+(stOther[w]||0);
   const tbody = document.getElementById('tblA-body');
   tbody.innerHTML='';
   let idx=0;
   const groupHdr=(txt,sub)=>{ const tr=document.createElement('tr'); tr.innerHTML=`<td colspan="7" style="padding:9px 12px 4px;background:#f8fafc;border-bottom:1px solid var(--bdr)"><span style="font-size:10px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;color:var(--navy)">${txt}</span> <span style="font-size:10px;color:var(--gray)">${sub}</span></td>`; tbody.appendChild(tr); };
+  // status breakdown (exhaustive, sums to the segment total) for new / fu / total
+  const segHTML=(seg)=>{
+    let g, base, lbl;
+    if(seg==='total'){ g={done:D.done[w]||0,missed:D.noshows[w]||0,rp:D.resched_patient[w]||0,rn:D.resched_noshow[w]||0}; base=D.bookings.total[w]||0; lbl='all'; }
+    else { const s=(D.statusWho||{})[seg]||{}, at=fn=>(s[fn]?s[fn][w]:0)||0; g={done:at('done'),missed:at('missed'),rp:at('resched_patient'),rn:at('resched_noshow')}; base=at('total'); lbl=(seg==='new'?'new':'follow-up'); }
+    const other=Math.max(0,base-g.done-g.missed-g.rp-g.rn);
+    const pc=n=>base>0?Math.round(n/base*100)+'%':'—';
+    const rs=[['Completed',g.done,COLORS.g],['No-show (missed)',g.missed,COLORS.r],['Rescheduled — by patient',g.rp,COLORS.a],['Rescheduled — after no-show',g.rn,COLORS.gr],['Cancelled / still scheduled',other,COLORS.n]];
+    return `<div style="font-size:11px;font-weight:600;color:var(--navy);margin-bottom:6px">What happened to these ${base} ${lbl} bookings — status (sums to ${base})</div>
+      <table class="tbl" style="margin:0;background:#fff;border-radius:8px"><thead><tr><th>Status</th><th class="num">Count</th><th class="num">% of ${lbl}</th></tr></thead><tbody>`
+      + rs.map(([l,n,c])=>`<tr><td>${l}</td><td class="num"><strong>${n}</strong></td><td class="num" style="color:${c};font-weight:600">${pc(n)}</td></tr>`).join('')
+      + `<tr style="border-top:2px solid var(--bdr)"><td style="color:var(--gray)">Total</td><td class="num"><strong>${base}</strong></td><td class="num">100%</td></tr></tbody></table>`;
+  };
   const dataRow=(r)=>{
     const i=idx++; const val=r.series[w], prev=(w>0?r.series[w-1]:val), a=avg4(r.series,w), w2=wow(r.series,w);
-    const rowId='rA-'+i, panelId='pA-'+i, canId='cA-'+i;
+    const rowId='rA-'+i, panelId='pA-'+i;
     const tr=document.createElement('tr'); tr.className='clickable'; tr.id=rowId; tr.setAttribute('data-panel',panelId);
-    tr.onclick=()=>toggleRowChart(rowId,panelId,canId,[{label:r.label,data:r.series,color:r.color}],{},null);
+    tr.onclick=()=>{ const p=document.getElementById(panelId); if(p){ const open=p.classList.toggle('open'); const chev=tr.querySelector('.aChev'); if(chev) chev.style.transform=open?'rotate(180deg)':''; } };
     const lblStyle=r.indent?'padding-left:22px':''; const strongOpen=r.bold?'<strong>':''; const strongClose=r.bold?'</strong>':'';
     tr.innerHTML=`
-      <td style="${lblStyle}">${strongOpen}${r.label}${strongClose}</td>
+      <td style="${lblStyle}">${strongOpen}${r.label}${strongClose} <i class="ti ti-chevron-down aChev" style="font-size:11px;color:var(--p);transition:transform .15s"></i></td>
       <td class="num"><strong>${val}</strong></td>
       <td class="num">${prev}</td>
       <td class="num">${a}</td>
       <td class="num ${w2.dir}">${w2.str}</td>
       <td>${sparkSVG(r.series,r.color,false)}</td>
-      <td style="font-size:11px;color:var(--gray)">${r.note}</td>`;
+      <td style="font-size:11px;color:var(--gray)">${r.note} <span style="color:var(--p)">· click to break down by status</span></td>`;
     tbody.appendChild(tr);
     const pr=document.createElement('tr');
-    pr.innerHTML=`<td colspan="7" style="padding:0"><div class="row-chart-wrap" id="${panelId}">
-      <div class="chart-box-lbl" style="padding:0 0 6px">${r.label} — 8-week trend</div>
-      <div class="row-chart-inner"><canvas id="${canId}" role="img" aria-label="${r.label} trend">${r.label} trend chart.</canvas></div>
-    </div></td>`;
+    pr.innerHTML=`<td colspan="7" style="padding:0"><div class="row-chart-wrap" id="${panelId}">${segHTML(r.seg)}</div></td>`;
     tbody.appendChild(pr);
   };
-  groupHdr('Who booked','New + Follow-up = Total '+(sumOK?'✓':'')); whoRows.forEach(dataRow);
-  groupHdr('What happened — status of every booking','Completed + No-show + Rescheduled + Cancelled/scheduled = Total '+(statSum===totV?'✓':`(${statSum} vs ${totV})`)); statRows.forEach(dataRow);
+  groupHdr('Who booked — New + Follow-up = Total '+(sumOK?'✓':''),'Click any row to expand its status breakdown (Completed / No-show / Rescheduled / Cancelled)'); whoRows.forEach(dataRow);
   // update insight (data-driven, no assumed direction)
   const nb=wow(D.bookings.new_first,w), fu=wow(D.bookings.followup,w), tb=wow(D.bookings.total,w);
   const wrap=document.getElementById('insA1').closest('.ins');
@@ -794,47 +785,23 @@ function renderA() {
   if(Math.abs(nb.pct)>=Math.abs(fu.pct)) read=`New first-time (real new demand) is the bigger mover — acquisition, not retention.`;
   else read=`Follow-ups moved more than new bookings — this is a retention/continuation shift, not new demand.`;
   if(wrap) wrap.className='ins '+(tb.pct<0?'ins-r':tb.pct>0?'ins-b':'ins-n');
-  document.getElementById('insA1').innerHTML=`<strong>Total bookings ${tb.str} WoW (${D.bookings.total[w-1]} → ${D.bookings.total[w]}).</strong> New first-time ${newWord}, follow-ups ${fuWord}. ${read} Click any row for its 8-week trend.`;
+  document.getElementById('insA1').innerHTML=`<strong>Total bookings ${tb.str} WoW (${D.bookings.total[w-1]} → ${D.bookings.total[w]}).</strong> New first-time ${newWord}, follow-ups ${fuWord}. ${read} Click <strong>New</strong> or <strong>Follow-up</strong> to break it down by status.`;
   renderAW();
 }
 
-/* ── RENDER Status × New/Follow-up crosstab ── */
+/* ── new-vs-follow-up comparison insight (shown under the bookings table) ── */
 function renderAW(){
-  const tb=document.getElementById('tblAW-body'); if(!tb) return;
-  const w=currentWeek, sw=D.statusWho; if(!sw||!sw.new){ tb.innerHTML=''; return; }
-  const nN=sw.new.total[w]||0, nF=sw.fu.total[w]||0, nT=nN+nF;
-  const segVal=(seg,f)=>seg[f][w]||0;
-  // cancelled/scheduled remainder per segment
-  const other=seg=>Math.max(0, segVal(seg,'total')-segVal(seg,'done')-segVal(seg,'missed')-segVal(seg,'resched_patient')-segVal(seg,'resched_noshow'));
-  const statuses=[
-    {label:'Completed', f:'done', col:COLORS.g},
-    {label:'No-show (missed)', f:'missed', col:COLORS.r},
-    {label:'Rescheduled — by patient', f:'resched_patient', col:COLORS.a},
-    {label:'Rescheduled — after no-show', f:'resched_noshow', col:COLORS.gr},
-    {label:'Cancelled / still scheduled', f:'__other', col:COLORS.n},
-  ];
-  const get=(seg,f)=> f==='__other'?other(seg):segVal(seg,f);
-  const pc=(a,b)=>b>0?Math.round(a/b*100)+'%':'—';
-  tb.innerHTML='';
-  statuses.forEach(s=>{
-    const vn=get(sw.new,s.f), vf=get(sw.fu,s.f), vt=vn+vf;
-    const tr=document.createElement('tr');
-    tr.innerHTML=`<td><strong>${s.label}</strong></td>
-      <td class="num">${vn}</td><td class="num" style="color:${s.col};font-weight:600">${pc(vn,nN)}</td>
-      <td class="num">${vf}</td><td class="num" style="color:${s.col};font-weight:600">${pc(vf,nF)}</td>
-      <td class="num"><strong>${vt}</strong></td><td class="num" style="font-weight:600">${pc(vt,nT)}</td>`;
-    tb.appendChild(tr);
-  });
-  // totals row
-  const trT=document.createElement('tr'); trT.style.borderTop='2px solid var(--bdr)';
-  trT.innerHTML=`<td style="color:var(--gray)">All bookings</td><td class="num"><strong>${nN}</strong></td><td class="num">100%</td><td class="num"><strong>${nF}</strong></td><td class="num">100%</td><td class="num"><strong>${nT}</strong></td><td class="num">100%</td>`;
-  tb.appendChild(trT);
-  // insight: compare completion & reschedule between segments
-  const doneN=pc(get(sw.new,'done'),nN), doneF=pc(get(sw.fu,'done'),nF);
-  const rpN=get(sw.new,'resched_patient'), rpF=get(sw.fu,'resched_patient');
-  const rpNp=nN>0?Math.round(rpN/nN*100):0, rpFp=nF>0?Math.round(rpF/nF*100):0;
-  const msN=nN>0?Math.round(get(sw.new,'missed')/nN*100):0, msF=nF>0?Math.round(get(sw.fu,'missed')/nF*100):0;
-  document.getElementById('awInsight').querySelector('span').innerHTML=`<strong>New patients complete at ${doneN} vs ${doneF} for follow-ups.</strong> Reschedules-by-patient differ sharply: ${rpNp}% of new vs ${rpFp}% of follow-ups — ${rpFp>rpNp?'returning patients move appointments far more (treatment-plan churn), so chasing them on confirmation pays off most':'new patients reschedule more, a first-visit commitment gap'}. No-show: ${msN}% new vs ${msF}% follow-up.`;
+  const el=document.getElementById('awInsight'); if(!el) return;
+  const w=currentWeek, sw=D.statusWho;
+  if(!sw||!sw.new){ el.style.display='none'; return; }
+  el.style.display='';
+  const v=(seg,f)=>(sw[seg][f]?sw[seg][f][w]:0)||0;
+  const nN=v('new','total'), nF=v('fu','total');
+  const pc=(a,b)=>b>0?Math.round(a/b*100):0;
+  const doneN=pc(v('new','done'),nN), doneF=pc(v('fu','done'),nF);
+  const rpN=pc(v('new','resched_patient'),nN), rpF=pc(v('fu','resched_patient'),nF);
+  const msN=pc(v('new','missed'),nN), msF=pc(v('fu','missed'),nF);
+  el.querySelector('span').innerHTML=`<strong>New vs Follow-up:</strong> completion ${doneN}% vs ${doneF}% · no-show ${msN}% vs ${msF}% · rescheduled-by-patient ${rpN}% vs ${rpF}%. ${rpF>rpN+10?'Follow-ups churn appointments far more — confirmation/slot-fit effort pays off most on returning patients.':doneN>doneF+5?'New patients complete more reliably than returning ones this week.':'Expand a row above for the full status split.'}`;
 }
 
 /* ── RENDER no-show-rate by day of week ── */
