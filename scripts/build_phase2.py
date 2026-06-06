@@ -108,9 +108,9 @@ def build_doctor():
 def build_status_who():
     # data_status_who.json: per clinic/week, status counts split by new/fu (and total derived)
     D = {}
-    SUB = ["total","done","missed","resched_patient","resched_noshow","cancelled","scheduled"]
+    SUB = ["total","done","missed","resched_patient","resched_clinic","resched_noshow","cancelled","scheduled"]
     for c in q("fetch_status_who.sql"):
-        if len(c) < 11: continue
+        if len(c) < 12: continue
         city,clinic,wk,who = c[0],c[1],c[2],c[3]
         if wk not in WI: continue
         o = D.setdefault(f"{city}|{clinic}", {seg:{f:[0]*12 for f in SUB} for seg in ("new","fu")})

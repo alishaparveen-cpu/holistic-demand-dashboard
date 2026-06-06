@@ -3,7 +3,8 @@
 -- Screening Call, offline. new = patient's all-time-first SC (created_at = MIN over full history).
 WITH sc_all AS (
   SELECT a.id, a.patient_id, a.created_at, a.start_time, LOWER(a.status) AS st,
-         LOWER(COALESCE(a.previous_status,'')) AS prev, loc.city, loc.locality
+         LOWER(COALESCE(a.previous_status,'')) AS prev, LOWER(COALESCE(a.reason,'')) AS rsn,
+         loc.city, loc.locality
   FROM allo_consultations.appointments a
   JOIN allo_consultations.types t ON a.type_id=t.id AND t.name='Screening Call'
   JOIN allo_health.locations loc ON a.location_id=loc.id AND loc.deleted_at IS NULL
@@ -20,7 +21,10 @@ SELECT s.city, s.locality AS clinic,
   SUM(CASE WHEN s.st IN ('completed','reconsulted') AND s.created_at<>f.first_crt THEN 1 ELSE 0 END) AS done_followup,
   SUM(CASE WHEN s.st='missed' THEN 1 ELSE 0 END) AS missed,
   SUM(CASE WHEN s.st='rescheduled' AND s.prev='missed' THEN 1 ELSE 0 END) AS resched_noshow,
-  SUM(CASE WHEN s.st='rescheduled' AND s.prev<>'missed' THEN 1 ELSE 0 END) AS resched_patient,
+  SUM(CASE WHEN s.st='rescheduled' AND s.prev<>'missed'
+        AND (s.rsn LIKE '%provider%' OR s.rsn LIKE '%doctor%' OR s.rsn LIKE '%nonbookable%' OR s.rsn LIKE '%hms%' OR s.rsn LIKE '%block%') THEN 1 ELSE 0 END) AS resched_clinic,
+  SUM(CASE WHEN s.st='rescheduled' AND s.prev<>'missed'
+        AND NOT (s.rsn LIKE '%provider%' OR s.rsn LIKE '%doctor%' OR s.rsn LIKE '%nonbookable%' OR s.rsn LIKE '%hms%' OR s.rsn LIKE '%block%') THEN 1 ELSE 0 END) AS resched_patient,
   -- no-show RECOVERY proxy: appointments now completed whose immediately-prior state was 'missed'
   SUM(CASE WHEN s.st IN ('completed','reconsulted') AND s.prev='missed' THEN 1 ELSE 0 END) AS recovered_done,
   SUM(CASE WHEN s.st='cancelled' THEN 1 ELSE 0 END) AS cancelled,
