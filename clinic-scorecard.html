@@ -443,6 +443,7 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--navy);font-
       <div class="f-s"><div class="f-n" id="cvConv">—</div><div class="f-l">Converted to treatment</div><div class="f-r" id="cvRate">—</div></div>
     </div>
     <div class="ins ins-b" id="cvInsight" style="margin-top:10px"><i class="ti ti-bulb"></i><span></span></div>
+    <div id="cvCost"></div>
     <table class="tbl" id="tblH" style="margin-top:6px">
       <thead><tr><th>Metric</th><th class="num">Latest mature wk</th><th class="num">4-wk avg (mature)</th><th style="width:120px">Trend (8w · last 4 maturing)</th><th>Note</th></tr></thead>
       <tbody id="tblH-body"></tbody>
@@ -475,7 +476,7 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--navy);font-
 <script>
 /* ── DATA ── */
 let WEEKS=[], WEEK_LABELS=[], currentWeek=7;
-let SC=null, LEADS=null, ROSTER=null, REM={}, SARVAM=null, CONV={}, DOCTOR={}, D=null;
+let SC=null, LEADS=null, ROSTER=null, REM={}, SARVAM=null, CONV={}, DOCTOR={}, MKT=null, D=null;
 let SEL=[];                                   // selected clinic keys (City|Clinic) — aggregated/summed
 let CLINICS=[], CITIES={};                    // all keys; city -> [keys]
 const NW=8;                                   // weeks shown (last 8 of the 12 pulled)
@@ -821,6 +822,20 @@ function renderH() {
     const pr=document.createElement('tr'); pr.innerHTML=`<td colspan="5" style="padding:0"><div class="row-chart-wrap" id="${panelId}"><div class="chart-box-lbl" style="padding:0 0 6px">${r.label} — 8w (last 4 weeks still maturing)</div><div class="row-chart-inner"><canvas id="${canId}" role="img">${r.label}</canvas></div></div></td>`;
     tb.appendChild(pr);
   });
+  // network-only Google paid-search cost per done consult (blended)
+  const cc=document.getElementById('cvCost');
+  if(cc){
+    const isNet = SEL.length===CLINICS.length;
+    if(isNet && MKT && MKT.google_ads && MKT.google_ads.weeks){
+      const wkKeys=Object.keys(MKT.google_ads.weeks).sort();
+      const latest=wkKeys[wkKeys.length-1];
+      const cost=Math.round((MKT.google_ads.weeks[latest]||{}).cost||0);
+      const doneNet=D.done[w]||0;
+      const cpd=doneNet>0?Math.round(cost/doneNet):0;
+      cc.className='ins ins-n'; cc.style.marginTop='8px'; cc.style.marginBottom='0';
+      cc.innerHTML=`<i class="ti ti-coin"></i><span><strong>Google paid-search spend ≈ ₹${cost.toLocaleString('en-IN')}/wk → ~₹${cpd.toLocaleString('en-IN')} per done consult</strong> (network, week of ${latest}). <em>Blended ratio, not true CAC:</em> it divides paid-search spend by <strong>all</strong> done consults (incl. organic/GMB/walk-in/Meta), so it's a directional efficiency number, not per-channel acquisition cost. For per-channel/per-campaign cost see the Marketing page.</span>`;
+    } else { cc.innerHTML=''; }
+  }
   const ins=document.getElementById('cvInsight');
   const r0=rate[mi]||0, lbl=WEEK_LABELS[mi]||'';
   ins.className='ins '+(r0>=22?'ins-b':r0>=15?'ins-a':'ins-r');
@@ -1266,7 +1281,7 @@ function applySelection(){
 }
 (async function(){
   try{
-    const [sc,lj,ros,rem,sar,cnv,doc]=await Promise.all([
+    const [sc,lj,ros,rem,sar,cnv,doc,mkt]=await Promise.all([
       fetch('data_scorecard.json').then(r=>r.json()),
       fetch('data_leads.json').then(r=>r.json()),
       fetch('data_roster.json').then(r=>r.json()),
@@ -1274,8 +1289,9 @@ function applySelection(){
       fetch('data_sarvam.json').then(r=>r.ok?r.json():null).catch(()=>null),
       fetch('data_conversion.json').then(r=>r.ok?r.json():{}).catch(()=>({})),
       fetch('data_doctor.json').then(r=>r.ok?r.json():{}).catch(()=>({})),
+      fetch('data_marketing.json').then(r=>r.ok?r.json():null).catch(()=>null),
     ]);
-    SC=sc; LEADS=lj; ROSTER=ros; REM=rem||{}; SARVAM=sar; CONV=cnv||{}; DOCTOR=doc||{};
+    SC=sc; LEADS=lj; ROSTER=ros; REM=rem||{}; SARVAM=sar; CONV=cnv||{}; DOCTOR=doc||{}; MKT=mkt;
     buildWeeks();
     CLINICS=Object.keys(SC).filter(k=>k!=='_meta').sort();
     CITIES={}; CLINICS.forEach(k=>{const c=k.split('|')[0]; (CITIES[c]=CITIES[c]||[]).push(k);});
