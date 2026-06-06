@@ -153,6 +153,37 @@ let LEADMAT={};   // data_lead_maturation.json — Google/GMB/Organic lead→boo
 function leadMat(city,clinic){ return LEADMAT[city+'|'+clinic] || (LEADMAT._meta&&LEADMAT._meta.network) || null; }
 let PRACTODOC={};   // data_practo_by_doctor.json — Practo leads/booked per clinic split by Doctor Name
 let LEADCONV=null;  // data_lead_conv.json — lead→booking conversion by contact mode + source (network)
+let AVAILHOD=null;  // data_avail_hod.json — per-clinic dow×hour bookings + slots/shrinkage (hour-granular availability)
+function availHodArr(city,clinic){ return AVAILHOD&&AVAILHOD.by_clinic ? AVAILHOD.by_clinic[city+'|'+clinic] : null; }
+// Two heatmaps (bookings + doctor shrinkage) by dow×hour + the hour-granular availability loss.
+function availHeatmaps(r){
+  const m=availHodArr(r.city,r.clinic); if(!m) return '';
+  const hours=new Set(); Object.values(m).forEach(hrs=>Object.keys(hrs).forEach(h=>hours.add(+h)));
+  const hrs=[...hours].sort((a,b)=>a-b); if(!hrs.length) return '';
+  const days=[['1','Mon'],['2','Tue'],['3','Wed'],['4','Thu'],['5','Fri'],['6','Sat'],['0','Sun']];
+  const dn={'0':'Sun','1':'Mon','2':'Tue','3':'Wed','4':'Thu','5':'Fri','6':'Sat'};
+  const hl=h=>{const x=+h;return (x%12||12)+(x<12?'a':'p');};
+  let maxB=0,maxX=0,loss=0,peakB={c:0};
+  days.forEach(([dw])=>hrs.forEach(h=>{ const c=(m[dw]||{})[h]||{}; const b=c.b||0,x=c.x||0,a=c.a||0;
+    if(b>maxB){maxB=b;} if(b>peakB.c){peakB={c:b,dw,h};} if(x>maxX)maxX=x; if(a>0) loss+=(b/a)*x; }));
+  const grid=(valFn,maxV,rgb)=>{
+    const head=`<tr><td></td>${hrs.map(h=>`<td style="font-size:7px;color:#cbd5e1;text-align:center">${hl(h)}</td>`).join('')}</tr>`;
+    const rows=days.map(([dw,lbl])=>`<tr><td style="font-size:8.5px;color:#64748b;font-weight:600;padding-right:4px;text-align:right">${lbl}</td>${hrs.map(h=>{const c=(m[dw]||{})[h]||{};const v=valFn(c);const al=maxV>0?v/maxV:0;
+      return `<td title="${dn[dw]} ${hl(h)}" style="width:18px;height:15px;text-align:center;font-size:7.5px;background:${v===0?'#f8fafc':'rgba('+rgb+','+(0.14+al*0.85)+')'};color:${al>0.55?'#fff':'#64748b'};border-radius:2px">${v||''}</td>`;}).join('')}</tr>`).join('');
+    return `<table style="border-spacing:1.5px;border-collapse:separate"><tbody>${head}${rows}</tbody></table>`;
+  };
+  return `<div style="margin-top:12px;border-top:1px dashed var(--line);padding-top:10px;">
+    <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:#94a3b8;margin-bottom:6px;">Peak slots vs doctor shrinkage — hour × day <span style="font-weight:500;text-transform:none;">(IST · 8wk)</span></div>
+    <div style="display:flex;gap:18px;flex-wrap:wrap;">
+      <div><div style="font-size:10px;color:#4338ca;font-weight:700;margin-bottom:3px;">📅 Bookings ${peakB.c?`· peak ${dn[peakB.dw]} ${hl(peakB.h)}`:''}</div>${grid(c=>c.b||0,maxB,'79,70,229')}</div>
+      <div><div style="font-size:10px;color:#dc2626;font-weight:700;margin-bottom:3px;">✂️ Doctor shrinkage (blocked slots)</div>${grid(c=>c.x||0,maxX,'220,38,38')}</div>
+    </div>
+    <div style="font-size:11.5px;color:#334155;background:#f5f3ff;border:1px solid #ddd6fe;border-radius:9px;padding:9px 12px;margin-top:10px;line-height:1.5;">
+      <b>~${Math.round(loss)} bookings lost to availability over 8 weeks (~${Math.round(loss/8)}/wk)</b> — computed <b>hour by hour</b>: each blocked slot × that exact hour's realized booking-rate (bookings ÷ available slots). This is sharper than the weekday/weekend average because blocking a <b>4pm</b> slot costs far more than a dead 11am one.
+      <div style="color:#7c2d12;margin-top:5px;font-size:10.5px;">⚠ Caveat: this assumes demand would have filled those slots. If <b>leads</b> also fell that week, some of the gap is missing demand, not blocked supply — the two can't be fully separated from this view alone.</div>
+    </div>
+  </div>`;
+}
 // Lead→conversion panel: how leads we engage convert to bookings, by contact mode + source. Network-level.
 function leadConvCard(){
   if(!LEADCONV||!LEADCONV.by_mode) return '';
@@ -1987,6 +2018,7 @@ function renderDeepDive(r){
       <b>${r1(r.av_w)} active doctor-days</b> this week (${signed(r1(r.dAct))} vs ${r1(r.av_avg)} norm) — wd ${r1(r.wd_w)} + we ${r1(r.we_w)}.${(r.weLost>0.3)?` <b style="color:#7c3aed">Weekend-weighted loss</b> — the costliest window.`:''}
     </div>
     ${ladder}
+    ${availHeatmaps(r)}
     <details style="margin-top:2px;">
       <summary style="cursor:pointer;font-size:11.5px;font-weight:700;color:#4338ca;padding:7px 0;outline:none;">Roster &amp; slot-shrinkage detail <span style="font-weight:500;color:#94a3b8;">— scheduled slots, weekly shrinkage trend, days open</span></summary>
       <div style="padding-top:4px;">${rosBlock}</div>
@@ -2302,7 +2334,7 @@ function renderOnline(){
 async function init(){
   try{
     const safe=u=>fetch(u,{cache:'no-store'}).catch(()=>({ok:false}));
-    const [jr,sr,lr,pr,rr,ld,rv,mk,bt,dg,ga,nr,gi,la,df,pbk,pl,lm,pd,lc]=await Promise.all([ fetch('data.json',{cache:'no-store'}), safe(SHEET_URL), safe(L0_URL), safe(PRACTO_URL), safe('data_roster.json'), safe('data_leads.json'), safe('data_reviews.json'), safe('data_marketing.json'), safe('data_booktype.json'), safe('data_diagnostic.json'), safe('data_ga_city.json'), safe('data_reviews_neg.json'), safe('data_gmb_insights.json'), safe('data_lead_age.json'), safe('data_demand_funnel.json'), safe('data_practo_booked.json'), safe('data_practo_leads.json'), safe('data_lead_maturation.json'), safe('data_practo_by_doctor.json'), safe('data_lead_conv.json') ]);
+    const [jr,sr,lr,pr,rr,ld,rv,mk,bt,dg,ga,nr,gi,la,df,pbk,pl,lm,pd,lc,ah]=await Promise.all([ fetch('data.json',{cache:'no-store'}), safe(SHEET_URL), safe(L0_URL), safe(PRACTO_URL), safe('data_roster.json'), safe('data_leads.json'), safe('data_reviews.json'), safe('data_marketing.json'), safe('data_booktype.json'), safe('data_diagnostic.json'), safe('data_ga_city.json'), safe('data_reviews_neg.json'), safe('data_gmb_insights.json'), safe('data_lead_age.json'), safe('data_demand_funnel.json'), safe('data_practo_booked.json'), safe('data_practo_leads.json'), safe('data_lead_maturation.json'), safe('data_practo_by_doctor.json'), safe('data_lead_conv.json'), safe('data_avail_hod.json') ]);
     if(!jr.ok) throw new Error('data.json not found');
     JDATA=await jr.json();
     // SDATA now comes from Redshift (data_diagnostic.json); the Google Sheet is a fallback only.
@@ -2328,6 +2360,7 @@ async function init(){
     if(lm.ok){ try{ LEADMAT=await lm.json(); }catch(_){ } }
     if(pd.ok){ try{ PRACTODOC=await pd.json(); }catch(_){ } }
     if(lc&&lc.ok){ try{ LEADCONV=await lc.json(); }catch(_){ } }
+    if(ah&&ah.ok){ try{ AVAILHOD=await ah.json(); }catch(_){ } }
     const wSel=document.getElementById('weekSelect');
     WEEKS.forEach((w,i)=>{ const o=document.createElement('option'); o.value=i; o.textContent=w.label+(i===0?' (latest)':''); if(i===0)o.selected=true; wSel.appendChild(o); });
     render(); updateRefreshBadge();
