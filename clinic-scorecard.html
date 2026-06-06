@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Clinic Scorecard · Allo Health</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+:root{--ink:#0f172a;--muted:#64748b;--dim:#94a3b8;--line:#e2e8f0;}
+html,body{background:#f8fafc;color:var(--ink);font-family:ui-sans-serif,system-ui,sans-serif;font-size:13px;margin:0;}
+.nav-link{font-size:12px;color:#64748b;text-decoration:none;padding:4px 8px;border-radius:6px;}
+.nav-link:hover{background:#f1f5f9;color:#0f172a;} .nav-link.active{font-weight:700;color:#0f172a;background:#f1f5f9;}
+.nav-sep{color:#e2e8f0;font-size:14px;}
+.card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:16px 18px;box-shadow:0 1px 3px rgba(15,23,42,.05);margin-bottom:14px;}
+.bh{font-size:14px;font-weight:800;display:flex;align-items:center;gap:8px;margin-bottom:2px;}
+.bnum{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:7px;background:#eef2ff;color:#4338ca;font-weight:800;font-size:11px;flex:none;}
+.bsub{font-size:11px;color:var(--muted);margin-bottom:11px;line-height:1.45;}
+table.sc{width:100%;border-collapse:collapse;font-size:12px;}
+table.sc th{background:#f8fafc;color:#64748b;font-weight:700;font-size:9.5px;letter-spacing:.04em;text-transform:uppercase;padding:6px 8px;text-align:right;border-bottom:2px solid var(--line);white-space:nowrap;}
+table.sc th:first-child{text-align:left;}
+table.sc td{padding:6px 8px;border-bottom:1px solid #f1f5f9;text-align:right;white-space:nowrap;}
+table.sc td:first-child{text-align:left;font-weight:600;color:#334155;}
+table.sc tr:hover td{background:#fafaff;}
+.need{display:inline-block;font-size:9px;font-weight:700;color:#9a3412;background:#fff7ed;border:1px solid #fed7aa;border-radius:5px;padding:1px 6px;margin-left:5px;}
+.flag{display:flex;align-items:center;gap:8px;font-size:12px;padding:8px 11px;border-radius:9px;margin-bottom:6px;line-height:1.4;}
+.loading-msg{display:flex;align-items:center;justify-content:center;min-height:200px;color:var(--muted);}
+select{font-size:13px;border:1.5px solid #4f46e5;border-radius:7px;padding:5px 10px;background:#fff;font-weight:600;color:#4338ca;cursor:pointer;}
+</style>
+</head>
+<body class="min-h-screen">
+<script>if(!sessionStorage.getItem("allo_dash_auth"))location.replace("index.html");</script>
+<div style="max-width:1000px;margin:0 auto;padding:14px 18px 60px;">
+  <nav style="display:flex;align-items:center;gap:2px;flex-wrap:wrap;margin-bottom:12px;">
+    <a href="index.html" class="nav-link">← Dashboard</a><span class="nav-sep">|</span>
+    <a href="diagnostic.html" class="nav-link">Diagnostic</a>
+    <a href="marketing.html" class="nav-link">Marketing</a>
+    <span class="nav-link active">Clinic Scorecard</span>
+  </nav>
+  <div style="display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:4px;">
+    <h1 style="font-size:20px;font-weight:800;margin:0;">Clinic Scorecard</h1>
+    <span style="font-size:10.5px;font-weight:700;color:#9a3412;background:#fff7ed;border:1px solid #fed7aa;border-radius:6px;padding:2px 9px;">PROTOTYPE · 1 clinic</span>
+    <select id="clinicSel" onchange="CUR=this.value;render()"></select>
+  </div>
+  <div style="font-size:12px;color:var(--muted);margin-bottom:14px;">A city head reads top-down: <b>Did bookings drop?</b> → <b>which type?</b> → <b>where from?</b> → <b>did B2D drop, for whom?</b> → <b>are no-shows recovered?</b> Each block answers the next question.</div>
+  <div id="main"><div class="loading-msg">Loading…</div></div>
+</div>
+<script>
+let DIAG=null, LA=null, LEADS=null, PR=null, CUR='Bangalore|Bellandur';
+const WEEKS=["2026-05-25","2026-05-18","2026-05-11","2026-05-04","2026-04-27","2026-04-20","2026-04-13","2026-04-06","2026-03-30","2026-03-23","2026-03-16","2026-03-09"];
+const wkLabel=w=>{ const d=new Date(w+'T00:00:00'), e=new Date(d); e.setDate(d.getDate()+6); const M=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']; return `${d.getDate()} ${M[d.getMonth()]}–${e.getDate()} ${M[e.getMonth()]}`; };
+const A=(o,f)=>(o&&o[f])?o[f]:Array(12).fill(0);
+const sum=a=>a.reduce((s,x)=>s+(+x||0),0);
+function stat(arr){ const now=arr[0]||0, last=arr[1]||0, avg4=Math.round(sum(arr.slice(1,5))/4*10)/10, d=now-last, dp=last>0?Math.round(d/last*100):(now>0?100:0); return {now,last,avg4,d,dp}; }
+const cN=v=>v==null?'—':v;
+const wowCell=s=>{ const col=s.d>0?'#059669':s.d<0?'#dc2626':'#94a3b8'; return `<span style="color:${col};font-weight:700;">${s.d>0?'+':''}${s.d} <span style="font-size:9px;">(${s.dp>0?'+':''}${s.dp}%)</span></span>`; };
+function row(label, arr, need){ const s=stat(arr); return `<tr><td>${label}${need?`<span class="need">🔧 ${need}</span>`:''}</td><td>${s.now}</td><td>${s.last}</td><td>${s.avg4}</td><td>${wowCell(s)}</td></tr>`; }
+function pct(n,d){ return d>0?Math.round(n/d*100):0; }
+
+function render(){
+  const el=document.getElementById('main');
+  const o=DIAG[CUR]; if(!o){ el.innerHTML='<div class="loading-msg">No data for this clinic.</div>'; return; }
+  const la=LA[CUR]||{}, lj=LEADS[CUR]||{}, pj=PR[CUR]||null;
+  const allBk=A(o,'allBk'), nw=A(o,'bkNew'), rep=A(o,'bkRepeat'), res=A(o,'bkResched'), mis=A(o,'bkMissed'), don=A(o,'bkDone'), dnw=A(o,'bkDoneNew'), drep=A(o,'bkDoneRepeat');
+  const sSame=A(la,'same'), sLast=A(la,'last'), sOld=A(la,'older');
+  const W=0; // this week = idx 0
+  // ── Block 6 flags (computed first so they sit on top) ──
+  const flags=[];
+  const newS=stat(nw); if(newS.dp<=-20) flags.push(['🔴','#fef2f2','#991b1b',`New bookings down <b>${newS.dp}%</b> WoW (${newS.last}→${newS.now})`]);
+  const b2d=pct(don[W],allBk[W]); if(b2d<70) flags.push(['🔴','#fef2f2','#991b1b',`B2D% is <b>${b2d}%</b> — below the 70% bar`]);
+  const nsRate=pct(mis[W],allBk[W]); if(nsRate>30) flags.push(['🔴','#fef2f2','#991b1b',`No-show rate <b>${nsRate}%</b> — above 30%`]);
+  if((A(lj,'gmb')[W]||0)===0) flags.push(['🟡','#fffbeb','#92400e',`Zero GMB leads this week`]);
+  if((sOld[W]||0)===0 && sum(sOld.slice(1,6))>0) flags.push(['🟡','#fffbeb','#92400e',`No bookings from older leads (30d+) — old pipeline not being worked`]);
+  if(b2d>=85) flags.push(['🟢','#f0fdf4','#166534',`B2D% strong at <b>${b2d}%</b> — call out good ops`]);
+  const flagBlock = flags.length ? `<div class="card">${flags.map(f=>`<div class="flag" style="background:${f[1]};color:${f[2]};">${f[0]} ${f[3]}</div>`).join('')}</div>`
+    : `<div class="card"><div class="flag" style="background:#f0fdf4;color:#166534;">🟢 No red/amber flags this week.</div></div>`;
+
+  // ── Block 1 — Bookings overview ──
+  const b1 = `<div class="card"><div class="bh"><span class="bnum">1</span>Bookings overview</div>
+    <div class="bsub">Did bookings drop — and which <b>type</b>? Patient-requested reschedules are a demand signal; no-show reschedules are a quality failure being recycled (split needs a pull).</div>
+    <table class="sc"><thead><tr><th>Metric</th><th>This wk</th><th>Last wk</th><th>4-wk avg</th><th>WoW △</th></tr></thead><tbody>
+      ${row('Total bookings', allBk)}
+      ${row('New (first-time)', nw)}
+      ${row('Follow-up (returning)', rep)}
+      ${row('Rescheduled — all', res)}
+      <tr><td style="color:#94a3b8;">↳ Patient-requested vs No-show recycled<span class="need">🔧 reschedule-reason pull</span></td><td colspan="4" style="text-align:left;color:#cbd5e1;font-style:italic;">split not in data yet</td></tr>
+    </tbody></table></div>`;
+
+  // ── Block 2 — New bookings by lead age ──
+  const ageTot = (sSame[W]||0)+(sLast[W]||0)+(sOld[W]||0);
+  const ageRow=(lab,v)=>`<tr><td>${lab}</td><td>${v}</td><td>${ageTot>0?Math.round(v/ageTot*100):0}%</td></tr>`;
+  const b2 = `<div class="card"><div class="bh"><span class="bnum">2</span>New bookings by lead age</div>
+    <div class="bsub">Is the drop a <b>demand</b> problem (fewer fresh leads converting) or a <b>reactivation</b> problem (old pipeline not worked)? · ${ageTot} new bookings traced to lead-creation date this week.</div>
+    <table class="sc"><thead><tr><th>Lead age</th><th>Bookings</th><th>% of new</th></tr></thead><tbody>
+      ${ageRow('Lead created this week (fresh)', sSame[W]||0)}
+      ${ageRow('Lead created last week (7–14d)', sLast[W]||0)}
+      ${ageRow('Lead created 2+ weeks ago (older)', sOld[W]||0)}
+      <tr><td style="color:#94a3b8;">Finer 2–4wk / 1–3mo / 3+mo split<span class="need">🔧 finer lead-age pull</span></td><td colspan="2" style="text-align:left;color:#cbd5e1;font-style:italic;">3 buckets today; 5 needs a pull</td></tr>
+    </tbody></table></div>`;
+
+  // ── Block 3 — New bookings by channel (leads available; bookings/C2B need a pull) ──
+  const ch=[['Google Ads','google_ad'],['GMB','gmb'],['Meta / FB','fb'],['Organic','organic'],['JustDial','justdial'],['Other / Direct','others']];
+  const chRows = ch.map(([lab,k])=>{ const s=stat(A(lj,k)); return `<tr><td>${lab}</td><td>${s.now}</td><td style="color:#cbd5e1;">—</td><td style="color:#cbd5e1;">—</td><td>${wowCell(s)}</td></tr>`; }).join('');
+  const prNow = pj? (pj.leads&&pj.leads[W])||0 : null;
+  const b3 = `<div class="card"><div class="bh"><span class="bnum">3</span>New bookings by channel</div>
+    <div class="bsub">Did <b>volume</b> drop (fewer leads from a channel) or <b>conversion</b> drop (same leads, fewer booked)? · <b class="need">🔧 bookings &amp; C2B per channel need a pull</b> — leads shown today.</div>
+    <table class="sc"><thead><tr><th>Channel</th><th>Leads</th><th>Bookings</th><th>C2B%</th><th>Leads WoW</th></tr></thead><tbody>
+      ${chRows}
+      <tr><td>Practo</td><td>${prNow==null?'—':prNow}</td><td style="color:#cbd5e1;">—</td><td style="color:#cbd5e1;">—</td><td style="color:#cbd5e1;">—</td></tr>
+      <tr><td style="color:#94a3b8;">WhatsApp chatbot<span class="need">🔧 not tracked</span></td><td colspan="4" style="text-align:left;color:#cbd5e1;font-style:italic;">channel not in lead data</td></tr>
+    </tbody></table></div>`;
+
+  // ── Block 4 — B2D by booking type ──
+  const b2dRow=(lab,bk,dn,need)=>`<tr><td>${lab}${need?`<span class="need">🔧 ${need}</span>`:''}</td><td>${bk}</td><td>${dn}</td><td><b style="color:${pct(dn,bk)>=70?'#059669':pct(dn,bk)>=50?'#d97706':'#dc2626'}">${pct(dn,bk)}%</b></td></tr>`;
+  const b4 = `<div class="card"><div class="bh"><span class="bnum">4</span>Book→Done (B2D) by booking type</div>
+    <div class="bsub">If overall B2D dropped, <b>which patient type</b> stopped showing? No-show-rescheduled usually has the lowest B2D — rising volume there drags the average without a real quality problem.</div>
+    <table class="sc"><thead><tr><th>Booking type</th><th>Booked</th><th>Done</th><th>B2D%</th></tr></thead><tbody>
+      ${b2dRow('New first-time', nw[W]||0, dnw[W]||0)}
+      ${b2dRow('Follow-up (returning)', rep[W]||0, drep[W]||0)}
+      <tr><td style="color:#94a3b8;">Rescheduled (patient) · No-show rescheduled<span class="need">🔧 done-by-reschedule-type pull</span></td><td colspan="3" style="text-align:left;color:#cbd5e1;font-style:italic;">not split in data yet</td></tr>
+    </tbody></table></div>`;
+
+  // ── Block 5 — No-show & recovery ──
+  const b5 = `<div class="card"><div class="bh"><span class="bnum">5</span>No-show &amp; recovery</div>
+    <div class="bsub">Are no-shows being <b>recovered</b>? High recovery = not a crisis, just volume. Low recovery = the calling team isn't working it. <b class="need">🔧 call-log &amp; recovery need a pull</b>.</div>
+    <table class="sc"><thead><tr><th>Metric</th><th>This wk</th><th>Last wk</th><th>△</th></tr></thead><tbody>
+      ${row('Total no-shows', mis)}
+      <tr><td style="color:#94a3b8;">Called back · Rescheduled · Net recovered · Recovery %<span class="need">🔧 call-log pull</span></td><td colspan="3" style="text-align:left;color:#cbd5e1;font-style:italic;">no call-log source connected</td></tr>
+    </tbody></table></div>`;
+
+  // ── Day-of-week B2D (needs pull) ──
+  const bDow = `<div class="card" style="border-style:dashed;background:#fafafa;"><div class="bh"><span class="bnum">+</span>Day-of-week B2D <span class="need">🔧 appointments-by-day pull</span></div>
+    <div class="bsub">Some clinics have a consistent no-show day (e.g. Mon AM, Sun PM) — an <b>ops</b> fix, not a demand one. Needs a per-day appointment-status pull.</div></div>`;
+
+  el.innerHTML = `
+    <div style="font-size:11px;color:#94a3b8;margin-bottom:10px;">${CUR.split('|')[1]}, ${CUR.split('|')[0]} · week ${wkLabel(WEEKS[0])} (vs prior &amp; 4-wk avg)</div>
+    ${flagBlock}${b1}${b2}${b3}${b4}${b5}${bDow}
+    <div class="card" style="background:#eef2ff;border-color:#ddd6fe;"><div class="bh" style="color:#3730a3;">🔧 What needs an engineering data pull</div>
+      <div style="font-size:11.5px;color:#475569;line-height:1.7;">
+        1. <b>Reschedule reason</b> — split patient-requested vs no-show-recycled (Block 1 &amp; 4).<br>
+        2. <b>Finer lead-age buckets</b> — 2–4wk / 1–3mo / 3+mo (Block 2).<br>
+        3. <b>Bookings &amp; C2B by channel</b> — attribute each booking to its lead channel (Block 3); add WhatsApp chatbot.<br>
+        4. <b>Call log / no-show recovery</b> — called-back, rescheduled, showed, recovery % by channel (Block 5).<br>
+        5. <b>Day-of-week B2D</b> — per-day appointment status.<br>
+        <span style="color:#94a3b8;">Hardest join (flag to eng): linking each booking to <b>when its original lead was created</b>, not last-touched.</span>
+      </div></div>`;
+}
+(async()=>{
+  try{
+    const safe=u=>fetch(u,{cache:'no-store'}).then(r=>r.ok?r.json():null).catch(()=>null);
+    [DIAG,LA,LEADS,PR]=await Promise.all([safe('data_diagnostic.json'),safe('data_lead_age.json'),safe('data_leads.json'),safe('data_practo_leads.json')]);
+    if(!DIAG) throw new Error('data_diagnostic.json not found');
+    const sel=document.getElementById('clinicSel');
+    sel.innerHTML=Object.keys(DIAG).filter(k=>k!=='_meta').sort().map(k=>`<option value="${k}" ${k===CUR?'selected':''}>${k.replace('|',' · ')}</option>`).join('');
+    if(!DIAG[CUR]){ CUR=Object.keys(DIAG).find(k=>k!=='_meta'); sel.value=CUR; }
+    render();
+  }catch(e){ document.getElementById('main').innerHTML='<div class="loading-msg" style="color:#dc2626">'+e.message+'</div>'; }
+})();
+</script>
+</body>
+</html>
