@@ -761,7 +761,7 @@ function renderAggView(r, levelLabel){
     ${vc('📞','Consults done',done_w,'',pctOf(done_w-done_n,done_n),doneRate+'% of '+r.bk_w+' completed',spark(rev(r.bkDoneArr),'#0891b2',hi,null,done_n))}
     ${r.aggHasHrs?vc('🩺','Available hours',r1(availH_w),'h',availH_pct,'scheduled × (1−shrinkage) · '+r1(rh_w)+'h − '+_shrPct+'% blocked',availSplitChart(rev(wdAvailHArr),rev(weAvailHArr),hi,availH_n,wkS,'hours')):vc('🩺','Availability',r1(r.av_w),'d',pctOf(r.dAct,r.av_avg),'doctor-days',availSplitChart(rev(r.wdArr),rev(r.weArr),hi,r.av_avg,wkS))}
     ${vc('🗓️','Active days',r1(r.av_w),'d',pctOf(r.dAct,r.av_avg),'doctor-days · '+r1(r.wd_w)+' wd + '+r1(r.we_w)+' we',availSplitChart(rev(r.wdArr),rev(r.weArr),hi,r.av_avg,wkS,'days'))}
-    ${(()=>{const sm=r.aggSame,ldn=r.ldArr[W]||0,bks=sm[W]||0,tr=groupBars([{vals:rev(r.ldArr),color:'#cbd5e1',label:'Leads'},{vals:rev(sm),color:'#0ea5e9',label:'Booked'}],hi,v=>Math.round(v),null,wkS);return vc('⛳','Lead→book %',l2b_w,'%',null,'<b>'+bks+'</b> of <b>'+ldn+'</b> leads booked same week · vs '+_l2bN+'% norm · bars = leads vs booked',tr);})()}
+    ${(()=>{const sm=r.aggSame,ldn=r.ldArr[W]||0,bks=sm[W]||0,tr=groupBars([{vals:rev(r.ldArr),color:'#cbd5e1',label:'Leads'},{vals:rev(sm),color:'#0ea5e9',label:'Booked'}],hi,v=>Math.round(v),null,wkS)+`<div style="font-size:8.5px;color:#cbd5e1;font-weight:700;text-transform:uppercase;margin:3px 0 0;">Lead→book % trend</div>`+spark(rev(l2bArr),'#0ea5e9',hi,v=>v+'%',_l2bN);return vc('⛳','Lead→book %',l2b_w,'%',null,'<b>'+bks+'</b> of <b>'+ldn+'</b> leads booked same week · vs '+_l2bN+'% norm · bars = leads vs booked, line = %',tr);})()}
     ${vc('✅','Book→done %',b2d_w,'%',null,'consults done ÷ booked · vs '+_b2dN+'% norm',spark(rev(b2dArr),'#059669',hi,v=>v+'%',_b2dN))}
   </div>`;
   return `<div class="card"><div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;"><div style="font-size:18px;font-weight:800;">${levelLabel}</div><div style="font-size:11px;color:#94a3b8;">${r.mat} · ${WEEKS[wkIdx].label} · same snapshot as a clinic, aggregated</div></div>${hd}${ov}</div>`;
@@ -1191,20 +1191,21 @@ function practoSection(rows){
 // see at a glance how the latest point sits vs the clinic's recent norm.
 function spark(vals, color, hiIdx, fmt, refVal){
   const w=340,h=90,pad=10;
+  const hasRef = refVal!=null && isFinite(refVal);
+  const rpad = hasRef?14:10, RM = hasRef?58:4;   // rpad = inner gap so last value clears; RM = right margin holding the "norm" label
   const valid=vals.filter(x=>x!=null);                 // null = no data that week → render as a gap, not 0
   if(valid.length<2) return '<div style="color:#94a3b8;font-size:11px;">no trend</div>';
-  const hasRef = refVal!=null && isFinite(refVal);
   const mn=Math.min(...valid,0,hasRef?refVal:Infinity), mx=Math.max(...valid,1,hasRef?refVal:-Infinity), rng=(mx-mn)||1;
-  const X=i=>pad+i/(vals.length-1)*(w-2*pad), Y=v=>h-pad-(v-mn)/rng*(h-2*pad);
+  const X=i=>pad+i/(vals.length-1)*(w-pad-rpad), Y=v=>h-pad-(v-mn)/rng*(h-2*pad);
   let path='', pen=false;                              // break the line across null gaps
   vals.forEach((v,i)=>{ if(v==null){ pen=false; return; } path+=(pen?'L':'M')+X(i).toFixed(1)+' '+Y(v).toFixed(1)+' '; pen=true; });
   const dots=vals.map((v,i)=> v==null?'':`<circle cx="${X(i).toFixed(1)}" cy="${Y(v).toFixed(1)}" r="${i===hiIdx?4:2.5}" fill="${i===hiIdx?color:'#fff'}" stroke="${color}" stroke-width="1.5"/>`).join('');
   const labs=vals.map((v,i)=> v==null?'':`<text x="${X(i).toFixed(1)}" y="${(Y(v)-7).toFixed(1)}" font-size="9" fill="${i===hiIdx?color:'#64748b'}" text-anchor="middle" font-weight="${i===hiIdx?800:500}">${fmt?fmt(v):v}</text>`).join('');
   let ref='';
   if(hasRef){ const ry=Y(refVal).toFixed(1);
-    ref=`<line x1="${pad}" y1="${ry}" x2="${w-pad}" y2="${ry}" stroke="#94a3b8" stroke-width="1" stroke-dasharray="3 3"/>`+
-        `<text x="${w-pad}" y="${(+ry-3).toFixed(1)}" font-size="8" fill="#94a3b8" text-anchor="end">norm ${fmt?fmt(refVal):r1(refVal)}</text>`; }
-  return `<svg width="100%" viewBox="0 0 ${w} ${h+4}" style="overflow:visible;">${ref}<path d="${path}" fill="none" stroke="${color}" stroke-width="2"/>${dots}${labs}</svg>`;
+    ref=`<line x1="${pad}" y1="${ry}" x2="${(w+RM-10).toFixed(1)}" y2="${ry}" stroke="#94a3b8" stroke-width="1" stroke-dasharray="3 3"/>`+
+        `<text x="${(w-pad+8).toFixed(1)}" y="${(+ry+3.3).toFixed(1)}" font-size="9.5" font-weight="700" fill="#64748b" text-anchor="start">norm ${fmt?fmt(refVal):r1(refVal)}</text>`; }
+  return `<svg width="100%" viewBox="0 0 ${w+RM} ${h+4}" style="overflow:visible;">${ref}<path d="${path}" fill="none" stroke="${color}" stroke-width="2"/>${dots}${labs}</svg>`;
 }
 // Multi-line sparkline — e.g. Total / GMB+Google / Practo leads on one chart so
 // you can see WHERE a lead gap came from. series=[{vals,color,label,width}].
@@ -1259,7 +1260,7 @@ function availSplitChart(wd, we, hi, normTot, weeks, unit){
   const base=h-padB;
   const Y=v=>base-(v/mx)*(base-padT);
   const normY=(normTot&&normTot>0)?Y(normTot):null;
-  const norm=normY!=null?`<line x1="${padX}" y1="${normY.toFixed(1)}" x2="${w-padX}" y2="${normY.toFixed(1)}" stroke="#94a3b8" stroke-width="1" stroke-dasharray="3 3"/><text x="${w-padX}" y="${(normY-3).toFixed(1)}" font-size="8" fill="#94a3b8" text-anchor="end">norm ${r1(normTot)}</text>`:'';
+  const norm=normY!=null?`<line x1="${padX}" y1="${normY.toFixed(1)}" x2="${(w+28).toFixed(1)}" y2="${normY.toFixed(1)}" stroke="#94a3b8" stroke-width="1" stroke-dasharray="3 3"/><text x="${(w-padX+6).toFixed(1)}" y="${(normY+3.2).toFixed(1)}" font-size="9" font-weight="700" fill="#64748b" text-anchor="start">norm ${r1(normTot)}</text>`:'';
   const bars=tot.map((t,i)=>{
     const x=X(i)-bw/2, wdv=wd[i]||0, wev=we[i]||0, hl=i===hi;
     const wdTop=Y(wdv), totTop=Y(t), wdH=base-wdTop, weH=wdTop-totTop;
@@ -1276,7 +1277,7 @@ function availSplitChart(wd, we, hi, normTot, weeks, unit){
   const legend=`<div style="margin-bottom:4px;font-size:10px;color:#475569;font-weight:600;">
     <span style="margin-right:12px;"><span style="display:inline-block;width:10px;height:10px;background:#7c3aed;border-radius:2px;vertical-align:middle;margin-right:4px;"></span>Weekday ${unit}</span>
     <span><span style="display:inline-block;width:10px;height:10px;background:#c4b5fd;border-radius:2px;vertical-align:middle;margin-right:4px;"></span>Weekend ${unit}</span></div>`;
-  return `${legend}<svg width="100%" viewBox="0 0 ${w} ${h+2}" style="overflow:visible;">${norm}${bars}</svg>`;
+  return `${legend}<svg width="100%" viewBox="0 0 ${w+42} ${h+2}" style="overflow:visible;">${norm}${bars}</svg>`;
 }
 // Stacked composition bars — N sources stacked per week so the bar HEIGHT = total leads and
 // each colour band = that source's share. No crossing lines (unlike a multi-line). Clickable
@@ -2509,8 +2510,8 @@ function renderDeepDive(r){
         : vchip('🩺','Availability', r1(r.av_w),'d', pctOf(r.dAct,r.av_avg), 'realized doctor-days · wd '+r1(r.wd_w)+' + we '+r1(r.we_w), availSplitChart(rev(r.wdArr), rev(r.weArr), hi, r.av_avg, wkS))}
       ${vchip('🗓️','Active days', r1(r.av_w),'d', pctOf(r.dAct,r.av_avg), 'doctor-days · '+r1(r.wd_w)+' weekday + '+r1(r.we_w)+' weekend', availSplitChart(rev(r.wdArr), rev(r.weArr), hi, r.av_avg, wkS, 'days'))}
       ${(()=>{ const _ldNow=r.ldArr[wkIdx]||0, _smA=_l2bHasLA?_l2bSame:r.bkNewArr, _bkSame=_smA[wkIdx]||0, _norm=Math.round(avg(l2bArr.slice(wkIdx+1,wkIdx+6)));
-        const _trend=groupBars([{vals:rev(r.ldArr),color:'#cbd5e1',label:'Leads'},{vals:rev(_smA),color:'#0ea5e9',label:'Booked'}], hi, v=>Math.round(v), null, wkS);
-        return vchip('⛳','Lead→book %', l2b_w,'%', null, `<b>${_bkSame}</b> of <b>${_ldNow}</b> leads booked ${_l2bHasLA?'same week':'(new ÷ leads)'} · vs ${_norm}% norm · bars = leads vs booked/wk`, _trend); })()}
+        const _trend=groupBars([{vals:rev(r.ldArr),color:'#cbd5e1',label:'Leads'},{vals:rev(_smA),color:'#0ea5e9',label:'Booked'}], hi, v=>Math.round(v), null, wkS)+`<div style="font-size:8.5px;color:#cbd5e1;font-weight:700;text-transform:uppercase;margin:3px 0 0;">Lead→book % trend</div>`+spark(rev(l2bArr),'#0ea5e9',hi,v=>v+'%',_norm);
+        return vchip('⛳','Lead→book %', l2b_w,'%', null, `<b>${_bkSame}</b> of <b>${_ldNow}</b> leads booked ${_l2bHasLA?'same week':'(new ÷ leads)'} · vs ${_norm}% norm · bars = leads vs booked, line = %`, _trend); })()}
       ${vchip('✅','Book→done %', b2d_w,'%', null, 'consults done ÷ booked · vs '+Math.round(avg(b2dArr.slice(wkIdx+1,wkIdx+6)))+'% norm', spark(rev(b2dArr),'#059669',hi,v=>v+'%',avg(b2dArr.slice(wkIdx+1,wkIdx+6))))}
     </div></div>`;
   // the "why" fork — leads down (demand/sources) vs leads held (conversion)
