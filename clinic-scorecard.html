@@ -1724,58 +1724,28 @@ function renderBHOD(){
     <div style="font-size:10.5px;color:var(--gray);margin-top:8px">Last <b>${WN} week${WN>1?'s':''}</b> (change with Window). Bookings/Shrinkage show <b>${bhodRate?'per-week average':'window total'}</b>; utilization is always a rate. <b>For roster planning</b> — keep high-utilization cells covered. Volume = <i>where bookings land</i>; utilization = <i>where slots are full</i>; shrinkage = <i>where doctors blocked slots</i>.</div>
   </div>`;
 }
-/* ── Lead → conversion by contact mode + source (network) ── */
+/* ── How patients who booked here originally reached us (CLINIC-LEVEL).
+   The network-level "Lead → conversion / how we engage leads" funnel was removed from the
+   clinic scorecard — it was identical for every clinic (the lead end carries no clinic), so it
+   added no clinic-specific signal here. The same network engagement view still lives elsewhere. ── */
 function renderLeadConv(){
   const el=document.getElementById('leadConvPanel'); if(!el) return;
-  if(!LEADCONV||!LEADCONV.by_mode){ el.innerHTML=''; return; }
-  const wk=LEADCONV.weeks.length-1;
-  const rows=Object.entries(LEADCONV.by_mode).map(([m,d])=>({m,leads:d.leads[wk],booked:d.booked[wk]})).sort((a,b)=>b.leads-a.leads);
-  const maxL=Math.max(...rows.map(r=>r.leads),1);
-  const col=p=>p>=35?'#16a34a':p>=15?'#d97706':'#dc2626';
-  const ic={'Inbound call':'📞','Outbound call':'📲','WhatsApp':'💬','Website self-serve':'🌐','Other':'•'};
-  const bar=r=>{ const p=r.leads>0?Math.round(r.booked/r.leads*100):0;
-    return `<div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid #f1f5f9;font-size:12px">
-      <span style="flex:0 0 150px;color:#334155;font-weight:600">${ic[r.m]||''} ${r.m}</span>
-      <span style="flex:1;position:relative;height:20px;background:#f8fafc;border-radius:5px;overflow:hidden">
-        <span style="position:absolute;left:0;top:0;height:100%;width:${r.leads/maxL*100}%;background:#e0e7ff"></span>
-        <span style="position:absolute;left:0;top:0;height:100%;width:${r.booked/maxL*100}%;background:${col(p)}"></span>
-        <span style="position:absolute;left:6px;top:2px;font-size:10px;color:#475569">${r.leads.toLocaleString()} → ${r.booked.toLocaleString()} booked</span></span>
-      <span style="flex:0 0 44px;text-align:right;font-weight:800;color:${col(p)}">${p}%</span></div>`; };
-  const src=(LEADCONV.by_source||[]).map(s=>{ const p=s.leads>0?Math.round(s.booked/s.leads*100):0;
-    return `<tr><td>${s.src}</td><td class="num">${s.leads.toLocaleString()}</td><td class="num">${s.booked.toLocaleString()}</td><td class="num" style="font-weight:800;color:${col(p)}">${p}%</td></tr>`; }).join('');
-  const called=rows.filter(r=>/call/i.test(r.m)).reduce((a,r)=>({l:a.l+r.leads,b:a.b+r.booked}),{l:0,b:0});
-  const unc=rows.filter(r=>!/call/i.test(r.m)).reduce((a,r)=>({l:a.l+r.leads,b:a.b+r.booked}),{l:0,b:0});
-  const cP=called.l?Math.round(called.b/called.l*100):0, uP=unc.l?Math.round(unc.b/unc.l*100):0;
-  // CLINIC-ACCURATE: of patients who booked at the SELECTED clinic(s) THIS WEEK, how did they originally reach us?
-  let cmBlock='';
-  if(CONTACTMODE&&CONTACTMODE.by_clinic){
-    const monSel=WEEK_MON[currentWeek];               // selected week's Monday key
-    const sumWk=mon=>{ const agg={}; SEL.forEach(k=>{ const wk=(CONTACTMODE.by_clinic[k]||{})[mon]; if(wk) Object.entries(wk).forEach(([mode,n])=>{agg[mode]=(agg[mode]||0)+n;}); }); return agg; };
-    const agg=sumWk(monSel);
-    const ord=['Call','Website','WhatsApp','Practo','Walk-in/Ops','Other','Unknown'];
-    const entries=ord.filter(m=>agg[m]).map(m=>[m,agg[m]]);
-    const tot=entries.reduce((a,[,n])=>a+n,0);
-    if(tot>0){ const cic={Call:'📞',Website:'🌐',WhatsApp:'💬',Practo:'⭐','Walk-in/Ops':'🏥',Other:'•',Unknown:'?'};
-      // weekly trend per mode over the displayed weeks (for the mini sparkline)
-      const modeSeries=m=>WEEK_MON.map(mon=>{const a=sumWk(mon); return a[m]||0;});
-      const bars=entries.map(([m,n])=>{const p=Math.round(n/tot*100); const ser=modeSeries(m);
-        return `<div style="display:flex;align-items:center;gap:8px;font-size:11.5px;padding:3px 0"><span style="flex:0 0 110px;color:#334155">${cic[m]||''} ${m}</span><span style="flex:1;height:14px;background:#f1f5f9;border-radius:4px;overflow:hidden"><span style="display:block;height:100%;width:${p}%;background:#6366f1"></span></span><span style="flex:0 0 64px;text-align:right;font-weight:700">${n.toLocaleString()} · ${p}%</span><span style="flex:0 0 64px">${sparkSVG(ser,'#6366f1',false)}</span></div>`;}).join('');
-      cmBlock=`<div style="margin-top:14px;border-top:1px dashed var(--bdr);padding-top:10px">
-        <div style="font-size:12px;font-weight:600;color:var(--navy)">📍 How patients who booked here originally reached us <span style="color:#16a34a;font-weight:700">● CLINIC-LEVEL</span></div>
-        <div style="font-size:11px;color:var(--gray);margin:2px 0 8px">For the selected clinic(s), the original contact mode (from <code>lead.origin</code> at creation) of the <b>${tot.toLocaleString()}</b> patients who booked in <b>${WEEK_LABELS[currentWeek]||'this week'}</b>. Use the week selector at the top to change the week; sparkline = weekly trend. Walk-in/Ops = staff-created (retool).</div>
-        ${bars}</div>`;
-    }
-  }
+  if(!CONTACTMODE||!CONTACTMODE.by_clinic){ el.innerHTML=''; return; }
+  const monSel=WEEK_MON[currentWeek];               // selected week's Monday key
+  const sumWk=mon=>{ const agg={}; SEL.forEach(k=>{ const wk=(CONTACTMODE.by_clinic[k]||{})[mon]; if(wk) Object.entries(wk).forEach(([mode,n])=>{agg[mode]=(agg[mode]||0)+n;}); }); return agg; };
+  const agg=sumWk(monSel);
+  const ord=['Call','Website','WhatsApp','Practo','Walk-in/Ops','Other','Unknown'];
+  const entries=ord.filter(m=>agg[m]).map(m=>[m,agg[m]]);
+  const tot=entries.reduce((a,[,n])=>a+n,0);
+  if(tot<=0){ el.innerHTML=''; return; }
+  const cic={Call:'📞',Website:'🌐',WhatsApp:'💬',Practo:'⭐','Walk-in/Ops':'🏥',Other:'•',Unknown:'?'};
+  const modeSeries=m=>WEEK_MON.map(mon=>{const a=sumWk(mon); return a[m]||0;});
+  const bars=entries.map(([m,n])=>{const p=Math.round(n/tot*100); const ser=modeSeries(m);
+    return `<div style="display:flex;align-items:center;gap:8px;font-size:11.5px;padding:3px 0"><span style="flex:0 0 110px;color:#334155">${cic[m]||''} ${m}</span><span style="flex:1;height:14px;background:#f1f5f9;border-radius:4px;overflow:hidden"><span style="display:block;height:100%;width:${p}%;background:#6366f1"></span></span><span style="flex:0 0 64px;text-align:right;font-weight:700">${n.toLocaleString()} · ${p}%</span><span style="flex:0 0 64px">${sparkSVG(ser,'#6366f1',false)}</span></div>`;}).join('');
   el.innerHTML=`<div class="sec" style="padding:16px 18px">
-    <div style="font-size:13px;font-weight:600;color:var(--navy);margin-bottom:2px">🔗 Lead → conversion — how we engage leads <span style="color:#d97706;font-weight:700">● NETWORK</span></div>
-    <div style="font-size:11px;color:var(--gray);margin-bottom:10px">Of leads we get, how many <b>book</b>, by how the lead was engaged (priority: inbound call › outbound › WhatsApp › website). Booked = matched to a screening call within 14d. <b>Network-level</b> — the lead end carries no clinic, so this is the same for every clinic.</div>
-    <div style="font-size:11.5px;color:#334155;background:#eff6ff;border:1px solid #bfdbfe;border-radius:9px;padding:9px 12px;margin-bottom:10px;line-height:1.5">
-      <b>Leads on a call convert at ${cP}%</b> (${called.b.toLocaleString()}/${called.l.toLocaleString()}); WhatsApp / uncalled-website convert at <b>${uP}%</b> (${unc.b.toLocaleString()}/${unc.l.toLocaleString()}). <b>The lever is calling the uncalled leads.</b></div>
-    ${rows.map(bar).join('')}
-    <details style="margin-top:10px"><summary style="cursor:pointer;font-size:11px;color:var(--p);font-weight:700">By source — conversion by channel (last 4 weeks)</summary>
-      <table class="tbl" style="margin-top:6px"><thead><tr><th>Source</th><th class="num">Leads</th><th class="num">Booked</th><th class="num">Conv%</th></tr></thead><tbody>${src}</tbody></table></details>
-    ${cmBlock}
-  </div>`;
+    <div style="font-size:13px;font-weight:600;color:var(--navy)">📍 How patients who booked here originally reached us <span style="color:#16a34a;font-weight:700">● CLINIC-LEVEL</span></div>
+    <div style="font-size:11px;color:var(--gray);margin:2px 0 8px">For the selected clinic(s), the original contact mode (from <code>lead.origin</code> at creation) of the <b>${tot.toLocaleString()}</b> patients who booked in <b>${WEEK_LABELS[currentWeek]||'this week'}</b>. Use the week selector at the top to change the week; sparkline = weekly trend. Walk-in/Ops = staff-created (retool).</div>
+    ${bars}</div>`;
 }
 
 /* ── RENDER SECTION G: prioritised fixes derived from live signals ── */
