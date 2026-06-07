@@ -321,6 +321,7 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--navy);font-
       <thead><tr><th>Channel</th><th class="num">Leads this wk</th><th class="num">% of total</th><th class="num">Last wk</th><th class="num">WoW Δ</th><th style="width:100px">Trend (8w)</th><th>Note</th></tr></thead>
       <tbody id="tblD-body"></tbody>
     </table>
+    <div class="ins ins-n" id="leadMoverInsight" style="margin-top:12px;margin-bottom:0"><i class="ti ti-bulb"></i><span></span></div>
     <div style="margin-top:14px">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:8px">
         <div style="font-size:11px;font-weight:500;color:var(--gray);text-transform:uppercase;letter-spacing:.4px">Lead age at time of booking — click any bucket to see trend</div>
@@ -1196,6 +1197,25 @@ function renderD() {
   const scope = ageChannel==='all' ? 'tagged bookings' : chanLbl+' leads';
   if(totLa===0){ aiEl.querySelector('span').textContent=`No ${scope} this week to age${ageChannel!=='all'?' (try another channel)':' (this clinic’s bookings are mostly walk-in/direct)'}.`; }
   else aiEl.querySelector('span').innerHTML=`<strong>${sameP}% of ${scope} (${sameW}/${totLa}) came from same-week leads.</strong> ${ageChannel==='all'?'Allo’s leads convert fast, so older buckets are naturally near-zero (not missing). ':''}Only <strong>${aged}</strong> came from leads older than a week${aged>0?' — reactivated/aged-lead wins':''}.${ageChannel==='all'?` Covers only the ${D.coverage[w]}% of bookings with a source tag.`:' Practo is excluded from the age split (separate feed).'}`;
+  // ── biggest channel mover this week vs its 4-wk norm — the "where did demand move" verdict (ported from Quick View's source drill) ──
+  (()=>{
+    const el=document.getElementById('leadMoverInsight'); if(!el) return; const span=el.querySelector('span');
+    const norm4=s=>{ const a=(s||[]).slice(Math.max(0,w-4),w); return a.length?a.reduce((x,y)=>x+y,0)/a.length:0; };
+    const chans=[['Google Ads',L.google],['GMB',L.gmb],['Meta / FB',L.meta],['Practo',L.practo],['Organic / Direct',L.organic],['Justdial / Other',L.other]];
+    const moves=chans.map(([name,s])=>{ const v=(s||[])[w]||0, n=norm4(s); return {name,v,n,d:v-n}; }).filter(m=>m.n>0.5||m.v>0);
+    if(!moves.length){ el.style.display='none'; return; } el.style.display='';
+    const fall=moves.slice().sort((a,b)=>a.d-b.d)[0], rise=moves.slice().sort((a,b)=>b.d-a.d)[0];
+    const totD=Math.round(((L.total||[])[w]||0)-norm4(L.total||[])), pc=(d,n)=>n>0?Math.round(d/n*100):0;
+    let msg;
+    if(fall.d<=-1){ el.className='ins ins-r';
+      msg=`<strong>${fall.name}</strong> drove the lead shortfall: ${Math.round(fall.n)}→${fall.v} (${pc(fall.d,fall.n)}% vs 4-wk norm)`;
+      if(rise.d>=1) msg+=`, partly offset by <strong>${rise.name}</strong> +${Math.round(rise.d)}`;
+      msg+=`. Total leads ${totD>=0?'+':''}${totD} this week — check this channel's spend / GMB reviews / impression-share in the Marketing &amp; Efficiency tabs.`;
+    } else if(rise.d>=1){ el.className='ins ins-a';
+      msg=`<strong>${rise.name}</strong> led lead growth: ${Math.round(rise.n)}→${rise.v} (+${pc(rise.d,rise.n)}% vs 4-wk norm). No channel fell materially — demand is healthy.`;
+    } else { el.className='ins ins-n'; msg=`All channels broadly held vs their 4-wk norms — no single channel moved demand this week.`; }
+    span.innerHTML=msg;
+  })();
 }
 /* ── lead-age channel filter ── */
 function setAgeChannel(ch){ ageChannel=ch; renderD(); const s=document.getElementById('ageChanSel'); if(s)s.value=ch; }
