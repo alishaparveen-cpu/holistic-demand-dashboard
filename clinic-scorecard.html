@@ -461,7 +461,7 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--navy);font-
 <script>
 /* ── DATA ── */
 let WEEKS=[], WEEK_LABELS=[], WEEK_MON=[], currentWeek=7;
-let SC=null, LEADS=null, ROSTER=null, REM={}, SARVAM=null, CONV={}, DOCTOR={}, MKT=null, SWHO={}, RETEN={}, CALLBACK={}, PRACTO={}, LAGE={}, L2C=null, DAILY={}, LEADCONV=null, CONTACTMODE=null, BHOD=null, AVAILHOD=null, BOOKSRC=null, D=null;
+let SC=null, LEADS=null, ROSTER=null, REM={}, SARVAM=null, CONV={}, DOCTOR={}, MKT=null, SWHO={}, RETEN={}, CALLBACK={}, PRACTO={}, LAGE={}, L2C=null, DAILY={}, LEADCONV=null, CONTACTMODE=null, BHOD=null, AVAILHOD=null, BOOKSRC=null, REBOOKGAP={}, D=null;
 let bhodWin=8, bhodRate=false;   // hour×day heatmap: window weeks · Total vs per-week
 function setBhodWin(v){ bhodWin=v; renderBHOD(); }
 function setBhodRate(v){ bhodRate=v; renderBHOD(); }
@@ -472,6 +472,9 @@ let CLINICS=[], CITIES={};                    // all keys; city -> [keys]
 const NW=8;                                   // weeks shown (last 8 of the 12 pulled)
 const _M=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 function ser(a){ return (a||Array(12).fill(0)).slice(0,NW).reverse(); }   // newest-first 12 → oldest-first NW
+// re-book gap split (same-day / 1–6d / 7–13d since prior SC) for the selected week, summed across SEL
+function rebookGapW(){ const idx=(NW-1)-currentWeek, o={d0:0,d1_6:0,d7_13:0};   // idx → newest-first 12-week index
+  SEL.forEach(k=>{ const g=REBOOKGAP[k]; if(!g)return; ['d0','d1_6','d7_13'].forEach(b=>{ o[b]+=((g[b]||[])[idx])||0; }); }); return o; }
 function pctSer(num,den){ return num.map((n,i)=>{ const d=den[i]||0; return d>0?Math.round(n/d*100):0; }); }
 function buildWeeks(){
   const W12=(SC._meta&&SC._meta.weeks)||["2026-05-25","2026-05-18","2026-05-11","2026-05-04","2026-04-27","2026-04-20","2026-04-13","2026-04-06","2026-03-30","2026-03-23","2026-03-16","2026-03-09"];
@@ -1626,7 +1629,11 @@ function renderBookFlow(){
     boxes+=_bfBox(xBk,bkY,bw,boxH,'Bookings',TOT.toLocaleString(),'#475569');
     segs.forEach(s=>{ boxes+=_bfBox(xSeg,s.y,sw_,boxH,s.lbl,s.total.toLocaleString(),s.c); s.outs.forEach(o=>{ boxes+=_bfBox(xOut,o.y,ow,boxH,o.lbl,o.v.toLocaleString(),o.c,10); }); });
     const rp=segs.reduce((a,s)=>a+V(s.k,'resched_patient'),0), ro=segs.reduce((a,s)=>a+V(s.k,'resched_clinic'),0);
-    const sub=`Each booking split by <b>New (first-time)</b> · <b>Re-booked</b> (a reschedule / no-show re-book within 14d — the same intended visit re-created) · <b>Genuine return</b> (a real repeat 14d+ later), then by what happened (% on the lines). Re-booked is churn, not new demand.`+((rp+ro)>0?` Of reschedules, <b>${rp}</b> patient-side vs <b>${ro}</b> ops-side.`:'');
+    const _rbTot=(segs.find(s=>s.k==='rebook')||{}).total||0;
+    let _gapNote='';
+    if(_rbTot>0){ const g=rebookGapW(), gt=g.d0+g.d1_6+g.d7_13; if(gt>0){ const pcf=x=>Math.round(x/gt*100);
+      _gapNote=` <b>↳ Re-booked from which date:</b> <b style="color:#d97706">${g.d0}</b> same-day (${pcf(g.d0)}%), <b style="color:#d97706">${g.d1_6}</b> within 1–6 days (${pcf(g.d1_6)}%), <b style="color:#d97706">${g.d7_13}</b> after 7–13 days (${pcf(g.d7_13)}%) — measured from the patient's prior Screening Call. Most churn is near-immediate.`; } }
+    const sub=`Each booking split by <b>New (first-time)</b> · <b>Re-booked</b> (a reschedule / no-show re-book within 14d — the same intended visit re-created) · <b>Genuine return</b> (a real repeat 14d+ later), then by what happened (% on the lines). Re-booked is churn, not new demand.`+((rp+ro)>0?` Of reschedules, <b>${rp}</b> patient-side vs <b>${ro}</b> ops-side.`:'')+_gapNote;
     const svg=`<svg width="100%" viewBox="0 -20 ${vw} ${totH+24}" preserveAspectRatio="xMinYMin meet" style="font-family:inherit;display:block">${_bfHdr(xBk,bw,'BOOKED')}${_bfHdr(xSeg,sw_,'NEW vs FOLLOW-UP')}${_bfHdr(xOut,ow,'WHAT HAPPENED')}${lines}${boxes}</svg>`;
     wrap('🔀 Booking flow — what happened to this week’s bookings',sub,svg,'New = patient’s first-ever Screening Call. Statuses live from <code>appointments</code>.');
     return;
@@ -1869,7 +1876,7 @@ function applySelection(){
 (async function(){
   try{
     const _cb='?t='+Date.now();   // cache-bust so data rebuilds always show fresh
-    const [sc,lj,ros,rem,sar,cnv,doc,mkt,swho,ret,cbk,prc,lage,l2c,daily,lcv,cmd,bhod,bsrc,ahod]=await Promise.all([
+    const [sc,lj,ros,rem,sar,cnv,doc,mkt,swho,ret,cbk,prc,lage,l2c,daily,lcv,cmd,bhod,bsrc,ahod,rbg]=await Promise.all([
       fetch('data_scorecard.json'+_cb).then(r=>r.json()),
       fetch('data_leads.json'+_cb).then(r=>r.json()),
       fetch('data_roster.json'+_cb).then(r=>r.json()),
@@ -1890,8 +1897,9 @@ function applySelection(){
       fetch('data_booking_hod.json'+_cb).then(r=>r.ok?r.json():null).catch(()=>null),
       fetch('data_booking_source.json'+_cb).then(r=>r.ok?r.json():null).catch(()=>null),
       fetch('data_avail_hod.json'+_cb).then(r=>r.ok?r.json():null).catch(()=>null),
+      fetch('data_rebook_gap.json'+_cb).then(r=>r.ok?r.json():null).catch(()=>null),
     ]);
-    SC=sc; LEADS=lj; ROSTER=ros; REM=rem||{}; SARVAM=sar; CONV=cnv||{}; DOCTOR=doc||{}; MKT=mkt; SWHO=swho||{}; RETEN=ret||{}; CALLBACK=cbk||{}; PRACTO=prc||{}; LAGE=lage||{}; L2C=l2c; DAILY=daily||{}; LEADCONV=lcv; CONTACTMODE=cmd; BHOD=bhod; BOOKSRC=bsrc; AVAILHOD=ahod;
+    SC=sc; LEADS=lj; ROSTER=ros; REM=rem||{}; SARVAM=sar; CONV=cnv||{}; DOCTOR=doc||{}; MKT=mkt; SWHO=swho||{}; RETEN=ret||{}; CALLBACK=cbk||{}; PRACTO=prc||{}; LAGE=lage||{}; L2C=l2c; DAILY=daily||{}; LEADCONV=lcv; CONTACTMODE=cmd; BHOD=bhod; BOOKSRC=bsrc; AVAILHOD=ahod; REBOOKGAP=rbg||{};
     buildWeeks();
     CLINICS=Object.keys(SC).filter(k=>k!=='_meta').sort();
     CITIES={}; CLINICS.forEach(k=>{const c=k.split('|')[0]; (CITIES[c]=CITIES[c]||[]).push(k);});
