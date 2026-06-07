@@ -416,7 +416,7 @@ function geoMatchRow(r){ return geoSel.has('c|'+r.city) || geoSel.has('k|'+r.cit
 function geoScopeText(){ const cs=[...geoSel].filter(t=>t[0]==='c').map(t=>t.slice(2)); const ks=[...geoSel].filter(t=>t[0]==='k').map(t=>t.split('|').slice(2).join(' ')); return [...cs,...ks].join(', '); }
 function geoLabel(){ if(!geoSel.size) return 'All clinics'; if(geoSel.size===1) return geoScopeText(); return geoSel.size+' selected'; }
 function geoToggle(){ geoOpen=!geoOpen; geoQ=''; renderGeo(); }
-function geoClear(){ geoSel.clear(); selClinic=''; render(); renderGeo(); }
+function geoClear(){ geoSel.clear(); selClinic=''; drillMetric=null; render(); renderGeo(); }
 function drillCity(city){ geoSel.clear(); geoSel.add('c|'+city); selClinic=''; render(); if(typeof renderGeo==='function')renderGeo(); window.scrollTo(0,0); }
 function geoSearchInput(v){ geoQ=(v||'').toLowerCase(); renderGeoList(); }
 function geoPick(tok){ tok=decodeURIComponent(tok); geoSel.has(tok)?geoSel.delete(tok):geoSel.add(tok);
@@ -751,20 +751,76 @@ function renderAggView(r, levelLabel){
   const l2bArr=r.bkArr.map((b,i)=>{const l=r.ldArr[i]||0,conv=r.aggSame[i]||0;return l>0?Math.min(100,Math.round(conv/l*100)):0;});
   const b2dArr=r.bkArr.map((b,i)=>{const d=r.bkDoneArr[i]||0;return b>0?Math.round(d/b*100):0;});
   const l2b_w=l2bArr[W], b2d_w=b2dArr[W], _l2bN=Math.round(avg(l2bArr.slice(W+1,W+6))), _b2dN=Math.round(avg(b2dArr.slice(W+1,W+6)));
-  const dTile=(icon,label,val,delta,du)=>{const fl=delta==null||Math.abs(delta)<0.5,c=fl?'#94a3b8':delta<0?'#dc2626':'#059669',ar=fl?'–':delta<0?'▼':'▲';return `<div style="flex:1 1 0;min-width:92px;background:#f8fafc;border:1px solid var(--line);border-radius:9px;padding:6px 10px;"><div style="font-size:8.5px;font-weight:700;text-transform:uppercase;letter-spacing:.03em;color:#94a3b8;">${icon} ${label}</div><div style="display:flex;align-items:baseline;gap:5px;margin-top:1px;"><span style="font-size:15px;font-weight:800;color:#0f172a;">${val}</span><span style="font-size:10.5px;font-weight:800;color:${c};">${ar}${fl?'':Math.abs(Math.round(delta))+(du||'%')}</span></div></div>`;};
-  const hd=`<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:11px;">${dTile('🩺','Availability',Math.round(r.av_w)+'d',pctOf(r.dAct,r.av_avg),'%')}${dTile('🔎','Leads',r.ld_w,Math.round(r.dLeadPct),'%')}${dTile('⛳','Lead→Book',l2b_w+'%',l2b_w-_l2bN,'pp')}${dTile('✅','Book→Done',b2d_w+'%',b2d_w-_b2dN,'pp')}${dTile('📅','Total bookings',r.bk_w,gapPct,'%')}</div>`;
-  const vc=(icon,title,val,unit,dpct,sub,svg)=>`<div class="card" style="margin:0;"><div style="font-size:12px;font-weight:700;color:#0f172a;">${icon} ${title}</div><div style="display:flex;align-items:baseline;gap:8px;margin:1px 0;"><span style="font-size:23px;font-weight:800;color:#0f172a;line-height:1.1;">${val}<span style="font-size:11px;font-weight:600;color:#94a3b8;">${unit||''}</span></span>${dpct==null?'':`<span style="font-size:12.5px;font-weight:800;color:${dCol(dpct)};">${signed(dpct,'%')}</span>`}</div><div style="font-size:10px;color:#94a3b8;margin-bottom:4px;">${sub}</div>${svg}</div>`;
+  const _drillable=r.aggRows&&r.aggRows.length>1;   // only drill when there's >1 city/clinic to break into
+  const dTile=(icon,label,val,delta,du,mk)=>{const fl=delta==null||Math.abs(delta)<0.5,c=fl?'#94a3b8':delta<0?'#dc2626':'#059669',ar=fl?'–':delta<0?'▼':'▲',clk=mk&&_drillable;return `<div ${clk?`onclick="setDrillMetric('${mk}')" title="Click → ${label} by ${geoSel.size?'clinic':'city'}"`:''} style="flex:1 1 0;min-width:92px;background:#f8fafc;border:1px solid var(--line);border-radius:9px;padding:6px 10px;${clk?'cursor:pointer;':''}"${clk?` onmouseover="this.style.background='#eef2ff'" onmouseout="this.style.background='#f8fafc'"`:''}><div style="font-size:8.5px;font-weight:700;text-transform:uppercase;letter-spacing:.03em;color:#94a3b8;">${icon} ${label}${clk?' <span style="color:#a5b4fc;">▸</span>':''}</div><div style="display:flex;align-items:baseline;gap:5px;margin-top:1px;"><span style="font-size:15px;font-weight:800;color:#0f172a;">${val}</span><span style="font-size:10.5px;font-weight:800;color:${c};">${ar}${fl?'':Math.abs(Math.round(delta))+(du||'%')}</span></div></div>`;};
+  const hd=`<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:11px;">${dTile('🩺','Availability',Math.round(r.av_w)+'d',pctOf(r.dAct,r.av_avg),'%','avail')}${dTile('🔎','Leads',r.ld_w,Math.round(r.dLeadPct),'%','leads')}${dTile('⛳','Lead→Book',l2b_w+'%',l2b_w-_l2bN,'pp','l2b')}${dTile('✅','Book→Done',b2d_w+'%',b2d_w-_b2dN,'pp','b2d')}${dTile('📅','Total bookings',r.bk_w,gapPct,'%','total')}</div>`;
+  const vc=(icon,title,val,unit,dpct,sub,svg,mk)=>{const clk=mk&&_drillable;return `<div class="card" ${clk?`onclick="setDrillMetric('${mk}')" title="Click → ${title} by ${geoSel.size?'clinic':'city'}"`:''} style="margin:0;${clk?'cursor:pointer;':''}"><div style="font-size:12px;font-weight:700;color:#0f172a;">${icon} ${title}${clk?' <span style="font-size:9px;color:#a5b4fc;font-weight:700;">▸ drill</span>':''}</div><div style="display:flex;align-items:baseline;gap:8px;margin:1px 0;"><span style="font-size:23px;font-weight:800;color:#0f172a;line-height:1.1;">${val}<span style="font-size:11px;font-weight:600;color:#94a3b8;">${unit||''}</span></span>${dpct==null?'':`<span style="font-size:12.5px;font-weight:800;color:${dCol(dpct)};">${signed(dpct,'%')}</span>`}</div><div style="font-size:10px;color:#94a3b8;margin-bottom:4px;">${sub}</div>${svg}</div>`;};
   const ov=`<div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:12px;">
-    ${vc('🆕','New bookings',new_w,'',newPct,'first-time · vs '+r1(new_n)+' norm',spark(rev(r.bkNewArr),'#4f46e5',hi,null,new_n))}
-    ${vc('📅','All scheduled bookings',r.bk_w,'',gapPct,'new+repeat · vs '+exp+' exp',spark(rev(r.bkArr),'#6366f1',hi,null,r.bkBase))}
-    ${vc('🔎','Leads',r.ld_w,'',Math.round(r.dLeadPct),'inbound · vs '+Math.round(r.ld_avg)+' norm',spark(rev(r.ldArr),'#0ea5e9',hi,null,r.ld_avg))}
-    ${vc('📞','Consults done',done_w,'',pctOf(done_w-done_n,done_n),doneRate+'% of '+r.bk_w+' completed',spark(rev(r.bkDoneArr),'#0891b2',hi,null,done_n))}
-    ${r.aggHasHrs?vc('🩺','Available hours',r1(availH_w),'h',availH_pct,'scheduled × (1−shrinkage) · '+r1(rh_w)+'h − '+_shrPct+'% blocked',availSplitChart(rev(wdAvailHArr),rev(weAvailHArr),hi,availH_n,wkS,'hours')):vc('🩺','Availability',r1(r.av_w),'d',pctOf(r.dAct,r.av_avg),'doctor-days',availSplitChart(rev(r.wdArr),rev(r.weArr),hi,r.av_avg,wkS))}
-    ${vc('🗓️','Active days',r1(r.av_w),'d',pctOf(r.dAct,r.av_avg),'doctor-days · '+r1(r.wd_w)+' wd + '+r1(r.we_w)+' we',availSplitChart(rev(r.wdArr),rev(r.weArr),hi,r.av_avg,wkS,'days'))}
-    ${(()=>{const sm=r.aggSame,ldn=r.ldArr[W]||0,bks=sm[W]||0,tr=groupBars([{vals:rev(r.ldArr),color:'#cbd5e1',label:'Leads'},{vals:rev(sm),color:'#0ea5e9',label:'Booked'}],hi,v=>Math.round(v),null,wkS)+`<div style="font-size:8.5px;color:#cbd5e1;font-weight:700;text-transform:uppercase;margin:3px 0 0;">Lead→book % trend</div>`+spark(rev(l2bArr),'#0ea5e9',hi,v=>v+'%',_l2bN);return vc('⛳','Lead→book %',l2b_w,'%',null,'<b>'+bks+'</b> of <b>'+ldn+'</b> leads booked same week · vs '+_l2bN+'% norm · bars = leads vs booked, line = %',tr);})()}
-    ${vc('✅','Book→done %',b2d_w,'%',null,'consults done ÷ booked · vs '+_b2dN+'% norm',spark(rev(b2dArr),'#059669',hi,v=>v+'%',_b2dN))}
+    ${vc('🆕','New bookings',new_w,'',newPct,'first-time · vs '+r1(new_n)+' norm',spark(rev(r.bkNewArr),'#4f46e5',hi,null,new_n),'new')}
+    ${vc('📅','All scheduled bookings',r.bk_w,'',gapPct,'new+repeat · vs '+exp+' exp',spark(rev(r.bkArr),'#6366f1',hi,null,r.bkBase),'total')}
+    ${vc('🔎','Leads',r.ld_w,'',Math.round(r.dLeadPct),'inbound · vs '+Math.round(r.ld_avg)+' norm',spark(rev(r.ldArr),'#0ea5e9',hi,null,r.ld_avg),'leads')}
+    ${vc('📞','Consults done',done_w,'',pctOf(done_w-done_n,done_n),doneRate+'% of '+r.bk_w+' completed',spark(rev(r.bkDoneArr),'#0891b2',hi,null,done_n),'done')}
+    ${r.aggHasHrs?vc('🩺','Available hours',r1(availH_w),'h',availH_pct,'scheduled × (1−shrinkage) · '+r1(rh_w)+'h − '+_shrPct+'% blocked',availSplitChart(rev(wdAvailHArr),rev(weAvailHArr),hi,availH_n,wkS,'hours'),'avail'):vc('🩺','Availability',r1(r.av_w),'d',pctOf(r.dAct,r.av_avg),'doctor-days',availSplitChart(rev(r.wdArr),rev(r.weArr),hi,r.av_avg,wkS),'avail')}
+    ${vc('🗓️','Active days',r1(r.av_w),'d',pctOf(r.dAct,r.av_avg),'doctor-days · '+r1(r.wd_w)+' wd + '+r1(r.we_w)+' we',availSplitChart(rev(r.wdArr),rev(r.weArr),hi,r.av_avg,wkS,'days'),'avail')}
+    ${(()=>{const sm=r.aggSame,ldn=r.ldArr[W]||0,bks=sm[W]||0,tr=groupBars([{vals:rev(r.ldArr),color:'#cbd5e1',label:'Leads'},{vals:rev(sm),color:'#0ea5e9',label:'Booked'}],hi,v=>Math.round(v),null,wkS)+`<div style="font-size:8.5px;color:#cbd5e1;font-weight:700;text-transform:uppercase;margin:3px 0 0;">Lead→book % trend</div>`+spark(rev(l2bArr),'#0ea5e9',hi,v=>v+'%',_l2bN);return vc('⛳','Lead→book %',l2b_w,'%',null,'<b>'+bks+'</b> of <b>'+ldn+'</b> leads booked same week · vs '+_l2bN+'% norm · bars = leads vs booked, line = %',tr,'l2b');})()}
+    ${vc('✅','Book→done %',b2d_w,'%',null,'consults done ÷ booked · vs '+_b2dN+'% norm',spark(rev(b2dArr),'#059669',hi,v=>v+'%',_b2dN),'b2d')}
   </div>`;
   return `<div class="card"><div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;"><div style="font-size:18px;font-weight:800;">${levelLabel}</div><div style="font-size:11px;color:#94a3b8;">${r.mat} · ${WEEKS[wkIdx].label} · same snapshot as a clinic, aggregated</div></div>${hd}${ov}</div>`;
+}
+// ── Metric-first drill: click a metric (Leads, New bookings…) at India level → that metric
+//    ranked by city (worst-fall first) → click a city → by clinic → click a clinic → full RCA. ──
+let drillMetric=null;
+function setDrillMetric(k){ drillMetric=k; render(); window.scrollTo(0,0); }
+function clearDrillMetric(){ drillMetric=null; render(); window.scrollTo(0,0); }
+const METRICS={
+  new:{label:'New bookings',color:'#4f46e5',unit:'',rate:false},
+  total:{label:'All scheduled bookings',color:'#6366f1',unit:'',rate:false},
+  leads:{label:'Leads',color:'#0ea5e9',unit:'',rate:false},
+  done:{label:'Consults done',color:'#0891b2',unit:'',rate:false},
+  avail:{label:'Active doctor-days',color:'#7c3aed',unit:'d',rate:false},
+  l2b:{label:'Lead→book %',color:'#0ea5e9',unit:'%',rate:true},
+  b2d:{label:'Book→done %',color:'#059669',unit:'%',rate:true}
+};
+function computeMetricArr(rows, key){
+  const N=WEEKS.length, z=()=>Array(N).fill(0), sum=k=>{const o=z();rows.forEach(r=>{const a=r[k]||[];for(let i=0;i<N;i++)o[i]+=(a[i]||0);});return o;};
+  if(key==='new')return sum('bkNewArr');
+  if(key==='total')return sum('bkArr');
+  if(key==='leads')return sum('ldArr');
+  if(key==='done')return sum('bkDoneArr');
+  if(key==='avail')return sum('avArr');
+  if(key==='l2b'){ const ld=sum('ldArr'), same=z(); rows.forEach(r=>{ if(hasLeadAge(r.city,r.clinic)){ const s=leadAgeArr(r.city,r.clinic,'same'); for(let i=0;i<N;i++)same[i]+=(s[i]||0);} }); return ld.map((l,i)=>l>0?Math.min(100,Math.round(same[i]/l*100)):0); }
+  if(key==='b2d'){ const bk=sum('bkArr'),dn=sum('bkDoneArr'); return bk.map((b,i)=>b>0?Math.round(dn[i]/b*100):0); }
+  return z();
+}
+function renderMetricDrill(metricKey){
+  const M=METRICS[metricKey]; if(!M){ drillMetric=null; return ''; }
+  const W=wkIdx, N=WEEKS.length, winN=trendWin==='all'?N:Math.min(+trendWin||6,N);
+  const rev=a=>a.slice(0,N).reverse().slice(-winN), hi=(winN-1)-W;
+  const rows=scopeRCA(rcaOffline()).rows, byCity=!geoSel.size;
+  let groups;
+  if(byCity){ const m={}; rows.forEach(r=>(m[r.city]=m[r.city]||[]).push(r)); groups=Object.entries(m).map(([city,rs])=>({name:city,key:city,rows:rs,kind:'city'})); }
+  else { groups=rows.map(r=>({name:r.clinic,key:r.city+'|'+r.clinic,rows:[r],kind:'clinic'})); }
+  groups.forEach(g=>{ g.arr=computeMetricArr(g.rows,metricKey); g.w=g.arr[W]||0; g.norm=avg(dimSlice(g.arr,W)); g.delta=M.rate?(g.w-Math.round(g.norm)):(g.norm?Math.round((g.w-g.norm)/g.norm*100):0); });
+  groups=groups.filter(g=>g.arr.some(x=>x>0)).sort((a,b)=>a.delta-b.delta);   // worst fall first
+  const tot=computeMetricArr(rows,metricKey)[W]||0;
+  const dcolr=d=>d<-0.5?'#dc2626':d>0.5?'#059669':'#94a3b8';
+  const esc=s=>String(s).replace(/'/g,"\\'");
+  const rowsHtml=groups.map(g=>{ const du=M.rate?'pp':'%', clk=g.kind==='city'?`drillCity('${esc(g.name)}')`:`setSelClinic('${esc(g.key)}')`;
+    return `<div onclick="${clk}" style="display:flex;align-items:center;gap:12px;padding:9px 12px;border-bottom:1px solid #f1f5f9;cursor:pointer;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background=''">
+      <span style="flex:0 0 30%;min-width:0;font-weight:700;color:#0f172a;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${g.name}${g.kind==='city'?` <span style="font-size:10px;color:#94a3b8;font-weight:500;">${g.rows.length}cl</span>`:''}</span>
+      <span style="flex:0 0 64px;text-align:right;font-size:16px;font-weight:800;color:#0f172a;">${g.w}${M.unit==='%'?'%':''}</span>
+      <span style="flex:0 0 58px;text-align:right;font-size:12px;font-weight:800;color:${dcolr(g.delta)};">${g.delta<-0.5?'▼':g.delta>0.5?'▲':'–'}${Math.abs(g.delta)}${du}</span>
+      <span style="flex:1;min-width:120px;">${spark(rev(g.arr),M.color,hi,M.rate?(v=>v+'%'):null,g.norm)}</span>
+      <span style="flex:0 0 12px;color:#cbd5e1;font-size:16px;">›</span></div>`; }).join('')||'<div style="padding:16px;color:#94a3b8;text-align:center;">No data.</div>';
+  return `<div class="card">
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px;">
+      <button onclick="clearDrillMetric()" style="font-size:12px;padding:5px 12px;background:#f1f5f9;border:1px solid var(--line);border-radius:8px;cursor:pointer;">← ${byCity?'India overview':geoScopeText()+' overview'}</button>
+      <div style="font-size:17px;font-weight:800;">${M.label} — by ${byCity?'city':'clinic'}</div>
+      <div style="font-size:11px;color:#94a3b8;">🇮🇳 India${byCity?'':' › '+geoScopeText()} · ${WEEKS[wkIdx].label} · ${M.rate?'rate vs norm':'total '+tot.toLocaleString()} · worst-first · click a ${byCity?'city to go deeper':'clinic for full RCA'}</div>
+    </div>
+    <div style="display:flex;gap:10px;font-size:9px;font-weight:700;text-transform:uppercase;color:#cbd5e1;padding:0 12px 4px;"><span style="flex:0 0 30%;">${byCity?'City':'Clinic'}</span><span style="flex:0 0 64px;text-align:right;">this wk</span><span style="flex:0 0 58px;text-align:right;">vs norm</span><span style="flex:1;text-align:right;">trend</span><span style="flex:0 0 12px;"></span></div>
+    <div style="border:1px solid var(--line);border-radius:11px;overflow:hidden;">${rowsHtml}</div>
+  </div>`;
 }
 function netSeries(){ // network offline bookings per week (sum of all clinics)
   const s=Array(WEEKS.length).fill(0);
@@ -820,7 +876,7 @@ function setBase(b){ baseMode=b; trendWin = b==='avg4'?4 : b==='avg8'?8 : b==='a
 function setCauseF(c){ causeF=c; render(); }
 // does a clinic row match the active Cause filter? (used by the city/clinic landing cards)
 function causeMatch(r){ if(causeF==='all') return true; if(causeF==='mixed') return !!r.mixWith; return r.cause===causeF; }
-function resetDiagFilters(){ geoSel.clear(); selClinic=''; diagStep=null; baseMode='avg6'; tierF='all'; matF='all'; causeF='all'; trendWin=6; render(); if(typeof renderGeo==='function')renderGeo(); window.scrollTo(0,0); }
+function resetDiagFilters(){ geoSel.clear(); selClinic=''; diagStep=null; drillMetric=null; baseMode='avg6'; tierF='all'; matF='all'; causeF='all'; trendWin=6; render(); if(typeof renderGeo==='function')renderGeo(); window.scrollTo(0,0); }
 function setMatF(m){ matF=m; render(); }
 function setTierF(t){ tierF=t; render(); }
 function setSelClinic(v){ selClinic=v; diagStep=null; render(); window.scrollTo(0,0); }
@@ -993,6 +1049,7 @@ function renderOffline(){
   const Rall=rcaOffline();
   const ctrl=ctrlBar(Rall);
   if(selClinic){ const [c,cl]=selClinic.split('|'); const row=Rall.rows.find(r=>r.city===c&&r.clinic===cl); return ctrl+(row?renderDeepDive(row):'<div class="card">Clinic not found.</div>'); }
+  if(drillMetric){ return ctrl+renderMetricDrill(drillMetric); }
   const R=scopeRCA(Rall), wl=WEEKS[wkIdx].label;
   const fNote=(geoSel.size||tierF!=='all'||matF!=='all')?`<div style="font-size:11px;color:#4338ca;margin-bottom:10px;">Scoped to <b>${[geoScopeText(),tierF!=='all'?tierF:'',matF!=='all'?matF:''].filter(Boolean).join(' · ')}</b> — ${R.rows.length} clinic${R.rows.length===1?'':'s'}. Clear filters above for the full network.</div>`:'';
   const dPeak=R.netW-R.netPeak, dAvg=R.netW-R.netAvg;
