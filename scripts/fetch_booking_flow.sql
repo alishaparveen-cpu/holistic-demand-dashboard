@@ -1,9 +1,9 @@
--- WHERE booked patients came from: each Screening-Call appointment traced to its
--- lead's channel via patient.lead_id -> lead.utm_source/origin/gclid, per clinic/week.
--- 99.95% of booked patients link to a lead; utm_source covers ~95%. This is the
--- source of BOOKINGS (not all leads) — clinic-level, which main_source_wise_leads can't do.
+-- Combined booking flow source: each booked Screening Call traced to BOTH its
+-- acquisition channel AND its lead-age bucket (via patient.lead_id -> lead), per
+-- clinic/week, with outcome split. Lets the dashboard draw channel -> age -> booking
+-- -> outcome as one connected flow, and derive the channel-only / age-only marginals.
 WITH sc_all AS (
-  SELECT a.id, a.patient_id, a.start_time, LOWER(a.status) AS st,
+  SELECT a.id, a.patient_id, a.created_at AS booked_at, a.start_time, LOWER(a.status) AS st,
          LOWER(COALESCE(a.previous_status,'')) AS prev, LOWER(COALESCE(a.reason,'')) AS rsn,
          loc.city, loc.locality
   FROM allo_consultations.appointments a
@@ -28,14 +28,22 @@ j AS (
       WHEN l.id IS NULL THEN 'No lead record'
       WHEN COALESCE(l.utm_source,'')='' THEN 'Unknown'
       ELSE 'Other'
-    END AS channel
+    END AS channel,
+    CASE
+      WHEN l.id IS NULL OR l.created_at IS NULL THEN 'Unknown'
+      WHEN DATEDIFF(day, l.created_at, s.booked_at) < 7 THEN '1 · Same week'
+      WHEN DATEDIFF(day, l.created_at, s.booked_at) < 14 THEN '2 · Last week'
+      WHEN DATEDIFF(day, l.created_at, s.booked_at) < 28 THEN '3 · 2-4 weeks'
+      WHEN DATEDIFF(day, l.created_at, s.booked_at) < 90 THEN '4 · 1-3 months'
+      ELSE '5 · 3+ months'
+    END AS agebucket
   FROM sc_all s
   LEFT JOIN allo_persons.patient p ON s.patient_id=p.id
   LEFT JOIN allo_persons.lead l ON p.lead_id=l.id
   WHERE s.start_time >= '2026-03-09' AND s.start_time < '2026-06-01'
     AND LOWER(COALESCE(s.locality,'')) <> 'online' AND s.locality IS NOT NULL
 )
-SELECT city, clinic, wk, channel,
+SELECT city, clinic, wk, channel, agebucket,
   COUNT(*) AS total,
   SUM(CASE WHEN st IN ('completed','reconsulted') THEN 1 ELSE 0 END) AS done,
   SUM(CASE WHEN st='missed' THEN 1 ELSE 0 END) AS missed,
@@ -45,4 +53,4 @@ SELECT city, clinic, wk, channel,
   SUM(CASE WHEN st='cancelled' THEN 1 ELSE 0 END) AS cancelled,
   SUM(CASE WHEN st IN ('scheduled','confirmed','in_progress','provider_joined') THEN 1 ELSE 0 END) AS scheduled
 FROM j
-GROUP BY 1,2,3,4 ORDER BY 1,2,3,4;
+GROUP BY 1,2,3,4,5 ORDER BY 1,2,3,4,5;
