@@ -710,6 +710,62 @@ function allClinicRCA(){
   }
   return out;
 }
+// ── Aggregate a set of clinic rows into one synthetic row (India / city level) for the drill. ──
+// Sums the weekly arrays + roster + same-week lead-age, then recomputes the scalar metrics the
+// snapshot + 8 graphs need. clinic-keyed deep-dive tabs don't aggregate, so aggregate rows render
+// snapshot + graphs + a clickable list of the level below.
+function aggregateRows(rows, name, cityLabel){
+  const W=wkIdx, N=WEEKS.length, zero=()=>Array(N).fill(0);
+  const sumArr=(key)=>{ const o=zero(); rows.forEach(r=>{ const a=r[key]||[]; for(let i=0;i<N;i++) o[i]+=(a[i]||0); }); return o; };
+  const ARRS=['bkArr','bkWeArr','bkNewArr','bkRepeatArr','bkDoneArr','bkDoneNewArr','bkDoneRepeatArr','bkReschedArr','bkMissedArr','bkCancelledArr','ldArr','avArr','weArr','gmbArr','prArr','wdArr','orgArr','gmbOnlyArr','gAdArr','fbArr','jdArr','othArr'];
+  const A={}; ARRS.forEach(k=>A[k]=sumArr(k));
+  // summed roster + same-week lead-age across the member clinics
+  const RH=zero(),RWE=zero(),SCH=zero(),SHR=zero(); let hasHrs=false;
+  rows.forEach(r=>{ const ro=rosterArr(r.city,r.clinic); if(ro.hrs&&ro.hrs.some(x=>x!=null&&x>0))hasHrs=true;
+    for(let i=0;i<N;i++){ RH[i]+=(ro.hrs&&ro.hrs[i])||0; RWE[i]+=(ro.we_hrs&&ro.we_hrs[i])||0; SCH[i]+=(ro.shr&&ro.shr.sched&&ro.shr.sched[i])||0; SHR[i]+=(ro.shr&&ro.shr.shrunk&&ro.shr.shrunk[i])||0; } });
+  const aggRoster={hrs:RH,we_hrs:RWE,shr:{sched:SCH,shrunk:SHR,avail:SCH.map((s,i)=>Math.max(0,s-SHR[i]))},hod:[],dow:[]};
+  const same=zero(); rows.forEach(r=>{ if(hasLeadAge(r.city,r.clinic)){ const s=leadAgeArr(r.city,r.clinic,'same'); for(let i=0;i<N;i++) same[i]+=(s[i]||0); } });
+  const sl=a=>dimSlice(a,W), bk=A.bkArr, av=A.avArr, we=A.weArr, ld=A.ldArr, wd=A.wdArr;
+  const bk_w=bk[W], bk_avg=avg(sl(bk)), bkBase=expectedOf(bk,W), dBk=bk_w-bkBase;
+  const ld_w=ld[W], ld_avg=avg(sl(ld)), dLeadPct=ld_avg?(ld_w-ld_avg)/ld_avg*100:0;
+  const av_w=av[W], av_avg=avg(sl(av)), dAct=av_w-av_avg, we_w=we[W], we_avg=avg(sl(we)), wd_w=wd[W], wd_avg=avg(sl(wd));
+  return { isAgg:true, aggName:name, city:cityLabel||'', clinic:name, aggRoster, aggSame:same, aggHasHrs:hasHrs, aggRows:rows,
+    bk_w,bk_avg,bkBase,dBk,ld_w,ld_avg,dLeadPct,av_w,av_avg,dAct,we_w,we_avg,wd_w,wd_avg,
+    mat:rows.length+' clinic'+(rows.length>1?'s':''), cause:'agg', mixWith:null,
+    bkArr:bk,bkWeArr:A.bkWeArr,bkNewArr:A.bkNewArr,bkRepeatArr:A.bkRepeatArr,bkDoneArr:A.bkDoneArr,bkDoneNewArr:A.bkDoneNewArr,bkDoneRepeatArr:A.bkDoneRepeatArr,ldArr:ld,avArr:av,weArr:we,wdArr:wd,gmbArr:A.gmbArr,prArr:A.prArr };
+}
+// Aggregate-level view (India / city): the same 5-delta snapshot + 8 trend graphs as a clinic,
+// built from a synthetic aggregate row. The clickable city/clinic cards below it do the drilling.
+function renderAggView(r, levelLabel){
+  const pctOf=(d,b)=>b?Math.round(d/b*100):0;
+  const W=wkIdx, N=WEEKS.length, winN=trendWin==='all'?N:Math.min(+trendWin||6,N);
+  const rev=a=>a.slice(0,N).reverse().slice(-winN), hi=(winN-1)-W;
+  const wkS=WEEKS.map(w=>w.label.replace(/ \d{4}/,'')).slice(0,N).reverse().slice(-winN);
+  const new_w=r.bkNewArr[W]||0, new_n=avg(r.bkNewArr.slice(W+1,W+6)), newPct=pctOf(new_w-new_n,new_n);
+  const gapPct=r.bkBase?Math.round((r.bk_w-r.bkBase)/r.bkBase*100):0, exp=Math.round(r.bkBase);
+  const done_w=r.bkDoneArr[W]||0, done_n=avg(r.bkDoneArr.slice(W+1,W+6)), doneRate=r.bk_w?Math.round(done_w/r.bk_w*100):0;
+  const ros=r.aggRoster, _shr=ros.shr, _shrRate=i=>{const s=_shr.sched[i]||0;return s>0?(_shr.shrunk[i]||0)/s:0;};
+  const availHrArr=ros.hrs.map((h,i)=>(h||0)*(1-_shrRate(i))), wdAvailHArr=ros.hrs.map((h,i)=>Math.max(0,((h||0)-(ros.we_hrs[i]||0)))*(1-_shrRate(i))), weAvailHArr=ros.we_hrs.map((h,i)=>(h||0)*(1-_shrRate(i)));
+  const availH_w=availHrArr[W]||0, availH_n=avg(availHrArr.slice(W+1,W+6)), availH_pct=availH_n>0?Math.round((availH_w-availH_n)/availH_n*100):null;
+  const rh_w=ros.hrs[W]||0, _scW=_shr.sched[W]||0, _shW=_shr.shrunk[W]||0, _shrPct=_scW?Math.round(_shW/_scW*100):0;
+  const l2bArr=r.bkArr.map((b,i)=>{const l=r.ldArr[i]||0,conv=r.aggSame[i]||0;return l>0?Math.min(100,Math.round(conv/l*100)):0;});
+  const b2dArr=r.bkArr.map((b,i)=>{const d=r.bkDoneArr[i]||0;return b>0?Math.round(d/b*100):0;});
+  const l2b_w=l2bArr[W], b2d_w=b2dArr[W], _l2bN=Math.round(avg(l2bArr.slice(W+1,W+6))), _b2dN=Math.round(avg(b2dArr.slice(W+1,W+6)));
+  const dTile=(icon,label,val,delta,du)=>{const fl=delta==null||Math.abs(delta)<0.5,c=fl?'#94a3b8':delta<0?'#dc2626':'#059669',ar=fl?'–':delta<0?'▼':'▲';return `<div style="flex:1 1 0;min-width:92px;background:#f8fafc;border:1px solid var(--line);border-radius:9px;padding:6px 10px;"><div style="font-size:8.5px;font-weight:700;text-transform:uppercase;letter-spacing:.03em;color:#94a3b8;">${icon} ${label}</div><div style="display:flex;align-items:baseline;gap:5px;margin-top:1px;"><span style="font-size:15px;font-weight:800;color:#0f172a;">${val}</span><span style="font-size:10.5px;font-weight:800;color:${c};">${ar}${fl?'':Math.abs(Math.round(delta))+(du||'%')}</span></div></div>`;};
+  const hd=`<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:11px;">${dTile('🩺','Availability',Math.round(r.av_w)+'d',pctOf(r.dAct,r.av_avg),'%')}${dTile('🔎','Leads',r.ld_w,Math.round(r.dLeadPct),'%')}${dTile('⛳','Lead→Book',l2b_w+'%',l2b_w-_l2bN,'pp')}${dTile('✅','Book→Done',b2d_w+'%',b2d_w-_b2dN,'pp')}${dTile('📅','Total bookings',r.bk_w,gapPct,'%')}</div>`;
+  const vc=(icon,title,val,unit,dpct,sub,svg)=>`<div class="card" style="margin:0;"><div style="font-size:12px;font-weight:700;color:#0f172a;">${icon} ${title}</div><div style="display:flex;align-items:baseline;gap:8px;margin:1px 0;"><span style="font-size:23px;font-weight:800;color:#0f172a;line-height:1.1;">${val}<span style="font-size:11px;font-weight:600;color:#94a3b8;">${unit||''}</span></span>${dpct==null?'':`<span style="font-size:12.5px;font-weight:800;color:${dCol(dpct)};">${signed(dpct,'%')}</span>`}</div><div style="font-size:10px;color:#94a3b8;margin-bottom:4px;">${sub}</div>${svg}</div>`;
+  const ov=`<div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:12px;">
+    ${vc('🆕','New bookings',new_w,'',newPct,'first-time · vs '+r1(new_n)+' norm',spark(rev(r.bkNewArr),'#4f46e5',hi,null,new_n))}
+    ${vc('📅','All scheduled bookings',r.bk_w,'',gapPct,'new+repeat · vs '+exp+' exp',spark(rev(r.bkArr),'#6366f1',hi,null,r.bkBase))}
+    ${vc('🔎','Leads',r.ld_w,'',Math.round(r.dLeadPct),'inbound · vs '+Math.round(r.ld_avg)+' norm',spark(rev(r.ldArr),'#0ea5e9',hi,null,r.ld_avg))}
+    ${vc('📞','Consults done',done_w,'',pctOf(done_w-done_n,done_n),doneRate+'% of '+r.bk_w+' completed',spark(rev(r.bkDoneArr),'#0891b2',hi,null,done_n))}
+    ${r.aggHasHrs?vc('🩺','Available hours',r1(availH_w),'h',availH_pct,'scheduled × (1−shrinkage) · '+r1(rh_w)+'h − '+_shrPct+'% blocked',availSplitChart(rev(wdAvailHArr),rev(weAvailHArr),hi,availH_n,wkS,'hours')):vc('🩺','Availability',r1(r.av_w),'d',pctOf(r.dAct,r.av_avg),'doctor-days',availSplitChart(rev(r.wdArr),rev(r.weArr),hi,r.av_avg,wkS))}
+    ${vc('🗓️','Active days',r1(r.av_w),'d',pctOf(r.dAct,r.av_avg),'doctor-days · '+r1(r.wd_w)+' wd + '+r1(r.we_w)+' we',availSplitChart(rev(r.wdArr),rev(r.weArr),hi,r.av_avg,wkS,'days'))}
+    ${(()=>{const sm=r.aggSame,ldn=r.ldArr[W]||0,bks=sm[W]||0,tr=groupBars([{vals:rev(r.ldArr),color:'#cbd5e1',label:'Leads'},{vals:rev(sm),color:'#0ea5e9',label:'Booked'}],hi,v=>Math.round(v),null,wkS);return vc('⛳','Lead→book %',l2b_w,'%',null,'<b>'+bks+'</b> of <b>'+ldn+'</b> leads booked same week · vs '+_l2bN+'% norm · bars = leads vs booked',tr);})()}
+    ${vc('✅','Book→done %',b2d_w,'%',null,'consults done ÷ booked · vs '+_b2dN+'% norm',spark(rev(b2dArr),'#059669',hi,v=>v+'%',_b2dN))}
+  </div>`;
+  return `<div class="card"><div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;"><div style="font-size:18px;font-weight:800;">${levelLabel}</div><div style="font-size:11px;color:#94a3b8;">${r.mat} · ${WEEKS[wkIdx].label} · same snapshot as a clinic, aggregated</div></div>${hd}${ov}</div>`;
+}
 function netSeries(){ // network offline bookings per week (sum of all clinics)
   const s=Array(WEEKS.length).fill(0);
   for(const city of Object.keys(SDATA)){ const t=SDATA[city]._total; for(let i=0;i<WEEKS.length;i++) s[i]+=(t.allBk[i]||0); }
@@ -1078,7 +1134,13 @@ function renderOffline(){
       <span style="font-size:10px;color:#94a3b8;">vs each clinic's own ${baseShort()} — shows where losses concentrate · clinics with issues below</span>
     </div>
   </div>`;
-  return ctrl+fNote+overview+compactSummary;   // Practo → Marketing tab · Lead→conversion card removed · channel funnel → Efficiency
+  // ── Drill: aggregate snapshot+graphs for the current level (India when unscoped, the city when scoped),
+  //    then the clickable city/clinic cards below do the next drill-down. ──
+  const _aggLabel = geoSel.size ? geoScopeText() : '🇮🇳 India — all clinics';
+  let _aggBlock='';
+  try{ if(R.rows&&R.rows.length){ _aggBlock = renderAggView(aggregateRows(R.rows, _aggLabel), _aggLabel); } }catch(e){ console.warn('agg view',e); }
+  const _drillHint = `<div style="font-size:11px;color:#94a3b8;margin:14px 0 8px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;">${geoSel.size?'Clinics in '+geoScopeText()+' — click to drill in':'Cities — click to drill into a city, then a clinic'}</div>`;
+  return ctrl+fNote+_aggBlock+_drillHint+overview+compactSummary;
 }
 
 // Dedicated Practo section for the Quick View — leads + phone-matched bookings + by-doctor,
