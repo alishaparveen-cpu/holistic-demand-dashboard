@@ -196,10 +196,36 @@ function availHeatmaps(r, winN){
       <div><div style="font-size:10px;color:#dc2626;font-weight:700;margin-bottom:3px;">✂️ Doctor shrinkage ${hodRate?'(blocked/week)':'(blocked slots)'}</div>${grid(c=>rnum(c.x),maxX*rk||1,'220,38,38')}</div>
     </div>
     <div style="font-size:10.5px;color:#94a3b8;margin-top:6px;">Last <b>${WN} week${WN>1?'s':''}</b> (change with Window). Bookings/Shrinkage show <b>${hodRate?'per-week average':'window total'}</b> (toggle above); utilization is always a rate. Volume = <i>where bookings land</i>; utilization = <i>where slots are full</i>.</div>
-    <div style="font-size:11.5px;color:#334155;background:#f5f3ff;border:1px solid #ddd6fe;border-radius:9px;padding:9px 12px;margin-top:10px;line-height:1.5;">
-      <b>~${Math.round(loss)} bookings lost to availability over ${WN}w (~${Math.round(loss/WN)}/wk)</b> — each blocked slot × that exact hour's utilization (bookings ÷ available). A block at a <b>${peakU.u>=0?Math.round(peakU.u*100)+'%-full':'high-util'}</b> hour costs real bookings; a block at a near-empty hour costs ~nothing.
-      <div style="color:#7c2d12;margin-top:5px;font-size:10.5px;">⚠ Caveat: assumes demand would have filled those slots. If <b>leads</b> also fell, some of the gap is missing demand, not blocked supply.</div>
-    </div>
+    ${availLossDetail(r)}
+  </div>`;
+}
+// Full detailed "bookings lost to availability" view — the methodology the demand owner asked for:
+// normal availability trend (weekday & weekend, from the Compare-vs window) → normal booking rate →
+// if this week's hours fell short of normal, shortfall × rate = bookings lost. 0 = availability not a factor.
+function availLossDetail(r){
+  const a=r.availHr||{loss:0,wdRate:0,weRate:0,normWd:0,wdNow:0,normWe:0,weNow:0,wdShort:0,weShort:0,U:'h'};
+  const U=a.U==='h'?'hrs':'days', ur='bk/'+a.U, lost=Math.max(0,Math.round(a.loss||0));
+  const wdLost=a.wdRate*a.wdShort, weLost=a.weRate*a.weShort;
+  const cell=(v,bold,col)=>`<td style="text-align:right;padding:4px 10px;${bold?'font-weight:800;':''}${col?'color:'+col+';':''}">${v}</td>`;
+  const row=(lbl,col,norm,now,short,rate,lostv)=>`<tr style="border-top:1px solid #ede9fe;">
+    <td style="padding:4px 10px;font-weight:700;color:${col};">${lbl}</td>
+    ${cell(r1(norm))}${cell(r1(now))}${cell(short>0.05?r1(short):'0',short>0.05,short>0.05?'#dc2626':'#94a3b8')}${cell(a.rateShown?r1(rate):rate.toFixed(2))}${cell(r1(lostv),true,lostv>0.05?'#dc2626':'#94a3b8')}</tr>`;
+  return `<div style="background:#f5f3ff;border:1px solid #ddd6fe;border-radius:9px;padding:11px 13px;margin-top:10px;line-height:1.5;">
+    <div style="font-size:12px;font-weight:800;color:#5b21b6;margin-bottom:2px;">📉 Bookings lost to availability — ${WEEKS[wkIdx].label}</div>
+    <div style="font-size:10.5px;color:#7c6f9e;margin-bottom:8px;">Normal ${U} = your <b>“Compare vs”</b> baseline (${baseLabel()}), split <b>weekday vs weekend</b>. Each gets its own <b>normal booking rate</b> (bookings per ${a.U==='h'?'bookable hour':'open day'}). If this week's ${U} fell <b>short</b> of normal, the shortfall × that rate = bookings the supply gap can explain. Over-normal ${U} ⇒ 0 (availability not the constraint).</div>
+    <table style="border-collapse:collapse;font-size:11px;color:#334155;width:100%;max-width:560px;">
+      <thead><tr style="font-size:9.5px;text-transform:uppercase;letter-spacing:.03em;color:#a78bba;">
+        <th style="text-align:left;padding:0 10px 3px;">Day type</th><th style="text-align:right;padding:0 10px 3px;">Normal ${U}</th><th style="text-align:right;padding:0 10px 3px;">This week</th><th style="text-align:right;padding:0 10px 3px;">Short</th><th style="text-align:right;padding:0 10px 3px;">Rate (${ur})</th><th style="text-align:right;padding:0 10px 3px;">Bookings lost</th></tr></thead>
+      <tbody>
+        ${row('Weekday','#7c3aed',a.normWd,a.wdNow,a.wdShort,a.wdRate,wdLost)}
+        ${row('Weekend','#db2777',a.normWe,a.weNow,a.weShort,a.weRate,weLost)}
+        <tr style="border-top:2px solid #c4b5fd;"><td style="padding:5px 10px;font-weight:800;">Total</td><td></td><td></td><td></td><td></td><td style="text-align:right;padding:5px 10px;font-weight:900;color:${lost>0?'#dc2626':'#16a34a'};">${lost>0?r1(a.loss):'0'}</td></tr>
+      </tbody>
+    </table>
+    <div style="font-size:11px;color:#334155;margin-top:8px;">${lost>0
+      ? `→ Fewer bookable ${U} than normal cost this clinic <b style="color:#dc2626;">~${lost} booking${lost===1?'':'s'}</b> this week. The rest of any booking gap is <b>leads or conversion</b>, not supply.`
+      : `→ Availability was <b style="color:#16a34a;">not a constraint</b> this week — bookable ${U} were at or above normal, so <b>0</b> bookings lost to supply. Any booking gap is <b>leads or conversion</b>.`}</div>
+    <div style="color:#7c2d12;margin-top:6px;font-size:10px;">⚠ Assumes the lost ${U} were in demand — the <b>utilization</b> heatmap above shows whether they were (a block at a near-empty hour costs ~nothing). Weekends weight higher automatically via their own rate.</div>
   </div>`;
 }
 // Lead→conversion panel: how leads we engage convert to bookings, by contact mode + source. Network-level.
