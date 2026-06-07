@@ -25,12 +25,16 @@ j AS (
     CASE
       WHEN l.gclid IS NOT NULL AND l.gclid<>'' THEN 'Google Ads'
       WHEN LOWER(COALESCE(l.utm_source,''))='google' AND LOWER(COALESCE(l.utm_medium,'')) LIKE '%cpc%' THEN 'Google Ads'
-      WHEN LOWER(COALESCE(l.utm_source,''))='gmb' THEN 'Google Maps (GMB)'
+      WHEN LOWER(COALESCE(l.utm_source,''))='bing' THEN 'Bing Ads'
+      WHEN LOWER(COALESCE(l.utm_source,'')) IN ('gmb','googlelisting','google listing','google_listing') THEN 'Google Maps (GMB)'
       WHEN LOWER(COALESCE(l.utm_source,''))='practo' THEN 'Practo'
       WHEN LOWER(COALESCE(l.utm_source,'')) IN ('fb','facebook','meta','ig','instagram') THEN 'Meta'
-      WHEN LOWER(COALESCE(l.utm_source,''))='justdial' THEN 'JustDial'
-      WHEN LOWER(COALESCE(l.utm_source,'')) IN ('organic','google') THEN 'Organic'   -- google non-ad = organic search / listing
+      WHEN LOWER(COALESCE(l.utm_source,'')) IN ('justdial','jd') THEN 'JustDial'
+      WHEN LOWER(COALESCE(l.utm_source,'')) IN ('alloreferral','allorefferal','doctorreferral','referral') THEN 'Referral'
+      WHEN LOWER(COALESCE(l.utm_source,'')) IN ('chatgpt.com','youtube','moj') THEN 'AI / Social'
+      WHEN LOWER(COALESCE(l.utm_source,'')) IN ('organic','google','blog') THEN 'Organic'   -- google non-ad / blog / organic search
       WHEN LOWER(COALESCE(l.utm_source,'')) IN ('directwalkin','walkin','walk-in') OR LOWER(COALESCE(l.origin,''))='directwalkin' THEN 'Walk-in'
+      WHEN LOWER(COALESCE(l.utm_source,''))='others' THEN 'Other (untracked)'
       WHEN l.id IS NULL OR COALESCE(l.utm_source,'')='' THEN 'No tag'
       ELSE 'Other'
     END AS channel,
