@@ -1185,7 +1185,8 @@ function sparkMulti(series, hiIdx, showAvg, labelMode, hide, toggle){
 // Availability split — a clean stacked bar per week: weekday doctor-days (dark)
 // + weekend doctor-days (light). Each segment and the weekly total are labelled,
 // and a dashed line marks the recent norm. wd/we are display-ordered (old→new).
-function availSplitChart(wd, we, hi, normTot, weeks){
+function availSplitChart(wd, we, hi, normTot, weeks, unit){
+  unit=unit||'days';
   const wkOf=i=>(weeks&&weeks[i])?weeks[i]+' · ':'';
   const w=340,h=112,padX=8,padB=15,padT=15;
   const n=wd.length;
@@ -1207,12 +1208,12 @@ function availSplitChart(wd, we, hi, normTot, weeks){
     if(wev>0 && weH>=11) s+=`<text x="${X(i).toFixed(1)}" y="${(totTop+weH/2+3).toFixed(1)}" font-size="8.5" fill="#5b21b6" text-anchor="middle" font-weight="700">${r1(wev)}</text>`;
     s+=`<text x="${X(i).toFixed(1)}" y="${(totTop-4).toFixed(1)}" font-size="9.5" fill="${hl?'#4c1d95':'#334155'}" text-anchor="middle" font-weight="800">${r1(t)}</text>`;
     // full-height transparent hover target → tooltip for just this week
-    s+=`<rect x="${(X(i)-slot/2).toFixed(1)}" y="${padT.toFixed(1)}" width="${slot.toFixed(1)}" height="${(base-padT).toFixed(1)}" fill="transparent"><title>${wkOf(i)}${r1(t)} doctor-days = ${r1(wdv)} weekday + ${r1(wev)} weekend</title></rect>`;
+    s+=`<rect x="${(X(i)-slot/2).toFixed(1)}" y="${padT.toFixed(1)}" width="${slot.toFixed(1)}" height="${(base-padT).toFixed(1)}" fill="transparent"><title>${wkOf(i)}${r1(t)} ${unit} = ${r1(wdv)} weekday + ${r1(wev)} weekend</title></rect>`;
     return s;
   }).join('');
   const legend=`<div style="margin-bottom:4px;font-size:10px;color:#475569;font-weight:600;">
-    <span style="margin-right:12px;"><span style="display:inline-block;width:10px;height:10px;background:#7c3aed;border-radius:2px;vertical-align:middle;margin-right:4px;"></span>Weekday days</span>
-    <span><span style="display:inline-block;width:10px;height:10px;background:#c4b5fd;border-radius:2px;vertical-align:middle;margin-right:4px;"></span>Weekend days</span></div>`;
+    <span style="margin-right:12px;"><span style="display:inline-block;width:10px;height:10px;background:#7c3aed;border-radius:2px;vertical-align:middle;margin-right:4px;"></span>Weekday ${unit}</span>
+    <span><span style="display:inline-block;width:10px;height:10px;background:#c4b5fd;border-radius:2px;vertical-align:middle;margin-right:4px;"></span>Weekend ${unit}</span></div>`;
   return `${legend}<svg width="100%" viewBox="0 0 ${w} ${h+2}" style="overflow:visible;">${norm}${bars}</svg>`;
 }
 // Stacked composition bars — N sources stacked per week so the bar HEIGHT = total leads and
@@ -2407,6 +2408,17 @@ function renderDeepDive(r){
   const _psc=_shr.sched.slice(wkIdx+1,wkIdx+6).reduce((a,b)=>a+(b||0),0), _psh=_shr.shrunk.slice(wkIdx+1,wkIdx+6).reduce((a,b)=>a+(b||0),0);
   const _shrPctN=_psc?Math.round(_psh/_psc*100):0;
   const shrChip = _shrHas ? shrinkChart(rev(_shr.sched), rev(_shr.shrunk), rev(_shr.avail), hi) : '<div style="color:#cbd5e1;font-size:10px;padding:18px 0;text-align:center;">No roster / shrinkage data</div>';
+  // ── ACTUAL available HOURS = scheduled hours × (1 − shrinkage), split weekday/weekend. ──
+  // Days overstate supply: a doctor can be "present" (counts as a day) yet block hours. Hours after
+  // shrinkage are the true bookable supply. (assumes shrinkage hits weekday/weekend slots at the same rate)
+  const _schH=ros.hrs||[], _weH=ros.we_hrs||[];
+  const _shrRate=i=>{ const s=_shr.sched[i]||0; return s>0?(_shr.shrunk[i]||0)/s:0; };
+  const availHrArr  = _schH.map((h,i)=> (h||0)*(1-_shrRate(i)));
+  const wdAvailHArr = _schH.map((h,i)=> Math.max(0,((h||0)-(_weH[i]||0)))*(1-_shrRate(i)));
+  const weAvailHArr = _weH.map((h,i)=> (h||0)*(1-_shrRate(i)));
+  const _hasRosterH = _schH.some(x=>x>0);
+  const availH_w=availHrArr[wkIdx]||0, availH_n=avg(availHrArr.slice(wkIdx+1,wkIdx+6));
+  const availH_pct=availH_n>0?Math.round((availH_w-availH_n)/availH_n*100):null;
   // OVERVIEW — six at a glance, 2 per row (wider = bigger charts); details in the tabs below
   const ov = `<div class="card" style="margin-bottom:12px;">${winBar}
     <div style="font-size:10.5px;color:#94a3b8;margin:0 0 9px;">📅 Trailing <b>${winN}</b> weeks · ${WEEKS[Math.min(wkIdx+winN-1,WEEKS.length-1)].label} → <b>${wl}</b> · chart dates are week-ending · click ⛶ on any chart to zoom.</div>
@@ -2415,7 +2427,9 @@ function renderDeepDive(r){
       ${vchip('📅','All scheduled bookings', r.bk_w,'', gapPct, 'new+repeat · vs '+exp+' exp', spark(rev(r.bkArr),'#6366f1',hi,null,r.bkBase))}
       ${vchip('🔎','Leads', r.ld_w,'', Math.round(r.dLeadPct), 'inbound · vs '+Math.round(r.ld_avg)+' norm', spark(rev(r.ldArr),'#0ea5e9',hi,null,r.ld_avg))}
       ${vchip('📞','Consults done', done_w,'', pctOf(done_w-done_n,done_n), doneRate+'% of '+r.bk_w+' scheduled completed', spark(rev(r.bkDoneArr),'#0891b2',hi,null,done_n))}
-      ${vchip('🩺','Availability', r1(r.av_w),'d', pctOf(r.dAct,r.av_avg), 'realized doctor-days · wd '+r1(r.wd_w)+' + we '+r1(r.we_w)+(hasRoster&&rh_w!=null?' · '+r1(rh_w)+'h scheduled':''), availSplitChart(rev(r.wdArr), rev(r.weArr), hi, r.av_avg, wkS))}
+      ${_hasRosterH
+        ? vchip('🩺','Available hours', r1(availH_w),'h', availH_pct, 'bookable hours = scheduled × (1−shrinkage) · '+r1(rh_w!=null?rh_w:_schH[wkIdx]||0)+'h sched − '+_shrPct+'% blocked · '+r1(r.av_w)+' doctor-days', availSplitChart(rev(wdAvailHArr), rev(weAvailHArr), hi, availH_n, wkS, 'hours'))
+        : vchip('🩺','Availability', r1(r.av_w),'d', pctOf(r.dAct,r.av_avg), 'realized doctor-days · wd '+r1(r.wd_w)+' + we '+r1(r.we_w), availSplitChart(rev(r.wdArr), rev(r.weArr), hi, r.av_avg, wkS))}
       ${vchip('✂️','Doctor shrinkage', _shrPct,'%', null, _shrHas?_shW+' of '+_scW+' slots blocked · norm '+_shrPctN+'%':'no roster data', shrChip)}
       ${vchip('⛳','Lead→book %', l2b_w,'%', null, (_l2bHasLA?'this week’s leads booked same week':'new bookings ÷ leads')+' · vs '+Math.round(avg(l2bArr.slice(wkIdx+1,wkIdx+6)))+'% norm', spark(rev(l2bArr),'#0ea5e9',hi,v=>v+'%',avg(l2bArr.slice(wkIdx+1,wkIdx+6))))}
       ${vchip('✅','Book→done %', b2d_w,'%', null, 'consults done ÷ booked · vs '+Math.round(avg(b2dArr.slice(wkIdx+1,wkIdx+6)))+'% norm', spark(rev(b2dArr),'#059669',hi,v=>v+'%',avg(b2dArr.slice(wkIdx+1,wkIdx+6))))}
