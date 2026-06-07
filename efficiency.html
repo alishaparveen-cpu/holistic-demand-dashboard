@@ -198,6 +198,9 @@ html,body{background:#f8fafc;color:var(--ink);font-family:ui-sans-serif,system-u
 <!-- ══ FUNNEL BREAK ANALYZER (injected by JS) ══ -->
 <div id="funnelBreakAnalyzer" style="margin-bottom:20px;"></div>
 
+<!-- CHANNEL FUNNEL — Leads → Booked → Done, by channel (box-and-line flow) -->
+<div id="channelFunnelFlow" style="margin-bottom:20px;"></div>
+
 <!-- KPI STRIP (4 cards) -->
 <div id="kpiStrip" style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:20px;">
   <div class="kpi-card loading-state" style="grid-column:1/-1;padding:20px;">Loading efficiency data…</div>
@@ -458,6 +461,7 @@ const CITY_KEYS = [
 let JDATA        = null;
 let L0           = null;
 let MDATA        = null;   // data_marketing.json — live Google Ads IS + GBP brand signal
+let LEADCONV     = null;   // data_lead_conv.json — lead→booking by channel (for the channel funnel flow)
 let mCharts      = {};     // chart instances for the marketing-API sections
 let activeWkIdx  = 0;
 let activeScope  = 'all';
@@ -3429,6 +3433,7 @@ function render() {
   document.getElementById('spendCostCluster').innerHTML    = buildSpendCostCluster(wkI);
   document.getElementById('costTrendPulse').innerHTML      = buildCostTrendPulse();
   document.getElementById('funnelBreakAnalyzer').innerHTML = buildFunnelBreakAnalyzer(wkI);
+  { const cf=document.getElementById('channelFunnelFlow'); if(cf) cf.innerHTML = buildChannelFunnelFlow(); }
   document.getElementById('kpiStrip').innerHTML    = buildKPIStrip(wkI);
   document.getElementById('chanTblBody').innerHTML = buildTableRows(wkI);
   updateSortIndicators();
@@ -3569,6 +3574,43 @@ function buildComparePanel_eff() {
 }
 
 // ── INIT ──────────────────────────────────────────────────────────────────
+// Channel funnel as a box-and-line flow chart (moved here from Quick View; no Sankey).
+// Leads (by channel) → Booked / Not booked → Done / No-show. Lead-attributed only.
+function buildChannelFunnelFlow(){
+  if(!LEADCONV||!LEADCONV.by_source) return '';
+  const COL={'Google/Call':'#6366f1','GMB':'#0d9488','Meta':'#2563eb','WhatsApp':'#16a34a','Practo':'#f59e0b','Organic/Direct':'#d97706','Other':'#94a3b8'};
+  let chans=LEADCONV.by_source.filter(s=>s.leads>0).slice().sort((a,b)=>b.leads-a.leads);
+  if(!chans.length) return '';
+  if(chans.length>7){ const keep=chans.slice(0,6), rest=chans.slice(6);
+    chans=keep.concat([{src:'Other sources',leads:rest.reduce((a,s)=>a+s.leads,0),booked:rest.reduce((a,s)=>a+s.booked,0),done:rest.reduce((a,s)=>a+(s.done||0),0)}]); }
+  const L=chans.reduce((a,s)=>a+s.leads,0), BK=chans.reduce((a,s)=>a+s.booked,0), DN=chans.reduce((a,s)=>a+(s.done||0),0), NC=L-BK, ND=BK-DN;
+  if(L<=0||BK<=0) return '';
+  const pct=(a,b)=>b>0?Math.round(a/b*100):0, BH=26, og=9;
+  const box=(x,y,wd,label,num,accent,fs)=>`<rect x="${x}" y="${y}" width="${wd}" height="${BH}" rx="6" fill="#fff" stroke="${accent}" stroke-width="1.3"/><rect x="${x}" y="${y}" width="3.5" height="${BH}" rx="2" fill="${accent}"/><text x="${x+11}" y="${y+BH/2+4}" font-size="${fs||10.5}" font-weight="600" fill="#334155">${label}</text><text x="${x+wd-8}" y="${y+BH/2+4}" font-size="11" font-weight="800" fill="#0f172a" text-anchor="end">${num}</text>`;
+  const line=(x1,y1,x2,y2,lab,op)=>{const mx=(x1+x2)/2;return `<path d="M${x1} ${y1} C${mx} ${y1} ${mx} ${y2} ${x2} ${y2}" fill="none" stroke="#cbd5e1" stroke-width="1.3" opacity="${op||1}"/>${lab?`<rect x="${mx-15}" y="${(y1+y2)/2-7}" width="30" height="13" rx="3" fill="#fff" stroke="#e2e8f0" stroke-width="0.6"/><text x="${mx}" y="${(y1+y2)/2+2.5}" font-size="8.7" font-weight="700" fill="#475569" text-anchor="middle">${lab}</text>`:''}`;};
+  const hdr=(x,wd,t)=>`<text x="${x+wd/2}" y="-12" font-size="9" font-weight="700" fill="#94a3b8" text-anchor="middle" letter-spacing=".5">${t}</text>`;
+  const chW=158, midW=150, outW=176, xCh=8, xMid=xCh+chW+70, xOut=xMid+midW+70, vw=xOut+outW+10;
+  const chH=chans.length*(BH+og)-og, totH=Math.max(chH, 2*BH+44)+6, top=h=>(totH-h)/2;
+  chans.forEach((s,i)=>{ s.y=top(chH)+i*(BH+og); });
+  const midH=2*BH+24, mTop=top(midH), bkY=mTop, ncY=mTop+BH+24;
+  const outH=2*BH+18, oTop=top(outH), dnY=oTop, ndY=oTop+BH+18;
+  let lines='',boxes='';
+  chans.forEach(s=>{ lines+=line(xCh+chW,s.y+BH/2,xMid,bkY+BH/2,pct(s.booked,s.leads)+'%'); lines+=line(xCh+chW,s.y+BH/2,xMid,ncY+BH/2,'',0.16); });
+  lines+=line(xMid+midW,bkY+BH/2,xOut,dnY+BH/2,pct(DN,BK)+'%');
+  lines+=line(xMid+midW,bkY+BH/2,xOut,ndY+BH/2,pct(ND,BK)+'%');
+  chans.forEach(s=>{ boxes+=box(xCh,s.y,chW,s.src,s.leads.toLocaleString(),COL[s.src]||'#94a3b8',10); });
+  boxes+=box(xMid,bkY,midW,'Booked',BK.toLocaleString()+' · '+pct(BK,L)+'%','#16a34a',10);
+  boxes+=box(xMid,ncY,midW,'Not booked',NC.toLocaleString()+' · '+pct(NC,L)+'%','#94a3b8',10);
+  boxes+=box(xOut,dnY,outW,'Done',DN.toLocaleString(),'#16a34a',10);
+  boxes+=box(xOut,ndY,outW,'No-show / not done',ND.toLocaleString(),'#dc2626',10);
+  const legend=chans.map(s=>`<span style="display:inline-flex;align-items:center;gap:4px;margin:0 12px 4px 0;font-size:10.5px;"><span style="width:9px;height:9px;border-radius:2px;background:${COL[s.src]||'#94a3b8'}"></span><b>${s.src}</b> — C2B ${pct(s.booked,s.leads)}%, B2D ${pct(s.done||0,s.booked)}%</span>`).join('');
+  return `<details class="sect" open><summary><span class="sect-t">📊 Channel funnel — Leads → Booked → Done</span><span class="sect-s">lead-attributed conversion by channel · C2B = booked÷leads · B2D = done÷booked</span><span class="sect-cv">▶</span></summary>
+    <div class="sect-body">
+    <div style="font-size:11px;color:var(--muted);margin-bottom:8px;">Last 4 weeks · <b>lead-attributed only</b> — walk-ins &amp; untracked bookings aren't here, so this won't match total bookings. % on each channel→Booked line = that channel's lead→booking rate (C2B); Booked→outcome = B2D.</div>
+    <svg width="100%" viewBox="0 -16 ${vw} ${totH+22}" preserveAspectRatio="xMinYMin meet" style="font-family:inherit;display:block">${hdr(xCh,chW,'CHANNEL (LEADS)')}${hdr(xMid,midW,'BOOKED?')}${hdr(xOut,outW,'OUTCOME')}${lines}${boxes}</svg>
+    <div style="margin-top:8px;">${legend}</div>
+    </div></details>`;
+}
 async function init() {
   try {
     // Try data.json (optional — only needed for B2D% from CSV)
@@ -3582,6 +3624,11 @@ async function init() {
       const mRes = await fetch('data_marketing.json');
       if (mRes.ok) MDATA = await mRes.json();
     } catch (e) { /* ok — sections show a 'not loaded' note */ }
+
+    try {
+      const lcRes = await fetch('data_lead_conv.json');
+      if (lcRes.ok) LEADCONV = await lcRes.json();
+    } catch (e) { /* ok — channel funnel shows nothing */ }
 
     // L0 from cache or network (primary data source)
     const l0Text = await fetchL0Cached();
