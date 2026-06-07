@@ -460,7 +460,10 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--navy);font-
 <script>
 /* ── DATA ── */
 let WEEKS=[], WEEK_LABELS=[], WEEK_MON=[], currentWeek=7;
-let SC=null, LEADS=null, ROSTER=null, REM={}, SARVAM=null, CONV={}, DOCTOR={}, MKT=null, SWHO={}, RETEN={}, CALLBACK={}, PRACTO={}, LAGE={}, L2C=null, DAILY={}, LEADCONV=null, CONTACTMODE=null, BHOD=null, BOOKSRC=null, D=null;
+let SC=null, LEADS=null, ROSTER=null, REM={}, SARVAM=null, CONV={}, DOCTOR={}, MKT=null, SWHO={}, RETEN={}, CALLBACK={}, PRACTO={}, LAGE={}, L2C=null, DAILY={}, LEADCONV=null, CONTACTMODE=null, BHOD=null, AVAILHOD=null, BOOKSRC=null, D=null;
+let bhodWin=8, bhodRate=false;   // hour×day heatmap: window weeks · Total vs per-week
+function setBhodWin(v){ bhodWin=v; renderBHOD(); }
+function setBhodRate(v){ bhodRate=v; renderBHOD(); }
 let ageChannel='all';
 const RET_MATURE_IDX=9;   // newest-first 12-week idx whose 60-day retention window has fully elapsed
 let SEL=[];                                   // selected clinic keys (City|Clinic) — aggregated/summed
@@ -1622,25 +1625,43 @@ function renderBookFlow(){
 /* ── Peak booking slots: hour × day heatmap (for roster planning) ── */
 function renderBHOD(){
   const el=document.getElementById('bhodPanel'); if(!el) return;
-  if(!BHOD||!BHOD.by_clinic){ el.innerHTML=''; return; }
-  const grid={}; let maxC=0,total=0; const hours=new Set();
-  SEL.forEach(k=>{ const c=BHOD.by_clinic[k]; if(!c) return;
-    Object.entries(c).forEach(([dw,hrs])=>Object.entries(hrs).forEach(([h,v])=>{
-      const key=dw+'_'+h; grid[key]=(grid[key]||0)+v[0]; hours.add(+h); total+=v[0]; if(grid[key]>maxC)maxC=grid[key]; })); });
-  if(total===0){ el.innerHTML=''; return; }
-  const hrs=[...hours].sort((a,b)=>a-b);
+  if(!AVAILHOD||!AVAILHOD.by_clinic){ el.innerHTML=''; return; }
+  const nWk=(AVAILHOD.weeks?AVAILHOD.weeks.length:12), WN=Math.min(bhodWin,nWk);
+  const slL=arr=>{ arr=arr||[]; let s=0; for(let i=Math.max(0,arr.length-WN);i<arr.length;i++) s+=arr[i]||0; return s; };   // sum last WN weeks (arrays oldest→newest)
+  const G={}; const hours=new Set();
+  SEL.forEach(k=>{ const c=AVAILHOD.by_clinic[k]; if(!c) return;
+    Object.keys(c).forEach(dw=>Object.keys(c[dw]).forEach(h=>{ const cell=c[dw][h]; (G[dw]=G[dw]||{});
+      const g=(G[dw][h]=G[dw][h]||{b:0,x:0,a:0}); g.b+=slL(cell.b); g.x+=slL(cell.x); g.a+=slL(cell.a); hours.add(+h); })); });
+  const hrs=[...hours].sort((a,b)=>a-b); if(!hrs.length){ el.innerHTML=''; return; }
+  const cv=(dw,h)=>(G[dw]||{})[h]||{b:0,x:0,a:0};
   const days=[['1','Mon'],['2','Tue'],['3','Wed'],['4','Thu'],['5','Fri'],['6','Sat'],['0','Sun']];
   const dn={'0':'Sun','1':'Mon','2':'Tue','3':'Wed','4':'Thu','5':'Fri','6':'Sat'};
   const hl=h=>{const x=+h;return (x%12||12)+(x<12?'a':'p');};
-  let peak={c:0}; Object.entries(grid).forEach(([key,c])=>{ if(c>peak.c){const a=key.split('_');peak={c,dw:a[0],h:a[1]};} });
-  const cell=(dw,h)=>{ const c=grid[dw+'_'+h]||0,a=maxC>0?c/maxC:0;
-    return `<td title="${dn[dw]} ${hl(h)} · ${c} bookings" style="width:26px;height:22px;text-align:center;font-size:9px;background:${c===0?'#f8fafc':'rgba(79,70,229,'+(0.12+a*0.85)+')'};color:${a>0.5?'#fff':'#475569'};border-radius:3px">${c||''}</td>`; };
-  const head=`<tr><td></td>${hrs.map(h=>`<td style="font-size:8.5px;color:#94a3b8;text-align:center">${hl(h)}</td>`).join('')}</tr>`;
-  const rows=days.map(([dw,lbl])=>`<tr><td style="font-size:10px;color:#64748b;font-weight:600;padding-right:6px;text-align:right">${lbl}</td>${hrs.map(h=>cell(dw,h)).join('')}</tr>`).join('');
+  const minA=Math.max(2,Math.ceil(WN*0.5));
+  let maxB=0,maxX=0,peakU={u:-1};
+  days.forEach(([dw])=>hrs.forEach(h=>{ const c=cv(dw,h); if(c.b>maxB)maxB=c.b; if(c.x>maxX)maxX=c.x; if(c.a>=minA){ const u=c.b/c.a; if(u>peakU.u) peakU={u,dw,h,b:c.b,a:c.a}; } }));
+  const grid=(valFn,maxV,rgb,suf)=>{
+    const head=`<tr><td></td>${hrs.map(h=>`<td style="font-size:7px;color:#cbd5e1;text-align:center">${hl(h)}</td>`).join('')}</tr>`;
+    const rows=days.map(([dw,lbl])=>`<tr><td style="font-size:8.5px;color:#64748b;font-weight:600;padding-right:4px;text-align:right">${lbl}</td>${hrs.map(h=>{const v=valFn(cv(dw,h));const al=maxV>0?Math.min(1,v/maxV):0;return `<td title="${dn[dw]} ${hl(h)}" style="width:20px;height:16px;text-align:center;font-size:7.5px;background:${v===0?'#f8fafc':'rgba('+rgb+','+(0.14+al*0.85)+')'};color:${al>0.55?'#fff':'#64748b'};border-radius:2px">${v?v+(suf||''):''}</td>`;}).join('')}</tr>`).join('');
+    return `<table style="border-spacing:1.5px;border-collapse:separate"><tbody>${head}${rows}</tbody></table>`;
+  };
+  const util=c=>c.a>0?Math.round(c.b/c.a*100):0;
+  const rk=bhodRate?1/WN:1, rnum=x=>{ const v=x*rk; return bhodRate?Math.round(v*10)/10:Math.round(v); };
+  const wB=v=>`<button onclick="setBhodWin(${v})" style="font-size:10px;padding:2px 8px;border-radius:6px;border:1.5px solid ${WN===v?'#0d9488':'var(--bdr)'};background:${WN===v?'#f0fdfa':'#fff'};color:${WN===v?'#0f766e':'#64748b'};font-weight:${WN===v?700:500};cursor:pointer;">${v}w</button>`;
+  const winBtns=[1,2,4,8,12].filter(v=>v<=nWk).map(wB).join('');
+  const rB=(v,l)=>`<button onclick="setBhodRate(${v})" style="font-size:10px;padding:2px 8px;border-radius:6px;border:1.5px solid ${bhodRate===v?'#4338ca':'var(--bdr)'};background:${bhodRate===v?'#eef2ff':'#fff'};color:${bhodRate===v?'#4338ca':'#64748b'};font-weight:${bhodRate===v?700:500};cursor:pointer;">${l}</button>`;
   el.innerHTML=`<div class="sec" style="padding:16px 18px">
-    <div style="font-size:13px;font-weight:600;color:var(--navy)">🕐 Peak booking slots — hour × day</div>
-    <div style="font-size:11px;color:var(--gray);margin:2px 0 10px">When the selected clinic(s)' bookings actually land, by weekday × hour (IST · last 8 weeks). <b>For roster planning</b> — keep dark cells covered, avoid blocking peak hours. ${peak.c?`Busiest slot: <b>${dn[peak.dw]} ${hl(peak.h)}</b> (${peak.c} bookings).`:''}</div>
-    <div style="overflow-x:auto"><table style="border-spacing:2px;border-collapse:separate"><tbody>${head}${rows}</tbody></table></div>
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:4px;">
+      <div style="font-size:13px;font-weight:600;color:var(--navy)">🕐 When are doctors busiest? — hour × day <span style="font-weight:400;color:var(--gray)">(IST)</span></div>
+      <span style="display:flex;gap:4px;align-items:center;"><span style="font-size:9px;color:#cbd5e1;font-weight:700;text-transform:uppercase;">Window</span>${winBtns}</span>
+      <span style="display:flex;gap:4px;align-items:center;"><span style="font-size:9px;color:#cbd5e1;font-weight:700;text-transform:uppercase;">Bookings/Shrinkage</span>${rB(false,'Total')}${rB(true,'/week')}</span></div>
+    ${peakU.u>=0?`<div style="font-size:11.5px;color:#0f766e;background:#f0fdfa;border:1px solid #99f6e4;border-radius:9px;padding:8px 12px;margin-bottom:10px;"><b>Busiest slot: ${dn[peakU.dw]} ${hl(peakU.h)} at ${Math.round(peakU.u*100)}% utilization</b> (${peakU.b} booked of ${peakU.a} available, last ${WN}w). Utilization = booked ÷ available slots — the real "how busy", not just volume.</div>`:''}
+    <div style="display:flex;gap:16px;flex-wrap:wrap;">
+      <div><div style="font-size:10px;color:#0d9488;font-weight:700;margin-bottom:3px;">⚡ Utilization (booked ÷ available)</div>${grid(util,100,'13,148,136','%')}</div>
+      <div><div style="font-size:10px;color:#4338ca;font-weight:700;margin-bottom:3px;">📅 Bookings ${bhodRate?'(per week)':'(volume)'}</div>${grid(c=>rnum(c.b),maxB*rk||1,'79,70,229')}</div>
+      <div><div style="font-size:10px;color:#dc2626;font-weight:700;margin-bottom:3px;">✂️ Doctor shrinkage ${bhodRate?'(blocked/week)':'(blocked slots)'}</div>${grid(c=>rnum(c.x),maxX*rk||1,'220,38,38')}</div>
+    </div>
+    <div style="font-size:10.5px;color:var(--gray);margin-top:8px">Last <b>${WN} week${WN>1?'s':''}</b> (change with Window). Bookings/Shrinkage show <b>${bhodRate?'per-week average':'window total'}</b>; utilization is always a rate. <b>For roster planning</b> — keep high-utilization cells covered. Volume = <i>where bookings land</i>; utilization = <i>where slots are full</i>; shrinkage = <i>where doctors blocked slots</i>.</div>
   </div>`;
 }
 /* ── Lead → conversion by contact mode + source (network) ── */
@@ -1795,7 +1816,7 @@ function applySelection(){
 (async function(){
   try{
     const _cb='?t='+Date.now();   // cache-bust so data rebuilds always show fresh
-    const [sc,lj,ros,rem,sar,cnv,doc,mkt,swho,ret,cbk,prc,lage,l2c,daily,lcv,cmd,bhod,bsrc]=await Promise.all([
+    const [sc,lj,ros,rem,sar,cnv,doc,mkt,swho,ret,cbk,prc,lage,l2c,daily,lcv,cmd,bhod,bsrc,ahod]=await Promise.all([
       fetch('data_scorecard.json'+_cb).then(r=>r.json()),
       fetch('data_leads.json'+_cb).then(r=>r.json()),
       fetch('data_roster.json'+_cb).then(r=>r.json()),
@@ -1815,8 +1836,9 @@ function applySelection(){
       fetch('data_contact_mode.json'+_cb).then(r=>r.ok?r.json():null).catch(()=>null),
       fetch('data_booking_hod.json'+_cb).then(r=>r.ok?r.json():null).catch(()=>null),
       fetch('data_booking_source.json'+_cb).then(r=>r.ok?r.json():null).catch(()=>null),
+      fetch('data_avail_hod.json'+_cb).then(r=>r.ok?r.json():null).catch(()=>null),
     ]);
-    SC=sc; LEADS=lj; ROSTER=ros; REM=rem||{}; SARVAM=sar; CONV=cnv||{}; DOCTOR=doc||{}; MKT=mkt; SWHO=swho||{}; RETEN=ret||{}; CALLBACK=cbk||{}; PRACTO=prc||{}; LAGE=lage||{}; L2C=l2c; DAILY=daily||{}; LEADCONV=lcv; CONTACTMODE=cmd; BHOD=bhod; BOOKSRC=bsrc;
+    SC=sc; LEADS=lj; ROSTER=ros; REM=rem||{}; SARVAM=sar; CONV=cnv||{}; DOCTOR=doc||{}; MKT=mkt; SWHO=swho||{}; RETEN=ret||{}; CALLBACK=cbk||{}; PRACTO=prc||{}; LAGE=lage||{}; L2C=l2c; DAILY=daily||{}; LEADCONV=lcv; CONTACTMODE=cmd; BHOD=bhod; BOOKSRC=bsrc; AVAILHOD=ahod;
     buildWeeks();
     CLINICS=Object.keys(SC).filter(k=>k!=='_meta').sort();
     CITIES={}; CLINICS.forEach(k=>{const c=k.split('|')[0]; (CITIES[c]=CITIES[c]||[]).push(k);});
