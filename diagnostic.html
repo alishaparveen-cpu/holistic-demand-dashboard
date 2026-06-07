@@ -1053,7 +1053,50 @@ function renderOffline(){
       <span style="font-size:10px;color:#94a3b8;">vs each clinic's own ${baseShort()} — shows where losses concentrate · clinics with issues below</span>
     </div>
   </div>`;
-  return ctrl+fNote+overview+leadConvCard()+compactSummary;
+  return ctrl+fNote+overview+practoSection(R.rows)+leadConvCard()+compactSummary;
+}
+
+// Dedicated Practo section for the Quick View — leads + phone-matched bookings + by-doctor,
+// aggregated over the selected clinic(s). Always expanded.
+function practoSection(rows){
+  if(!rows||!rows.length) return '';
+  const W=wkIdx, NWK=WEEKS.length;
+  const winN=trendWin==='all'?NWK:Math.min(+trendWin||6,NWK);
+  const rev=a=>a.slice(0,NWK).reverse().slice(-winN), hi=(winN-1)-W;
+  const nrm=a=>{ const w=(a||[]).slice(0,winN).filter(x=>x!=null&&!isNaN(x)); return w.length?w.reduce((s,x)=>s+(+x||0),0)/w.length:0; };
+  const mini=(label,col,sub,svg)=>`<div style="margin-bottom:9px;"><div style="font-size:12px;font-weight:700;color:${col};">${label}</div><div style="font-size:10px;color:#94a3b8;margin-bottom:3px;">${sub}</div>${svg}</div>`;
+  const add=(acc,arr)=>{ for(let i=0;i<NWK;i++) acc[i]=(acc[i]||0)+((arr&&arr[i])||0); return acc; };
+  let leads=Array(NWK).fill(0), booked=Array(NWK).fill(0); const byDoc={}; let anyP=false, anyB=false;
+  rows.forEach(r=>{ const l=practoArr(r.city,r.clinic); if(l.some(x=>x>0)) anyP=true; add(leads,l);
+    const b=practoBkTrueArr(r.city,r.clinic); if(b.some(x=>x>0)) anyB=true; add(booked,b);
+    const bd=practoByDoctor(r.city,r.clinic); if(bd){ Object.keys(bd).forEach(d=>{ byDoc[d]=byDoc[d]||Array(NWK).fill(0); add(byDoc[d], bd[d].leads||[]); }); } });
+  if(!anyP && !anyB && !Object.keys(byDoc).length) return '';
+  const lw=leads[W]||0, ln=nrm(leads), dL=ln?Math.round((lw-ln)/ln*100):0;
+  const bw=booked[W]||0, bn=nrm(booked), dB=bn?Math.round((bw-bn)/bn*100):0;
+  const l2b = lw>0?Math.round(bw/lw*100):null;
+  const docs=Object.keys(byDoc).map(d=>({d,w:byDoc[d][W]||0,tot:byDoc[d].slice(0,winN).reduce((a,b)=>a+b,0),arr:byDoc[d]})).filter(x=>x.tot>0).sort((a,b)=>b.w-a.w||b.tot-a.tot);
+  const mx=Math.max(1,...docs.map(x=>x.w));
+  const docList=docs.length?`<details open style="margin-top:8px;"><summary style="cursor:pointer;font-size:11px;font-weight:700;color:#b45309;padding:3px 0;">Practo leads by doctor — ${WEEKS[W].label} (click a doctor for trend) · ${docs.length} with leads</summary>
+    <div style="padding:5px 0 2px;">${docs.map(x=>{ const dn=nrm(x.arr); return `<details style="margin-bottom:2px;"><summary style="cursor:pointer;list-style:none;display:flex;align-items:center;gap:7px;font-size:11px;padding:2px 0;">
+      <span style="flex:0 0 42%;color:#475569;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${x.d}">▸ ${x.d.replace(/^Dr\.?\s*/,'')}</span>
+      <span style="flex:1;height:10px;background:#fff7ed;border-radius:3px;overflow:hidden;"><span style="display:block;height:100%;width:${x.w/mx*100}%;background:#f59e0b;"></span></span>
+      <span style="flex:0 0 auto;font-weight:800;color:#0f172a;">${x.w}</span></summary>
+      <div style="padding:2px 0 7px 10px;"><div style="font-size:9px;color:#94a3b8;margin-bottom:1px;">weekly Practo leads · ${x.tot} in last ${winN}w · dashed = ${winN}-wk avg</div>${spark(rev(x.arr),'#f59e0b',hi,null,dn)}</div></details>`; }).join('')}</div></details>`:'<div style="font-size:10.5px;color:#94a3b8;margin-top:6px;">No per-doctor Practo leads for this scope.</div>';
+  const scopeLbl = rows.length===1?`${rows[0].clinic} · ${rows[0].city}`:((geoSel.size?geoScopeText():'all clinics')+` · ${rows.length} clinics`);
+  return `<div class="card" style="border-top:3px solid #f59e0b;">
+    <div class="sec-h"><span class="sec-num" style="background:#f59e0b;">P</span>Practo — ${scopeLbl}</div>
+    <div class="sec-sub">Practo profile leads &amp; phone-matched bookings for the selected scope · ${WEEKS[W].label} · dashed = ${winN}-wk norm</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:12px;">
+      <div class="kpi"><div class="kpi-l">Practo leads · ${WEEKS[W].label}</div><div class="kpi-v">${lw}</div><div class="kpi-s" style="color:${dCol(dL)}">${signed(dL,'%')} vs ${winN}-wk avg</div></div>
+      <div class="kpi"><div class="kpi-l">Practo booked (true)</div><div class="kpi-v">${bw}</div><div class="kpi-s" style="color:${dCol(dB)}">${signed(dB,'%')} vs avg</div></div>
+      <div class="kpi"><div class="kpi-l">Lead → booked</div><div class="kpi-v">${l2b==null?'—':l2b+'%'}</div><div class="kpi-s">phone-matched, this scope</div></div>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px;">
+      ${anyP?mini('Practo leads trend','#f59e0b','profile leads · dashed = '+winN+'-wk avg',spark(rev(leads),'#f59e0b',hi,null,ln)):''}
+      ${anyB?mini('Practo booked trend','#ea580c','phone-matched true bookings · dashed = '+winN+'-wk avg',spark(rev(booked),'#ea580c',hi,null,bn)):''}
+    </div>
+    ${docList}
+  </div>`;
 }
 
 // inline SVG trend sparkline with value labels; hiIdx = highlighted (selected) point.
