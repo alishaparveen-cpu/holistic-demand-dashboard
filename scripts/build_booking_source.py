@@ -42,7 +42,7 @@ clinics=set(cube)|set(chan)|set(age)
 OUT={"_meta":{"weeks":WEEKS,
     "source":"appointments -> patient.lead_id -> lead (Screening Calls, offline clinics)",
     "note":"Full booking cube: channel x lead-age(tw/lw/old) x new/fu x outcome, per clinic/week. 99.95% of booked patients link to a lead. Source of BOOKINGS, not all leads.",
-    "channels":["Google Ads","Meta","Practo","Google Maps (GMB)","Organic","WhatsApp","Google organic","Other","Unknown","No lead record"],
+    "channels":["Google Ads","Google Maps (GMB)","Practo","Meta","JustDial","Organic","Walk-in","Other","No tag"],
     "ages":["1 · Same week","2 · Last week","3 · Older"],
     "agegroups":{"tw":"This week","lw":"Last week","old":"Older"}}}
 def undefault(x):
