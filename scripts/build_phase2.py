@@ -113,21 +113,20 @@ def build_status_who():
         if len(c) < 12: continue
         city,clinic,wk,who = c[0],c[1],c[2],c[3]
         if wk not in WI: continue
-        o = D.setdefault(f"{city}|{clinic}", {seg:{f:[0]*12 for f in SUB} for seg in ("new","fu")})
+        o = D.setdefault(f"{city}|{clinic}", {seg:{f:[0]*12 for f in SUB} for seg in ("new","rebook","return")})
         seg = o.get(who)
         if seg is None: continue
         for j,f in enumerate(SUB): seg[f][WI[wk]] = num(c[4+j])
     out = {"_meta":{"weeks":WEEKS,
-        "source":"allo_consultations.appointments — status split by new(first-ever SC) vs follow-up",
-        "note":"per clinic/week: for new and fu segments — total/done/missed/resched_patient/resched_noshow. cancelled/scheduled = total - others."}}
+        "source":"allo_consultations.appointments — status split by new(first-ever SC) / rebook(reschedule/re-book <14d) / return(genuine repeat 14d+)",
+        "note":"per clinic/week: for new/rebook/return segments — total/done/missed/resched_*. cancelled/scheduled = total - others."}}
     out.update(D)
     json.dump(out, open(os.path.join(ROOT,"data_status_who.json"),"w"), separators=(",",":"))
     b=D.get("Bangalore|Bellandur")
     if b:
-        n,fu=b["new"],b["fu"]
         print(f"data_status_who.json · {len(D)} clinics")
-        print(f"  Bellandur wk0 — NEW: total {n['total'][0]} done {n['done'][0]} missed {n['missed'][0]} rp {n['resched_patient'][0]}")
-        print(f"  Bellandur wk0 — FU : total {fu['total'][0]} done {fu['done'][0]} missed {fu['missed'][0]} rp {fu['resched_patient'][0]}")
+        for s in ("new","rebook","return"):
+            seg=b.get(s,{}); print(f"  Bellandur wk0 — {s.upper()}: total {seg.get('total',[0])[0]}")
 
 def build_retention():
     D = {}

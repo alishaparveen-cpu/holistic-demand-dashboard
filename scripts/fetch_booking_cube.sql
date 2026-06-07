@@ -11,11 +11,15 @@ WITH sc_all AS (
   JOIN allo_health.locations loc ON a.location_id=loc.id AND loc.deleted_at IS NULL
   WHERE a.deleted_at IS NULL
 ),
-firsts AS (SELECT patient_id, MIN(created_at) AS first_crt FROM sc_all GROUP BY patient_id),
+ranked AS (SELECT *, LAG(created_at) OVER (PARTITION BY patient_id ORDER BY created_at) AS prev_crt FROM sc_all),
 j AS (
   SELECT s.city, s.locality AS clinic,
     TO_CHAR(DATE_TRUNC('week', s.start_time + INTERVAL '5.5 hours'),'YYYY-MM-DD') AS wk,
-    CASE WHEN s.created_at = f.first_crt THEN 'new' ELSE 'fu' END AS seg,
+    -- new = patient's first-ever SC; rebook = within 14d of the prior SC (reschedule / no-show re-book churn);
+    -- return = a genuine repeat 14+ days later. Splits the old 'follow-up' so Total stops double-counting churn.
+    CASE WHEN s.prev_crt IS NULL THEN 'new'
+         WHEN DATEDIFF(day, s.prev_crt, s.created_at) < 14 THEN 'rebook'
+         ELSE 'return' END AS seg,
     -- Clean, exhaustive source taxonomy. utm_source is the source of record; origin (whatsapp/call) is a
     -- contact MODE, not a source, so it never decides the channel. ELSE -> Other; empty/no-lead -> No tag.
     CASE
@@ -45,8 +49,7 @@ j AS (
       WHEN s.st='cancelled' THEN 'cancelled'
       ELSE 'scheduled'
     END AS outcome
-  FROM sc_all s
-  JOIN firsts f ON s.patient_id=f.patient_id
+  FROM ranked s
   LEFT JOIN allo_persons.patient p ON s.patient_id=p.id
   LEFT JOIN allo_persons.lead l ON p.lead_id=l.id
   WHERE s.start_time >= '2026-03-09' AND s.start_time < '2026-06-01'

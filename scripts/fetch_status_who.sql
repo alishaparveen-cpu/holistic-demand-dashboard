@@ -9,18 +9,21 @@ WITH sc_all AS (
   JOIN allo_health.locations loc ON a.location_id=loc.id AND loc.deleted_at IS NULL
   WHERE a.deleted_at IS NULL
 ),
-firsts AS (SELECT patient_id, MIN(created_at) AS first_crt FROM sc_all GROUP BY patient_id),
+ranked AS (SELECT *, LAG(created_at) OVER (PARTITION BY patient_id ORDER BY created_at) AS prev_crt FROM sc_all),
 j AS (
   SELECT s.city, s.locality AS clinic,
     TO_CHAR(DATE_TRUNC('week', s.start_time + INTERVAL '5.5 hours'),'YYYY-MM-DD') AS wk,
-    (s.created_at = f.first_crt) AS is_new, s.st, s.prev,
+    -- new = first-ever SC; rebook = within 14d of prior SC (reschedule / no-show re-book); return = 14+ days later
+    CASE WHEN s.prev_crt IS NULL THEN 'new'
+         WHEN DATEDIFF(day, s.prev_crt, s.created_at) < 14 THEN 'rebook'
+         ELSE 'return' END AS who, s.st, s.prev,
     (s.rsn LIKE '%provider%' OR s.rsn LIKE '%doctor%' OR s.rsn LIKE '%nonbookable%' OR s.rsn LIKE '%hms%' OR s.rsn LIKE '%block%') AS is_clinic_resched
-  FROM sc_all s JOIN firsts f ON s.patient_id=f.patient_id
+  FROM ranked s
   WHERE s.start_time >= '2026-03-09' AND s.start_time < '2026-06-01'
     AND LOWER(COALESCE(s.locality,'')) <> 'online' AND s.locality IS NOT NULL
 )
 SELECT city, clinic, wk,
-  CASE WHEN is_new THEN 'new' ELSE 'fu' END AS who,
+  who,
   COUNT(*) AS total,
   SUM(CASE WHEN st IN ('completed','reconsulted') THEN 1 ELSE 0 END) AS done,
   SUM(CASE WHEN st='missed' THEN 1 ELSE 0 END) AS missed,
