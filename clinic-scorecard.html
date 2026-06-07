@@ -544,11 +544,14 @@ function buildD(){
       const SUB=['total','done','missed','resched_patient','resched_clinic','resched_noshow','cancelled','scheduled'];
       const dim=which=>{ const segs=new Set(); SEL.forEach(k=>Object.keys(((BOOKSRC[k]||{})[which])||{}).forEach(c=>segs.add(c)));
         const o={}; segs.forEach(c=>{ const seg={}; SUB.forEach(f=>seg[f]=sumS(k=>(((((BOOKSRC[k]||{})[which]||{})[c]||{})[f])))); o[c]=seg; }); return o; };
-      // channel -> age total, via sumS so weeks align to currentWeek (oldest->newest, NW) like every other series
-      const joint={}; const chs=new Set(); SEL.forEach(k=>Object.keys(((BOOKSRC[k]||{}).joint)||{}).forEach(ch=>chs.add(ch)));
-      chs.forEach(ch=>{ const ags=new Set(); SEL.forEach(k=>Object.keys((((BOOKSRC[k]||{}).joint||{})[ch])||{}).forEach(ag=>ags.add(ag)));
-        const o={}; ags.forEach(ag=>{ o[ag]=sumS(k=>((((BOOKSRC[k]||{}).joint||{})[ch]||{})[ag])); }); joint[ch]=o; });
-      return { channel:dim('channel'), age:dim('age'), joint }; })(),
+      // full cube ch->ageGrp->seg->out, via sumS so weeks align to currentWeek (oldest->newest, NW)
+      const cube={}; const chs=new Set(); SEL.forEach(k=>Object.keys(((BOOKSRC[k]||{}).cube)||{}).forEach(ch=>chs.add(ch)));
+      chs.forEach(ch=>{ const ags=new Set(); SEL.forEach(k=>Object.keys((((BOOKSRC[k]||{}).cube||{})[ch])||{}).forEach(a=>ags.add(a)));
+        const co={}; ags.forEach(ag=>{ const sgs=new Set(); SEL.forEach(k=>Object.keys(((((BOOKSRC[k]||{}).cube||{})[ch]||{})[ag])||{}).forEach(s=>sgs.add(s)));
+          const ao={}; sgs.forEach(seg=>{ const outs=new Set(); SEL.forEach(k=>Object.keys((((((BOOKSRC[k]||{}).cube||{})[ch]||{})[ag]||{})[seg])||{}).forEach(o=>outs.add(o)));
+            const so={}; outs.forEach(o=>{ so[o]=sumS(k=>(((((((BOOKSRC[k]||{}).cube||{})[ch]||{})[ag]||{})[seg]||{})[o]))); }); ao[seg]=so; });
+          co[ag]=ao; }); cube[ch]=co; });
+      return { channel:dim('channel'), age:dim('age'), cube }; })(),
     dow: (()=>{ const DD=['Mon','Tue','Wed','Thu','Fri','Sat','Sun']; const o={}; DD.forEach(d=>o[d]={booked:0,done:0,missed:0});
       SEL.forEach(k=>{ const dw=(SC[k]||{}).dow||{}; DD.forEach(d=>{ if(dw[d]){o[d].booked+=dw[d].booked||0;o[d].done+=dw[d].done||0;o[d].missed+=dw[d].missed||0;} }); }); return o; })(),
   };
@@ -1444,9 +1447,16 @@ function renderAll() {
   document.getElementById('weekLabel').textContent=WEEK_LABELS[currentWeek];
 }
 /* ── Booking flow (per clinic) — combined full flow + single-dimension views ── */
-let bfMode='full';
-function bfSet(m){ bfMode=m; renderBookFlow(); }
-const _bfBox=(x,y,wd,h,label,num,accent,fs)=>`<rect x="${x}" y="${y}" width="${wd}" height="${h}" rx="6" fill="#fff" stroke="${accent}" stroke-width="1.3"/><rect x="${x}" y="${y}" width="3.5" height="${h}" rx="2" fill="${accent}"/><text x="${x+11}" y="${y+h/2+4}" font-size="${fs||10.5}" font-weight="600" fill="#334155">${label}</text><text x="${x+wd-8}" y="${y+h/2+4}" font-size="11" font-weight="800" fill="#0f172a" text-anchor="end">${num}</text>`;
+let bfMode='full', bfFocus=null;
+function bfSet(m){ bfMode=m; bfFocus=null; renderBookFlow(); }
+function bfClear(){ bfFocus=null; renderBookFlow(); }
+function bfFocusSet(dim,key){
+  if(bfFocus && bfFocus.dim===dim && (bfFocus.key===key || (key==='__other'&&bfFocus.key==='__other'))){ bfFocus=null; renderBookFlow(); return; }
+  bfFocus={dim,key};
+  if(dim==='channel' && key==='__other'){ bfFocus.keys=(window._bfOtherMembers||[]).slice(); bfFocus.label='Other sources'; }
+  renderBookFlow();
+}
+const _bfBox=(x,y,wd,h,label,num,accent,fs,click,hot)=>{ const inner=`<rect x="${x}" y="${y}" width="${wd}" height="${h}" rx="6" fill="${hot?'#f5f3ff':'#fff'}" stroke="${accent}" stroke-width="${hot?2.4:1.3}"/><rect x="${x}" y="${y}" width="3.5" height="${h}" rx="2" fill="${accent}"/><text x="${x+11}" y="${y+h/2+4}" font-size="${fs||10.5}" font-weight="600" fill="#334155">${label}</text><text x="${x+wd-8}" y="${y+h/2+4}" font-size="11" font-weight="800" fill="#0f172a" text-anchor="end">${num}</text>`; return click?`<g style="cursor:pointer" onclick="${click}">${inner}</g>`:inner; };
 const _bfLine=(x1,y1,x2,y2,lab)=>{const mx=(x1+x2)/2;return `<path d="M${x1} ${y1} C${mx} ${y1} ${mx} ${y2} ${x2} ${y2}" fill="none" stroke="#cbd5e1" stroke-width="1.3"/>${lab?`<rect x="${mx-13}" y="${(y1+y2)/2-7}" width="26" height="12" rx="3" fill="#fff" stroke="#e2e8f0" stroke-width="0.5"/><text x="${mx}" y="${(y1+y2)/2+2}" font-size="8.5" font-weight="600" fill="#64748b" text-anchor="middle">${lab}</text>`:''}`;};
 const _bfHdr=(x,wd,t)=>`<text x="${x+wd/2}" y="-14" font-size="9" font-weight="700" fill="#94a3b8" text-anchor="middle" letter-spacing="0.5">${t}</text>`;
 const _BF_DISP=[['done','Completed','#16a34a'],['missed','No-show','#dc2626'],['resched_patient','Resched · patient','#d97706'],['resched_clinic','Resched · ops','#f59e0b'],['resched_noshow','Re-booked (was no-show)','#a855f7'],['cancelled','Cancelled','#64748b'],['scheduled','Pending','#2563eb']];
@@ -1465,43 +1475,60 @@ function renderBookFlow(){
     <div style="font-size:10px;color:var(--gray);margin-top:6px">${foot}</div></div>`; };
 
   if(bfMode==='full'){
-    // ── COMBINED flow (matches the hand-drawn chart): Channel → Lead age → Booking[New/FU] → Done ──
-    const sw=D.statusWho, bsrc=D.bookSrc, J=bsrc&&bsrc.joint, chanM=bsrc&&bsrc.channel;
-    if(!sw||!J||!chanM){ wrap('🔀 Full booking flow','Source data not loaded — rebuild <code>data_booking_source.json</code>.','',''); return; }
-    const V=(s,f)=>(((sw[s]||{})[f]||[])[w])||0;
-    const segs=[['new','New · first-time','#7c3aed'],['fu','Follow-up','#0d9488']].map(a=>({k:a[0],lbl:a[1],c:a[2],total:V(a[0],'total')})).filter(s=>s.total>0);
-    const TOT=segs.reduce((a,s)=>a+s.total,0);
-    if(TOT<=0){ wrap('🔀 Full booking flow — channel → lead age → booking → outcome','No bookings this week.','',''); return; }
-    segs.forEach(s=>{ s.outs=_BF_DISP.map(d=>({f:d[0],lbl:d[1],c:d[2],v:V(s.k,d[0])})).filter(o=>o.v>0); });
+    // ── COMBINED, FOCUSABLE flow from the cube: Channel → Lead age → Booking[New/FU] → Done ──
+    const CUBE=D.bookSrc&&D.bookSrc.cube;
+    if(!CUBE){ wrap('🔀 Full booking flow','Source data not loaded — rebuild <code>data_booking_source.json</code>.','',''); return; }
     const CHC={'Google Ads':'#2563eb','Meta':'#7c3aed','Practo':'#0ea5e9','Google Maps (GMB)':'#16a34a','Organic':'#0d9488','WhatsApp':'#22c55e','Google organic':'#0891b2','Other':'#94a3b8','Unknown':'#cbd5e1','No lead record':'#cbd5e1'};
     const SHORT={'Google Maps (GMB)':'Google Maps','No lead record':'No source tag','Unknown':'Untagged'};
-    let chans=Object.keys(chanM).map(c=>({k:c,lbl:SHORT[c]||c,c:CHC[c]||'#64748b',total:((chanM[c]||{}).total||[])[w]||0,members:[c]})).filter(x=>x.total>0).sort((a,b)=>b.total-a.total);
-    if(chans.length>6){ const keep=chans.slice(0,5),rest=chans.slice(5); chans=keep.concat([{k:'__other',lbl:'Other sources',c:'#94a3b8',total:rest.reduce((a,s)=>a+s.total,0),members:rest.flatMap(s=>s.members)}]); }
-    // collapse the 5 lead-age buckets into 3 (This week / Last week / Older) by leading digit — robust to label text
-    const GRP=[['tw','This week','#16a34a'],['lw','Last week','#0d9488'],['old','Older','#d97706']];
-    const grpOf=k=>{ const n=(k||'').charAt(0); return n==='1'?'tw':n==='2'?'lw':'old'; };
-    const chAge=(cn,g)=>cn.members.reduce((x,m)=>{ const ags=J[m]||{}; return x+Object.keys(ags).reduce((y,ak)=>y+(grpOf(ak)===g?((ags[ak]||[])[w]||0):0),0); },0);
-    let ages=GRP.map(a=>({k:a[0],lbl:a[1],c:a[2],total:chans.reduce((acc,cn)=>acc+chAge(cn,a[0]),0)})).filter(a=>a.total>0);
-    // layout — 5 columns
-    const BH=24, OG=7, chW=128, ageW=110, bw=78, segW=118, doneW=186;
-    const xCh=8, xAge=xCh+chW+46, xBk=xAge+ageW+46, xSeg=xBk+bw+46, xDone=xSeg+segW+46, vw=xDone+doneW+10;
+    const AGELBL={tw:'This week',lw:'Last week',old:'Older'}, AGECOL={tw:'#16a34a',lw:'#0d9488',old:'#d97706'};
+    const segDef={new:['New · first-time','#7c3aed'],fu:['Follow-up','#0d9488']};
+    // flatten cube to cells at week w
+    const cells=[];
+    Object.keys(CUBE).forEach(ch=>Object.keys(CUBE[ch]).forEach(ag=>Object.keys(CUBE[ch][ag]).forEach(seg=>Object.keys(CUBE[ch][ag][seg]).forEach(out=>{ const v=((CUBE[ch][ag][seg][out])||[])[w]||0; if(v>0) cells.push({ch,ag,seg,out,v}); }))));
+    const F=bfFocus, PROP={channel:'ch',age:'ag',seg:'seg',out:'out'};
+    const match=c=>{ if(!F) return true; if(F.dim==='channel') return F.keys?F.keys.indexOf(c.ch)>=0:c.ch===F.key; return c[PROP[F.dim]]===F.key; };
+    const fc=cells.filter(match);
+    const TOT=fc.reduce((a,c)=>a+c.v,0);
+    // focus banner
+    const focusLbl=F?(F.dim==='channel'?(F.label||SHORT[F.key]||F.key):F.dim==='age'?AGELBL[F.key]:F.dim==='seg'?segDef[F.key][0]:(_BF_DISP.find(d=>d[0]===F.key)||[,F.key])[1]):'';
+    const banner=F?`<div style="display:flex;align-items:center;gap:8px;margin:0 0 8px"><span style="font:600 11px Inter;color:#7c3aed">Focused on “${focusLbl}”</span><button onclick="bfClear()" style="font:600 10.5px Inter;padding:3px 9px;border-radius:999px;border:1px solid #e2e8f0;background:#fff;color:#475569;cursor:pointer">✕ clear</button></div>`
+      :`<div style="font-size:10.5px;color:#94a3b8;margin:0 0 8px">Tip: click any box to focus the whole flow on it (e.g. click <b>This week</b> to see only those bookings’ channels &amp; outcomes).</div>`;
+    if(TOT<=0){ wrap('🔀 Full booking flow — channel → lead age → booking → outcome',banner+'No bookings match this week.','',''); return; }
+    // CHANNEL marginal (display top-5 + Other, unless focused on a single channel)
+    const chT={}; fc.forEach(c=>chT[c.ch]=(chT[c.ch]||0)+c.v);
+    let chans=Object.keys(chT).map(ch=>({k:ch,lbl:SHORT[ch]||ch,c:CHC[ch]||'#64748b',total:chT[ch],members:[ch]})).sort((a,b)=>b.total-a.total);
+    if(chans.length>6){ const keep=chans.slice(0,5),rest=chans.slice(5); const mem=rest.flatMap(s=>s.members); window._bfOtherMembers=mem; chans=keep.concat([{k:'__other',lbl:'Other sources',c:'#94a3b8',total:rest.reduce((a,s)=>a+s.total,0),members:mem}]); }
+    // AGE marginal
+    const agT={}; fc.forEach(c=>agT[c.ag]=(agT[c.ag]||0)+c.v);
+    const ages=['tw','lw','old'].filter(a=>agT[a]>0).map(a=>({k:a,lbl:AGELBL[a],c:AGECOL[a],total:agT[a]}));
+    // SEG marginal + per-seg outcomes
+    const sgT={}; fc.forEach(c=>sgT[c.seg]=(sgT[c.seg]||0)+c.v);
+    const segs=['new','fu'].filter(s=>sgT[s]>0).map(s=>{ const ot={}; fc.filter(c=>c.seg===s).forEach(c=>ot[c.out]=(ot[c.out]||0)+c.v); return {k:s,lbl:segDef[s][0],c:segDef[s][1],total:sgT[s],outs:_BF_DISP.filter(d=>ot[d[0]]>0).map(d=>({f:d[0],lbl:d[1],c:d[2],v:ot[d[0]]}))}; });
+    // channel×age joint (over displayed channels' members)
+    const chAg=(cn,ag)=>cn.members.reduce((x,m)=>x+fc.filter(c=>c.ch===m&&c.ag===ag).reduce((y,c)=>y+c.v,0),0);
+    const hot=(dim,key)=>F&&F.dim===dim&&(F.keys?(dim==='channel'&&key==='__other'):F.key===key);
+    const clk=(dim,key)=>`bfFocusSet('${dim}','${key}')`;
+    // layout — 5 columns (wider channel→age gap to fit % labels)
+    const BH=24, OG=7, chW=126, ageW=104, bw=76, segW=116, doneW=182;
+    const xCh=8, xAge=xCh+chW+70, xBk=xAge+ageW+56, xSeg=xBk+bw+56, xDone=xSeg+segW+56, vw=xDone+doneW+10;
     let curY=6;
     segs.forEach(s=>{ const clH=Math.max(BH, s.outs.length*(BH+OG)-OG); s.outs.forEach((o,i)=>{ o.y=curY+i*(BH+OG); }); s.y=curY+clH/2-BH/2; curY+=clH+16; });
-    const totH=curY+4, bkY=totH/2-BH/2, cTop=n=>(totH-(n*(BH+OG)-OG))/2;
+    const totH=Math.max(curY+4, 90), bkY=totH/2-BH/2, cTop=n=>(totH-(n*(BH+OG)-OG))/2;
     chans.forEach((s,i)=>{ s.y=cTop(chans.length)+i*(BH+OG); });
     ages.forEach((a,i)=>{ a.y=cTop(ages.length)+i*(BH+OG); });
     let lines='',boxes='';
-    chans.forEach(cn=>{ ages.forEach(ag=>{ if(chAge(cn,ag.k)>0) lines+=_bfLine(xCh+chW,cn.y+BH/2,xAge,ag.y+BH/2,''); }); });
+    // channel → age : % share of that age bucket (sums to 100 down each age, matches the sketch)
+    chans.forEach(cn=>{ ages.forEach(ag=>{ const v=chAg(cn,ag.k); if(v>0) lines+=_bfLine(xCh+chW,cn.y+BH/2,xAge,ag.y+BH/2,pct(v,ag.total)+'%'); }); });
     ages.forEach(ag=>{ lines+=_bfLine(xAge+ageW,ag.y+BH/2,xBk,bkY+BH/2,pct(ag.total,TOT)+'%'); });
     segs.forEach(s=>{ lines+=_bfLine(xBk+bw,bkY+BH/2,xSeg,s.y+BH/2,pct(s.total,TOT)+'%'); s.outs.forEach(o=>{ lines+=_bfLine(xSeg+segW,s.y+BH/2,xDone,o.y+BH/2,pct(o.v,s.total)+'%'); }); });
-    chans.forEach(s=>{ boxes+=_bfBox(xCh,s.y,chW,BH,s.lbl,s.total.toLocaleString(),s.c,10); });
-    ages.forEach(a=>{ boxes+=_bfBox(xAge,a.y,ageW,BH,a.lbl,a.total.toLocaleString(),a.c,10); });
+    chans.forEach(s=>{ boxes+=_bfBox(xCh,s.y,chW,BH,s.lbl,s.total.toLocaleString(),s.c,10,clk('channel',s.k),hot('channel',s.k)); });
+    ages.forEach(a=>{ boxes+=_bfBox(xAge,a.y,ageW,BH,a.lbl,a.total.toLocaleString(),a.c,10,clk('age',a.k),hot('age',a.k)); });
     boxes+=_bfBox(xBk,bkY,bw,BH,'Booking',TOT.toLocaleString(),'#475569',10);
-    segs.forEach(s=>{ boxes+=_bfBox(xSeg,s.y,segW,BH,s.lbl,s.total.toLocaleString(),s.c,10); s.outs.forEach(o=>{ boxes+=_bfBox(xDone,o.y,doneW,BH,o.lbl,o.v.toLocaleString(),o.c,9.5); }); });
+    segs.forEach(s=>{ boxes+=_bfBox(xSeg,s.y,segW,BH,s.lbl,s.total.toLocaleString(),s.c,10,clk('seg',s.k),hot('seg',s.k)); s.outs.forEach(o=>{ boxes+=_bfBox(xDone,o.y,doneW,BH,o.lbl,o.v.toLocaleString(),o.c,9.5,clk('out',o.f),hot('out',o.f)); }); });
     const hdrs=`${_bfHdr(xCh,chW,'CHANNEL')}${_bfHdr(xAge,ageW,'LEAD AGE')}${_bfHdr(xBk,bw,'BOOKING')}${_bfHdr(xSeg,segW,'NEW / FOLLOW-UP')}${_bfHdr(xDone,doneW,'DONE')}`;
-    const rp=segs.reduce((a,s)=>a+V(s.k,'resched_patient'),0), ro=segs.reduce((a,s)=>a+V(s.k,'resched_clinic'),0);
     const fresh=ages.filter(a=>a.k==='tw'||a.k==='lw').reduce((a,s)=>a+s.total,0);
-    const sub=`The full path of this week’s bookings — <b>channel → how old the lead was → New / Follow-up → outcome</b> (% on the lines). <b>${pct(fresh,TOT)}%</b> came from leads under 2 weeks old`+((rp+ro)>0?`; of reschedules, <b>${rp}</b> patient-side vs <b>${ro}</b> ops-side.`:'.');
+    const rp=fc.filter(c=>c.out==='resched_patient').reduce((a,c)=>a+c.v,0), ro=fc.filter(c=>c.out==='resched_clinic').reduce((a,c)=>a+c.v,0);
+    const sub=banner+`<b>channel → how old the lead was → New / Follow-up → outcome</b>. Channel→age % = share of that age bucket; age→booking &amp; New/FU % = share of bookings; outcome % = of that segment. <b>${pct(fresh,TOT)}%</b> from leads under 2 weeks old`+((rp+ro)>0?`; reschedules <b>${rp}</b> patient vs <b>${ro}</b> ops.`:'.');
     const svg=`<svg width="100%" viewBox="0 -20 ${vw} ${totH+24}" preserveAspectRatio="xMinYMin meet" style="font-family:inherit;display:block">${hdrs}${lines}${boxes}</svg>`;
     const extra=`<div style="border:1px dashed #cbd5e1;border-radius:8px;padding:9px 12px;margin-top:10px;background:#f8fafc;font-size:10.5px;color:#64748b;line-height:1.5"><b style="color:#475569">The mirror half — leads who <i>didn’t</i> book</b> (called / not called → relevant / not relevant), like the bottom of your sketch, needs per-lead <b>clinic + call-disposition</b> data. The lead table has source &amp; disposition but no clinic; the clinic-level leads feed has no phone/disposition. That link lived in LeadSquared, whose sync is stale (Sep 2024). Wire that back and this half drops straight in.</div>`;
     const foot=`Every booked patient linked to their lead (99.95%). Channel from <code>utm_source/origin/gclid</code>, age from <code>lead.created_at→booked</code>, New/Follow-up + outcome from <code>appointments</code>. <b>Booked patients only.</b>`;

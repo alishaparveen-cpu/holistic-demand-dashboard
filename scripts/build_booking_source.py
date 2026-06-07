@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Build data_booking_source.json from the combined channel x age x outcome pull.
-Per clinic/week we emit:
-  channel : bookings by acquisition channel (full outcome split)   [single-dim view]
-  age     : bookings by lead-age bucket      (full outcome split)   [single-dim view]
-  joint   : channel -> age total counts                            [combined flow chart]
+"""Build data_booking_source.json from the full booking cube
+(channel x lead-age-group x New/FU x outcome, per clinic/week).
+Emits per clinic:
+  channel : bookings by channel, full outcome split   [single-dim 'Where they came from' view]
+  age     : bookings by 5-bucket lead age, outcomes    [single-dim 'Lead age' view]
+  cube    : nested ch -> ageGroup(tw/lw/old) -> seg(new/fu) -> outcome -> [12]  [focusable Full flow]
 12 Monday-weeks, newest-first."""
 import json, os, subprocess, sys
 from collections import defaultdict
@@ -12,42 +13,54 @@ WEEKS=["2026-05-25","2026-05-18","2026-05-11","2026-05-04","2026-04-27","2026-04
        "2026-04-13","2026-04-06","2026-03-30","2026-03-23","2026-03-16","2026-03-09"]
 WI={w:i for i,w in enumerate(WEEKS)}
 SUB=["total","done","missed","resched_patient","resched_clinic","resched_noshow","cancelled","scheduled"]
+AGEMAP={'tw':'1 · Same week','lw':'2 · Last week','old':'3 · Older'}   # 5-bucket age view collapses to 3 here (cube already grouped)
 def num(x):
     try: return int(x)
     except: return 0
-sql=open(os.path.join(HERE,'fetch_booking_flow.sql')).read()
+sql=open(os.path.join(HERE,'fetch_booking_cube.sql')).read()
 p=subprocess.run([sys.executable,RUN],input=sql,capture_output=True,text=True)
 if p.returncode!=0: raise RuntimeError(p.stderr[-400:])
 rows=[l.split('\t') for l in p.stdout.splitlines() if l.strip()]
-# accumulate
+# cube[clinic][ch][agegrp][seg][out] = [12]
+cube=defaultdict(lambda:defaultdict(lambda:defaultdict(lambda:defaultdict(lambda:defaultdict(lambda:[0]*12)))))
 chan=defaultdict(lambda:defaultdict(lambda:{f:[0]*12 for f in SUB}))   # clinic->ch->fields
-age =defaultdict(lambda:defaultdict(lambda:{f:[0]*12 for f in SUB}))   # clinic->age->fields
-joint=defaultdict(lambda:defaultdict(lambda:defaultdict(lambda:[0]*12)))  # clinic->ch->age->total
+age =defaultdict(lambda:defaultdict(lambda:{f:[0]*12 for f in SUB}))   # clinic->ageLabel->fields
 for c in rows:
-    if len(c)<13: continue
-    city,clinic,wk,ch,ag=c[0],c[1],c[2],c[3],c[4]
+    if len(c)<8: continue
+    city,clinic,wk,ch,ag,seg,out=c[0],c[1],c[2],c[3],c[4],c[5],c[6]
     if wk not in WI: continue
-    i=WI[wk]; key=f"{city}|{clinic}"; vals=[num(x) for x in c[5:13]]
-    for j,f in enumerate(SUB):
-        chan[key][ch][f][i]+=vals[j]
-        age[key][ag][f][i]+=vals[j]
-    joint[key][ch][ag][i]+=vals[0]   # total only
-clinics=set(chan)|set(age)|set(joint)
+    i=WI[wk]; key=f"{city}|{clinic}"; n=num(c[7])
+    cube[key][ch][ag][seg][out][i]+=n
+    # channel marginal (full outcomes)
+    chan[key][ch]['total'][i]+=n
+    if out in chan[key][ch]: chan[key][ch][out][i]+=n
+    # age marginal (collapsed labels, full outcomes)
+    al=AGEMAP.get(ag,ag)
+    age[key][al]['total'][i]+=n
+    if out in age[key][al]: age[key][al][out][i]+=n
+clinics=set(cube)|set(chan)|set(age)
 OUT={"_meta":{"weeks":WEEKS,
     "source":"appointments -> patient.lead_id -> lead (Screening Calls, offline clinics)",
-    "note":"Per clinic/week, bookings traced to channel (utm_source/origin/gclid) and lead age (lead.created_at -> booked). 'joint' = channel->age total counts for the combined flow. 99.95% of booked patients link to a lead. Source of BOOKINGS, not all leads.",
+    "note":"Full booking cube: channel x lead-age(tw/lw/old) x new/fu x outcome, per clinic/week. 99.95% of booked patients link to a lead. Source of BOOKINGS, not all leads.",
     "channels":["Google Ads","Meta","Practo","Google Maps (GMB)","Organic","WhatsApp","Google organic","Other","Unknown","No lead record"],
-    "ages":["1 · Same week","2 · Last week","3 · 2-4 weeks","4 · 1-3 months","5 · 3+ months","Unknown"]}}
+    "ages":["1 · Same week","2 · Last week","3 · Older"],
+    "agegroups":{"tw":"This week","lw":"Last week","old":"Older"}}}
+def undefault(x):
+    if isinstance(x,defaultdict): return {k:undefault(v) for k,v in x.items()}
+    return x
 for k in clinics:
-    OUT[k]={
-        "channel":{ch:dict(f) for ch,f in chan[k].items()},
-        "age":{ag:dict(f) for ag,f in age[k].items()},
-        "joint":{ch:{ag:list(t) for ag,t in ags.items()} for ch,ags in joint[k].items()},
-    }
+    OUT[k]={"channel":{ch:dict(f) for ch,f in chan[k].items()},
+            "age":{a:dict(f) for a,f in age[k].items()},
+            "cube":undefault(cube[k])}
 json.dump(OUT,open(os.path.join(ROOT,"data_booking_source.json"),"w"),separators=(",",":"))
 print(f"data_booking_source.json · {len(clinics)} clinics")
 b=OUT.get("Bangalore|Bellandur")
 if b:
     print("  wk0 channel:", {k:v['total'][0] for k,v in sorted(b['channel'].items(),key=lambda kv:-kv[1]['total'][0]) if v['total'][0]>0})
-    print("  wk0 age    :", {k:v['total'][0] for k,v in sorted(b['age'].items()) if v['total'][0]>0})
-    print("  wk0 joint  :", {ch:{ag:t[0] for ag,t in ags.items() if t[0]>0} for ch,ags in b['joint'].items() if any(t[0]>0 for t in ags.values())})
+    # cube sanity: New same-week outcomes
+    cu=b['cube']; tot=0
+    for ch,ags in cu.items():
+        for ag,segs in ags.items():
+            for seg,outs in segs.items():
+                for o,arr in outs.items(): tot+=arr[0]
+    print("  cube wk0 total bookings:", tot)
