@@ -1982,16 +1982,31 @@ function leadLossDrill(r){
       <div style="background:#eef2ff;border-radius:11px;padding:12px 14px;">
         <div style="font-size:13px;font-weight:800;color:#4338ca;margin-bottom:8px;">📍 GMB profile <span style="font-weight:500;color:#94a3b8;font-size:10px;">${hasGmbIns(r.city,r.clinic)?'· live Insights':''}</span></div>
         ${(()=>{
-          const stepB=(num,den,lbl)=>{ const p=den>0?Math.round(num/den*1000)/10:null;
-            return `<div style="text-align:center;font-size:9.5px;color:#94a3b8;margin:1px 0 4px;">↓ <b style="color:#334155;">${p==null?'—':p+'%'}</b> <span style="color:#cbd5e1;">${lbl}</span></div>`; };
+          const miniPctSpark=(vals,hiIdx)=>{ const col='#cbd5e1';
+            const valid=vals.map((v,i)=>({v,i})).filter(o=>o.v!=null); if(valid.length<2) return '';
+            const n=vals.length, Wd=Math.min(230,Math.max(140,n*26)), H=30, pX=14, pT=11, pB=4;
+            const mn=Math.min(...valid.map(o=>o.v)), mx=Math.max(...valid.map(o=>o.v)), rng=(mx-mn)||1;
+            const X=i=>pX+(n>1?i/(n-1):0.5)*(Wd-2*pX), Y=v=>pT+(1-(v-mn)/rng)*(H-pT-pB);
+            let path='',pts='',labs='',started=false;
+            vals.forEach((v,i)=>{ if(v==null){started=false;return;} const x=X(i),y=Y(v),isHi=i===hiIdx;
+              path+=(started?`L${x} ${y}`:`M${x} ${y}`); started=true;
+              pts+=`<circle cx="${x}" cy="${y}" r="${isHi?2.6:1.6}" fill="${isHi?'#0d9488':'#94a3b8'}"/>`;
+              labs+=`<text x="${x}" y="${y-3.5}" font-size="${isHi?7.8:6.8}" font-weight="${isHi?800:600}" fill="${isHi?'#0f766e':'#9aa3af'}" text-anchor="middle">${v}</text>`; });
+            return `<svg width="${Wd}" height="${H}" style="display:block;margin:1px auto 2px;overflow:visible;"><path d="${path}" fill="none" stroke="${col}" stroke-width="1.2"/>${pts}${labs}</svg>`; };
+          const stepB=(numArr,denArr,lbl)=>{
+            const pser=(numArr||[]).map((nv,i)=>{ const d=(denArr||[])[i]; return d>0?Math.round(nv/d*1000)/10:null; });
+            const pw=pser[W];
+            return `<div style="margin:1px 0 5px;text-align:center;">
+              <div style="font-size:9.5px;color:#94a3b8;">↓ <b style="color:#334155;">${pw==null?'—':pw+'%'}</b> <span style="color:#cbd5e1;">${lbl} · weekly %</span></div>
+              ${miniPctSpark(rev(pser),hi)}</div>`; };
           const leadsMini=mini('GMB leads · '+gmb_w+' ('+signed(dGmbP,'%')+')', '#6366f1', 'profile clicks + inbound calls → tracked leads · dashed = '+winN+'-wk avg', spark(rev(gmb),'#6366f1',hi,null,gmb_n));
           if(!hasGmbIns(r.city,r.clinic)) return leadsMini;
           const gs=gmbInsArr(r.city,r.clinic,'searches'), gix=gmbInsArr(r.city,r.clinic,'interactions');
           const sw=gs[W]||0, sn=nrm(gs), iw=gix[W]||0, iN=nrm(gix); const dsp=sn?Math.round((sw-sn)/sn*100):0, dip=iN?Math.round((iw-iN)/iN*100):0;
           return mini('Searches · '+sw.toLocaleString()+' ('+signed(dsp,'%')+')', '#7c3aed', 'GMB+Google impressions — how often the listing was seen · dashed = '+winN+'-wk avg', spark(rev(gs),'#7c3aed',hi,null,sn))
-            + stepB(iw,sw,'searches → interaction')
+            + stepB(gix,gs,'searches → interaction')
             + mini('Interactions · '+iw+' ('+signed(dip,'%')+')', '#0d9488', 'calls + directions + website taps on the profile · dashed = '+winN+'-wk avg', spark(rev(gix),'#0d9488',hi,null,iN))
-            + stepB(gmb_w,iw,'interaction → tracked lead')
+            + stepB(gmb,gix,'interaction → tracked lead')
             + leadsMini;
         })()}
         ${mini('Review velocity · '+vel_w+'/wk', '#0891b2', 'reviews/week — a primary GMB-rank driver', spark(rev(rvN),'#0891b2',hi,null,vel_n))}
