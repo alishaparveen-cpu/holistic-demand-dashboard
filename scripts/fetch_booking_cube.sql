@@ -16,17 +16,18 @@ j AS (
   SELECT s.city, s.locality AS clinic,
     TO_CHAR(DATE_TRUNC('week', s.start_time + INTERVAL '5.5 hours'),'YYYY-MM-DD') AS wk,
     CASE WHEN s.created_at = f.first_crt THEN 'new' ELSE 'fu' END AS seg,
+    -- Clean, exhaustive source taxonomy. utm_source is the source of record; origin (whatsapp/call) is a
+    -- contact MODE, not a source, so it never decides the channel. ELSE -> Other; empty/no-lead -> No tag.
     CASE
       WHEN l.gclid IS NOT NULL AND l.gclid<>'' THEN 'Google Ads'
       WHEN LOWER(COALESCE(l.utm_source,''))='google' AND LOWER(COALESCE(l.utm_medium,'')) LIKE '%cpc%' THEN 'Google Ads'
-      WHEN LOWER(COALESCE(l.utm_source,''))='google' THEN 'Google organic'
-      WHEN LOWER(COALESCE(l.utm_source,'')) IN ('fb','facebook','meta','ig','instagram') THEN 'Meta'
-      WHEN LOWER(COALESCE(l.utm_source,''))='practo' THEN 'Practo'
       WHEN LOWER(COALESCE(l.utm_source,''))='gmb' THEN 'Google Maps (GMB)'
-      WHEN LOWER(COALESCE(l.origin,''))='whatsapp' OR LOWER(COALESCE(l.utm_source,''))='whatsapp' THEN 'WhatsApp'
-      WHEN LOWER(COALESCE(l.utm_source,''))='organic' THEN 'Organic'
-      WHEN l.id IS NULL THEN 'No lead record'
-      WHEN COALESCE(l.utm_source,'')='' THEN 'Unknown'
+      WHEN LOWER(COALESCE(l.utm_source,''))='practo' THEN 'Practo'
+      WHEN LOWER(COALESCE(l.utm_source,'')) IN ('fb','facebook','meta','ig','instagram') THEN 'Meta'
+      WHEN LOWER(COALESCE(l.utm_source,''))='justdial' THEN 'JustDial'
+      WHEN LOWER(COALESCE(l.utm_source,'')) IN ('organic','google') THEN 'Organic'   -- google non-ad = organic search / listing
+      WHEN LOWER(COALESCE(l.utm_source,'')) IN ('directwalkin','walkin','walk-in') OR LOWER(COALESCE(l.origin,''))='directwalkin' THEN 'Walk-in'
+      WHEN l.id IS NULL OR COALESCE(l.utm_source,'')='' THEN 'No tag'
       ELSE 'Other'
     END AS channel,
     CASE

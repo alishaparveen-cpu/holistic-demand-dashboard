@@ -1530,12 +1530,15 @@ function renderBookFlow(){
     chans.forEach((s,i)=>{ s.y=cTop(chans.length)+i*(BH+OG); });
     ages.forEach((a,i)=>{ a.y=cTop(ages.length)+i*(BH+OG); });
     let lines='',boxes='';
-    // channel → age : one compact label group per CHANNEL (no per-line clutter). Each shows how that
-    // channel's bookings split across lead-age, % colour-coded by age. Sits in the gap right of the box.
+    // channel → age : one compact label group per CHANNEL (no per-line clutter).
+    // Default (multiple age buckets): how that channel's bookings split across lead-age (% of the CHANNEL).
+    // When a single age is in view (e.g. focused on "This week"): flip to each channel's share OF THAT AGE
+    // (% of the AGE — sums to 100% across channels), so it isn't a meaningless 100%.
+    const _oneAge = ages.length===1;
     chans.forEach(cn=>{ const outs=ages.map(ag=>({ag,v:chAg(cn,ag.k)})).filter(o=>o.v>0); if(!outs.length) return;
       const cy=cn.y+BH/2;
       outs.forEach(o=>{ lines+=_bfLine(xCh+chW,cy,xAge,o.ag.y+BH/2,''); });   // thin connectors only
-      const segs2=outs.map(o=>`<tspan fill="${o.ag.c}" font-weight="800">${pct(o.v,cn.total)}%</tspan>`).join('<tspan fill="#cbd5e1"> · </tspan>');
+      const segs2=outs.map(o=>`<tspan fill="${o.ag.c}" font-weight="800">${_oneAge?pct(o.v,o.ag.total):pct(o.v,cn.total)}%</tspan>`).join('<tspan fill="#cbd5e1"> · </tspan>');
       const wdt=outs.reduce((a)=>a+24,0)+2;
       lines+=`<rect x="${xCh+chW+5}" y="${cy-7.5}" width="${wdt}" height="15" rx="3.5" fill="#fff" stroke="#eef2f7" stroke-width="0.7"/><text x="${xCh+chW+9}" y="${cy+3}" font-size="8.7" text-anchor="start">${segs2}</text>`;
     });
@@ -1548,7 +1551,8 @@ function renderBookFlow(){
     const hdrs=`${_bfHdr(xCh,chW,'CHANNEL')}${_bfHdr(xAge,ageW,'LEAD AGE')}${_bfHdr(xBk,bw,'BOOKING')}${_bfHdr(xSeg,segW,'NEW / FOLLOW-UP')}${_bfHdr(xDone,doneW,'DONE')}`;
     const fresh=ages.filter(a=>a.k==='tw'||a.k==='lw').reduce((a,s)=>a+s.total,0);
     const rp=fc.filter(c=>c.out==='resched_patient').reduce((a,c)=>a+c.v,0), ro=fc.filter(c=>c.out==='resched_clinic').reduce((a,c)=>a+c.v,0);
-    const sub=banner+`<b>channel → how old the lead was → New / Follow-up → outcome</b>. Each channel's coloured %s show how its bookings split across lead-age (colour = age); age→booking &amp; New/FU % = share of bookings; outcome % = of that segment. <b>${pct(fresh,TOT)}%</b> from leads under 2 weeks old`+((rp+ro)>0?`; reschedules <b>${rp}</b> patient vs <b>${ro}</b> ops.`:'.');
+    const _chPctNote=_oneAge?`each channel's coloured % = its <b>share of that age bucket</b> (sums to 100% across channels)`:`each channel's coloured %s show how its bookings <b>split across lead-age</b> (colour = age)`;
+    const sub=banner+`<b>channel → how old the lead was → New / Follow-up → outcome</b>. ${_chPctNote}; age→booking &amp; New/FU % = share of bookings; outcome % = of that segment. <b>${pct(fresh,TOT)}%</b> from leads under 2 weeks old`+((rp+ro)>0?`; reschedules <b>${rp}</b> patient vs <b>${ro}</b> ops.`:'.');
     const svg=`<svg width="100%" viewBox="0 -20 ${vw} ${totH+24}" preserveAspectRatio="xMinYMin meet" style="font-family:inherit;display:block">${hdrs}${lines}${boxes}</svg>`;
     const extra=`<div style="border:1px dashed #cbd5e1;border-radius:8px;padding:9px 12px;margin-top:10px;background:#f8fafc;font-size:10.5px;color:#64748b;line-height:1.5"><b style="color:#475569">The mirror half — leads who <i>didn’t</i> book</b> (called / not called → relevant / not relevant), like the bottom of your sketch, needs per-lead <b>clinic + call-disposition</b> data. The lead table has source &amp; disposition but no clinic; the clinic-level leads feed has no phone/disposition. That link lived in LeadSquared, whose sync is stale (Sep 2024). Wire that back and this half drops straight in.</div>`;
     const foot=`Every booked patient linked to their lead (99.95%). Channel from <code>utm_source/origin/gclid</code>, age from <code>lead.created_at→booked</code>, New/Follow-up + outcome from <code>appointments</code>. <b>Booked patients only.</b>`;
