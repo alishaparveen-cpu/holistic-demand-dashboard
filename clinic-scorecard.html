@@ -460,7 +460,7 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--navy);font-
 <script>
 /* ── DATA ── */
 let WEEKS=[], WEEK_LABELS=[], WEEK_MON=[], currentWeek=7;
-let SC=null, LEADS=null, ROSTER=null, REM={}, SARVAM=null, CONV={}, DOCTOR={}, MKT=null, SWHO={}, RETEN={}, CALLBACK={}, PRACTO={}, LAGE={}, L2C=null, DAILY={}, LEADCONV=null, CONTACTMODE=null, BHOD=null, D=null;
+let SC=null, LEADS=null, ROSTER=null, REM={}, SARVAM=null, CONV={}, DOCTOR={}, MKT=null, SWHO={}, RETEN={}, CALLBACK={}, PRACTO={}, LAGE={}, L2C=null, DAILY={}, LEADCONV=null, CONTACTMODE=null, BHOD=null, BOOKSRC=null, D=null;
 let ageChannel='all';
 const RET_MATURE_IDX=9;   // newest-first 12-week idx whose 60-day retention window has fully elapsed
 let SEL=[];                                   // selected clinic keys (City|Clinic) — aggregated/summed
@@ -540,6 +540,11 @@ function buildD(){
     statusWho: (()=>{ const SUB=['total','done','missed','resched_patient','resched_clinic','resched_noshow','cancelled','scheduled'];
       const seg=s=>{ const o={}; SUB.forEach(f=>o[f]=sumS(k=>(((SWHO[k]||{})[s]||{})[f]))); return o; };
       return { new:seg('new'), fu:seg('fu') }; })(),
+    bookSrc: (()=>{ if(!BOOKSRC) return null;
+      const SUB=['total','done','missed','resched_patient','resched_clinic','resched_noshow','cancelled','scheduled'];
+      const chans=new Set(); SEL.forEach(k=>Object.keys(BOOKSRC[k]||{}).forEach(c=>chans.add(c)));
+      const o={}; chans.forEach(c=>{ const seg={}; SUB.forEach(f=>seg[f]=sumS(k=>((((BOOKSRC[k]||{})[c]||{})[f])))); o[c]=seg; });
+      return o; })(),
     dow: (()=>{ const DD=['Mon','Tue','Wed','Thu','Fri','Sat','Sun']; const o={}; DD.forEach(d=>o[d]={booked:0,done:0,missed:0});
       SEL.forEach(k=>{ const dw=(SC[k]||{}).dow||{}; DD.forEach(d=>{ if(dw[d]){o[d].booked+=dw[d].booked||0;o[d].done+=dw[d].done||0;o[d].missed+=dw[d].missed||0;} }); }); return o; })(),
   };
@@ -1437,36 +1442,49 @@ function renderAll() {
 /* ── Booking flow (per clinic): Bookings → New/Follow-up → outcomes (patient vs ops reschedule) ── */
 function renderBookFlow(){
   const el=document.getElementById('bookFlowPanel'); if(!el) return;
-  if(!D||!D.statusWho){ el.innerHTML=''; return; }
-  const w=currentWeek, sw=D.statusWho, V=(s,f)=>(((sw[s]||{})[f]||[])[w])||0;
-  const segs=[['new','New · first-time','#7c3aed'],['fu','Follow-up','#0d9488']].map(a=>({k:a[0],lbl:a[1],c:a[2],total:V(a[0],'total')})).filter(s=>s.total>0);
-  const TOT=segs.reduce((a,s)=>a+s.total,0);
+  const bs=D&&D.bookSrc;
+  if(!bs){ el.innerHTML=''; return; }
+  const w=currentWeek, pct=(a,b)=>b>0?Math.round(a/b*100):0;
+  const CHC={'Google Ads':'#2563eb','Meta':'#7c3aed','Practo':'#0ea5e9','Google Maps (GMB)':'#16a34a','Organic':'#0d9488','WhatsApp':'#22c55e','Google organic':'#0891b2','Other':'#94a3b8','Unknown':'#cbd5e1','No lead record':'#cbd5e1'};
+  const SHORT={'Google Maps (GMB)':'Google Maps (GMB)','No lead record':'No source tag','Unknown':'Untagged'};
+  const VC=(c,f)=>(((bs[c]||{})[f]||[])[w])||0;
+  // CHANNEL stage — where the bookings came from, sorted desc
+  let chans=Object.keys(bs).map(c=>({k:c,lbl:SHORT[c]||c,c:CHC[c]||'#64748b',total:VC(c,'total'),done:VC(c,'done')})).filter(x=>x.total>0).sort((a,b)=>b.total-a.total);
+  const TOT=chans.reduce((a,s)=>a+s.total,0);
   if(TOT<=0){ el.innerHTML=''; return; }
+  if(chans.length>7){ const keep=chans.slice(0,6), rest=chans.slice(6);
+    chans=keep.concat([{k:'__other',lbl:'Other sources',c:'#94a3b8',total:rest.reduce((a,s)=>a+s.total,0),done:rest.reduce((a,s)=>a+s.done,0)}]); }
+  // OUTCOME stage — summed across all channels
+  const OUT=f=>Object.keys(bs).reduce((a,c)=>a+VC(c,f),0);
   const DISP=[['done','Completed','#16a34a'],['missed','No-show','#dc2626'],['resched_patient','Resched · patient','#d97706'],['resched_clinic','Resched · ops','#f59e0b'],['resched_noshow','Re-booked (was no-show)','#a855f7'],['cancelled','Cancelled','#64748b'],['scheduled','Pending','#2563eb']];
-  const pct=(a,b)=>b>0?Math.round(a/b*100):0;
-  segs.forEach(s=>{ s.outs=DISP.map(d=>({f:d[0],lbl:d[1],c:d[2],v:V(s.k,d[0])})).filter(o=>o.v>0); });
-  // simple box-and-line flow chart layout (boxes + connector lines + numbers/%)
-  const boxH=28, og=9, segGap=22, bw=96, sw_=132, ow=210, xBk=8, xSeg=180, xOut=378;
-  let curY=6;
-  segs.forEach(s=>{ const clH=Math.max(boxH, s.outs.length*(boxH+og)-og);
-    s.outs.forEach((o,i)=>{ o.y=curY+i*(boxH+og); });
-    s.y=curY+clH/2-boxH/2; s.clH=clH; curY+=clH+segGap; });
-  const totH=curY+4, bkY=totH/2-boxH/2, vw=xOut+ow+10;
-  const box=(x,y,w,label,num,accent,fs)=>`<rect x="${x}" y="${y}" width="${w}" height="${boxH}" rx="6" fill="#fff" stroke="${accent}" stroke-width="1.3"/><rect x="${x}" y="${y}" width="3.5" height="${boxH}" rx="2" fill="${accent}"/><text x="${x+11}" y="${y+boxH/2+4}" font-size="${fs||11}" font-weight="600" fill="#334155">${label}</text><text x="${x+w-8}" y="${y+boxH/2+4}" font-size="11.5" font-weight="800" fill="#0f172a" text-anchor="end">${num}</text>`;
-  const line=(x1,y1,x2,y2,lab)=>{const mx=(x1+x2)/2;return `<path d="M${x1} ${y1} C${mx} ${y1} ${mx} ${y2} ${x2} ${y2}" fill="none" stroke="#cbd5e1" stroke-width="1.3"/>${lab?`<rect x="${mx-14}" y="${(y1+y2)/2-7}" width="28" height="12" rx="3" fill="#fff" stroke="#e2e8f0" stroke-width="0.5"/><text x="${mx}" y="${(y1+y2)/2+2}" font-size="8.5" font-weight="600" fill="#64748b" text-anchor="middle">${lab}</text>`:''}`;};
+  const outs=DISP.map(d=>({f:d[0],lbl:d[1],c:d[2],v:OUT(d[0])})).filter(o=>o.v>0);
+  // layout — 3 columns: Channel → Bookings → Outcome
+  const boxH=26, og=8, chW=152, bw=104, ow=206, xCh=8, xBk=xCh+chW+62, xOut=xBk+bw+62, vw=xOut+ow+10;
+  const chH=chans.length*(boxH+og)-og, outH=outs.length*(boxH+og)-og, colMax=Math.max(chH,outH), totH=colMax+12;
+  const top=c=>(totH-c)/2;
+  chans.forEach((s,i)=>{ s.y=top(chH)+i*(boxH+og); });
+  outs.forEach((o,i)=>{ o.y=top(outH)+i*(boxH+og); });
+  const bkY=totH/2-boxH/2;
+  const box=(x,y,wd,label,num,accent,fs)=>`<rect x="${x}" y="${y}" width="${wd}" height="${boxH}" rx="6" fill="#fff" stroke="${accent}" stroke-width="1.3"/><rect x="${x}" y="${y}" width="3.5" height="${boxH}" rx="2" fill="${accent}"/><text x="${x+11}" y="${y+boxH/2+4}" font-size="${fs||10.5}" font-weight="600" fill="#334155">${label}</text><text x="${x+wd-8}" y="${y+boxH/2+4}" font-size="11" font-weight="800" fill="#0f172a" text-anchor="end">${num}</text>`;
+  const line=(x1,y1,x2,y2,lab)=>{const mx=(x1+x2)/2;return `<path d="M${x1} ${y1} C${mx} ${y1} ${mx} ${y2} ${x2} ${y2}" fill="none" stroke="#cbd5e1" stroke-width="1.3"/>${lab?`<rect x="${mx-13}" y="${(y1+y2)/2-7}" width="26" height="12" rx="3" fill="#fff" stroke="#e2e8f0" stroke-width="0.5"/><text x="${mx}" y="${(y1+y2)/2+2}" font-size="8.5" font-weight="600" fill="#64748b" text-anchor="middle">${lab}</text>`:''}`;};
+  const hdr=(x,wd,t)=>`<text x="${x+wd/2}" y="-14" font-size="9" font-weight="700" fill="#94a3b8" text-anchor="middle" letter-spacing="0.5">${t}</text>`;
   let lines='',boxes='';
-  segs.forEach(s=>{ lines+=line(xBk+bw,bkY+boxH/2,xSeg,s.y+boxH/2,pct(s.total,TOT)+'%');
-    s.outs.forEach(o=>{ lines+=line(xSeg+sw_,s.y+boxH/2,xOut,o.y+boxH/2,pct(o.v,s.total)+'%'); }); });
+  chans.forEach(s=>{ lines+=line(xCh+chW,s.y+boxH/2,xBk,bkY+boxH/2,pct(s.total,TOT)+'%'); });
+  outs.forEach(o=>{ lines+=line(xBk+bw,bkY+boxH/2,xOut,o.y+boxH/2,pct(o.v,TOT)+'%'); });
+  chans.forEach(s=>{ boxes+=box(xCh,s.y,chW,s.lbl,s.total.toLocaleString(),s.c); });
   boxes+=box(xBk,bkY,bw,'Bookings',TOT.toLocaleString(),'#475569');
-  segs.forEach(s=>{ boxes+=box(xSeg,s.y,sw_,s.lbl,s.total.toLocaleString(),s.c);
-    s.outs.forEach(o=>{ boxes+=box(xOut,o.y,ow,o.lbl,o.v.toLocaleString(),o.c,10); }); });
-  const rp=segs.reduce((a,s)=>a+V(s.k,'resched_patient'),0), ro=segs.reduce((a,s)=>a+V(s.k,'resched_clinic'),0);
-  const rsNote=(rp+ro)>0?`Of reschedules, <b>${rp}</b> patient-side vs <b>${ro}</b> ops/clinic-side — the ops ones are yours to fix.`:'';
+  outs.forEach(o=>{ boxes+=box(xOut,o.y,ow,o.lbl,o.v.toLocaleString(),o.c,10); });
+  // notes
+  const conv=chans.filter(s=>s.k!=='__other'&&s.total>=4).map(s=>({lbl:s.lbl,r:pct(s.done,s.total)})).sort((a,b)=>b.r-a.r);
+  const rp=OUT('resched_patient'), ro=OUT('resched_clinic');
+  let note='';
+  if(conv.length>1) note+=`Best-converting source: <b>${conv[0].lbl}</b> (${conv[0].r}% completed) vs <b>${conv[conv.length-1].lbl}</b> (${conv[conv.length-1].r}%). `;
+  if((rp+ro)>0) note+=`Of reschedules, <b>${rp}</b> patient-side vs <b>${ro}</b> ops-side.`;
   el.innerHTML=`<div class="sec" style="padding:16px 18px">
-    <div style="font-size:13px;font-weight:600;color:var(--navy)">🔀 Booking flow — what happened to this week's bookings <span style="color:#16a34a;font-weight:700">● CLINIC-LEVEL</span></div>
-    <div style="font-size:11px;color:var(--gray);margin:2px 0 8px">For the selected clinic(s) · ${WEEK_LABELS[currentWeek]||'this week'}. Bookings → <b>New (first-time)</b> vs <b>Follow-up</b> → each outcome (% on the lines). Reschedule split <b>by patient vs by ops</b>. ${rsNote}</div>
-    <svg width="100%" viewBox="0 0 ${vw} ${totH}" preserveAspectRatio="xMinYMin meet" style="font-family:inherit;display:block">${lines}${boxes}</svg>
-    <div style="font-size:10px;color:var(--gray);margin-top:4px">Starts at <b>Bookings</b> (not leads): lead→booking-by-channel and the "didn't book → called/relevant" branch need per-lead clinic + relevance data we don't have. Statuses live from <code>appointments</code>.</div>
+    <div style="font-size:13px;font-weight:600;color:var(--navy)">🔀 Where this week's bookings came from → what happened <span style="color:#16a34a;font-weight:700">● CLINIC-LEVEL</span></div>
+    <div style="font-size:11px;color:var(--gray);margin:2px 0 10px">For the selected clinic(s) · ${WEEK_LABELS[currentWeek]||'this week'}. Each booked patient is traced to their <b>acquisition channel</b> via the lead record (<code>patient → lead → utm_source / origin</code>), then to its outcome. % on the lines = share of the week's bookings. ${note}</div>
+    <svg width="100%" viewBox="0 -20 ${vw} ${totH+24}" preserveAspectRatio="xMinYMin meet" style="font-family:inherit;display:block">${hdr(xCh,chW,'WHERE THEY CAME FROM')}${hdr(xBk,bw,'BOOKED')}${hdr(xOut,ow,'WHAT HAPPENED')}${lines}${boxes}</svg>
+    <div style="font-size:10px;color:var(--gray);margin-top:6px">This is the source of the <b>bookings</b> — 99.95% of booked patients link to a lead, ~95% carry a tagged source. It is <b>not</b> all leads: clinic-level source for people who enquired but <i>didn't</i> book isn't captured anywhere. Live from <code>appointments</code> + <code>lead</code>.</div>
   </div>`;
 }
 /* ── Peak booking slots: hour × day heatmap (for roster planning) ── */
@@ -1645,7 +1663,7 @@ function applySelection(){
 (async function(){
   try{
     const _cb='?t='+Date.now();   // cache-bust so data rebuilds always show fresh
-    const [sc,lj,ros,rem,sar,cnv,doc,mkt,swho,ret,cbk,prc,lage,l2c,daily,lcv,cmd,bhod]=await Promise.all([
+    const [sc,lj,ros,rem,sar,cnv,doc,mkt,swho,ret,cbk,prc,lage,l2c,daily,lcv,cmd,bhod,bsrc]=await Promise.all([
       fetch('data_scorecard.json'+_cb).then(r=>r.json()),
       fetch('data_leads.json'+_cb).then(r=>r.json()),
       fetch('data_roster.json'+_cb).then(r=>r.json()),
@@ -1664,8 +1682,9 @@ function applySelection(){
       fetch('data_lead_conv.json'+_cb).then(r=>r.ok?r.json():null).catch(()=>null),
       fetch('data_contact_mode.json'+_cb).then(r=>r.ok?r.json():null).catch(()=>null),
       fetch('data_booking_hod.json'+_cb).then(r=>r.ok?r.json():null).catch(()=>null),
+      fetch('data_booking_source.json'+_cb).then(r=>r.ok?r.json():null).catch(()=>null),
     ]);
-    SC=sc; LEADS=lj; ROSTER=ros; REM=rem||{}; SARVAM=sar; CONV=cnv||{}; DOCTOR=doc||{}; MKT=mkt; SWHO=swho||{}; RETEN=ret||{}; CALLBACK=cbk||{}; PRACTO=prc||{}; LAGE=lage||{}; L2C=l2c; DAILY=daily||{}; LEADCONV=lcv; CONTACTMODE=cmd; BHOD=bhod;
+    SC=sc; LEADS=lj; ROSTER=ros; REM=rem||{}; SARVAM=sar; CONV=cnv||{}; DOCTOR=doc||{}; MKT=mkt; SWHO=swho||{}; RETEN=ret||{}; CALLBACK=cbk||{}; PRACTO=prc||{}; LAGE=lage||{}; L2C=l2c; DAILY=daily||{}; LEADCONV=lcv; CONTACTMODE=cmd; BHOD=bhod; BOOKSRC=bsrc;
     buildWeeks();
     CLINICS=Object.keys(SC).filter(k=>k!=='_meta').sort();
     CITIES={}; CLINICS.forEach(k=>{const c=k.split('|')[0]; (CITIES[c]=CITIES[c]||[]).push(k);});
