@@ -542,9 +542,9 @@ function buildD(){
       return { new:seg('new'), fu:seg('fu') }; })(),
     bookSrc: (()=>{ if(!BOOKSRC) return null;
       const SUB=['total','done','missed','resched_patient','resched_clinic','resched_noshow','cancelled','scheduled'];
-      const chans=new Set(); SEL.forEach(k=>Object.keys(BOOKSRC[k]||{}).forEach(c=>chans.add(c)));
-      const o={}; chans.forEach(c=>{ const seg={}; SUB.forEach(f=>seg[f]=sumS(k=>((((BOOKSRC[k]||{})[c]||{})[f])))); o[c]=seg; });
-      return o; })(),
+      const dim=which=>{ const segs=new Set(); SEL.forEach(k=>Object.keys(((BOOKSRC[k]||{})[which])||{}).forEach(c=>segs.add(c)));
+        const o={}; segs.forEach(c=>{ const seg={}; SUB.forEach(f=>seg[f]=sumS(k=>(((((BOOKSRC[k]||{})[which]||{})[c]||{})[f])))); o[c]=seg; }); return o; };
+      return { channel:dim('channel'), age:dim('age') }; })(),
     dow: (()=>{ const DD=['Mon','Tue','Wed','Thu','Fri','Sat','Sun']; const o={}; DD.forEach(d=>o[d]={booked:0,done:0,missed:0});
       SEL.forEach(k=>{ const dw=(SC[k]||{}).dow||{}; DD.forEach(d=>{ if(dw[d]){o[d].booked+=dw[d].booked||0;o[d].done+=dw[d].done||0;o[d].missed+=dw[d].missed||0;} }); }); return o; })(),
   };
@@ -1439,53 +1439,91 @@ function renderAll() {
   renderPills();
   document.getElementById('weekLabel').textContent=WEEK_LABELS[currentWeek];
 }
-/* ── Booking flow (per clinic): Bookings → New/Follow-up → outcomes (patient vs ops reschedule) ── */
+/* ── Booking flow (per clinic) — three switchable views: New vs Follow-up · Source · Lead age ── */
+let bfMode='who';
+function bfSet(m){ bfMode=m; renderBookFlow(); }
+const _bfBox=(x,y,wd,h,label,num,accent,fs)=>`<rect x="${x}" y="${y}" width="${wd}" height="${h}" rx="6" fill="#fff" stroke="${accent}" stroke-width="1.3"/><rect x="${x}" y="${y}" width="3.5" height="${h}" rx="2" fill="${accent}"/><text x="${x+11}" y="${y+h/2+4}" font-size="${fs||10.5}" font-weight="600" fill="#334155">${label}</text><text x="${x+wd-8}" y="${y+h/2+4}" font-size="11" font-weight="800" fill="#0f172a" text-anchor="end">${num}</text>`;
+const _bfLine=(x1,y1,x2,y2,lab)=>{const mx=(x1+x2)/2;return `<path d="M${x1} ${y1} C${mx} ${y1} ${mx} ${y2} ${x2} ${y2}" fill="none" stroke="#cbd5e1" stroke-width="1.3"/>${lab?`<rect x="${mx-13}" y="${(y1+y2)/2-7}" width="26" height="12" rx="3" fill="#fff" stroke="#e2e8f0" stroke-width="0.5"/><text x="${mx}" y="${(y1+y2)/2+2}" font-size="8.5" font-weight="600" fill="#64748b" text-anchor="middle">${lab}</text>`:''}`;};
+const _bfHdr=(x,wd,t)=>`<text x="${x+wd/2}" y="-14" font-size="9" font-weight="700" fill="#94a3b8" text-anchor="middle" letter-spacing="0.5">${t}</text>`;
+const _BF_DISP=[['done','Completed','#16a34a'],['missed','No-show','#dc2626'],['resched_patient','Resched · patient','#d97706'],['resched_clinic','Resched · ops','#f59e0b'],['resched_noshow','Re-booked (was no-show)','#a855f7'],['cancelled','Cancelled','#64748b'],['scheduled','Pending','#2563eb']];
 function renderBookFlow(){
   const el=document.getElementById('bookFlowPanel'); if(!el) return;
-  const bs=D&&D.bookSrc;
-  if(!bs){ el.innerHTML=''; return; }
-  const w=currentWeek, pct=(a,b)=>b>0?Math.round(a/b*100):0;
-  const CHC={'Google Ads':'#2563eb','Meta':'#7c3aed','Practo':'#0ea5e9','Google Maps (GMB)':'#16a34a','Organic':'#0d9488','WhatsApp':'#22c55e','Google organic':'#0891b2','Other':'#94a3b8','Unknown':'#cbd5e1','No lead record':'#cbd5e1'};
-  const SHORT={'Google Maps (GMB)':'Google Maps (GMB)','No lead record':'No source tag','Unknown':'Untagged'};
+  if(!D){ el.innerHTML=''; return; }
+  const w=currentWeek, pct=(a,b)=>b>0?Math.round(a/b*100):0, boxH=26, og=8;
+  const tabs=[['who','New vs Follow-up'],['source','Where they came from'],['age','Lead age at booking']];
+  const toggle=`<div style="display:flex;gap:6px;margin:8px 0 6px;flex-wrap:wrap">`+tabs.map(t=>`<button onclick="bfSet('${t[0]}')" style="font:600 11px Inter;padding:5px 11px;border-radius:999px;cursor:pointer;border:1px solid ${bfMode===t[0]?'#7c3aed':'#e2e8f0'};background:${bfMode===t[0]?'#7c3aed':'#fff'};color:${bfMode===t[0]?'#fff':'#475569'}">${t[1]}</button>`).join('')+`</div>`;
+  const wrap=(title,sub,svg,foot)=>{ el.innerHTML=`<div class="sec" style="padding:16px 18px">
+    <div style="font-size:13px;font-weight:600;color:var(--navy)">${title} <span style="color:#16a34a;font-weight:700">● CLINIC-LEVEL</span></div>
+    ${toggle}
+    <div style="font-size:11px;color:var(--gray);margin:2px 0 10px">For the selected clinic(s) · ${WEEK_LABELS[currentWeek]||'this week'}. ${sub}</div>
+    ${svg}
+    <div style="font-size:10px;color:var(--gray);margin-top:6px">${foot}</div></div>`; };
+
+  if(bfMode==='who'){
+    // ── ORIGINAL view: Bookings → New / Follow-up → each segment's own outcomes ──
+    const sw=D.statusWho; if(!sw){ wrap('🔀 Booking flow','No status data.',''+'',''); return; }
+    const V=(s,f)=>(((sw[s]||{})[f]||[])[w])||0;
+    const segs=[['new','New · first-time','#7c3aed'],['fu','Follow-up','#0d9488']].map(a=>({k:a[0],lbl:a[1],c:a[2],total:V(a[0],'total')})).filter(s=>s.total>0);
+    const TOT=segs.reduce((a,s)=>a+s.total,0);
+    if(TOT<=0){ wrap('🔀 Booking flow — what happened to this week’s bookings','No bookings this week.','',''); return; }
+    segs.forEach(s=>{ s.outs=_BF_DISP.map(d=>({f:d[0],lbl:d[1],c:d[2],v:V(s.k,d[0])})).filter(o=>o.v>0); });
+    const segGap=20, bw=92, sw_=128, ow=200, xBk=8, xSeg=176, xOut=368, vw=xOut+ow+10;
+    let curY=6;
+    segs.forEach(s=>{ const clH=Math.max(boxH, s.outs.length*(boxH+og)-og); s.outs.forEach((o,i)=>{ o.y=curY+i*(boxH+og); }); s.y=curY+clH/2-boxH/2; curY+=clH+segGap; });
+    const totH=curY+4, bkY=totH/2-boxH/2;
+    let lines='',boxes='';
+    segs.forEach(s=>{ lines+=_bfLine(xBk+bw,bkY+boxH/2,xSeg,s.y+boxH/2,pct(s.total,TOT)+'%'); s.outs.forEach(o=>{ lines+=_bfLine(xSeg+sw_,s.y+boxH/2,xOut,o.y+boxH/2,pct(o.v,s.total)+'%'); }); });
+    boxes+=_bfBox(xBk,bkY,bw,boxH,'Bookings',TOT.toLocaleString(),'#475569');
+    segs.forEach(s=>{ boxes+=_bfBox(xSeg,s.y,sw_,boxH,s.lbl,s.total.toLocaleString(),s.c); s.outs.forEach(o=>{ boxes+=_bfBox(xOut,o.y,ow,boxH,o.lbl,o.v.toLocaleString(),o.c,10); }); });
+    const rp=segs.reduce((a,s)=>a+V(s.k,'resched_patient'),0), ro=segs.reduce((a,s)=>a+V(s.k,'resched_clinic'),0);
+    const sub=`Each booking split by <b>New (first-time)</b> vs <b>Follow-up</b>, then by what happened to it (% on the lines).`+((rp+ro)>0?` Of reschedules, <b>${rp}</b> patient-side vs <b>${ro}</b> ops-side — the ops ones are yours to fix.`:'');
+    const svg=`<svg width="100%" viewBox="0 -20 ${vw} ${totH+24}" preserveAspectRatio="xMinYMin meet" style="font-family:inherit;display:block">${_bfHdr(xBk,bw,'BOOKED')}${_bfHdr(xSeg,sw_,'NEW vs FOLLOW-UP')}${_bfHdr(xOut,ow,'WHAT HAPPENED')}${lines}${boxes}</svg>`;
+    wrap('🔀 Booking flow — what happened to this week’s bookings',sub,svg,'New = patient’s first-ever Screening Call. Statuses live from <code>appointments</code>.');
+    return;
+  }
+
+  // ── Source / Lead-age views: Left split → Bookings → overall Outcome ──
+  const isSrc=(bfMode==='source');
+  const bs=(D.bookSrc||{})[isSrc?'channel':'age'];
+  if(!bs||!Object.keys(bs).length){ wrap(isSrc?'🔀 Where this week’s bookings came from':'🔀 How old the lead was when it booked','Source data not loaded for this week — rebuild <code>data_booking_source.json</code>.','',''); return; }
   const VC=(c,f)=>(((bs[c]||{})[f]||[])[w])||0;
-  // CHANNEL stage — where the bookings came from, sorted desc
-  let chans=Object.keys(bs).map(c=>({k:c,lbl:SHORT[c]||c,c:CHC[c]||'#64748b',total:VC(c,'total'),done:VC(c,'done')})).filter(x=>x.total>0).sort((a,b)=>b.total-a.total);
-  const TOT=chans.reduce((a,s)=>a+s.total,0);
-  if(TOT<=0){ el.innerHTML=''; return; }
-  if(chans.length>7){ const keep=chans.slice(0,6), rest=chans.slice(6);
-    chans=keep.concat([{k:'__other',lbl:'Other sources',c:'#94a3b8',total:rest.reduce((a,s)=>a+s.total,0),done:rest.reduce((a,s)=>a+s.done,0)}]); }
-  // OUTCOME stage — summed across all channels
+  const CHC={'Google Ads':'#2563eb','Meta':'#7c3aed','Practo':'#0ea5e9','Google Maps (GMB)':'#16a34a','Organic':'#0d9488','WhatsApp':'#22c55e','Google organic':'#0891b2','Other':'#94a3b8','Unknown':'#cbd5e1','No lead record':'#cbd5e1'};
+  const SHORT={'No lead record':'No source tag','Unknown':'Untagged'};
+  const AGEC={'Same week':'#16a34a','Last week':'#0d9488','2-4 weeks':'#d97706','1-3 months':'#dc2626','3+ months':'#7c3aed','Unknown':'#cbd5e1'};
+  const strip=c=>c.replace(/^\d+\s*·\s*/,'');
+  let segs=Object.keys(bs).map(c=>({k:c, lbl:isSrc?(SHORT[c]||c):strip(c), c:isSrc?(CHC[c]||'#64748b'):(AGEC[strip(c)]||'#64748b'), total:VC(c,'total'), done:VC(c,'done')})).filter(x=>x.total>0);
+  if(isSrc) segs.sort((a,b)=>b.total-a.total); else segs.sort((a,b)=>a.k.localeCompare(b.k));
+  const TOT=segs.reduce((a,s)=>a+s.total,0);
+  if(TOT<=0){ wrap(isSrc?'🔀 Where this week’s bookings came from':'🔀 How old the lead was when it booked','No bookings this week.','',''); return; }
+  if(isSrc && segs.length>7){ const keep=segs.slice(0,6), rest=segs.slice(6); segs=keep.concat([{k:'__other',lbl:'Other sources',c:'#94a3b8',total:rest.reduce((a,s)=>a+s.total,0),done:rest.reduce((a,s)=>a+s.done,0)}]); }
   const OUT=f=>Object.keys(bs).reduce((a,c)=>a+VC(c,f),0);
-  const DISP=[['done','Completed','#16a34a'],['missed','No-show','#dc2626'],['resched_patient','Resched · patient','#d97706'],['resched_clinic','Resched · ops','#f59e0b'],['resched_noshow','Re-booked (was no-show)','#a855f7'],['cancelled','Cancelled','#64748b'],['scheduled','Pending','#2563eb']];
-  const outs=DISP.map(d=>({f:d[0],lbl:d[1],c:d[2],v:OUT(d[0])})).filter(o=>o.v>0);
-  // layout — 3 columns: Channel → Bookings → Outcome
-  const boxH=26, og=8, chW=152, bw=104, ow=206, xCh=8, xBk=xCh+chW+62, xOut=xBk+bw+62, vw=xOut+ow+10;
-  const chH=chans.length*(boxH+og)-og, outH=outs.length*(boxH+og)-og, colMax=Math.max(chH,outH), totH=colMax+12;
-  const top=c=>(totH-c)/2;
-  chans.forEach((s,i)=>{ s.y=top(chH)+i*(boxH+og); });
+  const outs=_BF_DISP.map(d=>({f:d[0],lbl:d[1],c:d[2],v:OUT(d[0])})).filter(o=>o.v>0);
+  const chW=isSrc?152:146, bw=104, ow=206, xCh=8, xBk=xCh+chW+62, xOut=xBk+bw+62, vw=xOut+ow+10;
+  const chH=segs.length*(boxH+og)-og, outH=outs.length*(boxH+og)-og, colMax=Math.max(chH,outH), totH=colMax+12, top=c=>(totH-c)/2;
+  segs.forEach((s,i)=>{ s.y=top(chH)+i*(boxH+og); });
   outs.forEach((o,i)=>{ o.y=top(outH)+i*(boxH+og); });
   const bkY=totH/2-boxH/2;
-  const box=(x,y,wd,label,num,accent,fs)=>`<rect x="${x}" y="${y}" width="${wd}" height="${boxH}" rx="6" fill="#fff" stroke="${accent}" stroke-width="1.3"/><rect x="${x}" y="${y}" width="3.5" height="${boxH}" rx="2" fill="${accent}"/><text x="${x+11}" y="${y+boxH/2+4}" font-size="${fs||10.5}" font-weight="600" fill="#334155">${label}</text><text x="${x+wd-8}" y="${y+boxH/2+4}" font-size="11" font-weight="800" fill="#0f172a" text-anchor="end">${num}</text>`;
-  const line=(x1,y1,x2,y2,lab)=>{const mx=(x1+x2)/2;return `<path d="M${x1} ${y1} C${mx} ${y1} ${mx} ${y2} ${x2} ${y2}" fill="none" stroke="#cbd5e1" stroke-width="1.3"/>${lab?`<rect x="${mx-13}" y="${(y1+y2)/2-7}" width="26" height="12" rx="3" fill="#fff" stroke="#e2e8f0" stroke-width="0.5"/><text x="${mx}" y="${(y1+y2)/2+2}" font-size="8.5" font-weight="600" fill="#64748b" text-anchor="middle">${lab}</text>`:''}`;};
-  const hdr=(x,wd,t)=>`<text x="${x+wd/2}" y="-14" font-size="9" font-weight="700" fill="#94a3b8" text-anchor="middle" letter-spacing="0.5">${t}</text>`;
   let lines='',boxes='';
-  chans.forEach(s=>{ lines+=line(xCh+chW,s.y+boxH/2,xBk,bkY+boxH/2,pct(s.total,TOT)+'%'); });
-  outs.forEach(o=>{ lines+=line(xBk+bw,bkY+boxH/2,xOut,o.y+boxH/2,pct(o.v,TOT)+'%'); });
-  chans.forEach(s=>{ boxes+=box(xCh,s.y,chW,s.lbl,s.total.toLocaleString(),s.c); });
-  boxes+=box(xBk,bkY,bw,'Bookings',TOT.toLocaleString(),'#475569');
-  outs.forEach(o=>{ boxes+=box(xOut,o.y,ow,o.lbl,o.v.toLocaleString(),o.c,10); });
-  // notes
-  const conv=chans.filter(s=>s.k!=='__other'&&s.total>=4).map(s=>({lbl:s.lbl,r:pct(s.done,s.total)})).sort((a,b)=>b.r-a.r);
+  segs.forEach(s=>{ lines+=_bfLine(xCh+chW,s.y+boxH/2,xBk,bkY+boxH/2,pct(s.total,TOT)+'%'); });
+  outs.forEach(o=>{ lines+=_bfLine(xBk+bw,bkY+boxH/2,xOut,o.y+boxH/2,pct(o.v,TOT)+'%'); });
+  segs.forEach(s=>{ boxes+=_bfBox(xCh,s.y,chW,boxH,s.lbl,s.total.toLocaleString(),s.c); });
+  boxes+=_bfBox(xBk,bkY,bw,boxH,'Bookings',TOT.toLocaleString(),'#475569');
+  outs.forEach(o=>{ boxes+=_bfBox(xOut,o.y,ow,boxH,o.lbl,o.v.toLocaleString(),o.c,10); });
   const rp=OUT('resched_patient'), ro=OUT('resched_clinic');
   let note='';
-  if(conv.length>1) note+=`Best-converting source: <b>${conv[0].lbl}</b> (${conv[0].r}% completed) vs <b>${conv[conv.length-1].lbl}</b> (${conv[conv.length-1].r}%). `;
+  if(isSrc){ const conv=segs.filter(s=>s.k!=='__other'&&s.total>=4).map(s=>({lbl:s.lbl,r:pct(s.done,s.total)})).sort((a,b)=>b.r-a.r);
+    if(conv.length>1) note+=`Best-converting source: <b>${conv[0].lbl}</b> (${conv[0].r}% completed) vs <b>${conv[conv.length-1].lbl}</b> (${conv[conv.length-1].r}%). `; }
+  else { const fresh=segs.filter(s=>/Same week|Last week/.test(s.lbl)).reduce((a,s)=>a+s.total,0);
+    note+=`<b>${pct(fresh,TOT)}%</b> of bookings came from leads under 2 weeks old — Allo’s leads convert fast. `; }
   if((rp+ro)>0) note+=`Of reschedules, <b>${rp}</b> patient-side vs <b>${ro}</b> ops-side.`;
-  el.innerHTML=`<div class="sec" style="padding:16px 18px">
-    <div style="font-size:13px;font-weight:600;color:var(--navy)">🔀 Where this week's bookings came from → what happened <span style="color:#16a34a;font-weight:700">● CLINIC-LEVEL</span></div>
-    <div style="font-size:11px;color:var(--gray);margin:2px 0 10px">For the selected clinic(s) · ${WEEK_LABELS[currentWeek]||'this week'}. Each booked patient is traced to their <b>acquisition channel</b> via the lead record (<code>patient → lead → utm_source / origin</code>), then to its outcome. % on the lines = share of the week's bookings. ${note}</div>
-    <svg width="100%" viewBox="0 -20 ${vw} ${totH+24}" preserveAspectRatio="xMinYMin meet" style="font-family:inherit;display:block">${hdr(xCh,chW,'WHERE THEY CAME FROM')}${hdr(xBk,bw,'BOOKED')}${hdr(xOut,ow,'WHAT HAPPENED')}${lines}${boxes}</svg>
-    <div style="font-size:10px;color:var(--gray);margin-top:6px">This is the source of the <b>bookings</b> — 99.95% of booked patients link to a lead, ~95% carry a tagged source. It is <b>not</b> all leads: clinic-level source for people who enquired but <i>didn't</i> book isn't captured anywhere. Live from <code>appointments</code> + <code>lead</code>.</div>
-  </div>`;
+  const title=isSrc?'🔀 Where this week’s bookings came from → what happened':'🔀 How old the lead was when it booked → what happened';
+  const sub=isSrc?`Each booked patient traced to their <b>acquisition channel</b> via the lead record (<code>patient → lead → utm_source / origin</code>), then to its outcome. % on the lines = share of bookings. ${note}`
+                 :`Each booking by <b>how stale the lead was</b> when it booked (<code>lead.created_at → booked</code>), then by what happened. % on the lines = share of bookings. ${note}`;
+  const hL=isSrc?'WHERE THEY CAME FROM':'LEAD AGE WHEN BOOKED';
+  const svg=`<svg width="100%" viewBox="0 -20 ${vw} ${totH+24}" preserveAspectRatio="xMinYMin meet" style="font-family:inherit;display:block">${_bfHdr(xCh,chW,hL)}${_bfHdr(xBk,bw,'BOOKED')}${_bfHdr(xOut,ow,'WHAT HAPPENED')}${lines}${boxes}</svg>`;
+  const foot=isSrc?`Source of the <b>bookings</b> — 99.95% of booked patients link to a lead, ~95% carry a tagged source. <b>Not</b> all leads: clinic-level source for people who enquired but <i>didn’t</i> book isn’t captured anywhere. Live from <code>appointments</code> + <code>lead</code>.`
+                  :`Age = days from <code>lead.created_at</code> to when the booking was made. Covers the same booked patients (99.95% link to a lead). Live from <code>appointments</code> + <code>lead</code>.`;
+  wrap(title,sub,svg,foot);
 }
 /* ── Peak booking slots: hour × day heatmap (for roster planning) ── */
 function renderBHOD(){
