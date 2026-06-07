@@ -2170,15 +2170,30 @@ function renderDeepDive(r){
     <p><b>When this is ~0, availability is not a factor</b> for the clinic this week — look at the leads &amp; conversion sections for the gap.</p>
     ${calcStep(`weekday rate = <b>${_avHr.wdRate.toFixed(2)}</b> bookings/${_avHr.U} · weekend rate = <b>${_avHr.weRate.toFixed(2)}</b> bookings/${_avHr.U}<br>weekday ${_avHr.U}: norm <b>${r1(_avHr.normWd)}</b> → this wk <b>${r1(_avHr.wdNow)}</b> = <b>${r1(_avHr.wdShort)}</b> short<br>weekend ${_avHr.U}: norm <b>${r1(_avHr.normWe)}</b> → this wk <b>${r1(_avHr.weNow)}</b> = <b>${r1(_avHr.weShort)}</b> short<br><b>availability share = ${_avHr.wdRate.toFixed(2)}×${r1(_avHr.wdShort)} + ${_avHr.weRate.toFixed(2)}×${r1(_avHr.weShort)} = ${r1(_avHr.loss)}</b>${_availShown<_avHr.loss-0.05?` → counted as <b>${r1(_availShown)}</b> (gated to the threshold &amp; capped at the week's total shortfall)`:''}`)}
     <p>Caveat: it also assumes those lost hours were <b>in demand</b>. The hour×day <b>utilization</b> heatmap below shows whether they were — a block at a near-empty hour really costs ~0. Weekends weight higher automatically (higher per-hour rate, no multiplier).</p>${calcBasis()}`);
+  // weekly arrays for the per-row trend charts (newest-first, like r.*Arr)
+  const _wdSchH=(ros.hrs||[]).map((h,i)=>Math.max(0,(h||0)-((ros.we_hrs||[])[i]||0)));
+  const _weSchH=(ros.we_hrs||[]).map(h=>h||0);
+  const _shrRateA=i=>{ const s=(shr.sched||[])[i]||0; return s>0?((shr.shrunk||[])[i]||0)/s:0; };
+  const _shrPctArr=(shr.sched||[]).map((s,i)=> s>0?((shr.shrunk[i]||0)/s*100):0);
+  const _wdAvailH=(ros.hrs||[]).map((h,i)=>Math.max(0,(h||0)-((ros.we_hrs||[])[i]||0))*(1-_shrRateA(i)));
+  const _weAvailH=(ros.we_hrs||[]).map((h,i)=>(h||0)*(1-_shrRateA(i)));
+  const _availHA=(ros.hrs||[]).map((h,i)=>(h||0)*(1-_shrRateA(i)));
+  const _availH_now=_availHA[wkIdx]||0, _availH_norm=avg(rsl(_availHA));
+  const _mini=(t,svg)=>`<div style="margin:5px 0 10px;"><div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:#cbd5e1;margin-bottom:1px;">${t}</div>${svg}</div>`;
   const ladder = `
-    <div style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:#94a3b8;margin:2px 0 4px;display:flex;align-items:center;gap:6px;flex-wrap:wrap;">Normal → this week · norm: ${cmpMini} ${calcChip('How this availability ladder reads', `<p>Each row compares this week to your clinic’s own <b>${baseLabel()}</b> norm. Green = better, red = worse. The norm window follows the <b>“Compare vs”</b> selector at the top — change it and every row re-computes.</p><p><b>Active doctor-days</b> = distinct doctor×day with a bookable slot. <b>Scheduled hours</b> = the roster plan. <b>Shrinkage</b> = % of scheduled slots the doctor blocked. The last row turns the day shortfall into lost bookings.</p>`)}</div>
+    <div style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:#94a3b8;margin:2px 0 4px;display:flex;align-items:center;gap:6px;flex-wrap:wrap;">Normal → this week · norm: ${cmpMini} ${calcChip('How this availability ladder reads', `<p>Each row compares this week to your clinic’s own <b>${baseLabel()}</b> norm, with its weekly trend below. Green = better, red = worse. The norm window follows the <b>“Compare vs”</b> selector at the top.</p><p><b>Active doctor-days</b> = distinct doctor×day with a bookable slot. <b>Scheduled hours</b> = the roster plan. <b>Shrinkage</b> = % of scheduled slots the doctor blocked. <b>Available hours</b> = scheduled × (1−shrinkage) — the real bookable supply.</p>`)}</div>
     <div style="border:1px solid var(--line);border-radius:10px;padding:3px 12px;background:#fff;margin-bottom:10px;">
       ${_lr('🗓️ Active weekday-days', r.wd_avg, r.wd_w, '', true)}
       ${_lr('🌤️ Active weekend-days', r.we_avg, r.we_w, '', true)}
+      ${_mini('Active days · weekday + weekend', availSplitChart(rev(r.wdArr), rev(r.weArr), hi, r.av_avg, wkS, 'days'))}
       ${(hasRoster&&rh_w!=null)?_lr('⏱️ Scheduled hours · weekday', Math.max(0,rh_avg-rwe_avg), Math.max(0,rh_w-(rwe_w||0)), 'h', true):''}
       ${(hasRoster&&rh_w!=null)?_lr('⏱️ Scheduled hours · weekend', rwe_avg, rwe_w||0, 'h', true):''}
+      ${(hasRoster&&rh_w!=null)?_mini('Scheduled hours · weekday + weekend', availSplitChart(rev(_wdSchH), rev(_weSchH), hi, rh_avg, wkS, 'hours')):''}
       ${hasShr?_lr('✂️ Doctor shrinkage (blocked %)', shrPct_n, shrPct_w, '%', false):''}
-      <div style="display:flex;align-items:center;gap:8px;padding:9px 2px;font-size:12px;">
+      ${hasShr?_mini('Doctor shrinkage % · weekly', spark(rev(_shrPctArr),'#dc2626',hi,v=>r1(v)+'%',shrPct_n)):''}
+      ${(hasRoster&&hasShr)?_lr('🟢 Available hours = scheduled × (1−shrinkage)', _availH_norm, _availH_now, 'h', true, true):''}
+      ${(hasRoster&&hasShr)?_mini('Available hours · weekday + weekend (after shrinkage)', availSplitChart(rev(_wdAvailH), rev(_weAvailH), hi, _availH_norm, wkS, 'hours')):''}
+      <div style="display:flex;align-items:center;gap:8px;padding:9px 2px;font-size:12px;border-top:1px solid #f1f5f9;margin-top:4px;">
         <span style="flex:1;color:#7c3aed;font-weight:800;">↳ Availability’s share of the gap <span style="font-weight:500;color:#94a3b8;">(hour-rate · 0 = not a factor)</span>${_availLossChip}</span>
         <span style="font-size:19px;font-weight:800;color:${_availShown>=0.5?'#7c3aed':'#94a3b8'};">${_availShown>=0.5?'~'+r1(_availShown):'~0'}</span></div>
     </div>`;
