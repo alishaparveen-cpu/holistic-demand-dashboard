@@ -45,6 +45,7 @@ step "Booking hour×day (build_booking_hod)" python3 scripts/build_booking_hod.p
 step "Avail hour×day (build_avail_hod)"     python3 scripts/build_avail_hod.py
 step "Booking cube (build_booking_source)"  python3 scripts/build_booking_source.py
 step "Re-book gap (build_rebook_gap)"        python3 scripts/build_rebook_gap.py
+step "Booking episodes (clean funnel)"      python3 scripts/build_booking_episodes.py
 
 echo "── Optional / API ──"
 step "GMB insights (pull_gmb_insights)"   python3 scripts/pull_gmb_insights.py
