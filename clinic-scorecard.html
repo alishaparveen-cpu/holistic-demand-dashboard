@@ -337,6 +337,9 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--navy);font-
   </div>
 </div>
 
+<!-- BOOKING FLOW (per clinic) -->
+<div id="bookFlowPanel" style="margin-bottom:16px"></div>
+
 <!-- PEAK BOOKING SLOTS (hour × day heatmap) -->
 <div id="bhodPanel" style="margin-bottom:16px"></div>
 
@@ -1427,8 +1430,48 @@ function renderAll() {
   renderG();
   renderLeadConv();
   renderBHOD();
+  renderBookFlow();
   renderPills();
   document.getElementById('weekLabel').textContent=WEEK_LABELS[currentWeek];
+}
+/* ── Booking flow (per clinic): Bookings → New/Follow-up → outcomes (patient vs ops reschedule) ── */
+function renderBookFlow(){
+  const el=document.getElementById('bookFlowPanel'); if(!el) return;
+  if(!D||!D.statusWho){ el.innerHTML=''; return; }
+  const w=currentWeek, sw=D.statusWho, V=(s,f)=>(((sw[s]||{})[f]||[])[w])||0;
+  const segs=[['new','New · first-time','#7c3aed'],['fu','Follow-up','#0d9488']].map(a=>({k:a[0],lbl:a[1],c:a[2],total:V(a[0],'total')})).filter(s=>s.total>0);
+  const TOT=segs.reduce((a,s)=>a+s.total,0);
+  if(TOT<=0){ el.innerHTML=''; return; }
+  const DISP=[['done','Completed','#16a34a'],['missed','No-show','#dc2626'],['resched_patient','Resched · patient','#d97706'],['resched_clinic','Resched · ops','#f59e0b'],['resched_noshow','Re-booked (was no-show)','#a855f7'],['cancelled','Cancelled','#64748b'],['scheduled','Pending','#2563eb']];
+  const disp=DISP.map(d=>({f:d[0],lbl:d[1],c:d[2],v:segs.reduce((a,s)=>a+V(s.k,d[0]),0)})).filter(d=>d.v>0);
+  const H=Math.max(180, TOT*8), gap=10, scale=H/TOT, barW=12, xBk=4, xSeg=232, xDisp=470, pct=(a,b)=>b>0?Math.round(a/b*100):0;
+  // node layouts
+  let sy=0; segs.forEach(s=>{s.y=sy;s.h=s.total*scale;sy+=s.h+gap;});
+  let dyy=0; disp.forEach(d=>{d.y=dyy;d.h=d.v*scale;d.inOff=d.y;dyy+=d.h+gap;});
+  const bkY=0,bkH=TOT*scale;
+  const lk=(Lx,LyT,LyB,Rx,RyT,RyB,fill,op)=>{const mx=(Lx+Rx)/2;return `<path d="M${Lx} ${LyT} C${mx} ${LyT} ${mx} ${RyT} ${Rx} ${RyT} L${Rx} ${RyB} C${mx} ${RyB} ${mx} ${LyB} ${Lx} ${LyB} Z" fill="${fill}" opacity="${op}"/>`;};
+  const bar=(x,y,h,c)=>`<rect x="${x}" y="${y}" width="${barW}" height="${Math.max(1.5,h)}" rx="2" fill="${c}"/>`;
+  const tL=(x,y,t,sub)=>`<text x="${x}" y="${y}" font-size="11" font-weight="700" fill="#0f172a">${t}</text>${sub?`<text x="${x}" y="${y+13}" font-size="9.5" fill="#64748b">${sub}</text>`:''}`;
+  let links='',nodes='';
+  // stage1: Bookings -> each seg
+  let bkOff=bkY; segs.forEach(s=>{ links+=lk(xBk+barW,bkOff,bkOff+s.h,xSeg,s.y,s.y+s.h,s.c,.5); bkOff+=s.h; });
+  // stage2: each seg -> each disposition (its count)
+  segs.forEach(s=>{ let outOff=s.y; disp.forEach(d=>{ const v=V(s.k,d.f); if(v<=0) return; const h=v*scale;
+    links+=lk(xSeg+barW,outOff,outOff+h,xDisp,d.inOff,d.inOff+h,s.c,.42); outOff+=h; d.inOff+=h; }); });
+  // nodes + labels
+  nodes+=bar(xBk,bkY,bkH,'#475569')+tL(xBk+barW+6,bkY+12,'Bookings',TOT.toLocaleString());
+  segs.forEach(s=>{ nodes+=bar(xSeg,s.y,s.h,s.c)+tL(xSeg+barW+6,s.y+12,s.lbl,s.total.toLocaleString()+' · '+pct(s.total,TOT)+'%'); });
+  disp.forEach(d=>{ nodes+=bar(xDisp,d.y,d.h,d.c)+tL(xDisp+barW+6,d.y+12,d.lbl,d.v.toLocaleString()+' · '+pct(d.v,TOT)+'%'); });
+  const totH=Math.max(bkH, sy, dyy)+8;
+  // reschedule patient vs ops summary
+  const rp=disp.find(d=>d.f==='resched_patient'), ro=disp.find(d=>d.f==='resched_clinic');
+  const rsNote=(rp||ro)?`Of reschedules, <b>${(rp?rp.v:0)}</b> patient-side vs <b>${(ro?ro.v:0)}</b> ops/clinic-side — the ops ones are yours to fix.`:'';
+  el.innerHTML=`<div class="sec" style="padding:16px 18px">
+    <div style="font-size:13px;font-weight:600;color:var(--navy)">🔀 Booking flow — what happened to this week's bookings <span style="color:#16a34a;font-weight:700">● CLINIC-LEVEL</span></div>
+    <div style="font-size:11px;color:var(--gray);margin:2px 0 8px">For the selected clinic(s) · ${WEEK_LABELS[currentWeek]||'this week'}. Bookings split into <b>New (first-time)</b> vs <b>Follow-up</b>, then each into its outcome — including reschedule <b>by patient vs by ops</b>. ${rsNote}</div>
+    <svg width="100%" viewBox="0 0 720 ${totH}" style="overflow:visible;font-family:inherit">${links}${nodes}</svg>
+    <div style="font-size:10px;color:var(--gray);margin-top:4px">This starts at <b>Bookings</b> (not leads): the lead→booking-by-channel and the "didn't book → called/relevant" branch need per-lead clinic + relevance data we don't have. Statuses are live from <code>appointments</code>.</div>
+  </div>`;
 }
 /* ── Peak booking slots: hour × day heatmap (for roster planning) ── */
 function renderBHOD(){
