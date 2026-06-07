@@ -765,7 +765,8 @@ function renderAggView(r, levelLabel){
     ${(()=>{const sm=r.aggSame,ldn=r.ldArr[W]||0,bks=sm[W]||0,tr=groupBars([{vals:rev(r.ldArr),color:'#cbd5e1',label:'Leads'},{vals:rev(sm),color:'#0ea5e9',label:'Booked'}],hi,v=>Math.round(v),null,wkS)+`<div style="font-size:8.5px;color:#cbd5e1;font-weight:700;text-transform:uppercase;margin:3px 0 0;">Lead→book % trend</div>`+spark(rev(l2bArr),'#0ea5e9',hi,v=>v+'%',_l2bN);return vc('⛳','Lead→book %',l2b_w,'%',null,'<b>'+bks+'</b> of <b>'+ldn+'</b> leads booked same week · vs '+_l2bN+'% norm · bars = leads vs booked, line = %',tr,'l2b');})()}
     ${vc('✅','Book→done %',b2d_w,'%',null,'consults done ÷ booked · vs '+_b2dN+'% norm',spark(rev(b2dArr),'#059669',hi,v=>v+'%',_b2dN),'b2d')}
   </div>`;
-  return `<div class="card"><div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;"><div style="font-size:18px;font-weight:800;">${levelLabel}</div><div style="font-size:11px;color:#94a3b8;">${r.mat} · ${WEEKS[wkIdx].label} · same snapshot as a clinic, aggregated</div></div>${hd}${ov}</div>`;
+  const drillHint=_drillable?`<div style="display:flex;align-items:center;gap:8px;background:#eef2ff;border:1px solid #c7d2fe;border-radius:9px;padding:8px 13px;margin-top:12px;font-size:12px;color:#4338ca;line-height:1.5;">👆 <span><b>Click any tile or chart below</b> to drill that metric into ${geoSel.size?'clinics':'cities'} (worst-first) → then ${geoSel.size?'the full clinic diagnosis':'clinics'} → then the full RCA. The story reads top-to-bottom.</span></div>`:'';
+  return `<div class="card"><div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;"><div style="font-size:18px;font-weight:800;">${levelLabel}</div><div style="font-size:11px;color:#94a3b8;">${r.mat} · ${WEEKS[wkIdx].label} · same snapshot as a clinic, aggregated</div></div>${hd}${drillHint}${ov}</div>`;
 }
 // ── Metric-first drill: click a metric (Leads, New bookings…) at India level → that metric
 //    ranked by city (worst-fall first) → click a city → by clinic → click a clinic → full RCA. ──
@@ -800,11 +801,40 @@ function renderMetricDrill(metricKey){
   let groups;
   if(byCity){ const m={}; rows.forEach(r=>(m[r.city]=m[r.city]||[]).push(r)); groups=Object.entries(m).map(([city,rs])=>({name:city,key:city,rows:rs,kind:'city'})); }
   else { groups=rows.map(r=>({name:r.clinic,key:r.city+'|'+r.clinic,rows:[r],kind:'clinic'})); }
-  groups.forEach(g=>{ g.arr=computeMetricArr(g.rows,metricKey); g.w=g.arr[W]||0; g.norm=avg(dimSlice(g.arr,W)); g.delta=M.rate?(g.w-Math.round(g.norm)):(g.norm?Math.round((g.w-g.norm)/g.norm*100):0); });
+  groups.forEach(g=>{ g.arr=computeMetricArr(g.rows,metricKey); g.w=g.arr[W]||0; g.norm=avg(dimSlice(g.arr,W)); g.abs=g.w-g.norm; g.delta=M.rate?(g.w-Math.round(g.norm)):(g.norm?Math.round((g.w-g.norm)/g.norm*100):0); });
   groups=groups.filter(g=>g.arr.some(x=>x>0)).sort((a,b)=>a.delta-b.delta);   // worst fall first
   const tot=computeMetricArr(rows,metricKey)[W]||0;
   const dcolr=d=>d<-0.5?'#dc2626':d>0.5?'#059669':'#94a3b8';
   const esc=s=>String(s).replace(/'/g,"\\'");
+  const unitLbl=byCity?'cities':'clinics', oneLbl=byCity?'city':'clinic';
+  // ── story headline: what moved at this scope, and which children drove it ──
+  const aggArr=computeMetricArr(rows,metricKey), aggW=aggArr[W]||0, aggNorm=avg(dimSlice(aggArr,W));
+  const dn=v=>`<span style="color:#dc2626;font-weight:800;">▼${v}</span>`, up=v=>`<span style="color:#059669;font-weight:800;">▲${v}</span>`;
+  let story;
+  if(M.rate){
+    const dpp=Math.round(aggW-aggNorm);
+    const weak=groups.filter(g=>g.delta<-0.5).slice(0,3), strong=groups.slice().reverse().filter(g=>g.delta>0.5).slice(0,2);
+    story=`<b>${M.label}</b> across these ${unitLbl} is <b>${Math.round(aggW)}%</b> — ${dpp<-0.5?dn(Math.abs(dpp)+'pp'):dpp>0.5?up(dpp+'pp'):'flat'} vs its norm.`;
+    if(weak.length) story+=` Weakest: ${weak.map(g=>`<b>${g.name}</b> ${g.w}%`).join(', ')}.`;
+    if(strong.length) story+=` Strongest: ${strong.map(g=>`<b>${g.name}</b> ${g.w}%`).join(', ')}.`;
+    story+=` ${weak.length?`Lift the laggards — open the worst ${oneLbl} below to see whether it's leads or conversion.`:''}`;
+  } else {
+    const absD=Math.round(aggW-aggNorm), pctD=aggNorm?Math.round(absD/aggNorm*100):0;
+    if(absD<-0.5){
+      const fallers=groups.filter(g=>g.abs<-0.5).sort((a,b)=>a.abs-b.abs), totFall=fallers.reduce((s,g)=>s+Math.abs(g.abs),0);   // biggest absolute drop first = real drivers
+      let cum=0; const lead=[]; for(const g of fallers){ lead.push(g); cum+=Math.abs(g.abs); if(cum>=totFall*0.7||lead.length>=3) break; }
+      const share=totFall>0?Math.round(cum/totFall*100):0;
+      story=`<b>${M.label}</b> fell <b>${Math.abs(absD)}</b> vs norm (${dn(Math.abs(pctD)+'%')}). <b>${lead.length}</b> of ${groups.length} ${unitLbl} drove <b>${share}%</b> of the drop: ${lead.map(g=>`<b>${g.name}</b> (${Math.round(g.abs)})`).join(', ')}. Open the top ${oneLbl} below to go a level deeper.`;
+    } else {
+      const risers=groups.slice().filter(g=>g.abs>0.5).sort((a,b)=>b.abs-a.abs).slice(0,3);
+      story=`<b>${M.label}</b> ${absD>0.5?`rose <b>${absD}</b> vs norm (${up(pctD+'%')})`:'held at its norm'}.`;
+      if(risers.length) story+=` Led by ${risers.map(g=>`<b>${g.name}</b> (+${Math.round(g.abs)})`).join(', ')}.`;
+      story+=` No ${oneLbl} is dragging — the story is healthy here.`;
+    }
+  }
+  const storyCard=`<div style="display:flex;gap:12px;align-items:center;background:#f8fafc;border:1px solid var(--line);border-left:3px solid ${M.color};border-radius:10px;padding:10px 14px;margin-bottom:12px;">
+    <div style="flex:1;font-size:12.5px;color:#334155;line-height:1.55;">${story}</div>
+    <div style="flex:0 0 130px;">${spark(rev(aggArr),M.color,hi,M.rate?(v=>v+'%'):null,aggNorm)}</div></div>`;
   const rowsHtml=groups.map(g=>{ const du=M.rate?'pp':'%', clk=g.kind==='city'?`drillCity('${esc(g.name)}')`:`setSelClinic('${esc(g.key)}')`;
     return `<div onclick="${clk}" style="display:flex;align-items:center;gap:12px;padding:9px 12px;border-bottom:1px solid #f1f5f9;cursor:pointer;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background=''">
       <span style="flex:0 0 30%;min-width:0;font-weight:700;color:#0f172a;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${g.name}${g.kind==='city'?` <span style="font-size:10px;color:#94a3b8;font-weight:500;">${g.rows.length}cl</span>`:''}</span>
@@ -818,6 +848,7 @@ function renderMetricDrill(metricKey){
       <div style="font-size:17px;font-weight:800;">${M.label} — by ${byCity?'city':'clinic'}</div>
       <div style="font-size:11px;color:#94a3b8;">🇮🇳 India${byCity?'':' › '+geoScopeText()} · ${WEEKS[wkIdx].label} · ${M.rate?'rate vs norm':'total '+tot.toLocaleString()} · worst-first · click a ${byCity?'city to go deeper':'clinic for full RCA'}</div>
     </div>
+    ${storyCard}
     <div style="display:flex;gap:10px;font-size:9px;font-weight:700;text-transform:uppercase;color:#cbd5e1;padding:0 12px 4px;"><span style="flex:0 0 30%;">${byCity?'City':'Clinic'}</span><span style="flex:0 0 64px;text-align:right;">this wk</span><span style="flex:0 0 58px;text-align:right;">vs norm</span><span style="flex:1;text-align:right;">trend</span><span style="flex:0 0 12px;"></span></div>
     <div style="border:1px solid var(--line);border-radius:11px;overflow:hidden;">${rowsHtml}</div>
   </div>`;
