@@ -216,6 +216,9 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--navy);font-
   <div id="kpiChartNote" style="font-size:11px;color:var(--gray);margin-top:8px;line-height:1.6;padding:8px 10px;background:#F8FAFC;border-radius:6px"></div>
 </div>
 
+<!-- BOOKING FLOW (per clinic) — topmost, the headline narrative -->
+<div id="bookFlowPanel" style="margin-bottom:16px"></div>
+
 <!-- CLINIC COMPARISON (city-lead view, only when >1 clinic selected) -->
 <div class="sec" id="secCmp" style="display:none">
   <div class="sec-hdr" onclick="toggleSec('secCmp')">
@@ -336,9 +339,6 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--navy);font-
     </div>
   </div>
 </div>
-
-<!-- BOOKING FLOW (per clinic) -->
-<div id="bookFlowPanel" style="margin-bottom:16px"></div>
 
 <!-- PEAK BOOKING SLOTS (hour × day heatmap) -->
 <div id="bhodPanel" style="margin-bottom:16px"></div>
@@ -711,13 +711,16 @@ function closeKpiChart() {
 function renderKPIs() {
   const w = currentWeek;
   const av=D.availDays||{total:[],weekday:[],weekend:[]};
+  const nbS=D.bookings.new_first, ldS=D.leads.total;
+  const l2nbSer=ldS.map((l,i)=>l>0?Math.round((nbS[i]||0)/l*100):0);
   const kpis = [
     {key:'total_bk', label:'All bookings', series:D.bookings.total, color:COLORS.p,
      note:'All bookings this week (every type). A blended number — decompose into New vs Follow-up and by status before acting (Section A).'},
-    {key:'new_bk', label:'New bookings', series:D.bookings.new_first, color:COLORS.r,
-     note:'New first-time bookings — the real new-demand proxy. Follow-up and reschedule are not new patients.'},
     {key:'leads', label:'Leads', series:D.leads.total, color:COLORS.b,
-     note:'Inbound leads across all channels incl. Practo (Section C). Marketing-attributed demand into the clinic.'},
+     extra:`${(nbS[w]||0).toLocaleString()} new booked`,
+     note:'Inbound leads across all channels incl. Practo (Section C). Marketing-attributed demand into the clinic. The sub-line shows new first-time bookings made this week.'},
+    {key:'l2nb', label:'Lead → New booking', series:l2nbSer, unit:'%', color:COLORS.r,
+     note:'New first-time bookings ÷ leads, by week — how efficiently this week’s lead volume converts into new bookings. A velocity ratio, NOT a strict lead cohort: some of this week’s leads book in later weeks, and some new bookings came from older leads. For the true same-week cohort see the Full booking flow (Lead age = This week).'},
     {key:'b2d', label:'Book → Done', series:D.completion, unit:'%', color:COLORS.a,
      note:'Book→Done = completed ÷ all bookings. Dragged down by reschedule/cancel leakage — see the funnel in Section D (Kept→Done show-up is separate, ~higher).'},
     {key:'showup', label:'Show rate', series:D.showup, unit:'%', color:COLORS.g,
@@ -743,10 +746,12 @@ function renderKPIs() {
     div.onclick=()=>showKpiChart(k.key,k.label,s,k.note,k.color,k.dsets);
     const subLine = k.sub ? `<div class="kpi-wow fl" style="color:var(--gray)"><i class="ti ti-calendar" style="font-size:11px"></i>${k.sub}</div>`
                           : `<div class="kpi-wow ${dir}"><i class="ti ti-trending-${dir==='up'?'up':dir==='dn'?'down':'flat'}" style="font-size:11px"></i>${pct===null?'—':sign+pct+'% vs last week'}</div>`;
+    const extraLine = k.extra ? `<div class="kpi-wow fl" style="color:var(--gray);font-weight:600"><i class="ti ti-arrow-down-right" style="font-size:11px"></i>${k.extra}</div>` : '';
     div.innerHTML=`
       <div class="kpi-lbl"><i class="ti ti-chart-line" style="font-size:11px"></i>${k.label}</div>
       <div class="kpi-val">${val}${unit}</div>
       ${subLine}
+      ${extraLine}
       ${sparkSVG(s,k.color,true)}
       <div class="expand-hint">Click for trend <i class="ti ti-arrow-down" style="font-size:10px"></i></div>`;
     grid.appendChild(div);
