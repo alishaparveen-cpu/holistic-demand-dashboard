@@ -1458,7 +1458,7 @@ function bfClear(){ bfFocus=null; renderBookFlow(); }
 function bfFocusSet(dim,key){
   if(bfFocus && bfFocus.dim===dim && (bfFocus.key===key || (key==='__other'&&bfFocus.key==='__other'))){ bfFocus=null; renderBookFlow(); return; }
   bfFocus={dim,key};
-  if(dim==='channel' && key==='__other'){ bfFocus.keys=(window._bfOtherMembers||[]).slice(); bfFocus.label='Other sources'; }
+  if(dim==='channel' && key==='__other'){ bfFocus.keys=(window._bfOtherMembers||[]).slice(); bfFocus.label='Smaller sources'; }
   renderBookFlow();
 }
 const _bfBox=(x,y,wd,h,label,num,accent,fs,click,hot)=>{ const inner=`<rect x="${x}" y="${y}" width="${wd}" height="${h}" rx="6" fill="${hot?'#f5f3ff':'#fff'}" stroke="${accent}" stroke-width="${hot?2.4:1.3}"/><rect x="${x}" y="${y}" width="3.5" height="${h}" rx="2" fill="${accent}"/><text x="${x+11}" y="${y+h/2+4}" font-size="${fs||10.5}" font-weight="600" fill="#334155">${label}</text><text x="${x+wd-8}" y="${y+h/2+4}" font-size="11" font-weight="800" fill="#0f172a" text-anchor="end">${num}</text>`; return click?`<g style="cursor:pointer" onclick="${click}">${inner}</g>`:inner; };
@@ -1484,7 +1484,7 @@ function renderBookFlow(){
     const CUBE=D.bookSrc&&D.bookSrc.cube;
     if(!CUBE){ wrap('🔀 Full booking flow','Source data not loaded — rebuild <code>data_booking_source.json</code>.','',''); return; }
     const CHC={'Google Ads':'#2563eb','Meta':'#7c3aed','Practo':'#0ea5e9','Google Maps (GMB)':'#16a34a','Organic':'#0d9488','WhatsApp':'#22c55e','Google organic':'#0891b2','Other':'#94a3b8','Unknown':'#cbd5e1','No lead record':'#cbd5e1'};
-    const SHORT={'Google Maps (GMB)':'Google Maps','No lead record':'No source tag','Unknown':'Untagged'};
+    const SHORT={'Google Maps (GMB)':'Google Maps','No lead record':'No source tag','Unknown':'Untagged','Other':'Other (tagged)'};
     const AGELBL={tw:'This week',lw:'Last week',old:'Older'}, AGECOL={tw:'#16a34a',lw:'#0d9488',old:'#d97706'};
     const segDef={new:['New · first-time','#7c3aed'],fu:['Follow-up','#0d9488']};
     // flatten cube to cells at week w
@@ -1502,7 +1502,7 @@ function renderBookFlow(){
     // CHANNEL marginal (display top-5 + Other, unless focused on a single channel)
     const chT={}; fc.forEach(c=>chT[c.ch]=(chT[c.ch]||0)+c.v);
     let chans=Object.keys(chT).map(ch=>({k:ch,lbl:SHORT[ch]||ch,c:CHC[ch]||'#64748b',total:chT[ch],members:[ch]})).sort((a,b)=>b.total-a.total);
-    if(chans.length>6){ const keep=chans.slice(0,5),rest=chans.slice(5); const mem=rest.flatMap(s=>s.members); window._bfOtherMembers=mem; chans=keep.concat([{k:'__other',lbl:'Other sources',c:'#94a3b8',total:rest.reduce((a,s)=>a+s.total,0),members:mem}]); }
+    if(chans.length>8){ const keep=chans.slice(0,7),rest=chans.slice(7); const mem=rest.flatMap(s=>s.members); window._bfOtherMembers=mem; chans=keep.concat([{k:'__other',lbl:'Smaller sources ('+rest.length+')',c:'#94a3b8',total:rest.reduce((a,s)=>a+s.total,0),members:mem}]); }
     // AGE marginal
     const agT={}; fc.forEach(c=>agT[c.ag]=(agT[c.ag]||0)+c.v);
     const ages=['tw','lw','old'].filter(a=>agT[a]>0).map(a=>({k:a,lbl:AGELBL[a],c:AGECOL[a],total:agT[a]}));
@@ -1577,14 +1577,14 @@ function renderBookFlow(){
   if(!bs||!Object.keys(bs).length){ wrap(isSrc?'🔀 Where this week’s bookings came from':'🔀 How old the lead was when it booked','Source data not loaded for this week — rebuild <code>data_booking_source.json</code>.','',''); return; }
   const VC=(c,f)=>(((bs[c]||{})[f]||[])[w])||0;
   const CHC={'Google Ads':'#2563eb','Meta':'#7c3aed','Practo':'#0ea5e9','Google Maps (GMB)':'#16a34a','Organic':'#0d9488','WhatsApp':'#22c55e','Google organic':'#0891b2','Other':'#94a3b8','Unknown':'#cbd5e1','No lead record':'#cbd5e1'};
-  const SHORT={'No lead record':'No source tag','Unknown':'Untagged'};
+  const SHORT={'No lead record':'No source tag','Unknown':'Untagged','Other':'Other (tagged)'};
   const AGEC={'Same week':'#16a34a','Last week':'#0d9488','2-4 weeks':'#d97706','1-3 months':'#dc2626','3+ months':'#7c3aed','Unknown':'#cbd5e1'};
   const strip=c=>c.replace(/^\d+\s*·\s*/,'');
   let segs=Object.keys(bs).map(c=>({k:c, lbl:isSrc?(SHORT[c]||c):strip(c), c:isSrc?(CHC[c]||'#64748b'):(AGEC[strip(c)]||'#64748b'), total:VC(c,'total'), done:VC(c,'done')})).filter(x=>x.total>0);
   if(isSrc) segs.sort((a,b)=>b.total-a.total); else segs.sort((a,b)=>a.k.localeCompare(b.k));
   const TOT=segs.reduce((a,s)=>a+s.total,0);
   if(TOT<=0){ wrap(isSrc?'🔀 Where this week’s bookings came from':'🔀 How old the lead was when it booked','No bookings this week.','',''); return; }
-  if(isSrc && segs.length>7){ const keep=segs.slice(0,6), rest=segs.slice(6); segs=keep.concat([{k:'__other',lbl:'Other sources',c:'#94a3b8',total:rest.reduce((a,s)=>a+s.total,0),done:rest.reduce((a,s)=>a+s.done,0)}]); }
+  if(isSrc && segs.length>8){ const keep=segs.slice(0,7), rest=segs.slice(7); segs=keep.concat([{k:'__other',lbl:'Smaller sources ('+rest.length+')',c:'#94a3b8',total:rest.reduce((a,s)=>a+s.total,0),done:rest.reduce((a,s)=>a+s.done,0)}]); }
   const OUT=f=>Object.keys(bs).reduce((a,c)=>a+VC(c,f),0);
   const outs=_BF_DISP.map(d=>({f:d[0],lbl:d[1],c:d[2],v:OUT(d[0])})).filter(o=>o.v>0);
   const chW=isSrc?152:146, bw=104, ow=206, xCh=8, xBk=xCh+chW+62, xOut=xBk+bw+62, vw=xOut+ow+10;
