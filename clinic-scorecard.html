@@ -894,9 +894,12 @@ function renderDow(){
 
 /* ── RENDER SECTION H: SC → treatment conversion (revenue funnel) ── */
 function renderH() {
-  const w=currentWeek, mi=lastMatureIdx();
+  const w=currentWeek;
   renderRetention();
   const cv=D.conv||{}, comp=cv.completed||[], conv=cv.converted||[], rate=cv.rate||[];
+  // latest fully-mature week WITH data — skip empty weeks (a clinic can have a 0/gap week, which would read a meaningless "0 of 0")
+  let mi=lastMatureIdx();
+  while(mi>0 && (comp[mi]||0)===0) mi--;
   { const e=document.getElementById('cvMatWk'); if(e) e.textContent=WEEK_LABELS[Math.min(NW-1,mi)]||'mature'; }
   document.getElementById('cvSc').textContent=comp[mi]||0;
   document.getElementById('cvConv').textContent=conv[mi]||0;
@@ -1035,21 +1038,23 @@ function renderC() {
   const w=currentWeek;
   const w0=currentWeek, shr=D.slots.shrunk[w0], shrR=D.slots.shrinkRate[w0];
   const H=D.hours||{};
-  const hourRows = H.hasHrs ? [
-    {label:'⏱️ Bookable hours (scheduled × 1−shrinkage)',series:H.availHrs,color:COLORS.a,unit:'h',note:`The truest supply number — hours patients could actually book into = roster hours minus the ${shrR}% a doctor shrank this week. A doctor can be "available" yet shrink their bookable hours.`},
-    {label:'⏱️ Scheduled roster hours',series:H.scheduled,color:COLORS.r,unit:'h',note:'The doctor roster plan — total hours scheduled (weekday + weekend) before shrinkage.'},
-    {label:'   ↳ weekday bookable hrs',series:H.wdAvailHrs,color:COLORS.t,unit:'h',note:'Mon–Fri bookable hours after shrinkage.'},
-    {label:'   ↳ weekend bookable hrs',series:H.weAvailHrs,color:COLORS.gr,unit:'h',note:'Sat–Sun bookable hours after shrinkage — the high-demand window.'},
-    {label:'🗓️ Active days · weekday',series:(D.availDays||{}).weekday,color:COLORS.t,unit:'d',note:'Mon–Fri days with a bookable doctor slot (distinct doctor×day).'},
-    {label:'🗓️ Active days · weekend',series:(D.availDays||{}).weekend,color:COLORS.gr,unit:'d',note:'Sat–Sun days with cover — weekend is the high-demand window, watch this closely.'},
-  ] : [];
-  const rows=[
-    ...hourRows,
-    {label:'Slots scheduled by doctor',series:D.slots.scheduled,color:COLORS.r,note:"Doctor's own availability — if this dropped, check with doctor immediately",flag:true},
-    {label:'Shrinkage (held / blocked)',series:D.slots.shrunk,color:COLORS.gr,note:`Scheduled − available = internal holds, breaks, admin blocks. ${shrR}% of scheduled slots this week (${shr} slots) — recover these before asking for more doctor hours.`},
-    {label:'Slots available for booking',series:D.slots.available,color:COLORS.a,note:'What patients could actually book = scheduled − shrinkage'},
-    {label:'Slots actually booked',series:D.slots.booked,color:COLORS.p,note:'Demand from patients'},
-    {label:'Utilization % (booked/available)',series:D.slots.utilization,color:COLORS.t,unit:'%',note:'Above 90% = demand exceeds supply. Fix: add slots. Below 70% = demand problem.'},
+  // ── ordered as a supply story: PLAN → loss → REAL SUPPLY → split → DEMAND → OUTCOME ──
+  const rows = H.hasHrs ? [
+    {label:'⏱️ Scheduled roster hours',series:H.scheduled,color:COLORS.r,unit:'h',note:'The plan — doctor hours rostered this week (before shrinkage).',flag:true},
+    {label:'✂️ Shrinkage (held / blocked)',series:D.slots.shrunk,color:COLORS.gr,note:`${shrR}% of scheduled slots blocked this week (${shr}) — internal holds, breaks, admin. Recover these before adding doctor hours.`},
+    {label:'⏱️ Bookable hours = scheduled × (1−shrinkage)',series:H.availHrs,color:COLORS.a,unit:'h',note:'The truest supply — hours patients could actually book into. A doctor can be "available" yet shrink their bookable hours.'},
+    {label:'   ↳ weekday bookable hrs',series:H.wdAvailHrs,color:COLORS.t,unit:'h',note:'Mon–Fri.'},
+    {label:'   ↳ weekend bookable hrs',series:H.weAvailHrs,color:COLORS.gr,unit:'h',note:'Sat–Sun — the high-demand window.'},
+    {label:'🗓️ Active days · weekday',series:(D.availDays||{}).weekday,color:COLORS.t,unit:'d',note:'Mon–Fri distinct doctor×day with cover.'},
+    {label:'🗓️ Active days · weekend',series:(D.availDays||{}).weekend,color:COLORS.gr,unit:'d',note:'Sat–Sun cover — watch this closely.'},
+    {label:'📅 Slots actually booked',series:D.slots.booked,color:COLORS.p,note:'Demand from patients this week.'},
+    {label:'📊 Utilization % (booked ÷ bookable)',series:D.slots.utilization,color:COLORS.t,unit:'%',note:'>90% = supply-constrained → add slots. <70% = demand problem, not supply.'},
+  ] : [
+    {label:'Slots scheduled by doctor',series:D.slots.scheduled,color:COLORS.r,note:"The plan — doctor's rostered slots.",flag:true},
+    {label:'✂️ Shrinkage (held / blocked)',series:D.slots.shrunk,color:COLORS.gr,note:`${shrR}% of scheduled slots blocked (${shr}). Recover before adding hours.`},
+    {label:'Slots available for booking',series:D.slots.available,color:COLORS.a,note:'Scheduled − shrinkage = what patients could book.'},
+    {label:'📅 Slots actually booked',series:D.slots.booked,color:COLORS.p,note:'Demand from patients.'},
+    {label:'📊 Utilization % (booked ÷ available)',series:D.slots.utilization,color:COLORS.t,unit:'%',note:'>90% = supply-constrained → add slots. <70% = demand problem.'},
   ];
   const tbody=document.getElementById('tblC-body');tbody.innerHTML='';
   rows.forEach((r,i)=>{
