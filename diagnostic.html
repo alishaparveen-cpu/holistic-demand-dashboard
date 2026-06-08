@@ -756,27 +756,29 @@ function renderAggView(r, levelLabel){
   const childLbl=geoSel.size?'clinics':'cities', oneChild=geoSel.size?'clinic':'city';
   // compact chip + a small trend below it (click the step to drill = "zoom" into the city breakdown)
   const frow=(no,mk,icon,label,sub,val,unit,delta,du,color,arr,norm,fmt)=>{
-    const fl=delta==null||Math.abs(delta)<0.5, dc=fl?'#94a3b8':delta<0?'#dc2626':'#059669', ar=fl?'–':delta<0?'▼':'▲', clk=_drillable;
+    const av=delta==null?0:Math.abs(delta), fl=delta==null||av<0.05, dc=fl?'#94a3b8':delta<0?'#dc2626':'#059669', ar=fl?'–':delta<0?'▼':'▲', clk=_drillable;
+    const dv=av<1?av.toFixed(1):Math.round(av);   // show small moves (e.g. +0.4%) instead of hiding them as a flat dash
     const bandBg=fl?'#fff':delta<0?'#fffafa':'#fafffb';
     return `<div ${clk?`onclick="setDrillMetric('${mk}')" title="Click → ${label} by ${oneChild}"`:''} style="padding:8px 13px;border:1px solid var(--line);border-left:3px solid ${color};border-radius:11px;background:${bandBg};${clk?'cursor:pointer;':''}"${clk?` onmouseover="this.style.boxShadow='0 1px 8px rgba(79,70,229,.10)'" onmouseout="this.style.boxShadow='none'"`:''}>
       <div style="display:flex;align-items:center;gap:11px;">
         <div style="flex:0 0 22px;height:22px;border-radius:50%;background:${color}1a;color:${color};font-weight:800;font-size:11px;display:flex;align-items:center;justify-content:center;">${no}</div>
         <div style="flex:1;min-width:0;"><span style="font-size:13px;font-weight:700;color:#0f172a;">${icon} ${label}</span> <span style="font-size:9.5px;color:#94a3b8;">${sub}</span></div>
         <div style="flex:0 0 auto;text-align:right;"><span style="font-size:20px;font-weight:800;color:#0f172a;">${val}</span><span style="font-size:11px;color:#94a3b8;font-weight:600;">${unit}</span></div>
-        <div style="flex:0 0 50px;text-align:right;font-size:12.5px;font-weight:800;color:${dc};">${ar}${fl?'':Math.abs(Math.round(delta))+du}</div>
+        <div style="flex:0 0 56px;text-align:right;font-size:12.5px;font-weight:800;color:${dc};">${ar}${fl?'':dv+du}</div>
         ${clk?`<div style="flex:0 0 12px;color:#cbd5e1;font-size:15px;">›</div>`:''}
       </div>
       <div style="max-width:330px;margin:1px 0 -2px 33px;">${spark(rev(arr),color,hi,fmt,norm)}</div></div>`;
   };
   const _newN=avg(r.bkNewArr.slice(W+1,W+6));
+  const rawP=(v,n)=>n?(v-n)/n*100:0;   // raw % vs norm (unrounded — so small moves like +0.4% still show, not a flat dash)
   const steps=[
-    frow(1,'new','🆕','New bookings','first-time patients · the headline',new_w,'',newPct,'%','#4f46e5',r.bkNewArr,_newN,null),
-    frow(2,'avail','🩺','Availability','active doctor-days · supply',Math.round(r.av_w),'d',pctOf(r.dAct,r.av_avg),'%','#7c3aed',r.avArr,r.av_avg,null),
-    frow(3,'leads','🔎','Leads','inbound demand',r.ld_w,'',Math.round(r.dLeadPct),'%','#0ea5e9',r.ldArr,r.ld_avg,null),
+    frow(1,'new','🆕','New bookings','first-time patients · the headline',new_w,'',rawP(new_w,_newN),'%','#4f46e5',r.bkNewArr,_newN,null),
+    frow(2,'avail','🩺','Availability','active doctor-days · supply',Math.round(r.av_w),'d',rawP(r.av_w,r.av_avg),'%','#7c3aed',r.avArr,r.av_avg,null),
+    frow(3,'leads','🔎','Leads','inbound demand',r.ld_w,'',rawP(r.ld_w,r.ld_avg),'%','#0ea5e9',r.ldArr,r.ld_avg,null),
     frow(4,'l2b','⛳','Lead → Book','same-week conversion',l2b_w,'%',l2b_w-_l2bN,'pp','#0284c7',l2bArr,_l2bN,v=>v+'%'),
-    frow(5,'total','📅','All bookings','new + repeat',r.bk_w,'',gapPct,'%','#6366f1',r.bkArr,r.bkBase,null),
+    frow(5,'total','📅','All bookings','new + repeat',r.bk_w,'',rawP(r.bk_w,r.bkBase),'%','#6366f1',r.bkArr,r.bkBase,null),
     frow(6,'b2d','✅','Book → Done','show-up rate',b2d_w,'%',b2d_w-_b2dN,'pp','#16a34a',b2dArr,_b2dN,v=>v+'%'),
-    frow(7,'done','📞','Consults done','completed output',done_w,'',pctOf(done_w-done_n,done_n),'%','#0891b2',r.bkDoneArr,done_n,null),
+    frow(7,'done','📞','Consults done','completed output',done_w,'',rawP(done_w,done_n),'%','#0891b2',r.bkDoneArr,done_n,null),
   ];
   const connector=`<div style="height:7px;border-left:2px dotted #dbe2ea;margin-left:25px;"></div>`;
   const drillHint=_drillable?`<div style="font-size:11.5px;color:#4338ca;background:#eef2ff;border:1px solid #c7d2fe;border-radius:8px;padding:7px 12px;margin-top:10px;line-height:1.5;">👆 <b>Click any step</b> to see which ${childLbl} drove it (worst-first) → drill into ${geoSel.size?'the full clinic RCA':'clinics, then the clinic'}. The funnel reads top-to-bottom: supply → demand → convert → book → show → done.</div>`:'';
