@@ -474,9 +474,11 @@ let CLINICS=[], CITIES={};                    // all keys; city -> [keys]
 const NW=8;                                   // weeks shown (last 8 of the 12 pulled)
 const _M=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 function ser(a){ return (a||Array(12).fill(0)).slice(0,NW).reverse(); }   // newest-first 12 → oldest-first NW
-// re-book gap split (same-day / 1–6d / 7–13d since prior SC) for the selected week, summed across SEL
-function rebookGapW(){ const idx=(NW-1)-currentWeek, o={d0:0,d1_6:0,d7_13:0};   // idx → newest-first 12-week index
-  SEL.forEach(k=>{ const g=REBOOKGAP[k]; if(!g)return; ['d0','d1_6','d7_13'].forEach(b=>{ o[b]+=((g[b]||[])[idx])||0; }); }); return o; }
+// reschedule events for the selected week, summed across SEL — split by booking segment (new/return)
+// × gap (same-day / 1–6d / 7–13d). Also exposes combined gap totals (o.d0/d1_6/d7_13) for back-compat.
+function rebookGapW(){ const idx=(NW-1)-currentWeek, S=['new','return'], B=['d0','d1_6','d7_13'];
+  const o={new:{d0:0,d1_6:0,d7_13:0},return:{d0:0,d1_6:0,d7_13:0},d0:0,d1_6:0,d7_13:0};
+  SEL.forEach(k=>{ const g=REBOOKGAP[k]; if(!g)return; S.forEach(s=>{ const sg=g[s]||{}; B.forEach(b=>{ const v=((sg[b]||[])[idx])||0; o[s][b]+=v; o[b]+=v; }); }); }); return o; }
 function pctSer(num,den){ return num.map((n,i)=>{ const d=den[i]||0; return d>0?Math.round(n/d*100):0; }); }
 function buildWeeks(){
   const W12=(SC._meta&&SC._meta.weeks)||["2026-06-01","2026-05-25","2026-05-18","2026-05-11","2026-05-04","2026-04-27","2026-04-20","2026-04-13","2026-04-06","2026-03-30","2026-03-23","2026-03-16"];
@@ -1643,13 +1645,22 @@ function renderBookFlow(){
       return _subTitle('📥 Leads → booked · this week')+`<svg width="100%" viewBox="0 4 398 88" preserveAspectRatio="xMinYMin meet" style="font-family:inherit;display:block;max-width:430px;">${ln}${bx}</svg>`; })():'';
     // ── small sub-flow #2 (below): rescheduled bookings (rework) → by gap since prior booking ──
     const _reschedMini=(function(){ const g=rebookGapW(), tot=g.d0+g.d1_6+g.d7_13; if(tot<=0) return '';
-      const items=[['Same-day',g.d0,'#dc2626'],['Within 1–6 days',g.d1_6,'#d97706'],['7–13 days later',g.d7_13,'#f59e0b']].filter(i=>i[1]>0);
-      const bh=22, gp=9, lx=4,lw=158, rx=232,rw=170, totH=items.length*(bh+gp)-gp, y0=8, cy=y0+totH/2-bh/2; let ln='',bx='';
-      items.forEach((it,i)=>{ const y=y0+i*(bh+gp); ln+=_bfLine(lx+lw,cy+bh/2,rx,y+bh/2,pct(it[1],tot)+'%'); bx+=_bfBox(rx,y,rw,bh,it[0],it[1],it[2],9.5); });
-      bx+=_bfBox(lx,cy,lw,bh,'🔁 Reschedules',tot,'#7c3aed',9.5);
-      return _subTitle('🔁 Rescheduled bookings — rework (NOT unique demand) · by gap since prior booking')+`<svg width="100%" viewBox="0 0 420 ${y0+totH+8}" preserveAspectRatio="xMinYMin meet" style="font-family:inherit;display:block;max-width:450px;">${ln}${bx}</svg>`; })();
+      const GAPS=[['d0','Same-day','#dc2626'],['d1_6','Within 1–6d','#d97706'],['d7_13','7–13d later','#f59e0b']];
+      const SEGD=[['new','New · first-time','#7c3aed'],['return','Genuine return','#0d9488']];
+      const bh=20, gp=7, segGap=13, lx=4,lw=152, sx=196,sw=152, gx=386,gw=156;
+      let gy=6; const segs=[];
+      SEGD.forEach(([sk,slbl,scol])=>{ const st=g[sk].d0+g[sk].d1_6+g[sk].d7_13; if(st<=0) return;
+        const gaps=GAPS.filter(([gk])=>g[sk][gk]>0).map(([gk,glbl,gcol])=>({lbl:glbl,v:g[sk][gk],col:gcol}));
+        const grpH=gaps.length*(bh+gp)-gp; gaps.forEach((it,i)=>{ it.y=gy+i*(bh+gp); });
+        segs.push({sk,slbl,scol,st,gaps,sy:gy+grpH/2-bh/2}); gy+=grpH+segGap; });
+      const totH=gy-segGap+6, cy=6+(totH-6)/2-bh/2; let ln='',bx='';
+      segs.forEach(s=>{ ln+=_bfLine(lx+lw,cy+bh/2,sx,s.sy+bh/2,pct(s.st,tot)+'%');
+        s.gaps.forEach(it=>{ ln+=_bfLine(sx+sw,s.sy+bh/2,gx,it.y+bh/2,pct(it.v,s.st)+'%'); bx+=_bfBox(gx,it.y,gw,bh,it.lbl,it.v,it.col,9); });
+        bx+=_bfBox(sx,s.sy,sw,bh,s.slbl,s.st,s.scol,9); });
+      bx+=_bfBox(lx,cy,lw,bh,'🔁 Reschedules',tot,'#7c3aed',9);
+      return _subTitle('🔁 Rescheduled bookings — rework (NOT unique demand) · by booking type, then gap')+`<svg width="100%" viewBox="0 0 552 ${totH}" preserveAspectRatio="xMinYMin meet" style="font-family:inherit;display:block;max-width:600px;">${ln}${bx}</svg>`; })();
     const svg=_mainSvg+_leadsMini+_reschedMini;
-    const _rework=(D.resched&&D.resched[w])||0;
+    const _rgw=rebookGapW(), _rework=_rgw.d0+_rgw.d1_6+_rgw.d7_13;   // same source as the rescheduled sub-flow, so they reconcile
     const _reconcile=`<div style="border:1px solid #bbf7d0;background:#f0fdf4;border-radius:8px;padding:8px 12px;margin-top:10px;font-size:10.5px;color:#166534;line-height:1.55;"><b>✓ Clean funnel — one patient = one booking.</b> A patient who booked then rescheduled (or no-showed and re-booked) is counted <b>once</b>, at their first booking, with their <b>final</b> outcome.${_rework>0?` <b>${_rework}</b> reschedule${_rework>1?'s':''} this week ${_rework>1?'were':'was'} collapsed out — that's operational rework, not demand.`:''} The "This week" node = <b>${_swNew} new + ${_swRet} return</b> same-week bookings.</div>`;
     const extra=`<div style="border:1px dashed #cbd5e1;border-radius:8px;padding:9px 12px;margin-top:10px;background:#f8fafc;font-size:10.5px;color:#64748b;line-height:1.5">The <b>didn't-book</b> count is this week's clinic leads minus new same-week bookings — a count, not a per-lead disposition. <b>Why each didn't book</b> (called / not called → relevant?), like the bottom of your sketch, still needs per-lead clinic + call-disposition data (the leads feed has no phone/disposition; that link lived in LeadSquared, sync stale Sep 2024). The flow below covers <b>all</b> this week's bookings (incl. repeat &amp; older-lead), so it won't equal "booked new" above.</div>`+_reconcile;
     const foot=`Every booked patient linked to their lead (99.95%). Channel from <code>utm_source/origin/gclid</code>, age from <code>lead.created_at→booked</code>, New/Follow-up + outcome from <code>appointments</code>. <b>Booked patients only.</b>`;
