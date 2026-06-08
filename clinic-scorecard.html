@@ -1546,7 +1546,7 @@ const _bfLine=(x1,y1,x2,y2,lab)=>{const mx=(x1+x2)/2;return `<path d="M${x1} ${y
 const _bfHdr=(x,wd,t)=>`<text x="${x+wd/2}" y="-14" font-size="9" font-weight="700" fill="#94a3b8" text-anchor="middle" letter-spacing="0.5">${t}</text>`;
 const _BF_DISP=[['done','Completed','#16a34a'],['missed','No-show','#dc2626'],['resched_patient','Resched · patient','#d97706'],['resched_clinic','Resched · ops','#f59e0b'],['resched_noshow','Re-booked (was no-show)','#a855f7'],['cancelled','Cancelled','#64748b'],['scheduled','Pending','#2563eb']];
 // clean (episode) outcomes: each patient-intent ends in ONE final state (reschedules already collapsed)
-const _EPI_DISP=[['done','Completed','#16a34a'],['missed','No-show','#dc2626'],['cancelled','Cancelled','#64748b'],['pending','Rescheduled out (deferred >14d / no visit)','#d97706']];
+const _EPI_DISP=[['done','Completed','#16a34a'],['missed','No-show','#dc2626'],['cancelled','Cancelled','#64748b'],['pending','Rescheduled out','#d97706']];
 function renderBookFlow(){
   const el=document.getElementById('bookFlowPanel'); if(!el) return;
   if(!D){ el.innerHTML=''; return; }
@@ -1634,15 +1634,16 @@ function renderBookFlow(){
     // same-week re-books / returns — these ride on top of the new count in the flow's "This week" node
     const _swSeg=seg=>Object.keys(CUBE).reduce((a,ch)=>{ const sg=(((CUBE[ch]||{})['tw'])||{})[seg]; return sg?a+Object.keys(sg).reduce((x,o)=>x+((sg[o]||[])[w]||0),0):a; },0);
     const _swReb=_swSeg('rebook'), _swRet=_swSeg('return'), _swAll=_swNew+_swReb+_swRet;
-    const _lbox=(bg,bd,txt)=>`<div style="background:${bg};border:1.4px ${bd};border-radius:9px;padding:7px 12px;font-size:11.5px;color:#334155;">${txt}</div>`;
-    const leadHdr=_leadsW>0?`<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px;">
-      ${_lbox('#eff6ff','solid #93c5fd',`📥 <b>This week's leads</b> &nbsp;<span style="font-size:15px;font-weight:800;color:#1d4ed8;">${_leadsW.toLocaleString()}</span>`)}
-      <span style="color:#cbd5e1;font-size:18px;">→</span>
-      <div style="display:flex;flex-direction:column;gap:7px;">
-        ${_lbox('#fff','dashed #d1a8a8',`🕓 <b style="color:#b45309;">Didn't book this week</b> &nbsp;<span style="font-size:14px;font-weight:800;color:#b45309;">${_didnt.toLocaleString()}</span> <span style="color:#94a3b8;">· floating — may still book later (lead lag)</span>`)}
-        ${_lbox('#f0fdf4','solid #86efac',`✅ <b style="color:#15803d;">Booked this week (new)</b> &nbsp;<span style="font-size:14px;font-weight:800;color:#15803d;">${_booked.toLocaleString()}</span> &nbsp;<span style="color:#64748b;">${_convP}% of leads · ↓ these feed the flow below</span>`)}
-      </div></div>`:'';
-    const svg=leadHdr+`<svg width="100%" viewBox="0 -20 ${vw} ${totH+24}" preserveAspectRatio="xMinYMin meet" style="font-family:inherit;display:block">${hdrs}${lines}${boxes}</svg>`;
+    const _lbox=(bg,bd,txt)=>`<div style="background:${bg};border:1.4px ${bd};border-radius:9px;padding:7px 12px;font-size:11.5px;color:#334155;display:inline-block;">${txt}</div>`;
+    // slim one-line header (no longer a big stacked block that disrupted the diagram)
+    const leadHdr=_leadsW>0?`<div style="margin-bottom:10px;">${_lbox('#eff6ff','solid #93c5fd',`📥 <b>This week's clinic leads</b> &nbsp;<span style="font-size:15px;font-weight:800;color:#1d4ed8;">${_leadsW.toLocaleString()}</span> &nbsp;<span style="color:#64748b;font-weight:600;">→ <b style="color:#15803d;">${_booked}</b> booked new (${_convP}%) · <b style="color:#b45309;">${_didnt}</b> didn't book yet</span>`)}</div>`:'';
+    // floating "didn't book" box sits in the LEAD AGE column, just above the "This week" node — these leads
+    // arrived this week but didn't enter the booking flow (may still book later — lead lag).
+    const _twNode=ages.find(a=>a.k==='tw');
+    const _floatY=-52;
+    const _didntBox=(_leadsW>0&&_didnt>0)?`<rect x="${xAge}" y="${_floatY}" width="${ageW}" height="22" rx="6" fill="#fff7ed" stroke="#f59e0b" stroke-width="1.2" stroke-dasharray="4 3"/><text x="${xAge+ageW/2}" y="${_floatY+9.5}" font-size="9" font-weight="800" fill="#b45309" text-anchor="middle">🕓 ${_didnt} didn't book yet</text><text x="${xAge+ageW/2}" y="${_floatY+18}" font-size="7" fill="#d97706" text-anchor="middle">floating · may book later</text>`:'';
+    const _vbTop=Math.min(-20,_floatY-6);
+    const svg=leadHdr+`<svg width="100%" viewBox="0 ${_vbTop} ${vw} ${totH-_vbTop+8}" preserveAspectRatio="xMinYMin meet" style="font-family:inherit;display:block">${hdrs}${_didntBox}${lines}${boxes}</svg>`;
     const _rework=(D.resched&&D.resched[w])||0;
     const _reconcile=`<div style="border:1px solid #bbf7d0;background:#f0fdf4;border-radius:8px;padding:8px 12px;margin-top:10px;font-size:10.5px;color:#166534;line-height:1.55;"><b>✓ Clean funnel — one patient = one booking.</b> A patient who booked then rescheduled (or no-showed and re-booked) is counted <b>once</b>, at their first booking, with their <b>final</b> outcome.${_rework>0?` <b>${_rework}</b> reschedule${_rework>1?'s':''} this week ${_rework>1?'were':'was'} collapsed out — that's operational rework, not demand.`:''} The "This week" node = <b>${_swNew} new + ${_swRet} return</b> same-week bookings.</div>`;
     const extra=`<div style="border:1px dashed #cbd5e1;border-radius:8px;padding:9px 12px;margin-top:10px;background:#f8fafc;font-size:10.5px;color:#64748b;line-height:1.5">The <b>didn't-book</b> count is this week's clinic leads minus new same-week bookings — a count, not a per-lead disposition. <b>Why each didn't book</b> (called / not called → relevant?), like the bottom of your sketch, still needs per-lead clinic + call-disposition data (the leads feed has no phone/disposition; that link lived in LeadSquared, sync stale Sep 2024). The flow below covers <b>all</b> this week's bookings (incl. repeat &amp; older-lead), so it won't equal "booked new" above.</div>`+_reconcile;
