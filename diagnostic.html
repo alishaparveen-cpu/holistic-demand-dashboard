@@ -858,19 +858,21 @@ function renderMetricDrill(metricKey){
   // metric tabs — switch which metric you're slicing by, without going back to India
   const TABORD=[['avail','🩺 Availability'],['leads','🔎 Leads'],['l2b','⛳ Lead→book'],['new','🆕 New bookings'],['total','📅 Bookings'],['b2d','✅ Book→done'],['done','📞 Consults done']];
   const tabBar=`<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;">${TABORD.map(([k,lbl])=>{const on=k===metricKey,c=METRICS[k].color;return `<button onclick="setDrillMetric('${k}')" style="font-size:11.5px;padding:5px 11px;border-radius:20px;cursor:pointer;border:1.5px solid ${on?c:'var(--line)'};background:${on?c+'18':'#fff'};color:${on?c:'#475569'};font-weight:${on?700:500};">${lbl}</button>`;}).join('')}</div>`;
-  // mini-diagnosis chips: each child's other key levers, coloured by severity — fills the row, shows "what's wrong" at a glance
-  const diagDefs=[['avail','🩺'],['leads','🔎'],['l2b','⛳'],['b2d','✅'],['new','🆕']];
-  const diagChips=g=>diagDefs.map(([k,ic])=>{ const Mk=METRICS[k], arr=computeMetricArr(g.rows,k), v=arr[W]||0, n=avg(dimSlice(arr,W));
+  // mini-diagnosis chips — labelled levers, coloured by severity, on their own horizontal row: shows "what's wrong" at a glance
+  const diagDefs=[['avail','🩺','Avail'],['leads','🔎','Leads'],['l2b','⛳','Lead→Book'],['b2d','✅','Book→Done'],['new','🆕','New']];
+  const diagChips=g=>diagDefs.map(([k,ic,lbl])=>{ const Mk=METRICS[k], arr=computeMetricArr(g.rows,k), v=arr[W]||0, n=avg(dimSlice(arr,W));
     const d=Mk.rate?(v-n):(n?Math.round((v-n)/n*100):0), sev=Mk.rate?(d<=-5?2:d<=-1?1:0):(d<=-15?2:d<=-3?1:0);
     const col=['#16a34a','#d97706','#dc2626'][sev], bg=['#f0fdf4','#fffbeb','#fef2f2'][sev], a=Math.abs(d)<0.5?'–':d<0?'▼':'▲';
-    return `<span title="${Mk.label}: ${a}${Math.abs(Math.round(d))}${Mk.rate?'pp':'%'} vs norm" style="display:inline-flex;align-items:center;background:${bg};border:1px solid ${col}44;color:${col};border-radius:5px;padding:0 4px;font-size:9px;font-weight:700;margin:0 3px 2px 0;">${ic}${a}${Math.abs(Math.round(d))}${Mk.rate?'p':'%'}</span>`; }).join('');
+    return `<span title="${Mk.label}" style="display:inline-flex;align-items:center;gap:3px;background:${bg};border:1px solid ${col}44;color:${col};border-radius:6px;padding:1px 7px;font-size:10px;font-weight:700;">${ic} ${lbl} ${a}${Math.abs(Math.round(d))}${Mk.rate?'pp':'%'}</span>`; }).join('');
   const rowsHtml=groups.map(g=>{ const du=M.rate?'pp':'%', clk=g.kind==='city'?`drillCity('${esc(g.name)}')`:`setSelClinic('${esc(g.key)}')`, bb=band(g);
-    return `<div onclick="${clk}" style="display:flex;align-items:center;gap:12px;padding:9px 12px;border-bottom:1px solid #f1f5f9;border-left:4px solid ${bb[1]};background:${bb[0]};cursor:pointer;" onmouseover="this.style.filter='brightness(.97)'" onmouseout="this.style.filter='none'">
-      <div style="flex:0 0 33%;min-width:0;"><div style="font-weight:700;color:#0f172a;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${g.name}${g.kind==='city'?` <span style="font-size:10px;color:#94a3b8;font-weight:500;">${g.rows.length}cl</span>`:''}</div><div style="margin-top:4px;line-height:1.6;">${diagChips(g)}</div></div>
-      <span style="flex:0 0 58px;text-align:right;font-size:16px;font-weight:800;color:#0f172a;">${g.w}${M.unit==='%'?'%':''}</span>
-      <span style="flex:0 0 54px;text-align:right;font-size:12px;font-weight:800;color:${dcolr(g.delta)};">${g.delta<-0.5?'▼':g.delta>0.5?'▲':'–'}${Math.abs(g.delta)}${du}</span>
-      <span style="flex:1;max-width:300px;min-width:120px;">${spark(rev(g.arr),M.color,hi,M.rate?(v=>v+'%'):null,g.norm)}</span>
-      <span style="flex:0 0 12px;color:#cbd5e1;font-size:16px;">›</span></div>`; }).join('')||'<div style="padding:16px;color:#94a3b8;text-align:center;">No data.</div>';
+    return `<div onclick="${clk}" style="border-bottom:1px solid #f1f5f9;border-left:4px solid ${bb[1]};background:${bb[0]};cursor:pointer;" onmouseover="this.style.filter='brightness(.97)'" onmouseout="this.style.filter='none'">
+      <div style="display:flex;align-items:center;gap:12px;padding:9px 12px 5px;">
+        <span style="flex:0 0 30%;min-width:0;font-weight:700;color:#0f172a;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${g.name}${g.kind==='city'?` <span style="font-size:10px;color:#94a3b8;font-weight:500;">${g.rows.length}cl</span>`:''}</span>
+        <span style="flex:0 0 58px;text-align:right;font-size:16px;font-weight:800;color:#0f172a;">${g.w}${M.unit==='%'?'%':''}</span>
+        <span style="flex:0 0 54px;text-align:right;font-size:12px;font-weight:800;color:${dcolr(g.delta)};">${g.delta<-0.5?'▼':g.delta>0.5?'▲':'–'}${Math.abs(g.delta)}${du}</span>
+        <span style="flex:1;max-width:300px;min-width:120px;">${spark(rev(g.arr),M.color,hi,M.rate?(v=>v+'%'):null,g.norm)}</span>
+        <span style="flex:0 0 12px;color:#cbd5e1;font-size:16px;">›</span></div>
+      <div style="display:flex;flex-wrap:wrap;gap:5px;padding:0 12px 9px 12px;">${diagChips(g)}</div></div>`; }).join('')||'<div style="padding:16px;color:#94a3b8;text-align:center;">No data.</div>';
   return `<div class="card">
     <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px;">
       <button onclick="clearDrillMetric()" style="font-size:12px;padding:5px 12px;background:#f1f5f9;border:1px solid var(--line);border-radius:8px;cursor:pointer;">← ${byCity?'India overview':geoScopeText()+' overview'}</button>
@@ -879,7 +881,7 @@ function renderMetricDrill(metricKey){
     </div>
     ${tabBar}
     ${storyCard}
-    <div style="display:flex;gap:12px;font-size:9px;font-weight:700;text-transform:uppercase;color:#cbd5e1;padding:0 12px 4px;"><span style="flex:0 0 33%;">${byCity?'City':'Clinic'} · 🩺🔎⛳✅🆕 levers</span><span style="flex:0 0 58px;text-align:right;">this wk</span><span style="flex:0 0 54px;text-align:right;">vs norm</span><span style="flex:1;text-align:right;">trend</span><span style="flex:0 0 12px;"></span></div>
+    <div style="display:flex;gap:12px;font-size:9px;font-weight:700;text-transform:uppercase;color:#cbd5e1;padding:0 12px 4px;"><span style="flex:0 0 30%;">${byCity?'City':'Clinic'}</span><span style="flex:0 0 58px;text-align:right;">this wk</span><span style="flex:0 0 54px;text-align:right;">vs norm</span><span style="flex:1;text-align:right;">trend</span><span style="flex:0 0 12px;"></span></div>
     <div style="border:1px solid var(--line);border-radius:11px;overflow:hidden;">${rowsHtml}</div>
   </div>`;
 }
