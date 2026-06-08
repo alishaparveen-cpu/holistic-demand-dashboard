@@ -754,23 +754,29 @@ function renderAggView(r, levelLabel){
   const _drillable=r.aggRows&&r.aggRows.length>1;   // only drill when there's >1 city/clinic to break into
   // ── clean 6-step demand funnel, top→bottom: supply → demand → convert → book → show → done ──
   const childLbl=geoSel.size?'clinics':'cities', oneChild=geoSel.size?'clinic':'city';
+  // compact chip + a small trend below it (click the step to drill = "zoom" into the city breakdown)
   const frow=(no,mk,icon,label,sub,val,unit,delta,du,color,arr,norm,fmt)=>{
     const fl=delta==null||Math.abs(delta)<0.5, dc=fl?'#94a3b8':delta<0?'#dc2626':'#059669', ar=fl?'–':delta<0?'▼':'▲', clk=_drillable;
-    return `<div ${clk?`onclick="setDrillMetric('${mk}')" title="Click → ${label} by ${oneChild}"`:''} style="display:flex;align-items:center;gap:13px;padding:11px 14px;border:1px solid var(--line);border-left:3px solid ${color};border-radius:11px;background:#fff;${clk?'cursor:pointer;':''}"${clk?` onmouseover="this.style.background='#f8faff'" onmouseout="this.style.background='#fff'"`:''}>
-      <div style="flex:0 0 24px;height:24px;border-radius:50%;background:${color}1a;color:${color};font-weight:800;font-size:11px;display:flex;align-items:center;justify-content:center;">${no}</div>
-      <div style="flex:0 0 145px;min-width:0;"><div style="font-size:13px;font-weight:700;color:#0f172a;white-space:nowrap;">${icon} ${label}${clk?' <span style="font-size:10px;color:#a5b4fc;font-weight:700;">▸</span>':''}</div><div style="font-size:9.5px;color:#94a3b8;">${sub}</div></div>
-      <div style="flex:0 0 88px;text-align:right;"><span style="font-size:21px;font-weight:800;color:#0f172a;line-height:1;">${val}</span><span style="font-size:11px;color:#94a3b8;font-weight:600;">${unit}</span></div>
-      <div style="flex:0 0 52px;text-align:right;font-size:12.5px;font-weight:800;color:${dc};">${ar}${fl?'':Math.abs(Math.round(delta))+du}</div>
-      <div style="flex:1;min-width:100px;">${spark(rev(arr),color,hi,fmt,norm)}</div>
-      <div style="flex:0 0 10px;color:#cbd5e1;font-size:16px;">${clk?'›':''}</div></div>`;
+    const bandBg=fl?'#fff':delta<0?'#fffafa':'#fafffb';
+    return `<div ${clk?`onclick="setDrillMetric('${mk}')" title="Click → ${label} by ${oneChild}"`:''} style="padding:8px 13px;border:1px solid var(--line);border-left:3px solid ${color};border-radius:11px;background:${bandBg};${clk?'cursor:pointer;':''}"${clk?` onmouseover="this.style.boxShadow='0 1px 8px rgba(79,70,229,.10)'" onmouseout="this.style.boxShadow='none'"`:''}>
+      <div style="display:flex;align-items:center;gap:11px;">
+        <div style="flex:0 0 22px;height:22px;border-radius:50%;background:${color}1a;color:${color};font-weight:800;font-size:11px;display:flex;align-items:center;justify-content:center;">${no}</div>
+        <div style="flex:1;min-width:0;"><span style="font-size:13px;font-weight:700;color:#0f172a;">${icon} ${label}</span> <span style="font-size:9.5px;color:#94a3b8;">${sub}</span></div>
+        <div style="flex:0 0 auto;text-align:right;"><span style="font-size:20px;font-weight:800;color:#0f172a;">${val}</span><span style="font-size:11px;color:#94a3b8;font-weight:600;">${unit}</span></div>
+        <div style="flex:0 0 50px;text-align:right;font-size:12.5px;font-weight:800;color:${dc};">${ar}${fl?'':Math.abs(Math.round(delta))+du}</div>
+        ${clk?`<div style="flex:0 0 12px;color:#cbd5e1;font-size:15px;">›</div>`:''}
+      </div>
+      <div style="max-width:330px;margin:1px 0 -2px 33px;">${spark(rev(arr),color,hi,fmt,norm)}</div></div>`;
   };
+  const _newN=avg(r.bkNewArr.slice(W+1,W+6));
   const steps=[
-    frow(1,'avail','🩺','Availability','active doctor-days · supply',Math.round(r.av_w),'d',pctOf(r.dAct,r.av_avg),'%','#7c3aed',r.avArr,r.av_avg,null),
-    frow(2,'leads','🔎','Leads','inbound demand',r.ld_w,'',Math.round(r.dLeadPct),'%','#0ea5e9',r.ldArr,r.ld_avg,null),
-    frow(3,'l2b','⛳','Lead → Book','same-week conversion',l2b_w,'%',l2b_w-_l2bN,'pp','#0284c7',l2bArr,_l2bN,v=>v+'%'),
-    frow(4,'total','📅','Bookings','unique patient bookings',r.bk_w,'',gapPct,'%','#6366f1',r.bkArr,r.bkBase,null),
-    frow(5,'b2d','✅','Book → Done','show-up rate',b2d_w,'%',b2d_w-_b2dN,'pp','#16a34a',b2dArr,_b2dN,v=>v+'%'),
-    frow(6,'done','📞','Consults done','completed output',done_w,'',pctOf(done_w-done_n,done_n),'%','#0891b2',r.bkDoneArr,done_n,null),
+    frow(1,'new','🆕','New bookings','first-time patients · the headline',new_w,'',newPct,'%','#4f46e5',r.bkNewArr,_newN,null),
+    frow(2,'avail','🩺','Availability','active doctor-days · supply',Math.round(r.av_w),'d',pctOf(r.dAct,r.av_avg),'%','#7c3aed',r.avArr,r.av_avg,null),
+    frow(3,'leads','🔎','Leads','inbound demand',r.ld_w,'',Math.round(r.dLeadPct),'%','#0ea5e9',r.ldArr,r.ld_avg,null),
+    frow(4,'l2b','⛳','Lead → Book','same-week conversion',l2b_w,'%',l2b_w-_l2bN,'pp','#0284c7',l2bArr,_l2bN,v=>v+'%'),
+    frow(5,'total','📅','All bookings','new + repeat',r.bk_w,'',gapPct,'%','#6366f1',r.bkArr,r.bkBase,null),
+    frow(6,'b2d','✅','Book → Done','show-up rate',b2d_w,'%',b2d_w-_b2dN,'pp','#16a34a',b2dArr,_b2dN,v=>v+'%'),
+    frow(7,'done','📞','Consults done','completed output',done_w,'',pctOf(done_w-done_n,done_n),'%','#0891b2',r.bkDoneArr,done_n,null),
   ];
   const connector=`<div style="height:7px;border-left:2px dotted #dbe2ea;margin-left:25px;"></div>`;
   const drillHint=_drillable?`<div style="font-size:11.5px;color:#4338ca;background:#eef2ff;border:1px solid #c7d2fe;border-radius:8px;padding:7px 12px;margin-top:10px;line-height:1.5;">👆 <b>Click any step</b> to see which ${childLbl} drove it (worst-first) → drill into ${geoSel.size?'the full clinic RCA':'clinics, then the clinic'}. The funnel reads top-to-bottom: supply → demand → convert → book → show → done.</div>`:'';
@@ -850,12 +856,18 @@ function renderMetricDrill(metricKey){
   // metric tabs — switch which metric you're slicing by, without going back to India
   const TABORD=[['avail','🩺 Availability'],['leads','🔎 Leads'],['l2b','⛳ Lead→book'],['new','🆕 New bookings'],['total','📅 Bookings'],['b2d','✅ Book→done'],['done','📞 Consults done']];
   const tabBar=`<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;">${TABORD.map(([k,lbl])=>{const on=k===metricKey,c=METRICS[k].color;return `<button onclick="setDrillMetric('${k}')" style="font-size:11.5px;padding:5px 11px;border-radius:20px;cursor:pointer;border:1.5px solid ${on?c:'var(--line)'};background:${on?c+'18':'#fff'};color:${on?c:'#475569'};font-weight:${on?700:500};">${lbl}</button>`;}).join('')}</div>`;
+  // mini-diagnosis chips: each child's other key levers, coloured by severity — fills the row, shows "what's wrong" at a glance
+  const diagDefs=[['avail','🩺'],['leads','🔎'],['l2b','⛳'],['b2d','✅'],['new','🆕']];
+  const diagChips=g=>diagDefs.map(([k,ic])=>{ const Mk=METRICS[k], arr=computeMetricArr(g.rows,k), v=arr[W]||0, n=avg(dimSlice(arr,W));
+    const d=Mk.rate?(v-n):(n?Math.round((v-n)/n*100):0), sev=Mk.rate?(d<=-5?2:d<=-1?1:0):(d<=-15?2:d<=-3?1:0);
+    const col=['#16a34a','#d97706','#dc2626'][sev], bg=['#f0fdf4','#fffbeb','#fef2f2'][sev], a=Math.abs(d)<0.5?'–':d<0?'▼':'▲';
+    return `<span title="${Mk.label}: ${a}${Math.abs(Math.round(d))}${Mk.rate?'pp':'%'} vs norm" style="display:inline-flex;align-items:center;background:${bg};border:1px solid ${col}44;color:${col};border-radius:5px;padding:0 4px;font-size:9px;font-weight:700;margin:0 3px 2px 0;">${ic}${a}${Math.abs(Math.round(d))}${Mk.rate?'p':'%'}</span>`; }).join('');
   const rowsHtml=groups.map(g=>{ const du=M.rate?'pp':'%', clk=g.kind==='city'?`drillCity('${esc(g.name)}')`:`setSelClinic('${esc(g.key)}')`, bb=band(g);
     return `<div onclick="${clk}" style="display:flex;align-items:center;gap:12px;padding:9px 12px;border-bottom:1px solid #f1f5f9;border-left:4px solid ${bb[1]};background:${bb[0]};cursor:pointer;" onmouseover="this.style.filter='brightness(.97)'" onmouseout="this.style.filter='none'">
-      <span style="flex:0 0 30%;min-width:0;font-weight:700;color:#0f172a;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${g.name}${g.kind==='city'?` <span style="font-size:10px;color:#94a3b8;font-weight:500;">${g.rows.length}cl</span>`:''}</span>
-      <span style="flex:0 0 64px;text-align:right;font-size:16px;font-weight:800;color:#0f172a;">${g.w}${M.unit==='%'?'%':''}</span>
-      <span style="flex:0 0 58px;text-align:right;font-size:12px;font-weight:800;color:${dcolr(g.delta)};">${g.delta<-0.5?'▼':g.delta>0.5?'▲':'–'}${Math.abs(g.delta)}${du}</span>
-      <span style="flex:1;min-width:120px;">${spark(rev(g.arr),M.color,hi,M.rate?(v=>v+'%'):null,g.norm)}</span>
+      <div style="flex:0 0 33%;min-width:0;"><div style="font-weight:700;color:#0f172a;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${g.name}${g.kind==='city'?` <span style="font-size:10px;color:#94a3b8;font-weight:500;">${g.rows.length}cl</span>`:''}</div><div style="margin-top:4px;line-height:1.6;">${diagChips(g)}</div></div>
+      <span style="flex:0 0 58px;text-align:right;font-size:16px;font-weight:800;color:#0f172a;">${g.w}${M.unit==='%'?'%':''}</span>
+      <span style="flex:0 0 54px;text-align:right;font-size:12px;font-weight:800;color:${dcolr(g.delta)};">${g.delta<-0.5?'▼':g.delta>0.5?'▲':'–'}${Math.abs(g.delta)}${du}</span>
+      <span style="flex:1;max-width:300px;min-width:120px;">${spark(rev(g.arr),M.color,hi,M.rate?(v=>v+'%'):null,g.norm)}</span>
       <span style="flex:0 0 12px;color:#cbd5e1;font-size:16px;">›</span></div>`; }).join('')||'<div style="padding:16px;color:#94a3b8;text-align:center;">No data.</div>';
   return `<div class="card">
     <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px;">
@@ -865,7 +877,7 @@ function renderMetricDrill(metricKey){
     </div>
     ${tabBar}
     ${storyCard}
-    <div style="display:flex;gap:10px;font-size:9px;font-weight:700;text-transform:uppercase;color:#cbd5e1;padding:0 12px 4px;"><span style="flex:0 0 30%;">${byCity?'City':'Clinic'}</span><span style="flex:0 0 64px;text-align:right;">this wk</span><span style="flex:0 0 58px;text-align:right;">vs norm</span><span style="flex:1;text-align:right;">trend</span><span style="flex:0 0 12px;"></span></div>
+    <div style="display:flex;gap:12px;font-size:9px;font-weight:700;text-transform:uppercase;color:#cbd5e1;padding:0 12px 4px;"><span style="flex:0 0 33%;">${byCity?'City':'Clinic'} · 🩺🔎⛳✅🆕 levers</span><span style="flex:0 0 58px;text-align:right;">this wk</span><span style="flex:0 0 54px;text-align:right;">vs norm</span><span style="flex:1;text-align:right;">trend</span><span style="flex:0 0 12px;"></span></div>
     <div style="border:1px solid var(--line);border-radius:11px;overflow:hidden;">${rowsHtml}</div>
   </div>`;
 }
