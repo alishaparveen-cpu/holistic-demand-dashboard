@@ -843,8 +843,15 @@ function renderMetricDrill(metricKey){
   const storyCard=`<div style="display:flex;gap:12px;align-items:center;background:#f8fafc;border:1px solid var(--line);border-left:3px solid ${M.color};border-radius:10px;padding:10px 14px;margin-bottom:12px;">
     <div style="flex:1;font-size:12.5px;color:#334155;line-height:1.55;">${story}</div>
     <div style="flex:0 0 130px;">${spark(rev(aggArr),M.color,hi,M.rate?(v=>v+'%'):null,aggNorm)}</div></div>`;
-  const rowsHtml=groups.map(g=>{ const du=M.rate?'pp':'%', clk=g.kind==='city'?`drillCity('${esc(g.name)}')`:`setSelClinic('${esc(g.key)}')`;
-    return `<div onclick="${clk}" style="display:flex;align-items:center;gap:12px;padding:9px 12px;border-bottom:1px solid #f1f5f9;cursor:pointer;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background=''">
+  // red / orange / green band by how the metric moved (thresholds differ for rate vs count metrics)
+  const band=g=>{ const d=g.delta;
+    if(M.rate) return d<=-5?['#fef2f2','#dc2626']:d<=-1?['#fffbeb','#f59e0b']:['#f0fdf4','#16a34a'];
+    return d<=-15?['#fef2f2','#dc2626']:d<=-3?['#fffbeb','#f59e0b']:['#f0fdf4','#16a34a']; };
+  // metric tabs — switch which metric you're slicing by, without going back to India
+  const TABORD=[['avail','🩺 Availability'],['leads','🔎 Leads'],['l2b','⛳ Lead→book'],['new','🆕 New bookings'],['total','📅 Bookings'],['b2d','✅ Book→done'],['done','📞 Consults done']];
+  const tabBar=`<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;">${TABORD.map(([k,lbl])=>{const on=k===metricKey,c=METRICS[k].color;return `<button onclick="setDrillMetric('${k}')" style="font-size:11.5px;padding:5px 11px;border-radius:20px;cursor:pointer;border:1.5px solid ${on?c:'var(--line)'};background:${on?c+'18':'#fff'};color:${on?c:'#475569'};font-weight:${on?700:500};">${lbl}</button>`;}).join('')}</div>`;
+  const rowsHtml=groups.map(g=>{ const du=M.rate?'pp':'%', clk=g.kind==='city'?`drillCity('${esc(g.name)}')`:`setSelClinic('${esc(g.key)}')`, bb=band(g);
+    return `<div onclick="${clk}" style="display:flex;align-items:center;gap:12px;padding:9px 12px;border-bottom:1px solid #f1f5f9;border-left:4px solid ${bb[1]};background:${bb[0]};cursor:pointer;" onmouseover="this.style.filter='brightness(.97)'" onmouseout="this.style.filter='none'">
       <span style="flex:0 0 30%;min-width:0;font-weight:700;color:#0f172a;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${g.name}${g.kind==='city'?` <span style="font-size:10px;color:#94a3b8;font-weight:500;">${g.rows.length}cl</span>`:''}</span>
       <span style="flex:0 0 64px;text-align:right;font-size:16px;font-weight:800;color:#0f172a;">${g.w}${M.unit==='%'?'%':''}</span>
       <span style="flex:0 0 58px;text-align:right;font-size:12px;font-weight:800;color:${dcolr(g.delta)};">${g.delta<-0.5?'▼':g.delta>0.5?'▲':'–'}${Math.abs(g.delta)}${du}</span>
@@ -854,8 +861,9 @@ function renderMetricDrill(metricKey){
     <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px;">
       <button onclick="clearDrillMetric()" style="font-size:12px;padding:5px 12px;background:#f1f5f9;border:1px solid var(--line);border-radius:8px;cursor:pointer;">← ${byCity?'India overview':geoScopeText()+' overview'}</button>
       <div style="font-size:17px;font-weight:800;">${M.label} — by ${byCity?'city':'clinic'}</div>
-      <div style="font-size:11px;color:#94a3b8;">🇮🇳 India${byCity?'':' › '+geoScopeText()} · ${WEEKS[wkIdx].label} · ${M.rate?'rate vs norm':'total '+tot.toLocaleString()} · worst-first · click a ${byCity?'city to go deeper':'clinic for full RCA'}</div>
+      <div style="font-size:11px;color:#94a3b8;">🇮🇳 India${byCity?'':' › '+geoScopeText()} · ${WEEKS[wkIdx].label} · ${M.rate?'rate vs norm':'total '+tot.toLocaleString()} · worst-first · <span style="color:#dc2626;font-weight:700;">▮ fell hard</span> <span style="color:#f59e0b;font-weight:700;">▮ dipped</span> <span style="color:#16a34a;font-weight:700;">▮ held/grew</span></div>
     </div>
+    ${tabBar}
     ${storyCard}
     <div style="display:flex;gap:10px;font-size:9px;font-weight:700;text-transform:uppercase;color:#cbd5e1;padding:0 12px 4px;"><span style="flex:0 0 30%;">${byCity?'City':'Clinic'}</span><span style="flex:0 0 64px;text-align:right;">this wk</span><span style="flex:0 0 58px;text-align:right;">vs norm</span><span style="flex:1;text-align:right;">trend</span><span style="flex:0 0 12px;"></span></div>
     <div style="border:1px solid var(--line);border-radius:11px;overflow:hidden;">${rowsHtml}</div>
