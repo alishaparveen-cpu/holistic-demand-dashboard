@@ -2195,11 +2195,17 @@ function leadLossDrill(r){
           const leadsMini=mini('GMB leads · '+gmb_w+' ('+signed(dGmbP,'%')+')', '#6366f1', 'profile clicks + inbound calls → tracked leads · dashed = '+winN+'-wk avg', spark(rev(gmb),'#6366f1',hi,null,gmb_n));
           if(!hasGmbIns(r.city,r.clinic)) return leadsMini;
           const gs=gmbInsArr(r.city,r.clinic,'searches'), gix=gmbInsArr(r.city,r.clinic,'interactions');
-          const sw=gs[W]||0, sn=nrm(gs), iw=gix[W]||0, iN=nrm(gix); const dsp=sn?Math.round((sw-sn)/sn*100):0, dip=iN?Math.round((iw-iN)/iN*100):0;
-          return mini('Searches · '+sw.toLocaleString()+' ('+signed(dsp,'%')+')', '#7c3aed', 'GMB+Google impressions — how often the listing was seen · dashed = '+winN+'-wk avg', spark(rev(gs),'#7c3aed',hi,null,sn))
-            + stepB(gix,gs,'searches → interaction')
-            + mini('Interactions · '+iw+' ('+signed(dip,'%')+')', '#0d9488', 'calls + directions + website taps on the profile · dashed = '+winN+'-wk avg', spark(rev(gix),'#0d9488',hi,null,iN))
-            + stepB(gmb,gix,'interaction → tracked lead')
+          // Google Business Profile insights lag ~2-3 days → the current week is often still empty.
+          // Use the latest week GBP has actually published, and carry it back over empty weeks so the trend doesn't show a false crash to 0.
+          const gI=(()=>{ for(let i=W;i<WEEKS.length;i++){ if((gs[i]||0)>0) return i; } return W; })();
+          const fill=a=>{ const o=a.slice(); for(let i=0;i<gI;i++) if(!o[i]) o[i]=a[gI]||0; return o; };
+          const gsF=fill(gs), gixF=fill(gix), hiG=(winN-1)-gI;
+          const sw=gs[gI]||0, sn=nrm(gs), iw=gix[gI]||0, iN=nrm(gix); const dsp=sn?Math.round((sw-sn)/sn*100):0, dip=iN?Math.round((iw-iN)/iN*100):0;
+          const lagNote=gI>W?` <span style="color:#b45309;">· GBP lags ~2-3d, latest: ${WEEKS[gI]?WEEKS[gI].label:''}</span>`:'';
+          return mini('Searches · '+sw.toLocaleString()+' ('+signed(dsp,'%')+')'+lagNote, '#7c3aed', 'GMB+Google impressions — how often the listing was seen · dashed = '+winN+'-wk avg', spark(rev(gsF),'#7c3aed',hiG,null,sn))
+            + stepB(gixF,gsF,'searches → interaction')
+            + mini('Interactions · '+iw+' ('+signed(dip,'%')+')'+lagNote, '#0d9488', 'calls + directions + website taps on the profile · dashed = '+winN+'-wk avg', spark(rev(gixF),'#0d9488',hiG,null,iN))
+            + stepB(gmb,gixF,'interaction → tracked lead')
             + leadsMini;
         })()}
         ${mini('Review velocity · '+vel_w+'/wk', '#0891b2', 'reviews/week — a primary GMB-rank driver', spark(rev(rvN),'#0891b2',hi,null,vel_n))}
