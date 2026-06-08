@@ -44,7 +44,8 @@ joined AS (
     CASE WHEN f.ever_done = 1 THEN 'done'
          WHEN lr.last_st = 'cancelled' THEN 'cancelled'
          WHEN lr.last_st = 'missed' THEN 'missed'
-         ELSE 'pending' END AS outcome,
+         WHEN lr.last_st = 'rescheduled' THEN 'resched'   -- deferred >14d (next visit, if any, is a separate 'return')
+         ELSE 'open' END AS outcome,                      -- still scheduled / in-progress: upcoming or status never finalized
     (f.chain_len - 1) AS resched_events,
     CASE
       WHEN l.gclid IS NOT NULL AND l.gclid<>'' THEN 'Google Ads'

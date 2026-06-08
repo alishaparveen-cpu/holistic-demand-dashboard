@@ -18,7 +18,7 @@ HERE=os.path.dirname(__file__); RUN=os.path.join(HERE,'redshift_query.py'); ROOT
 WEEKS=["2026-05-25","2026-05-18","2026-05-11","2026-05-04","2026-04-27","2026-04-20",
        "2026-04-13","2026-04-06","2026-03-30","2026-03-23","2026-03-16","2026-03-09"]
 WI={w:i for i,w in enumerate(WEEKS)}
-SUB=["total","done","missed","cancelled","pending"]
+SUB=["total","done","missed","cancelled","resched","open"]
 AGEMAP={'tw':'1 · Same week','lw':'2 · Last week','old':'3 · Older'}
 def num(x):
     try: return int(x)
@@ -36,7 +36,7 @@ for c in rows:
     city,clinic,wk,ch,ag,seg,out,e,rs=c[0],c[1],c[2],c[3],c[4],c[5],c[6],num(c[7]),num(c[8])
     if wk not in WI: continue
     i=WI[wk]; key=f"{city}|{clinic}"
-    out=out if out in SUB else 'pending'
+    out=out if out in SUB else 'open'
     cube[key][ch][ag][seg][out][i]+=e
     chan[key][ch]['total'][i]+=e; chan[key][ch][out][i]+=e
     al=AGEMAP.get(ag,ag)
