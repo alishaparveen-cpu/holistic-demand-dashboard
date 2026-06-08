@@ -752,21 +752,29 @@ function renderAggView(r, levelLabel){
   const b2dArr=r.bkArr.map((b,i)=>{const d=r.bkDoneArr[i]||0;return b>0?Math.round(d/b*100):0;});
   const l2b_w=l2bArr[W], b2d_w=b2dArr[W], _l2bN=Math.round(avg(l2bArr.slice(W+1,W+6))), _b2dN=Math.round(avg(b2dArr.slice(W+1,W+6)));
   const _drillable=r.aggRows&&r.aggRows.length>1;   // only drill when there's >1 city/clinic to break into
-  const dTile=(icon,label,val,delta,du,mk)=>{const fl=delta==null||Math.abs(delta)<0.5,c=fl?'#94a3b8':delta<0?'#dc2626':'#059669',ar=fl?'–':delta<0?'▼':'▲',clk=mk&&_drillable;return `<div ${clk?`onclick="setDrillMetric('${mk}')" title="Click → ${label} by ${geoSel.size?'clinic':'city'}"`:''} style="flex:1 1 0;min-width:92px;background:#f8fafc;border:1px solid var(--line);border-radius:9px;padding:6px 10px;${clk?'cursor:pointer;':''}"${clk?` onmouseover="this.style.background='#eef2ff'" onmouseout="this.style.background='#f8fafc'"`:''}><div style="font-size:8.5px;font-weight:700;text-transform:uppercase;letter-spacing:.03em;color:#94a3b8;">${icon} ${label}${clk?' <span style="color:#a5b4fc;">▸</span>':''}</div><div style="display:flex;align-items:baseline;gap:5px;margin-top:1px;"><span style="font-size:15px;font-weight:800;color:#0f172a;">${val}</span><span style="font-size:10.5px;font-weight:800;color:${c};">${ar}${fl?'':Math.abs(Math.round(delta))+(du||'%')}</span></div></div>`;};
-  const hd=`<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:11px;">${dTile('🩺','Availability',Math.round(r.av_w)+'d',pctOf(r.dAct,r.av_avg),'%','avail')}${dTile('🔎','Leads',r.ld_w,Math.round(r.dLeadPct),'%','leads')}${dTile('⛳','Lead→Book',l2b_w+'%',l2b_w-_l2bN,'pp','l2b')}${dTile('✅','Book→Done',b2d_w+'%',b2d_w-_b2dN,'pp','b2d')}${dTile('📅','Total bookings',r.bk_w,gapPct,'%','total')}</div>`;
-  const vc=(icon,title,val,unit,dpct,sub,svg,mk)=>{const clk=mk&&_drillable;return `<div class="card" ${clk?`onclick="setDrillMetric('${mk}')" title="Click → ${title} by ${geoSel.size?'clinic':'city'}"`:''} style="margin:0;${clk?'cursor:pointer;':''}"><div style="font-size:12px;font-weight:700;color:#0f172a;">${icon} ${title}${clk?' <span style="font-size:9px;color:#a5b4fc;font-weight:700;">▸ drill</span>':''}</div><div style="display:flex;align-items:baseline;gap:8px;margin:1px 0;"><span style="font-size:23px;font-weight:800;color:#0f172a;line-height:1.1;">${val}<span style="font-size:11px;font-weight:600;color:#94a3b8;">${unit||''}</span></span>${dpct==null?'':`<span style="font-size:12.5px;font-weight:800;color:${dCol(dpct)};">${signed(dpct,'%')}</span>`}</div><div style="font-size:10px;color:#94a3b8;margin-bottom:4px;">${sub}</div>${svg}</div>`;};
-  const ov=`<div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:12px;">
-    ${vc('🆕','New bookings',new_w,'',newPct,'first-time · vs '+r1(new_n)+' norm',spark(rev(r.bkNewArr),'#4f46e5',hi,null,new_n),'new')}
-    ${vc('📅','All scheduled bookings',r.bk_w,'',gapPct,'new+repeat · vs '+exp+' exp',spark(rev(r.bkArr),'#6366f1',hi,null,r.bkBase),'total')}
-    ${vc('🔎','Leads',r.ld_w,'',Math.round(r.dLeadPct),'inbound · vs '+Math.round(r.ld_avg)+' norm',spark(rev(r.ldArr),'#0ea5e9',hi,null,r.ld_avg),'leads')}
-    ${vc('📞','Consults done',done_w,'',pctOf(done_w-done_n,done_n),doneRate+'% of '+r.bk_w+' completed',spark(rev(r.bkDoneArr),'#0891b2',hi,null,done_n),'done')}
-    ${r.aggHasHrs?vc('🩺','Available hours',r1(availH_w),'h',availH_pct,'scheduled × (1−shrinkage) · '+r1(rh_w)+'h − '+_shrPct+'% blocked',availSplitChart(rev(wdAvailHArr),rev(weAvailHArr),hi,availH_n,wkS,'hours'),'avail'):vc('🩺','Availability',r1(r.av_w),'d',pctOf(r.dAct,r.av_avg),'doctor-days',availSplitChart(rev(r.wdArr),rev(r.weArr),hi,r.av_avg,wkS),'avail')}
-    ${vc('🗓️','Active days',r1(r.av_w),'d',pctOf(r.dAct,r.av_avg),'doctor-days · '+r1(r.wd_w)+' wd + '+r1(r.we_w)+' we',availSplitChart(rev(r.wdArr),rev(r.weArr),hi,r.av_avg,wkS,'days'),'avail')}
-    ${(()=>{const sm=r.aggSame,ldn=r.ldArr[W]||0,bks=sm[W]||0,tr=groupBars([{vals:rev(r.ldArr),color:'#cbd5e1',label:'Leads'},{vals:rev(sm),color:'#0ea5e9',label:'Booked'}],hi,v=>Math.round(v),null,wkS)+`<div style="font-size:8.5px;color:#cbd5e1;font-weight:700;text-transform:uppercase;margin:3px 0 0;">Lead→book % trend</div>`+spark(rev(l2bArr),'#0ea5e9',hi,v=>v+'%',_l2bN);return vc('⛳','Lead→book %',l2b_w,'%',null,'<b>'+bks+'</b> of <b>'+ldn+'</b> leads booked same week · vs '+_l2bN+'% norm · bars = leads vs booked, line = %',tr,'l2b');})()}
-    ${vc('✅','Book→done %',b2d_w,'%',null,'consults done ÷ booked · vs '+_b2dN+'% norm',spark(rev(b2dArr),'#059669',hi,v=>v+'%',_b2dN),'b2d')}
-  </div>`;
-  const drillHint=_drillable?`<div style="display:flex;align-items:center;gap:8px;background:#eef2ff;border:1px solid #c7d2fe;border-radius:9px;padding:8px 13px;margin-top:12px;font-size:12px;color:#4338ca;line-height:1.5;">👆 <span><b>Click any tile or chart below</b> to drill that metric into ${geoSel.size?'clinics':'cities'} (worst-first) → then ${geoSel.size?'the full clinic diagnosis':'clinics'} → then the full RCA. The story reads top-to-bottom.</span></div>`:'';
-  return `<div class="card"><div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;"><div style="font-size:18px;font-weight:800;">${levelLabel}</div><div style="font-size:11px;color:#94a3b8;">${r.mat} · ${WEEKS[wkIdx].label} · same snapshot as a clinic, aggregated</div></div>${hd}${drillHint}${ov}</div>`;
+  // ── clean 6-step demand funnel, top→bottom: supply → demand → convert → book → show → done ──
+  const childLbl=geoSel.size?'clinics':'cities', oneChild=geoSel.size?'clinic':'city';
+  const frow=(no,mk,icon,label,sub,val,unit,delta,du,color,arr,norm,fmt)=>{
+    const fl=delta==null||Math.abs(delta)<0.5, dc=fl?'#94a3b8':delta<0?'#dc2626':'#059669', ar=fl?'–':delta<0?'▼':'▲', clk=_drillable;
+    return `<div ${clk?`onclick="setDrillMetric('${mk}')" title="Click → ${label} by ${oneChild}"`:''} style="display:flex;align-items:center;gap:13px;padding:11px 14px;border:1px solid var(--line);border-left:3px solid ${color};border-radius:11px;background:#fff;${clk?'cursor:pointer;':''}"${clk?` onmouseover="this.style.background='#f8faff'" onmouseout="this.style.background='#fff'"`:''}>
+      <div style="flex:0 0 24px;height:24px;border-radius:50%;background:${color}1a;color:${color};font-weight:800;font-size:11px;display:flex;align-items:center;justify-content:center;">${no}</div>
+      <div style="flex:0 0 145px;min-width:0;"><div style="font-size:13px;font-weight:700;color:#0f172a;white-space:nowrap;">${icon} ${label}${clk?' <span style="font-size:10px;color:#a5b4fc;font-weight:700;">▸</span>':''}</div><div style="font-size:9.5px;color:#94a3b8;">${sub}</div></div>
+      <div style="flex:0 0 88px;text-align:right;"><span style="font-size:21px;font-weight:800;color:#0f172a;line-height:1;">${val}</span><span style="font-size:11px;color:#94a3b8;font-weight:600;">${unit}</span></div>
+      <div style="flex:0 0 52px;text-align:right;font-size:12.5px;font-weight:800;color:${dc};">${ar}${fl?'':Math.abs(Math.round(delta))+du}</div>
+      <div style="flex:1;min-width:100px;">${spark(rev(arr),color,hi,fmt,norm)}</div>
+      <div style="flex:0 0 10px;color:#cbd5e1;font-size:16px;">${clk?'›':''}</div></div>`;
+  };
+  const steps=[
+    frow(1,'avail','🩺','Availability','active doctor-days · supply',Math.round(r.av_w),'d',pctOf(r.dAct,r.av_avg),'%','#7c3aed',r.avArr,r.av_avg,null),
+    frow(2,'leads','🔎','Leads','inbound demand',r.ld_w,'',Math.round(r.dLeadPct),'%','#0ea5e9',r.ldArr,r.ld_avg,null),
+    frow(3,'l2b','⛳','Lead → Book','same-week conversion',l2b_w,'%',l2b_w-_l2bN,'pp','#0284c7',l2bArr,_l2bN,v=>v+'%'),
+    frow(4,'total','📅','Bookings','unique patient bookings',r.bk_w,'',gapPct,'%','#6366f1',r.bkArr,r.bkBase,null),
+    frow(5,'b2d','✅','Book → Done','show-up rate',b2d_w,'%',b2d_w-_b2dN,'pp','#16a34a',b2dArr,_b2dN,v=>v+'%'),
+    frow(6,'done','📞','Consults done','completed output',done_w,'',pctOf(done_w-done_n,done_n),'%','#0891b2',r.bkDoneArr,done_n,null),
+  ];
+  const connector=`<div style="height:7px;border-left:2px dotted #dbe2ea;margin-left:25px;"></div>`;
+  const drillHint=_drillable?`<div style="font-size:11.5px;color:#4338ca;background:#eef2ff;border:1px solid #c7d2fe;border-radius:8px;padding:7px 12px;margin-top:10px;line-height:1.5;">👆 <b>Click any step</b> to see which ${childLbl} drove it (worst-first) → drill into ${geoSel.size?'the full clinic RCA':'clinics, then the clinic'}. The funnel reads top-to-bottom: supply → demand → convert → book → show → done.</div>`:'';
+  return `<div class="card"><div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;"><div style="font-size:18px;font-weight:800;">${levelLabel}</div><div style="font-size:11px;color:#94a3b8;">${WEEKS[wkIdx].label} · the weekly demand funnel</div></div>${drillHint}<div style="margin-top:12px;">${steps.join(connector)}</div></div>`;
 }
 // ── Metric-first drill: click a metric (Leads, New bookings…) at India level → that metric
 //    ranked by city (worst-fall first) → click a city → by clinic → click a clinic → full RCA. ──
@@ -1227,8 +1235,8 @@ function renderOffline(){
   const _aggLabel = geoSel.size ? geoScopeText() : '🇮🇳 India — all clinics';
   let _aggBlock='';
   try{ if(R.rows&&R.rows.length){ _aggBlock = renderAggView(aggregateRows(R.rows, _aggLabel), _aggLabel); } }catch(e){ console.warn('agg view',e); }
-  const _drillHint = `<div style="font-size:11px;color:#94a3b8;margin:14px 0 8px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;">${geoSel.size?'Clinics in '+geoScopeText()+' — click to drill in':'Cities — click to drill into a city, then a clinic'}</div>`;
-  return ctrl+fNote+_aggBlock+_drillHint+overview+compactSummary;
+  // Clean metric-first flow: just the funnel. Drilling a step shows the city→clinic story (renderMetricDrill).
+  return ctrl+fNote+_aggBlock;
 }
 
 // Dedicated Practo section for the Quick View — leads + phone-matched bookings + by-doctor,
