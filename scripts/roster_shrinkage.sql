@@ -13,7 +13,7 @@ WITH slots AS (
    AND ab.start_time < rs.end_time
    AND ab.end_time   > rs.start_time
   WHERE rs.type_id = 'cd02525c-1528-4047-a12c-1ad526c28c9a'
-    AND rs.start_time >= '2026-04-13' AND rs.start_time < '2026-06-01'
+    AND rs.start_time >= '2026-04-20' AND rs.start_time < '2026-06-08'
     AND COALESCE(loc.locality,loc.name,'') <> ''
     AND LOWER(COALESCE(loc.locality,loc.name,'')) <> 'online'
   GROUP BY 1,2,3, rs.provider_id, rs.start_time

@@ -6,8 +6,7 @@ flag set by agents / Sarvam AI). Keyed City|Clinic, arrays newest-first aligned 
 Run: python3 scripts/build_demand_superset.py   (needs AWS SSO)"""
 import os, sys, subprocess, json, datetime
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-WEEKS = ["2026-05-25","2026-05-18","2026-05-11","2026-05-04","2026-04-27","2026-04-20",
-         "2026-04-13","2026-04-06","2026-03-30","2026-03-23","2026-03-16","2026-03-09"]
+WEEKS=["2026-06-01","2026-05-25","2026-05-18","2026-05-11","2026-05-04","2026-04-27","2026-04-20","2026-04-13","2026-04-06","2026-03-30","2026-03-23","2026-03-16"]
 idx = {w:i for i,w in enumerate(WEEKS)}
 def monday_from_ending(wk_end):                      # week column is Sunday (week-ending) → Monday = -6 days
     y,m,d = map(int, wk_end.split("-")); return (datetime.date(y,m,d) - datetime.timedelta(days=6)).isoformat()

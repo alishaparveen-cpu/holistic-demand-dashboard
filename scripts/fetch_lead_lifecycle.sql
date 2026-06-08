@@ -8,13 +8,13 @@ WITH ld AS (
          WHEN LOWER(COALESCE(origin,'')) LIKE '%whatsapp%' THEN 'WhatsApp'
          WHEN LOWER(COALESCE(utm_source,'')) LIKE '%organic%' OR utm_source IS NULL THEN 'Organic/Direct'
          ELSE 'Other' END AS src
-  FROM allo_persons.lead WHERE created_at >= '2026-05-04' AND created_at < '2026-06-01' AND phone_no IS NOT NULL AND LEN(phone_no)>=10
+  FROM allo_persons.lead WHERE created_at >= '2026-05-11' AND created_at < '2026-06-08' AND phone_no IS NOT NULL AND LEN(phone_no)>=10
 ),
 bk AS (
   SELECT RIGHT(p.phone_no,10) AS ph, DATE(a.created_at) AS bdate, LOWER(a.status) AS st, LOWER(COALESCE(a.previous_status,'')) AS prev
   FROM allo_consultations.appointments a JOIN allo_consultations.types t ON a.type_id=t.id AND t.name='Screening Call'
   JOIN allo_persons.patient p ON p.id=a.patient_id
-  WHERE a.deleted_at IS NULL AND a.created_at >= '2026-05-04' AND p.phone_no IS NOT NULL
+  WHERE a.deleted_at IS NULL AND a.created_at >= '2026-05-11' AND p.phone_no IS NOT NULL
 ),
 agg AS (
   SELECT ld.src, ld.ph,

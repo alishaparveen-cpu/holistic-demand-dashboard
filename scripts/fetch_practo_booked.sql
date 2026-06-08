@@ -10,5 +10,5 @@ FROM allo_consultations.appointments a
     JOIN allo_persons.patient p ON c.patient_id = p.id
 WHERE a.deleted_at IS NULL AND c.deleted_at IS NULL AND l.deleted_at IS NULL
     AND c.consultation_type_id = (SELECT id FROM allo_consultations.types WHERE name = 'Screening Call')
-    AND DATE(a.start_time + INTERVAL '5.5 hours') BETWEEN '2026-03-09' AND '2026-05-31'
+    AND DATE(a.start_time + INTERVAL '5.5 hours') BETWEEN '2026-03-16' AND '2026-06-07'
     AND p.phone_no IS NOT NULL AND p.phone_no <> ''

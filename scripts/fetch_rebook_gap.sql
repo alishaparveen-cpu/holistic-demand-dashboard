@@ -22,7 +22,7 @@ j AS (
   FROM ranked s
   WHERE s.prev_crt IS NOT NULL
     AND DATEDIFF(day, s.prev_crt, s.created_at) < 14
-    AND s.start_time >= '2026-03-09' AND s.start_time < '2026-06-01'
+    AND s.start_time >= '2026-03-16' AND s.start_time < '2026-06-08'
     AND LOWER(COALESCE(s.locality,'')) <> 'online' AND s.locality IS NOT NULL
 )
 SELECT city, clinic, wk, gap, COUNT(*) AS c

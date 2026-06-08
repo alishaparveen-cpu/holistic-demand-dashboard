@@ -4,5 +4,5 @@
 -- the true top-of-funnel for the category demand funnel. Practo is an external feed and not included.
 SELECT TO_CHAR(DATE(week)::date - 6,'YYYY-MM-DD') AS wk, COUNT(*) AS all_leads
 FROM production.public.main_source_wise_leads
-WHERE week >= '2026-03-09' AND week < '2026-06-02'
+WHERE week >= '2026-03-16' AND week < '2026-06-08'
 GROUP BY 1 ORDER BY 1

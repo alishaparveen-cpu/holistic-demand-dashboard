@@ -8,7 +8,7 @@ WITH sc AS (
   JOIN allo_consultations.types t ON a.type_id=t.id AND t.name='Screening Call'
   JOIN allo_health.locations loc ON a.location_id=loc.id AND loc.deleted_at IS NULL
   WHERE a.deleted_at IS NULL
-    AND a.start_time >= '2026-03-09' AND a.start_time < '2026-06-01'
+    AND a.start_time >= '2026-03-16' AND a.start_time < '2026-06-08'
     AND LOWER(COALESCE(loc.locality,'')) <> 'online' AND loc.locality IS NOT NULL
 ),
 rem AS (
@@ -19,7 +19,7 @@ rem AS (
   FROM allo_vendors.whatsapp w
   WHERE w.reference_entity = 'appointment' AND w.deleted_at IS NULL
     AND w.template ILIKE '%reminder%'
-    AND w.created_at >= '2026-03-07'
+    AND w.created_at >= '2026-03-14'
   GROUP BY w.reference_id
 )
 SELECT sc.city, sc.locality AS clinic,

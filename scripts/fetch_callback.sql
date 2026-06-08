@@ -9,7 +9,7 @@ WITH ns AS (
   JOIN allo_health.locations loc ON a.location_id=loc.id AND loc.deleted_at IS NULL
   JOIN allo_persons.patient p ON p.id = a.patient_id
   WHERE a.deleted_at IS NULL AND LOWER(a.status)='missed'
-    AND a.start_time >= '2026-03-09' AND a.start_time < '2026-06-01'
+    AND a.start_time >= '2026-03-16' AND a.start_time < '2026-06-08'
     AND p.phone_no IS NOT NULL AND LEN(p.phone_no) >= 10
     AND LOWER(COALESCE(loc.locality,'')) <> 'online' AND loc.locality IS NOT NULL
 ),
@@ -17,7 +17,7 @@ calls AS (
   SELECT DISTINCT RIGHT("to",10) AS ph, start_time AS ct
   FROM allo_vendors.exotel_calls
   WHERE direction IN ('outbound','outbound-api') AND deleted_at IS NULL
-    AND start_time >= '2026-03-09'
+    AND start_time >= '2026-03-16'
 )
 SELECT ns.city, ns.locality AS clinic, ns.wk,
   COUNT(*) AS noshows,

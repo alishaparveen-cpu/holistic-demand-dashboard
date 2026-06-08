@@ -40,7 +40,7 @@ ep AS (
     lr.last_st
   FROM first_row f
   JOIN last_row lr ON lr.patient_id=f.patient_id AND lr.epi_no=f.epi_no
-  WHERE f.start_time >= '2026-03-09' AND f.start_time < '2026-06-01'
+  WHERE f.start_time >= '2026-03-16' AND f.start_time < '2026-06-08'
     AND LOWER(COALESCE(f.locality,'')) <> 'online' AND f.locality IS NOT NULL
 )
 -- episode disposition (done > pending > missed > cancelled), so done+resched+missed+cancelled = allbk.

@@ -2,12 +2,12 @@
 WITH ld AS (
   SELECT DISTINCT RIGHT(phone_no,10) AS ph, DATE(created_at) AS ld_date, NULLIF(TRIM(city),'') AS city
   FROM allo_persons.lead
-  WHERE phone_no IS NOT NULL AND LEN(phone_no)>=10 AND created_at>='2026-04-27' AND created_at<'2026-05-25' AND city IS NOT NULL),
+  WHERE phone_no IS NOT NULL AND LEN(phone_no)>=10 AND created_at>='2026-05-04' AND created_at< '2026-06-08' AND city IS NOT NULL),
 calls AS (SELECT RIGHT(CASE WHEN direction='inbound' THEN "from" ELSE "to" END,10) AS ph, DATE(start_time) cdate, LOWER(status) st
-  FROM allo_vendors.exotel_calls WHERE deleted_at IS NULL AND start_time>='2026-04-27'),
+  FROM allo_vendors.exotel_calls WHERE deleted_at IS NULL AND start_time>='2026-05-04'),
 bk AS (SELECT DISTINCT RIGHT(p.phone_no,10) AS ph, DATE(a.created_at) bdate FROM allo_consultations.appointments a
   JOIN allo_consultations.types t ON a.type_id=t.id AND t.name='Screening Call'
-  JOIN allo_persons.patient p ON p.id=a.patient_id WHERE a.deleted_at IS NULL AND a.created_at>='2026-04-27' AND p.phone_no IS NOT NULL)
+  JOIN allo_persons.patient p ON p.id=a.patient_id WHERE a.deleted_at IS NULL AND a.created_at>='2026-05-04' AND p.phone_no IS NOT NULL)
 SELECT ld.city, COUNT(DISTINCT ld.ph) leads,
   COUNT(DISTINCT CASE WHEN c.ph IS NOT NULL THEN ld.ph END) reached,
   COUNT(DISTINCT CASE WHEN c.st='completed' THEN ld.ph END) connected,

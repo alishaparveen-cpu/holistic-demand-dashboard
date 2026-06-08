@@ -9,7 +9,7 @@ WITH ld AS (
          WHEN LOWER(COALESCE(utm_source,'')) LIKE '%organic%' OR utm_source IS NULL THEN 'Organic/Direct'
          ELSE 'Other' END AS src
   FROM allo_persons.lead
-  WHERE created_at >= '2026-05-04' AND created_at < '2026-06-01'
+  WHERE created_at >= '2026-05-11' AND created_at < '2026-06-08'
     AND phone_no IS NOT NULL AND LEN(phone_no) >= 10
 ),
 bk AS (
@@ -17,7 +17,7 @@ bk AS (
   FROM allo_consultations.appointments a
   JOIN allo_consultations.types t ON a.type_id=t.id AND t.name='Screening Call'
   JOIN allo_persons.patient p ON p.id=a.patient_id
-  WHERE a.deleted_at IS NULL AND a.created_at >= '2026-05-04' AND p.phone_no IS NOT NULL
+  WHERE a.deleted_at IS NULL AND a.created_at >= '2026-05-11' AND p.phone_no IS NOT NULL
 )
 SELECT ld.src, COUNT(DISTINCT ld.ph) AS leads,
   COUNT(DISTINCT CASE WHEN b.ph IS NOT NULL THEN ld.ph END) AS booked,
