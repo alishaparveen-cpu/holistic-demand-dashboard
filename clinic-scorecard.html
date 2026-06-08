@@ -317,10 +317,12 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--navy);font-
   </div>
   <div class="sec-body" id="secD-body">
     <div class="ins ins-b"><i class="ti ti-info-circle"></i><span><strong>Leads by channel</strong> from <code>main_source_wise_leads</code> (Google Ads / GMB / Meta / Organic / Justdial) plus the <strong>Practo</strong> marketplace feed — the same channel cut as the Diagnostic tab. Use it to see which channel's demand is moving week to week. Click any channel for its 8-week trend.</span></div>
-    <table class="tbl" id="tblD">
+    <div id="leadLadder" style="margin-bottom:16px"></div>
+    <details style="margin-bottom:4px"><summary style="cursor:pointer;font-size:11px;font-weight:600;color:var(--p)">Detailed channel table (WoW · % of total · click to expand chart)</summary>
+    <table class="tbl" id="tblD" style="margin-top:8px">
       <thead><tr><th>Channel</th><th class="num">Leads this wk</th><th class="num">% of total</th><th class="num">Last wk</th><th class="num">WoW Δ</th><th style="width:100px">Trend (8w)</th><th>Note</th></tr></thead>
       <tbody id="tblD-body"></tbody>
-    </table>
+    </table></details>
     <div class="ins ins-n" id="leadMoverInsight" style="margin-top:12px;margin-bottom:0"><i class="ti ti-bulb"></i><span></span></div>
     <div style="margin-top:14px">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:8px">
@@ -1121,6 +1123,30 @@ function renderD() {
   const w=currentWeek;
   const L=D.leads||{};
   const tot=(L.total||Array(NW).fill(0))[w]||0;
+  // ── per-channel leads ladder: normal → this week, each with its always-visible trend (mirrors the availability ladder) ──
+  (()=>{
+    const el=document.getElementById('leadLadder'); if(!el) return;
+    const norm4=s=>{ const a=(s||[]).slice(Math.max(0,w-4),w); return a.length?a.reduce((x,y)=>x+y,0)/a.length:0; };
+    const defs=[
+      ['🔎 Total leads', L.total, '#b91c1c', 'all channels incl. Practo', true],
+      ['🔍 Google Ads', L.google, '#2563eb', 'paid search'],
+      ['📍 GMB', L.gmb, '#16a34a', 'Maps / Business Profile — highest intent'],
+      ['📘 Meta / FB', L.meta, '#7c3aed', 'paid social'],
+      ['⭐ Practo', L.practo, '#0ea5e9', 'marketplace feed'],
+      ['🌐 Organic / Direct', L.organic, '#0d9488', 'SEO · brand · direct'],
+      ['📒 Justdial / Other', L.other, '#f59e0b', 'directories & misc'],
+    ];
+    const rows=defs.filter(d=>d[4]||((d[1]||[])[w]||0)>0||norm4(d[1])>0.5).map(([lbl,s,c,sub,bold])=>{
+      const v=(s||[])[w]||0, n=norm4(s), d=v-n, pc=n>0?Math.round(d/n*100):0;
+      const fl=Math.abs(d)<0.5, dc=fl?'#94a3b8':d<0?'#dc2626':'#16a34a', ar=fl?'–':d<0?'▼':'▲';
+      return `<div style="display:flex;align-items:center;gap:12px;padding:8px 12px;border:1px solid var(--bdr);border-left:3px solid ${c};border-radius:9px;margin-bottom:7px;background:${bold?'#fafafa':'#fff'}">
+        <span style="flex:0 0 150px;min-width:0;font-weight:${bold?800:600};font-size:13px;color:var(--navy);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${lbl}<div style="font-size:9px;color:var(--gray);font-weight:400">${sub}</div></span>
+        <span style="flex:0 0 50px;text-align:right;font-size:18px;font-weight:800;color:var(--navy)">${v}</span>
+        <span style="flex:0 0 78px;text-align:right;font-size:11.5px;font-weight:700;color:${dc}">${ar}${fl?'':Math.abs(pc)+'%'} <span style="color:#cbd5e1;font-weight:500">vs ${Math.round(n)}</span></span>
+        <span style="flex:1;min-width:110px">${sparkSVG(s||[],c,false)}</span></div>`;
+    }).join('');
+    el.innerHTML=`<div style="font-size:11px;font-weight:600;color:var(--gray);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">Per-channel ladder — this week vs 4-wk norm · trend each</div>${rows}`;
+  })();
   const rowsAll=[
     {label:'Total leads', series:L.total, color:COLORS.r, note:'All channels (incl. Practo)', bold:true, always:true},
     {label:'Google + GMB', series:L.google_gmb, color:COLORS.p, note:'Combined search/maps demand'},
