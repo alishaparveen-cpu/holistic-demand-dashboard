@@ -1634,20 +1634,21 @@ function renderBookFlow(){
     // same-week re-books / returns — these ride on top of the new count in the flow's "This week" node
     const _swSeg=seg=>Object.keys(CUBE).reduce((a,ch)=>{ const sg=(((CUBE[ch]||{})['tw'])||{})[seg]; return sg?a+Object.keys(sg).reduce((x,o)=>x+((sg[o]||[])[w]||0),0):a; },0);
     const _swReb=_swSeg('rebook'), _swRet=_swSeg('return'), _swAll=_swNew+_swReb+_swRet;
-    // ── leads prepend as a small box-and-arrow flow: This week's leads → (didn't book) + (booked → feeds flow) ──
-    const leadHdr=_leadsW>0?(function(){
-      const W=486,H=98, lx=6,lw=166,ly=34,bh=30, cy=ly+bh/2, rx=234,rw=246, dbY=4, bkY=H-34;
-      const ar=(x1,y1,x2,y2,col)=>`<path d="M${x1},${y1} C${(x1+x2)/2},${y1} ${(x1+x2)/2},${y2} ${x2-7},${y2}" fill="none" stroke="${col}" stroke-width="1.6"/><path d="M${x2-7},${y2-4} L${x2},${y2} L${x2-7},${y2+4} Z" fill="${col}"/>`;
-      const box=(x,y,w,h,fill,stroke,dash,inner)=>`<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="7" fill="${fill}" stroke="${stroke}" stroke-width="1.4" ${dash?'stroke-dasharray="4 3"':''}/>${inner}`;
-      return `<svg width="100%" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMinYMin meet" style="font-family:inherit;display:block;margin-bottom:8px;max-width:540px;">
-        ${ar(lx+lw,cy,rx,dbY+15,'#f59e0b')}
-        ${ar(lx+lw,cy,rx,bkY+15,'#16a34a')}
-        ${box(lx,ly,lw,bh,'#eff6ff','#93c5fd',0,`<text x="${lx+11}" y="${ly+13}" font-size="10" font-weight="700" fill="#1e3a8a">📥 This week's leads</text><text x="${lx+lw-10}" y="${ly+23}" font-size="17" font-weight="800" fill="#1d4ed8" text-anchor="end">${_leadsW}</text>`)}
-        ${box(rx,dbY,rw,30,'#fff7ed','#f59e0b',1,`<text x="${rx+11}" y="${dbY+13}" font-size="9.5" font-weight="800" fill="#b45309">🕓 Didn't book this week</text><text x="${rx+11}" y="${dbY+24}" font-size="7.5" fill="#d97706">floating · may still book later (lead lag)</text><text x="${rx+rw-10}" y="${dbY+21}" font-size="15" font-weight="800" fill="#b45309" text-anchor="end">${_didnt}</text>`)}
-        ${box(rx,bkY,rw,30,'#f0fdf4','#86efac',0,`<text x="${rx+11}" y="${bkY+13}" font-size="9.5" font-weight="800" fill="#15803d">✅ Booked new this week · ${_convP}%</text><text x="${rx+11}" y="${bkY+24}" font-size="7.5" fill="#16a34a">↓ these feed the flow below</text><text x="${rx+rw-10}" y="${bkY+21}" font-size="15" font-weight="800" fill="#15803d" text-anchor="end">${_booked}</text>`)}
-      </svg>`;
-    })():'';
-    const svg=leadHdr+`<svg width="100%" viewBox="0 -20 ${vw} ${totH+24}" preserveAspectRatio="xMinYMin meet" style="font-family:inherit;display:block">${hdrs}${lines}${boxes}</svg>`;
+    const _mainSvg=`<svg width="100%" viewBox="0 -20 ${vw} ${totH+24}" preserveAspectRatio="xMinYMin meet" style="font-family:inherit;display:block">${hdrs}${lines}${boxes}</svg>`;
+    const _subTitle=t=>`<div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:#94a3b8;margin:16px 0 3px;">${t}</div>`;
+    // ── small sub-flow #1 (below the main chart): this week's leads → booked / didn't-book, same box-and-line format ──
+    const _leadsMini=_leadsW>0?(function(){ const bh=22, lx=4,lw=158,cy=37, rx=232,rw=150; let ln='',bx='';
+      ln+=_bfLine(lx+lw,cy+bh/2,rx,12+bh/2,pct(_booked,_leadsW)+'%')+_bfLine(lx+lw,cy+bh/2,rx,62+bh/2,pct(_didnt,_leadsW)+'%');
+      bx+=_bfBox(lx,cy,lw,bh,'📥 Leads (this wk)',_leadsW,'#1d4ed8',9.5)+_bfBox(rx,12,rw,bh,'✅ Booked new',_booked,'#16a34a',9.5)+_bfBox(rx,62,rw,bh,"🕓 Didn't book",_didnt,'#f59e0b',9.5);
+      return _subTitle('📥 Leads → booked · this week')+`<svg width="100%" viewBox="0 4 398 88" preserveAspectRatio="xMinYMin meet" style="font-family:inherit;display:block;max-width:430px;">${ln}${bx}</svg>`; })():'';
+    // ── small sub-flow #2 (below): rescheduled bookings (rework) → by gap since prior booking ──
+    const _reschedMini=(function(){ const g=rebookGapW(), tot=g.d0+g.d1_6+g.d7_13; if(tot<=0) return '';
+      const items=[['Same-day',g.d0,'#dc2626'],['Within 1–6 days',g.d1_6,'#d97706'],['7–13 days later',g.d7_13,'#f59e0b']].filter(i=>i[1]>0);
+      const bh=22, gp=9, lx=4,lw=158, rx=232,rw=170, totH=items.length*(bh+gp)-gp, y0=8, cy=y0+totH/2-bh/2; let ln='',bx='';
+      items.forEach((it,i)=>{ const y=y0+i*(bh+gp); ln+=_bfLine(lx+lw,cy+bh/2,rx,y+bh/2,pct(it[1],tot)+'%'); bx+=_bfBox(rx,y,rw,bh,it[0],it[1],it[2],9.5); });
+      bx+=_bfBox(lx,cy,lw,bh,'🔁 Reschedules',tot,'#7c3aed',9.5);
+      return _subTitle('🔁 Rescheduled bookings — rework (NOT unique demand) · by gap since prior booking')+`<svg width="100%" viewBox="0 0 420 ${y0+totH+8}" preserveAspectRatio="xMinYMin meet" style="font-family:inherit;display:block;max-width:450px;">${ln}${bx}</svg>`; })();
+    const svg=_mainSvg+_leadsMini+_reschedMini;
     const _rework=(D.resched&&D.resched[w])||0;
     const _reconcile=`<div style="border:1px solid #bbf7d0;background:#f0fdf4;border-radius:8px;padding:8px 12px;margin-top:10px;font-size:10.5px;color:#166534;line-height:1.55;"><b>✓ Clean funnel — one patient = one booking.</b> A patient who booked then rescheduled (or no-showed and re-booked) is counted <b>once</b>, at their first booking, with their <b>final</b> outcome.${_rework>0?` <b>${_rework}</b> reschedule${_rework>1?'s':''} this week ${_rework>1?'were':'was'} collapsed out — that's operational rework, not demand.`:''} The "This week" node = <b>${_swNew} new + ${_swRet} return</b> same-week bookings.</div>`;
     const extra=`<div style="border:1px dashed #cbd5e1;border-radius:8px;padding:9px 12px;margin-top:10px;background:#f8fafc;font-size:10.5px;color:#64748b;line-height:1.5">The <b>didn't-book</b> count is this week's clinic leads minus new same-week bookings — a count, not a per-lead disposition. <b>Why each didn't book</b> (called / not called → relevant?), like the bottom of your sketch, still needs per-lead clinic + call-disposition data (the leads feed has no phone/disposition; that link lived in LeadSquared, sync stale Sep 2024). The flow below covers <b>all</b> this week's bookings (incl. repeat &amp; older-lead), so it won't equal "booked new" above.</div>`+_reconcile;
