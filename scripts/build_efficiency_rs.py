@@ -84,8 +84,18 @@ def main():
                   'done':pctOf(chDn.get(k,[0]*len(weeks)),doneT),'spend':[0]*len(weeks)}
     # Google spend share from data_marketing (approx); Meta/Practo flagged 0 (need source)
     plabels=[lab.get(w,w) for w in weeks]
-    out={'_meta':{'source':'Redshift-native (main_source_wise_leads + data.json) · revenue/spend/verified carried from L0 pending RS source','weekly':plabels},
-         'weekly':{'periods':plabels,'ALL':ALL,'CONTR':CONTR,'DIRECT':{}},
+    # per-channel spend/cost (Google from Redshift-via-sheet, Meta from SyncWith/FB sheet, Practo from Practo sheet)
+    # carried from the L0 build aligned to RS weeks — these are external-platform spends, not in the warehouse.
+    L0D=json.load(open(os.path.join(ROOT,'data_efficiency.json')))['weekly']['DIRECT']
+    def align(a):
+        o=[None]*len(weeks)
+        for w in weeks:
+            p=lab.get(w)
+            if p and p in L0P and p in [lab.get(x) for x in weeks]: o[idx[w]]=a[L0P.index(p)] if L0P.index(p)<len(a) else None
+        return o
+    DIRECT={ch:{m:align(v) for m,v in d.items()} for ch,d in L0D.items()}
+    out={'_meta':{'source':'Redshift-native volume funnel (main_source_wise_leads + data.json gross bookings). Spend: Google=Redshift, Meta=SyncWith/FB sheet, Practo=Practo sheet (external platforms). Revenue/verified carried from L0 pending source.','weekly':plabels},
+         'weekly':{'periods':plabels,'ALL':ALL,'CONTR':CONTR,'DIRECT':DIRECT},
          'monthly':json.load(open(os.path.join(ROOT,'data_efficiency.json')))['monthly']}
     json.dump(out, open(os.path.join(ROOT,'data_efficiency_rs.json'),'w'), separators=(',',':'))
 
