@@ -862,9 +862,34 @@ function renderMetricDrill(metricKey){
       const fmt=h=>`<b>${h.name}</b> <span style="color:#dc2626;font-weight:700;">${h.d>0?'+':''}${Math.round(h.d)}${h.unit}</span>${h.rate?` (${h.v}% vs ${Math.round(h.n)}%)`:''}`;
       ptrs.push(`${ic} <b>${lbl}</b> dropped at ${w.map(fmt).join(', ')}${hits.length>3?` <span style="color:#94a3b8;">+${hits.length-3} more</span>`:''}`); } });
   const pScope = byCity ? 'across cities' : geoScopeText();
-  const pointersCard = `<div style="background:#fff;border:1px solid var(--line);border-left:3px solid ${ptrs.length?'#dc2626':'#16a34a'};border-radius:10px;padding:11px 14px;margin-bottom:12px;">
-    <div style="font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:${ptrs.length?'#dc2626':'#16a34a'};margin-bottom:${ptrs.length?'7px':'0'};">${ptrs.length?`⚠ What needs attention — ${pScope}`:`✓ All clear — ${pScope}`}</div>
-    ${ptrs.length?`<ul style="margin:0;padding-left:17px;font-size:12.5px;line-height:1.75;color:#334155;">${ptrs.map(p=>`<li>${p}</li>`).join('')}</ul><div style="font-size:10px;color:#94a3b8;margin-top:6px;">Click a ${oneLbl} below to open its full RCA.</div>`:`<div style="font-size:11.5px;color:#475569;">Every ${oneLbl} is at or above its norm on availability, leads, conversion, show-up & new bookings this week.</div>`}</div>`;
+  const snapScope = byCity ? 'Network' : geoScopeText();
+  // ── aggregate "what moved" snapshot — the whole scope's top numbers + lead SOURCES, flagged when they dropped ──
+  const aggOf=fn=>{ const o=Array(WEEKS.length).fill(0); rows.forEach(r=>{const a=fn(r)||[];for(let i=0;i<WEEKS.length;i++)o[i]+=(a[i]||0);}); return o; };
+  const SNAP=[
+    ['🔎','Leads',computeMetricArr(rows,'leads'),false],
+    ['📍','GMB leads',aggOf(r=>leadArr(r.city,r.clinic,'gmb')),false],
+    ['🅖','Google Ads',aggOf(r=>leadArr(r.city,r.clinic,'google_ad')),false],
+    ['🌐','Organic',aggOf(r=>leadArr(r.city,r.clinic,'organic')),false],
+    ['Ⓟ','Practo leads',aggOf(r=>practoArr(r.city,r.clinic)),false],
+    ['⛳','Lead→Book',computeMetricArr(rows,'l2b'),true],
+    ['🩺','Availability',computeMetricArr(rows,'avail'),false],
+    ['📅','Bookings',computeMetricArr(rows,'total'),false],
+    ['✅','Book→Done',computeMetricArr(rows,'b2d'),true],
+    ['🆕','New',computeMetricArr(rows,'new'),false],
+  ];
+  let snapDrops=0;
+  const snapChips=SNAP.map(([ic,lbl,arr,rate])=>{ const v=arr[W]||0, n=avg(dimSlice(arr,W));
+      const d=rate?Math.round(v-n):(n?Math.round((v-n)/n*100):0), sev=rate?(d<=-5?2:d<=-1?1:0):(d<=-15?2:d<=-3?1:0);
+      if(!rate && v===0 && n<1) return '';                              // hide sources with no volume at all
+      if(sev>=2) snapDrops++;
+      const col=['#475569','#d97706','#dc2626'][sev], bg=['#f8fafc','#fffbeb','#fef2f2'][sev], bc=['var(--line)','#fde68a','#fecaca'][sev];
+      const ar=Math.abs(d)<0.5?'–':d<0?'▼':'▲';
+      return `<span title="${lbl}: ${rate?v+'% vs '+Math.round(n)+'% norm':v+' vs '+Math.round(n)+' norm'}" style="display:inline-flex;align-items:center;gap:4px;background:${bg};border:1px solid ${bc};border-radius:7px;padding:3px 9px;font-size:11px;white-space:nowrap;">${ic} <b style="color:#0f172a;">${lbl}</b> <b style="color:#0f172a;">${rate?v+'%':v}</b> <span style="color:${col};font-weight:800;">${ar}${Math.abs(d)}${rate?'pp':'%'}</span></span>`;
+    }).filter(Boolean).join('');
+  const pointersCard = `<div style="background:#fff;border:1px solid var(--line);border-left:3px solid ${(ptrs.length||snapDrops)?'#dc2626':'#16a34a'};border-radius:10px;padding:11px 14px;margin-bottom:12px;">
+    <div style="font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:${snapDrops?'#dc2626':'#16a34a'};margin-bottom:6px;">${snapDrops?`📉 ${snapScope} — ${snapDrops} number${snapDrops>1?'s':''} dropped this week`:`📊 ${snapScope} snapshot — all numbers steady`}</div>
+    <div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:${ptrs.length?'10px':'0'};">${snapChips}</div>
+    ${ptrs.length?`<div style="font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:#dc2626;margin:2px 0 6px;border-top:1px solid var(--line);padding-top:8px;">⚠ Which ${unitLbl} drove it</div><ul style="margin:0;padding-left:17px;font-size:12.5px;line-height:1.75;color:#334155;">${ptrs.map(p=>`<li>${p}</li>`).join('')}</ul><div style="font-size:10px;color:#94a3b8;margin-top:6px;">Click a ${oneLbl} below to open its full RCA.</div>`:`<div style="font-size:11.5px;color:#475569;">Every ${oneLbl} is at or above its norm on availability, leads, conversion, show-up & new bookings this week.</div>`}</div>`;
   // red / orange / green band by how the metric moved (thresholds differ for rate vs count metrics)
   const band=g=>{ const d=g.delta;
     if(M.rate) return d<=-5?['#fef2f2','#dc2626']:d<=-1?['#fffbeb','#f59e0b']:['#f0fdf4','#16a34a'];
