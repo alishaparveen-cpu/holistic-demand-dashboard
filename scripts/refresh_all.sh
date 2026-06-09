@@ -55,6 +55,7 @@ step "Practo booked (build_practo_booked)"  python3 scripts/build_practo_booked.
 
 echo "── Sheets / API (no Redshift creds needed) ──"
 step "Practo leads (build_practo_leads)"  python3 scripts/build_practo_leads.py
+step "Channel efficiency (build_efficiency)" python3 scripts/build_efficiency.py
 
 echo "── Optional / API ──"
 step "GMB insights (pull_gmb_insights)"   python3 scripts/pull_gmb_insights.py
