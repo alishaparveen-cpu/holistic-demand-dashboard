@@ -36,6 +36,7 @@ step "GA gclid leads→bookings (SQL)"      bash -c 'cat scripts/fetch_ga_leads.
 step "GA funnel build (build_ga_funnel)"  python3 scripts/build_ga_funnel.py
 
 echo "── Redshift core (needs aws sso login) ──"
+step "Leads by source (build_leads)"      python3 scripts/build_leads.py   # must precede scorecard (leads denom)
 step "Scorecard (build_scorecard)"        python3 scripts/build_scorecard.py
 step "Phase-2 metrics (build_phase2)"     python3 scripts/build_phase2.py
 step "Diagnostic RCA (build_diagnostic)"  python3 scripts/build_diagnostic.py
@@ -46,9 +47,18 @@ step "Avail hour×day (build_avail_hod)"     python3 scripts/build_avail_hod.py
 step "Booking cube (build_booking_source)"  python3 scripts/build_booking_source.py
 step "Re-book gap (build_rebook_gap)"        python3 scripts/build_rebook_gap.py
 step "Booking episodes (clean funnel)"      python3 scripts/build_booking_episodes.py
+step "Demand superset (relevancy/funnel)"   python3 scripts/build_demand_superset.py
+step "Lead age (build_lead_age)"            python3 scripts/build_lead_age.py
+step "Lead maturation (build_lead_maturation)" python3 scripts/build_lead_maturation.py
+step "Leads total (build_leads_total)"      python3 scripts/build_leads_total.py
+step "Practo booked (build_practo_booked)"  python3 scripts/build_practo_booked.py
+
+echo "── Sheets / API (no Redshift creds needed) ──"
+step "Practo leads (build_practo_leads)"  python3 scripts/build_practo_leads.py
 
 echo "── Optional / API ──"
 step "GMB insights (pull_gmb_insights)"   python3 scripts/pull_gmb_insights.py
+step "Negative reviews (build_reviews_neg_gbp)" python3 scripts/build_reviews_neg_gbp.py
 
 echo "════════════════════════════════════════════════"
 printf "Done: %d OK, %d FAIL" "$PASS" "$FAIL"
