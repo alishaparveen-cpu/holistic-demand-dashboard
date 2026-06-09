@@ -1531,10 +1531,25 @@ function renderBookFlow(){
   const el=document.getElementById('bookFlowPanel'); if(!el) return;
   if(!D){ el.innerHTML=''; return; }
   const w=currentWeek, pct=(a,b)=>b>0?Math.round(a/b*100):0, boxH=26, og=8;
+  // ── outcome KPI strip: the numbers the founder watches — B2D vs target, no-show + ₹ lost, recovery — with 8-wk trends ──
+  const RS=2000, TGT_B2D=75, TGT_NS=15;   // ₹/consult · targets (adjust if your benchmarks differ)
+  const _ser=fn=>{ const a=[]; for(let i=0;i<NW;i++)a.push(fn(i)); return a; };
+  const b2dSer=_ser(i=>(D.bookings.total[i]||0)>0?Math.round((D.done[i]||0)/D.bookings.total[i]*100):0);
+  const nsSer=D.noshowRate||_ser(()=>0), recSer=D.recovery||_ser(()=>0), lostSer=_ser(i=>(D.noshows[i]||0)*RS);
+  const b2d=b2dSer[w]||0, ns=nsSer[w]||0, rec=recSer[w]||0, lost=lostSer[w]||0;
+  const _ktile=(icon,lbl,val,sub,subCol,ser,serCol)=>`<div style="flex:1 1 0;min-width:158px;background:#fff;border:1px solid var(--bdr);border-radius:10px;padding:10px 13px;"><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.3px;color:var(--gray)">${icon} ${lbl}</div><div style="display:flex;align-items:baseline;gap:7px;margin:1px 0 3px"><span style="font-size:25px;font-weight:800;color:#0f172a;line-height:1">${val}</span><span style="font-size:10.5px;font-weight:700;color:${subCol}">${sub}</span></div>${sparkSVG(ser,serCol,false)}</div>`;
+  const kpiStrip=`<div style="display:flex;gap:10px;flex-wrap:wrap;margin:4px 0 6px">
+    ${_ktile('✅','Book → Done (B2D)',b2d+'%',(b2d>=TGT_B2D?'✓ ≥':'▼')+' '+TGT_B2D+'% target',b2d>=TGT_B2D?'#16a34a':'#dc2626',b2dSer,'#16a34a')}
+    ${_ktile('🚫','No-show rate',ns+'%',(ns<=TGT_NS?'✓ ≤':'▲ over')+' '+TGT_NS+'% target',ns<=TGT_NS?'#16a34a':'#dc2626',nsSer,'#dc2626')}
+    ${_ktile('♻️','No-show recovery',rec+'%',rec>=50?'healthy':'low — losing no-shows',rec>=50?'#16a34a':'#d97706',recSer,'#2563eb')}
+    ${_ktile('₹','Lost to no-shows','₹'+(lost>=10000?Math.round(lost/1000)+'k':(lost/1000).toFixed(1)+'k'),(D.noshows[w]||0)+' × ₹'+RS.toLocaleString('en-IN')+'/wk',(lost>0?'#dc2626':'#94a3b8'),lostSer,'#dc2626')}
+  </div>
+  <div style="font-size:10.5px;color:var(--gray);margin:0 0 10px;line-height:1.45">💡 The lever is <b>Book→Done</b>, not Leads→Booked — leads convert to bookings well, the leak is patients not showing. No-show target ${TGT_NS}%, B2D target ${TGT_B2D}% (adjust in code).</div>`;
   const tabs=[['full','Full flow (clean)'],['who','Status detail · incl. reschedules'],['source','Where they came from'],['age','Lead age at booking']];
   const toggle=`<div style="display:flex;gap:6px;margin:8px 0 6px;flex-wrap:wrap">`+tabs.map(t=>`<button onclick="bfSet('${t[0]}')" style="font:600 11px Inter;padding:5px 11px;border-radius:999px;cursor:pointer;border:1px solid ${bfMode===t[0]?'#7c3aed':'#e2e8f0'};background:${bfMode===t[0]?'#7c3aed':'#fff'};color:${bfMode===t[0]?'#fff':'#475569'}">${t[1]}</button>`).join('')+`</div>`;
   const wrap=(title,sub,svg,foot,extra)=>{ el.innerHTML=`<div class="sec" style="padding:16px 18px">
     <div style="font-size:13px;font-weight:600;color:var(--navy)">${title} <span style="color:#16a34a;font-weight:700">● CLINIC-LEVEL</span></div>
+    ${kpiStrip}
     ${toggle}
     <div style="font-size:11px;color:var(--gray);margin:2px 0 10px">For the selected clinic(s) · ${WEEK_LABELS[currentWeek]||'this week'}. ${sub}</div>
     ${svg}
