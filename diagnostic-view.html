@@ -61,7 +61,7 @@ a{color:inherit;text-decoration:none}
 .hc-sub{font-size:10px}.hc-sub.r{color:var(--r)}.hc-sub.a{color:var(--a)}.hc-sub.g{color:var(--g)}.hc-sub.n{color:var(--t3)}
 .hc-spark{display:flex;align-items:flex-end;gap:2px;height:16px;margin-top:5px}
 .sp{border-radius:1px;min-height:2px;flex:1}
-.three-col{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
+.three-col{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:10px;align-items:start}
 .panel{background:var(--s1);border:1px solid var(--b);border-radius:10px;overflow:hidden;box-shadow:var(--sh)}
 .ph{padding:9px 13px;border-bottom:1px solid var(--b);background:var(--s2);display:flex;align-items:center;justify-content:space-between}
 .ph-t{font-size:11px;font-weight:600}
@@ -194,8 +194,12 @@ a{color:inherit;text-decoration:none}
 const _cb='?t='+Date.now();
 const TGT={b2d:75,noshow:15,recovery:50,l2b:60};
 const WEEKLBL=i=>i===0?'W-1':'W-'+(i+1);   // index 0 = latest complete week
-let SC={},LEADS={},EP={},GMB={},REVIEWS={},REM={},CB={},ROST={},LAGE={},WEEKS=[];
+let SC={},LEADS={},EP={},GMB={},REVIEWS={},REM={},CB={},ROST={},LAGE={},DF={},DFW=[],PL={},WEEKS=[];
 const RS=2000; // ₹ revenue per completed consult (for impact sizing)
+// demand_funnel.json (relevancy + funnel) is maintained on its own weekly cadence and can lag the
+// scorecard by a week — align it to the view's WEEKS by date so columns never silently shift.
+function dfAlign(a){ return WEEKS.map(w=>{const j=DFW.indexOf(w);return j>=0?(a[j]==null?null:a[j]):null;}); }
+function dfArr(key,grp,fld){ const o=DF[key]; const a=o&&o[grp]&&o[grp][fld]; return a?dfAlign(a):WEEKS.map(()=>null); }
 let CLINICS=[],CITIES={},curCity='',curClinic='';
 
 const sum=a=>a.reduce((x,y)=>x+(+y||0),0);
@@ -242,8 +246,12 @@ function clinObj(key){
     rem:{tot:f(rem,'total'),sent:f(rem,'rem_sent'),deliv:f(rem,'rem_delivered'),read:f(rem,'rem_read'),
          nsTot:f(rem,'ns_total'),nsDeliv:f(rem,'ns_delivered'),nsRead:f(rem,'ns_read')},
     cb:{ns:f(cb,'noshows'),called:f(cb,'called_back')},
-    cap:{hrs:f(rost,'hrs'),weHrs:f(rost,'we_hrs'),sched:f((rost.shr||{}),'sched'),shrunk:f((rost.shr||{}),'shrunk')},
-    lage:{same:f(lage,'same'),last:f(lage,'last'),older:f(lage,'older')}};
+    cap:{hrs:f(rost,'hrs'),weHrs:f(rost,'we_hrs'),sched:f((rost.shr||{}),'sched'),shrunk:f((rost.shr||{}),'shrunk'),avail:f((rost.shr||{}),'avail'),dow:(rost.dow||arr12()).slice(0,12)},
+    lage:{same:f(lage,'same'),last:f(lage,'last'),older:f(lage,'older')},
+    // lead quality / relevancy + funnel from the weekly demand superset (date-aligned to the view)
+    rel:{leads:dfArr(key,'gmb_google','leads'),relevant:dfArr(key,'gmb_google','relevant'),sw:dfArr(key,'gmb_google','sw_booked')},
+    // Practo funnel (own weekly cadence)
+    practo:{leads:f((PL[key]||{}),'leads'),booked:f((PL[key]||{}),'booked')}};
 }
 // aggregate a list of clinic objects into one (sum counts; recompute rates downstream)
 function aggClin(list){
@@ -273,9 +281,10 @@ function mcol(m,c,w){ if(!metricSig(m,c)) return 'n'; const s=METRICS[m].series(
 // ── load data ──
 async function load(){
   const F=(f)=>fetch(f+_cb).then(r=>r.ok?r.json():{}).catch(()=>({}));
-  const [sc,ld,ep,gm,rv,rem,cb,rost,lage]=await Promise.all([F('data_scorecard.json'),F('data_leads.json'),F('data_booking_episodes.json'),F('data_gmb_insights.json'),F('data_reviews.json'),F('data_reminders.json'),F('data_callback.json'),F('data_roster.json'),F('data_lead_age.json')]);
-  SC=sc;LEADS=ld;EP=ep;GMB=gm;REVIEWS=rv;REM=rem;CB=cb;ROST=rost;LAGE=lage;
+  const [sc,ld,ep,gm,rv,rem,cb,rost,lage,df,pl]=await Promise.all([F('data_scorecard.json'),F('data_leads.json'),F('data_booking_episodes.json'),F('data_gmb_insights.json'),F('data_reviews.json'),F('data_reminders.json'),F('data_callback.json'),F('data_roster.json'),F('data_lead_age.json'),F('data_demand_funnel.json'),F('data_practo_leads.json')]);
+  SC=sc;LEADS=ld;EP=ep;GMB=gm;REVIEWS=rv;REM=rem;CB=cb;ROST=rost;LAGE=lage;DF=df;PL=pl;
   WEEKS=(sc._meta&&sc._meta.weeks)||(ep._meta&&ep._meta.weeks)||[];
+  DFW=(df._meta&&df._meta.weeks)||[];
   CLINICS=Object.keys(SC).filter(k=>k!=='_meta').map(clinObj).filter(c=>c.disp.total.some(x=>x>0));
   CITIES={}; CLINICS.forEach(c=>{(CITIES[c.city]=CITIES[c.city]||[]).push(c);});
   const wl='W-1 · '+(WEEKS[0]||'');
@@ -375,32 +384,62 @@ function renderThreeCol(c){
   const cbNs=c.cb.ns[0],cbCalled=c.cb.called[0],rec0=c.disp.recovered_done[0];
   const hrs0=c.cap.hrs[0],hrsN=avg(c.cap.hrs.slice(1,5)),hrsDp=hrsN>0?r0((hrs0-hrsN)/hrsN*100):0;
   const remRate=nsTot>0?pctv(nsDeliv,nsTot):null, cbRate=cbNs>0?pctv(cbCalled,cbNs):null, convRate=cbCalled>0?pctv(rec0,cbCalled):null;
-  const col2=`<div style="display:flex;flex-direction:column;gap:10px">
-    <div class="panel"><div class="ph"><div class="ph-t">Bookings → outcome</div></div><div class="pb">
+  const dlt=(v,n)=>{const d=v-n;return `<div class="mr-d ${d<-0.5?'dn':d>0.5?'up':'fl'}">${d<-0.5?'↓':d>0.5?'↑':'–'}${Math.abs(d)>=0.5?Math.abs(r0(d)):''}</div>`;};
+  const panelBook=`<div class="panel"><div class="ph"><div class="ph-t">Bookings → outcome</div></div><div class="pb">
       <div class="mr"><div class="mr-l">Bookings (unique)</div><div class="mr-r"><div class="mr-v n">${c.disp.total[0]}</div></div></div>
       <div class="mr"><div class="mr-l">Completed</div><div class="mr-r"><div class="mr-v g">${c.disp.done[0]}</div></div></div>
       <div class="mr"><div class="mr-l">No-shows</div><div class="mr-r"><div class="mr-v ${c.disp.missed[0]>0?'r':'n'}">${c.disp.missed[0]}</div><div class="mr-d fl">${inr(c.disp.missed[0]*RS)}</div></div></div>
       <div class="mr"><div class="mr-l">Recovered</div><div class="mr-r"><div class="mr-v ${rec0>0?'g':'n'}">${rec0}</div></div></div>
-    </div></div>
-    <div class="panel"><div class="ph"><div class="ph-t">Ops signals · cross-data</div></div><div class="pb">
+    </div></div>`;
+  const panelOps=`<div class="panel"><div class="ph"><div class="ph-t">Ops signals · cross-data</div></div><div class="pb">
       <div class="mr"><div class="mr-l">No-shows reminded</div><div class="mr-r"><div class="mr-v ${remRate==null?'n':remRate>=90?'g':remRate>=70?'a':'r'}">${remRate==null?'—':nsDeliv+'/'+nsTot}</div><div class="mr-d fl">${remRate==null?'':remRate+'%'}</div></div></div>
       <div class="mr"><div class="mr-l">No-shows called back</div><div class="mr-r"><div class="mr-v ${cbRate==null?'n':cbRate>=90?'g':cbRate>=70?'a':'r'}">${cbRate==null?'—':cbCalled+'/'+cbNs}</div><div class="mr-d fl">${cbRate==null?'':cbRate+'%'}</div></div></div>
       <div class="mr"><div class="mr-l">Callback → re-visit</div><div class="mr-r"><div class="mr-v ${convRate==null?'n':convRate>=40?'g':convRate>=15?'a':'r'}">${convRate==null?'—':rec0+'/'+cbCalled}</div><div class="mr-d fl">${convRate==null?'':convRate+'%'}</div></div></div>
-      <div class="mr"><div class="mr-l">Bookable hours</div><div class="mr-r"><div class="mr-v ${Math.abs(hrsDp)<12?'n':hrsDp<0?'r':'g'}">${hrs0}h</div><div class="mr-d ${hrsDp<-5?'dn':hrsDp>5?'up':'fl'}">${hrsDp>0?'+':''}${hrsDp}%</div></div></div>
-    </div></div>
-    <div class="panel"><div class="ph"><div class="ph-t">Reviews (rank signal)</div></div><div class="pb">
+    </div></div>`;
+  // ── Availability & capacity (hours + active days + shrinkage) ──
+  const dw=Array.isArray(c.cap.dow[0])?c.cap.dow[0]:null;
+  const actDays=dw?dw.filter(x=>x>0).length:null, actWd=dw?dw.slice(0,5).filter(x=>x>0).length:null, actWe=dw?dw.slice(5,7).filter(x=>x>0).length:null;
+  const schSlot=c.cap.sched[0]||0, shrSlot=c.cap.shrunk[0]||0, shrPct=schSlot>0?pctv(shrSlot,schSlot):null;
+  const bookHr=r1(hrs0*(1-(shrPct||0)/100));
+  const panelAvail=`<div class="panel"><div class="ph"><div class="ph-t">Availability &amp; capacity</div></div><div class="pb">
+      <div class="mr"><div class="mr-l">Scheduled hours</div><div class="mr-r"><div class="mr-v n">${r1(hrs0)}h</div>${dlt(hrs0,hrsN)}</div></div>
+      <div class="mr"><div class="mr-l">Shrinkage</div><div class="mr-r"><div class="mr-v ${shrPct==null?'n':shrPct>=30?'r':shrPct>=15?'a':'g'}">${shrPct==null?'—':shrPct+'%'}</div></div></div>
+      <div class="mr"><div class="mr-l">Bookable hours</div><div class="mr-r"><div class="mr-v ${Math.abs(hrsDp)<12?'n':hrsDp<0?'r':'g'}">${bookHr}h</div><div class="mr-d ${hrsDp<-5?'dn':hrsDp>5?'up':'fl'}">${hrsDp>0?'+':''}${hrsDp}%</div></div></div>
+      <div class="mr"><div class="mr-l">Active days</div><div class="mr-r"><div class="mr-v n">${actDays==null?'—':actDays}</div><div class="mr-d fl">${actDays==null?'':actWd+'wd · '+actWe+'we'}</div></div></div>
+    </div></div>`;
+  // ── Lead quality & relevancy (GMB+Google bottom funnel, from the weekly demand superset) ──
+  const ri=c.rel.relevant.findIndex(x=>x!=null);
+  const relLeads=ri>=0?c.rel.relevant[ri]:null, relTot=ri>=0?c.rel.leads[ri]:null, relSw=ri>=0?c.rel.sw[ri]:null;
+  const relPct=(relTot&&relLeads!=null)?pctv(relLeads,relTot):null;
+  const relStale=ri>0?` <span style="font-size:8px;color:var(--t3)">(as of ${(WEEKS[ri]||'').slice(5)})</span>`:'';
+  const panelRel=`<div class="panel"><div class="ph"><div class="ph-t">Lead quality · relevancy${relStale}</div></div><div class="pb">
+      <div class="mr"><div class="mr-l">GMB + Google leads</div><div class="mr-r"><div class="mr-v n">${relTot==null?'—':relTot}</div></div></div>
+      <div class="mr"><div class="mr-l">Relevant leads</div><div class="mr-r"><div class="mr-v ${relPct==null?'n':relPct>=60?'g':relPct>=35?'a':'r'}">${relLeads==null?'—':relLeads}</div></div></div>
+      <div class="mr"><div class="mr-l">Relevancy %</div><div class="mr-r"><div class="mr-v ${relPct==null?'n':relPct>=60?'g':relPct>=35?'a':'r'}">${relPct==null?'—':relPct+'%'}</div></div></div>
+      <div class="mr"><div class="mr-l">Booked same week</div><div class="mr-r"><div class="mr-v n">${relSw==null?'—':relSw}</div></div></div>
+    </div></div>`;
+  // ── Practo funnel ──
+  const pL=c.practo.leads[0]||0, pLn=avg(c.practo.leads.slice(1,5)), pB=c.practo.booked[0]||0, pConv=pL>0?pctv(pB,pL):null;
+  const hasPracto=sum(c.practo.leads.slice(0,8))>0;
+  const panelPracto=hasPracto?`<div class="panel"><div class="ph"><div class="ph-t">Practo funnel</div></div><div class="pb">
+      <div class="mr"><div class="mr-l">Practo leads</div><div class="mr-r"><div class="mr-v n">${pL}</div>${dlt(pL,pLn)}</div></div>
+      <div class="mr"><div class="mr-l">Booked</div><div class="mr-r"><div class="mr-v g">${pB}</div></div></div>
+      <div class="mr"><div class="mr-l">Lead → Book</div><div class="mr-r"><div class="mr-v ${pConv==null?'n':pConv>=60?'g':pConv>=40?'a':'r'}">${pConv==null?'—':pConv+'%'}</div></div></div>
+    </div></div>`:'';
+  // ── Reviews ──
+  const panelRev=`<div class="panel"><div class="ph"><div class="ph-t">Reviews (rank signal)</div></div><div class="pb">
       <div class="mr"><div class="mr-l">New reviews W-1</div><div class="mr-r"><div class="mr-v ${(rv.n&&rv.n[0]>=5)?'g':'a'}">${rv.n&&rv.n[0]||0}</div></div></div>
       <div class="mr"><div class="mr-l">Negative W-1</div><div class="mr-r"><div class="mr-v ${(rv.neg&&rv.neg[0]>0)?'r':'g'}">${rv.neg&&rv.neg[0]||0}</div></div></div>
       <div class="mr"><div class="mr-l">Rating</div><div class="mr-r"><div class="mr-v n">${rv.rating&&rv.rating.find(x=>x!=null)||'—'}★</div></div></div>
-    </div></div></div>`;
-  // col3: 8-week trends
+    </div></div>`;
+  // 8-week trends
   const col3=`<div class="panel"><div class="ph"><div class="ph-t">8-week key metrics</div></div><div class="pb">
     ${chart8('Book → Done %',METRICS.b2d.series(c),sevColor(METRICS.b2d,METRICS.b2d.series(c)[0],avg(METRICS.b2d.series(c).slice(1,5))))}
     ${chart8('No-show %',METRICS.noshow.series(c),sevColor(METRICS.noshow,METRICS.noshow.series(c)[0],avg(METRICS.noshow.series(c).slice(1,5))))}
     ${chart8('Total leads',c.leads,sevColor(METRICS.leads,c.leads[0],avg(c.leads.slice(1,5))))}
     ${chart8('GMB searches',c.gmbSearch.map(x=>x),'bl')}
   </div></div>`;
-  document.getElementById('threeCol').innerHTML=col1+col2+col3;
+  document.getElementById('threeCol').innerHTML=col1+panelBook+panelOps+panelAvail+panelRel+panelPracto+panelRev+col3;
 }
 
 // ── DRAWER: 5-question diagnostic ──
