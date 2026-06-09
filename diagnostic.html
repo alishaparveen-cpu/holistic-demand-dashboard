@@ -80,8 +80,8 @@ code{background:#f1f5f9;padding:1px 5px;border-radius:4px;font-size:11px;}
     <span style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;color:#cbd5e1;">Executive</span>
     <a href="category.html" class="nav-link">Category</a><button id="refreshBtn" onclick="showRefreshHelp()" title="How to refresh this week's data" style="margin-left:8px;font-size:11.5px;font-weight:600;color:#0f766e;background:#ecfeff;border:1px solid #99f6e4;border-radius:8px;padding:3px 10px;cursor:pointer;white-space:nowrap;">↻ Refresh data</button>
     <div class="ml-2">
-      <div class="font-bold text-base">Demand Overview</div>
-      <div class="text-xs text-slate-400">All top metrics at a glance — pick a city, a week, or a trend range. Drill the "why" in Diagnostic View.</div>
+      <div class="font-bold text-base">Weekly Demand RCA</div>
+      <div class="text-xs text-slate-400">All top metrics → click any step to drill India → city → clinic (where leads dropped & why). Filter by city, week or trend range.</div>
     </div>
     <div class="ml-auto flex items-center gap-3 flex-wrap">
       <div class="toggle" id="scopeToggle">
@@ -748,7 +748,7 @@ function renderAggView(r, levelLabel){
   const l2bArr=r.bkArr.map((b,i)=>{const l=r.ldArr[i]||0,conv=r.aggSame[i]||0;return l>0?Math.min(100,Math.round(conv/l*100)):0;});
   const b2dArr=r.bkArr.map((b,i)=>{const d=r.bkDoneArr[i]||0;return b>0?Math.round(d/b*100):0;});
   const l2b_w=l2bArr[W], b2d_w=b2dArr[W], _l2bN=Math.round(avg(l2bArr.slice(W+1,W+6))), _b2dN=Math.round(avg(b2dArr.slice(W+1,W+6)));
-  const _drillable=false;   // Quick View = overview only; per-metric → city → clinic RCA lives in Diagnostic View
+  const _drillable=r.aggRows&&r.aggRows.length>1;   // click a funnel step → that metric by city → clinic → full RCA
   // ── clean 6-step demand funnel, top→bottom: supply → demand → convert → book → show → done ──
   const childLbl=geoSel.size?'clinics':'cities', oneChild=geoSel.size?'clinic':'city';
   // compact chip + a small trend below it (click the step to drill = "zoom" into the city breakdown)
@@ -971,11 +971,22 @@ function ctrlBar(R){
   const rangeSel=`<div style="display:flex;align-items:center;gap:6px;">
     <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#94a3b8;">Trend range</span>
     <div class="toggle" style="padding:2px;">${[['4w','4'],['8w','8'],['12w','12'],['All','all']].map(([l,v])=>`<button class="${String(trendWin)===v?'on':''}" style="padding:3px 9px;font-size:11px;" onclick="setTrendWin(${v==='all'?"'all'":v})">${l}</button>`).join('')}</div></div>`;
+  // jump straight to a clinic's full RCA deep-dive (filtered by city/tier/maturity)
+  const clinicOpts=R.rows.filter(passF).sort((a,b)=>a.city.localeCompare(b.city)||a.clinic.localeCompare(b.clinic))
+    .map(r=>`<option value="${r.city}|${r.clinic}" ${selClinic===r.city+'|'+r.clinic?'selected':''}>${r.city} › ${r.clinic}</option>`).join('');
+  const clinicSel=`<div style="display:flex;align-items:center;gap:6px;">
+    <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#94a3b8;">Clinic</span>
+    <select onchange="setSelClinic(this.value)" title="Open a clinic's full RCA deep-dive" style="font-size:12px;border:1.5px solid ${selClinic?'#4f46e5':'var(--line)'};border-radius:7px;padding:4px 9px;background:${selClinic?'#eef2ff':'#fff'};cursor:pointer;max-width:210px;color:${selClinic?'#4338ca':'#0f172a'};font-weight:${selClinic?600:400};">
+      <option value="">— deep-dive a clinic —</option>${clinicOpts}
+    </select></div>`;
   return `<div class="card" style="position:sticky;top:54px;z-index:10;padding:11px 16px;display:flex;align-items:center;gap:16px;flex-wrap:wrap;">
     ${citySel}
+    ${clinicSel}
     ${weekSel}
     ${rangeSel}
     ${baseSel}
+    ${seg('Tier',[['All','all'],['T1','T1'],['T2','T2']],tierF,'setTierF')}
+    ${seg('Maturity',[['All','all'],['Mature','Mature'],['Maturing','Maturing'],['New','New']],matF,'setMatF')}
     <button onclick="resetDiagFilters()" title="Reset all filters" style="font-size:11.5px;font-weight:600;color:#4f46e5;background:#eef2ff;border:1px solid #c7d2fe;border-radius:8px;padding:4px 11px;cursor:pointer;white-space:nowrap;margin-left:auto;">↺ Reset filters</button>
   </div>`;
 }
