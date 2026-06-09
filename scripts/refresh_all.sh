@@ -64,3 +64,9 @@ echo "════════════════════════�
 printf "Done: %d OK, %d FAIL" "$PASS" "$FAIL"
 [ "$FAIL" -gt 0 ] && printf " — failed steps:%b\n" "$FAILED_STEPS" || echo " — all good."
 echo "Review changes with: git status --short data_*.json"
+# Fail the run (red ✗ in CI) when most steps fail — almost always a missing-credentials problem.
+# Without this the workflow reports a false "success" while pulling nothing (e.g. empty GitHub Secrets).
+if [ "$FAIL" -ge "$PASS" ]; then
+  echo "✗ ABORT: $FAIL of $((PASS+FAIL)) steps failed — likely missing credentials (AWS / Google Ads / GBP secrets). Check GitHub → Settings → Secrets." >&2
+  exit 1
+fi
