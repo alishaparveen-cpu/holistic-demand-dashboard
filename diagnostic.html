@@ -851,6 +851,20 @@ function renderMetricDrill(metricKey){
   const storyCard=`<div style="display:flex;gap:12px;align-items:center;background:#f8fafc;border:1px solid var(--line);border-left:3px solid ${M.color};border-radius:10px;padding:10px 14px;margin-bottom:12px;">
     <div style="flex:1;font-size:12.5px;color:#334155;line-height:1.55;">${story}</div>
     <div style="flex:0 0 130px;">${spark(rev(aggArr),M.color,hi,M.rate?(v=>v+'%'):null,aggNorm)}</div></div>`;
+  // ── plain-language pointers: scan EVERY lever across these groups and call out the red ones by name ──
+  const PDIMS=[['avail','🩺','Availability'],['leads','🔎','Leads'],['l2b','⛳','Lead→Book'],['b2d','✅','Book→Done'],['new','🆕','New bookings'],['done','📞','Consults done']];
+  const ptrs=[];
+  PDIMS.forEach(([k,ic,lbl])=>{ const Mk=METRICS[k];
+    const hits=groups.map(g=>{ const arr=computeMetricArr(g.rows,k), v=arr[W]||0, n=avg(dimSlice(arr,W));
+        const d=Mk.rate?(v-n):(n?Math.round((v-n)/n*100):0), sev=Mk.rate?(d<=-5?2:d<=-1?1:0):(d<=-15?2:d<=-3?1:0);
+        return {name:g.name,v,n,d,sev,unit:Mk.rate?'pp':'%',rate:Mk.rate}; }).filter(h=>h.sev>=2).sort((a,b)=>a.d-b.d);
+    if(hits.length){ const w=hits.slice(0,3);
+      const fmt=h=>`<b>${h.name}</b> <span style="color:#dc2626;font-weight:700;">${h.d>0?'+':''}${Math.round(h.d)}${h.unit}</span>${h.rate?` (${h.v}% vs ${Math.round(h.n)}%)`:''}`;
+      ptrs.push(`${ic} <b>${lbl}</b> dropped at ${w.map(fmt).join(', ')}${hits.length>3?` <span style="color:#94a3b8;">+${hits.length-3} more</span>`:''}`); } });
+  const pScope = byCity ? 'across cities' : geoScopeText();
+  const pointersCard = `<div style="background:#fff;border:1px solid var(--line);border-left:3px solid ${ptrs.length?'#dc2626':'#16a34a'};border-radius:10px;padding:11px 14px;margin-bottom:12px;">
+    <div style="font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:${ptrs.length?'#dc2626':'#16a34a'};margin-bottom:${ptrs.length?'7px':'0'};">${ptrs.length?`⚠ What needs attention — ${pScope}`:`✓ All clear — ${pScope}`}</div>
+    ${ptrs.length?`<ul style="margin:0;padding-left:17px;font-size:12.5px;line-height:1.75;color:#334155;">${ptrs.map(p=>`<li>${p}</li>`).join('')}</ul><div style="font-size:10px;color:#94a3b8;margin-top:6px;">Click a ${oneLbl} below to open its full RCA.</div>`:`<div style="font-size:11.5px;color:#475569;">Every ${oneLbl} is at or above its norm on availability, leads, conversion, show-up & new bookings this week.</div>`}</div>`;
   // red / orange / green band by how the metric moved (thresholds differ for rate vs count metrics)
   const band=g=>{ const d=g.delta;
     if(M.rate) return d<=-5?['#fef2f2','#dc2626']:d<=-1?['#fffbeb','#f59e0b']:['#f0fdf4','#16a34a'];
@@ -881,6 +895,7 @@ function renderMetricDrill(metricKey){
     </div>
     ${tabBar}
     ${storyCard}
+    ${pointersCard}
     <div style="display:flex;gap:12px;font-size:9px;font-weight:700;text-transform:uppercase;color:#cbd5e1;padding:0 12px 4px;"><span style="flex:0 0 30%;">${byCity?'City':'Clinic'}</span><span style="flex:0 0 58px;text-align:right;">this wk</span><span style="flex:0 0 54px;text-align:right;">vs norm</span><span style="flex:1;text-align:right;">trend</span><span style="flex:0 0 12px;"></span></div>
     <div style="border:1px solid var(--line);border-radius:11px;overflow:hidden;">${rowsHtml}</div>
   </div>`;
