@@ -271,6 +271,7 @@ let activeCity   = 'ALL';   // legacy single-city (kept for Data/Snapshot paths)
 let activeClinic = 'ALL';
 let geoCitySel   = new Set();   // multi-select cities (empty = all)
 let geoClinicSel = new Set();   // multi-select clinic keys "City_Locality" (empty = all)
+let geoDoctorSel = new Set();   // multi-select doctor keys "City_Locality|Dr. Name" (one depth below clinic)
 let geoMsOpen    = null;        // open multiselect panel: 'city' | 'clinic' | null
 let geoMsSearch  = '';
 let activeTier   = 'ALL';
@@ -331,6 +332,7 @@ function effectiveClinicKeys(){
   return ks;
 }
 function geoMode(){
+  if (geoDoctorSel.size) return 'doctor';
   if (clinInc.size || clinExc.size || geoClinicSel.size || activeMat!=='ALL') return 'clinic';
   if (activeTier!=='ALL' || cityInc.size || cityExc.size || geoCitySel.size) return 'city';
   return 'none';
@@ -349,6 +351,10 @@ function getFilteredData(weekKey) {
     return { cats: d, funnel: d, total: d.total || 0, isFiltered: true };
   }
   const gm = geoMode();
+  if (gm === 'doctor') {
+    const a = aggCats(weekKey, effectiveDoctorKeys(), 'weekly_doctor');
+    return { cats: a.by_cat, funnel: scope.weekly_funnel?.[weekKey]||{}, total: a.total, isFiltered: true };
+  }
   if (gm === 'clinic') {
     const a = aggCats(weekKey, effectiveClinicKeys(), 'weekly_clinic');
     return { cats: a.by_cat, funnel: scope.weekly_funnel?.[weekKey]||{}, total: a.total, isFiltered: true };
@@ -469,27 +475,36 @@ function geoAllClinics(){ const n=(CHDATA&&CHDATA.offline&&CHDATA.offline.clinic
   if(activeTier!=='ALL') ks=ks.filter(k=>cityTier(k.split('_')[0])===activeTier);
   if(geoCitySel.size) ks=ks.filter(k=>geoCitySel.has(k.split('_')[0]));
   return ks; }
+// doctors live one depth below clinic: key = "City_Locality|Dr. Name". Scope to the selected clinic/city.
+function geoAllDoctors(){ let ks=((S()&&S().doctors)||[]).slice();
+  if(geoClinicSel.size)  ks=ks.filter(k=>geoClinicSel.has(k.split('|')[0]));
+  else if(geoCitySel.size) ks=ks.filter(k=>geoCitySel.has(k.split('|')[0].split('_')[0]));
+  if(activeTier!=='ALL') ks=ks.filter(k=>cityTier(k.split('_')[0])===activeTier);
+  return ks; }
+function effectiveDoctorKeys(){ let ks=geoAllDoctors(); if(geoDoctorSel.size) ks=ks.filter(k=>geoDoctorSel.has(k)); return ks; }
 function geoMsToggle(kind){ geoMsOpen = geoMsOpen===kind?null:kind; geoMsSearch=''; renderGeoMs(); }
 function geoMsSearchInput(v){ geoMsSearch=(v||'').toLowerCase(); renderGeoMsList(); }
-function geoMsPick(kind,val){ const set=kind==='city'?geoCitySel:geoClinicSel; if(set.has(val)) set.delete(val); else set.add(val);
-  if(kind==='city'){ /* prune clinics whose city is no longer in the (now narrowed) set */ if(geoCitySel.size){ [...geoClinicSel].forEach(k=>{ if(!geoCitySel.has(k.split('_')[0])) geoClinicSel.delete(k); }); } }
+function geoMsPick(kind,val){ const set=kind==='city'?geoCitySel:kind==='clinic'?geoClinicSel:geoDoctorSel; if(set.has(val)) set.delete(val); else set.add(val);
+  if(kind==='city'){ if(geoCitySel.size){ [...geoClinicSel].forEach(k=>{ if(!geoCitySel.has(k.split('_')[0])) geoClinicSel.delete(k); }); [...geoDoctorSel].forEach(k=>{ if(!geoCitySel.has(k.split('|')[0].split('_')[0])) geoDoctorSel.delete(k); }); } }
+  if(kind==='clinic'){ /* keep only doctors of still-selected clinics */ if(geoClinicSel.size){ [...geoDoctorSel].forEach(k=>{ if(!geoClinicSel.has(k.split('|')[0])) geoDoctorSel.delete(k); }); } }
   activeTier='ALL'; ['tierAllCat','tierT1Cat','tierT2Cat'].forEach(id=>document.getElementById(id)?.classList.toggle('active', id==='tierAllCat'));
   syncDrillToGeo(); render(); renderGeoMs(); }
-function geoMsClear(kind){ (kind==='city'?geoCitySel:geoClinicSel).clear(); if(kind==='city') geoClinicSel.clear(); syncDrillToGeo(); render(); renderGeoMs(); }
+function geoMsClear(kind){ geoCitySel.clear(); geoClinicSel.clear(); geoDoctorSel.clear(); syncDrillToGeo(); render(); renderGeoMs(); }
 function renderGeoMs(){
   const allBtn=document.getElementById('geoAllBtn'), panel=document.getElementById('geoMsPanel');
   if(!allBtn) return;
-  // unified button label reflects the active selection (clinic wins over city)
-  const lbl = geoClinicSel.size ? (geoClinicSel.size===1?[...geoClinicSel][0].split('_').slice(1).join(' '):geoClinicSel.size+' clinics')
+  // unified button label reflects the active selection (doctor > clinic > city)
+  const lbl = geoDoctorSel.size ? (geoDoctorSel.size===1?[...geoDoctorSel][0].split('|')[1]:geoDoctorSel.size+' doctors')
+            : geoClinicSel.size ? (geoClinicSel.size===1?[...geoClinicSel][0].split('_').slice(1).join(' '):geoClinicSel.size+' clinics')
             : geoCitySel.size   ? (geoCitySel.size===1?[...geoCitySel][0]:geoCitySel.size+' cities')
             : 'All clinics';
   allBtn.innerHTML = '🔍 '+lbl+' ▾';
-  const on=geoCitySel.size||geoClinicSel.size;
+  const on=geoCitySel.size||geoClinicSel.size||geoDoctorSel.size;
   allBtn.style.borderColor = on?'#4f46e5':'var(--line)'; allBtn.style.color = on?'#4338ca':'';
   if(!geoMsOpen){ panel.style.display='none'; return; }
   panel.style.display='block';
-  panel.innerHTML = `<input id="geoMsInput" type="text" oninput="geoMsSearchInput(this.value)" placeholder="Type a city or clinic…" style="width:100%;box-sizing:border-box;font-size:12.5px;padding:7px 10px;border:1.5px solid #4f46e5;border-radius:7px;margin-bottom:6px;">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px;"><span style="font-size:10px;color:#94a3b8;font-weight:700;text-transform:uppercase;">City or clinic</span>${on?`<button onclick="geoMsClear('city')" style="font-size:10px;color:#4f46e5;background:none;border:none;cursor:pointer;">✕ Clear</button>`:''}</div>
+  panel.innerHTML = `<input id="geoMsInput" type="text" oninput="geoMsSearchInput(this.value)" placeholder="Type a city, clinic or doctor…" style="width:100%;box-sizing:border-box;font-size:12.5px;padding:7px 10px;border:1.5px solid #4f46e5;border-radius:7px;margin-bottom:6px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px;"><span style="font-size:10px;color:#94a3b8;font-weight:700;text-transform:uppercase;">City · clinic · doctor</span>${on?`<button onclick="geoMsClear('city')" style="font-size:10px;color:#4f46e5;background:none;border:none;cursor:pointer;">✕ Clear</button>`:''}</div>
     <div id="geoMsList" style="max-height:300px;overflow:auto;"></div>`;
   renderGeoMsList();
   const inp=document.getElementById('geoMsInput'); if(inp) inp.focus();
@@ -497,14 +512,19 @@ function renderGeoMs(){
 function renderGeoMsList(){
   const list=document.getElementById('geoMsList'); if(!list||!geoMsOpen) return;
   const f = geoMsSearch;
-  const row=(kind,v,lab,sub)=>{ const set=kind==='city'?geoCitySel:geoClinicSel; const sel=set.has(v);
+  const setOf=kind=>kind==='city'?geoCitySel:kind==='clinic'?geoClinicSel:geoDoctorSel;
+  const row=(kind,v,lab,sub)=>{ const sel=setOf(kind).has(v);
     return `<label style="display:flex;align-items:center;gap:7px;font-size:12.5px;padding:5px 6px;border-radius:6px;cursor:pointer;${sel?'background:#eef2ff;':''}" onmouseover="this.style.background='#f1f5f9'" onmouseout="this.style.background='${sel?'#eef2ff':'transparent'}'">
       <input type="checkbox" ${sel?'checked':''} onchange="geoMsPick('${kind}','${v.replace(/'/g,"\\'")}')" style="cursor:pointer;"><span>${lab}${sub?` <span style="color:#94a3b8;font-size:10px;">${sub}</span>`:''}</span></label>`; };
   const cities  = geoAllCities().map(c=>['city',c,c,'city']).filter(([,,lab])=>!f||lab.toLowerCase().includes(f));
   const clinics = geoAllClinics().map(k=>['clinic',k, k.split('_').slice(1).join('_'), k.split('_')[0]]).filter(([,,lab,sub])=>!f||lab.toLowerCase().includes(f)||sub.toLowerCase().includes(f));
+  // doctors appear once a clinic/city is picked (one depth below) or when searched by name
+  const showDocs = geoClinicSel.size || geoCitySel.size || geoDoctorSel.size || (f && f.length>=2);
+  const doctors = showDocs ? geoAllDoctors().map(k=>['doctor',k, k.split('|')[1]||k, k.split('|')[0].split('_').slice(1).join(' ')]).filter(([,,lab,sub])=>!f||lab.toLowerCase().includes(f)||sub.toLowerCase().includes(f)) : [];
   let h='';
   if(cities.length){ h+='<div style="font-size:9px;font-weight:700;text-transform:uppercase;color:#cbd5e1;padding:3px 6px;">Cities</div>'+cities.map(([k,v,lab,sub])=>row(k,v,lab,sub)).join(''); }
   if(clinics.length){ h+='<div style="font-size:9px;font-weight:700;text-transform:uppercase;color:#cbd5e1;padding:5px 6px 3px;">Clinics</div>'+clinics.map(([k,v,lab,sub])=>row(k,v,lab,sub)).join(''); }
+  if(doctors.length){ h+='<div style="font-size:9px;font-weight:700;text-transform:uppercase;color:#cbd5e1;padding:5px 6px 3px;">Doctors</div>'+doctors.map(([k,v,lab,sub])=>row(k,v,lab,sub)).join(''); }
   list.innerHTML = h || '<div style="font-size:11px;color:#94a3b8;padding:8px;">No matches</div>';
 }
 // close the panel on outside click
