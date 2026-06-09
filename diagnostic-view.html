@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Diagnostic View · Allo Health · City Heads</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500;600&family=DM+Serif+Display&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--bg:#0D1119;--s1:#141926;--s2:#1A2130;--s3:#212840;--b:#263048;--b2:#2E3A56;--t:#DFE4F2;--t2:#8B97B8;--t3:#4A5470;--g:#34D399;--gb:rgba(52,211,153,.1);--gbr:rgba(52,211,153,.2);--r:#F87171;--rb:rgba(248,113,113,.1);--rbr:rgba(248,113,113,.22);--a:#FBBF24;--ab:rgba(251,191,36,.1);--abr:rgba(251,191,36,.22);--bl:#60A5FA;--blb:rgba(96,165,250,.1);--blbr:rgba(96,165,250,.2);--te:#2DD4BF;--teb:rgba(45,212,191,.09)}
+html{scroll-behavior:smooth}
+body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--t);font-size:13px;line-height:1.5}
+a{color:inherit;text-decoration:none}
+.nav{display:flex;align-items:center;justify-content:space-between;padding:10px 22px;border-bottom:1px solid var(--b);background:var(--s1);position:sticky;top:0;z-index:100;gap:10px;flex-wrap:wrap}
+.logo{font-family:'DM Serif Display',serif;font-size:17px}.logo em{color:var(--te);font-style:normal}
+.nav-tabs{display:flex;gap:1px;background:var(--s3);padding:3px;border-radius:7px;border:1px solid var(--b)}
+.ntab{padding:4px 12px;border-radius:5px;font-size:11px;font-weight:500;cursor:pointer;color:var(--t2)}
+.ntab.on{background:var(--s1);color:var(--t);box-shadow:0 1px 3px rgba(0,0,0,.5)}
+.ntab.ext{color:var(--t3)}
+.wk{font-size:10px;color:var(--t3);background:var(--s2);border:1px solid var(--b);padding:3px 9px;border-radius:5px}
+.live{display:flex;align-items:center;gap:4px;font-size:10px;color:var(--g)}
+.live::before{content:'';width:5px;height:5px;border-radius:50%;background:var(--g);animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+.page{display:none}.page.on{display:block}
+.city-page{padding:18px 22px;max-width:1240px;margin:0 auto}
+.city-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.cc{background:var(--s1);border:1px solid var(--b);border-radius:12px;overflow:hidden;cursor:pointer;transition:border-color .2s,transform .1s}
+.cc:hover{border-color:var(--b2);transform:translateY(-1px)}
+.cc.r{border-left:3px solid var(--r)}.cc.a{border-left:3px solid var(--a)}.cc.g{border-left:3px solid var(--g)}
+.cc-head{padding:12px 14px;border-bottom:1px solid var(--b);display:flex;align-items:center;justify-content:space-between}
+.cc-city{font-size:14px;font-weight:600}
+.cc-badge{font-size:10px;font-weight:600;padding:2px 8px;border-radius:10px}
+.cc-badge.r{background:var(--rb);color:var(--r);border:1px solid var(--rbr)}.cc-badge.a{background:var(--ab);color:var(--a);border:1px solid var(--abr)}.cc-badge.g{background:var(--gb);color:var(--g);border:1px solid var(--gbr)}
+.cc-metrics{display:grid;grid-template-columns:repeat(4,1fr);padding:10px 14px}
+.cc-m{text-align:center;padding:4px 0}
+.cc-m-n{font-family:'DM Mono',monospace;font-size:15px;line-height:1}
+.cc-m-n.r{color:var(--r)}.cc-m-n.a{color:var(--a)}.cc-m-n.g{color:var(--g)}
+.cc-m-l{font-size:9px;color:var(--t3);margin-top:2px;text-transform:uppercase;letter-spacing:.3px}
+.cc-diag{padding:8px 14px;border-top:1px solid var(--b);background:var(--s2);display:flex;gap:5px;flex-wrap:wrap;min-height:30px}
+.ct{font-size:9px;font-weight:600;padding:1px 6px;border-radius:3px}
+.ct.r{background:var(--rb);color:var(--r);border:1px solid var(--rbr)}.ct.a{background:var(--ab);color:var(--a);border:1px solid var(--abr)}.ct.g{background:var(--gb);color:var(--g);border:1px solid var(--gbr)}
+.clinic-layout{display:flex;min-height:calc(100vh - 46px)}
+.clinic-main{flex:1;padding:14px 20px;min-width:0;transition:margin .3s}
+.clinic-main.drawer-open{margin-right:380px}
+.breadcrumb{display:flex;align-items:center;gap:8px;margin-bottom:12px;font-size:12px;color:var(--t3)}
+.bc-back{cursor:pointer;color:var(--te)}.bc-back:hover{text-decoration:underline}.bc-sep{color:var(--b2)}.bc-current{color:var(--t)}
+.chips{display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap;align-items:center}
+.chip{padding:4px 12px;border-radius:14px;font-size:11px;font-weight:500;cursor:pointer;border:1px solid var(--b);color:var(--t2);background:var(--s1)}
+.chip.on{border-color:var(--te);color:var(--te);background:var(--teb)}
+.chip.r{border-color:var(--rbr);color:var(--r)}.chip.a{border-color:var(--abr);color:var(--a)}.chip.g{border-color:var(--gbr);color:var(--g)}
+.headline{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px;margin-bottom:12px}
+.hc{background:var(--s1);border:1px solid var(--b);border-radius:10px;padding:12px 14px;cursor:pointer;position:relative}
+.hc:hover{border-color:var(--b2);background:var(--s2)}
+.hc.r{border-left:3px solid var(--r)}.hc.a{border-left:3px solid var(--a)}.hc.g{border-left:3px solid var(--g)}
+.hc-top{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:6px}
+.hc-label{font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--t3)}
+.hc-dur{font-size:9px;font-weight:600;padding:1px 5px;border-radius:3px}
+.dur-r{background:var(--rb);color:var(--r);border:1px solid var(--rbr)}.dur-a{background:var(--ab);color:var(--a);border:1px solid var(--abr)}.dur-g{background:var(--gb);color:var(--g);border:1px solid var(--gbr)}.dur-n{background:var(--s3);color:var(--t3);border:1px solid var(--b)}
+.hc-val{font-family:'DM Mono',monospace;font-size:24px;line-height:1;margin-bottom:4px}
+.hc-val.r{color:var(--r)}.hc-val.a{color:var(--a)}.hc-val.g{color:var(--g)}
+.hc-sub{font-size:10px}.hc-sub.r{color:var(--r)}.hc-sub.a{color:var(--a)}.hc-sub.g{color:var(--g)}.hc-sub.n{color:var(--t3)}
+.hc-spark{display:flex;align-items:flex-end;gap:2px;height:16px;margin-top:5px}
+.sp{border-radius:1px;min-height:2px;flex:1}
+.three-col{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
+.panel{background:var(--s1);border:1px solid var(--b);border-radius:10px;overflow:hidden}
+.ph{padding:9px 13px;border-bottom:1px solid var(--b);background:var(--s2);display:flex;align-items:center;justify-content:space-between}
+.ph-t{font-size:11px;font-weight:600}
+.pb{padding:11px 13px}
+.pil{display:inline-block;padding:1px 6px;border-radius:3px;font-size:9px;font-weight:600;border:1px solid}
+.pi-r{background:var(--rb);color:var(--r);border-color:var(--rbr)}.pi-a{background:var(--ab);color:var(--a);border-color:var(--abr)}.pi-g{background:var(--gb);color:var(--g);border-color:var(--gbr)}.pi-b{background:var(--blb);color:var(--bl);border-color:var(--blbr)}.pi-n{background:var(--s3);color:var(--t3);border-color:var(--b)}
+.mr{display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:.5px solid var(--b)}
+.mr:last-child{border-bottom:none}
+.mr-l{font-size:11px;color:var(--t2)}.mr-r{display:flex;align-items:center;gap:7px}
+.mr-v{font-family:'DM Mono',monospace;font-size:11px}.mr-v.r{color:var(--r)}.mr-v.g{color:var(--g)}.mr-v.a{color:var(--a)}.mr-v.n{color:var(--t)}
+.up{color:var(--g)}.dn{color:var(--r)}.fl{color:var(--t3)}
+.div{height:1px;background:var(--b);margin:8px 0}
+.chart8-wrap{margin-bottom:10px}
+.c8-title{font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--t3);margin-bottom:5px}
+.c8{display:flex;align-items:flex-end;gap:3px;height:48px;position:relative}
+.c8-col{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px}
+.c8-bar{width:100%;border-radius:2px 2px 0 0;min-height:2px}
+.c8-lbl{font-size:8px;color:var(--t3)}
+.drawer{position:fixed;top:46px;right:0;bottom:0;width:380px;background:var(--s1);border-left:1px solid var(--b);z-index:90;transform:translateX(100%);transition:transform .25s;overflow-y:auto}
+.drawer.open{transform:translateX(0)}
+.drawer-head{padding:14px 16px;border-bottom:1px solid var(--b);background:var(--s2);display:flex;align-items:flex-start;justify-content:space-between;position:sticky;top:0;z-index:1}
+.dh-metric{font-size:11px;font-weight:600;color:var(--te);text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px}
+.dh-val{font-family:'DM Mono',monospace;font-size:28px;line-height:1}
+.dh-val.r{color:var(--r)}.dh-val.a{color:var(--a)}.dh-val.g{color:var(--g)}
+.dh-context{font-size:10px;color:var(--t2);margin-top:3px}
+.dh-close{font-size:18px;color:var(--t3);cursor:pointer;padding:2px 6px}.dh-close:hover{color:var(--t)}
+.d-sec{border-bottom:1px solid var(--b)}
+.d-sec-head{padding:10px 16px;display:flex;align-items:center;justify-content:space-between;cursor:pointer;user-select:none}
+.d-sec-head:hover{background:var(--s2)}
+.d-sec-num{font-size:10px;font-weight:700;width:18px;color:var(--t3)}
+.d-sec-title{font-size:11px;font-weight:600;flex:1}
+.d-sec-status{font-size:10px;font-weight:600}
+.d-sec-status.r{color:var(--r)}.d-sec-status.a{color:var(--a)}.d-sec-status.g{color:var(--g)}.d-sec-status.n{color:var(--t3)}
+.d-sec-chev{font-size:9px;color:var(--t3);transition:transform .2s}.d-sec-chev.open{transform:rotate(90deg)}
+.d-sec-body{padding:10px 16px;background:var(--bg);display:none}.d-sec-body.on{display:block}
+.what-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.what-box{background:var(--s2);border:1px solid var(--b);border-radius:7px;padding:8px 10px;text-align:center}
+.what-n{font-family:'DM Mono',monospace;font-size:18px;line-height:1}.what-n.r{color:var(--r)}.what-n.a{color:var(--a)}.what-n.g{color:var(--g)}
+.what-l{font-size:9px;color:var(--t3);margin-top:2px}
+.hb-row{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.hb-dot{width:8px;height:8px;border-radius:50%}
+.hb-label{font-size:10px;color:var(--t2);flex:1}
+.hb-val{font-family:'DM Mono',monospace;font-size:11px}.hb-val.r{color:var(--r)}.hb-val.a{color:var(--a)}.hb-val.g{color:var(--g)}
+.hb-bar-bg{height:4px;background:var(--s3);border-radius:2px;overflow:hidden;margin-top:3px}
+.severity-box{margin-top:4px;padding:7px 9px;border-radius:6px;border:1px solid;font-size:11px;line-height:1.4}
+.severity-box.r{background:var(--rb);border-color:var(--rbr);color:var(--r)}.severity-box.a{background:var(--ab);border-color:var(--abr);color:var(--a)}.severity-box.g{background:var(--gb);border-color:var(--gbr);color:var(--g)}
+.sw-bar{display:flex;align-items:center;gap:4px;margin-bottom:4px}
+.sw-wk{font-size:9px;color:var(--t3);width:24px;font-family:'DM Mono',monospace}
+.sw-box{flex:1;height:16px;border-radius:3px;display:flex;align-items:center;padding:0 5px}
+.sw-box-val{font-size:9px;font-family:'DM Mono',monospace}
+.sw-box.above{background:var(--gb);color:var(--g)}.sw-box.below{background:var(--rb);color:var(--r)}.sw-box.warn{background:var(--ab);color:var(--a)}.sw-box.na{background:var(--s3);color:var(--t3)}
+.sw-summary{margin-top:6px;padding:7px 9px;border-radius:6px;font-size:11px;line-height:1.4}
+.sw-summary.acute{background:var(--rb);color:var(--r);border:1px solid var(--rbr)}.sw-summary.chronic{background:rgba(167,139,250,.1);color:#A78BFA;border:1px solid rgba(167,139,250,.2)}
+.iso-row{display:flex;align-items:center;gap:7px;padding:6px 8px;border-radius:6px;border:1px solid var(--b);background:var(--s2);margin-bottom:5px}
+.iso-label{font-size:10px;color:var(--t2);flex:1}
+.iso-val{font-family:'DM Mono',monospace;font-size:12px}.iso-val.r{color:var(--r)}.iso-val.g{color:var(--g)}.iso-val.a{color:var(--a)}
+.iso-badge{font-size:9px;font-weight:600;padding:1px 5px;border-radius:3px}
+.ib-r{background:var(--rb);color:var(--r);border:1px solid var(--rbr)}.ib-g{background:var(--gb);color:var(--g);border:1px solid var(--gbr)}.ib-a{background:var(--ab);color:var(--a);border:1px solid var(--abr)}
+.iso-conclusion{margin-top:7px;padding:7px 9px;border-radius:6px;font-size:11px;line-height:1.4;background:var(--s2);border:1px solid var(--b);color:var(--t2)}
+.iso-conclusion strong{color:var(--t)}
+.why-item{padding:7px 9px;border-radius:6px;border:1px solid;font-size:11px;line-height:1.4;margin-bottom:5px}
+.why-item.checked{background:var(--rb);border-color:var(--rbr)}.why-item.possible{background:var(--ab);border-color:var(--abr)}.why-item.ruled-out{background:var(--s2);border-color:var(--b)}
+.wi-label{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;margin-bottom:2px}
+.why-item.checked .wi-label{color:var(--r)}.why-item.possible .wi-label{color:var(--a)}.why-item.ruled-out .wi-label{color:var(--t3)}
+.wi-text{color:var(--t2)}.why-item.checked .wi-text{color:var(--r)}
+.wi-action{font-size:10px;margin-top:3px;padding-top:3px;border-top:1px solid rgba(255,255,255,.06);color:var(--t3)}
+.why-item.checked .wi-action{color:rgba(248,113,113,.8)}
+.ai-banner{margin:0 0 10px;padding:9px 12px;border-radius:8px;background:linear-gradient(90deg,rgba(45,212,191,.08),rgba(96,165,250,.06));border:1px solid var(--blbr);font-size:11px;line-height:1.5;color:var(--t2)}
+.ai-banner b{color:var(--te)}
+.loading{padding:60px;text-align:center;color:var(--t3)}
+</style>
+</head>
+<body>
+<div class="nav">
+  <div style="display:flex;align-items:center;gap:12px">
+    <div class="logo">Allo<em>.</em></div>
+    <div class="nav-tabs">
+      <a class="ntab ext" href="diagnostic.html">Quick View</a>
+      <a class="ntab ext" href="clinic-scorecard.html">Detailed View</a>
+      <div class="ntab on">Diagnostic View</div>
+    </div>
+  </div>
+  <div style="display:flex;align-items:center;gap:8px">
+    <div class="wk" id="wkLabel">W-1</div>
+    <div class="live">Live</div>
+  </div>
+</div>
+
+<div class="page on" id="page-cities">
+  <div class="city-page">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:10px">
+      <div>
+        <div style="font-family:'DM Serif Display',serif;font-size:20px;margin-bottom:2px">Diagnostic view — <span id="ovWk">W-1</span></div>
+        <div style="font-size:11px;color:var(--t3)">What broke, how bad, since when, is it just this clinic, and why — click a city to drill in</div>
+      </div>
+      <div style="display:flex;gap:8px" id="netStrip"></div>
+    </div>
+    <div class="city-grid" id="cityGrid"><div class="loading">Loading data…</div></div>
+  </div>
+</div>
+
+<div class="page" id="page-clinic">
+<div class="clinic-layout">
+<div class="clinic-main" id="clinic-main">
+  <div class="breadcrumb">
+    <span class="bc-back" onclick="showPage('cities')">← All cities</span>
+    <span class="bc-sep">/</span><span class="bc-current" id="bc-city"></span>
+    <span class="bc-sep">/</span><span id="bc-clinic" style="color:var(--te)"></span>
+  </div>
+  <div class="chips" id="clinicChips"></div>
+  <div class="headline" id="headline"></div>
+  <div class="three-col" id="threeCol"></div>
+</div>
+</div>
+</div>
+
+<div class="drawer" id="drawer">
+  <div class="drawer-head">
+    <div>
+      <div class="dh-metric" id="d-metric-label"></div>
+      <div class="dh-val" id="d-metric-val"></div>
+      <div class="dh-context" id="d-metric-ctx"></div>
+    </div>
+    <div class="dh-close" onclick="closeDrawer()">✕</div>
+  </div>
+  <div id="d-sections"></div>
+</div>
+
+<script>
+const _cb='?t='+Date.now();
+const TGT={b2d:75,noshow:15,recovery:50,l2b:60};
+const WEEKLBL=i=>i===0?'W-1':'W-'+(i+1);   // index 0 = latest complete week
+let SC={},LEADS={},EP={},GMB={},REVIEWS={},WEEKS=[];
+let CLINICS=[],CITIES={},curCity='',curClinic='';
+
+const sum=a=>a.reduce((x,y)=>x+(+y||0),0);
+const avg=a=>a.length?sum(a)/a.length:0;
+const r0=x=>Math.round(x);
+const r1=x=>Math.round(x*10)/10;
+const arr12=()=>Array(12).fill(0);
+function sevColor(m,val,norm){ // returns 'r'/'a'/'g'
+  if(m.dir==='lower'){ const d=val-norm; if(val>=m.tgt*1.5||d>=norm*0.4) return 'r'; if(val>m.tgt||d>=norm*0.15) return 'a'; return 'g'; }
+  if(m.rate){ const d=norm-val; if(val<m.tgt*0.7||d>=norm*0.25) return 'r'; if(val<m.tgt||d>=5) return 'a'; return 'g'; }
+  const d=norm-val; if(norm>0&&d/norm>=0.30) return 'r'; if(norm>0&&d/norm>=0.10) return 'a'; return 'g';
+}
+// ── metric definitions: each returns a 12-week array (newest-first) for a clinic ──
+const METRICS={
+  b2d:{label:'Book → Done (B2D)',dir:'higher',rate:true,tgt:TGT.b2d,unit:'%',
+    series:c=>c.disp.total.map((t,i)=>t>0?r0(c.disp.done[i]/t*100):0)},
+  noshow:{label:'No-show rate',dir:'lower',rate:true,tgt:TGT.noshow,unit:'%',
+    series:c=>c.disp.done.map((d,i)=>{const k=d+c.disp.missed[i];return k>0?r0(c.disp.missed[i]/k*100):0;})},
+  recovery:{label:'No-show recovery',dir:'higher',rate:true,tgt:TGT.recovery,unit:'%',
+    series:c=>c.disp.missed.map((m,i)=>m>0?r0(c.disp.recovered_done[i]/m*100):0)},
+  leads:{label:'Total leads',dir:'higher',rate:false,tgt:0,unit:'',
+    series:c=>c.leads},
+  l2b:{label:'Lead → Book',dir:'higher',rate:true,tgt:TGT.l2b,unit:'%',
+    series:c=>c.leads.map((l,i)=>l>0?Math.min(100,r0(c.disp.new_bk[i]/l*100)):0)},
+  bookings:{label:'Bookings',dir:'higher',rate:false,tgt:0,unit:'',
+    series:c=>c.disp.total}
+};
+const ORDER=['b2d','noshow','recovery','leads','l2b'];
+
+function clinObj(key){
+  const sc=(SC[key]||{}).disp||{}, ld=LEADS[key]||{}, gm=GMB[key]||{}, rv=REVIEWS[key]||{};
+  const f=(o,k)=>(o[k]||arr12()).slice(0,12);
+  const leads=arr12();
+  ['gmb','google_ad','organic','fb','justdial','others'].forEach(ch=>{const a=f(ld,ch);for(let i=0;i<12;i++)leads[i]+=a[i];});
+  const practo=(EP[key]&&EP[key].channel&&EP[key].channel.Practo)?f(EP[key].channel.Practo,'total'):arr12();
+  for(let i=0;i<12;i++)leads[i]+=practo[i];
+  return {key,city:key.split('|')[0],clinic:key.split('|')[1],
+    disp:{total:f(sc,'total'),new_bk:f(sc,'new_bk'),done:f(sc,'done'),missed:f(sc,'missed'),recovered_done:f(sc,'recovered_done')},
+    leads, gmbSearch:f(gm,'searches'), gmbInter:f(gm,'interactions'),
+    revN:f(rv,'n'), revNeg:f(rv,'neg'), rating:(rv.rating||[])};
+}
+// aggregate a list of clinic objects into one (sum counts; recompute rates downstream)
+function aggClin(list){
+  const o={disp:{total:arr12(),new_bk:arr12(),done:arr12(),missed:arr12(),recovered_done:arr12()},leads:arr12(),gmbSearch:arr12(),gmbInter:arr12(),revN:arr12(),revNeg:arr12()};
+  list.forEach(c=>{ for(const k in o.disp) for(let i=0;i<12;i++) o.disp[k][i]+=c.disp[k][i];
+    for(let i=0;i<12;i++){o.leads[i]+=c.leads[i];o.gmbSearch[i]+=c.gmbSearch[i];o.gmbInter[i]+=c.gmbInter[i];o.revN[i]+=c.revN[i];o.revNeg[i]+=c.revNeg[i];}});
+  return o;
+}
+// metric value at week w for a (possibly aggregated) clinic object
+function mval(m,c,w){ return METRICS[m].series(c)[w]||0; }
+
+// ── load data ──
+async function load(){
+  const F=(f)=>fetch(f+_cb).then(r=>r.ok?r.json():{}).catch(()=>({}));
+  const [sc,ld,ep,gm,rv]=await Promise.all([F('data_scorecard.json'),F('data_leads.json'),F('data_booking_episodes.json'),F('data_gmb_insights.json'),F('data_reviews.json')]);
+  SC=sc;LEADS=ld;EP=ep;GMB=gm;REVIEWS=rv;
+  WEEKS=(sc._meta&&sc._meta.weeks)||(ep._meta&&ep._meta.weeks)||[];
+  CLINICS=Object.keys(SC).filter(k=>k!=='_meta').map(clinObj).filter(c=>c.disp.total.some(x=>x>0));
+  CITIES={}; CLINICS.forEach(c=>{(CITIES[c.city]=CITIES[c.city]||[]).push(c);});
+  const wl='W-1 · '+(WEEKS[0]||'');
+  document.getElementById('wkLabel').textContent=wl; document.getElementById('ovWk').textContent='W-1';
+  renderCities();
+}
+// network aggregate object (all clinics)
+function netObj(){ return aggClin(CLINICS); }
+function cityObj(city){ return aggClin(CITIES[city]||[]); }
+
+// ── CITY OVERVIEW ──
+function renderCities(){
+  const W=0, net=netObj();
+  // network strip
+  const ns=document.getElementById('netStrip');
+  const netLeads=mval('leads',net,W), netB2D=mval('b2d',net,W), netRec=mval('recovery',net,W), netNS=mval('noshow',net,W);
+  ns.innerHTML=[['Network leads',netLeads,'',''],['Network B2D',netB2D+'%','b2d',netB2D],['No-show',netNS+'%','noshow',netNS],['Recovery',netRec+'%','recovery',netRec]]
+    .map(([l,v,m,raw])=>{const col=m?sevColor(METRICS[m],raw,m==='noshow'?TGT.noshow:TGT[m]||raw):'';return `<div style="background:var(--s2);border:1px solid var(--b);border-radius:8px;padding:8px 14px;text-align:center"><div style="font-family:'DM Mono',monospace;font-size:18px;color:${col==='r'?'var(--r)':col==='a'?'var(--a)':col==='g'?'var(--g)':'var(--t)'}">${v}</div><div style="font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:.4px;margin-top:1px">${l}</div></div>`;}).join('');
+  // city cards — rank worst city first
+  const cities=Object.keys(CITIES).map(city=>{
+    const co=cityObj(city), clinics=CITIES[city];
+    const mvals={}; ORDER.forEach(m=>{const norm=avg(METRICS[m].series(co).slice(1,7));mvals[m]={v:mval(m,co,W),col:sevColor(METRICS[m],mval(m,co,W),norm)};});
+    const score=ORDER.reduce((s,m)=>s+(mvals[m].col==='r'?2:mvals[m].col==='a'?1:0),0);
+    const badge=score>=3?'r':score>=1?'a':'g';
+    // diagnosis tags: which clinics are broken on which lever
+    const tags=[];
+    clinics.forEach(c=>{ORDER.forEach(m=>{const s=METRICS[m].series(c);const norm=avg(s.slice(1,7));if(sevColor(METRICS[m],s[W],norm)==='r'){tags.push({clinic:c.clinic,m:METRICS[m].label,col:'r'});}});});
+    return {city,clinics:clinics.length,leads:mval('leads',co,W),mvals,badge,score,tags};
+  }).sort((a,b)=>b.score-a.score);
+  document.getElementById('cityGrid').innerHTML=cities.map(ci=>{
+    const bl=ci.badge==='r'?'Broken':ci.badge==='a'?'Watch':'On track';
+    const m4=[['b2d','B2D'],['noshow','No-show'],['recovery','Recovery'],['l2b','L→Book']];
+    const tags=ci.tags.slice(0,3).map(t=>`<span class="ct ${t.col}">${t.clinic}: ${t.m}</span>`).join('')||'<span class="ct g">All clinics healthy</span>';
+    return `<div class="cc ${ci.badge}" onclick="drillCity('${ci.city.replace(/'/g,"")}')">
+      <div class="cc-head"><div><div class="cc-city">${ci.city}</div><div style="font-size:10px;color:var(--t3);margin-top:1px">${ci.clinics} clinic${ci.clinics>1?'s':''} · ${ci.leads} leads</div></div><div class="cc-badge ${ci.badge}">${bl}</div></div>
+      <div class="cc-metrics">${m4.map(([k,l])=>`<div class="cc-m"><div class="cc-m-n ${ci.mvals[k].col}">${ci.mvals[k].v}${k==='leads'?'':'%'}</div><div class="cc-m-l">${l}</div></div>`).join('')}</div>
+      <div class="cc-diag">${tags}</div></div>`;
+  }).join('');
+}
+
+// ── CLINIC DETAIL ──
+function drillCity(city){ curCity=city; const list=CITIES[city]||[]; // pick worst clinic by score
+  curClinic=list.map(c=>{let s=0;ORDER.forEach(m=>{const a=METRICS[m].series(c);if(sevColor(METRICS[m],a[0],avg(a.slice(1,7)))==='r')s+=2;});return {c,s};}).sort((a,b)=>b.s-a.s)[0].c.key;
+  showPage('clinic'); renderClinic();
+}
+function selClinic(key){ curClinic=key; renderClinic(); }
+function renderClinic(){
+  const c=CLINICS.find(x=>x.key===curClinic); if(!c)return;
+  document.getElementById('bc-city').textContent=curCity;
+  document.getElementById('bc-clinic').textContent=c.clinic;
+  // chips
+  document.getElementById('clinicChips').innerHTML='<span style="font-size:10px;color:var(--t3)">Clinic:</span>'+CITIES[curCity].map(x=>{
+    let worst='g';ORDER.forEach(m=>{const a=METRICS[m].series(x);const col=sevColor(METRICS[m],a[0],avg(a.slice(1,7)));if(col==='r')worst='r';else if(col==='a'&&worst!=='r')worst='a';});
+    return `<div class="chip ${worst} ${x.key===curClinic?'on':''}" onclick="selClinic('${x.key.replace(/'/g,"")}')">${x.clinic}${worst==='r'?' ⚠':''}</div>`;}).join('');
+  // headline cards
+  document.getElementById('headline').innerHTML=ORDER.map(m=>{
+    const M=METRICS[m],a=M.series(c),v=a[0],norm4=avg(a.slice(1,5)),col=sevColor(M,v,norm4);
+    // duration of breach
+    let dur=0;for(let i=0;i<8;i++){const n=avg(a.slice(i+1,i+5));if(sevColor(M,a[i],n)!=='g')dur++;else break;}
+    const durTxt=dur===0?'Healthy':dur>=4?'↓ '+dur+' wks (chronic)':'↓ '+dur+' wk'+(dur>1?'s':'');
+    return `<div class="hc ${col}" onclick="openDrawer('${m}')">
+      <div class="hc-top"><div class="hc-label">${M.label}</div><div class="hc-dur dur-${col==='g'?'g':col==='a'?'a':'r'}">${durTxt}</div></div>
+      <div class="hc-val ${col}">${v}${M.unit}</div>
+      <div class="hc-sub ${col}">${M.dir==='lower'?(v<=M.tgt?'✓':'▲')+' tgt '+M.tgt+'%':(M.tgt?(v>=M.tgt?'✓':'▼')+' tgt '+M.tgt+'%':'4w avg '+r0(norm4))} · 4w ${r0(norm4)}${M.unit}</div>
+      ${spark(a,col)}</div>`;
+  }).join('');
+  // three columns
+  renderThreeCol(c);
+}
+function spark(a,col){ // a = newest-first 12; show last 8 oldest→left
+  const v=a.slice(0,8).reverse(), mx=Math.max(...v,1);
+  return `<div class="hc-spark">${v.map((x,i)=>{const h=Math.max(2,r0(x/mx*16));const c=i===7?(col==='r'?'var(--r)':col==='a'?'var(--a)':'var(--g)'):'var(--t3)';return `<div class="sp" style="height:${h}px;background:${c}"></div>`;}).join('')}</div>`;
+}
+function chart8(title,a,col){ const v=a.slice(0,8).reverse(),mx=Math.max(...v,1);
+  return `<div class="chart8-wrap"><div class="c8-title">${title}</div><div class="c8">${v.map((x,i)=>{const h=Math.max(2,r0(x/mx*100));const bc=i===7?(col==='r'?'var(--r)':col==='a'?'var(--a)':col==='bl'?'var(--bl)':'var(--g)'):(col==='bl'?'var(--bl)':'var(--t3)');return `<div class="c8-col"><div class="c8-bar" style="height:${h}%;background:${bc}"></div><div class="c8-lbl">${WEEKLBL(7-i)}</div></div>`;}).join('')}</div></div>`;
+}
+function renderThreeCol(c){
+  const W=0;
+  // col1: demand by channel (leads per channel this week + funnel)
+  const chans=[['gmb','GMB','google_ad'],['google_ad','Google Ads'],['fb','Meta'],['organic','Organic']];
+  const ld=LEADS[c.key]||{};
+  const chRows=['gmb','google_ad','fb','organic','justdial','others'].map(ch=>{const a=(ld[ch]||arr12());const v=a[0]||0;if(v===0&&avg(a.slice(0,6))<0.5)return '';const nm={gmb:'GMB',google_ad:'Google Ads',fb:'Meta',organic:'Organic',justdial:'JustDial',others:'Other'}[ch];const d=v-avg(a.slice(1,5));return `<div class="mr"><div class="mr-l">${nm}</div><div class="mr-r"><div class="mr-v n">${v}</div><div class="mr-d ${d<-0.5?'dn':d>0.5?'up':'fl'}">${d<-0.5?'↓':d>0.5?'↑':'–'}${d?Math.abs(r0(d)):''}</div></div></div>`;}).join('');
+  const gm=GMB[c.key]||{};
+  const col1=`<div class="panel"><div class="ph"><div class="ph-t">Demand by channel</div></div><div class="pb">
+    <div style="font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--t3);margin-bottom:6px">GMB + Google top funnel</div>
+    <div class="mr"><div class="mr-l">GMB Searches</div><div class="mr-r"><div class="mr-v n">${(gm.searches&&gm.searches[0]||c.gmbSearch[1])||0}</div></div></div>
+    <div class="mr"><div class="mr-l">Interactions</div><div class="mr-r"><div class="mr-v n">${(gm.interactions&&gm.interactions[0]||c.gmbInter[1])||0}</div></div></div>
+    <div class="div"></div><div style="font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--t3);margin-bottom:5px">Leads by channel (this wk)</div>${chRows}</div></div>`;
+  // col2: outcomes / supply-ish (bookings + reviews)
+  const rv=REVIEWS[c.key]||{};
+  const col2=`<div style="display:flex;flex-direction:column;gap:10px">
+    <div class="panel"><div class="ph"><div class="ph-t">Bookings → outcome</div></div><div class="pb">
+      <div class="mr"><div class="mr-l">Bookings (unique)</div><div class="mr-r"><div class="mr-v n">${c.disp.total[0]}</div></div></div>
+      <div class="mr"><div class="mr-l">Completed</div><div class="mr-r"><div class="mr-v g">${c.disp.done[0]}</div></div></div>
+      <div class="mr"><div class="mr-l">No-shows</div><div class="mr-r"><div class="mr-v ${c.disp.missed[0]>0?'r':'n'}">${c.disp.missed[0]}</div><div class="mr-d fl">₹${(c.disp.missed[0]*2000/1000).toFixed(1)}k</div></div></div>
+      <div class="mr"><div class="mr-l">Recovered</div><div class="mr-r"><div class="mr-v ${c.disp.recovered_done[0]>0?'g':'n'}">${c.disp.recovered_done[0]}</div></div></div>
+    </div></div>
+    <div class="panel"><div class="ph"><div class="ph-t">Reviews (rank signal)</div></div><div class="pb">
+      <div class="mr"><div class="mr-l">New reviews W-1</div><div class="mr-r"><div class="mr-v ${(rv.n&&rv.n[0]>=5)?'g':'a'}">${rv.n&&rv.n[0]||0}</div></div></div>
+      <div class="mr"><div class="mr-l">Negative W-1</div><div class="mr-r"><div class="mr-v ${(rv.neg&&rv.neg[0]>0)?'r':'g'}">${rv.neg&&rv.neg[0]||0}</div></div></div>
+      <div class="mr"><div class="mr-l">Rating</div><div class="mr-r"><div class="mr-v n">${rv.rating&&rv.rating.find(x=>x!=null)||'—'}★</div></div></div>
+    </div></div></div>`;
+  // col3: 8-week trends
+  const col3=`<div class="panel"><div class="ph"><div class="ph-t">8-week key metrics</div></div><div class="pb">
+    ${chart8('Book → Done %',METRICS.b2d.series(c),sevColor(METRICS.b2d,METRICS.b2d.series(c)[0],avg(METRICS.b2d.series(c).slice(1,5))))}
+    ${chart8('No-show %',METRICS.noshow.series(c),sevColor(METRICS.noshow,METRICS.noshow.series(c)[0],avg(METRICS.noshow.series(c).slice(1,5))))}
+    ${chart8('Total leads',c.leads,sevColor(METRICS.leads,c.leads[0],avg(c.leads.slice(1,5))))}
+    ${chart8('GMB searches',c.gmbSearch.map(x=>x),'bl')}
+  </div></div>`;
+  document.getElementById('threeCol').innerHTML=col1+col2+col3;
+}
+
+// ── DRAWER: 5-question diagnostic ──
+function openDrawer(m){
+  const c=CLINICS.find(x=>x.key===curClinic); if(!c)return;
+  const M=METRICS[m],a=M.series(c),W=0,v=a[0];
+  const norm4=avg(a.slice(1,5)),norm6=avg(a.slice(1,7)),col=sevColor(M,v,norm4);
+  document.getElementById('d-metric-label').textContent=M.label;
+  const valEl=document.getElementById('d-metric-val'); valEl.textContent=v+M.unit; valEl.className='dh-val '+col;
+  document.getElementById('d-metric-ctx').textContent=`${c.clinic} · W-1 · target ${M.tgt}${M.unit}`;
+  // Q1 WHAT
+  let lastNormIdx=-1;for(let i=1;i<12;i++){if(sevColor(M,a[i],avg(a.slice(i+1,i+5)))==='g'){lastNormIdx=i;break;}}
+  const q1=`<div class="what-grid">
+    <div class="what-box"><div class="what-n ${col}">${v}${M.unit}</div><div class="what-l">This week (W-1)</div></div>
+    <div class="what-box"><div class="what-n ${sevColor(M,a[1],avg(a.slice(2,6)))}">${a[1]}${M.unit}</div><div class="what-l">Last week (W-2)</div></div>
+    <div class="what-box"><div class="what-n g">${lastNormIdx>0?a[lastNormIdx]+M.unit:'—'}</div><div class="what-l">${lastNormIdx>0?WEEKLBL(lastNormIdx)+' (last normal)':'no normal wk'}</div></div>
+    <div class="what-box"><div class="what-n n">${r0(norm4)}${M.unit}</div><div class="what-l">4-week average</div></div></div>`;
+  // Q2 HOW BAD
+  const sevMult=M.dir==='lower'?(norm4>0?v/norm4:1):(v>0?norm4/v:99);
+  const sevTxt=M.dir==='lower'?`${r1(sevMult)}× above normal`:(v<norm4?`${r1(sevMult)}× below normal`:'at/above normal');
+  const sevClass=col;
+  const bar=(lbl,val,c2,pct)=>`<div class="hb-row"><div class="hb-dot" style="background:var(--${c2==='n'?'t3':c2})"></div><div class="hb-label">${lbl}</div><div style="flex:1"><div class="hb-bar-bg"><div class="hb-bar-fill" style="width:${Math.min(100,pct)}%;height:100%;background:var(--${c2==='n'?'t3':c2})"></div></div></div><div class="hb-val ${c2}">${val}${M.unit}</div></div>`;
+  const mx2=Math.max(v,norm4,norm6,M.tgt,1);
+  const q2=bar('This week',v,col,v/mx2*100)+bar('4-week avg',r0(norm4),'g',norm4/mx2*100)+bar('6-week avg',r0(norm6),'g',norm6/mx2*100)+(M.tgt?bar('Target',M.tgt,'a',M.tgt/mx2*100):'')+
+    `<div class="severity-box ${sevClass}"><strong>Severity: ${col==='r'?'Critical':col==='a'?'Watch':'Healthy'}.</strong> ${v}${M.unit} vs ${r0(norm4)}${M.unit} avg — ${sevTxt}. ${col==='r'?'A structural break, not noise.':col==='a'?'A meaningful dip worth watching.':'Within normal range.'}</div>`;
+  // Q3 SINCE WHEN
+  let breach=0;for(let i=0;i<8;i++){if(sevColor(M,a[i],avg(a.slice(i+1,i+5)))!=='g')breach++;else break;}
+  let rows='';for(let i=7;i>=0;i--){const n=avg(a.slice(i+1,i+5));const cc=a.slice(i).every(x=>x===0)&&i>0?'na':sevColor(M,a[i],n);const cls=cc==='g'?'above':cc==='a'?'warn':cc==='na'?'na':'below';const lbl=cc==='na'?'no data':a[i]+M.unit+(cc==='g'?' ✓':cc==='r'?' ✗':' ~');rows+=`<div class="sw-bar"><div class="sw-wk">${WEEKLBL(i)}</div><div class="sw-box ${cls}"><div class="sw-box-val">${lbl}</div></div></div>`;}
+  const acute=breach<=2;
+  const q3=rows+`<div class="sw-summary ${acute?'acute':'chronic'}"><strong>${breach===0?'No active issue.':acute?`Acute — started ${WEEKLBL(breach-1)}.`:`Chronic — ${breach}+ weeks.`}</strong> ${breach===0?'This metric is at or above normal.':acute?'Something changed recently. Look at what moved in the last 1–2 weeks.':'Long-standing — a structural/staffing issue, not a one-off.'}</div>`;
+  // Q4 IS IT JUST ME
+  const co=cityObj(curCity),net=netObj();
+  const cityV=mval(m,co,W),netV=mval(m,net,W);
+  const peers=CITIES[curCity].filter(x=>x.key!==c.key).slice(0,2);
+  const isoRow=(lbl,val,badge)=>`<div class="iso-row"><div class="iso-label">${lbl}</div><div class="iso-val ${badge}">${val}${M.unit}</div><div class="iso-badge ib-${badge}">${badge==='r'?'ANOMALY':badge==='a'?'Watch':'Normal'}</div></div>`;
+  let q4=isoRow(`This clinic (${c.clinic})`,v,col);
+  peers.forEach(p=>{const pa=M.series(p);q4+=isoRow(`${p.clinic} (same city)`,pa[0],sevColor(M,pa[0],avg(pa.slice(1,5))));});
+  q4+=isoRow(`${curCity} city avg`,cityV,sevColor(M,cityV,avg(M.series(co).slice(1,7))));
+  q4+=isoRow('Network avg',netV,sevColor(M,netV,avg(M.series(net).slice(1,7))));
+  const cityBad=sevColor(M,cityV,avg(M.series(co).slice(1,7)))!=='g';
+  q4+=`<div class="iso-conclusion"><strong>Verdict: ${cityBad?'City-wide':'Clinic-specific.'}</strong> ${cityBad?`The whole of ${curCity} is off on this metric — this is a market/seasonal/city-ops issue, not just ${c.clinic}. Fix at city level.`:`City avg (${cityV}${M.unit}) and network (${netV}${M.unit}) are normal — this is specific to ${c.clinic}, not the market. Look at this clinic's own ops/ads.`}</div>`;
+  // Q5 WHY (the AI cross-data engine)
+  const q5=whyEngine(m,c,co);
+  // assemble
+  const secs=[['1','What is the number?',v+M.unit+' this week',col,q1],['2','How bad is it?',sevTxt,col,q2],['3','Since when?',breach===0?'No issue':acute?'Acute · '+breach+'wk':'Chronic · '+breach+'+wk',col,q3],['4','Is it just this clinic?',cityBad?'City-wide':'Clinic-specific',cityBad?'a':col,q4],['5','Why did it happen?',q5.headline,col,q5.html]];
+  document.getElementById('d-sections').innerHTML=secs.map((s,i)=>`<div class="d-sec"><div class="d-sec-head" onclick="toggleSec(this)"><div class="d-sec-num">${s[0]}</div><div class="d-sec-title">${s[1]}</div><div class="d-sec-status ${s[3]||'n'}">${s[2]}</div><div class="d-sec-chev ${i<2?'open':''}">▶</div></div><div class="d-sec-body ${i<2?'on':''}">${s[4]}</div></div>`).join('');
+  document.getElementById('drawer').classList.add('open');
+  document.getElementById('clinic-main').classList.add('drawer-open');
+}
+// ── the cross-data "Why" engine: encoded analyst logic across leads / reviews / GMB / ops / city ──
+function whyEngine(m,c,co){
+  const W=0,items=[];
+  const d=(s)=>{const n=avg(s.slice(1,5));return n>0?(s[0]-n)/n*100:0;};      // % change vs 4w norm
+  const dpp=(s)=>{const n=avg(s.slice(1,5));return s[0]-n;};                  // pp change
+  const leadsD=d(c.leads), b2d=METRICS.b2d.series(c), nsD=dpp(METRICS.noshow.series(c)), recD=dpp(METRICS.recovery.series(c));
+  const gmbD=d(c.gmbSearch), revNeg=c.revNeg[0]||0, revVel=c.revN[0]||0, revVelN=avg(c.revN.slice(1,5));
+  const cityBad=sevColor(METRICS[m],METRICS[m].series(co)[0],avg(METRICS[m].series(co).slice(1,7)))!=='g';
+  const add=(rank,label,text,action)=>items.push({rank,label,text,action});
+
+  if(cityBad){ add('checked','Market / city-wide — not just this clinic',`The whole of ${c.city} moved the same way on ${METRICS[m].label.toLowerCase()} this week. That points to seasonality, a city-level ad/budget change, or a market shift — not this clinic's execution.`,'→ Check: city-level ad spend & a competitor/seasonality scan for '+c.city+'. Fix at city level, not clinic.'); }
+
+  if(m==='b2d'||m==='noshow'){
+    if(nsD>=3) add('checked','No-shows rising — confirmation gap',`No-show rate is up ${r1(nsD)}pp vs its 4-wk norm. Patients are booking but not turning up — a reminder/confirmation-call problem, not a demand problem.`,'→ Check: reminder delivery (WhatsApp) + PCC confirmation calls for this clinic. Tighten the day-before confirm.');
+    if(recD<=-5||(METRICS.recovery.series(c)[0]<TGT.recovery)) add(nsD>=3?'possible':'checked','No-show recovery weak — PCC not rebooking',`Recovery is ${METRICS.recovery.series(c)[0]}% (target ${TGT.recovery}%). No-shows aren't being rebooked and completed — every un-recovered no-show is ~₹2,000 lost.`,'→ Check: PCC call-back discipline on this clinic\'s no-shows within 48h.');
+    if(revNeg>0) add('possible','Recent negative review — trust dip',`${revNeg} negative review(s) landed recently. Can soften show-up intent for booked first-timers.`,'→ Check: respond to the negative review; watch next-week show-up.');
+  }
+  if(m==='leads'||m==='l2b'){
+    if(gmbD<=-15) add('checked','GMB visibility down — fewer eyeballs',`GMB+Google searches fell ${r1(Math.abs(gmbD))}% vs norm. Less profile exposure → fewer leads upstream.`,'→ Check: GMB profile status, recent posts, category/keyword changes; review velocity (rank driver).');
+    else if(leadsD<=-15&&gmbD>-5) add('checked','Leads down but visibility held — conversion/routing',`Searches held but leads fell ${r1(Math.abs(leadsD))}% — the drop is in click→lead (ad relevance, landing page, or lead routing), not exposure.`,'→ Check: Google Ads Search-Terms for junk queries; confirm the right landing page is served.');
+    if(revVelN>0.5&&revVel<revVelN-0.5) add('possible','Review velocity slowing — rank risk',`New reviews fell to ${revVel}/wk (was ~${r1(revVelN)}). Slowing velocity erodes GMB rank over time → fewer future leads.`,'→ Check: re-start the review ask at checkout for this clinic.');
+    if(m==='l2b'&&leadsD>5) add('possible','Lead quality dropped — volume up, conversion down',`Leads rose but conversion fell — likely broad-match ad expansion pulling lower-intent traffic.`,'→ Check: Search-Terms report for non-sexual-health queries; add negatives.');
+  }
+  if(m==='recovery'){
+    add('checked','PCC accountability — no-show callbacks',`Recovery measures whether the PCC rebooks no-shows. At ${METRICS.recovery.series(c)[0]}% (target ${TGT.recovery}%), ${METRICS.recovery.series(c)[0]<TGT.recovery?'most no-shows are being lost':'recovery is healthy'}.`,'→ Check: per-PCC callback logs; who is/ isn\'t calling back this clinic\'s no-shows.');
+  }
+  // rule-outs
+  if(m!=='leads'&&Math.abs(leadsD)<10) add('ruled-out','Lead demand',`Leads are roughly flat (${r1(leadsD)}% vs norm) — top-of-funnel demand isn't the cause.`,'');
+  if(revNeg===0&&(m==='b2d'||m==='leads')) add('ruled-out','Negative reviews',`0 negative reviews recently — not a trust/rank cause this week.`,'');
+  if(!cityBad) add('ruled-out','Market / competitor',`City and network are normal on this metric — not a market-wide issue.`,'');
+
+  const order={checked:0,possible:1,'ruled-out':2};
+  items.sort((a,b)=>order[a.rank]-order[b.rank]);
+  const top=items.find(i=>i.rank==='checked');
+  const html=`<div class="ai-banner">🤖 <b>Cross-data read:</b> generated by correlating this metric's move with leads, reviews, GMB visibility, no-show/recovery and city-vs-network — ranked most-likely first.</div>`+
+    items.map(it=>`<div class="why-item ${it.rank}"><div class="wi-label">${it.rank==='checked'?'Most likely':it.rank==='possible'?'Possible':'Ruled out'} — ${it.label}</div><div class="wi-text">${it.text}</div>${it.action?`<div class="wi-action">${it.action}</div>`:''}</div>`).join('');
+  return {headline:top?top.label.split('—')[0].trim():(cityBad?'City-wide':'No clear cause'),html};
+}
+
+function showPage(p){document.querySelectorAll('.page').forEach(e=>e.classList.remove('on'));document.getElementById('page-'+p).classList.add('on');if(p==='cities')closeDrawer();}
+function closeDrawer(){document.getElementById('drawer').classList.remove('open');document.getElementById('clinic-main').classList.remove('drawer-open');}
+function toggleSec(h){const b=h.nextElementSibling,ch=h.querySelector('.d-sec-chev'),o=b.classList.contains('on');b.classList.toggle('on',!o);ch.classList.toggle('open',!o);}
+load();
+</script>
+</body>
+</html>
