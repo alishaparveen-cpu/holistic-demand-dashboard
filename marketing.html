@@ -60,7 +60,7 @@ const r1=v=>v==null?'—':(Math.round(v*10)/10);
 const P=v=>v==null?'—':Math.round(v*100)+'%';
 let GA=null, GAF=null, GAF2=null, SORT='spend';
 let mktView='google';                       // 'google' | 'practo'
-let PRACTO=null, PRACTODOC=null, PRACTOBK=null, PWEEKS=[], prView='city', prWin=8;
+let PRACTO=null, PRACTODOC=null, PRACTOBK=null, PRACTOPROFILE=null, PRACTOTRUE=null, PWEEKS=[], prView='city', prWin=8;
 function setMktView(v){ mktView=v; document.getElementById('tabGoogle').classList.toggle('on',v==='google'); document.getElementById('tabPracto').classList.toggle('on',v==='practo'); render(); window.scrollTo(0,0); }
 function setPrView(v){ prView=v; renderPracto(); }
 function setPrWin(v){ prWin=v; renderPracto(); }
@@ -260,7 +260,7 @@ function renderPracto(){
   } else if(prView==='city'){
     const m={}; keys.forEach(k=>{ const city=k.split('|')[0]; const L=A((PRACTO[k]||{}).leads); const B=A((PRACTOBK&&PRACTOBK[k])||[]); if(!m[city])m[city]={name:city,sub:'',leads:Array(NW).fill(0),booked:Array(NW).fill(0),hasBooked:true,n:0}; m[city].leads=add(m[city].leads,L); m[city].booked=add(m[city].booked,B); m[city].n++; }); rows=Object.values(m).map(r=>{ r.sub=r.n+' clinic'+(r.n>1?'s':''); return r; });
   } else { // doctor
-    const m={}; keys.forEach(k=>{ const bd=PRACTODOC&&PRACTODOC[k]; if(!bd) return; Object.keys(bd).forEach(d=>{ const L=A((bd[d]||{}).leads); if(!m[d])m[d]={name:d.replace(/^Dr\.?\s*/,''),sub:'across clinics',leads:Array(NW).fill(0),booked:Array(NW).fill(0),hasBooked:false}; m[d].leads=add(m[d].leads,L); }); }); rows=Object.values(m);
+    const m={}; keys.forEach(k=>{ const bd=PRACTODOC&&PRACTODOC[k]; if(!bd) return; Object.keys(bd).forEach(d=>{ const L=A((bd[d]||{}).leads); const B=A((bd[d]||{}).booked); if(!m[d])m[d]={name:d.replace(/^Dr\.?\s*/,''),sub:'across clinics',leads:Array(NW).fill(0),booked:Array(NW).fill(0),hasBooked:true}; m[d].leads=add(m[d].leads,L); m[d].booked=add(m[d].booked,B); }); }); rows=Object.values(m);
   }
   rows=rows.filter(r=>winSum(r.leads)>0).map(r=>{ r.lw=r.leads[W]||0; r.lprev=r.leads[W+1]||0; r.bw=r.booked[W]||0; r.ln=norm(r.leads); r.bn=norm(r.booked); r.lsum=winSum(r.leads); r.bsum=winSum(r.booked); r.conv=r.lsum>0?Math.round(r.bsum/r.lsum*100):null; return r; }).sort((a,b)=>b.lw-a.lw||b.lsum-a.lsum);
   // network totals
@@ -270,7 +270,11 @@ function renderPracto(){
   const netLeads12=allKeys.reduce((a,k)=>add(a,A((PRACTO[k]||{}).leads)),Array(NW).fill(0));
   const netBk12=allKeys.reduce((a,k)=>add(a,A((PRACTOBK&&PRACTOBK[k])||[])),Array(NW).fill(0));
   const wow=(a,b)=>b>0?Math.round((a-b)/b*100):null, dcol=p=>p==null?'#94a3b8':p<0?'#dc2626':'#059669', sgn=p=>p==null?'—':(p>=0?'+':'')+p+'%';
-  const convNet = netL>0?Math.round(netBwk/netL*100):null;
+  // network cohort conversion over the selected window (stable; single latest week reads low due to maturation)
+  const convNet = winSum(netLeads12)>0?Math.round(winSum(netBk12)/winSum(netLeads12)*100):null;
+  // secondary volumes for the context note (phone-matched true bookings + RD profile leads, latest wk)
+  const trueBkWk = PRACTOTRUE?Object.keys(PRACTOTRUE).reduce((a,k)=>k==='_meta'?a:a+((PRACTOTRUE[k]||[])[W]||0),0):null;
+  const profLdWk = PRACTOPROFILE?Object.keys(PRACTOPROFILE).reduce((a,k)=>k==='_meta'?a:a+(((PRACTOPROFILE[k]||{}).leads||[])[W]||0),0):null;
   const mx=Math.max(1,...rows.map(r=>r.lw));
   const tab=(v,l)=>`<button class="sortbtn ${prView===v?'on':''}" onclick="setPrView('${v}')">${l}</button>`;
   const winb=(v)=>`<button class="sortbtn ${prWin===v?'on':''}" onclick="setPrWin(${v})">${v}w</button>`;
@@ -286,14 +290,14 @@ function renderPracto(){
     <span style="flex:0 0 110px;">${trend(r.leads,'#f59e0b')}</span></div>`;
   el.innerHTML=`
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:16px;">
-      ${kpi('Practo leads · '+(PWEEKS[0]||'this wk'),netL.toLocaleString(),sgn(wow(netL,netLp))+' WoW',dcol(wow(netL,netLp)))}
-      ${kpi('Practo booked (true)',netBwk.toLocaleString(),sgn(wow(netBwk,netBprev))+' WoW',dcol(wow(netBwk,netBprev)))}
-      ${kpi('Lead → booked',convNet==null?'—':convNet+'%','phone-matched, network')}
+      ${kpi('Practo leads · '+(PWEEKS[0]||'this wk'),netL.toLocaleString(),sgn(wow(netL,netLp))+' WoW · distinct phones',dcol(wow(netL,netLp)))}
+      ${kpi('Booked · cohort',netBwk.toLocaleString(),'of these leads, booked a call')}
+      ${kpi('Lead → booked',convNet==null?'—':convNet+'%','cohort · last '+win+'w')}
       ${kpi('Profiles with leads',rows.length,'in this '+prView+' view')}
     </div>
     <div class="card">
       <div class="sec-h">🩺 Practo — by ${prView}</div>
-      <div class="sec-sub">Practo <b>profile leads</b> &amp; <b>phone-matched true bookings</b> · ${PWEEKS[0]||''} · trend = last ${win} wks. Booked is phone-matched at the clinic and so only shows in City/Clinic views (Practo's per-doctor feed carries leads only).</div>
+      <div class="sec-sub"><b>Cohort lead→book:</b> of the distinct Practo lead phones in a week, the % that booked a Screening Call (matched in Redshift) — always ≤100%. ${PWEEKS[0]||''} · trend = last ${win} wks. Most recent week(s) read low — those leads are still maturing. ${(trueBkWk!=null)?('<span style="color:#94a3b8;">Separately, phone-matched <b>true bookings</b> this wk (by booking date, incl. follow-ups & reschedules): <b>'+trueBkWk.toLocaleString()+'</b>'+(profLdWk!=null?' · RD profile leads: <b>'+profLdWk.toLocaleString()+'</b>':'')+'.</span>'):''}</div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:6px 0 12px;">
         <span class="sec-sub" style="margin:0;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#94a3b8;">Group by</span>
         ${tab('city','City')}${tab('clinic','Clinic')}${tab('doctor','Doctor')}
@@ -308,7 +312,7 @@ function renderPracto(){
       <div class="sec-sub">Profile leads vs phone-matched bookings · last ${win} weeks</div>
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px;">
         <div><div style="font-size:11.5px;font-weight:700;color:#f59e0b;margin-bottom:3px;">Practo leads</div>${lbTrend(netLeads12.slice(0,win).slice().reverse(),PWEEKS.slice(0,win).slice().reverse().map(w=>w.slice(5)),'#f59e0b')}</div>
-        <div><div style="font-size:11.5px;font-weight:700;color:#ea580c;margin-bottom:3px;">Practo booked (true)</div>${lbTrend(netBk12.slice(0,win).slice().reverse(),PWEEKS.slice(0,win).slice().reverse().map(w=>w.slice(5)),'#ea580c')}</div>
+        <div><div style="font-size:11.5px;font-weight:700;color:#ea580c;margin-bottom:3px;">Booked (cohort — leads that booked)</div>${lbTrend(netBk12.slice(0,win).slice().reverse(),PWEEKS.slice(0,win).slice().reverse().map(w=>w.slice(5)),'#ea580c')}</div>
       </div>
     </div>`;
 }
@@ -347,9 +351,15 @@ function renderGoogle(){
     GA=await res.json();
     try{ const fr=await fetch('data_ga_funnel.json',{cache:'no-store'}); if(fr.ok) GAF=await fr.json(); }catch(_){}
     try{ const f2=await fetch('data_ga_funnel2.json',{cache:'no-store'}); if(f2.ok) GAF2=await f2.json(); }catch(_){}
-    try{ const pr=await fetch('data_practo_leads.json',{cache:'no-store'}); if(pr.ok){ PRACTO=await pr.json(); PWEEKS=(PRACTO._meta&&PRACTO._meta.weeks)||[]; } }catch(_){}
-    try{ const pd=await fetch('data_practo_by_doctor.json',{cache:'no-store'}); if(pd.ok) PRACTODOC=await pd.json(); }catch(_){}
-    try{ const pb=await fetch('data_practo_booked.json',{cache:'no-store'}); if(pb.ok) PRACTOBK=await pb.json(); }catch(_){}
+    // Practo funnel is rendered from the COHORT source (data_practo_conv.json): of the distinct Practo
+    // lead phones in a week, the % that booked a Screening Call. One consistent universe, conv always
+    // ≤100% (fixes the old phone-matched/by-booking-week ratio that produced >100%). by-doctor too.
+    try{ const pr=await fetch('data_practo_conv.json',{cache:'no-store'}); if(pr.ok){ PRACTO=await pr.json(); PWEEKS=(PRACTO._meta&&PRACTO._meta.weeks)||[];
+      PRACTOBK={}; Object.keys(PRACTO).forEach(k=>{ if(k!=='_meta') PRACTOBK[k]=(PRACTO[k]||{}).booked||[]; }); } }catch(_){}
+    try{ const pd=await fetch('data_practo_conv_by_doctor.json',{cache:'no-store'}); if(pd.ok) PRACTODOC=await pd.json(); }catch(_){}
+    // secondary (volume only): RD profile-lead count + phone-matched true bookings, for the context note
+    try{ const pf=await fetch('data_practo_leads.json',{cache:'no-store'}); if(pf.ok) PRACTOPROFILE=await pf.json(); }catch(_){}
+    try{ const pt=await fetch('data_practo_booked.json',{cache:'no-store'}); if(pt.ok) PRACTOTRUE=await pt.json(); }catch(_){}
     render();
   }catch(e){ document.getElementById('main').innerHTML='<div class="loading-msg" style="color:#dc2626">Could not load Google Ads data: '+e.message+'</div>'; }
 })();

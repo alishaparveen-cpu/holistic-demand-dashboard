@@ -52,6 +52,7 @@ step "Lead age (build_lead_age)"            python3 scripts/build_lead_age.py
 step "Lead maturation (build_lead_maturation)" python3 scripts/build_lead_maturation.py
 step "Leads total (build_leads_total)"      python3 scripts/build_leads_total.py
 step "Practo booked (build_practo_booked)"  python3 scripts/build_practo_booked.py
+step "Practo cohort conv (build_practo_conv)" python3 scripts/build_practo_conv.py
 # ── Category pipeline (gross bookings + doctor level) — chain: pull → data.json → channel cube ──
 step "Category bookings pull (fetch_bookings)" python3 scripts/fetch_bookings.py
 step "Category data build (rebuild_data)"      python3 scripts/rebuild_data.py
