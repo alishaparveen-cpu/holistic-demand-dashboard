@@ -143,6 +143,11 @@ def main():
             if p and p in L0P and p in [lab.get(x) for x in weeks]: o[idx[w]]=a[L0P.index(p)] if L0P.index(p)<len(a) else None
         return o
     DIRECT={ch:{m:align(v) for m,v in d.items()} for ch,d in L0D.items()}
+    # spend SHARE per channel = channel spend ÷ network spend (×100). From DIRECT (external-platform spend)
+    # so the scorecard's "Spend %" column works on the Redshift build too, and Meta/Practo split out.
+    for k in CONTR:
+        dsp=DIRECT.get(k,{}).get('spend')
+        CONTR[k]['spend']=[ (round(dsp[i]/spend[i]*100) if (dsp and i<len(dsp) and dsp[i] and spend[i]) else 0) for i in range(len(weeks)) ]
     out={'_meta':{'source':'Redshift-native funnel + revenue. Leads/booked: main_source_wise_leads. Bookings/done: data.json gross. Revenue (1st TP Rev): allo_billing.invoices status=paid over COMPLETED screening calls, split offline/online; Consult Rev = done_on×199+done_off×499; New Rev = TP+Consult; RoAS/AOV/RPC derived. Spend: Google=Redshift, Meta=SyncWith/FB sheet, Practo=Practo sheet (external platforms, carried from L0). Verified-lead% carried from L0.','weekly':plabels},
          'weekly':{'periods':plabels,'ALL':ALL,'CONTR':CONTR,'DIRECT':DIRECT},
          'monthly':json.load(open(os.path.join(ROOT,'data_efficiency.json')))['monthly']}

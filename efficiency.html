@@ -162,8 +162,13 @@ tr.grp.closed td .gchev{transform:rotate(-90deg)}
 .zoomhint{font-family:'JetBrains Mono';font-size:9px;color:var(--faint)}
 .ctrend{cursor:zoom-in;border-radius:8px;transition:.12s}
 .ctrend:hover{background:var(--inset)}
-.cmp-legend{display:flex;gap:16px;flex-wrap:wrap;margin-top:8px;font-size:12px;color:var(--ink-2)}
-.cmp-legend span{display:flex;align-items:center;gap:6px}.cmp-legend i{width:14px;height:3px;border-radius:2px}
+.cmp-legend{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 10px;font-size:12px;color:var(--ink-2)}
+.cmp-legend .lgchip{display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;border:1px solid var(--line);border-radius:999px;padding:4px 11px;font-weight:500;transition:.12s;background:var(--sheet)}
+.cmp-legend .lgchip:hover{border-color:var(--accent)}
+.cmp-legend .lgchip.off{opacity:.4;background:var(--inset)}
+.cmp-legend .lgchip.off i{filter:grayscale(1)}
+.cmp-legend i{width:14px;height:3px;border-radius:2px}
+.cmp-legend .lghint{align-self:center;font-size:11px;color:var(--muted);font-style:italic;border:0;padding:0}
 .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:13px}
 .ccard{background:var(--sheet);border:1px solid var(--line);border-radius:var(--r);padding:15px;border-top:3px solid}
 .ccard h3{font-size:14.5px;margin:0;font-weight:600;display:flex;align-items:center;gap:8px}
@@ -299,8 +304,9 @@ table.sc tr:last-child td{border-bottom:0}
     <div class="editpanel open" id="editPanel"></div>
   </div>
   <div class="cards" id="compareCards"></div>
-  <div class="cmp-overlay"><h3 id="cmpTitle"></h3><div class="chartbox"><canvas id="cmpChart"></canvas></div>
-    <div class="cmp-legend" id="cmpLegend"></div></div>
+  <div class="cmp-overlay"><h3 id="cmpTitle"></h3>
+    <div class="cmp-legend" id="cmpLegend"></div>
+    <div class="chartbox"><canvas id="cmpChart"></canvas></div></div>
 </section>
 
 <!-- ============ SCORECARD VIEW ============ -->
@@ -471,7 +477,7 @@ const HINTS={funnel:'One channel, full funnel from impressions to revenue. Multi
 const COMPARE_SET=['gmbgoogle','gsearch','gmb','organic','meta','practo'];
 let state={view:'funnel',funnelChs:['all'],gran:'weekly',scope:'all',cat:'all',funnelWeeks:[5],
   rFrom:0,rTo:5,media:false,orgExpand:false,
-  activeChips:['b2l','cpl','cpb','roas','aov'],selMetric:'cpb'};
+  activeChips:['b2l','cpl','cpb','roas','aov'],selMetric:'cpb',cmpChans:['gmbgoogle','gsearch','gmb','organic','meta','practo']};
 let cmpChart=null,zoomChart=null;
 // range helpers
 const rFrom=()=>Math.min(state.rFrom,state.rTo), rTo=()=>Math.max(state.rFrom,state.rTo);
@@ -732,13 +738,21 @@ function renderEditPanel(){const el=document.getElementById('editPanel');el.inne
     const on=state.activeChips.includes(k),b=document.createElement('button');
     b.className='addchip'+(on?' active':'');b.innerHTML=(on?'✓ ':'+ ')+M.label+(M.media?' ·G':'');
     b.onclick=()=>{if(on){if(state.activeChips.length>1)removeChip(k);}else{state.activeChips.push(k);state.selMetric=k;renderCompare();}};el.appendChild(b);});}
+function toggleCmpChan(k){const i=state.cmpChans.indexOf(k);
+  if(i>=0){if(state.cmpChans.length>1)state.cmpChans.splice(i,1);}else state.cmpChans.push(k);
+  renderOverlay();}
 function renderOverlay(){const m=METRICS[state.selMetric];document.getElementById('cmpTitle').textContent=m.label+' — by channel · '+WEEKS[rFrom()]+'→'+WEEKS[rTo()];
-  const wk=rangeWeeks(),sets=[],leg=[];
+  const wk=rangeWeeks(),sets=[];
+  // clickable legend: every comparable channel that HAS this metric is a toggle; off = excluded from the chart
+  const lg=document.getElementById('cmpLegend');lg.innerHTML='';
   COMPARE_SET.forEach(k=>{const c=CH[k];if(!hasMetric(c,state.selMetric))return;
-    sets.push({label:c.label,data:sliceR(series(c,state.selMetric)),borderColor:c.color,tension:.32,pointRadius:2,borderWidth:2.2,fill:false});
-    leg.push(`<span><i style="background:${c.color}"></i>${c.label}</span>`);});
-  if(hasMetric(CH.all,state.selMetric)){sets.push({label:'All',data:sliceR(series(CH.all,state.selMetric)),borderColor:'#8A8A80',borderDash:[5,4],pointRadius:0,borderWidth:1.6,tension:.32});leg.push('<span><i style="background:#8A8A80"></i>All</span>');}
-  document.getElementById('cmpLegend').innerHTML=leg.join('');
+    const on=state.cmpChans.includes(k);
+    if(on)sets.push({label:c.label,data:sliceR(series(c,state.selMetric)),borderColor:c.color,tension:.32,pointRadius:2,borderWidth:2.2,fill:false});
+    const chip=document.createElement('span');chip.className='lgchip'+(on?'':' off');
+    chip.innerHTML=`<i style="background:${c.color}"></i>${c.label}`;
+    chip.onclick=()=>toggleCmpChan(k);lg.appendChild(chip);});
+  if(hasMetric(CH.all,state.selMetric)){sets.push({label:'All',data:sliceR(series(CH.all,state.selMetric)),borderColor:'#8A8A80',borderDash:[5,4],pointRadius:0,borderWidth:1.6,tension:.32});
+    const hint=document.createElement('span');hint.className='lghint';hint.textContent='— — All (network) · click a channel to add/remove';lg.appendChild(hint);}
   if(cmpChart)cmpChart.destroy();
   cmpChart=new Chart(document.getElementById('cmpChart'),{type:'line',data:{labels:wk,datasets:sets},plugins:[ChartDataLabels],options:{responsive:true,maintainAspectRatio:false,layout:{padding:{top:16}},interaction:{mode:'index',intersect:false},plugins:{legend:{display:false},datalabels:{display:true,align:'top',anchor:'end',offset:1,clamp:true,font:{family:'JetBrains Mono',size:9,weight:'700'},color:c=>c.dataset.borderColor,formatter:(v)=>v==null?'':m.fmt(v)},tooltip:{backgroundColor:'#1A1A17',padding:9,cornerRadius:7,callbacks:{label:x=>x.dataset.label+': '+(x.parsed.y==null?'—':m.fmt(x.parsed.y))}}},scales:{x:{grid:{display:false},ticks:{font:{family:'JetBrains Mono',size:10},color:'#8A8A80'}},y:{grid:{color:'#EDEAE0'},ticks:{font:{family:'JetBrains Mono',size:10},color:'#8A8A80',callback:v=>m.unit==='%'?v+'%':m.unit==='₹'?'₹'+v:v}}}}});}
 function renderCompareCards(){const el=document.getElementById('compareCards');el.innerHTML='';const m=METRICS[state.selMetric],i=rTo();
@@ -764,17 +778,17 @@ function renderCompare(){renderChips();renderEditPanel();renderCompareCards();re
 
 /* ===== SCORECARD (reused) ===== */
 function renderScore(){const el=document.getElementById('scTable'),i=rTo();
-  const rows=[['gmbgoogle','Google + GMB'],['gsearch','Google Search'],['gmb','GMB (Maps)'],['organic','Organic']];
-  const resid={spend:100-contr.gsearch.spend[i],lead:+(100-contr.gsearch.lead[i]-contr.gmb.lead[i]-contr.organic.lead[i]).toFixed(0),book:+(100-contr.gsearch.book[i]-contr.gmb.book[i]-contr.organic.book[i]).toFixed(0),done:+(100-contr.gsearch.done[i]-contr.gmb.done[i]-contr.organic.done[i]).toFixed(0)};
+  // Meta & Practo now split out as their own rows (real spend shares from DIRECT); no more lumped residual.
+  const rows=[['gmbgoogle','Google + GMB'],['gsearch','Google Search'],['gmb','GMB (Maps)'],['organic','Organic'],['meta','Meta / FB'],['practo','Practo']];
   const bar=(v,col)=>`<div class="scbar"><i style="width:${Math.min(100,v)}%;background:${col}"></i><span>${v}%</span></div>`;
   let h='<thead><tr><th>Channel</th><th>Spend %</th><th>Verified leads %</th><th>Booking %</th><th>Done %</th><th class="r">Efficiency</th><th class="r">CPB</th><th class="r">RoAS</th><th>Where it stands</th></tr></thead><tbody>';
-  rows.forEach(([k,name])=>{const c=CH[k],cc=contr[k];const sp=cc.spend[i],ld=cc.lead[i],bk=cc.book[i],dn=cc.done[i];const free=c.free;const eff=free?'∞':(bk/sp).toFixed(2);
-    let pcls,pill,read;if(free){pcls='free';pill='FREE';read=`Delivers <b>${bk}%</b> of bookings at zero cost.`;}else{const e=bk/sp;pcls=e>1.1?'over':e<0.9?'under':'even';pill=e>1.1?'OVER-DELIVERS':e<0.9?'UNDER':'IN LINE';read=`Takes <b>${sp}%</b> of spend for <b>${bk}%</b> of bookings.`;}
+  rows.forEach(([k,name])=>{const c=CH[k];if(!c||c.template||!contr[k])return;const cc=contr[k];const sp=cc.spend[i],ld=cc.lead[i],bk=cc.book[i],dn=cc.done[i];const free=c.free;const eff=free?'∞':(sp?(bk/sp).toFixed(2):'—');
+    let pcls,pill,read;if(free){pcls='free';pill='FREE';read=`Delivers <b>${bk}%</b> of bookings at zero cost.`;}else{const e=sp?bk/sp:0;pcls=e>1.1?'over':e<0.9?'under':'even';pill=e>1.1?'OVER-DELIVERS':e<0.9?'UNDER':'IN LINE';read=`Takes <b>${sp}%</b> of spend for <b>${bk}%</b> of bookings.`;}
     if(dn<bk-1)read+=` Loses share by ‘done’ (${bk}→${dn}%).`;else if(dn>bk+1)read+=` Gains share by ‘done’.`;
-    h+=`<tr><td><div class="cname"><span class="cdot" style="background:${c.color}"></span>${name}</div></td><td>${bar(sp,c.color)}</td><td>${bar(ld,'#1F8A70')}</td><td>${bar(bk,'#2E7D5B')}</td><td>${bar(dn,'#B5722A')}</td><td class="r idx">${eff}${free?'':'×'}</td><td class="r mono">${c.cpb?'₹'+last(c.cpb):'—'}</td><td class="r mono">${c.roas?Math.round(last(c.roas))+'%':'—'}</td><td><span class="pill ${pcls}">${pill}</span> <span class="leak">${read}</span></td></tr>`;});
-  h+=`<tr class="resid"><td><div class="cname">Other paid (Meta/Practo)*</div></td><td>${bar(resid.spend,'#B23A2E')}</td><td>${bar(resid.lead,'#1F8A70')}</td><td>${bar(resid.book,'#2E7D5B')}</td><td>${bar(resid.done,'#B5722A')}</td><td class="r idx">${(resid.book/resid.spend).toFixed(2)}×</td><td class="r mono">—</td><td class="r mono">—</td><td><span class="pill under">DRAG</span> <span class="leak">Takes <b>${resid.spend}%</b> of spend for <b>${resid.book}%</b> of bookings.</span></td></tr>`;
+    if(k==='practo')read+=` <span style="color:var(--muted)">Lead→book uses true cohort (booked screening call), not reschedules.</span>`;
+    h+=`<tr><td><div class="cname"><span class="cdot" style="background:${c.color}"></span>${name}</div></td><td>${bar(sp,c.color)}</td><td>${bar(ld,'#1F8A70')}</td><td>${bar(bk,'#2E7D5B')}</td><td>${bar(dn,'#B5722A')}</td><td class="r idx">${eff}${free||eff==='—'?'':'×'}</td><td class="r mono">${c.cpb&&last(c.cpb)?'₹'+last(c.cpb):'—'}</td><td class="r mono">${c.roas&&last(c.roas)?Math.round(last(c.roas))+'%':'—'}</td><td><span class="pill ${pcls}">${pill}</span> <span class="leak">${read}</span></td></tr>`;});
   el.innerHTML=h+'</tbody>';
-  document.getElementById('scNote').innerHTML='Reporting <b>'+WEEKS[i]+'</b> ('+(state.gran==='monthly'?'monthly':'weekly')+'). <b>Efficiency = Booking share ÷ Spend share.</b> Revenue % not shown (per-channel revenue rows not in extract). Scope/category don’t change contribution shares. *Other paid is the residual standing in for Meta + Practo.';}
+  document.getElementById('scNote').innerHTML='Reporting <b>'+WEEKS[i]+'</b> ('+(state.gran==='monthly'?'monthly':'weekly')+'). <b>Efficiency = Booking share ÷ Spend share.</b> Spend split: Google (Redshift), Meta (SyncWith/FB), Practo (Practo sheet). Note: Google + GMB is the combined row; Google Search and GMB (Maps) split it.';}
 
 /* ===== AI INSIGHTS ===== */
 function renderAI(){
@@ -782,14 +796,14 @@ function renderAI(){
   const gran=state.gran==='monthly'?'monthly':'weekly';
   document.getElementById('aiSub').textContent='generated from the '+gran+' data shown · '+(state.funnelChs.length>1?'multi-channel':ch.label)+(estOn()?' · estimated view':'');
   const ins=[];
-  const d2t0=A.done2tp[0],d2t=A.done2tp[i],roas0=A.roas[0],roas=Math.round(A.roas[i]);
+  const r0=rFrom(),d2t0=A.done2tp[r0],d2t=A.done2tp[i],roas0=A.roas[r0]!=null?Math.round(A.roas[r0]):null,roas=Math.round(A.roas[i]);
   if(!estOn()&&state.funnelChs.length===1&&ch.label==='All Channels'){
     ins.push(['dn',`<b>Revenue leak is at done→treatment-plan, not bookings.</b> Calls-done→TP conversion is <b>${d2t}%</b> (from ${d2t0}% at the start of the range). Completions hold; fewer turn into paid plans.`]);
     ins.push(['in',`<b>It’s conversion, not price.</b> AOV is steady at <b>₹${A.aov[i]}</b> (₹${A.aov[0]} at range start), so the value drop is the TP conversion above, not pricing.`]);
     ins.push(['wa',`<b>Online monetises far worse than offline.</b> Offline calls→TP <b>${A.convOff[i]}%</b> vs online <b>${A.convOn[i]}%</b> — the biggest fixable gap.`]);
     ins.push([roas<roas0?'dn':'up',`<b>RoAS ${roas<roas0?'eased':'held'}</b> ${roas0}%→${roas}% over the ${gran} range. New revenue ₹${(+A.newRev[i]).toFixed(1)}L.`]);
     ins.push(['up',`<b>Free demand is the cushion.</b> GMB + Organic deliver ~${(contr.gmb.book[i]+contr.organic.book[i]).toFixed(0)}% of bookings at zero spend.`]);
-    ins.push(['wa',`<b>The drag is non-Google paid.</b> Meta/Practo take ~${(100-contr.gsearch.spend[i]).toFixed(0)}% of spend for ~${(100-contr.gsearch.book[i]-contr.gmb.book[i]-contr.organic.book[i]).toFixed(0)}% of bookings — first place to reallocate.`]);
+    ins.push(['wa',`<b>The drag is non-Google paid.</b> Meta takes <b>${contr.meta?contr.meta.spend[i]:'—'}%</b> of spend for <b>${contr.meta?contr.meta.book[i]:'—'}%</b> of bookings; Practo <b>${contr.practo?contr.practo.spend[i]:'—'}%</b> for <b>${contr.practo?contr.practo.book[i]:'—'}%</b> — first place to reallocate.`]);
     if(gran==='monthly')ins.push(['in',`Note: monthly leads/CPL in the sheet look under-counted vs the weekly sum (CPL ₹${A.cpl[i]} monthly vs ~₹90 weekly) — verify the monthly leads column.`]);
   } else if(estOn()){
     ins.push(['in',`<b>Estimated ${state.cat!=='all'?state.cat.toUpperCase()+' ':''}${state.scope!=='all'?state.scope+' ':''}view</b> scaled from share rows. Paste the real split rows for exact figures; cost ratios hidden (spend not split).`]);
@@ -915,7 +929,8 @@ function _startEff(){
 }
 async function initEff(){
   try{ if(typeof Chart!=='undefined') Chart.defaults.set('plugins.datalabels',{display:false}); }catch(_){}
-  const isRS=new URLSearchParams(location.search).get('src')==='rs';
+  // Redshift-native is the single source of truth now (volume funnel + DB-native revenue). Sheet (?src=sheet) kept only as a manual fallback.
+  const isRS=new URLSearchParams(location.search).get('src')!=='sheet';
   try{
     const d=await fetch((isRS?'data_efficiency_rs.json':'data_efficiency.json')+'?t='+Date.now()).then(r=>r.ok?r.json():Promise.reject('http '+r.status));
     WEEKLY_PERIODS=d.weekly.periods;  MONTHLY_PERIODS=d.monthly.periods;
@@ -923,8 +938,7 @@ async function initEff(){
     CONTR_W=d.weekly.CONTR; CONTR_M=d.monthly.CONTR;
     DIRECT_W=d.weekly.DIRECT; DIRECT_M=d.monthly.DIRECT;
     const dl=document.querySelector('.dateline');
-    if(dl) dl.innerHTML=WEEKLY_PERIODS[0]+' → '+WEEKLY_PERIODS[WEEKLY_PERIODS.length-1]+' · '+(isRS?'<b style=\"color:#1F6F5C\">live from Redshift</b>':'live from L0')+
-      ' · <a href="?'+(isRS?'':'src=rs')+'" style="color:#8A8A80;text-decoration:underline">switch to '+(isRS?'sheet':'Redshift')+'</a>';
+    if(dl) dl.innerHTML=WEEKLY_PERIODS[0]+' → '+WEEKLY_PERIODS[WEEKLY_PERIODS.length-1]+' · <b style="color:#1F6F5C">live from Redshift</b>';
   }catch(e){ console.warn('efficiency: using sample data —',e); const dl=document.querySelector('.dateline'); if(dl) dl.textContent+=' · ⚠ sample'; }
   _startEff();
 }
