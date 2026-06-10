@@ -6,7 +6,7 @@
   adays/weekday/weekend doctor-days: data_diagnostic.json (avail / weekend)
   avail hrs: data_roster.json (shr.avail, aligned — roster lags a week)
 Run: python3 scripts/build_drops.py"""
-import os, json, re, datetime
+import os, sys, json, re, datetime, subprocess
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 T1 = {"Bangalore","Mumbai","Navi Mumbai","Pune","Hyderabad","Chennai","Delhi","Delhi NCR","Gurgaon","Gurugram","Kolkata"}
@@ -29,6 +29,28 @@ def main():
     labels = [lbl(w) for w in WK]
     rweeks = (R.get("_meta") or {}).get("weeks", [])
     rmap = {w: rweeks.index(w) for w in WK if w in rweeks}        # demand-week → roster col
+    widx = {w: i for i, w in enumerate(WK)}
+
+    # ── per-DOCTOR active days (realized) from the roster, keyed city|locality|doctor → {adays[],we[]} ──
+    DOC_AVAIL = {}
+    try:
+        sql = open(os.path.join(ROOT,"scripts","fetch_drops_doc_avail.sql")).read()
+        p = subprocess.run([sys.executable, os.path.join(ROOT,"scripts","redshift_query.py")],
+                           input=sql, capture_output=True, text=True)
+        if p.returncode==0 and "ERROR" not in p.stderr:
+            for line in p.stdout.strip().splitlines():
+                c = line.split("\t")
+                if len(c) < 6: continue
+                city, loc, doc, wk, ad, we = c[0], c[1], c[2], c[3], c[4], c[5]
+                if wk not in widx: continue
+                o = DOC_AVAIL.setdefault(f"{city}|{loc}|{doc}", {"a":[0]*NW,"we":[0]*NW})
+                try: o["a"][widx[wk]] += int(float(ad)); o["we"][widx[wk]] += int(float(we))
+                except (ValueError, IndexError): pass
+            print(f"  per-doctor availability: {len(DOC_AVAIL)} doctors")
+        else:
+            sys.stderr.write("WARN per-doctor avail query failed; doctors will have no availability\n")
+    except Exception as e:
+        sys.stderr.write(f"WARN per-doctor avail skipped: {e}\n")
 
     def rev(a):  # newest-first 12 → oldest-first 12, missing→0
         a = a or []; out=[0]*NW
@@ -82,7 +104,12 @@ def main():
                 if dname=="(unassigned)": continue
                 dbook=dj("doctor",dk,"gross"); ddone=dj("doctor",dk,"calls_done")
                 if not any(dbook): continue
-                docs.append({"id":slug(dname),"name":dname,"spec":"SH","book":dbook,"done":ddone})
+                dobj={"id":slug(dname),"name":dname,"spec":"SH","book":dbook,"done":ddone}
+                da=DOC_AVAIL.get(f"{city}|{clinic}|{dname}")
+                if da and any(da["a"]):
+                    dobj["adays"]=da["a"]; dobj["adays_we"]=da["we"]
+                    dobj["adays_wd"]=[max(0,da["a"][i]-da["we"][i]) for i in range(NW)]
+                docs.append(dobj)
             cl={"id":slug(clinic),"name":clinic,"leads":leads,"book":book,"done":done,
                 "adays":aday,"adays_wd":awd,"adays_we":awe,"doctors":docs}
             if ravail: cl["avail"]=ravail
