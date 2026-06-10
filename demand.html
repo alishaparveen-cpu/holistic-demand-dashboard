@@ -90,6 +90,18 @@ header.top h1{font-family:'Newsreader';font-weight:500;font-size:32px;margin:6px
 .funnel-read{background:var(--sheet);border:1px solid var(--line);border-top:0;border-radius:0 0 var(--r) var(--r);padding:12px 16px;font-size:13px;color:var(--ink-2)}
 .funnel-read b{color:var(--ink)}
 .funnel-read .bad-note{color:var(--bad);font-weight:500}.funnel-read .warn-note{color:var(--warn);font-weight:500}
+.cohpanel{background:var(--sheet);border:1px solid var(--line);border-radius:var(--r);padding:14px 16px;margin-top:12px}
+.cohpanel h3{font-size:13.5px;margin:0 0 2px;font-weight:600;font-family:'Newsreader';font-weight:500;font-size:17px}
+.cohpanel .cnote{font-size:11px;color:var(--muted);font-style:italic;margin-bottom:9px}
+.coht{width:100%;border-collapse:collapse;font-size:12.5px}
+.coht th{font-family:'JetBrains Mono';font-size:9px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);font-weight:600;text-align:right;padding:5px 10px;border-bottom:1px solid var(--line)}
+.coht th:first-child{text-align:left}
+.coht td{padding:5px 10px;text-align:right;font-family:'JetBrains Mono';font-variant-numeric:tabular-nums;border-bottom:1px solid var(--line-2)}
+.coht td:first-child{text-align:left;font-family:'Inter'}
+.coht tr.tot td{font-weight:700;border-top:1px solid var(--line);border-bottom:0}
+.coht .cdot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;vertical-align:middle}
+.coht .cv{font-weight:700}.coht .cv.good{color:var(--good)}.coht .cv.warn{color:var(--warn)}.coht .cv.bad{color:var(--bad)}
+.coht .barcell{width:90px}.coht .minibar{height:7px;border-radius:4px;background:var(--line-2);overflow:hidden}.coht .minibar i{display:block;height:100%}
 /* matrix */
 .fmwrap{background:var(--sheet);border:1px solid var(--line);border-radius:var(--r);overflow-x:auto}
 table.fm{border-collapse:collapse;width:100%;font-size:12.5px;min-width:760px}
@@ -226,6 +238,7 @@ tr.grp.closed td .gchev{transform:rotate(-90deg)}
     <div class="shead"><h2 class="serif" id="fTitle">Full demand chain</h2><span class="s-sub" id="fSub"></span></div>
     <div class="funnel" id="funnel"></div>
     <div class="funnel-read" id="funnelRead"></div>
+    <div id="cohPanel"></div>
     <div class="shead" style="margin-top:22px"><h2 class="serif">The same chain, week by week</h2>
       <span class="s-sub">green = above 6-wk norm · red = below · tap a sparkline to zoom</span></div>
     <div class="fmwrap" id="fmatrix"></div>
@@ -294,8 +307,8 @@ const HINTS={
 // ── load ──
 async function boot(){
   const j=async f=>{try{const r=await fetch(f+'?t='+Date.now());return r.ok?await r.json():{};}catch(e){return {};}};
-  const [L,G,D,A,big]=await Promise.all([j('data_leads.json'),j('data_gmb_insights.json'),j('data_diagnostic.json'),j('data_lead_age.json'),j('data.json')]);
-  DAT={L,G,D,A};
+  const [L,G,D,A,LC,big]=await Promise.all([j('data_leads.json'),j('data_gmb_insights.json'),j('data_diagnostic.json'),j('data_lead_age.json'),j('data_lead_cohort.json'),j('data.json')]);
+  DAT={L,G,D,A,LC};
   WEEKS=(L._meta&&L._meta.weeks)||(D._meta&&D._meta.weeks)||[];
   NW=WEEKS.length;LI=NW-1;
   DAT.big=big; setScope('all');
@@ -339,16 +352,24 @@ function spineFor(level,id,scope){
 
 // ── offline-clinic enrichments (GMB discovery, leads by source, timing, capacity) + diagnostic raw for new/repeat shares ──
 function clinicEnrich(keys){
-  const L=DAT.L,G=DAT.G,D=DAT.D,A=DAT.A;
-  const out={searches:z(),interactions:z(),leads:z(),avail:z(),age_same:z(),age_last:z(),age_older:z(),src:{},_allBk:z(),_bkNew:z(),_bkDone:z(),_bkDoneNew:z()};
-  SRC.forEach(([k])=>out.src[k]=z());
+  const L=DAT.L,G=DAT.G,D=DAT.D,A=DAT.A,LC=DAT.LC||{};
+  const out={searches:z(),interactions:z(),leads:z(),avail:z(),age_same:z(),age_last:z(),age_older:z(),src:{},_allBk:z(),_bkNew:z(),_bkDone:z(),_bkDoneNew:z(),
+    coh:{leads:z(),booked:z(),same:z(),nextw:z(),later:z(),byChan:{}}};
+  SRC.forEach(([k])=>{out.src[k]=z();out.coh.byChan[k]={leads:z(),booked:z()};});
   keys.forEach(key=>{
-    const g=G[key]||{},d=D[key]||{},a=A[key]||{},l=L[key]||{};
+    const g=G[key]||{},d=D[key]||{},a=A[key]||{},l=L[key]||{},lc=LC[key]||{};
     out.searches=addA(out.searches,g.searches);out.interactions=addA(out.interactions,g.interactions);out.avail=addA(out.avail,d.avail);
     out.age_same=addA(out.age_same,a.same);out.age_last=addA(out.age_last,a.last);out.age_older=addA(out.age_older,a.older);
     out._allBk=addA(out._allBk,d.allBk);out._bkNew=addA(out._bkNew,d.bkNew);out._bkDone=addA(out._bkDone,d.bkDone);out._bkDoneNew=addA(out._bkDoneNew,d.bkDoneNew);
-    SRC.forEach(([k])=>{out.src[k]=addA(out.src[k],l[k]);out.leads=addA(out.leads,l[k]);});
+    SRC.forEach(([k])=>{
+      out.src[k]=addA(out.src[k],l[k]);out.leads=addA(out.leads,l[k]);
+      const cc=lc[k]||{};
+      out.coh.byChan[k].leads=addA(out.coh.byChan[k].leads,cc.leads);out.coh.byChan[k].booked=addA(out.coh.byChan[k].booked,cc.booked);
+      out.coh.leads=addA(out.coh.leads,cc.leads);out.coh.booked=addA(out.coh.booked,cc.booked);
+      out.coh.same=addA(out.coh.same,cc.same);out.coh.nextw=addA(out.coh.nextw,cc.nextw);out.coh.later=addA(out.coh.later,cc.later);
+    });
   });
+  out.hasCohort=out.coh.leads.some(v=>v>0);
   return out;
 }
 
@@ -375,7 +396,7 @@ function entitySeries(level,id){
     s.newDone=spine.done.map((d,i)=>ndShare[i]==null?null:Math.round(d*ndShare[i]));
     s.repeatDone=spine.done.map((d,i)=>s.newDone[i]==null?null:Math.max(0,d-s.newDone[i]));
   } else {
-    s=Object.assign({searches:z(),interactions:z(),leads:null,avail:z(),age_same:z(),age_last:z(),age_older:z(),src:{},noLeads:true,newBk:null,repeat:null,newDone:null,repeatDone:null},spine);
+    s=Object.assign({searches:z(),interactions:z(),leads:null,avail:z(),age_same:z(),age_last:z(),age_older:z(),src:{},noLeads:true,newBk:null,repeat:null,newDone:null,repeatDone:null,coh:null,hasCohort:false},spine);
     if(level!=='doctor')s.nClinics=clinicsFor(level,id).length;
   }
   s.scope=scope;s.onlineNoGeo=!!(spine.onlyNet&&spine.specific);
@@ -455,16 +476,20 @@ const MROWS=[
   {t:'stage',k:'searches',label:'GMB searches',fmt:N},
   {t:'edge',k:'_intrate',label:'Interaction rate %',formula:'interactions ÷ searches',fmt:P},
   {t:'stage',k:'interactions',label:'GMB interactions',fmt:N},
-  {grp:'leads',label:'Leads & source mix'},
-  {t:'stage',k:'leads',label:'Leads (tracked online)',fmt:N},
-  {t:'edge',k:'src.gmb',label:'· from GMB',fmt:N},{t:'edge',k:'src.google_ad',label:'· from Google Ads',fmt:N},
-  {t:'edge',k:'src.organic',label:'· from Organic',fmt:N},{t:'edge',k:'src.fb',label:'· from Meta',fmt:N},
-  {t:'edge',k:'src.justdial',label:'· from Justdial',fmt:N},{t:'edge',k:'src.others',label:'· from Others',fmt:N},
-  {t:'edge',k:'_lbratio',label:'Bookings per lead',formula:'bookings ÷ tracked leads (× = walk-in/repeat beyond tracked)',fmt:RATIO},
-  {grp:'timing',label:'Lead timing (how fast leads book)'},
-  {t:'edge',k:'age_same',label:'Booked same week',fmt:N},{t:'edge',k:'age_last',label:'1-week lag',fmt:N},{t:'edge',k:'age_older',label:'2+ week backlog',fmt:N},
-  {grp:'acq',label:'Acquisition — new patients'},
-  {t:'stage',k:'newBk',label:'New bookings',fmt:N},
+  {grp:'leadcoh',label:'Leads this week — did they book? (cohort, by lead-creation week)'},
+  {t:'stage',k:'coh_leads',label:'Leads (created this week)',fmt:N},
+  {t:'edge',k:'cohsrc.gmb',label:'· GMB',fmt:N},{t:'edge',k:'cohsrc.google_ad',label:'· Google Ads',fmt:N},
+  {t:'edge',k:'cohsrc.organic',label:'· Organic',fmt:N},{t:'edge',k:'cohsrc.fb',label:'· Meta',fmt:N},
+  {t:'edge',k:'cohsrc.justdial',label:'· Justdial',fmt:N},{t:'edge',k:'cohsrc.others',label:'· Others',fmt:N},
+  {t:'stage',k:'coh_booked',label:'Booked (from these leads)',fmt:N},
+  {t:'edge',k:'_cohconv',label:'Lead → book conversion %',formula:'booked ÷ leads · recent weeks still maturing',fmt:P,tgt:45},
+  {t:'edge',k:'_cohnobook',label:'Did not book',formula:'leads − booked',fmt:N,inv:true},
+  {grp:'cohlag',label:'When these leads booked'},
+  {t:'edge',k:'coh_same',label:'Same week',fmt:N},{t:'edge',k:'coh_nextw',label:'Next week (+1 wk)',fmt:N},{t:'edge',k:'coh_later',label:'2+ weeks later',fmt:N},
+  {grp:'attr',label:'New (unique) bookings — from a lead or direct? (by booking week)'},
+  {t:'stage',k:'newBk',label:'New bookings (first-time patients)',fmt:N},
+  {t:'edge',k:'_attrlead',label:'· from a tracked lead',formula:'lead-attributed bookings (any lead age)',fmt:N},
+  {t:'edge',k:'_attrdirect',label:'· direct / walk-in (untracked)',formula:'new bookings − lead-attributed',fmt:N,inv:true},
   {t:'edge',k:'_newshow',label:'New show-up %',formula:'new done ÷ new bookings',fmt:P,tgt:75},
   {t:'stage',k:'newDone',label:'New done',fmt:N},
   {grp:'ret',label:'Retention — repeat patients'},
@@ -481,10 +506,21 @@ const MROWS=[
 ];
 function deriv(s,k){
   if(k==='_intrate')return (s.searches&&s.searches.some(v=>v>0))?s.searches.map((v,i)=>pct(s.interactions[i],v)):null;
-  if(k==='_lbratio')return s.leads?s.leads.map((v,i)=>v?+(s.bookings[i]/v).toFixed(2):null):null;
   if(k==='_b2d')return s.bookings.map((v,i)=>pct(s.done[i],v));
   if(k==='_newshow')return s.newBk?s.newBk.map((v,i)=>pct((s.newDone||z())[i],v)):null;
   if(k==='_perday')return (s.avail&&s.avail.some(v=>v>0))?s.avail.map((v,i)=>v?+(s.bookings[i]/v).toFixed(2):null):null;
+  // lead cohort (forward — by lead-creation week)
+  if(k==='coh_leads')return s.coh?s.coh.leads:null;
+  if(k==='coh_booked')return s.coh?s.coh.booked:null;
+  if(k==='coh_same')return s.coh?s.coh.same:null;
+  if(k==='coh_nextw')return s.coh?s.coh.nextw:null;
+  if(k==='coh_later')return s.coh?s.coh.later:null;
+  if(k==='_cohconv')return s.coh?s.coh.leads.map((v,i)=>pct(s.coh.booked[i],v)):null;
+  if(k==='_cohnobook')return s.coh?s.coh.leads.map((v,i)=>Math.max(0,(v||0)-(s.coh.booked[i]||0))):null;
+  if(k.startsWith('cohsrc.'))return s.coh?s.coh.byChan[k.slice(7)].leads:null;
+  // booking attribution (backward — by booking week)
+  if(k==='_attrlead')return s.newBk?s.age_same.map((v,i)=>(v||0)+(s.age_last[i]||0)+(s.age_older[i]||0)):null;
+  if(k==='_attrdirect')return s.newBk?s.newBk.map((v,i)=>{const la=(s.age_same[i]||0)+(s.age_last[i]||0)+(s.age_older[i]||0);return v==null?null:Math.max(0,v-la);}):null;
   if(k.startsWith('src.'))return s.src[k.slice(4)];
   return s[k];
 }
@@ -502,7 +538,24 @@ function renderFunnel(){
   if(b2d<65)r+=`<span class="bad-note">Show-up below 65% — chase no-shows (${N(s.noshow[i])} this week).</span>`;
   else if(s.age_older&&s.age_older[i]>(s.age_same[i]||0))r+=`<span class="warn-note">More leads are booking from backlog than same-week — speed of follow-up is slipping.</span>`;
   document.getElementById('funnelRead').innerHTML=r;
+  renderCohPanel(s,i);
   renderMatrix(s);
+}
+// per-channel lead cohort for the selected week: of leads that came in, how many booked + conversion
+function renderCohPanel(s,i){
+  const el=document.getElementById('cohPanel');
+  if(!s.hasCohort||!s.coh){el.innerHTML='';return;}
+  const c=s.coh;const tot=c.leads[i]||0,totB=c.booked[i]||0;
+  const maturing=i<=1; // newest 2 weeks still converting
+  const rows=SRC.map(([k,nm,col])=>{const ld=(c.byChan[k].leads[i]||0),bk=(c.byChan[k].booked[i]||0);return {k,nm,col,ld,bk,conv:ld?Math.round(bk/ld*100):null};}).filter(x=>x.ld>0).sort((a,b)=>b.ld-a.ld);
+  const cv=v=>v==null?'':v>=50?'good':v>=30?'warn':'bad';
+  const mx=Math.max(1,...rows.map(x=>x.ld));
+  let h=`<div class="cohpanel"><h3>Lead cohort · week of ${WEEKS[i]}</h3>
+    <div class="cnote">Of the <b>${N(tot)}</b> leads that came in this week, <b>${N(totB)}</b> have booked so far (<b>${P(pct(totB,tot))}</b>).${maturing?' ⚠ this week is still maturing — leads can still book in the coming weeks, so conversion will rise.':''} Not booked: <b>${N(tot-totB)}</b>.</div>
+    <table class="coht"><thead><tr><th>Channel</th><th>Leads</th><th class="barcell">share</th><th>Booked</th><th>Conv</th></tr></thead><tbody>`;
+  rows.forEach(x=>{h+=`<tr><td><span class="cdot" style="background:${x.col}"></span>${x.nm}</td><td>${N(x.ld)}</td><td class="barcell"><div class="minibar"><i style="width:${x.ld/mx*100}%;background:${x.col}"></i></div></td><td>${N(x.bk)}</td><td class="cv ${cv(x.conv)}">${P(x.conv)}</td></tr>`;});
+  h+=`<tr class="tot"><td>Total</td><td>${N(tot)}</td><td></td><td>${N(totB)}</td><td class="cv ${cv(pct(totB,tot))}">${P(pct(totB,tot))}</td></tr></tbody></table></div>`;
+  el.innerHTML=h;
 }
 function renderMatrix(s){
   const lo=state.rFrom,hi=state.rTo,cols=[];for(let i=hi;i<=lo;i++)cols.push(i);// newest-first display L→R = recent→old? keep oldest→newest
