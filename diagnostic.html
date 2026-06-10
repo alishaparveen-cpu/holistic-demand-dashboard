@@ -136,6 +136,9 @@ const MIXCOL='#be185d';
 // ═══════════════ STATE ═══════════════
 let JDATA=null, SDATA={}, L0=null, PRACTO={}, ROSTER={};   // PRACTO['City|Clinic'] = [7 weekly counts aligned to WEEKS]; ROSTER['City|Clinic']={hrs:[7],we_hrs:[7]} scheduled bookable hours
 let LEADS={}, REVIEWS={}, MKT=null, BOOKTYPE={}, GACITY={}, NEGREV={}, GMBINS={};   // Redshift leads-by-source · GMB review velocity · Google Ads impression-share · booking-type split · city-level Google Ads health · recent negative reviews · GMB profile Insights (searches/interactions)
+let DAILY={};   // data_daily.json — daily bk/done per "City|Clinic" + _network (bk/done/leads), last 35 days to yesterday
+let viewMode='weekly';   // 'weekly' (the RCA) | 'daily' (recent daily pulse, up to yesterday)
+function setViewMode(m){ viewMode=m; render(); window.scrollTo(0,0); }
 function gmbInsArr(city,clinic,field){ const o=GMBINS[city+'|'+clinic]; return o&&o[field] ? o[field].slice(0,WEEKS.length) : Array(WEEKS.length).fill(0); }
 function hasGmbIns(city,clinic){ return !!GMBINS[city+'|'+clinic]; }
 let LEADAGE={};   // data_lead_age.json — bookings split by lead age (same/last/older week)
@@ -1023,14 +1026,21 @@ function ctrlBar(R){
     <select onchange="setSelClinic(this.value)" title="Open a clinic's full RCA deep-dive" style="font-size:12px;border:1.5px solid ${selClinic?'#4f46e5':'var(--line)'};border-radius:7px;padding:4px 9px;background:${selClinic?'#eef2ff':'#fff'};cursor:pointer;max-width:210px;color:${selClinic?'#4338ca':'#0f172a'};font-weight:${selClinic?600:400};">
       <option value="">— deep-dive a clinic —</option>${clinicOpts}
     </select></div>`;
+  const modeSel=`<div style="display:flex;align-items:center;gap:6px;">
+    <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#94a3b8;">View</span>
+    <div class="toggle" style="padding:2px;">
+      <button class="${viewMode==='weekly'?'on':''}" style="padding:3px 11px;font-size:11px;" onclick="setViewMode('weekly')" title="Weekly RCA — full demand diagnosis">Weekly RCA</button>
+      <button class="${viewMode==='daily'?'on':''}" style="padding:3px 11px;font-size:11px;" onclick="setViewMode('daily')" title="Daily pulse — bookings / done / leads by day, up to yesterday">📈 Daily pulse</button>
+    </div></div>`;
   return `<div class="card" style="position:sticky;top:54px;z-index:10;padding:11px 16px;display:flex;align-items:center;gap:16px;flex-wrap:wrap;">
+    ${modeSel}
     ${citySel}
-    ${clinicSel}
-    ${weekSel}
-    ${rangeSel}
-    ${baseSel}
-    ${seg('Tier',[['All','all'],['T1','T1'],['T2','T2']],tierF,'setTierF')}
-    ${seg('Maturity',[['All','all'],['Mature','Mature'],['Maturing','Maturing'],['New','New']],matF,'setMatF')}
+    ${viewMode==='daily'?'':clinicSel}
+    ${viewMode==='daily'?'':weekSel}
+    ${viewMode==='daily'?'':rangeSel}
+    ${viewMode==='daily'?'':baseSel}
+    ${viewMode==='daily'?'':seg('Tier',[['All','all'],['T1','T1'],['T2','T2']],tierF,'setTierF')}
+    ${viewMode==='daily'?'':seg('Maturity',[['All','all'],['Mature','Mature'],['Maturing','Maturing'],['New','New']],matF,'setMatF')}
     <button onclick="resetDiagFilters()" title="Reset all filters" style="font-size:11.5px;font-weight:600;color:#4f46e5;background:#eef2ff;border:1px solid #c7d2fe;border-radius:8px;padding:4px 11px;cursor:pointer;white-space:nowrap;margin-left:auto;">↺ Reset filters</button>
   </div>`;
 }
@@ -1160,10 +1170,83 @@ function cityRollup(R){
     <div class="sec-sub"><b>${list.length}</b> cities · <b style="color:${affCities.length?'#dc2626':'#059669'}">${affCities.length} dipped</b> in ${sp.affNoun} this week. Worst-first — <b>click a city</b> to see its clinics, then drill into one.</div>
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(228px,1fr));gap:12px;">${list.map(card).join('')}</div></div>`;
 }
+/* ===================== DAILY PULSE (up to yesterday) ===================== */
+function dailySeries(){
+  const days=(DAILY._meta&&DAILY._meta.days)||[]; const ND=days.length, z=()=>Array(ND).fill(0);
+  let bk=z(), done=z(), leads=null, label='All clinics · network', isNet=false;
+  if(!geoSel.size){ const n=DAILY._network||{}; bk=(n.bk||z()).slice(); done=(n.done||z()).slice(); leads=(n.leads||z()).slice(); isNet=true; }
+  else{
+    const cities=[...geoSel].filter(t=>t[0]==='c').map(t=>t.slice(2));
+    const clinics=[...geoSel].filter(t=>t[0]==='k').map(t=>t.split('|').slice(1).join('|'));
+    Object.keys(DAILY).forEach(k=>{ if(k[0]==='_')return; const o=DAILY[k];
+      if(cities.includes(k.split('|')[0])||clinics.includes(k)){ for(let i=0;i<ND;i++){ bk[i]+=(o.bk||[])[i]||0; done[i]+=(o.done||[])[i]||0; } } });
+    label=geoScopeText();
+  }
+  return {days,bk,done,leads,label,isNet,ND};
+}
+const _MON3=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const dDay=iso=>{ const d=new Date(iso+'T00:00:00Z'); return d.getUTCDate()+' '+_MON3[d.getUTCMonth()]; };
+const dIsWE=iso=>{ const w=new Date(iso+'T00:00:00Z').getUTCDay(); return w===0||w===6; };
+function mavg(a,w){ return a.map((_,i)=>{ let s=0,n=0; for(let j=Math.max(0,i-w+1);j<=i;j++){ s+=a[j]||0; n++; } return n?s/n:0; }); }
+// daily bar chart with a 7-day moving-average line; weekends lighter; last bar emphasised
+function dayChart(arr, days, color){
+  const ND=arr.length, W=Math.max(620,ND*17), H=150, padL=4, padR=4, padT=14, padB=20;
+  const mx=Math.max(1,...arr), bw=(W-padL-padR)/ND, Y=v=>padT+(1-v/mx)*(H-padT-padB);
+  let bars='';
+  arr.forEach((v,i)=>{ const x=padL+i*bw, h=H-padB-Y(v), we=dIsWE(days[i]), last=i===ND-1;
+    bars+=`<rect x="${(x+1).toFixed(1)}" y="${Y(v).toFixed(1)}" width="${Math.max(1,bw-2).toFixed(1)}" height="${Math.max(0,h).toFixed(1)}" rx="1.5" fill="${color}" opacity="${last?1:we?0.32:0.62}"><title>${days[i]}${we?' (weekend)':''}: ${v}</title></rect>`; });
+  const ma=mavg(arr,7); let mp='';
+  ma.forEach((v,i)=>{ const x=padL+i*bw+bw/2, y=Y(v); mp+=(i?'L':'M')+x.toFixed(1)+' '+y.toFixed(1); });
+  // x labels every ~5 days + the last
+  let labs='';
+  days.forEach((d,i)=>{ if(i%5===0||i===ND-1){ const x=padL+i*bw+bw/2; labs+=`<text x="${x.toFixed(1)}" y="${H-6}" font-size="8.5" fill="#94a3b8" text-anchor="middle">${dDay(d)}</text>`; } });
+  return `<svg width="100%" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" style="display:block;height:${H}px;">${bars}<path d="${mp}" fill="none" stroke="#0f172a" stroke-width="1.4" opacity="0.55"/>${labs}</svg>
+    <div style="font-size:9.5px;color:#94a3b8;margin-top:2px;">bars = per day · lighter = weekend · <b style="color:#475569;">dark line = 7-day average</b> · last bar = ${dDay(days[ND-1])}</div>`;
+}
+function renderDailyPulse(){
+  if(!DAILY._meta||!((DAILY._meta.days||[]).length)) return '<div class="card">Daily data unavailable — run <code>scripts/build_daily.py</code> to generate data_daily.json.</div>';
+  const S=dailySeries(), {days,bk,done,leads,isNet,ND}=S;
+  const yest=days[ND-1], sum=(a,s,e)=>{let t=0;for(let i=s;i<=e;i++)t+=a[i]||0;return t;};
+  const a7=a=>sum(a,ND-7,ND-1)/7, p7=a=>sum(a,ND-14,ND-8)/7;
+  const delta=(c,p)=>{ if(!p) return ''; const d=Math.round((c-p)/p*100); const up=d>=0; return `<span style="font-size:12px;font-weight:700;color:${up?'#059669':'#dc2626'};margin-left:6px;">${up?'▲':'▼'}${Math.abs(d)}%</span>`; };
+  const stat=(lab,arr,col)=>{ const y=arr[ND-1]||0, av=a7(arr), pav=p7(arr);
+    return `<div style="flex:1;min-width:150px;background:#fff;border:1px solid var(--line);border-radius:11px;padding:12px 14px;">
+      <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:#94a3b8;">${lab} · yesterday</div>
+      <div style="font-size:26px;font-weight:800;color:${col};line-height:1.1;margin:2px 0;">${y}</div>
+      <div style="font-size:11px;color:#64748b;">7-day avg <b>${av.toFixed(1)}/day</b>${delta(av,pav)} <span style="color:#cbd5e1;">vs prior 7d</span></div></div>`; };
+  const charts=`
+    <div class="card" style="padding:14px 16px;margin-bottom:12px;">
+      <div style="font-size:13px;font-weight:800;color:#1e3a8a;margin-bottom:2px;">📅 Bookings made per day</div>
+      <div style="font-size:11px;color:#64748b;margin-bottom:8px;">Screening-Call appointments <b>created</b> each day — booking velocity (demand made that day).</div>
+      ${dayChart(bk,days,'#4f46e5')}
+    </div>
+    ${isNet?`<div class="card" style="padding:14px 16px;margin-bottom:12px;">
+      <div style="font-size:13px;font-weight:800;color:#92400e;margin-bottom:2px;">🌐 Leads per day (network)</div>
+      <div style="font-size:11px;color:#64748b;margin-bottom:8px;">All inbound leads created each day (every channel) — top-of-funnel demand.</div>
+      ${dayChart(leads,days,'#d97706')}
+    </div>`:''}
+    <div class="card" style="padding:14px 16px;margin-bottom:12px;">
+      <div style="font-size:13px;font-weight:800;color:#065f46;margin-bottom:2px;">✅ Consults done per day</div>
+      <div style="font-size:11px;color:#64748b;margin-bottom:8px;">Screening Calls whose slot was that day and were <b>attended</b>. Recent days dip as future appointments haven't happened yet.</div>
+      ${dayChart(done,days,'#059669')}
+    </div>`;
+  return `<div class="card" style="padding:13px 16px;margin-bottom:12px;background:linear-gradient(180deg,#eff6ff,#fff);">
+      <div style="font-size:15px;font-weight:800;color:#1e3a8a;">📈 Daily pulse — ${S.label}</div>
+      <div style="font-size:11.5px;color:#64748b;margin-top:2px;">Last ${ND} days · through <b>${dDay(yest)}</b> (yesterday) · live from Redshift. Use the <b>City / clinic</b> picker above to scope. <span style="color:#94a3b8;">Switch back to <b>Weekly RCA</b> for the full diagnosis.</span></div>
+    </div>
+    <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px;">
+      ${stat('Bookings',bk,'#4f46e5')}
+      ${stat('Done',done,'#059669')}
+      ${isNet?stat('Leads',leads,'#d97706'):''}
+    </div>
+    ${charts}`;
+}
+
 function renderOffline(){
   if(!Object.keys(SDATA).length) return '<div class="card">Demand-tracker sheet didn\'t load (leads & availability unavailable). Check the sheet is published.</div>';
   const Rall=rcaOffline();
   const ctrl=ctrlBar(Rall);
+  if(viewMode==='daily') return ctrl+renderDailyPulse();
   if(selClinic){ const [c,cl]=selClinic.split('|'); const row=Rall.rows.find(r=>r.city===c&&r.clinic===cl); return ctrl+(row?renderDeepDive(row):'<div class="card">Clinic not found.</div>'); }
   if(drillMetric){ return ctrl+renderMetricDrill(drillMetric); }
   const R=scopeRCA(Rall), wl=WEEKS[wkIdx].label;
@@ -2794,7 +2877,7 @@ function renderOnline(){
 async function init(){
   try{
     const safe=u=>fetch(u,{cache:'no-store'}).catch(()=>({ok:false}));
-    const [jr,sr,lr,pr,rr,ld,rv,mk,bt,dg,ga,nr,gi,la,df,pbk,pl,lm,pd,lc,ah]=await Promise.all([ fetch('data.json',{cache:'no-store'}), safe(SHEET_URL), safe(L0_URL), safe(PRACTO_URL), safe('data_roster.json'), safe('data_leads.json'), safe('data_reviews.json'), safe('data_marketing.json'), safe('data_booktype.json'), safe('data_diagnostic.json'), safe('data_ga_city.json'), safe('data_reviews_neg.json'), safe('data_gmb_insights.json'), safe('data_lead_age.json'), safe('data_demand_funnel.json'), safe('data_practo_booked.json'), safe('data_practo_leads.json'), safe('data_lead_maturation.json'), safe('data_practo_by_doctor.json'), safe('data_lead_conv.json'), safe('data_avail_hod.json') ]);
+    const [jr,sr,lr,pr,rr,ld,rv,mk,bt,dg,ga,nr,gi,la,df,pbk,pl,lm,pd,lc,ah,dd]=await Promise.all([ fetch('data.json',{cache:'no-store'}), safe(SHEET_URL), safe(L0_URL), safe(PRACTO_URL), safe('data_roster.json'), safe('data_leads.json'), safe('data_reviews.json'), safe('data_marketing.json'), safe('data_booktype.json'), safe('data_diagnostic.json'), safe('data_ga_city.json'), safe('data_reviews_neg.json'), safe('data_gmb_insights.json'), safe('data_lead_age.json'), safe('data_demand_funnel.json'), safe('data_practo_booked.json'), safe('data_practo_leads.json'), safe('data_lead_maturation.json'), safe('data_practo_by_doctor.json'), safe('data_lead_conv.json'), safe('data_avail_hod.json'), safe('data_daily.json') ]);
     if(!jr.ok) throw new Error('data.json not found');
     JDATA=await jr.json();
     // SDATA now comes from Redshift (data_diagnostic.json); the Google Sheet is a fallback only.
@@ -2821,6 +2904,7 @@ async function init(){
     if(pd.ok){ try{ PRACTODOC=await pd.json(); }catch(_){ } }
     if(lc&&lc.ok){ try{ LEADCONV=await lc.json(); }catch(_){ } }
     if(ah&&ah.ok){ try{ AVAILHOD=await ah.json(); }catch(_){ } }
+    if(dd&&dd.ok){ try{ DAILY=await dd.json(); }catch(_){ } }
     render(); updateRefreshBadge();   // week picker now lives in the control bar (built per-render in ctrlBar)
   }catch(e){
     document.getElementById('mainContent').innerHTML=`<div class="loading-msg" style="color:#dc2626">Error: ${e.message}</div>`;
