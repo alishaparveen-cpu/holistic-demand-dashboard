@@ -299,7 +299,7 @@ let DAT={};                       // raw json
 let UNIV={clinics:[],cities:[],doctors:[]};
 let DJ=null,DJSCOPE='all';        // data.json scope object
 let state={view:'funnel',level:'city',sel:['__all__'],scope:'all',rFrom:0,rTo:0,baBy:'channel'};
-let zoomChart=null,closed={bah_gmb:true,bah_google_ad:true,bah_organic:true,bah_fb:true,bah_others:true,bah_a0:true,bah_a1:true,bah_a2:true,bah_a3:true};
+let zoomChart=null,closed={bah_gmb:true,bah_google_ad:true,bah_organic:true,bah_fb:true,bah_others:true,bah_a0:true,bah_a1:true,bah_a2:true,bah_a3:true,bah_a4:true};
 const hexA=(h,a)=>{const n=parseInt(h.slice(1),16);return 'rgba('+(n>>16&255)+','+(n>>8&255)+','+(n&255)+','+a+')';};
 
 const z=()=>Array(NW).fill(0);
@@ -427,7 +427,7 @@ function entitySeries(level,id){
   // network-level: split this-week's bookings by the age of the lead behind them (from _bookattr)
   if(id==='__all__' && DAT.LC && DAT.LC._bookattr){
     const BA=DAT.LC._bookattr, sumA=a=>{const o=z();['gmb','google_ad','organic','fb','justdial','others'].forEach(ch=>{const arr=BA[ch]&&BA[ch]['a'+a];if(arr)for(let k=0;k<NW;k++)o[k]+=arr[k]||0;});return o;};
-    s.bookAge={a0:sumA(0),a1:sumA(1),a2:sumA(2),a3:sumA(3)};s.bookAgeRaw=BA;
+    s.bookAge={a0:sumA(0),a1:sumA(1),a2:sumA(2),a3:sumA(3),a4:sumA(4)};s.bookAgeRaw=BA;
   } else {s.bookAge=null;s.bookAgeRaw=null;}
   return s;
 }
@@ -503,12 +503,12 @@ const D1=v=>v==null?'—':v.toFixed(1);
 // lead-age × channel detail as a TWO-LEVEL drill (network): top dim = channel or maturity (state.baBy),
 // each is a collapsible sub-group; second dim expands inside. Collapsed by default.
 const BA_DCH=[['gmb','GMB'],['google_ad','Google Ads'],['organic','Organic'],['fb','Meta'],['others','Others']];
-const BA_DAG=[['0','same week'],['1','1-wk back'],['2','2-wk back'],['3','3+ back']];
+const BA_DAG=[['0','same week'],['1','1-wk back'],['2','2-wk back'],['3','3-wk back'],['4','4+ wk back']];
 function baDetail(){const out=[];
   if(state.baBy==='maturity'){
-    BA_DAG.forEach(([a,al])=>{out.push({grp:'bah_a'+a,label:'↳ '+al+' — by channel'});BA_DCH.forEach(([ch,nm])=>out.push({t:'edge',k:'_ba'+a+'_'+ch,label:nm,fmt:N}));});
+    BA_DAG.forEach(([a,al])=>{out.push({grp:'bah_a'+a,label:'↳ '+al+' — by channel'});out.push({t:'stage',k:'_bamtot_'+a,label:'total',fmt:N});BA_DCH.forEach(([ch,nm])=>out.push({t:'edge',k:'_ba'+a+'_'+ch,label:nm,fmt:N}));});
   } else {
-    BA_DCH.forEach(([ch,nm])=>{out.push({grp:'bah_'+ch,label:'↳ '+nm+' — by lead age'});BA_DAG.forEach(([a,al])=>out.push({t:'edge',k:'_ba'+a+'_'+ch,label:al,fmt:N}));});
+    BA_DCH.forEach(([ch,nm])=>{out.push({grp:'bah_'+ch,label:'↳ '+nm+' — by lead age'});out.push({t:'stage',k:'_batot_'+ch,label:'total',fmt:N});BA_DAG.forEach(([a,al])=>out.push({t:'edge',k:'_ba'+a+'_'+ch,label:al,fmt:N}));});
   }
   return out;}
 function mrows(){return [
@@ -518,9 +518,10 @@ function mrows(){return [
   {t:'stage',k:'interactions',label:'GMB interactions',fmt:N},
   {grp:'leads',label:'Leads (clinic-engaged) & source mix'},
   {t:'stage',k:'coh_leads',label:'Leads (engaged this week)',fmt:N},
-  {t:'edge',k:'cohsrc.gmb',label:'· GMB',fmt:N},{t:'edge',k:'cohsrc.google_ad',label:'· Google Ads',fmt:N},
+  {t:'edge',k:'_cohsrc_ggmb',label:'· Google + GMB',fmt:N},
+  {t:'edge',k:'cohsrc.gmb',label:'— GMB',fmt:N},{t:'edge',k:'cohsrc.google_ad',label:'— Google Ads',fmt:N},
   {t:'edge',k:'cohsrc.organic',label:'· Organic',fmt:N},{t:'edge',k:'cohsrc.fb',label:'· Meta',fmt:N},
-  {t:'edge',k:'cohsrc.justdial',label:'· Justdial',fmt:N},{t:'edge',k:'cohsrc.others',label:'· Others',fmt:N},
+  {t:'edge',k:'cohsrc.others',label:'· Others',fmt:N},
   {t:'edge',k:'_inbound',label:'· of which inbound calls',formula:'phoned the clinic (PC-Inbound)',fmt:N},
   {grp:'acq',label:'New (first-time) bookings'},
   {t:'stage',k:'newBk',label:'New bookings (first-time patients)',fmt:N},
@@ -528,7 +529,8 @@ function mrows(){return [
   {t:'edge',k:'_ba0',label:'· from same-week leads',fmt:N},
   {t:'edge',k:'_ba1',label:'· from 1-week-back leads',fmt:N},
   {t:'edge',k:'_ba2',label:'· from 2-week-back leads',fmt:N},
-  {t:'edge',k:'_ba3',label:'· from 3+-week-back leads',fmt:N},
+  {t:'edge',k:'_ba3',label:'· from 3-week-back leads',fmt:N},
+  {t:'edge',k:'_ba4',label:'· from 4+-week-back leads',fmt:N},
   ...baDetail(),
   {grp:'acqout',label:'New bookings — show-up & done'},
   {t:'edge',k:'_newshow',label:'New show-up %',formula:'new done ÷ new bookings',fmt:P,tgt:75},
@@ -579,6 +581,10 @@ function deriv(s,k){
   if(k==='_ba1')return s.bookAge?s.bookAge.a1:null;
   if(k==='_ba2')return s.bookAge?s.bookAge.a2:null;
   if(k==='_ba3')return s.bookAge?s.bookAge.a3:null;
+  if(k==='_ba4')return s.bookAge?s.bookAge.a4:null;
+  if(k==='_cohsrc_ggmb')return s.coh?s.coh.byChan.gmb.leads.map((v,j)=>(v||0)+(s.coh.byChan.google_ad.leads[j]||0)):null;
+  if(/^_batot_/.test(k)){const ch=k.slice(7);if(!s.bookAgeRaw||!s.bookAgeRaw[ch])return null;const o=z();for(let x=0;x<5;x++){const arr=s.bookAgeRaw[ch]['a'+x];if(arr)for(let w=0;w<NW;w++)o[w]+=arr[w]||0;}return o;}
+  if(/^_bamtot_/.test(k)){const a=k.slice(8);if(!s.bookAgeRaw)return null;const o=z();['gmb','google_ad','organic','fb','others'].forEach(ch=>{const arr=s.bookAgeRaw[ch]&&s.bookAgeRaw[ch]['a'+a];if(arr)for(let w=0;w<NW;w++)o[w]+=arr[w]||0;});return o;}
   if(/^_ba\d_/.test(k)){const mm=k.match(/^_ba(\d)_(.+)$/);return (s.bookAgeRaw&&s.bookAgeRaw[mm[2]]&&s.bookAgeRaw[mm[2]]['a'+mm[1]])||null;}
   if(k==='_attrlead')return s.newBk?s.age_same.map((v,i)=>(v||0)+(s.age_last[i]||0)+(s.age_older[i]||0)):null;
   if(k==='_attrdirect')return s.newBk?s.newBk.map((v,i)=>{const la=(s.age_same[i]||0)+(s.age_last[i]||0)+(s.age_older[i]||0);return v==null?null:Math.max(0,v-la);}):null;
@@ -630,7 +636,7 @@ function renderCohPanel(s,i){
   const aRows=aorder.map(([k,nm,col,chs,ind])=>{const L=chs.reduce((a,c)=>a+gN(c,'leads'),0),B=bookedOf(chs);return {nm,col,L,B,ind,conv:L?Math.round(B/L*100):null,share:totL?Math.round(L/totL*100):0};}).filter(x=>x.L>0);
   const mxA=Math.max(1,...aRows.filter(x=>!x.ind).map(x=>x.L));
   let h=`<div class="cohpanel"><h3>Lead → booking flow · network · week of ${WEEKS[i]}</h3>
-    <div class="cnote">All digital leads network-wide, from the lead-tracking feed (differs slightly from the appointment funnel above). <b>Conv = % of this week's leads that booked the SAME week</b> — a completed, final number (the week is over), not a forecast. A few leads also book in later weeks; those appear in ②'s 1/2/3+-weeks-back columns for the week they actually book. <span style="color:var(--muted)">Per-clinic leads in the matrix are engaged-only.</span></div>
+    <div class="cnote">All digital leads network-wide, from the lead-tracking feed (differs slightly from the appointment funnel above). <b>Conv = % of this week's leads that booked the SAME week</b> — a completed, final number (the week is over), not a forecast. A few leads also book in later weeks; those appear in ②'s 1/2/3/4+-weeks-back columns for the week they actually book. <span style="color:var(--muted)">Per-clinic leads in the matrix are engaged-only.</span></div>
     <div class="cohsub">① This week's leads — from which channel, and how many booked the same week</div>
     <table class="coht"><thead><tr><th>Channel</th><th>Leads</th><th class="barcell">share</th><th>Booked</th><th>Conv</th></tr></thead><tbody>`;
   aRows.forEach(x=>{
@@ -638,26 +644,28 @@ function renderCohPanel(s,i){
     else{h+=`<tr><td><span class="cdot" style="background:${x.col}"></span>${x.nm}</td><td>${N(x.L)}</td><td class="barcell"><div class="minibar"><i style="width:${x.L/mxA*100}%;background:${x.col}"></i></div><span class="barpct">${x.share}%</span></td><td>${N(x.B)}</td><td class="cv ${cv(x.conv)}">${P(x.conv)}</td></tr>`;}
   });
   h+=`<tr class="tot"><td>Total</td><td>${N(totL)}</td><td></td><td>${N(totB)}</td><td class="cv ${cv(pct(totB,totL))}">${P(pct(totB,totL))}</td></tr></tbody></table>
-    <div class="cohnote2"><b>Booked here = same-week bookings</b> — it equals the <b>“This wk”</b> column in ② below. Leads that book later show up in ②’s 1/2/3+-weeks-back columns. <span style="color:var(--muted)">† Practo is an external feed with no week-level lag, so it shows eventual bookings (${N(practoEv)}).</span></div>
+    <div class="cohnote2"><b>Booked here = same-week bookings</b> — it equals the <b>“This wk”</b> column in ② below. Leads that book later show up in ②’s 1/2/3/4+-weeks-back columns. <span style="color:var(--muted)">† Practo is an external feed with no week-level lag, so it shows eventual bookings (${N(practoEv)}).</span></div>
     <div class="cohnote2"><b>Inbound</b> (phoned us): <b>${N(inbL)}</b>→${N(inbB)} (<b style="color:var(--good)">${P(pct(inbB,inbL))}</b>, eventual) &nbsp;vs&nbsp; <b>Web</b>: ${N(webL)}→${N(webB)} (${P(pct(webB,webL))}) — calls convert far better.</div>`;
   // ── PART B: this week's bookings by lead maturity & channel ──
   if(BA){
     const gB=(ch,a)=>((BA[ch]&&BA[ch]['a'+a])?(BA[ch]['a'+a][i]||0):0);
     const ageOf=(chs,a)=>chs.reduce((s,c)=>s+gB(c,a),0);
     // Google+GMB combined first, then broken out (GMB / Google Ads), then the rest
+    const AGES=[0,1,2,3,4];
     const border=[['ggmb','Google + GMB','#1F6F5C',['gmb','google_ad'],0],['gmb','— GMB','#5FB3A6',['gmb'],1],['google_ad','— Google Ads','#5B53C6',['google_ad'],1],
-      ['organic','Organic','#B5722A',['organic'],0],['fb','Meta','#3A5A8C',['fb'],0],['others','Others','#B6B6AC',['others'],0],['justdial','Justdial','#9C6A1F',['justdial'],0]];
-    const bRows=border.map(([k,nm,col,chs,ind])=>{const a=[0,1,2,3].map(x=>ageOf(chs,x));return {nm,col,ind,a,tot:a.reduce((p,q)=>p+q,0)};}).filter(x=>x.tot>0);
-    const LEAFB=['gmb','google_ad','organic','fb','others','justdial'];
-    const tA=[0,1,2,3].map(x=>LEAFB.reduce((p,c)=>p+gB(c,x),0)),tAll=tA.reduce((p,q)=>p+q,0);
+      ['organic','Organic','#B5722A',['organic'],0],['fb','Meta','#3A5A8C',['fb'],0],['others','Others','#B6B6AC',['others'],0]];
+    const bRows=border.map(([k,nm,col,chs,ind])=>{const a=AGES.map(x=>ageOf(chs,x));return {nm,col,ind,a,tot:a.reduce((p,q)=>p+q,0)};}).filter(x=>x.tot>0);
+    const LEAFB=['gmb','google_ad','organic','fb','others'];
+    const tA=AGES.map(x=>LEAFB.reduce((p,c)=>p+gB(c,x),0)),tAll=tA.reduce((p,q)=>p+q,0);
+    const cells=a=>a.map(v=>`<td>${N(v)}</td>`).join('');
     h+=`<div class="cohsub" style="margin-top:16px">② This week's bookings — how old was the lead that booked</div>
-      <div class="cohmini">Of bookings made this week, the age of the lead behind each: same week vs 1 / 2 / 3+ weeks back. ${tAll?`<b>${Math.round(tA[0]/tAll*100)}%</b> from this week's leads, <b>${Math.round((tAll-tA[0])/tAll*100)}%</b> from backlog.`:''} <span style="color:var(--muted)">(Practo excluded — no lead-age feed.)</span></div>
-      <table class="coht"><thead><tr><th>Channel</th><th>This wk</th><th>1 wk back</th><th>2 wk back</th><th>3+ back</th><th>Total</th></tr></thead><tbody>`;
+      <div class="cohmini">Of bookings made this week, the age of the lead behind each: same week vs 1 / 2 / 3 / 4+ weeks back. ${tAll?`<b>${Math.round(tA[0]/tAll*100)}%</b> from this week's leads, <b>${Math.round((tAll-tA[0])/tAll*100)}%</b> from backlog (mostly 4+ weeks old).`:''} <span style="color:var(--muted)">(Practo & Justdial excluded.)</span></div>
+      <table class="coht"><thead><tr><th>Channel</th><th>This wk</th><th>1 wk</th><th>2 wk</th><th>3 wk</th><th>4+ wk</th><th>Total</th></tr></thead><tbody>`;
     bRows.forEach(x=>{
-      if(x.ind){h+=`<tr style="opacity:.9"><td style="padding-left:26px;font-size:11.5px;color:var(--muted)">${x.nm}</td><td>${N(x.a[0])}</td><td>${N(x.a[1])}</td><td>${N(x.a[2])}</td><td>${N(x.a[3])}</td><td style="font-weight:600">${N(x.tot)}</td></tr>`;}
-      else{h+=`<tr><td><span class="cdot" style="background:${x.col}"></span>${x.nm}</td><td>${N(x.a[0])}</td><td>${N(x.a[1])}</td><td>${N(x.a[2])}</td><td>${N(x.a[3])}</td><td style="font-weight:700">${N(x.tot)}</td></tr>`;}
+      if(x.ind){h+=`<tr style="opacity:.9"><td style="padding-left:26px;font-size:11.5px;color:var(--muted)">${x.nm}</td>${cells(x.a)}<td style="font-weight:600">${N(x.tot)}</td></tr>`;}
+      else{h+=`<tr><td><span class="cdot" style="background:${x.col}"></span>${x.nm}</td>${cells(x.a)}<td style="font-weight:700">${N(x.tot)}</td></tr>`;}
     });
-    h+=`<tr class="tot"><td>Total</td><td>${N(tA[0])}</td><td>${N(tA[1])}</td><td>${N(tA[2])}</td><td>${N(tA[3])}</td><td>${N(tAll)}</td></tr></tbody></table>`;
+    h+=`<tr class="tot"><td>Total</td>${cells(tA)}<td>${N(tAll)}</td></tr></tbody></table>`;
   }
   h+=`</div>`;
   el.innerHTML=h;

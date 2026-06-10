@@ -9,7 +9,7 @@ SELECT
        WHEN l.source IN ('Fb','Instagram') THEN 'fb'
        WHEN l.source='Justdial' THEN 'justdial'
        ELSE 'others' END AS chan,
-  LEAST(GREATEST(DATEDIFF(week, DATE_TRUNC('week',l.created_on), DATE_TRUNC('week',l.call_booking_ts)),0),3) AS age,
+  LEAST(GREATEST(DATEDIFF(week, DATE_TRUNC('week',l.created_on), DATE_TRUNC('week',l.call_booking_ts)),0),4) AS age,
   COUNT(*) AS n
 FROM production.public.main_source_wise_leads l
 WHERE l.call_booking_ts >= '2026-03-16' AND l.call_booking_ts < '2026-06-08'

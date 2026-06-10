@@ -77,7 +77,7 @@ def main():
     ba_sql = open(os.path.join(ROOT, "scripts", "fetch_book_attr.sql")).read()
     pb = subprocess.run([sys.executable, os.path.join(ROOT, "scripts", "redshift_query.py")],
                         input=ba_sql, capture_output=True, text=True)
-    BA = {ch: {f"a{a}": [0]*12 for a in range(4)} for ch in CHANS}
+    BA = {ch: {f"a{a}": [0]*12 for a in range(5)} for ch in CHANS}   # a0=same wk … a4=4+ weeks back
     if pb.returncode == 0 and "ERROR" not in pb.stderr:
         for line in pb.stdout.strip().splitlines():
             c = line.split("\t")
