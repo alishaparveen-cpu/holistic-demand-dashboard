@@ -1,0 +1,662 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Demand Chain · Allo Health</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+:root{
+  --ink:#1A1A17;--ink-2:#4A4A44;--muted:#8A8A80;--faint:#B6B6AC;
+  --paper:#F3F1EA;--sheet:#FFFFFF;--line:#E2DFD4;--line-2:#EDEAE0;--inset:#FAFAF6;
+  --accent:#1F6F5C;--accent-d:#13503F;
+  --good:#2E7D5B;--good-bg:#E8F2EC;--warn:#B5722A;--warn-bg:#F8EFE2;--bad:#B23A2E;--bad-bg:#F8E9E6;
+  --r:11px;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:'Inter',system-ui,sans-serif;font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+.serif{font-family:'Newsreader',Georgia,serif}
+.mono{font-family:'JetBrains Mono',monospace;font-variant-numeric:tabular-nums}
+a{color:inherit}
+/* top nav (matches the rest of the dashboard) */
+.topnav{border-bottom:1px solid var(--line);background:var(--sheet);position:sticky;top:0;z-index:40}
+.topnav .inner{max-width:1180px;margin:0 auto;padding:10px 24px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.nav-link{font-size:12px;color:var(--muted);text-decoration:none;padding:4px 8px;border-radius:6px}
+.nav-link:hover{background:var(--line-2);color:var(--ink)}
+.nav-link.active{font-weight:700;color:var(--accent-d);background:var(--good-bg)}
+.nav-sep{color:var(--line);font-size:14px}
+.nav-grp{font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;color:var(--faint)}
+.wrap{max-width:1180px;margin:0 auto;padding:0 24px 90px}
+header.top{padding:26px 0 0}
+.eyebrow{font-family:'JetBrains Mono';font-size:11px;letter-spacing:.2em;text-transform:uppercase;color:var(--accent);font-weight:600}
+header.top h1{font-family:'Newsreader';font-weight:500;font-size:32px;margin:6px 0 0;letter-spacing:-.01em}
+.dateline{font-family:'JetBrains Mono';font-size:12px;color:var(--muted);margin-top:4px}
+.viewswitch{display:inline-flex;gap:2px;background:var(--line-2);border-radius:10px;padding:3px;margin:16px 0 6px}
+.viewswitch button{border:0;background:transparent;font-size:13.5px;font-weight:500;color:var(--ink-2);padding:8px 18px;border-radius:8px;cursor:pointer;transition:.14s}
+.viewswitch button:hover{color:var(--ink)}
+.viewswitch button.on{background:var(--sheet);color:var(--accent-d);font-weight:600;box-shadow:0 1px 3px rgba(0,0,0,.08)}
+.view-hint{font-size:12.5px;color:var(--muted);font-style:italic;margin:2px 0 16px}
+.ctrls{display:flex;gap:16px;flex-wrap:wrap;align-items:center;background:var(--sheet);border:1px solid var(--line);border-radius:var(--r);padding:11px 15px;margin-bottom:13px}
+.cg{display:flex;align-items:center;gap:8px}
+.cg .lbl{font-family:'JetBrains Mono';font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);font-weight:600}
+.seg{display:inline-flex;gap:1px;border:1px solid var(--line);border-radius:7px;overflow:hidden}
+.seg button{border:0;background:var(--sheet);font-size:12px;font-weight:500;color:var(--ink-2);padding:5px 11px;cursor:pointer;transition:.12s}
+.seg button:hover{background:var(--line-2)}
+.seg button.on{background:var(--ink);color:#fff;font-weight:600}
+.rsel{font-family:'Inter';font-size:12px;font-weight:500;color:var(--ink-2);border:1px solid var(--line);border-radius:6px;padding:4px 7px;background:var(--sheet);cursor:pointer}
+.rarrow{color:var(--muted);font-family:'JetBrains Mono'}
+/* entity picker */
+.picker{position:relative}
+.pick-btn{border:1px solid var(--line);background:var(--inset);border-radius:8px;padding:6px 12px;font-size:12.5px;font-weight:600;color:var(--ink);cursor:pointer;display:flex;align-items:center;gap:7px}
+.pick-btn:hover{border-color:var(--accent)}
+.pick-panel{display:none;position:absolute;z-index:50;top:calc(100% + 5px);left:0;width:330px;max-height:340px;overflow:auto;background:var(--sheet);border:1px solid var(--line);border-radius:10px;box-shadow:0 14px 40px rgba(0,0,0,.16);padding:9px}
+.pick-panel.open{display:block}
+.pick-search{width:100%;border:1px solid var(--line);border-radius:7px;padding:7px 9px;font-size:12.5px;font-family:'Inter';margin-bottom:7px}
+.pick-grphdr{font-family:'JetBrains Mono';font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);font-weight:600;padding:6px 4px 3px}
+.pick-opt{display:flex;align-items:center;gap:8px;padding:6px 7px;border-radius:7px;cursor:pointer;font-size:12.5px}
+.pick-opt:hover{background:var(--inset)}
+.pick-opt.sel{background:var(--good-bg);color:var(--accent-d);font-weight:600}
+.pick-opt .ck{width:14px;text-align:center;color:var(--accent)}
+.pick-opt .sub{font-size:10px;color:var(--muted);margin-left:auto}
+.chanrow{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:13px;align-items:center}
+.selchip{border:1px solid var(--accent);background:var(--good-bg);color:var(--accent-d);border-radius:999px;padding:6px 12px;font-size:12.5px;font-weight:600;display:flex;align-items:center;gap:7px}
+.selchip .x{cursor:pointer;color:var(--accent);font-weight:700}
+.selchip .dot{width:8px;height:8px;border-radius:50%}
+.chanhint{font-size:11.5px;color:var(--muted);font-style:italic;margin-left:4px}
+.shead{display:flex;align-items:baseline;gap:10px;margin:0 0 11px}
+.shead h2{font-family:'Newsreader';font-weight:500;font-size:20px;margin:0}
+.shead .s-sub{font-size:12px;color:var(--muted);margin-left:auto;font-family:'JetBrains Mono'}
+/* funnel snapshot */
+.funnel{display:flex;background:var(--sheet);border:1px solid var(--line);border-radius:var(--r);overflow:hidden;overflow-x:auto}
+.fcell{flex:1;min-width:104px;padding:13px 10px;border-right:1px solid var(--line-2);text-align:center}
+.fcell:last-child{border-right:0}
+.fcell .fk{font-family:'JetBrains Mono';font-size:9px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:600}
+.fcell .fv{font-family:'Newsreader';font-size:23px;font-weight:500;margin-top:3px;line-height:1}
+.fcell .fmeta{font-size:10px;color:var(--muted);margin-top:4px}
+.fcell .fmeta b{color:var(--accent-d)}
+.fcell.bad-cell{background:var(--bad-bg);border-left:2px solid var(--bad)}
+.fcell.disc{background:var(--inset)}
+.fcell .srcbar{display:flex;height:5px;border-radius:3px;overflow:hidden;margin-top:6px}
+.fcell .srcbar i{display:block;height:100%}
+.farrow{flex:0 0 70px;display:flex;flex-direction:column;align-items:center;justify-content:center;background:var(--inset);border-right:1px solid var(--line-2)}
+.farrow .conv{font-family:'JetBrains Mono';font-size:13px;font-weight:700}
+.farrow .clab{font-size:8.5px;color:var(--muted);margin-top:1px;text-align:center;padding:0 4px}
+.farrow.good-arrow .conv{color:var(--good)}
+.farrow.warn-arrow .conv{color:var(--warn)}
+.farrow.bad-arrow .conv{color:var(--bad)}
+.funnel-read{background:var(--sheet);border:1px solid var(--line);border-top:0;border-radius:0 0 var(--r) var(--r);padding:12px 16px;font-size:13px;color:var(--ink-2)}
+.funnel-read b{color:var(--ink)}
+.funnel-read .bad-note{color:var(--bad);font-weight:500}.funnel-read .warn-note{color:var(--warn);font-weight:500}
+/* matrix */
+.fmwrap{background:var(--sheet);border:1px solid var(--line);border-radius:var(--r);overflow-x:auto}
+table.fm{border-collapse:collapse;width:100%;font-size:12.5px;min-width:760px}
+table.fm th{font-family:'JetBrains Mono';font-size:9px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);font-weight:600;text-align:right;padding:9px 13px;background:var(--inset);border-bottom:1px solid var(--line);white-space:nowrap}
+table.fm th:first-child{text-align:left}
+table.fm th.lastcol{color:var(--accent-d)}
+table.fm td{padding:8px 13px;text-align:right;border-bottom:1px solid var(--line-2);font-family:'JetBrains Mono';font-variant-numeric:tabular-nums;white-space:nowrap}
+table.fm td:first-child{text-align:left;font-family:'Inter'}
+table.fm tr:last-child td{border-bottom:0}
+tr.stage td{font-weight:700;font-size:13.5px;color:var(--ink)}
+.snode{display:flex;align-items:center;gap:8px;font-weight:600;padding-left:9px;border-left:3px solid var(--accent)}
+tr.edge td{color:var(--ink-2);font-size:12px}
+.edge-lbl{padding-left:21px;color:var(--muted);display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+.edge-lbl .formula{font-family:'JetBrains Mono';font-size:9.5px;color:var(--faint)}
+tr.grp td{background:#F4F2EB;font-family:'JetBrains Mono';font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--accent-d);font-weight:600;padding:5px 13px;cursor:pointer}
+tr.grp td .gchev{transition:.2s;display:inline-block}
+tr.grp.closed td .gchev{transform:rotate(-90deg)}
+.fm td.lastcol{font-weight:700}
+.fm td.hit{color:var(--good)}.fm td.miss{color:var(--bad)}
+.sparkcell{padding:3px 11px!important;cursor:zoom-in}
+.sparkcell:hover{background:var(--good-bg)}
+/* compare cards */
+.sbs{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(210px,1fr))}
+.sbscard{background:var(--sheet);border:1px solid var(--line);border-radius:var(--r);border-top:3px solid;padding:13px}
+.sbscard h4{font-size:13.5px;margin:0 0 3px;display:flex;align-items:center;gap:7px;font-weight:600}
+.sbscard .csub{font-family:'JetBrains Mono';font-size:10px;color:var(--muted);margin-bottom:9px}
+.sbsrow{display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--line-2)}
+.sbsrow:last-child{border-bottom:0}
+.sbsrow .sk{font-size:11.5px;color:var(--ink-2)}
+.sbsrow .sv{font-family:'JetBrains Mono';font-weight:700;font-size:13.5px}
+.sbsconv{text-align:right;font-family:'JetBrains Mono';font-size:9.5px;color:var(--accent);font-weight:600;padding:1px 0 3px}
+.sbsconv.bad{color:var(--bad)}.sbsconv.warn{color:var(--warn)}
+/* norm */
+.norm-wrap{display:grid;gap:10px}
+.norm-row-item{background:var(--sheet);border:1px solid var(--line);border-radius:var(--r);padding:13px 16px;display:flex;align-items:center;gap:16px}
+.nri-dot{width:10px;height:10px;border-radius:3px;flex-shrink:0}
+.nri-label{font-size:13px;font-weight:600;color:var(--ink);flex:1}
+.nri-desc{font-size:11.5px;color:var(--muted);margin-top:1px}
+.nri-norm{font-family:'JetBrains Mono';font-size:11px;color:var(--muted)}
+.nri-arrow{font-size:12px;color:var(--faint)}
+.nri-this{font-family:'Newsreader';font-size:22px;font-weight:500;color:var(--ink);min-width:52px;text-align:right}
+.nri-this.good{color:var(--good)}.nri-this.bad{color:var(--bad)}
+.nri-delta{font-family:'JetBrains Mono';font-size:11px;font-weight:700;min-width:54px}
+.nri-delta.up{color:var(--good)}.nri-delta.dn{color:var(--bad)}.nri-delta.flat{color:var(--muted)}
+.nri-spark-wrap{width:120px;flex-shrink:0}
+/* modal */
+.modal{position:fixed;inset:0;background:rgba(26,26,23,.55);display:none;align-items:center;justify-content:center;z-index:100;padding:24px}
+.modal.open{display:flex}
+.modalbox{background:var(--sheet);border-radius:14px;max-width:640px;width:100%;padding:22px 24px;box-shadow:0 20px 60px rgba(0,0,0,.3)}
+.modalbox .mh{display:flex;align-items:baseline;gap:10px;margin-bottom:4px}
+.modalbox h3{font-family:'Newsreader';font-weight:500;font-size:21px;margin:0}
+.modalbox .mformula{font-family:'JetBrains Mono';font-size:11px;color:var(--muted)}
+.modalbox .mclose{margin-left:auto;border:0;background:var(--inset);border-radius:8px;width:30px;height:30px;cursor:pointer;font-size:16px;color:var(--ink-2)}
+.modalbox .mchart{position:relative;height:280px;margin:14px 0 6px}
+.mvals{display:flex;gap:6px;flex-wrap:wrap}
+.mvals span{font-family:'JetBrains Mono';font-size:11px;background:var(--inset);border:1px solid var(--line-2);border-radius:6px;padding:3px 8px}
+.mvals b{color:var(--ink)}
+/* AI */
+.ai{margin-top:28px;background:linear-gradient(180deg,#FBFBF7,#FFFFFF);border:1px solid var(--line);border-radius:var(--r);padding:20px 22px}
+.ai h2{font-family:'Newsreader';font-weight:500;font-size:21px;margin:0;display:flex;align-items:center;gap:10px}
+.ai .badge{font-family:'JetBrains Mono';font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--accent);background:var(--good-bg);border:1px solid #CADFD2;padding:2px 8px;border-radius:6px;font-weight:600}
+.ai .ai-sub{font-size:12px;color:var(--muted);margin:3px 0 14px;font-style:italic}
+.ai ul{margin:0;padding:0;list-style:none}
+.ai li{display:flex;gap:11px;padding:10px 0;border-bottom:1px solid var(--line-2)}
+.ai li:last-child{border-bottom:0}
+.ai li .ic{flex:0 0 22px;height:22px;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#fff}
+.ai li .ic.up{background:var(--good)}.ai li .ic.dn{background:var(--bad)}.ai li .ic.wa{background:var(--warn)}.ai li .ic.in{background:var(--accent)}
+.ai li .tx{font-size:13.5px;line-height:1.5}.ai li .tx b{color:var(--ink)}
+.loading{padding:40px;text-align:center;color:var(--muted);font-family:'JetBrains Mono';font-size:13px}
+</style>
+</head>
+<body>
+<script>if(!sessionStorage.getItem("allo_dash_auth"))location.replace("index.html");</script>
+<div class="topnav"><div class="inner">
+  <a href="index.html" class="nav-link">← Dashboard</a><span class="nav-sep">|</span>
+  <span class="nav-grp">City Heads</span>
+  <a href="diagnostic.html" class="nav-link">Quick View</a>
+  <a href="clinic-scorecard.html" class="nav-link">Detailed View</a>
+  <a href="diagnostic-view.html" class="nav-link">Diagnostic View</a>
+  <span class="nav-link active">Demand Chain</span>
+  <span class="nav-sep">|</span>
+  <span class="nav-grp">Marketing</span>
+  <a href="marketing.html" class="nav-link">Campaigns</a>
+  <a href="efficiency.html" class="nav-link">Efficiency</a>
+  <span class="nav-sep">|</span>
+  <span class="nav-grp">Executive</span>
+  <a href="category.html" class="nav-link">Category</a>
+</div></div>
+
+<div class="wrap">
+<header class="top">
+  <div class="eyebrow">Demand Chain · Discovery → Leads → Bookings → Done</div>
+  <h1 class="serif">Demand chain</h1>
+  <div class="dateline" id="dateline">loading…</div>
+  <div class="viewswitch" id="viewswitch">
+    <button data-v="funnel" class="on">Funnel over time</button>
+    <button data-v="compare">Compare</button>
+    <button data-v="norm">vs 6-week norm</button>
+  </div>
+  <div class="view-hint" id="viewHint"></div>
+</header>
+
+<div class="ctrls">
+  <div class="cg"><span class="lbl">Level</span>
+    <div class="seg" id="levelSeg">
+      <button data-l="tier">Tier</button>
+      <button data-l="city" class="on">City</button>
+      <button data-l="clinic">Clinic</button>
+      <button data-l="doctor">Doctor</button>
+    </div>
+  </div>
+  <div class="cg"><span class="lbl" id="pickLbl">City</span>
+    <div class="picker">
+      <button class="pick-btn" id="pickBtn">All cities ▾</button>
+      <div class="pick-panel" id="pickPanel"></div>
+    </div>
+  </div>
+  <div class="cg"><span class="lbl">Week</span>
+    <select class="rsel" id="rangeFrom"></select><span class="rarrow">→</span><select class="rsel" id="rangeTo"></select>
+  </div>
+</div>
+
+<div class="chanrow" id="selRow"></div>
+
+<section id="view-funnel">
+  <div id="funnelWrap">
+    <div class="shead"><h2 class="serif" id="fTitle">Full demand chain</h2><span class="s-sub" id="fSub"></span></div>
+    <div class="funnel" id="funnel"></div>
+    <div class="funnel-read" id="funnelRead"></div>
+    <div class="shead" style="margin-top:22px"><h2 class="serif">The same chain, week by week</h2>
+      <span class="s-sub">green = above 6-wk norm · red = below · tap a sparkline to zoom</span></div>
+    <div class="fmwrap" id="fmatrix"></div>
+  </div>
+  <div id="cmpWrap" style="display:none">
+    <div class="shead"><h2 class="serif">Side by side — <span id="cmpWeek"></span></h2><span class="s-sub">most recent week</span></div>
+    <div class="sbs" id="cmpSbs"></div>
+  </div>
+</section>
+
+<section id="view-compare" style="display:none">
+  <div class="shead"><h2 class="serif" id="compTitle">All at a glance</h2><span class="s-sub">most recent week · click a card to drill</span></div>
+  <div class="sbs" id="compareCards"></div>
+</section>
+
+<section id="view-norm" style="display:none">
+  <div class="shead"><h2 class="serif">This week vs 6-week norm</h2><span class="s-sub">norm = 6-week rolling average</span></div>
+  <div class="norm-wrap" id="normWrap"></div>
+</section>
+
+<section class="ai">
+  <h2 class="serif">Signals <span class="badge">auto</span></h2>
+  <div class="ai-sub" id="aiSub">auto-detected from the demand chain shown</div>
+  <ul id="aiList"></ul>
+</section>
+</div>
+
+<div class="modal" id="modal"><div class="modalbox">
+  <div class="mh"><h3 id="mTitle"></h3><span class="mformula" id="mFormula"></span><button class="mclose" id="mClose">×</button></div>
+  <div class="mchart"><canvas id="mChart"></canvas></div>
+  <div class="mvals" id="mVals"></div>
+</div></div>
+
+<script>
+// ─────────────────────────────────────────────────────────────────────────
+// DATA LAYER — real demand-chain data, keyed City|Clinic (12 weeks, newest-first)
+//   leads  : data_leads.json        (gmb/google_ad/organic/fb/justdial/others)
+//   gmb    : data_gmb_insights.json (searches/interactions)
+//   diag   : data_diagnostic.json   (allBk/bkDone/bkResched/bkMissed/bkCancelled/bkNew/bkRepeat/avail)
+//   age    : data_lead_age.json     (same/last/older)
+//   booking/done/disposition by city/clinic/doctor + scope: data.json
+// ─────────────────────────────────────────────────────────────────────────
+const T1=new Set(['Bangalore','Mumbai','Navi Mumbai','Pune','Hyderabad','Chennai','Delhi','Delhi NCR','Gurgaon','Gurugram','Kolkata']);
+const SRC=[['gmb','GMB','#1F6F5C'],['google_ad','Google Ads','#5B53C6'],['organic','Organic','#B5722A'],['fb','Meta','#3A5A8C'],['justdial','Justdial','#9C6A1F'],['others','Others','#B6B6AC']];
+let WEEKS=[],NW=0,LI=0;            // WEEKS newest-first; LI=last index (oldest)
+let DAT={};                       // raw json
+let UNIV={clinics:[],cities:[],doctors:[]};
+let DJ=null,DJSCOPE='all';        // data.json scope object
+let state={view:'funnel',level:'city',sel:['__all__'],scope:'all',rFrom:0,rTo:0};
+let zoomChart=null,closed={};
+
+const z=()=>Array(NW).fill(0);
+const addA=(a,b)=>{const o=(a||z()).slice();(b||[]).forEach((v,i)=>o[i]=(o[i]||0)+(+v||0));return o;};
+const sumA=arrs=>arrs.reduce((o,a)=>addA(o,a),z());
+const N=v=>(v==null||isNaN(v))?'—':Math.round(v).toLocaleString('en-IN');
+const P=v=>(v==null||isNaN(v))?'—':Math.round(v)+'%';
+const pct=(n,d)=>d?Math.round(n/d*100):null;
+const norm6=(arr,i)=>{if(!arr)return null;const s=[];for(let j=i+1;j<=i+6&&j<arr.length;j++)s.push(arr[j]||0);return s.length?s.reduce((a,b)=>a+b,0)/s.length:null;};
+
+const HINTS={
+  funnel:'Pick a level (Tier / City / Clinic / Doctor) and an entity. The full chain from GMB discovery → leads → bookings → done, with source mix, lead timing, new/repeat and capacity. Add more entities to compare. Tap a sparkline to zoom.',
+  compare:'Every entity at this level, ranked — leads, lead→book, show-up, done. Click a card to drill into it.',
+  norm:'Each metric vs its 6-week rolling average — what is above, below and anomalous this week.'
+};
+
+// ── load ──
+async function boot(){
+  const j=async f=>{try{const r=await fetch(f+'?t='+Date.now());return r.ok?await r.json():{};}catch(e){return {};}};
+  const [L,G,D,A,big]=await Promise.all([j('data_leads.json'),j('data_gmb_insights.json'),j('data_diagnostic.json'),j('data_lead_age.json'),j('data.json')]);
+  DAT={L,G,D,A};
+  WEEKS=(L._meta&&L._meta.weeks)||(D._meta&&D._meta.weeks)||[];
+  NW=WEEKS.length;LI=NW-1;
+  DAT.big=big; setScope('all');
+  // universe of clinics (pipe keys) from the union
+  const keys=new Set();[L,G,D,A].forEach(o=>Object.keys(o).forEach(k=>{if(k!=='_meta')keys.add(k);}));
+  UNIV.clinics=[...keys].sort();
+  UNIV.cities=[...new Set(UNIV.clinics.map(k=>k.split('|')[0]))].sort();
+  // doctors from data.json weekly_doctor (key City_Clinic|Doctor) → display
+  const docSet=new Set();
+  Object.values(big.all&&big.all.weekly_doctor||{}).forEach(cell=>Object.keys(cell).forEach(dk=>docSet.add(dk)));
+  UNIV.doctors=[...docSet].sort();
+  document.getElementById('dateline').innerHTML=(WEEKS[LI]||'')+' → '+(WEEKS[0]||'')+' · <b style="color:#1F6F5C">live from Redshift</b> · weekly · offline clinic demand';
+  initWeeks();
+  state.rFrom=Math.min(7,LI);state.rTo=0;
+  renderSelRow();renderAll();
+  document.getElementById('viewHint').textContent=HINTS.funnel;
+}
+function setScope(s){DJSCOPE=s;DJ=(DAT.big&&DAT.big[s])||DAT.big.all||{};}
+
+// ── booking/done/disposition from data.json (by date key, scope-aware) ──
+function djSeries(kind,name){ // kind: 'city'|'clinic'|'doctor'
+  const map=DJ['weekly_'+kind]||{};
+  const f=k=>WEEKS.map(w=>{const cell=(map[w]||{})[k];return cell||null;});
+  const g=field=>WEEKS.map(w=>{const cell=(map[w]||{})[name];return cell?(cell[field]||0):0;});
+  return {bookings:g('gross'),done:g('calls_done'),noshow:g('no_show'),resched:g('rescheduled'),nbk:g('new_bookings')};
+}
+
+// ── aggregate the demand chain for a set of pipe-clinic-keys (discovery+leads+capacity) ──
+function clinicTop(keys){
+  const L=DAT.L,G=DAT.G,D=DAT.D,A=DAT.A;
+  const out={searches:z(),interactions:z(),leads:z(),avail:z(),age_same:z(),age_last:z(),age_older:z(),src:{},
+    bookings:z(),newBk:z(),repeat:z(),done:z(),newDone:z(),repeatDone:z(),noshow:z(),resched:z(),cancelled:z()};
+  SRC.forEach(([k])=>out.src[k]=z());
+  keys.forEach(key=>{
+    const g=G[key]||{},d=D[key]||{},a=A[key]||{},l=L[key]||{};
+    out.searches=addA(out.searches,g.searches);out.interactions=addA(out.interactions,g.interactions);
+    out.avail=addA(out.avail,d.avail);
+    out.age_same=addA(out.age_same,a.same);out.age_last=addA(out.age_last,a.last);out.age_older=addA(out.age_older,a.older);
+    // booking funnel from diagnostic (same City|Clinic universe) — has the new/repeat split
+    out.bookings=addA(out.bookings,d.allBk);out.newBk=addA(out.newBk,d.bkNew);out.repeat=addA(out.repeat,d.bkRepeat);
+    out.done=addA(out.done,d.bkDone);out.newDone=addA(out.newDone,d.bkDoneNew);out.repeatDone=addA(out.repeatDone,d.bkDoneRepeat);
+    out.noshow=addA(out.noshow,d.bkMissed);out.resched=addA(out.resched,d.bkResched);out.cancelled=addA(out.cancelled,d.bkCancelled);
+    SRC.forEach(([k])=>{out.src[k]=addA(out.src[k],l[k]);out.leads=addA(out.leads,l[k]);});
+  });
+  return out;
+}
+
+// ── resolve an entity id (at the current level) → full series object ──
+function clinicsFor(level,id){
+  if(level==='clinic')return id==='__all__'?UNIV.clinics:[id];
+  if(level==='city')return UNIV.clinics.filter(k=>id==='__all__'||k.split('|')[0]===id);
+  if(level==='tier'){const want=id==='T1';return UNIV.clinics.filter(k=>id==='__all__'?true:(T1.has(k.split('|')[0])===want));}
+  return []; // doctor handled separately
+}
+function entitySeries(level,id){
+  if(level==='doctor'){
+    const dj=djSeries('doctor',id);
+    const s=Object.assign({searches:z(),interactions:z(),leads:null,avail:z(),age_same:z(),age_last:z(),age_older:z(),src:{},noLeads:true,newBk:null,repeat:null,newDone:null},dj);
+    s.cancelled=z();
+    return s;
+  }
+  const keys=clinicsFor(level,id);
+  const s=clinicTop(keys);   // booking funnel now comes from diagnostic (same City|Clinic universe)
+  s.nClinics=keys.length;
+  return s;
+}
+function labelFor(level,id){
+  if(id==='__all__')return level==='tier'?'All India':level==='city'?'All cities':level==='clinic'?'All clinics':'All doctors';
+  if(level==='clinic')return id.split('|')[1]+' · '+id.split('|')[0];
+  if(level==='doctor')return id.split('|')[1]+' · '+id.split('|')[0].replace('_',' · ');
+  return id;
+}
+function subFor(level,id,s){
+  if(level==='tier')return (id==='__all__'?'all cities':id+' cities')+' · '+(s.nClinics||0)+' clinics';
+  if(level==='city')return (s.nClinics||0)+' clinics';
+  if(level==='clinic')return 'single clinic';
+  if(level==='doctor')return 'leads & discovery are clinic-level';
+  return '';
+}
+
+// ── FUNNEL SNAPSHOT (latest week in range) ──
+// link between leads and bookings: a % conversion when bookings≤leads, else a ×ratio (walk-in/repeat demand beyond tracked leads) — never a >100% optic
+function linkLB(book,lead){
+  if(!lead)return {txt:'—',cls:'',lab:'lead → book'};
+  const r=book/lead;
+  if(r<=1.02)return {txt:P(r*100),cls:r<0.55?'bad-arrow':r<0.7?'warn-arrow':'good-arrow',lab:'lead → book'};
+  return {txt:r.toFixed(2)+'×',cls:'',lab:'book / lead'};
+}
+function snapCells(s,i){
+  const cells=[];const has=v=>v&&v.some(x=>x>0);
+  if(has(s.searches)||has(s.interactions)){
+    cells.push({k:'GMB searches',v:N(s.searches[i]),m:'listing impressions',cls:'disc'});
+    cells.push({arrow:pct(s.interactions[i],s.searches[i]),lab:'interaction rate'});
+    cells.push({k:'GMB interactions',v:N(s.interactions[i]),m:'calls·web·directions',cls:'disc'});
+    cells.push({arrow:pct((s.src.gmb||z())[i],s.interactions[i]),lab:'GMB lead rate'});
+  }
+  if(!s.noLeads&&s.leads){
+    const tot=s.leads[i]||0;
+    const bar=SRC.map(([k,,c])=>{const v=(s.src[k]||z())[i]||0;return v>0?`<i style="width:${v/Math.max(tot,1)*100}%;background:${c}"></i>`:'';}).join('');
+    cells.push({k:'Leads',v:N(tot),m:'tracked online sources',srcbar:bar});
+    const lk=linkLB(s.bookings[i],tot);cells.push({arrowRaw:lk.txt,lab:lk.lab,cls:lk.cls});
+  }
+  const newM=s.newBk?`<b>${N(s.newBk[i])}</b> new · ${N(s.repeat[i])} repeat`:'';
+  cells.push({k:'Bookings',v:N(s.bookings[i]),m:newM});
+  cells.push({arrow:pct(s.done[i],s.bookings[i]),lab:'show-up / B2D',bad:pct(s.done[i],s.bookings[i])<65});
+  const doneM=s.noshow?`${N(s.noshow[i])} no-show · ${N(s.resched[i])} resched`:'';
+  cells.push({k:'Done',v:N(s.done[i]),m:doneM});
+  if(has(s.avail)){
+    const perDay=s.avail[i]?(s.bookings[i]/s.avail[i]).toFixed(1):'—';
+    cells.push({arrow:null,lab:''});
+    cells.push({k:'Capacity',v:N(s.avail[i]),m:`doctor-days · <b>${perDay}</b> bk/day`,cls:'disc'});
+  }
+  return cells;
+}
+function funnelHTML(cells){
+  return cells.map(x=>{
+    if(x.k!==undefined){
+      const cls='fcell'+(x.bad?' bad-cell':x.cls?' '+x.cls:'');
+      return `<div class="${cls}"><div class="fk">${x.k}</div><div class="fv serif">${x.v}</div>${x.srcbar?`<div class="srcbar">${x.srcbar}</div>`:''}<div class="fmeta">${x.m||'&nbsp;'}</div></div>`;
+    }
+    if(x.arrowRaw!==undefined)return `<div class="farrow ${x.cls||''}"><div class="conv">${x.arrowRaw}</div><div class="clab">${x.lab}</div></div>`;
+    if(x.arrow==null)return `<div class="farrow"></div>`;
+    const a='farrow'+(x.bad||x.arrow<55?' bad-arrow':x.arrow>=80?' good-arrow':x.arrow>=65?'':' warn-arrow');
+    return `<div class="${a}"><div class="conv">${P(x.arrow)}</div><div class="clab">${x.lab}</div></div>`;
+  }).join('');
+}
+
+// ── MATRIX rows ──
+const RATIO=v=>v==null?'—':(v<=1.02?Math.round(v*100)+'%':v.toFixed(2)+'×');
+const D1=v=>v==null?'—':v.toFixed(1);
+const MROWS=[
+  {grp:'discovery',label:'GMB discovery'},
+  {t:'stage',k:'searches',label:'GMB searches',fmt:N},
+  {t:'edge',k:'_intrate',label:'Interaction rate %',formula:'interactions ÷ searches',fmt:P},
+  {t:'stage',k:'interactions',label:'GMB interactions',fmt:N},
+  {grp:'leads',label:'Leads & source mix'},
+  {t:'stage',k:'leads',label:'Leads (tracked online)',fmt:N},
+  {t:'edge',k:'src.gmb',label:'· from GMB',fmt:N},{t:'edge',k:'src.google_ad',label:'· from Google Ads',fmt:N},
+  {t:'edge',k:'src.organic',label:'· from Organic',fmt:N},{t:'edge',k:'src.fb',label:'· from Meta',fmt:N},
+  {t:'edge',k:'src.justdial',label:'· from Justdial',fmt:N},{t:'edge',k:'src.others',label:'· from Others',fmt:N},
+  {t:'edge',k:'_lbratio',label:'Bookings per lead',formula:'bookings ÷ tracked leads (× = walk-in/repeat beyond tracked)',fmt:RATIO},
+  {grp:'timing',label:'Lead timing (how fast leads book)'},
+  {t:'edge',k:'age_same',label:'Booked same week',fmt:N},{t:'edge',k:'age_last',label:'1-week lag',fmt:N},{t:'edge',k:'age_older',label:'2+ week backlog',fmt:N},
+  {grp:'acq',label:'Acquisition — new patients'},
+  {t:'stage',k:'newBk',label:'New bookings',fmt:N},
+  {t:'edge',k:'_newshow',label:'New show-up %',formula:'new done ÷ new bookings',fmt:P,tgt:75},
+  {t:'stage',k:'newDone',label:'New done',fmt:N},
+  {grp:'ret',label:'Retention — repeat patients'},
+  {t:'stage',k:'repeat',label:'Repeat bookings',fmt:N},
+  {t:'edge',k:'repeatDone',label:'Repeat done',fmt:N},
+  {grp:'outcome',label:'Total bookings & outcome'},
+  {t:'stage',k:'bookings',label:'Bookings (new + repeat)',fmt:N},
+  {t:'edge',k:'_b2d',label:'Show-up / B2D %',formula:'done ÷ bookings',fmt:P,tgt:75},
+  {t:'stage',k:'done',label:'Done (consultations)',fmt:N},
+  {t:'edge',k:'noshow',label:'No-shows',fmt:N,inv:true},{t:'edge',k:'resched',label:'Reschedules',fmt:N,inv:true},{t:'edge',k:'cancelled',label:'Cancelled',fmt:N,inv:true},
+  {grp:'capacity',label:'Capacity'},
+  {t:'stage',k:'avail',label:'Doctor-days available',fmt:N},
+  {t:'edge',k:'_perday',label:'Bookings per doctor-day',formula:'bookings ÷ doctor-days',fmt:D1},
+];
+function deriv(s,k){
+  if(k==='_intrate')return (s.searches&&s.searches.some(v=>v>0))?s.searches.map((v,i)=>pct(s.interactions[i],v)):null;
+  if(k==='_lbratio')return s.leads?s.leads.map((v,i)=>v?+(s.bookings[i]/v).toFixed(2):null):null;
+  if(k==='_b2d')return s.bookings.map((v,i)=>pct(s.done[i],v));
+  if(k==='_newshow')return s.newBk?s.newBk.map((v,i)=>pct((s.newDone||z())[i],v)):null;
+  if(k==='_perday')return (s.avail&&s.avail.some(v=>v>0))?s.avail.map((v,i)=>v?+(s.bookings[i]/v).toFixed(2):null):null;
+  if(k.startsWith('src.'))return s.src[k.slice(4)];
+  return s[k];
+}
+
+function renderFunnel(){
+  const id=state.sel[0],s=entitySeries(state.level,id),i=state.rTo;
+  document.getElementById('fTitle').textContent='Demand chain — '+labelFor(state.level,id);
+  document.getElementById('fSub').textContent=subFor(state.level,id,s)+' · week of '+WEEKS[i];
+  document.getElementById('funnel').innerHTML=funnelHTML(snapCells(s,i));
+  // read
+  const ratio=s.leads&&s.leads[i]?s.bookings[i]/s.leads[i]:null,b2d=pct(s.done[i],s.bookings[i]);
+  let r=`<b>${WEEKS[i]}:</b> `;
+  if(!s.noLeads&&s.leads)r+=`${N(s.leads[i])} tracked leads → ${N(s.bookings[i])} bookings (<b>${RATIO(ratio)}</b> per lead${ratio>1.05?', i.e. walk-in/repeat demand beyond tracked leads':''}) → ${N(s.done[i])} done (<b>${P(b2d)}</b> show-up). `;
+  else r+=`${N(s.bookings[i])} bookings → ${N(s.done[i])} done (<b>${P(b2d)}</b> show-up). `;
+  if(b2d<65)r+=`<span class="bad-note">Show-up below 65% — chase no-shows (${N(s.noshow[i])} this week).</span>`;
+  else if(s.age_older&&s.age_older[i]>(s.age_same[i]||0))r+=`<span class="warn-note">More leads are booking from backlog than same-week — speed of follow-up is slipping.</span>`;
+  document.getElementById('funnelRead').innerHTML=r;
+  renderMatrix(s);
+}
+function renderMatrix(s){
+  const lo=state.rFrom,hi=state.rTo,cols=[];for(let i=hi;i<=lo;i++)cols.push(i);// newest-first display L→R = recent→old? keep oldest→newest
+  cols.sort((a,b)=>b-a); // oldest..newest left→right (index high=old)
+  const order=cols.slice().reverse(); // left=oldest
+  let h='<table class="fm"><thead><tr><th>Stage & transition</th>';
+  order.forEach((ci,j)=>h+=`<th class="${j===order.length-1?'lastcol':''}">${WEEKS[ci]}</th>`);
+  h+='<th>trend</th></tr></thead><tbody>';
+  let hidden=false;
+  MROWS.forEach(r=>{
+    if(r.grp){hidden=!!closed[r.grp];h+=`<tr class="grp${hidden?' closed':''}" data-grp="${r.grp}"><td colspan="${order.length+2}"><span class="gchev">▾</span> ${r.label}</td></tr>`;return;}
+    if(hidden)return;
+    const series=deriv(s,r.k);if(!series)return;if(!series.some(v=>v!=null&&v!==0)&&r.t==='edge'&&!r.tgt)return;
+    let cells='';order.forEach((ci,j)=>{
+      const v=series[ci];let cls=j===order.length-1?'lastcol':'';
+      if(v!=null){const nm=norm6(series,ci)||r.tgt;
+        if(nm!=null&&nm){const p=r.inv?(nm-v)/Math.max(nm,1):(v-nm)/Math.max(nm,1);if(p>=0.1)cls+=' hit';else if(p<=-0.2)cls+=' miss';}}
+      cells+=`<td class="${cls}">${v==null?'—':r.fmt(v)}</td>`;});
+    const lbl=r.t==='stage'?`<div class="snode">${r.label}</div>`:`<div class="edge-lbl">↳ ${r.label} ${r.formula?`<span class="formula">${r.formula}</span>`:''}</div>`;
+    const sd=order.map(ci=>series[ci]);
+    h+=`<tr class="${r.t}"><td>${lbl}</td>${cells}<td class="sparkcell" data-k="${r.k}">${sd.filter(v=>v!=null).length>1?spark(sd,r.inv):''}</td></tr>`;
+  });
+  const el=document.getElementById('fmatrix');el.innerHTML=h+'</tbody></table>';
+  el.querySelectorAll('.grp').forEach(g=>g.onclick=()=>{closed[g.dataset.grp]=!closed[g.dataset.grp];renderMatrix(s);});
+  el.querySelectorAll('.sparkcell').forEach(c=>{if(c.dataset.k)c.onclick=()=>openZoom(s,c.dataset.k);});
+}
+
+// ── sparkline ──
+function spark(sv,inv){const s=sv.slice();const vals=s.filter(v=>v!=null);if(vals.length<2)return '';
+  const w=120,h=26,p=4,n=s.length,mn=Math.min(...vals),mx=Math.max(...vals),rng=(mx-mn)||1;
+  const pts=s.map((v,i)=>[p+i*(w-2*p)/(n-1),v==null?null:h-p-((v-mn)/rng)*(h-2*p)]).filter(pt=>pt[1]!=null);
+  const rise=vals[vals.length-1]-vals[0],good=inv?rise<0:rise>0;
+  const col=Math.abs(rise/(vals[0]||1))<0.01?'#8A8A80':good?'#2E7D5B':'#B23A2E';
+  const d=pts.map((pt,i)=>(i?'L':'M')+pt[0].toFixed(1)+' '+pt[1].toFixed(1)).join(' ');const lp=pts[pts.length-1];
+  return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><path d="${d}" fill="none" stroke="${col}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/><circle cx="${lp[0].toFixed(1)}" cy="${lp[1].toFixed(1)}" r="3" fill="${col}"/></svg>`;}
+
+// ── COMPARE (multi-select inside funnel view) & full compare view ──
+function compareRows(s,i){
+  const ratio=s.leads&&s.leads[i]?s.bookings[i]/s.leads[i]:null,b2d=pct(s.done[i],s.bookings[i]);
+  let r='';
+  if(!s.noLeads&&s.leads){r+=`<div class="sbsrow"><span class="sk">Leads</span><span class="sv">${N(s.leads[i])}</span></div><div class="sbsconv${ratio!=null&&ratio<0.55?' bad':ratio!=null&&ratio<0.7?' warn':''}">↓ ${RATIO(ratio)} per lead</div>`;}
+  r+=`<div class="sbsrow"><span class="sk">Bookings</span><span class="sv">${N(s.bookings[i])}</span></div><div class="sbsconv${b2d<65?' bad':b2d<75?' warn':''}">↓ ${P(b2d)} show-up</div>`;
+  r+=`<div class="sbsrow"><span class="sk">Done</span><span class="sv">${N(s.done[i])}</span></div>`;
+  if(s.noshow)r+=`<div class="sbsrow"><span class="sk">No-shows</span><span class="sv" style="color:${s.noshow[i]>s.done[i]*0.3?'var(--bad)':'var(--ink)'}">${N(s.noshow[i])}</span></div>`;
+  return r;
+}
+const PAL=['#1F6F5C','#B23A2E','#3A5A8C','#B5722A','#5B53C6','#2E7D5B'];
+function renderCmpSbs(){
+  const el=document.getElementById('cmpSbs');el.innerHTML='';const i=state.rTo;
+  document.getElementById('cmpWeek').textContent=WEEKS[i];
+  state.sel.forEach((id,n)=>{const s=entitySeries(state.level,id),c=PAL[n%PAL.length];
+    el.insertAdjacentHTML('beforeend',`<div class="sbscard" style="border-top-color:${c}"><h4><span class="nri-dot" style="border-radius:50%;background:${c}"></span>${labelFor(state.level,id)}</h4><div class="csub">${subFor(state.level,id,s)}</div>${compareRows(s,i)}</div>`);});
+}
+function renderCompareView(){
+  const el=document.getElementById('compareCards');el.innerHTML='';const i=state.rTo;
+  document.getElementById('compTitle').textContent='All '+(state.level==='tier'?'tiers':state.level==='city'?'cities':state.level==='clinic'?'clinics':'doctors')+' — '+WEEKS[i];
+  let ids;
+  if(state.level==='tier')ids=['T1','T2'];
+  else if(state.level==='city')ids=UNIV.cities;
+  else if(state.level==='clinic')ids=UNIV.clinics;
+  else ids=UNIV.doctors;
+  const rows=ids.map(id=>({id,s:entitySeries(state.level,id)})).filter(x=>x.s.bookings.some(v=>v>0));
+  rows.sort((a,b)=>(b.s.bookings[i]||0)-(a.s.bookings[i]||0));
+  rows.slice(0,state.level==='clinic'||state.level==='doctor'?40:30).forEach((x,n)=>{
+    const c=PAL[n%PAL.length],s=x.s;
+    el.insertAdjacentHTML('beforeend',`<div class="sbscard" data-id="${x.id}" style="border-top-color:${c};cursor:pointer"><h4><span class="nri-dot" style="border-radius:50%;background:${c}"></span>${labelFor(state.level,x.id)}</h4><div class="csub">${subFor(state.level,x.id,s)}</div>${compareRows(s,i)}</div>`);
+  });
+  el.querySelectorAll('.sbscard').forEach(card=>card.onclick=()=>{state.sel=[card.dataset.id];setView('funnel');renderSelRow();renderAll();});
+}
+
+// ── NORM view ──
+function renderNorm(){
+  const el=document.getElementById('normWrap');el.innerHTML='';const i=state.rTo;
+  const s=entitySeries(state.level,state.sel[0]);
+  const items=[['leads','Leads',false],['bookings','Bookings',false],['newBk','New bookings',false],['_b2d','Show-up / B2D %',false],['done','Done',false],['noshow','No-shows',true],['searches','GMB searches',false],['interactions','GMB interactions',false],['avail','Doctor-days',false]];
+  items.forEach(([k,label,inv])=>{
+    const series=deriv(s,k);if(!series)return;const v=series[i];if(v==null)return;
+    if(!series.some(x=>x>0))return;
+    const nm=norm6(series,i),delta=nm?Math.round((v-nm)/nm*100):null,good=inv?delta<0:delta>0;
+    const cls=delta==null?'flat':Math.abs(delta)<3?'flat':good?'up':'dn',vcls=delta==null?'':Math.abs(delta)<3?'':good?'good':'bad';
+    const fmt=k.includes('l2b')||k.includes('b2d')?P:N;
+    el.insertAdjacentHTML('beforeend',`<div class="norm-row-item"><div class="nri-dot" style="background:${PAL[0]}"></div><div style="flex:1"><div class="nri-label">${label}</div></div><div class="nri-norm">norm ${nm!=null?(fmt===P?P(nm):N(nm)):'—'}</div><div class="nri-arrow">→</div><div class="nri-this ${vcls}">${fmt(v)}</div><div class="nri-delta ${cls}">${delta!=null?(delta>0?'▲':'▼')+' '+Math.abs(delta)+'%':'—'}</div><div class="nri-spark-wrap">${spark(series.slice(i,i+8),inv)}</div></div>`);
+  });
+}
+
+// ── AI signals ──
+function renderAI(){
+  const s=entitySeries(state.level,state.sel[0]),i=state.rTo,L=document.getElementById('aiList');const ins=[];
+  const wow=(arr)=>{const a=arr[i],b=arr[i+1];return b?Math.round((a-b)/b*100):null;};
+  if(s.leads){const lw=wow(s.leads);if(lw!=null&&lw<=-15)ins.push(['dn',`<b>Leads down ${lw}% WoW</b> (${N(s.leads[i+1])}→${N(s.leads[i])}). ${(()=>{let worst=null;SRC.forEach(([k,nm])=>{const d=(s.src[k][i]||0)-(s.src[k][i+1]||0);if(worst==null||d<worst.d)worst={nm,d};});return worst&&worst.d<0?`Biggest drop: <b>${worst.nm}</b> (${worst.d}).`:'';})()}`]);
+    else if(lw!=null&&lw>=15)ins.push(['up',`<b>Leads up ${lw}% WoW</b> — momentum building (${N(s.leads[i+1])}→${N(s.leads[i])}).`]);}
+  const b2d=pct(s.done[i],s.bookings[i]);if(b2d!=null&&b2d<65)ins.push(['wa',`<b>Show-up only ${b2d}%</b> — ${N(s.noshow[i])} no-shows + ${N(s.resched[i])} reschedules this week. Chase confirmations the day before.`]);
+  if(s.leads&&s.leads[i]){const ratio=s.bookings[i]/s.leads[i];if(ratio>1.15)ins.push(['in',`<b>${ratio.toFixed(2)}× bookings per tracked lead</b> — ${N(s.bookings[i]-s.leads[i])} more bookings than tracked online leads, i.e. meaningful walk-in / offline / repeat demand the lead feed doesn't capture.`]);else if(ratio<0.5)ins.push(['wa',`<b>Only ${Math.round(ratio*100)}% of tracked leads booked</b> — over half never convert. Check call-back speed and slot availability.`]);}
+  if(s.age_older&&s.age_same){const back=s.age_older[i]||0,same=s.age_same[i]||0;if(back>same&&back>3)ins.push(['in',`<b>${back} bookings came from 2+ week backlog</b> vs ${same} same-week — follow-up is slow; faster call-backs would lift conversion.`]);}
+  if(s.avail&&s.avail.some(v=>v>0)){const perDay=s.avail[i]?(s.bookings[i]/s.avail[i]):null;if(perDay!=null&&perDay>6)ins.push(['wa',`<b>${perDay.toFixed(1)} bookings per doctor-day</b> — capacity is tight; demand may be capped by available slots.`]);else if(perDay!=null&&perDay<2&&s.bookings[i]>0)ins.push(['in',`<b>Only ${perDay.toFixed(1)} bookings per doctor-day</b> — spare capacity to absorb more demand.`]);}
+  if(s.searches&&s.searches.some(v=>v>0)){const sw=wow(s.searches),iw=wow(s.interactions);if(sw!=null&&iw!=null&&sw>0&&iw<-20)ins.push(['dn',`<b>GMB interactions −${Math.abs(iw)}% while searches +${sw}%</b> — the listing is shown but tapped less. Check photos, hours, reviews.`]);}
+  if(!ins.length)ins.push(['up',`<b>${labelFor(state.level,state.sel[0])} is steady</b> this week — no anomalies in leads, conversion, show-up or capacity.`]);
+  document.getElementById('aiSub').textContent='auto-detected · '+labelFor(state.level,state.sel[0])+' · week of '+WEEKS[i];
+  L.innerHTML=ins.map(([t,tx])=>`<li><span class="ic ${t}">${t==='up'?'↑':t==='dn'?'↓':t==='wa'?'!':'i'}</span><span class="tx">${tx}</span></li>`).join('');
+}
+
+// ── zoom modal ──
+function openZoom(s,k){
+  const r=MROWS.find(x=>x.k===k);if(!r)return;const series=deriv(s,k);if(!series)return;
+  const lo=state.rFrom,hi=state.rTo,idxs=[];for(let i=lo;i>=hi;i--)idxs.push(i);
+  const per=idxs.map(i=>WEEKS[i]),sv=idxs.map(i=>series[i]);
+  document.getElementById('mTitle').textContent=(r.label||k)+' — '+labelFor(state.level,state.sel[0]);
+  document.getElementById('mFormula').textContent=r.formula||'';
+  document.getElementById('mVals').innerHTML=per.map((w,j)=>`<span>${w}: <b>${sv[j]==null?'—':r.fmt(sv[j])}</b></span>`).join('');
+  document.getElementById('modal').classList.add('open');
+  if(zoomChart)zoomChart.destroy();
+  zoomChart=new Chart(document.getElementById('mChart'),{type:'line',data:{labels:per,datasets:[{data:sv,borderColor:'#1F6F5C',backgroundColor:'rgba(31,111,92,.1)',fill:true,tension:.3,pointRadius:4,pointBackgroundColor:'#1F6F5C'}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{grid:{display:false},ticks:{font:{family:'JetBrains Mono',size:10},color:'#8A8A80'}},y:{grid:{color:'#EDEAE0'},ticks:{font:{family:'JetBrains Mono',size:10},color:'#8A8A80'}}}}});
+}
+document.getElementById('mClose').onclick=()=>document.getElementById('modal').classList.remove('open');
+document.getElementById('modal').onclick=e=>{if(e.target.id==='modal')document.getElementById('modal').classList.remove('open');};
+
+// ── picker ──
+function levelEntities(){
+  if(state.level==='tier')return [['T1','Tier 1','metro'],['T2','Tier 2','non-metro']];
+  if(state.level==='city')return UNIV.cities.map(c=>[c,c,(T1.has(c)?'T1':'T2')]);
+  if(state.level==='clinic')return UNIV.clinics.map(k=>[k,k.split('|')[1],k.split('|')[0]]);
+  return UNIV.doctors.map(k=>[k,k.split('|')[1],k.split('|')[0].replace('_',' · ')]);
+}
+let pickQuery='';
+function renderPicker(){
+  const panel=document.getElementById('pickPanel');const ents=levelEntities();
+  const q=pickQuery.toLowerCase();
+  const filt=ents.filter(([id,nm,sub])=>!q||nm.toLowerCase().includes(q)||(sub||'').toLowerCase().includes(q));
+  let h=`<input class="pick-search" id="pickSearch" placeholder="Search ${state.level}…" value="${pickQuery}">`;
+  h+=`<div class="pick-opt${state.sel.includes('__all__')?' sel':''}" data-id="__all__"><span class="ck">${state.sel.includes('__all__')?'✓':''}</span>All ${state.level==='tier'?'India':state.level+'s'}</div>`;
+  filt.slice(0,200).forEach(([id,nm,sub])=>{const on=state.sel.includes(id);h+=`<div class="pick-opt${on?' sel':''}" data-id="${id}"><span class="ck">${on?'✓':''}</span>${nm}<span class="sub">${sub||''}</span></div>`;});
+  panel.innerHTML=h;
+  const si=document.getElementById('pickSearch');si.oninput=()=>{pickQuery=si.value;renderPicker();si.focus();};
+  panel.querySelectorAll('.pick-opt').forEach(o=>o.onclick=()=>{
+    const id=o.dataset.id;
+    if(id==='__all__'){state.sel=['__all__'];}
+    else{state.sel=state.sel.filter(x=>x!=='__all__');const j=state.sel.indexOf(id);if(j>=0){if(state.sel.length>1)state.sel.splice(j,1);}else state.sel.push(id);}
+    renderPicker();renderSelRow();renderAll();
+  });
+}
+document.getElementById('pickBtn').onclick=()=>{const p=document.getElementById('pickPanel');p.classList.toggle('open');if(p.classList.contains('open')){pickQuery='';renderPicker();}};
+document.addEventListener('click',e=>{if(!e.target.closest('.picker'))document.getElementById('pickPanel').classList.remove('open');});
+
+function renderSelRow(){
+  const el=document.getElementById('selRow');el.innerHTML='';
+  document.querySelectorAll('#levelSeg button').forEach(b=>b.classList.toggle('on',b.dataset.l===state.level));
+  // update pick button label
+  document.getElementById('pickLbl').textContent=state.level.charAt(0).toUpperCase()+state.level.slice(1);
+  document.getElementById('pickBtn').textContent=(state.sel.includes('__all__')?('All '+(state.level==='tier'?'India':state.level+'s')):state.sel.length+' selected')+' ▾';
+  if(state.sel.includes('__all__')){el.innerHTML=`<span class="chanhint">Showing the whole network. Pick a ${state.level} above, or add several to compare.</span>`;return;}
+  state.sel.forEach((id,n)=>{const c=PAL[n%PAL.length];const chip=document.createElement('span');chip.className='selchip';
+    chip.innerHTML=`<span class="dot" style="background:${c}"></span>${labelFor(state.level,id)}<span class="x" data-id="${id}">✕</span>`;
+    chip.querySelector('.x').onclick=()=>{state.sel=state.sel.filter(x=>x!==id);if(!state.sel.length)state.sel=['__all__'];renderSelRow();renderAll();};el.appendChild(chip);});
+  const hint=document.createElement('span');hint.className='chanhint';hint.textContent=state.sel.length>1?'comparing '+state.sel.length:'add another to compare';el.appendChild(hint);
+}
+
+// ── weeks ──
+function initWeeks(){
+  const wf=document.getElementById('rangeFrom'),wt=document.getElementById('rangeTo');
+  // present oldest→newest in dropdowns
+  [wf,wt].forEach(el=>{el.innerHTML='';WEEKS.slice().reverse().forEach((w,j)=>{const idx=LI-j;const o=document.createElement('option');o.value=idx;o.textContent=w;el.appendChild(o);});});
+  wf.value=Math.min(7,LI);wt.value=0;
+  const upd=()=>{state.rFrom=+wf.value;state.rTo=+wt.value;if(state.rFrom<state.rTo){const t=state.rFrom;state.rFrom=state.rTo;state.rTo=t;}renderAll();};
+  wf.onchange=upd;wt.onchange=upd;
+}
+
+// ── view + level switches ──
+function setView(v){state.view=v;document.querySelectorAll('#viewswitch button').forEach(b=>b.classList.toggle('on',b.dataset.v===v));
+  ['funnel','compare','norm'].forEach(x=>document.getElementById('view-'+x).style.display=x===v?'block':'none');
+  document.getElementById('viewHint').textContent=HINTS[v]||'';renderAll();}
+document.querySelectorAll('#viewswitch button').forEach(b=>b.onclick=()=>setView(b.dataset.v));
+document.querySelectorAll('#levelSeg button').forEach(b=>b.onclick=()=>{document.querySelectorAll('#levelSeg button').forEach(x=>x.classList.remove('on'));b.classList.add('on');state.level=b.dataset.l;state.sel=['__all__'];pickQuery='';renderSelRow();renderAll();});
+
+function renderAll(){
+  if(!NW){return;}
+  if(state.view==='funnel'){
+    const multi=!state.sel.includes('__all__')&&state.sel.length>1;
+    document.getElementById('funnelWrap').style.display=multi?'none':'block';
+    document.getElementById('cmpWrap').style.display=multi?'block':'none';
+    if(multi)renderCmpSbs();else renderFunnel();
+  } else if(state.view==='compare')renderCompareView();
+  else if(state.view==='norm')renderNorm();
+  renderAI();
+}
+boot();
+</script>
+</body>
+</html>
