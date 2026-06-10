@@ -319,8 +319,8 @@ const HINTS={
 // ── load ──
 async function boot(){
   const j=async f=>{try{const r=await fetch(f+'?t='+Date.now());return r.ok?await r.json():{};}catch(e){return {};}};
-  const [L,G,D,A,LC,R,big]=await Promise.all([j('data_leads.json'),j('data_gmb_insights.json'),j('data_diagnostic.json'),j('data_lead_age.json'),j('data_lead_cohort.json'),j('data_roster.json'),j('data.json')]);
-  DAT={L,G,D,A,LC,R};
+  const [L,G,D,A,LC,R,big,PC]=await Promise.all([j('data_leads.json'),j('data_gmb_insights.json'),j('data_diagnostic.json'),j('data_lead_age.json'),j('data_lead_cohort.json'),j('data_roster.json'),j('data.json'),j('data_practo_conv.json')]);
+  DAT={L,G,D,A,LC,R,PC};
   WEEKS=(L._meta&&L._meta.weeks)||(D._meta&&D._meta.weeks)||[];
   NW=WEEKS.length;LI=NW-1;
   // roster weeks lag the diagnostic weeks by one — map each demand week to its roster column (or -1)
@@ -374,6 +374,7 @@ function clinicEnrich(keys){
     coh:{leads:z(),booked:z(),same:z(),nextw:z(),later:z(),inb:z(),byChan:{}},
     rost:{sched:z(),shrunk:z(),avhrs:z(),we_hrs:z(),hrs:z()}};
   SRC.forEach(([k])=>{out.src[k]=z();out.coh.byChan[k]={leads:z(),booked:z()};});
+  out.coh.byChan.practo={leads:z(),booked:z()};   // Practo = external marketplace feed (data_practo_conv.json), cohort basis
   keys.forEach(key=>{
     const g=G[key]||{},d=D[key]||{},a=A[key]||{},l=L[key]||{},lc=LC[key]||{},r=R[key];
     out.searches=addA(out.searches,g.searches);out.interactions=addA(out.interactions,g.interactions);out.avail=addA(out.avail,d.avail);out.weekend=addA(out.weekend,d.weekend);
@@ -389,7 +390,13 @@ function clinicEnrich(keys){
       out.coh.leads=addA(out.coh.leads,cc.leads);out.coh.booked=addA(out.coh.booked,cc.booked);
       out.coh.same=addA(out.coh.same,cc.same);out.coh.nextw=addA(out.coh.nextw,cc.nextw);out.coh.later=addA(out.coh.later,cc.later);out.coh.inb=addA(out.coh.inb,cc.inb_leads);
     });
+    // Practo (external feed) per-clinic — booked = engaged bookings attributable to that week's Practo leads
+    const pc=(DAT.PC&&DAT.PC[key])||{};
+    out.coh.byChan.practo.leads=addA(out.coh.byChan.practo.leads,pc.leads);
+    out.coh.byChan.practo.booked=addA(out.coh.byChan.practo.booked,pc.booked);
   });
+  // fold Practo engaged-bookings into the source total (non-network/engaged view; network view recomputes below)
+  for(let i=0;i<NW;i++)out.coh.leads[i]+=(out.coh.byChan.practo.booked[i]||0);
   // weeks with no roster column → null (show "—" not 0)
   WEEKS.forEach((w,i)=>{if(rIdx[i]==null||rIdx[i]<0){['sched','shrunk','avhrs','we_hrs','hrs'].forEach(f=>out.rost[f][i]=null);}});
   out.hasCohort=out.coh.leads.some(v=>v>0);
@@ -422,7 +429,9 @@ function entitySeries(level,id){
     // whole-network: use the TRUE digital-lead counts, not the clinic-engaged subset (call_location is
     // booking-only, so per-clinic 'leads' ≈ bookings — which made bookings look > leads at network level)
     if(id==='__all__' && DAT.LC && DAT.LC._network){const NET=DAT.LC._network;s.coh.leads=z();s.coh.inb=z();
-      ['gmb','google_ad','organic','fb','justdial','others'].forEach(ch=>{const L=(NET[ch]&&NET[ch].leads)||z(),ib=(NET[ch]&&NET[ch].inb_leads)||z();s.coh.byChan[ch].leads=L.slice();for(let w=0;w<NW;w++){s.coh.leads[w]+=L[w]||0;s.coh.inb[w]+=ib[w]||0;}});s.cohNet=true;}
+      ['gmb','google_ad','organic','fb','justdial','others'].forEach(ch=>{const L=(NET[ch]&&NET[ch].leads)||z(),ib=(NET[ch]&&NET[ch].inb_leads)||z();s.coh.byChan[ch].leads=L.slice();for(let w=0;w<NW;w++){s.coh.leads[w]+=L[w]||0;s.coh.inb[w]+=ib[w]||0;}});
+      const PL=(NET.practo&&NET.practo.leads)||z();s.coh.byChan.practo=s.coh.byChan.practo||{leads:z(),booked:z()};s.coh.byChan.practo.leads=PL.slice();for(let w=0;w<NW;w++)s.coh.leads[w]+=PL[w]||0;
+      s.cohNet=true;}
   } else {
     s=Object.assign({searches:z(),interactions:z(),leads:null,avail:z(),age_same:z(),age_last:z(),age_older:z(),src:{},noLeads:true,newBk:null,repeat:null,newDone:null,repeatDone:null,coh:null,hasCohort:false},spine);
     if(level!=='doctor')s.nClinics=clinicsFor(level,id).length;
@@ -526,6 +535,7 @@ function mrows(){return [
   {t:'edge',k:'cohsrc.gmb',label:'— GMB',fmt:N},{t:'edge',k:'cohsrc.google_ad',label:'— Google Ads',fmt:N},
   {t:'edge',k:'cohsrc.organic',label:'· Organic',fmt:N},{t:'edge',k:'cohsrc.fb',label:'· Meta',fmt:N},
   {t:'edge',k:'cohsrc.others',label:'· Others',fmt:N},
+  {t:'edge',k:'cohsrc.practo',label:'· Practo †',formula:'external marketplace feed (Practo phones × Screening-Call bookings); network = true leads, clinic = engaged bookings',fmt:N},
   {t:'edge',k:'_inbound',label:'· of which inbound calls',formula:'phoned the clinic (PC-Inbound)',fmt:N},
   {grp:'acq',label:'New (first-time) bookings'},
   {t:'stage',k:'newBk',label:'New bookings (first-time patients)',fmt:N},
@@ -578,6 +588,7 @@ function deriv(s,k){
   if(k==='coh_later')return s.coh?s.coh.later:null;
   if(k==='_cohconv')return s.coh?s.coh.leads.map((v,i)=>pct(s.coh.booked[i],v)):null;
   if(k==='_cohnobook')return s.coh?s.coh.leads.map((v,i)=>Math.max(0,(v||0)-(s.coh.booked[i]||0))):null;
+  if(k==='cohsrc.practo')return s.coh?(s.cohNet?s.coh.byChan.practo.leads:s.coh.byChan.practo.booked):null;
   if(k.startsWith('cohsrc.'))return s.coh?s.coh.byChan[k.slice(7)].leads:null;
   if(k==='_inbound')return s.coh?s.coh.inb:null;
   // booking attribution (backward — by booking week)
@@ -688,7 +699,7 @@ function renderMatrix(s){
   let hidden=false,skipGrp=false;
   MR.forEach(r=>{
     if(r.grp){skipGrp=!grpHas[r.grp];if(skipGrp)return;hidden=!!closed[r.grp];
-      const glabel=r.grp==='leads'?(s.cohNet?'Leads by source (network · all digital leads)':'Bookings by lead source (clinic-engaged — leads only attach to a clinic once they book)'):r.label;
+      const glabel=r.grp==='leads'?(s.cohNet?'Leads by source (network · all leads incl. Practo †)':'Bookings by lead source (clinic-engaged + Practo † — leads only attach to a clinic once they book)'):r.label;
       h+=`<tr class="grp${hidden?' closed':''}" data-grp="${r.grp}"><td colspan="${order.length+2}"><span class="gchev">▾</span> ${glabel}</td></tr>`;return;}
     if(hidden||skipGrp)return;
     const series=deriv(s,r.k);if(!series)return;if(!series.some(v=>v!=null&&v!==0)&&r.t==='edge'&&!r.tgt)return;
