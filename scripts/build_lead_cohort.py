@@ -43,9 +43,41 @@ def main():
         for j, f in enumerate(FIELDS):
             try: o[chan][f][i] += int(float(c[4+j]))
             except (ValueError, IndexError): pass
+    # ── NETWORK true cohort (no clinic-location filter → keeps unbooked leads → real conversion) ──
+    net_sql = open(os.path.join(ROOT, "scripts", "fetch_lead_cohort_net.sql")).read()
+    pn = subprocess.run([sys.executable, os.path.join(ROOT, "scripts", "redshift_query.py")],
+                        input=net_sql, capture_output=True, text=True)
+    NET = {ch: {f: [0]*12 for f in FIELDS} for ch in CHANS}
+    if pn.returncode == 0 and "ERROR" not in pn.stderr:
+        for line in pn.stdout.strip().splitlines():
+            c = line.split("\t")
+            if len(c) < 9: continue
+            wk, chan = c[0], c[1]
+            if wk not in idx or chan not in CHANS: continue
+            i = idx[wk]
+            for j, f in enumerate(FIELDS):
+                try: NET[chan][f][i] += int(float(c[2+j]))
+                except (ValueError, IndexError): pass
+    else:
+        sys.stderr.write("WARN network cohort query failed; network omitted\n")
+    # Practo (external — not in main_source_wise_leads): fold in from data_practo_conv.json (cohort leads/booked)
+    practo = {f: [0]*12 for f in FIELDS}
+    try:
+        PC = json.load(open(os.path.join(ROOT, "data_practo_conv.json")))
+        for k, o in PC.items():
+            if k == "_meta": continue
+            for i in range(12):
+                practo["leads"][i] += (o.get("leads") or [0]*12)[i]
+                practo["booked"][i] += (o.get("booked") or [0]*12)[i]
+    except Exception as e:
+        sys.stderr.write(f"WARN practo fold-in skipped: {e}\n")
+    NET["practo"] = practo
+
     out = {"_meta": {"source": "production.public.main_source_wise_leads — lead cohort by CREATION week & channel",
                      "weeks": WEEKS, "chans": CHANS,
-                     "fields": "leads=created that wk · booked=of those, ever booked · same/nextw/later=booking lag · conv=booked/leads (recent wks still maturing)"}}
+                     "fields": "leads=created that wk · booked=of those, ever booked · same/nextw/later=booking lag · inb_*=PC-Inbound (phoned us) · conv=booked/leads (recent wks still maturing)",
+                     "network_note": "_network = TRUE cohort (all digital leads, no clinic filter) by channel+inbound; per-clinic entries are clinic-engaged leads only (≈booked)."}}
+    out["_network"] = NET
     out.update(D)
     json.dump(out, open(os.path.join(ROOT, "data_lead_cohort.json"), "w"), separators=(",", ":"))
 

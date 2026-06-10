@@ -364,7 +364,7 @@ function clinicEnrich(keys){
   const L=DAT.L,G=DAT.G,D=DAT.D,A=DAT.A,LC=DAT.LC||{};
   const R=DAT.R||{},rIdx=DAT.rIdx||[];
   const out={searches:z(),interactions:z(),leads:z(),avail:z(),weekend:z(),age_same:z(),age_last:z(),age_older:z(),src:{},_allBk:z(),_bkNew:z(),_bkDone:z(),_bkDoneNew:z(),
-    coh:{leads:z(),booked:z(),same:z(),nextw:z(),later:z(),byChan:{}},
+    coh:{leads:z(),booked:z(),same:z(),nextw:z(),later:z(),inb:z(),byChan:{}},
     rost:{sched:z(),shrunk:z(),avhrs:z(),we_hrs:z(),hrs:z()}};
   SRC.forEach(([k])=>{out.src[k]=z();out.coh.byChan[k]={leads:z(),booked:z()};});
   keys.forEach(key=>{
@@ -380,7 +380,7 @@ function clinicEnrich(keys){
       const cc=lc[k]||{};
       out.coh.byChan[k].leads=addA(out.coh.byChan[k].leads,cc.leads);out.coh.byChan[k].booked=addA(out.coh.byChan[k].booked,cc.booked);
       out.coh.leads=addA(out.coh.leads,cc.leads);out.coh.booked=addA(out.coh.booked,cc.booked);
-      out.coh.same=addA(out.coh.same,cc.same);out.coh.nextw=addA(out.coh.nextw,cc.nextw);out.coh.later=addA(out.coh.later,cc.later);
+      out.coh.same=addA(out.coh.same,cc.same);out.coh.nextw=addA(out.coh.nextw,cc.nextw);out.coh.later=addA(out.coh.later,cc.later);out.coh.inb=addA(out.coh.inb,cc.inb_leads);
     });
   });
   // weeks with no roster column → null (show "—" not 0)
@@ -493,20 +493,14 @@ const MROWS=[
   {t:'stage',k:'searches',label:'GMB searches',fmt:N},
   {t:'edge',k:'_intrate',label:'Interaction rate %',formula:'interactions ÷ searches',fmt:P},
   {t:'stage',k:'interactions',label:'GMB interactions',fmt:N},
-  {grp:'leadcoh',label:'Leads this week — did they book? (cohort, by lead-creation week)'},
-  {t:'stage',k:'coh_leads',label:'Leads (created this week)',fmt:N},
+  {grp:'leads',label:'Leads (clinic-engaged) & source mix'},
+  {t:'stage',k:'coh_leads',label:'Leads (engaged this week)',fmt:N},
   {t:'edge',k:'cohsrc.gmb',label:'· GMB',fmt:N},{t:'edge',k:'cohsrc.google_ad',label:'· Google Ads',fmt:N},
   {t:'edge',k:'cohsrc.organic',label:'· Organic',fmt:N},{t:'edge',k:'cohsrc.fb',label:'· Meta',fmt:N},
   {t:'edge',k:'cohsrc.justdial',label:'· Justdial',fmt:N},{t:'edge',k:'cohsrc.others',label:'· Others',fmt:N},
-  {t:'stage',k:'coh_booked',label:'Booked (from these leads)',fmt:N},
-  {t:'edge',k:'_cohconv',label:'Lead → book conversion %',formula:'booked ÷ leads · recent weeks still maturing',fmt:P,tgt:45},
-  {t:'edge',k:'_cohnobook',label:'Did not book',formula:'leads − booked',fmt:N,inv:true},
-  {grp:'cohlag',label:'When these leads booked'},
-  {t:'edge',k:'coh_same',label:'Same week',fmt:N},{t:'edge',k:'coh_nextw',label:'Next week (+1 wk)',fmt:N},{t:'edge',k:'coh_later',label:'2+ weeks later',fmt:N},
-  {grp:'attr',label:'New (unique) bookings — from a lead or direct? (by booking week)'},
+  {t:'edge',k:'_inbound',label:'· of which inbound calls',formula:'phoned the clinic (PC-Inbound)',fmt:N},
+  {grp:'acq',label:'New (first-time) bookings & outcome'},
   {t:'stage',k:'newBk',label:'New bookings (first-time patients)',fmt:N},
-  {t:'edge',k:'_attrlead',label:'· from a tracked lead',formula:'lead-attributed bookings (any lead age)',fmt:N},
-  {t:'edge',k:'_attrdirect',label:'· direct / walk-in (untracked)',formula:'new bookings − lead-attributed',fmt:N,inv:true},
   {t:'edge',k:'_newshow',label:'New show-up %',formula:'new done ÷ new bookings',fmt:P,tgt:75},
   {t:'stage',k:'newDone',label:'New done',fmt:N},
   {grp:'ret',label:'Retention — repeat patients'},
@@ -549,6 +543,7 @@ function deriv(s,k){
   if(k==='_cohconv')return s.coh?s.coh.leads.map((v,i)=>pct(s.coh.booked[i],v)):null;
   if(k==='_cohnobook')return s.coh?s.coh.leads.map((v,i)=>Math.max(0,(v||0)-(s.coh.booked[i]||0))):null;
   if(k.startsWith('cohsrc.'))return s.coh?s.coh.byChan[k.slice(7)].leads:null;
+  if(k==='_inbound')return s.coh?s.coh.inb:null;
   // booking attribution (backward — by booking week)
   if(k==='_attrlead')return s.newBk?s.age_same.map((v,i)=>(v||0)+(s.age_last[i]||0)+(s.age_older[i]||0)):null;
   if(k==='_attrdirect')return s.newBk?s.newBk.map((v,i)=>{const la=(s.age_same[i]||0)+(s.age_last[i]||0)+(s.age_older[i]||0);return v==null?null:Math.max(0,v-la);}):null;
@@ -572,20 +567,29 @@ function renderFunnel(){
   renderCohPanel(s,i);
   renderMatrix(s);
 }
-// per-channel lead cohort for the selected week: of leads that came in, how many booked + conversion
+// NETWORK lead→booking cohort for the selected week (true conversion — all digital leads, by channel
+// + Google+GMB combined + inbound-vs-web + Practo). Per-clinic 'leads' in the matrix are engaged-only,
+// so the real conversion lives here at the network level.
 function renderCohPanel(s,i){
   const el=document.getElementById('cohPanel');
-  if(!s.hasCohort||!s.coh){el.innerHTML='';return;}
-  const c=s.coh;const tot=c.leads[i]||0,totB=c.booked[i]||0;
-  const maturing=i<=1; // newest 2 weeks still converting
-  const rows=SRC.map(([k,nm,col])=>{const ld=(c.byChan[k].leads[i]||0),bk=(c.byChan[k].booked[i]||0);return {k,nm,col,ld,bk,conv:ld?Math.round(bk/ld*100):null};}).filter(x=>x.ld>0).sort((a,b)=>b.ld-a.ld);
-  const cv=v=>v==null?'':v>=50?'good':v>=30?'warn':'bad';
-  const mx=Math.max(1,...rows.map(x=>x.ld));
-  let h=`<div class="cohpanel"><h3>Lead cohort · week of ${WEEKS[i]}</h3>
-    <div class="cnote">Of the <b>${N(tot)}</b> leads that came in this week, <b>${N(totB)}</b> have booked so far (<b>${P(pct(totB,tot))}</b>).${maturing?' ⚠ this week is still maturing — leads can still book in the coming weeks, so conversion will rise.':''} Not booked: <b>${N(tot-totB)}</b>.</div>
+  const NET=DAT.LC&&DAT.LC._network;
+  if(!NET){el.innerHTML='';return;}
+  const get=(ch,f)=>((NET[ch]&&NET[ch][f])?(NET[ch][f][i]||0):0);
+  const maturing=i<=1;
+  const cv=v=>v==null?'':v>=45?'good':v>=25?'warn':'bad';
+  // combined + breakdown rows: Google+GMB first (combined), then its parts indented, then the rest, then Practo
+  const order=[['_ggmb','Google + GMB','#1F6F5C',['gmb','google_ad'],0],['gmb','— GMB','#5FB3A6',['gmb'],1],['google_ad','— Google Ads','#5B53C6',['google_ad'],1],
+    ['organic','Organic','#B5722A',['organic'],0],['fb','Meta','#3A5A8C',['fb'],0],['justdial','Justdial','#9C6A1F',['justdial'],0],['others','Others','#B6B6AC',['others'],0],['practo','Practo','#B23A2E',['practo'],0]];
+  let totL=0,totB=0,inbL=0,inbB=0;
+  ['gmb','google_ad','organic','fb','justdial','others','practo'].forEach(ch=>{totL+=get(ch,'leads');totB+=get(ch,'booked');inbL+=get(ch,'inb_leads');inbB+=get(ch,'inb_booked');});
+  const webL=totL-inbL,webB=totB-inbB;
+  const rows=order.map(([k,nm,col,chs,ind])=>{const L=chs.reduce((a,c)=>a+get(c,'leads'),0),B=chs.reduce((a,c)=>a+get(c,'booked'),0);return {nm,col,L,B,ind,conv:L?Math.round(B/L*100):null,share:totL?Math.round(L/totL*100):0};}).filter(x=>x.L>0);
+  let h=`<div class="cohpanel"><h3>Lead → booking conversion · network · week of ${WEEKS[i]}</h3>
+    <div class="cnote">Every digital lead network-wide → the % that booked. <b>${N(totL)}</b> leads → <b>${N(totB)}</b> booked (<b>${P(pct(totB,totL))}</b>). ${maturing?'⚠ recent weeks still maturing (leads can book in coming weeks). ':''}<span style="color:var(--ink-2)"><b>Inbound</b> (phoned us): <b>${N(inbL)}</b>→${N(inbB)} (<b style="color:var(--good)">${P(pct(inbB,inbL))}</b>) vs <b>Web</b>: ${N(webL)}→${N(webB)} (${P(pct(webB,webL))}) — calls convert far better.</span> <span style="color:var(--muted)">Per-clinic leads in the table above are engaged-only; this is the full funnel.</span></div>
     <table class="coht"><thead><tr><th>Channel</th><th>Leads</th><th class="barcell">share</th><th>Booked</th><th>Conv</th></tr></thead><tbody>`;
-  rows.forEach(x=>{h+=`<tr><td><span class="cdot" style="background:${x.col}"></span>${x.nm}</td><td>${N(x.ld)}</td><td class="barcell"><div class="minibar"><i style="width:${x.ld/mx*100}%;background:${x.col}"></i></div></td><td>${N(x.bk)}</td><td class="cv ${cv(x.conv)}">${P(x.conv)}</td></tr>`;});
-  h+=`<tr class="tot"><td>Total</td><td>${N(tot)}</td><td></td><td>${N(totB)}</td><td class="cv ${cv(pct(totB,tot))}">${P(pct(totB,tot))}</td></tr></tbody></table></div>`;
+  const mx=Math.max(1,...rows.filter(x=>x.ind===0).map(x=>x.L));
+  rows.forEach(x=>{h+=`<tr${x.ind?' style="opacity:.8"':''}><td style="${x.ind?'padding-left:24px;font-size:11.5px;color:var(--muted)':''}">${x.ind?'':'<span class="cdot" style="background:'+x.col+'"></span>'}${x.nm}</td><td>${N(x.L)}</td><td class="barcell">${x.ind?'':`<div class="minibar"><i style="width:${x.L/mx*100}%;background:${x.col}"></i></div>`}</td><td>${N(x.B)}</td><td class="cv ${cv(x.conv)}">${P(x.conv)}<span style="font-weight:400;color:var(--muted);font-size:9px"> ·${x.share}%</span></td></tr>`;});
+  h+=`<tr class="tot"><td>Total</td><td>${N(totL)}</td><td></td><td>${N(totB)}</td><td class="cv ${cv(pct(totB,totL))}">${P(pct(totB,totL))}</td></tr></tbody></table></div>`;
   el.innerHTML=h;
 }
 function renderMatrix(s){
