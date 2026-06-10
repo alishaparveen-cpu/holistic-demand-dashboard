@@ -312,10 +312,13 @@ const HINTS={
 // ── load ──
 async function boot(){
   const j=async f=>{try{const r=await fetch(f+'?t='+Date.now());return r.ok?await r.json():{};}catch(e){return {};}};
-  const [L,G,D,A,LC,big]=await Promise.all([j('data_leads.json'),j('data_gmb_insights.json'),j('data_diagnostic.json'),j('data_lead_age.json'),j('data_lead_cohort.json'),j('data.json')]);
-  DAT={L,G,D,A,LC};
+  const [L,G,D,A,LC,R,big]=await Promise.all([j('data_leads.json'),j('data_gmb_insights.json'),j('data_diagnostic.json'),j('data_lead_age.json'),j('data_lead_cohort.json'),j('data_roster.json'),j('data.json')]);
+  DAT={L,G,D,A,LC,R};
   WEEKS=(L._meta&&L._meta.weeks)||(D._meta&&D._meta.weeks)||[];
   NW=WEEKS.length;LI=NW-1;
+  // roster weeks lag the diagnostic weeks by one — map each demand week to its roster column (or -1)
+  const rweeks=(R._meta&&R._meta.weeks)||[];
+  DAT.rIdx=WEEKS.map(w=>rweeks.indexOf(w));
   DAT.big=big; setScope('all');
   // universe of clinics (pipe keys) from the union
   const keys=new Set();[L,G,D,A].forEach(o=>Object.keys(o).forEach(k=>{if(k!=='_meta')keys.add(k);}));
@@ -359,12 +362,17 @@ function spineFor(level,id,scope){
 // ── offline-clinic enrichments (GMB discovery, leads by source, timing, capacity) + diagnostic raw for new/repeat shares ──
 function clinicEnrich(keys){
   const L=DAT.L,G=DAT.G,D=DAT.D,A=DAT.A,LC=DAT.LC||{};
-  const out={searches:z(),interactions:z(),leads:z(),avail:z(),age_same:z(),age_last:z(),age_older:z(),src:{},_allBk:z(),_bkNew:z(),_bkDone:z(),_bkDoneNew:z(),
-    coh:{leads:z(),booked:z(),same:z(),nextw:z(),later:z(),byChan:{}}};
+  const R=DAT.R||{},rIdx=DAT.rIdx||[];
+  const out={searches:z(),interactions:z(),leads:z(),avail:z(),weekend:z(),age_same:z(),age_last:z(),age_older:z(),src:{},_allBk:z(),_bkNew:z(),_bkDone:z(),_bkDoneNew:z(),
+    coh:{leads:z(),booked:z(),same:z(),nextw:z(),later:z(),byChan:{}},
+    rost:{sched:z(),shrunk:z(),avhrs:z(),we_hrs:z(),hrs:z()}};
   SRC.forEach(([k])=>{out.src[k]=z();out.coh.byChan[k]={leads:z(),booked:z()};});
   keys.forEach(key=>{
-    const g=G[key]||{},d=D[key]||{},a=A[key]||{},l=L[key]||{},lc=LC[key]||{};
-    out.searches=addA(out.searches,g.searches);out.interactions=addA(out.interactions,g.interactions);out.avail=addA(out.avail,d.avail);
+    const g=G[key]||{},d=D[key]||{},a=A[key]||{},l=L[key]||{},lc=LC[key]||{},r=R[key];
+    out.searches=addA(out.searches,g.searches);out.interactions=addA(out.interactions,g.interactions);out.avail=addA(out.avail,d.avail);out.weekend=addA(out.weekend,d.weekend);
+    if(r){WEEKS.forEach((w,i)=>{const ri=rIdx[i];if(ri==null||ri<0)return;
+      if(r.shr){out.rost.sched[i]+=(r.shr.sched[ri]||0);out.rost.shrunk[i]+=(r.shr.shrunk[ri]||0);out.rost.avhrs[i]+=(r.shr.avail[ri]||0);}
+      out.rost.we_hrs[i]+=(r.we_hrs?(r.we_hrs[ri]||0):0);out.rost.hrs[i]+=(r.hrs?(r.hrs[ri]||0):0);});}
     out.age_same=addA(out.age_same,a.same);out.age_last=addA(out.age_last,a.last);out.age_older=addA(out.age_older,a.older);
     out._allBk=addA(out._allBk,d.allBk);out._bkNew=addA(out._bkNew,d.bkNew);out._bkDone=addA(out._bkDone,d.bkDone);out._bkDoneNew=addA(out._bkDoneNew,d.bkDoneNew);
     SRC.forEach(([k])=>{
@@ -375,7 +383,10 @@ function clinicEnrich(keys){
       out.coh.same=addA(out.coh.same,cc.same);out.coh.nextw=addA(out.coh.nextw,cc.nextw);out.coh.later=addA(out.coh.later,cc.later);
     });
   });
+  // weeks with no roster column → null (show "—" not 0)
+  WEEKS.forEach((w,i)=>{if(rIdx[i]==null||rIdx[i]<0){['sched','shrunk','avhrs','we_hrs','hrs'].forEach(f=>out.rost[f][i]=null);}});
   out.hasCohort=out.coh.leads.some(v=>v>0);
+  out.hasRoster=out.rost.sched.some(v=>v!=null&&v>0);
   return out;
 }
 
@@ -506,15 +517,29 @@ const MROWS=[
   {t:'edge',k:'_b2d',label:'Show-up / B2D %',formula:'done ÷ bookings',fmt:P,tgt:75},
   {t:'stage',k:'done',label:'Done (consultations)',fmt:N},
   {t:'edge',k:'noshow',label:'No-shows',fmt:N,inv:true},{t:'edge',k:'resched',label:'Reschedules',fmt:N,inv:true},{t:'edge',k:'cancelled',label:'Cancelled',fmt:N,inv:true},
-  {grp:'capacity',label:'Capacity'},
+  {grp:'capacity',label:'Capacity & availability'},
   {t:'stage',k:'avail',label:'Doctor-days available',fmt:N},
+  {t:'edge',k:'_avail_wd',label:'· weekday',fmt:N},{t:'edge',k:'_avail_we',label:'· weekend',fmt:N},
   {t:'edge',k:'_perday',label:'Bookings per doctor-day',formula:'bookings ÷ doctor-days',fmt:D1},
+  {t:'stage',k:'r_sched',label:'Scheduled hours',fmt:N},
+  {t:'edge',k:'r_shrunk',label:'· shrinkage (hours lost)',fmt:N,inv:true},
+  {t:'edge',k:'_shrpct',label:'· shrinkage %',formula:'shrinkage ÷ scheduled',fmt:P,inv:true},
+  {t:'stage',k:'r_avhrs',label:'Available hours (post-shrinkage)',fmt:N},
+  {t:'edge',k:'r_we_hrs',label:'· weekend hours',fmt:N},
 ];
 function deriv(s,k){
   if(k==='_intrate')return (s.searches&&s.searches.some(v=>v>0))?s.searches.map((v,i)=>pct(s.interactions[i],v)):null;
   if(k==='_b2d')return s.bookings.map((v,i)=>pct(s.done[i],v));
   if(k==='_newshow')return s.newBk?s.newBk.map((v,i)=>pct((s.newDone||z())[i],v)):null;
   if(k==='_perday')return (s.avail&&s.avail.some(v=>v>0))?s.avail.map((v,i)=>v?+(s.bookings[i]/v).toFixed(2):null):null;
+  // capacity & availability
+  if(k==='_avail_we')return s.weekend||null;
+  if(k==='_avail_wd')return (s.avail&&s.weekend)?s.avail.map((v,i)=>Math.max(0,(v||0)-(s.weekend[i]||0))):null;
+  if(k==='r_sched')return s.rost?s.rost.sched:null;
+  if(k==='r_shrunk')return s.rost?s.rost.shrunk:null;
+  if(k==='r_avhrs')return s.rost?s.rost.avhrs:null;
+  if(k==='r_we_hrs')return s.rost?s.rost.we_hrs:null;
+  if(k==='_shrpct')return s.rost?s.rost.sched.map((v,i)=>v?Math.round((s.rost.shrunk[i]||0)/v*100):null):null;
   // lead cohort (forward — by lead-creation week)
   if(k==='coh_leads')return s.coh?s.coh.leads:null;
   if(k==='coh_booked')return s.coh?s.coh.booked:null;
@@ -609,6 +634,12 @@ function compareRows(s,i){
   r+=`<div class="sbsrow"><span class="sk">Bookings</span><span class="sv">${N(s.bookings[i])}</span></div><div class="sbsconv${b2d<65?' bad':b2d<75?' warn':''}">↓ ${P(b2d)} show-up</div>`;
   r+=`<div class="sbsrow"><span class="sk">Done</span><span class="sv">${N(s.done[i])}</span></div>`;
   if(s.noshow)r+=`<div class="sbsrow"><span class="sk">No-shows</span><span class="sv" style="color:${s.noshow[i]>s.done[i]*0.3?'var(--bad)':'var(--ink)'}">${N(s.noshow[i])}</span></div>`;
+  // capacity
+  if(s.avail&&s.avail.some(v=>v>0)){const wd=Math.max(0,(s.avail[i]||0)-((s.weekend&&s.weekend[i])||0)),we=(s.weekend&&s.weekend[i])||0;
+    r+=`<div class="sbsrow"><span class="sk">Doctor-days</span><span class="sv">${N(s.avail[i])}<span style="font-weight:400;color:var(--muted);font-size:10px"> · ${N(wd)}wd/${N(we)}we</span></span></div>`;
+    const pd=s.avail[i]?(s.bookings[i]/s.avail[i]):null;if(pd!=null)r+=`<div class="sbsconv${pd>6?' bad':pd<2?' warn':''}">${pd.toFixed(1)} bookings / doctor-day</div>`;}
+  if(s.rost&&s.rost.sched[i]!=null&&s.rost.sched[i]>0){const shr=Math.round((s.rost.shrunk[i]||0)/s.rost.sched[i]*100);
+    r+=`<div class="sbsrow"><span class="sk">Sched hrs</span><span class="sv">${N(s.rost.sched[i])}</span></div><div class="sbsconv${shr>30?' bad':shr>18?' warn':''}">${shr}% shrinkage → ${N(s.rost.avhrs[i])} avail hrs</div>`;}
   return r;
 }
 const PAL=['#1F6F5C','#B23A2E','#3A5A8C','#B5722A','#5B53C6','#2E7D5B'];
@@ -640,13 +671,13 @@ function renderCompareView(){
 function renderNorm(){
   const el=document.getElementById('normWrap');el.innerHTML='';const i=state.rTo;
   const s=entitySeries(state.level,state.sel[0]);
-  const items=[['leads','Leads',false],['bookings','Bookings',false],['newBk','New bookings',false],['_b2d','Show-up / B2D %',false],['done','Done',false],['noshow','No-shows',true],['searches','GMB searches',false],['interactions','GMB interactions',false],['avail','Doctor-days',false]];
+  const items=[['leads','Leads',false],['bookings','Bookings',false],['newBk','New bookings',false],['_b2d','Show-up / B2D %',false],['done','Done',false],['noshow','No-shows',true],['searches','GMB searches',false],['interactions','GMB interactions',false],['avail','Doctor-days available',false],['_avail_we','Weekend doctor-days',false],['r_sched','Scheduled hours',false],['_shrpct','Shrinkage %',true],['r_avhrs','Available hours',false]];
   items.forEach(([k,label,inv])=>{
     const series=deriv(s,k);if(!series)return;const v=series[i];if(v==null)return;
     if(!series.some(x=>x>0))return;
     const nm=norm6(series,i),delta=nm?Math.round((v-nm)/nm*100):null,good=inv?delta<0:delta>0;
     const cls=delta==null?'flat':Math.abs(delta)<3?'flat':good?'up':'dn',vcls=delta==null?'':Math.abs(delta)<3?'':good?'good':'bad';
-    const fmt=k.includes('l2b')||k.includes('b2d')?P:N;
+    const fmt=(k.includes('b2d')||k.includes('pct')||k.includes('conv'))?P:N;
     el.insertAdjacentHTML('beforeend',`<div class="norm-row-item"><div class="nri-dot" style="background:${PAL[0]}"></div><div style="flex:1"><div class="nri-label">${label}</div></div><div class="nri-norm">norm ${nm!=null?(fmt===P?P(nm):N(nm)):'—'}</div><div class="nri-arrow">→</div><div class="nri-this ${vcls}">${fmt(v)}</div><div class="nri-delta ${cls}">${delta!=null?(delta>0?'▲':'▼')+' '+Math.abs(delta)+'%':'—'}</div><div class="nri-spark-wrap">${spark(series.slice(i,i+8),inv)}</div></div>`);
   });
 }
