@@ -106,7 +106,11 @@ header.top h1{font-family:'Newsreader';font-weight:500;font-size:32px;margin:6px
 .coht tr.tot td{font-weight:700;border-top:1px solid var(--line);border-bottom:0}
 .coht .cdot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;vertical-align:middle}
 .coht .cv{font-weight:700}.coht .cv.good{color:var(--good)}.coht .cv.warn{color:var(--warn)}.coht .cv.bad{color:var(--bad)}
-.coht .barcell{width:90px}.coht .minibar{height:7px;border-radius:4px;background:var(--line-2);overflow:hidden}.coht .minibar i{display:block;height:100%}
+.coht .barcell{width:120px;white-space:nowrap}.coht .minibar{height:7px;border-radius:4px;background:var(--line-2);overflow:hidden;display:inline-block;width:80px;vertical-align:middle}.coht .minibar i{display:block;height:100%}
+.coht .barpct{font-size:9.5px;color:var(--muted);margin-left:6px}
+.cohsub{font-family:'JetBrains Mono';font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--accent-d);font-weight:700;margin:6px 0 6px;border-top:1px solid var(--line-2);padding-top:10px}
+.cohnote2{font-size:11.5px;color:var(--ink-2);margin:7px 0 2px;padding:7px 10px;background:var(--inset);border-radius:7px}
+.cohmini{font-size:11px;color:var(--muted);margin-bottom:7px}
 /* matrix */
 .fmwrap{background:var(--sheet);border:1px solid var(--line);border-radius:var(--r);overflow-x:auto}
 table.fm{border-collapse:collapse;width:100%;font-size:12.5px;min-width:760px}
@@ -567,29 +571,44 @@ function renderFunnel(){
   renderCohPanel(s,i);
   renderMatrix(s);
 }
-// NETWORK lead→booking cohort for the selected week (true conversion — all digital leads, by channel
-// + Google+GMB combined + inbound-vs-web + Practo). Per-clinic 'leads' in the matrix are engaged-only,
-// so the real conversion lives here at the network level.
+// NETWORK lead→booking flow for the selected week, in two parts the demand owner asked for:
+//  ① this week's leads → how many booked, by channel (+ inbound vs web)   — forward cohort
+//  ② this week's bookings → how old was the lead (this wk / 1·2·3+ wks back), by channel — maturity
+// Per-clinic 'leads' in the matrix are engaged-only (call_location is booking-only), so the real
+// conversion lives at the network level here.
+const CHMETA=[['gmb','GMB','#1F6F5C'],['google_ad','Google Ads','#5B53C6'],['organic','Organic','#B5722A'],['fb','Meta','#3A5A8C'],['justdial','Justdial','#9C6A1F'],['others','Others','#B6B6AC'],['practo','Practo','#B23A2E']];
 function renderCohPanel(s,i){
   const el=document.getElementById('cohPanel');
-  const NET=DAT.LC&&DAT.LC._network;
+  const NET=DAT.LC&&DAT.LC._network, BA=DAT.LC&&DAT.LC._bookattr;
   if(!NET){el.innerHTML='';return;}
-  const get=(ch,f)=>((NET[ch]&&NET[ch][f])?(NET[ch][f][i]||0):0);
+  const gN=(ch,f)=>((NET[ch]&&NET[ch][f])?(NET[ch][f][i]||0):0);
   const maturing=i<=1;
   const cv=v=>v==null?'':v>=45?'good':v>=25?'warn':'bad';
-  // combined + breakdown rows: Google+GMB first (combined), then its parts indented, then the rest, then Practo
-  const order=[['_ggmb','Google + GMB','#1F6F5C',['gmb','google_ad'],0],['gmb','— GMB','#5FB3A6',['gmb'],1],['google_ad','— Google Ads','#5B53C6',['google_ad'],1],
-    ['organic','Organic','#B5722A',['organic'],0],['fb','Meta','#3A5A8C',['fb'],0],['justdial','Justdial','#9C6A1F',['justdial'],0],['others','Others','#B6B6AC',['others'],0],['practo','Practo','#B23A2E',['practo'],0]];
+  // ── PART A: this week's leads → booked, by channel ──
   let totL=0,totB=0,inbL=0,inbB=0;
-  ['gmb','google_ad','organic','fb','justdial','others','practo'].forEach(ch=>{totL+=get(ch,'leads');totB+=get(ch,'booked');inbL+=get(ch,'inb_leads');inbB+=get(ch,'inb_booked');});
+  CHMETA.forEach(([ch])=>{totL+=gN(ch,'leads');totB+=gN(ch,'booked');inbL+=gN(ch,'inb_leads');inbB+=gN(ch,'inb_booked');});
   const webL=totL-inbL,webB=totB-inbB;
-  const rows=order.map(([k,nm,col,chs,ind])=>{const L=chs.reduce((a,c)=>a+get(c,'leads'),0),B=chs.reduce((a,c)=>a+get(c,'booked'),0);return {nm,col,L,B,ind,conv:L?Math.round(B/L*100):null,share:totL?Math.round(L/totL*100):0};}).filter(x=>x.L>0);
-  let h=`<div class="cohpanel"><h3>Lead → booking conversion · network · week of ${WEEKS[i]}</h3>
-    <div class="cnote">Every digital lead network-wide → the % that booked. <b>${N(totL)}</b> leads → <b>${N(totB)}</b> booked (<b>${P(pct(totB,totL))}</b>). ${maturing?'⚠ recent weeks still maturing (leads can book in coming weeks). ':''}<span style="color:var(--ink-2)"><b>Inbound</b> (phoned us): <b>${N(inbL)}</b>→${N(inbB)} (<b style="color:var(--good)">${P(pct(inbB,inbL))}</b>) vs <b>Web</b>: ${N(webL)}→${N(webB)} (${P(pct(webB,webL))}) — calls convert far better.</span> <span style="color:var(--muted)">Per-clinic leads in the table above are engaged-only; this is the full funnel.</span></div>
+  const aRows=CHMETA.map(([ch,nm,col])=>{const L=gN(ch,'leads'),B=gN(ch,'booked');return {nm,col,L,B,conv:L?Math.round(B/L*100):null,share:totL?Math.round(L/totL*100):0};}).filter(x=>x.L>0).sort((a,b)=>b.L-a.L);
+  const mxA=Math.max(1,...aRows.map(x=>x.L));
+  let h=`<div class="cohpanel"><h3>Lead → booking flow · network · week of ${WEEKS[i]}</h3>
+    <div class="cnote">All digital leads network-wide. ${maturing?'<b style="color:var(--warn)">⚠ this week is still maturing</b> — leads can still book in the coming weeks, so conversion will rise. ':''}<span style="color:var(--muted)">(Per-clinic leads in the table above are engaged-only; this is the full funnel.)</span></div>
+    <div class="cohsub">① This week's leads — from which channel, and how many booked</div>
     <table class="coht"><thead><tr><th>Channel</th><th>Leads</th><th class="barcell">share</th><th>Booked</th><th>Conv</th></tr></thead><tbody>`;
-  const mx=Math.max(1,...rows.filter(x=>x.ind===0).map(x=>x.L));
-  rows.forEach(x=>{h+=`<tr${x.ind?' style="opacity:.8"':''}><td style="${x.ind?'padding-left:24px;font-size:11.5px;color:var(--muted)':''}">${x.ind?'':'<span class="cdot" style="background:'+x.col+'"></span>'}${x.nm}</td><td>${N(x.L)}</td><td class="barcell">${x.ind?'':`<div class="minibar"><i style="width:${x.L/mx*100}%;background:${x.col}"></i></div>`}</td><td>${N(x.B)}</td><td class="cv ${cv(x.conv)}">${P(x.conv)}<span style="font-weight:400;color:var(--muted);font-size:9px"> ·${x.share}%</span></td></tr>`;});
-  h+=`<tr class="tot"><td>Total</td><td>${N(totL)}</td><td></td><td>${N(totB)}</td><td class="cv ${cv(pct(totB,totL))}">${P(pct(totB,totL))}</td></tr></tbody></table></div>`;
+  aRows.forEach(x=>{h+=`<tr><td><span class="cdot" style="background:${x.col}"></span>${x.nm}</td><td>${N(x.L)}</td><td class="barcell"><div class="minibar"><i style="width:${x.L/mxA*100}%;background:${x.col}"></i></div><span class="barpct">${x.share}%</span></td><td>${N(x.B)}</td><td class="cv ${cv(x.conv)}">${P(x.conv)}</td></tr>`;});
+  h+=`<tr class="tot"><td>Total</td><td>${N(totL)}</td><td></td><td>${N(totB)}</td><td class="cv ${cv(pct(totB,totL))}">${P(pct(totB,totL))}</td></tr></tbody></table>
+    <div class="cohnote2"><b>Inbound</b> (phoned us): <b>${N(inbL)}</b>→${N(inbB)} (<b style="color:var(--good)">${P(pct(inbB,inbL))}</b>) &nbsp;vs&nbsp; <b>Web</b>: ${N(webL)}→${N(webB)} (${P(pct(webB,webL))}) — calls convert far better.</div>`;
+  // ── PART B: this week's bookings by lead maturity & channel ──
+  if(BA){
+    const gB=(ch,a)=>((BA[ch]&&BA[ch]['a'+a])?(BA[ch]['a'+a][i]||0):0);
+    const bRows=CHMETA.filter(([ch])=>ch!=='practo').map(([ch,nm,col])=>{const a=[0,1,2,3].map(x=>gB(ch,x));return {nm,col,a,tot:a.reduce((p,q)=>p+q,0)};}).filter(x=>x.tot>0).sort((a,b)=>b.tot-a.tot);
+    const tA=[0,1,2,3].map(x=>bRows.reduce((p,r)=>p+r.a[x],0)),tAll=tA.reduce((p,q)=>p+q,0);
+    h+=`<div class="cohsub" style="margin-top:16px">② This week's bookings — how old was the lead that booked</div>
+      <div class="cohmini">Of bookings made this week, the age of the lead behind each: same week vs 1 / 2 / 3+ weeks back. ${tAll?`<b>${Math.round(tA[0]/tAll*100)}%</b> from this week's leads, <b>${Math.round((tAll-tA[0])/tAll*100)}%</b> from backlog.`:''} <span style="color:var(--muted)">(Practo excluded — no lead-age feed.)</span></div>
+      <table class="coht"><thead><tr><th>Channel</th><th>This wk</th><th>1 wk back</th><th>2 wk back</th><th>3+ back</th><th>Total</th></tr></thead><tbody>`;
+    bRows.forEach(x=>{h+=`<tr><td><span class="cdot" style="background:${x.col}"></span>${x.nm}</td><td>${N(x.a[0])}</td><td>${N(x.a[1])}</td><td>${N(x.a[2])}</td><td>${N(x.a[3])}</td><td style="font-weight:700">${N(x.tot)}</td></tr>`;});
+    h+=`<tr class="tot"><td>Total</td><td>${N(tA[0])}</td><td>${N(tA[1])}</td><td>${N(tA[2])}</td><td>${N(tA[3])}</td><td>${N(tAll)}</td></tr></tbody></table>`;
+  }
+  h+=`</div>`;
   el.innerHTML=h;
 }
 function renderMatrix(s){

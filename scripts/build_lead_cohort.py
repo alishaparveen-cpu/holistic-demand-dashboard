@@ -73,11 +73,28 @@ def main():
         sys.stderr.write(f"WARN practo fold-in skipped: {e}\n")
     NET["practo"] = practo
 
+    # ── BOOKING ATTRIBUTION (network): bookings by booking-week × channel × lead-age (0/1/2/3+ wks) ──
+    ba_sql = open(os.path.join(ROOT, "scripts", "fetch_book_attr.sql")).read()
+    pb = subprocess.run([sys.executable, os.path.join(ROOT, "scripts", "redshift_query.py")],
+                        input=ba_sql, capture_output=True, text=True)
+    BA = {ch: {f"a{a}": [0]*12 for a in range(4)} for ch in CHANS}
+    if pb.returncode == 0 and "ERROR" not in pb.stderr:
+        for line in pb.stdout.strip().splitlines():
+            c = line.split("\t")
+            if len(c) < 4: continue
+            wk, chan, age = c[0], c[1], c[2]
+            if wk not in idx or chan not in CHANS: continue
+            try: BA[chan][f"a{int(age)}"][idx[wk]] += int(float(c[3]))
+            except (ValueError, IndexError, KeyError): pass
+    else:
+        sys.stderr.write("WARN booking-attribution query failed; _bookattr omitted\n")
+
     out = {"_meta": {"source": "production.public.main_source_wise_leads — lead cohort by CREATION week & channel",
                      "weeks": WEEKS, "chans": CHANS,
                      "fields": "leads=created that wk · booked=of those, ever booked · same/nextw/later=booking lag · inb_*=PC-Inbound (phoned us) · conv=booked/leads (recent wks still maturing)",
                      "network_note": "_network = TRUE cohort (all digital leads, no clinic filter) by channel+inbound; per-clinic entries are clinic-engaged leads only (≈booked)."}}
     out["_network"] = NET
+    out["_bookattr"] = BA
     out.update(D)
     json.dump(out, open(os.path.join(ROOT, "data_lead_cohort.json"), "w"), separators=(",", ":"))
 
