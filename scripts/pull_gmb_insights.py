@@ -52,18 +52,19 @@ def perf(loc_num, at):
     # bucket daily -> weekly Monday index
     wk_idx = {WEEKS[i]: i for i in range(len(WEEKS))}
     def monday(dt): return (dt - datetime.timedelta(days=dt.weekday())).isoformat()
-    metric = {}
+    metric = {}; wk_days = [set() for _ in WEEKS]   # distinct calendar days GBP actually reported, per week
     for s in d.get("multiDailyMetricTimeSeries",[{}])[0].get("dailyMetricTimeSeries",[]):
         name = s.get("dailyMetric"); arr=[0]*len(WEEKS)
         for p in s.get("timeSeries",{}).get("datedValues",[]):
             dd = p.get("date",{});
             if not dd: continue
             day = datetime.date(dd["year"],dd["month"],dd["day"]); mk = monday(day)
-            if mk in wk_idx: arr[wk_idx[mk]] += int(p.get("value",0))
+            if mk in wk_idx: arr[wk_idx[mk]] += int(p.get("value",0)); wk_days[wk_idx[mk]].add(day.isoformat())
         metric[name]=arr
     searches=[sum(metric.get(m,[0]*len(WEEKS))[i] for m in IMPR) for i in range(len(WEEKS))]
     inter   =[sum(metric.get(m,[0]*len(WEEKS))[i] for m in INTER) for i in range(len(WEEKS))]
-    return {"searches":searches,"interactions":inter,
+    days    =[len(s) for s in wk_days]              # 0..7 days reported per week → dashboard flags incomplete (<7) trailing weeks
+    return {"searches":searches,"interactions":inter,"days":days,
             "calls":metric.get("CALL_CLICKS",[0]*len(WEEKS)),
             "website":metric.get("WEBSITE_CLICKS",[0]*len(WEEKS)),
             "directions":metric.get("BUSINESS_DIRECTION_REQUESTS",[0]*len(WEEKS))}

@@ -2263,11 +2263,14 @@ function leadLossDrill(r){
               ${miniPctSpark(rev(pser),hi)}</div>`; };
           const leadsMini=mini('GMB leads · '+gmb_w+' ('+signed(dGmbP,'%')+')', '#6366f1', 'profile clicks + inbound calls → tracked leads · dashed = '+winN+'-wk avg', spark(rev(gmb),'#6366f1',hi,null,gmb_n));
           if(!hasGmbIns(r.city,r.clinic)) return leadsMini;
-          const gs=gmbInsArr(r.city,r.clinic,'searches'), gix=gmbInsArr(r.city,r.clinic,'interactions');
-          // Google Business Profile insights lag ~2-3 days → the current week is often still empty.
-          // Use the latest week GBP has actually published, and carry it back over empty weeks so the trend doesn't show a false crash to 0.
-          const gI=(()=>{ for(let i=W;i<WEEKS.length;i++){ if((gs[i]||0)>0) return i; } return W; })();
-          const fill=a=>{ const o=a.slice(); for(let i=0;i<gI;i++) if(!o[i]) o[i]=a[gI]||0; return o; };
+          const gs=gmbInsArr(r.city,r.clinic,'searches'), gix=gmbInsArr(r.city,r.clinic,'interactions'), gdays=gmbInsArr(r.city,r.clinic,'days');
+          // Google Business Profile insights lag ~3-5 days → a trailing week is often only PARTIALLY reported
+          // (e.g. 2 of 7 days), which shows a false crash + >100% downstream conversions. Use the latest FULLY
+          // reported week (days≥6) and carry it back over any incomplete/empty newer weeks.
+          const complete=i=>(gdays[i]||0)>=6;
+          const gI=(()=>{ for(let i=W;i<WEEKS.length;i++){ if(complete(i)&&(gs[i]||0)>0) return i; }
+                          for(let i=W;i<WEEKS.length;i++){ if((gs[i]||0)>0) return i; } return W; })();
+          const fill=a=>{ const o=a.slice(); for(let i=0;i<gI;i++){ if(!complete(i)||!o[i]) o[i]=a[gI]||0; } return o; };
           const gsF=fill(gs), gixF=fill(gix), hiG=(winN-1)-gI;
           const sw=gs[gI]||0, sn=nrm(gs), iw=gix[gI]||0, iN=nrm(gix); const dsp=sn?Math.round((sw-sn)/sn*100):0, dip=iN?Math.round((iw-iN)/iN*100):0;
           const lagNote=gI>W?` <span style="color:#b45309;">· GBP lags ~2-3d, latest: ${WEEKS[gI]?WEEKS[gI].label:''}</span>`:'';
