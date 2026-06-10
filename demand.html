@@ -419,6 +419,10 @@ function entitySeries(level,id){
     s.repeat=spine.bookings.map((b,i)=>s.newBk[i]==null?null:Math.max(0,b-s.newBk[i]));
     s.newDone=spine.done.map((d,i)=>ndShare[i]==null?null:Math.round(d*ndShare[i]));
     s.repeatDone=spine.done.map((d,i)=>s.newDone[i]==null?null:Math.max(0,d-s.newDone[i]));
+    // whole-network: use the TRUE digital-lead counts, not the clinic-engaged subset (call_location is
+    // booking-only, so per-clinic 'leads' ≈ bookings — which made bookings look > leads at network level)
+    if(id==='__all__' && DAT.LC && DAT.LC._network){const NET=DAT.LC._network;s.coh.leads=z();s.coh.inb=z();
+      ['gmb','google_ad','organic','fb','justdial','others'].forEach(ch=>{const L=(NET[ch]&&NET[ch].leads)||z(),ib=(NET[ch]&&NET[ch].inb_leads)||z();s.coh.byChan[ch].leads=L.slice();for(let w=0;w<NW;w++){s.coh.leads[w]+=L[w]||0;s.coh.inb[w]+=ib[w]||0;}});s.cohNet=true;}
   } else {
     s=Object.assign({searches:z(),interactions:z(),leads:null,avail:z(),age_same:z(),age_last:z(),age_older:z(),src:{},noLeads:true,newBk:null,repeat:null,newDone:null,repeatDone:null,coh:null,hasCohort:false},spine);
     if(level!=='doctor')s.nClinics=clinicsFor(level,id).length;
@@ -517,7 +521,7 @@ function mrows(){return [
   {t:'edge',k:'_intrate',label:'Interaction rate %',formula:'interactions ÷ searches',fmt:P},
   {t:'stage',k:'interactions',label:'GMB interactions',fmt:N},
   {grp:'leads',label:'Leads (clinic-engaged) & source mix'},
-  {t:'stage',k:'coh_leads',label:'Leads (engaged this week)',fmt:N},
+  {t:'stage',k:'coh_leads',label:'Leads this week',fmt:N},
   {t:'edge',k:'_cohsrc_ggmb',label:'· Google + GMB',fmt:N},
   {t:'edge',k:'cohsrc.gmb',label:'— GMB',fmt:N},{t:'edge',k:'cohsrc.google_ad',label:'— Google Ads',fmt:N},
   {t:'edge',k:'cohsrc.organic',label:'· Organic',fmt:N},{t:'edge',k:'cohsrc.fb',label:'· Meta',fmt:N},
@@ -671,9 +675,9 @@ function renderCohPanel(s,i){
   el.innerHTML=h;
 }
 function renderMatrix(s){
-  const lo=state.rFrom,hi=state.rTo,cols=[];for(let i=hi;i<=lo;i++)cols.push(i);// newest-first display L→R = recent→old? keep oldest→newest
-  cols.sort((a,b)=>b-a); // oldest..newest left→right (index high=old)
-  const order=cols.slice().reverse(); // left=oldest
+  const lo=state.rFrom,hi=state.rTo,cols=[];for(let i=hi;i<=lo;i++)cols.push(i);
+  // WEEKS are newest-first (high index = older). Sort descending → oldest on the LEFT, newest on the RIGHT.
+  const order=cols.slice().sort((a,b)=>b-a);
   let h='<table class="fm"><thead><tr><th>Stage & transition</th>';
   order.forEach((ci,j)=>h+=`<th class="${j===order.length-1?'lastcol':''}">${WEEKS[ci]}</th>`);
   h+='<th>trend</th></tr></thead><tbody>';
@@ -683,7 +687,9 @@ function renderMatrix(s){
   MR.forEach(r=>{if(r.grp){cg=r.grp;grpHas[cg]=false;return;}const ser=deriv(s,r.k);if(ser&&ser.some(v=>v!=null&&v!==0))grpHas[cg]=true;});
   let hidden=false,skipGrp=false;
   MR.forEach(r=>{
-    if(r.grp){skipGrp=!grpHas[r.grp];if(skipGrp)return;hidden=!!closed[r.grp];h+=`<tr class="grp${hidden?' closed':''}" data-grp="${r.grp}"><td colspan="${order.length+2}"><span class="gchev">▾</span> ${r.label}</td></tr>`;return;}
+    if(r.grp){skipGrp=!grpHas[r.grp];if(skipGrp)return;hidden=!!closed[r.grp];
+      const glabel=r.grp==='leads'?(s.cohNet?'Leads by source (network · all digital leads)':'Leads (clinic-engaged) & source mix'):r.label;
+      h+=`<tr class="grp${hidden?' closed':''}" data-grp="${r.grp}"><td colspan="${order.length+2}"><span class="gchev">▾</span> ${glabel}</td></tr>`;return;}
     if(hidden||skipGrp)return;
     const series=deriv(s,r.k);if(!series)return;if(!series.some(v=>v!=null&&v!==0)&&r.t==='edge'&&!r.tgt)return;
     let cells='';order.forEach((ci,j)=>{
