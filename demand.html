@@ -107,7 +107,7 @@ header.top h1{font-family:'Newsreader';font-weight:500;font-size:32px;margin:6px
 .coht .cdot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;vertical-align:middle}
 .coht .cv{font-weight:700}.coht .cv.good{color:var(--good)}.coht .cv.warn{color:var(--warn)}.coht .cv.bad{color:var(--bad)}
 .coht .barcell{width:120px;white-space:nowrap}.coht .minibar{height:7px;border-radius:4px;background:var(--line-2);overflow:hidden;display:inline-block;width:80px;vertical-align:middle}.coht .minibar i{display:block;height:100%}
-.coht .barpct{font-size:9.5px;color:var(--muted);margin-left:6px}
+.coht .barpct{font-size:11px;font-weight:600;color:var(--ink-2);margin-left:7px}
 .cohsub{font-family:'JetBrains Mono';font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--accent-d);font-weight:700;margin:6px 0 6px;border-top:1px solid var(--line-2);padding-top:10px}
 .cohnote2{font-size:11.5px;color:var(--ink-2);margin:7px 0 2px;padding:7px 10px;background:var(--inset);border-radius:7px}
 .cohmini{font-size:11px;color:var(--muted);margin-bottom:7px}
@@ -588,13 +588,19 @@ function renderCohPanel(s,i){
   let totL=0,totB=0,inbL=0,inbB=0;
   CHMETA.forEach(([ch])=>{totL+=gN(ch,'leads');totB+=gN(ch,'booked');inbL+=gN(ch,'inb_leads');inbB+=gN(ch,'inb_booked');});
   const webL=totL-inbL,webB=totB-inbB;
-  const aRows=CHMETA.map(([ch,nm,col])=>{const L=gN(ch,'leads'),B=gN(ch,'booked');return {nm,col,L,B,conv:L?Math.round(B/L*100):null,share:totL?Math.round(L/totL*100):0};}).filter(x=>x.L>0).sort((a,b)=>b.L-a.L);
-  const mxA=Math.max(1,...aRows.map(x=>x.L));
+  // Google+GMB combined first, then broken out (GMB / Google Ads), then the rest
+  const aorder=[['ggmb','Google + GMB','#1F6F5C',['gmb','google_ad'],0],['gmb','— GMB','#5FB3A6',['gmb'],1],['google_ad','— Google Ads','#5B53C6',['google_ad'],1],
+    ['organic','Organic','#B5722A',['organic'],0],['fb','Meta','#3A5A8C',['fb'],0],['others','Others','#B6B6AC',['others'],0],['practo','Practo','#B23A2E',['practo'],0]];
+  const aRows=aorder.map(([k,nm,col,chs,ind])=>{const L=chs.reduce((a,c)=>a+gN(c,'leads'),0),B=chs.reduce((a,c)=>a+gN(c,'booked'),0);return {nm,col,L,B,ind,conv:L?Math.round(B/L*100):null,share:totL?Math.round(L/totL*100):0};}).filter(x=>x.L>0);
+  const mxA=Math.max(1,...aRows.filter(x=>!x.ind).map(x=>x.L));
   let h=`<div class="cohpanel"><h3>Lead → booking flow · network · week of ${WEEKS[i]}</h3>
     <div class="cnote">All digital leads network-wide. ${maturing?'<b style="color:var(--warn)">⚠ this week is still maturing</b> — leads can still book in the coming weeks, so conversion will rise. ':''}<span style="color:var(--muted)">(Per-clinic leads in the table above are engaged-only; this is the full funnel.)</span></div>
     <div class="cohsub">① This week's leads — from which channel, and how many booked</div>
     <table class="coht"><thead><tr><th>Channel</th><th>Leads</th><th class="barcell">share</th><th>Booked</th><th>Conv</th></tr></thead><tbody>`;
-  aRows.forEach(x=>{h+=`<tr><td><span class="cdot" style="background:${x.col}"></span>${x.nm}</td><td>${N(x.L)}</td><td class="barcell"><div class="minibar"><i style="width:${x.L/mxA*100}%;background:${x.col}"></i></div><span class="barpct">${x.share}%</span></td><td>${N(x.B)}</td><td class="cv ${cv(x.conv)}">${P(x.conv)}</td></tr>`;});
+  aRows.forEach(x=>{
+    if(x.ind){h+=`<tr style="opacity:.9"><td style="padding-left:26px;font-size:11.5px;color:var(--muted)">${x.nm}</td><td>${N(x.L)}</td><td class="barcell"><span class="barpct" style="margin-left:0">${x.share}%</span></td><td>${N(x.B)}</td><td class="cv ${cv(x.conv)}">${P(x.conv)}</td></tr>`;}
+    else{h+=`<tr><td><span class="cdot" style="background:${x.col}"></span>${x.nm}</td><td>${N(x.L)}</td><td class="barcell"><div class="minibar"><i style="width:${x.L/mxA*100}%;background:${x.col}"></i></div><span class="barpct">${x.share}%</span></td><td>${N(x.B)}</td><td class="cv ${cv(x.conv)}">${P(x.conv)}</td></tr>`;}
+  });
   h+=`<tr class="tot"><td>Total</td><td>${N(totL)}</td><td></td><td>${N(totB)}</td><td class="cv ${cv(pct(totB,totL))}">${P(pct(totB,totL))}</td></tr></tbody></table>
     <div class="cohnote2"><b>Inbound</b> (phoned us): <b>${N(inbL)}</b>→${N(inbB)} (<b style="color:var(--good)">${P(pct(inbB,inbL))}</b>) &nbsp;vs&nbsp; <b>Web</b>: ${N(webL)}→${N(webB)} (${P(pct(webB,webL))}) — calls convert far better.</div>`;
   // ── PART B: this week's bookings by lead maturity & channel ──
