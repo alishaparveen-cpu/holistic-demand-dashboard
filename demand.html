@@ -297,7 +297,7 @@ let DAT={};                       // raw json
 let UNIV={clinics:[],cities:[],doctors:[]};
 let DJ=null,DJSCOPE='all';        // data.json scope object
 let state={view:'funnel',level:'city',sel:['__all__'],scope:'all',rFrom:0,rTo:0};
-let zoomChart=null,closed={};
+let zoomChart=null,closed={bookagech:true};   // lead-age × channel detail collapsed by default
 
 const z=()=>Array(NW).fill(0);
 const addA=(a,b)=>{const o=(a||z()).slice();(b||[]).forEach((v,i)=>o[i]=(o[i]||0)+(+v||0));return o;};
@@ -424,8 +424,8 @@ function entitySeries(level,id){
   // network-level: split this-week's bookings by the age of the lead behind them (from _bookattr)
   if(id==='__all__' && DAT.LC && DAT.LC._bookattr){
     const BA=DAT.LC._bookattr, sumA=a=>{const o=z();['gmb','google_ad','organic','fb','justdial','others'].forEach(ch=>{const arr=BA[ch]&&BA[ch]['a'+a];if(arr)for(let k=0;k<NW;k++)o[k]+=arr[k]||0;});return o;};
-    s.bookAge={a0:sumA(0),a1:sumA(1),a2:sumA(2),a3:sumA(3)};
-  } else s.bookAge=null;
+    s.bookAge={a0:sumA(0),a1:sumA(1),a2:sumA(2),a3:sumA(3)};s.bookAgeRaw=BA;
+  } else {s.bookAge=null;s.bookAgeRaw=null;}
   return s;
 }
 function labelFor(level,id){
@@ -496,6 +496,11 @@ function funnelHTML(cells){
 
 // ── MATRIX rows ──
 const RATIO=v=>v==null?'—':(v<=1.02?Math.round(v*100)+'%':v.toFixed(2)+'×');
+// lead-age × channel detail rows (network): 5 channels × 4 ages, channel-major
+const BA_CH_ROWS=(function(){const out=[{grp:'bookagech',label:'··· lead age × channel (network · tap to collapse)'}];
+  [['gmb','GMB'],['google_ad','Google Ads'],['organic','Organic'],['fb','Meta'],['others','Others']].forEach(([ch,nm])=>{
+    [['0','same week'],['1','1-wk back'],['2','2-wk back'],['3','3+ back']].forEach(([a,al])=>out.push({t:'edge',k:'_ba'+a+'_'+ch,label:nm+' · '+al,fmt:N}));});
+  return out;})();
 const D1=v=>v==null?'—':v.toFixed(1);
 const MROWS=[
   {grp:'discovery',label:'GMB discovery'},
@@ -515,6 +520,7 @@ const MROWS=[
   {t:'edge',k:'_ba1',label:'· from 1-week-back leads',fmt:N},
   {t:'edge',k:'_ba2',label:'· from 2-week-back leads',fmt:N},
   {t:'edge',k:'_ba3',label:'· from 3+-week-back leads',fmt:N},
+  ...BA_CH_ROWS,
   {grp:'acqout',label:'New bookings — show-up & done'},
   {t:'edge',k:'_newshow',label:'New show-up %',formula:'new done ÷ new bookings',fmt:P,tgt:75},
   {t:'stage',k:'newDone',label:'New done',fmt:N},
@@ -564,6 +570,7 @@ function deriv(s,k){
   if(k==='_ba1')return s.bookAge?s.bookAge.a1:null;
   if(k==='_ba2')return s.bookAge?s.bookAge.a2:null;
   if(k==='_ba3')return s.bookAge?s.bookAge.a3:null;
+  if(/^_ba\d_/.test(k)){const mm=k.match(/^_ba(\d)_(.+)$/);return (s.bookAgeRaw&&s.bookAgeRaw[mm[2]]&&s.bookAgeRaw[mm[2]]['a'+mm[1]])||null;}
   if(k==='_attrlead')return s.newBk?s.age_same.map((v,i)=>(v||0)+(s.age_last[i]||0)+(s.age_older[i]||0)):null;
   if(k==='_attrdirect')return s.newBk?s.newBk.map((v,i)=>{const la=(s.age_same[i]||0)+(s.age_last[i]||0)+(s.age_older[i]||0);return v==null?null:Math.max(0,v-la);}):null;
   if(k.startsWith('src.'))return s.src[k.slice(4)];
