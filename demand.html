@@ -424,7 +424,14 @@ function entitySeries(level,id){
     const ndShare=e._bkDoneNew.map((v,i)=>e._bkDone[i]?v/e._bkDone[i]:null);
     s.newBk=spine.bookings.map((b,i)=>nShare[i]==null?null:Math.round(b*nShare[i]));
     s.repeat=spine.bookings.map((b,i)=>s.newBk[i]==null?null:Math.max(0,b-s.newBk[i]));
-    s.newDone=spine.done.map((d,i)=>ndShare[i]==null?null:Math.round(d*ndShare[i]));
+    // Split done into new/repeat using the diagnostic's new-done share, but CLAMP to the cohort
+    // constraint: done is a subset of bookings, so newDone≤newBk and repeatDone≤repeat. Without this,
+    // independent shares + rounding can make "repeat done" exceed "repeat bookings" (physically impossible).
+    s.newDone=spine.done.map((d,i)=>{
+      if(ndShare[i]==null||s.newBk[i]==null||s.repeat[i]==null)return null;
+      const lo=Math.max(0,d-s.repeat[i]),hi=Math.min(s.newBk[i],d);   // newDone must lie in [done−repeat, newBk]
+      return Math.max(lo,Math.min(hi,Math.round(d*ndShare[i])));
+    });
     s.repeatDone=spine.done.map((d,i)=>s.newDone[i]==null?null:Math.max(0,d-s.newDone[i]));
     // whole-network: use the TRUE digital-lead counts, not the clinic-engaged subset (call_location is
     // booking-only, so per-clinic 'leads' ≈ bookings — which made bookings look > leads at network level)
