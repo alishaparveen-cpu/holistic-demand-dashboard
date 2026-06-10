@@ -124,6 +124,12 @@ def main():
     camps = []
     for n, weeks in cw.items():
         wks = [w for w in sorted(weeks.keys()) if complete(w)]    # oldest→newest complete weeks
+        thin = False
+        if len(wks) < 1:
+            # enabled campaign with data only in the current (partial) week — e.g. just resumed.
+            # Don't drop it: fall back to whatever weeks it has so it still appears (flagged thin).
+            wks = sorted(weeks.keys())
+            thin = True
         if len(wks) < 1: continue
         rec = [weeks[w] for w in wks]
         w0 = rec[-1]; w1 = rec[-2] if len(rec) >= 2 else None
@@ -146,9 +152,9 @@ def main():
             'rl': [round(w0['rl']), round(w1['rl']) if w1 else None],
             'ar': [ar, ar], 'lp': [lp, lp],
             'util': round(w0['cost']/(budget.get(n, 0)*7)*100) if budget.get(n) else None,
-            'weeks': len(wks),
+            'weeks': len(wks), 'thin': thin,
         }
-        g['sug'] = derive_suggestion(g)
+        g['sug'] = 'Hold — just resumed' if thin else derive_suggestion(g)
         camps.append(g)
 
     camps.sort(key=lambda x: -(x['sp'] or 0))
