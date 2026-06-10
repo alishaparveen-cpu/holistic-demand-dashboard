@@ -421,6 +421,11 @@ function entitySeries(level,id){
     if(level!=='doctor')s.nClinics=clinicsFor(level,id).length;
   }
   s.scope=scope;s.onlineNoGeo=!!(spine.onlyNet&&spine.specific);
+  // network-level: split this-week's bookings by the age of the lead behind them (from _bookattr)
+  if(id==='__all__' && DAT.LC && DAT.LC._bookattr){
+    const BA=DAT.LC._bookattr, sumA=a=>{const o=z();['gmb','google_ad','organic','fb','justdial','others'].forEach(ch=>{const arr=BA[ch]&&BA[ch]['a'+a];if(arr)for(let k=0;k<NW;k++)o[k]+=arr[k]||0;});return o;};
+    s.bookAge={a0:sumA(0),a1:sumA(1),a2:sumA(2),a3:sumA(3)};
+  } else s.bookAge=null;
   return s;
 }
 function labelFor(level,id){
@@ -507,6 +512,11 @@ const MROWS=[
   {t:'stage',k:'newBk',label:'New bookings (first-time patients)',fmt:N},
   {t:'edge',k:'_newshow',label:'New show-up %',formula:'new done ÷ new bookings',fmt:P,tgt:75},
   {t:'stage',k:'newDone',label:'New done',fmt:N},
+  {grp:'bookage',label:'Tracked bookings by lead age (network · lead-tracking feed)'},
+  {t:'edge',k:'_ba0',label:'· from same-week leads',fmt:N},
+  {t:'edge',k:'_ba1',label:'· from 1-week-back leads',fmt:N},
+  {t:'edge',k:'_ba2',label:'· from 2-week-back leads',fmt:N},
+  {t:'edge',k:'_ba3',label:'· from 3+-week-back leads',fmt:N},
   {grp:'ret',label:'Retention — repeat patients'},
   {t:'stage',k:'repeat',label:'Repeat bookings',fmt:N},
   {t:'edge',k:'repeatDone',label:'Repeat done',fmt:N},
@@ -549,6 +559,10 @@ function deriv(s,k){
   if(k.startsWith('cohsrc.'))return s.coh?s.coh.byChan[k.slice(7)].leads:null;
   if(k==='_inbound')return s.coh?s.coh.inb:null;
   // booking attribution (backward — by booking week)
+  if(k==='_ba0')return s.bookAge?s.bookAge.a0:null;
+  if(k==='_ba1')return s.bookAge?s.bookAge.a1:null;
+  if(k==='_ba2')return s.bookAge?s.bookAge.a2:null;
+  if(k==='_ba3')return s.bookAge?s.bookAge.a3:null;
   if(k==='_attrlead')return s.newBk?s.age_same.map((v,i)=>(v||0)+(s.age_last[i]||0)+(s.age_older[i]||0)):null;
   if(k==='_attrdirect')return s.newBk?s.newBk.map((v,i)=>{const la=(s.age_same[i]||0)+(s.age_last[i]||0)+(s.age_older[i]||0);return v==null?null:Math.max(0,v-la);}):null;
   if(k.startsWith('src.'))return s.src[k.slice(4)];
@@ -584,25 +598,31 @@ function renderCohPanel(s,i){
   const gN=(ch,f)=>((NET[ch]&&NET[ch][f])?(NET[ch][f][i]||0):0);
   const maturing=i<=1;
   const cv=v=>v==null?'':v>=45?'good':v>=25?'warn':'bad';
-  // ── PART A: this week's leads → booked, by channel ──
+  // ── PART A: this week's leads → booked the SAME WEEK, by channel (Booked = Part ②'s 'this wk') ──
+  const LEAF=['gmb','google_ad','organic','fb','justdial','others'];
+  // same-week booked pulled from the SAME source as ② (booking-attribution a0) so the two tables tie out exactly
+  const gA0=ch=>((BA&&BA[ch]&&BA[ch].a0)?(BA[ch].a0[i]||0):gN(ch,'same'));
   let totL=0,totB=0,inbL=0,inbB=0;
-  CHMETA.forEach(([ch])=>{totL+=gN(ch,'leads');totB+=gN(ch,'booked');inbL+=gN(ch,'inb_leads');inbB+=gN(ch,'inb_booked');});
-  const webL=totL-inbL,webB=totB-inbB;
-  // Google+GMB combined first, then broken out (GMB / Google Ads), then the rest
+  LEAF.forEach(ch=>{totL+=gN(ch,'leads');totB+=gA0(ch);inbL+=gN(ch,'inb_leads');inbB+=gN(ch,'inb_booked');});
+  const practoL=gN('practo','leads'),practoB=gN('practo','booked'),practoEv=gN('practo','booked');
+  totL+=practoL; totB+=practoB;
+  const webL=(totL-practoL)-inbL,webB=(totB-practoB)-inbB;
+  const bookedOf=chs=>chs.reduce((a,c)=>a+(c==='practo'?gN(c,'booked'):gA0(c)),0);
   const aorder=[['ggmb','Google + GMB','#1F6F5C',['gmb','google_ad'],0],['gmb','— GMB','#5FB3A6',['gmb'],1],['google_ad','— Google Ads','#5B53C6',['google_ad'],1],
-    ['organic','Organic','#B5722A',['organic'],0],['fb','Meta','#3A5A8C',['fb'],0],['others','Others','#B6B6AC',['others'],0],['practo','Practo','#B23A2E',['practo'],0]];
-  const aRows=aorder.map(([k,nm,col,chs,ind])=>{const L=chs.reduce((a,c)=>a+gN(c,'leads'),0),B=chs.reduce((a,c)=>a+gN(c,'booked'),0);return {nm,col,L,B,ind,conv:L?Math.round(B/L*100):null,share:totL?Math.round(L/totL*100):0};}).filter(x=>x.L>0);
+    ['organic','Organic','#B5722A',['organic'],0],['fb','Meta','#3A5A8C',['fb'],0],['others','Others','#B6B6AC',['others'],0],['practo','Practo †','#B23A2E',['practo'],0]];
+  const aRows=aorder.map(([k,nm,col,chs,ind])=>{const L=chs.reduce((a,c)=>a+gN(c,'leads'),0),B=bookedOf(chs);return {nm,col,L,B,ind,conv:L?Math.round(B/L*100):null,share:totL?Math.round(L/totL*100):0};}).filter(x=>x.L>0);
   const mxA=Math.max(1,...aRows.filter(x=>!x.ind).map(x=>x.L));
   let h=`<div class="cohpanel"><h3>Lead → booking flow · network · week of ${WEEKS[i]}</h3>
-    <div class="cnote">All digital leads network-wide. ${maturing?'<b style="color:var(--warn)">⚠ this week is still maturing</b> — leads can still book in the coming weeks, so conversion will rise. ':''}<span style="color:var(--muted)">(Per-clinic leads in the table above are engaged-only; this is the full funnel.)</span></div>
-    <div class="cohsub">① This week's leads — from which channel, and how many booked</div>
+    <div class="cnote">All digital leads network-wide. ${maturing?'<b style="color:var(--warn)">⚠ this week is still maturing</b> — leads can still book in the coming weeks. ':''}<span style="color:var(--muted)">Uses the lead-tracking feed (differs slightly from the appointment funnel above). Per-clinic leads in the matrix are engaged-only.</span></div>
+    <div class="cohsub">① This week's leads — from which channel, and how many booked the same week</div>
     <table class="coht"><thead><tr><th>Channel</th><th>Leads</th><th class="barcell">share</th><th>Booked</th><th>Conv</th></tr></thead><tbody>`;
   aRows.forEach(x=>{
     if(x.ind){h+=`<tr style="opacity:.9"><td style="padding-left:26px;font-size:11.5px;color:var(--muted)">${x.nm}</td><td>${N(x.L)}</td><td class="barcell"><span class="barpct" style="margin-left:0">${x.share}%</span></td><td>${N(x.B)}</td><td class="cv ${cv(x.conv)}">${P(x.conv)}</td></tr>`;}
     else{h+=`<tr><td><span class="cdot" style="background:${x.col}"></span>${x.nm}</td><td>${N(x.L)}</td><td class="barcell"><div class="minibar"><i style="width:${x.L/mxA*100}%;background:${x.col}"></i></div><span class="barpct">${x.share}%</span></td><td>${N(x.B)}</td><td class="cv ${cv(x.conv)}">${P(x.conv)}</td></tr>`;}
   });
   h+=`<tr class="tot"><td>Total</td><td>${N(totL)}</td><td></td><td>${N(totB)}</td><td class="cv ${cv(pct(totB,totL))}">${P(pct(totB,totL))}</td></tr></tbody></table>
-    <div class="cohnote2"><b>Inbound</b> (phoned us): <b>${N(inbL)}</b>→${N(inbB)} (<b style="color:var(--good)">${P(pct(inbB,inbL))}</b>) &nbsp;vs&nbsp; <b>Web</b>: ${N(webL)}→${N(webB)} (${P(pct(webB,webL))}) — calls convert far better.</div>`;
+    <div class="cohnote2"><b>Booked here = same-week bookings</b> — it equals the <b>“This wk”</b> column in ② below. Leads that book later show up in ②’s 1/2/3+-weeks-back columns. <span style="color:var(--muted)">† Practo is an external feed with no week-level lag, so it shows eventual bookings (${N(practoEv)}).</span></div>
+    <div class="cohnote2"><b>Inbound</b> (phoned us): <b>${N(inbL)}</b>→${N(inbB)} (<b style="color:var(--good)">${P(pct(inbB,inbL))}</b>, eventual) &nbsp;vs&nbsp; <b>Web</b>: ${N(webL)}→${N(webB)} (${P(pct(webB,webL))}) — calls convert far better.</div>`;
   // ── PART B: this week's bookings by lead maturity & channel ──
   if(BA){
     const gB=(ch,a)=>((BA[ch]&&BA[ch]['a'+a])?(BA[ch]['a'+a][i]||0):0);
