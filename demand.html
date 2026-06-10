@@ -508,15 +508,16 @@ const MROWS=[
   {t:'edge',k:'cohsrc.organic',label:'· Organic',fmt:N},{t:'edge',k:'cohsrc.fb',label:'· Meta',fmt:N},
   {t:'edge',k:'cohsrc.justdial',label:'· Justdial',fmt:N},{t:'edge',k:'cohsrc.others',label:'· Others',fmt:N},
   {t:'edge',k:'_inbound',label:'· of which inbound calls',formula:'phoned the clinic (PC-Inbound)',fmt:N},
-  {grp:'acq',label:'New (first-time) bookings & outcome'},
+  {grp:'acq',label:'New (first-time) bookings'},
   {t:'stage',k:'newBk',label:'New bookings (first-time patients)',fmt:N},
-  {t:'edge',k:'_newshow',label:'New show-up %',formula:'new done ÷ new bookings',fmt:P,tgt:75},
-  {t:'stage',k:'newDone',label:'New done',fmt:N},
   {grp:'bookage',label:'Tracked bookings by lead age (network · lead-tracking feed)'},
   {t:'edge',k:'_ba0',label:'· from same-week leads',fmt:N},
   {t:'edge',k:'_ba1',label:'· from 1-week-back leads',fmt:N},
   {t:'edge',k:'_ba2',label:'· from 2-week-back leads',fmt:N},
   {t:'edge',k:'_ba3',label:'· from 3+-week-back leads',fmt:N},
+  {grp:'acqout',label:'New bookings — show-up & done'},
+  {t:'edge',k:'_newshow',label:'New show-up %',formula:'new done ÷ new bookings',fmt:P,tgt:75},
+  {t:'stage',k:'newDone',label:'New done',fmt:N},
   {grp:'ret',label:'Retention — repeat patients'},
   {t:'stage',k:'repeat',label:'Repeat bookings',fmt:N},
   {t:'edge',k:'repeatDone',label:'Repeat done',fmt:N},
@@ -626,12 +627,20 @@ function renderCohPanel(s,i){
   // ── PART B: this week's bookings by lead maturity & channel ──
   if(BA){
     const gB=(ch,a)=>((BA[ch]&&BA[ch]['a'+a])?(BA[ch]['a'+a][i]||0):0);
-    const bRows=CHMETA.filter(([ch])=>ch!=='practo').map(([ch,nm,col])=>{const a=[0,1,2,3].map(x=>gB(ch,x));return {nm,col,a,tot:a.reduce((p,q)=>p+q,0)};}).filter(x=>x.tot>0).sort((a,b)=>b.tot-a.tot);
-    const tA=[0,1,2,3].map(x=>bRows.reduce((p,r)=>p+r.a[x],0)),tAll=tA.reduce((p,q)=>p+q,0);
+    const ageOf=(chs,a)=>chs.reduce((s,c)=>s+gB(c,a),0);
+    // Google+GMB combined first, then broken out (GMB / Google Ads), then the rest
+    const border=[['ggmb','Google + GMB','#1F6F5C',['gmb','google_ad'],0],['gmb','— GMB','#5FB3A6',['gmb'],1],['google_ad','— Google Ads','#5B53C6',['google_ad'],1],
+      ['organic','Organic','#B5722A',['organic'],0],['fb','Meta','#3A5A8C',['fb'],0],['others','Others','#B6B6AC',['others'],0],['justdial','Justdial','#9C6A1F',['justdial'],0]];
+    const bRows=border.map(([k,nm,col,chs,ind])=>{const a=[0,1,2,3].map(x=>ageOf(chs,x));return {nm,col,ind,a,tot:a.reduce((p,q)=>p+q,0)};}).filter(x=>x.tot>0);
+    const LEAFB=['gmb','google_ad','organic','fb','others','justdial'];
+    const tA=[0,1,2,3].map(x=>LEAFB.reduce((p,c)=>p+gB(c,x),0)),tAll=tA.reduce((p,q)=>p+q,0);
     h+=`<div class="cohsub" style="margin-top:16px">② This week's bookings — how old was the lead that booked</div>
       <div class="cohmini">Of bookings made this week, the age of the lead behind each: same week vs 1 / 2 / 3+ weeks back. ${tAll?`<b>${Math.round(tA[0]/tAll*100)}%</b> from this week's leads, <b>${Math.round((tAll-tA[0])/tAll*100)}%</b> from backlog.`:''} <span style="color:var(--muted)">(Practo excluded — no lead-age feed.)</span></div>
       <table class="coht"><thead><tr><th>Channel</th><th>This wk</th><th>1 wk back</th><th>2 wk back</th><th>3+ back</th><th>Total</th></tr></thead><tbody>`;
-    bRows.forEach(x=>{h+=`<tr><td><span class="cdot" style="background:${x.col}"></span>${x.nm}</td><td>${N(x.a[0])}</td><td>${N(x.a[1])}</td><td>${N(x.a[2])}</td><td>${N(x.a[3])}</td><td style="font-weight:700">${N(x.tot)}</td></tr>`;});
+    bRows.forEach(x=>{
+      if(x.ind){h+=`<tr style="opacity:.9"><td style="padding-left:26px;font-size:11.5px;color:var(--muted)">${x.nm}</td><td>${N(x.a[0])}</td><td>${N(x.a[1])}</td><td>${N(x.a[2])}</td><td>${N(x.a[3])}</td><td style="font-weight:600">${N(x.tot)}</td></tr>`;}
+      else{h+=`<tr><td><span class="cdot" style="background:${x.col}"></span>${x.nm}</td><td>${N(x.a[0])}</td><td>${N(x.a[1])}</td><td>${N(x.a[2])}</td><td>${N(x.a[3])}</td><td style="font-weight:700">${N(x.tot)}</td></tr>`;}
+    });
     h+=`<tr class="tot"><td>Total</td><td>${N(tA[0])}</td><td>${N(tA[1])}</td><td>${N(tA[2])}</td><td>${N(tA[3])}</td><td>${N(tAll)}</td></tr></tbody></table>`;
   }
   h+=`</div>`;
