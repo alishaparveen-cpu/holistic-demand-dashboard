@@ -22,7 +22,7 @@ WEEKS = ["2026-06-01","2026-05-25","2026-05-18","2026-05-11","2026-05-04","2026-
          "2026-04-20","2026-04-13","2026-04-06","2026-03-30","2026-03-23","2026-03-16"]
 idx = {w: i for i, w in enumerate(WEEKS)}
 CHANS = ["gmb", "google_ad", "organic", "fb", "justdial", "others"]
-FIELDS = ["leads", "booked", "same", "nextw", "later"]
+FIELDS = ["leads", "booked", "same", "nextw", "later", "inb_leads", "inb_booked"]
 
 
 def main():

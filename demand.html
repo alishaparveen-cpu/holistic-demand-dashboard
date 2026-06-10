@@ -61,6 +61,11 @@ header.top h1{font-family:'Newsreader';font-weight:500;font-size:32px;margin:6px
 .pick-opt.sel{background:var(--good-bg);color:var(--accent-d);font-weight:600}
 .pick-opt .ck{width:14px;text-align:center;color:var(--accent)}
 .pick-opt .sub{font-size:10px;color:var(--muted);margin-left:auto}
+.pickhint{font-size:10.5px;color:var(--muted);font-style:italic;padding:1px 4px 7px}
+.clinhdr{display:flex;justify-content:space-between;align-items:center;cursor:pointer;position:sticky;top:0;background:var(--inset);border-radius:6px;margin-top:4px}
+.clinhdr:hover .pickall{color:var(--accent-d)}
+.clinhdr .pickall{font-family:'Inter';font-size:10.5px;font-weight:600;color:var(--accent);text-transform:none;letter-spacing:0}
+.pick-opt[data-id] .ck{color:var(--accent)}
 .chanrow{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:13px;align-items:center}
 .selchip{border:1px solid var(--accent);background:var(--good-bg);color:var(--accent-d);border-radius:999px;padding:6px 12px;font-size:12.5px;font-weight:600;display:flex;align-items:center;gap:7px}
 .selchip .x{cursor:pointer;color:var(--accent);font-weight:700}
@@ -316,10 +321,11 @@ async function boot(){
   const keys=new Set();[L,G,D,A].forEach(o=>Object.keys(o).forEach(k=>{if(k!=='_meta')keys.add(k);}));
   UNIV.clinics=[...keys].sort();
   UNIV.cities=[...new Set(UNIV.clinics.map(k=>k.split('|')[0]))].sort();
-  // doctors from data.json weekly_doctor (key City_Clinic|Doctor) → display
+  // doctors from data.json weekly_doctor (key City_Clinic|Doctor) → display.
+  // Exclude online/tele doctors (clinic='Online'/'Practo Online' or empty city) — this is offline clinic demand.
   const docSet=new Set();
   Object.values(big.all&&big.all.weekly_doctor||{}).forEach(cell=>Object.keys(cell).forEach(dk=>docSet.add(dk)));
-  UNIV.doctors=[...docSet].sort();
+  UNIV.doctors=[...docSet].filter(dk=>{const cc=dk.split('|')[0]||'';return cc && !cc.startsWith('_') && !/online/i.test(cc);}).sort();
   document.getElementById('dateline').innerHTML=(WEEKS[LI]||'')+' → '+(WEEKS[0]||'')+' · <b style="color:#1F6F5C">live from Redshift</b> · weekly';
   initWeeks();
   state.rFrom=Math.min(7,LI);state.rTo=0;
@@ -688,12 +694,33 @@ function renderPicker(){
   const panel=document.getElementById('pickPanel');const ents=levelEntities();
   const q=pickQuery.toLowerCase();
   const filt=ents.filter(([id,nm,sub])=>!q||nm.toLowerCase().includes(q)||(sub||'').toLowerCase().includes(q));
+  const multi=state.level==='doctor'||state.level==='clinic'||state.level==='city';
   let h=`<input class="pick-search" id="pickSearch" placeholder="Search ${state.level}…" value="${pickQuery}">`;
+  if(multi)h+=`<div class="pickhint">tip: click several to compare · the list stays open</div>`;
   h+=`<div class="pick-opt${state.sel.includes('__all__')?' sel':''}" data-id="__all__"><span class="ck">${state.sel.includes('__all__')?'✓':''}</span>All ${state.level==='tier'?'India':state.level+'s'}</div>`;
-  filt.slice(0,200).forEach(([id,nm,sub])=>{const on=state.sel.includes(id);h+=`<div class="pick-opt${on?' sel':''}" data-id="${id}"><span class="ck">${on?'✓':''}</span>${nm}<span class="sub">${sub||''}</span></div>`;});
+  if(state.level==='doctor'){
+    // group doctors by clinic so same-clinic doctors are together + a "select all in clinic" header
+    const groups={};filt.forEach(([id,nm,sub])=>{(groups[sub]=groups[sub]||[]).push([id,nm]);});
+    Object.keys(groups).sort().slice(0,80).forEach(sub=>{
+      const docs=groups[sub];const allOn=docs.length>0&&docs.every(([id])=>state.sel.includes(id));
+      h+=`<div class="pick-grphdr clinhdr" data-clinic="${sub.replace(/"/g,'&quot;')}"><span>${sub}</span><span class="pickall">${allOn?'✓ all':'+ all'}</span></div>`;
+      docs.forEach(([id,nm])=>{const on=state.sel.includes(id);h+=`<div class="pick-opt" data-id="${id.replace(/"/g,'&quot;')}"><span class="ck">${on?'✓':''}</span>${nm}</div>`;});
+    });
+  } else {
+    filt.slice(0,200).forEach(([id,nm,sub])=>{const on=state.sel.includes(id);h+=`<div class="pick-opt${on?' sel':''}" data-id="${id.replace(/"/g,'&quot;')}"><span class="ck">${on?'✓':''}</span>${nm}<span class="sub">${sub||''}</span></div>`;});
+  }
   panel.innerHTML=h;
   const si=document.getElementById('pickSearch');si.oninput=()=>{pickQuery=si.value;renderPicker();si.focus();};
-  panel.querySelectorAll('.pick-opt').forEach(o=>o.onclick=()=>{
+  // clinic header → toggle all of that clinic's doctors
+  panel.querySelectorAll('.clinhdr').forEach(g=>g.onclick=ev=>{ev.stopPropagation();
+    const sub=g.dataset.clinic;const docs=ents.filter(([id,nm,s])=>s===sub).map(([id])=>id);
+    state.sel=state.sel.filter(x=>x!=='__all__');
+    const allOn=docs.every(id=>state.sel.includes(id));
+    if(allOn)state.sel=state.sel.filter(x=>!docs.includes(x));else docs.forEach(id=>{if(!state.sel.includes(id))state.sel.push(id);});
+    if(!state.sel.length)state.sel=['__all__'];
+    renderPicker();renderSelRow();renderAll();
+  });
+  panel.querySelectorAll('.pick-opt').forEach(o=>o.onclick=ev=>{ev.stopPropagation();   // keep panel open for multi-select
     const id=o.dataset.id;
     if(id==='__all__'){state.sel=['__all__'];}
     else{state.sel=state.sel.filter(x=>x!=='__all__');const j=state.sel.indexOf(id);if(j>=0){if(state.sel.length>1)state.sel.splice(j,1);}else state.sel.push(id);}
