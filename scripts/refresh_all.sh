@@ -51,6 +51,7 @@ step "Demand superset (relevancy/funnel)"   python3 scripts/build_demand_superse
 step "Lead age (build_lead_age)"            python3 scripts/build_lead_age.py
 step "Lead maturation (build_lead_maturation)" python3 scripts/build_lead_maturation.py
 step "Lead cohort (build_lead_cohort)"      python3 scripts/build_lead_cohort.py
+step "Demand drops view (build_drops)"      python3 scripts/build_drops.py
 step "Leads total (build_leads_total)"      python3 scripts/build_leads_total.py
 step "Practo booked (build_practo_booked)"  python3 scripts/build_practo_booked.py
 step "Practo cohort conv (build_practo_conv)" python3 scripts/build_practo_conv.py
