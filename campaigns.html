@@ -334,6 +334,16 @@ const state={view:'filter',week:0,cmpTo:0,cmpFrom:1,fCat:'all',fCity:'all',fTier
   funCamps:[0],cmpCamps:[0,1,2,3,4],activeMetrics:['is','qs','cpc','rankLost'],selMetric:'is',trendMetric:'is',
   conds:[{key:'is',dir:'drop',mag:0}],matchMode:'all'};
 const short=n=>n.replace(/_/g,' ');
+/* ---- week labels: show the week-ENDING day / full range (e.g. "1–7 Jun") ---- */
+let WKISO=[];   // global complete-week timeline, newest-first (W0,W1,…), from _meta.weeks
+const _MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+function _wkEnd(iso){const s=new Date(iso+'T00:00:00Z');s.setUTCDate(s.getUTCDate()+6);return s;}
+function wkEndDay(iso){if(!iso)return'';const e=_wkEnd(iso);return e.getUTCDate()+' '+_MON[e.getUTCMonth()];}      // "7 Jun"
+function wkRange(iso){if(!iso)return'';const s=new Date(iso+'T00:00:00Z'),e=_wkEnd(iso);
+  return s.getUTCMonth()===e.getUTCMonth()?`${s.getUTCDate()}–${e.getUTCDate()} ${_MON[e.getUTCMonth()]}`
+    :`${s.getUTCDate()} ${_MON[s.getUTCMonth()]}–${e.getUTCDate()} ${_MON[e.getUTCMonth()]}`;}                     // "1–7 Jun"
+const weekISOof=(c,i)=>((c&&c.weeks_iso&&c.weeks_iso[i])||WKISO[i]||null);   // the ISO week-start for a card's W-index
+const weekLbl=(c,i)=>wkRange(weekISOof(c,i));
 const sugCat=s=>{if(/^On track/.test(s))return'good';if(/Increase budget|Raise bid|Expand/.test(s))return'blue';if(/^Hold/.test(s))return'grey';return'amber';};
 const sugCls={good:'b-good',blue:'b-blue',amber:'b-amber',grey:'b-grey'};
 const sugColor={good:'#2E7D5B',blue:'#2D6CA8',amber:'#C99A2E',grey:'#9A968B'};
@@ -399,38 +409,36 @@ function auctionBar(c,w,ghost){
   return h;}
 
 /* ============ CAMPAIGN CARD ============ */
-function lever(name,val,prev,max,color,inv,fmt){
-  if(val==null)return`<div class="lever"><span class="ln">${name}</span><div class="lbar"></div><span class="lv" style="color:var(--muted)">—</span></div>`;
+function lever(name,val,prev,max,color,inv,fmt,ci,zk){
+  const z=(ci!=null&&zk)?` data-zoom="${zk}" data-ci="${ci}" title="Click for ${name} trend" style="cursor:zoom-in"`:'';
+  if(val==null)return`<div class="lever"${z}><span class="ln">${name}</span><div class="lbar"></div><span class="lv" style="color:var(--muted)">—</span></div>`;
   const wd=Math.max(2,Math.min(100,val/max*100));
-  return`<div class="lever"><span class="ln">${name}</span><div class="lbar"><div style="width:${wd}%;background:${color}"></div></div><span class="lv">${fmt(val)}${deltaSpan(val,prev,inv)}</span></div>`;}
+  return`<div class="lever"${z}><span class="ln">${name}</span><div class="lbar"><div style="width:${wd}%;background:${color}"></div></div><span class="lv">${fmt(val)}${deltaSpan(val,prev,inv)}</span></div>`;}
 function campCard(ci,full){
   const c=CAMP[ci],w=state.week,g=GMAP[c.g],cat=sugCat(c.sug);
   let h=`<div class="campcard" style="border-top-color:${g.color}">
    <div class="cc-head"><div><div class="cc-name">${short(c.n)}</div><div class="cc-grp"><span class="cdot" style="background:${g.color}"></span> ${g.label}</div></div>
    <span class="badge ${sugCls[cat]}">${c.sug}</span></div>`;
-  h+=`<div class="seclbl">Impression share — where the auction goes</div>${auctionBar(c,w,true)}`;
+  h+=`<div class="seclbl">Impression share — where the auction goes · <span style="text-transform:none;letter-spacing:0">click any metric for its trend</span></div>`;
+  h+=`<div data-zoom="is" data-ci="${ci}" title="Click for impression-share trend" style="cursor:zoom-in">${auctionBar(c,w,true)}</div>`;
   h+=`<div class="seclbl">Why impressions are lost (rank levers)</div>`;
-  h+=lever('Avg QS',c.qs[w],c.qs[w+1],10,c.qs[w]>=7?'#2E7D5B':c.qs[w]>=5?'#C99A2E':'#B23A2E',false,v=>v+'/10');
-  h+=lever('Ad-rel drag',c.ar[w],c.ar[w+1],100,'#C0503F',true,v=>v+'%');
-  h+=lever('LP drag',c.lp[w],c.lp[w+1],100,'#C0503F',true,v=>v+'%');
+  h+=lever('Avg QS',c.qs[w],c.qs[w+1],10,c.qs[w]>=7?'#2E7D5B':c.qs[w]>=5?'#C99A2E':'#B23A2E',false,v=>v+'/10',ci,'qs');
+  h+=lever('Ad-rel drag',c.ar[w],c.ar[w+1],100,'#C0503F',true,v=>v+'%',ci,'adRel');
+  h+=lever('LP drag',c.lp[w],c.lp[w+1],100,'#C0503F',true,v=>v+'%',ci,'lp');
   // CPC
-  const cpcRev=[c.cpc[3],c.cpc[2],c.cpc[1],c.cpc[0]];
-  h+=`<div class="seclbl">CPC · last 4 weeks${c.ceil?` · ceiling ₹${c.ceil}`:''}</div>
-   <div style="display:flex;justify-content:space-between;align-items:flex-end">
+  const cpcRev=c.cpc.slice().reverse(),cpcN=c.cpc.filter(x=>x!=null).length;
+  h+=`<div class="seclbl">CPC · last ${cpcN} week${cpcN===1?'':'s'}${c.ceil?` · ceiling ₹${c.ceil}`:''} · click to zoom</div>
+   <div class="sparkbox" data-zoom="cpc" data-ci="${ci}" title="Click for CPC trend" style="display:flex;justify-content:space-between;align-items:flex-end">
      <div><span class="bigval">${c.cpc[w]!=null?rupee(c.cpc[w]):'—'}</span>${deltaSpan(c.cpc[w],c.cpc[w+1],true)}</div>
-     <div class="sparkbox" data-zoom="cpc" data-ci="${ci}">${spark(cpcRev,true,170,42,g.color)}</div></div>`;
+     <div>${spark(cpcRev,true,170,42,g.color)}</div></div>`;
   if(c.ceil&&c.cpc[w]!=null){const head=((c.ceil-c.cpc[w])/c.ceil*100);
     h+=`<div class="note">Avg CPC is ${head>=0?head.toFixed(0)+'% below':Math.abs(head).toFixed(0)+'% above'} the ₹${c.ceil} ceiling.</div>`;}
   // Outcome
-  h+=`<div class="seclbl">Outcome — ${volLabel(c.dt)}</div>`;
-  if(c.dt==='loc'){
-    h+=`<div class="mrow"><span class="mk">Loc %</span><span class="mv">${c.d[w]!=null?c.d[w]+'%':'—'}${deltaSpan(c.d[w],c.d[w+1],false)}</span></div>
-        <div class="mrow"><span class="mk">Loc clicks</span><span class="mv">${c.v[w]!=null?c.v[w].toLocaleString('en-IN'):'—'}${deltaSpan(c.v[w],c.v[w+1],false)}</span></div>
-        <div class="mrow"><span class="mk">CPLC</span><span class="mv">${c.cplc[w]!=null?rupee(c.cplc[w]):'—'}${deltaSpan(c.cplc[w],c.cplc[w+1],true)}</span></div>`;
-  }else{const costLbl=c.dt==='cpb'?'Cost / booking':'Cost / conversion';
-    h+=`<div class="mrow"><span class="mk">${c.dt==='cpb'?'Bookings':'Conversions'}</span><span class="mv">${c.v[w]!=null?c.v[w]:'—'}${deltaSpan(c.v[w],c.v[w+1],false)}</span></div>
-        <div class="mrow"><span class="mk">${costLbl}</span><span class="mv">${c.d[w]!=null?rupee(c.d[w]):'—'}${deltaSpan(c.d[w],c.d[w+1],true)}</span></div>`;}
-  h+=`<div class="cc-foot"><span>Budget <b>₹${c.bud.toLocaleString('en-IN')}/day</b></span><span>Ceiling <b>${c.ceil?'₹'+c.ceil:'—'}</b></span><span>Util <b>${c.util}%</b></span><span>Spent wk <b>₹${c.sp.toLocaleString('en-IN')}</b></span></div>`;
+  h+=`<div class="seclbl">Outcome — Conversions</div>`;
+  h+=`<div class="note" style="margin:0 0 4px">“Conversion” = a Google-Ads–tracked action after a click (the lead/booking action the Ads account counts) — directional, <b>not</b> the same as a booked patient in Redshift.</div>`;
+  h+=`<div class="mrow" data-zoom="vol" data-ci="${ci}" title="Click for conversions trend" style="cursor:zoom-in"><span class="mk">Conversions</span><span class="mv">${c.v[w]!=null?c.v[w]:'—'}${deltaSpan(c.v[w],c.v[w+1],false)}</span></div>
+      <div class="mrow" data-zoom="cpp" data-ci="${ci}" title="Click for cost/conversion trend" style="cursor:zoom-in"><span class="mk">Cost / conversion</span><span class="mv">${c.d[w]!=null?rupee(c.d[w]):'—'}${deltaSpan(c.d[w],c.d[w+1],true)}</span></div>`;
+  h+=`<div class="cc-foot"><span>Budget <b>₹${c.bud.toLocaleString('en-IN')}/day</b></span><span>Ceiling <b>${c.ceil?'₹'+c.ceil:'—'}</b></span><span>Util <b>${c.util==null?'—':c.util+'%'}</b></span><span data-zoom="spend" data-ci="${ci}" title="Click for spend trend" style="cursor:zoom-in">Spent (${weekLbl(c,w)}) <b>₹${c.sp.toLocaleString('en-IN')}</b></span></div>`;
   if(full&&c.act)h+=`<div class="actions"><div class="at">Actions to be taken</div>${c.act}</div>`;
   h+='</div>';return h;}
 
@@ -449,7 +457,7 @@ function renderFunnel(){
   const grid=document.getElementById('funGrid'),single=state.funCamps.length===1;
   grid.className='cardgrid '+(single?'single':'multi');
   grid.innerHTML=state.funCamps.map(ci=>campCard(ci,single)).join('');
-  grid.querySelectorAll('[data-zoom]').forEach(n=>n.onclick=()=>zoomCPC(+n.dataset.ci));
+  grid.querySelectorAll('[data-zoom]').forEach(n=>n.onclick=()=>openZoom(+n.dataset.ci,n.dataset.zoom));
   renderAI();
 }
 
@@ -482,7 +490,7 @@ function renderCompare(){
   renderMetricChips();renderEditPanel();
   const grid=document.getElementById('cmpGrid');
   grid.innerHTML=state.activeMetrics.map(metricCard).join('');
-  grid.querySelectorAll('.brow[data-ci]').forEach(n=>n.onclick=()=>zoomMetric(+n.dataset.ci,n.dataset.m));
+  grid.querySelectorAll('.brow[data-ci]').forEach(n=>n.onclick=()=>openZoom(+n.dataset.ci,n.dataset.m));
   renderChips2();renderAI();
 }
 // compare uses same chip strip area as funnel; rebuild for compare set
@@ -687,13 +695,23 @@ function zoomShow(title,formula,series,labels,fmt,color){
     options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:x=>x.parsed.y==null?'—':fmt(x.parsed.y)}}},
     scales:{x:{grid:{display:false},ticks:{font:{family:'JetBrains Mono',size:10},color:'#8A8A80'}},y:{grid:{color:'#EDEAE0'},ticks:{font:{family:'JetBrains Mono',size:10},color:'#8A8A80',callback:v=>fmt(v)}}}}});
   document.getElementById('zoom').classList.add('on');}
-function zoomCPC(ci){const c=CAMP[ci],g=GMAP[c.g];
-  zoomShow('CPC — '+short(c.n),'Avg cost per click · last 4 weeks'+(c.ceil?` · ceiling ₹${c.ceil}`:''),
-    [c.cpc[3],c.cpc[2],c.cpc[1],c.cpc[0]],['W3','W2','W1','W0'],rupee,g.color);}
-function zoomMetric(ci,k){const c=CAMP[ci],g=GMAP[c.g],M=METRICS[k];
-  if(M.wk4){zoomCPC(ci);return;}
-  const series=[gv(c,k,1),gv(c,k,0)];
-  zoomShow(M.label+' — '+short(c.n),'',series,['W1','W0'],M.fmt,g.color);}
+// weekly-history array for a metric (newest-first). null → metric has no weekly history.
+function metricHistory(c,k){switch(k){
+  case'is':return c.is;case'budgetLost':return c.bl;case'rankLost':return c.rl;
+  case'cpc':return c.cpc;case'vol':return c.v;case'cpp':return c.d;case'spend':return c.spendH;
+  case'qs':return c.qs;case'adRel':return c.ar;case'lp':return c.lp;}return null;}
+const SNAPSHOT_METRICS=['qs','adRel','lp'];   // Google Ads gives no weekly history for these
+function openZoom(ci,k){const c=CAMP[ci],g=GMAP[c.g],M=METRICS[k];if(!M)return;
+  const hist=metricHistory(c,k);
+  if(SNAPSHOT_METRICS.includes(k)){   // single current snapshot point
+    zoomShow(M.label+' — '+short(c.n),'Current snapshot · Google Ads provides no weekly history for '+M.label,
+      [hist?hist[0]:gv(c,k,0)],[weekLbl(c,0)||'now'],M.fmt,g.color);return;}
+  if(!hist){const series=[gv(c,k,1),gv(c,k,0)];
+    zoomShow(M.label+' — '+short(c.n),'',series,[weekLbl(c,1),weekLbl(c,0)],M.fmt,g.color);return;}
+  const n=hist.length,series=[],labels=[];
+  for(let i=n-1;i>=0;i--){series.push(hist[i]);labels.push(weekLbl(c,i));}   // oldest→newest, week-ending range
+  zoomShow(M.label+' — '+short(c.n),M.grp+' · '+M.label+' · by week (ending date)'+(k==='cpc'&&c.ceil?` · ceiling ₹${c.ceil}`:''),
+    series,labels,M.fmt,g.color);}
 
 /* ============ AI INSIGHTS ============ */
 function renderAI(){
@@ -785,9 +803,17 @@ function boot(){
     CAMP=(j.campaigns||[]).map(C);
     deriveMeta();
     const m=j._meta||{};
+    WKISO=m.weeks||[];
+    const w0=wkRange(WKISO[0]),w1=wkRange(WKISO[1]);
     document.getElementById('subline').innerHTML='Allo Health · live Google Ads (acct '+(m.account||'—')+') · '+
-      (m.n||CAMP.length)+' campaigns · latest week '+(m.latest_week||'—')+
-      ' · W0 = latest, W1 = prior · <span style="color:var(--amber)">outcomes = conversions &amp; cost/conversion (API-only)</span>';
+      (m.n||CAMP.length)+' campaigns · latest week '+(w0||m.latest_week||'—')+
+      ' · W0 = '+(w0||'latest')+', W1 = '+(w1||'prior')+' · <span style="color:var(--amber)">outcomes = conversions &amp; cost/conversion (API-only)</span>';
+    // relabel week toggle + compare select with week-ending ranges
+    const wt=document.querySelectorAll('#weekSeg button');
+    if(wt[0]&&w0)wt[0].textContent='W0 · '+w0; if(wt[1]&&w1)wt[1].textContent='W1 · '+w1;
+    const cs=document.getElementById('cmpSel');
+    if(cs&&WKISO.length>=2){cs.innerHTML=[[0,1],[1,2],[2,3],[3,4]].filter(p=>WKISO[p[0]]&&WKISO[p[1]])
+      .map(p=>`<option value="${p[0]},${p[1]}">${wkRange(WKISO[p[1]])} → ${wkRange(WKISO[p[0]])}</option>`).join('');}
     state.funCamps=[0];
     state.cmpCamps=CAMP.slice(0,5).map((_,i)=>i);
     rebuildFilters();rebuildAddSel();setView('filter');

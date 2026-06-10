@@ -121,6 +121,7 @@ def main():
         if qi.get("creativeQualityScore") == "BELOW_AVERAGE": a['ad_bad'] += imp
         if qi.get("postClickQualityScore") == "BELOW_AVERAGE": a['lp_bad'] += imp
 
+    NH = 6   # weeks of weekly history to keep (newest-first) for trend charts
     camps = []
     for n, weeks in cw.items():
         wks = [w for w in sorted(weeks.keys()) if complete(w)]    # oldest→newest complete weeks
@@ -131,37 +132,41 @@ def main():
             wks = sorted(weeks.keys())
             thin = True
         if len(wks) < 1: continue
-        rec = [weeks[w] for w in wks]
-        w0 = rec[-1]; w1 = rec[-2] if len(rec) >= 2 else None
-        cpc4 = [round(weeks[w]['cpc'], 2) if weeks[w]['cpc'] else None for w in wks[-4:]]
-        while len(cpc4) < 4: cpc4 = [None] + cpc4
-        cpc4 = cpc4[::-1]   # design uses [w0(newest),w1,w2,w3]
+        nf = wks[::-1][:NH]                       # newest-first, up to NH weeks
+        rec = [weeks[w] for w in nf]              # rec[0]=latest week
+        w0 = rec[0]
+        arr = lambda fn: [fn(x) for x in rec]
+        cpa = lambda x: round(x['cost']/x['conv']) if x['conv'] else None
+        cpcA = arr(lambda x: round(x['cpc'], 2) if x['cpc'] else None)
         a = q.get(n, {'imp':0,'qsw':0,'qs_imp':0,'ad_bad':0,'lp_bad':0}); imp = a['imp'] or 0
         qs = round(a['qsw']/a['qs_imp'], 1) if a['qs_imp'] else None
         ar = round(a['ad_bad']/imp*100) if imp else None
         lp = round(a['lp_bad']/imp*100) if imp else None
-        cpa = lambda w: round(w['cost']/w['conv']) if (w and w['conv']) else None
         g = {
             'n': n, 'g': group_of(n), 'bud': round(budget.get(n, 0)), 'ceil': None,
             'sp': round(w0['cost']),
-            'd': [cpa(w0), cpa(w1)], 'v': [round(w0['conv']), round(w1['conv']) if w1 else None],
+            'weeks_iso': nf,                       # ISO week-START dates, newest-first (W0,W1,…)
+            'd': arr(cpa), 'v': arr(lambda x: round(x['conv'])),
             'cplc': [None, None],
-            'cpc': cpc4,
-            'qs': [qs, qs], 'is': [round(w0['is']), round(w1['is']) if w1 else None],
-            'bl': [round(w0['bl']), round(w1['bl']) if w1 else None],
-            'rl': [round(w0['rl']), round(w1['rl']) if w1 else None],
+            'cpc': cpcA,
+            'spendH': arr(lambda x: round(x['cost'])),
+            'qs': [qs, qs], 'is': arr(lambda x: round(x['is'])),
+            'bl': arr(lambda x: round(x['bl'])), 'rl': arr(lambda x: round(x['rl'])),
             'ar': [ar, ar], 'lp': [lp, lp],
             'util': round(w0['cost']/(budget.get(n, 0)*7)*100) if budget.get(n) else None,
-            'weeks': len(wks), 'thin': thin,
+            'nweeks': len(wks), 'thin': thin,
         }
         g['sug'] = 'Hold — just resumed' if thin else derive_suggestion(g)
         camps.append(g)
 
     camps.sort(key=lambda x: -(x['sp'] or 0))
-    latest_wk = max((w for n in cw for w in cw[n] if complete(w)), default=ymd(today))
+    all_complete = sorted({w for n in cw for w in cw[n] if complete(w)}, reverse=True)
+    latest_wk = all_complete[0] if all_complete else ymd(today)
+    gweeks = all_complete[:NH]                     # global timeline, newest-first
     out = {'_meta': {'source': 'LIVE Google Ads API (scripts/pull_ga_campaigns.py) · per-campaign auction & outcomes',
-                     'account': CUSTOMER_ID, 'pulled': ymd(today), 'latest_week': latest_wk, 'n': len(camps),
-                     'note': 'API-only: outcomes = Google Ads conversions + cost-per-conversion (CPA); Loc%/CPLC/CPB not available via API. dt=cpp for all. QS/ad-rel/LP = current snapshot (no API history).'},
+                     'account': CUSTOMER_ID, 'pulled': ymd(today), 'latest_week': latest_wk,
+                     'weeks': gweeks, 'n': len(camps),
+                     'note': 'API-only: outcomes = Google Ads conversions + cost-per-conversion (CPA); Loc%/CPLC/CPB not available via API. dt=cpp for all. weekly arrays (is/bl/rl/cpc/v/d/spendH) are newest-first; weeks_iso gives their week-START dates. QS/ad-rel/LP = current snapshot (no API week history).'},
            'campaigns': camps}
     json.dump(out, open(OUT, 'w'), separators=(',', ':'))
     print(f"wrote {OUT} · {len(camps)} campaigns · latest week {latest_wk}")
