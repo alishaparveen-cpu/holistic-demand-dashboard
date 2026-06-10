@@ -249,7 +249,9 @@ tr.grp.closed td .gchev{transform:rotate(-90deg)}
     <div class="funnel-read" id="funnelRead"></div>
     <div id="cohPanel"></div>
     <div class="shead" style="margin-top:22px"><h2 class="serif">The same chain, week by week</h2>
-      <span class="s-sub">green = above 6-wk norm · red = below · tap a sparkline to zoom</span></div>
+      <span style="margin-left:auto;display:flex;align-items:center;gap:6px"><span class="s-sub" style="margin:0">lead-age detail by</span>
+        <span class="seg" id="baBySeg"><button data-b="channel" class="on">Channel</button><button data-b="maturity">Maturity</button></span></span></div>
+    <div class="s-sub" style="margin:-6px 0 8px">green = above 6-wk norm · red = below · tap a sparkline to zoom · open a sub-group to drill</div>
     <div class="fmwrap" id="fmatrix"></div>
   </div>
   <div id="cmpWrap" style="display:none">
@@ -296,8 +298,9 @@ let WEEKS=[],NW=0,LI=0;            // WEEKS newest-first; LI=last index (oldest)
 let DAT={};                       // raw json
 let UNIV={clinics:[],cities:[],doctors:[]};
 let DJ=null,DJSCOPE='all';        // data.json scope object
-let state={view:'funnel',level:'city',sel:['__all__'],scope:'all',rFrom:0,rTo:0};
-let zoomChart=null,closed={bookagech:true};   // lead-age × channel detail collapsed by default
+let state={view:'funnel',level:'city',sel:['__all__'],scope:'all',rFrom:0,rTo:0,baBy:'channel'};
+let zoomChart=null,closed={bah_gmb:true,bah_google_ad:true,bah_organic:true,bah_fb:true,bah_others:true,bah_a0:true,bah_a1:true,bah_a2:true,bah_a3:true};
+const hexA=(h,a)=>{const n=parseInt(h.slice(1),16);return 'rgba('+(n>>16&255)+','+(n>>8&255)+','+(n&255)+','+a+')';};
 
 const z=()=>Array(NW).fill(0);
 const addA=(a,b)=>{const o=(a||z()).slice();(b||[]).forEach((v,i)=>o[i]=(o[i]||0)+(+v||0));return o;};
@@ -496,13 +499,19 @@ function funnelHTML(cells){
 
 // ── MATRIX rows ──
 const RATIO=v=>v==null?'—':(v<=1.02?Math.round(v*100)+'%':v.toFixed(2)+'×');
-// lead-age × channel detail rows (network): 5 channels × 4 ages, channel-major
-const BA_CH_ROWS=(function(){const out=[{grp:'bookagech',label:'··· lead age × channel (network · tap to collapse)'}];
-  [['gmb','GMB'],['google_ad','Google Ads'],['organic','Organic'],['fb','Meta'],['others','Others']].forEach(([ch,nm])=>{
-    [['0','same week'],['1','1-wk back'],['2','2-wk back'],['3','3+ back']].forEach(([a,al])=>out.push({t:'edge',k:'_ba'+a+'_'+ch,label:nm+' · '+al,fmt:N}));});
-  return out;})();
 const D1=v=>v==null?'—':v.toFixed(1);
-const MROWS=[
+// lead-age × channel detail as a TWO-LEVEL drill (network): top dim = channel or maturity (state.baBy),
+// each is a collapsible sub-group; second dim expands inside. Collapsed by default.
+const BA_DCH=[['gmb','GMB'],['google_ad','Google Ads'],['organic','Organic'],['fb','Meta'],['others','Others']];
+const BA_DAG=[['0','same week'],['1','1-wk back'],['2','2-wk back'],['3','3+ back']];
+function baDetail(){const out=[];
+  if(state.baBy==='maturity'){
+    BA_DAG.forEach(([a,al])=>{out.push({grp:'bah_a'+a,label:'↳ '+al+' — by channel'});BA_DCH.forEach(([ch,nm])=>out.push({t:'edge',k:'_ba'+a+'_'+ch,label:nm,fmt:N}));});
+  } else {
+    BA_DCH.forEach(([ch,nm])=>{out.push({grp:'bah_'+ch,label:'↳ '+nm+' — by lead age'});BA_DAG.forEach(([a,al])=>out.push({t:'edge',k:'_ba'+a+'_'+ch,label:al,fmt:N}));});
+  }
+  return out;}
+function mrows(){return [
   {grp:'discovery',label:'GMB discovery'},
   {t:'stage',k:'searches',label:'GMB searches',fmt:N},
   {t:'edge',k:'_intrate',label:'Interaction rate %',formula:'interactions ÷ searches',fmt:P},
@@ -520,7 +529,7 @@ const MROWS=[
   {t:'edge',k:'_ba1',label:'· from 1-week-back leads',fmt:N},
   {t:'edge',k:'_ba2',label:'· from 2-week-back leads',fmt:N},
   {t:'edge',k:'_ba3',label:'· from 3+-week-back leads',fmt:N},
-  ...BA_CH_ROWS,
+  ...baDetail(),
   {grp:'acqout',label:'New bookings — show-up & done'},
   {t:'edge',k:'_newshow',label:'New show-up %',formula:'new done ÷ new bookings',fmt:P,tgt:75},
   {t:'stage',k:'newDone',label:'New done',fmt:N},
@@ -541,7 +550,7 @@ const MROWS=[
   {t:'edge',k:'_shrpct',label:'· shrinkage %',formula:'shrinkage ÷ scheduled',fmt:P,inv:true},
   {t:'stage',k:'r_avhrs',label:'Available hours (post-shrinkage)',fmt:N},
   {t:'edge',k:'r_we_hrs',label:'· weekend hours',fmt:N},
-];
+];}
 function deriv(s,k){
   if(k==='_intrate')return (s.searches&&s.searches.some(v=>v>0))?s.searches.map((v,i)=>pct(s.interactions[i],v)):null;
   if(k==='_b2d')return s.bookings.map((v,i)=>pct(s.done[i],v));
@@ -661,18 +670,21 @@ function renderMatrix(s){
   order.forEach((ci,j)=>h+=`<th class="${j===order.length-1?'lastcol':''}">${WEEKS[ci]}</th>`);
   h+='<th>trend</th></tr></thead><tbody>';
   // precompute which groups have any data this scope — skip empty groups (e.g. GMB/leads in Online)
+  const MR=mrows();
   const grpHas={};let cg=null;
-  MROWS.forEach(r=>{if(r.grp){cg=r.grp;grpHas[cg]=false;return;}const ser=deriv(s,r.k);if(ser&&ser.some(v=>v!=null&&v!==0))grpHas[cg]=true;});
+  MR.forEach(r=>{if(r.grp){cg=r.grp;grpHas[cg]=false;return;}const ser=deriv(s,r.k);if(ser&&ser.some(v=>v!=null&&v!==0))grpHas[cg]=true;});
   let hidden=false,skipGrp=false;
-  MROWS.forEach(r=>{
+  MR.forEach(r=>{
     if(r.grp){skipGrp=!grpHas[r.grp];if(skipGrp)return;hidden=!!closed[r.grp];h+=`<tr class="grp${hidden?' closed':''}" data-grp="${r.grp}"><td colspan="${order.length+2}"><span class="gchev">▾</span> ${r.label}</td></tr>`;return;}
     if(hidden||skipGrp)return;
     const series=deriv(s,r.k);if(!series)return;if(!series.some(v=>v!=null&&v!==0)&&r.t==='edge'&&!r.tgt)return;
     let cells='';order.forEach((ci,j)=>{
-      const v=series[ci];let cls=j===order.length-1?'lastcol':'';
+      const v=series[ci];let cls=j===order.length-1?'lastcol':'',bgc='';
       if(v!=null){const nm=norm6(series,ci)||r.tgt;
-        if(nm!=null&&nm){const p=r.inv?(nm-v)/Math.max(nm,1):(v-nm)/Math.max(nm,1);if(p>=0.1)cls+=' hit';else if(p<=-0.2)cls+=' miss';}}
-      cells+=`<td class="${cls}">${v==null?'—':r.fmt(v)}</td>`;});
+        if(nm!=null&&nm){const p=r.inv?(nm-v)/Math.max(nm,1):(v-nm)/Math.max(nm,1);
+          if(p>=0.1){bgc=hexA('#2E7D5B',0.07+0.16*Math.min(Math.abs(p),0.5)/0.5);cls+=' hit';}
+          else if(p<=-0.1){bgc=hexA('#B23A2E',0.07+0.16*Math.min(Math.abs(p),0.5)/0.5);cls+=' miss';}}}
+      cells+=`<td class="${cls}"${bgc?` style="background:${bgc}"`:''}>${v==null?'—':r.fmt(v)}</td>`;});
     const lbl=r.t==='stage'?`<div class="snode">${r.label}</div>`:`<div class="edge-lbl">↳ ${r.label} ${r.formula?`<span class="formula">${r.formula}</span>`:''}</div>`;
     const sd=order.map(ci=>series[ci]);
     h+=`<tr class="${r.t}"><td>${lbl}</td>${cells}<td class="sparkcell" data-k="${r.k}">${sd.filter(v=>v!=null).length>1?spark(sd,r.inv):''}</td></tr>`;
@@ -765,7 +777,7 @@ function renderAI(){
 
 // ── zoom modal ──
 function openZoom(s,k){
-  const r=MROWS.find(x=>x.k===k);if(!r)return;const series=deriv(s,k);if(!series)return;
+  const r=mrows().find(x=>x.k===k);if(!r)return;const series=deriv(s,k);if(!series)return;
   const lo=state.rFrom,hi=state.rTo,idxs=[];for(let i=lo;i>=hi;i--)idxs.push(i);
   const per=idxs.map(i=>WEEKS[i]),sv=idxs.map(i=>series[i]);
   document.getElementById('mTitle').textContent=(r.label||k)+' — '+labelFor(state.level,state.sel[0]);
@@ -857,6 +869,7 @@ function setView(v){state.view=v;document.querySelectorAll('#viewswitch button')
 document.querySelectorAll('#viewswitch button').forEach(b=>b.onclick=()=>setView(b.dataset.v));
 document.querySelectorAll('#levelSeg button').forEach(b=>b.onclick=()=>{document.querySelectorAll('#levelSeg button').forEach(x=>x.classList.remove('on'));b.classList.add('on');state.level=b.dataset.l;state.sel=['__all__'];pickQuery='';renderSelRow();renderAll();});
 document.querySelectorAll('#scopeSeg button').forEach(b=>b.onclick=()=>{state.scope=b.dataset.s;if(b.dataset.s==='online')state.sel=['__all__'];renderSelRow();renderAll();});
+document.querySelectorAll('#baBySeg button').forEach(b=>b.onclick=()=>{document.querySelectorAll('#baBySeg button').forEach(x=>x.classList.remove('on'));b.classList.add('on');state.baBy=b.dataset.b;renderAll();});
 
 function renderAll(){
   if(!NW){return;}
