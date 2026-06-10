@@ -207,6 +207,13 @@ tr.grp.closed td .gchev{transform:rotate(-90deg)}
       <div class="pick-panel" id="pickPanel"></div>
     </div>
   </div>
+  <div class="cg"><span class="lbl">Scope</span>
+    <div class="seg" id="scopeSeg">
+      <button data-s="all" class="on">All</button>
+      <button data-s="offline">Offline</button>
+      <button data-s="online">Online</button>
+    </div>
+  </div>
   <div class="cg"><span class="lbl">Week</span>
     <select class="rsel" id="rangeFrom"></select><span class="rarrow">→</span><select class="rsel" id="rangeTo"></select>
   </div>
@@ -300,37 +307,46 @@ async function boot(){
   const docSet=new Set();
   Object.values(big.all&&big.all.weekly_doctor||{}).forEach(cell=>Object.keys(cell).forEach(dk=>docSet.add(dk)));
   UNIV.doctors=[...docSet].sort();
-  document.getElementById('dateline').innerHTML=(WEEKS[LI]||'')+' → '+(WEEKS[0]||'')+' · <b style="color:#1F6F5C">live from Redshift</b> · weekly · offline clinic demand';
+  document.getElementById('dateline').innerHTML=(WEEKS[LI]||'')+' → '+(WEEKS[0]||'')+' · <b style="color:#1F6F5C">live from Redshift</b> · weekly';
   initWeeks();
   state.rFrom=Math.min(7,LI);state.rTo=0;
   renderSelRow();renderAll();
   document.getElementById('viewHint').textContent=HINTS.funnel;
 }
-function setScope(s){DJSCOPE=s;DJ=(DAT.big&&DAT.big[s])||DAT.big.all||{};}
+function setScope(s){state.scope=s;}
 
-// ── booking/done/disposition from data.json (by date key, scope-aware) ──
-function djSeries(kind,name){ // kind: 'city'|'clinic'|'doctor'
-  const map=DJ['weekly_'+kind]||{};
-  const f=k=>WEEKS.map(w=>{const cell=(map[w]||{})[k];return cell||null;});
-  const g=field=>WEEKS.map(w=>{const cell=(map[w]||{})[name];return cell?(cell[field]||0):0;});
-  return {bookings:g('gross'),done:g('calls_done'),noshow:g('no_show'),resched:g('rescheduled'),nbk:g('new_bookings')};
+// ── booking spine from data.json, scope-aware (gross/done/no-show/reschedule) ──
+// data.json: 'all' & 'offline' carry weekly_city/clinic/doctor; 'online' has NO geo split —
+// online demand (Practo/tele) lives only in the network weekly_funnel. So Online scope is
+// network-only; All & Offline drill to every level.
+function spineFor(level,id,scope){
+  const big=(DAT.big&&DAT.big[scope])||DAT.big.all||{};
+  const fromMap=(kind,name)=>{const map=big['weekly_'+kind]||{};const g=f=>WEEKS.map(w=>{const c=(map[w]||{})[name];return c?(c[f]||0):0;});return {bookings:g('gross'),done:g('calls_done'),noshow:g('no_show'),resched:g('rescheduled')};};
+  // whole-network total comes from weekly_funnel — in 'all' scope this INCLUDES online (Practo/tele),
+  // which has no per-city row, so summing cities would miss it.
+  const netFunnel=()=>{const wf=big.weekly_funnel||{};const g=f=>WEEKS.map(w=>{const c=wf[w]||{};return c[f]||0;});return {bookings:g('gross'),done:g('calls_done'),noshow:g('no_show'),resched:g('rescheduled')};};
+  if(scope==='online'){const n=netFunnel();n.onlyNet=true;n.specific=id!=='__all__';return n;}
+  if(id==='__all__')return netFunnel();                 // entire network (incl. online in 'all' scope)
+  if(level==='doctor')return fromMap('doctor',id);
+  if(level==='clinic')return fromMap('clinic',id.replace('|','_'));
+  if(level==='city')return fromMap('city',id);
+  // tier subset (T1 / T2) → sum its cities (geo rows are offline-only; online is not tier-attributable)
+  const keys=clinicsFor(level,id);const cities=[...new Set(keys.map(k=>k.split('|')[0]))];
+  const acc={bookings:z(),done:z(),noshow:z(),resched:z()};
+  cities.forEach(c=>{const d=fromMap('city',c);['bookings','done','noshow','resched'].forEach(f=>acc[f]=addA(acc[f],d[f]));});
+  return acc;
 }
 
-// ── aggregate the demand chain for a set of pipe-clinic-keys (discovery+leads+capacity) ──
-function clinicTop(keys){
+// ── offline-clinic enrichments (GMB discovery, leads by source, timing, capacity) + diagnostic raw for new/repeat shares ──
+function clinicEnrich(keys){
   const L=DAT.L,G=DAT.G,D=DAT.D,A=DAT.A;
-  const out={searches:z(),interactions:z(),leads:z(),avail:z(),age_same:z(),age_last:z(),age_older:z(),src:{},
-    bookings:z(),newBk:z(),repeat:z(),done:z(),newDone:z(),repeatDone:z(),noshow:z(),resched:z(),cancelled:z()};
+  const out={searches:z(),interactions:z(),leads:z(),avail:z(),age_same:z(),age_last:z(),age_older:z(),src:{},_allBk:z(),_bkNew:z(),_bkDone:z(),_bkDoneNew:z()};
   SRC.forEach(([k])=>out.src[k]=z());
   keys.forEach(key=>{
     const g=G[key]||{},d=D[key]||{},a=A[key]||{},l=L[key]||{};
-    out.searches=addA(out.searches,g.searches);out.interactions=addA(out.interactions,g.interactions);
-    out.avail=addA(out.avail,d.avail);
+    out.searches=addA(out.searches,g.searches);out.interactions=addA(out.interactions,g.interactions);out.avail=addA(out.avail,d.avail);
     out.age_same=addA(out.age_same,a.same);out.age_last=addA(out.age_last,a.last);out.age_older=addA(out.age_older,a.older);
-    // booking funnel from diagnostic (same City|Clinic universe) — has the new/repeat split
-    out.bookings=addA(out.bookings,d.allBk);out.newBk=addA(out.newBk,d.bkNew);out.repeat=addA(out.repeat,d.bkRepeat);
-    out.done=addA(out.done,d.bkDone);out.newDone=addA(out.newDone,d.bkDoneNew);out.repeatDone=addA(out.repeatDone,d.bkDoneRepeat);
-    out.noshow=addA(out.noshow,d.bkMissed);out.resched=addA(out.resched,d.bkResched);out.cancelled=addA(out.cancelled,d.bkCancelled);
+    out._allBk=addA(out._allBk,d.allBk);out._bkNew=addA(out._bkNew,d.bkNew);out._bkDone=addA(out._bkDone,d.bkDone);out._bkDoneNew=addA(out._bkDoneNew,d.bkDoneNew);
     SRC.forEach(([k])=>{out.src[k]=addA(out.src[k],l[k]);out.leads=addA(out.leads,l[k]);});
   });
   return out;
@@ -344,15 +360,25 @@ function clinicsFor(level,id){
   return []; // doctor handled separately
 }
 function entitySeries(level,id){
-  if(level==='doctor'){
-    const dj=djSeries('doctor',id);
-    const s=Object.assign({searches:z(),interactions:z(),leads:null,avail:z(),age_same:z(),age_last:z(),age_older:z(),src:{},noLeads:true,newBk:null,repeat:null,newDone:null},dj);
-    s.cancelled=z();
-    return s;
+  const scope=state.scope;
+  const spine=spineFor(level,id,scope);spine.cancelled=z();
+  const enrichable = scope!=='online' && level!=='doctor';  // GMB/leads/capacity/new-repeat are offline-clinic concepts
+  let s;
+  if(enrichable){
+    const keys=clinicsFor(level,id);const e=clinicEnrich(keys);
+    s=Object.assign(e,spine);s.nClinics=keys.length;
+    // new/repeat & their done: apply the diagnostic (offline) split share to the scope-aware spine so they sum to it
+    const nShare=e._bkNew.map((v,i)=>e._allBk[i]?v/e._allBk[i]:null);
+    const ndShare=e._bkDoneNew.map((v,i)=>e._bkDone[i]?v/e._bkDone[i]:null);
+    s.newBk=spine.bookings.map((b,i)=>nShare[i]==null?null:Math.round(b*nShare[i]));
+    s.repeat=spine.bookings.map((b,i)=>s.newBk[i]==null?null:Math.max(0,b-s.newBk[i]));
+    s.newDone=spine.done.map((d,i)=>ndShare[i]==null?null:Math.round(d*ndShare[i]));
+    s.repeatDone=spine.done.map((d,i)=>s.newDone[i]==null?null:Math.max(0,d-s.newDone[i]));
+  } else {
+    s=Object.assign({searches:z(),interactions:z(),leads:null,avail:z(),age_same:z(),age_last:z(),age_older:z(),src:{},noLeads:true,newBk:null,repeat:null,newDone:null,repeatDone:null},spine);
+    if(level!=='doctor')s.nClinics=clinicsFor(level,id).length;
   }
-  const keys=clinicsFor(level,id);
-  const s=clinicTop(keys);   // booking funnel now comes from diagnostic (same City|Clinic universe)
-  s.nClinics=keys.length;
+  s.scope=scope;s.onlineNoGeo=!!(spine.onlyNet&&spine.specific);
   return s;
 }
 function labelFor(level,id){
@@ -362,11 +388,16 @@ function labelFor(level,id){
   return id;
 }
 function subFor(level,id,s){
-  if(level==='tier')return (id==='__all__'?'all cities':id+' cities')+' · '+(s.nClinics||0)+' clinics';
-  if(level==='city')return (s.nClinics||0)+' clinics';
-  if(level==='clinic')return 'single clinic';
-  if(level==='doctor')return 'leads & discovery are clinic-level';
-  return '';
+  let base;
+  if(level==='tier')base=(id==='__all__'?'all cities':id+' cities')+' · '+(s.nClinics||0)+' clinics';
+  else if(level==='city')base=(s.nClinics||0)+' clinics';
+  else if(level==='clinic')base='single clinic';
+  else if(level==='doctor')base='leads & discovery are clinic-level';
+  else base='';
+  if(s&&s.scope==='online')base='⚠ network online demand (Practo/tele — not split by clinic)';
+  else if(s&&s.scope==='offline')base='offline · '+base;
+  else if(s&&s.scope==='all'&&level!=='doctor')base=base+' · incl. online';
+  return base;
 }
 
 // ── FUNNEL SNAPSHOT (latest week in range) ──
@@ -480,10 +511,13 @@ function renderMatrix(s){
   let h='<table class="fm"><thead><tr><th>Stage & transition</th>';
   order.forEach((ci,j)=>h+=`<th class="${j===order.length-1?'lastcol':''}">${WEEKS[ci]}</th>`);
   h+='<th>trend</th></tr></thead><tbody>';
-  let hidden=false;
+  // precompute which groups have any data this scope — skip empty groups (e.g. GMB/leads in Online)
+  const grpHas={};let cg=null;
+  MROWS.forEach(r=>{if(r.grp){cg=r.grp;grpHas[cg]=false;return;}const ser=deriv(s,r.k);if(ser&&ser.some(v=>v!=null&&v!==0))grpHas[cg]=true;});
+  let hidden=false,skipGrp=false;
   MROWS.forEach(r=>{
-    if(r.grp){hidden=!!closed[r.grp];h+=`<tr class="grp${hidden?' closed':''}" data-grp="${r.grp}"><td colspan="${order.length+2}"><span class="gchev">▾</span> ${r.label}</td></tr>`;return;}
-    if(hidden)return;
+    if(r.grp){skipGrp=!grpHas[r.grp];if(skipGrp)return;hidden=!!closed[r.grp];h+=`<tr class="grp${hidden?' closed':''}" data-grp="${r.grp}"><td colspan="${order.length+2}"><span class="gchev">▾</span> ${r.label}</td></tr>`;return;}
+    if(hidden||skipGrp)return;
     const series=deriv(s,r.k);if(!series)return;if(!series.some(v=>v!=null&&v!==0)&&r.t==='edge'&&!r.tgt)return;
     let cells='';order.forEach((ci,j)=>{
       const v=series[ci];let cls=j===order.length-1?'lastcol':'';
@@ -528,6 +562,7 @@ function renderCmpSbs(){
 function renderCompareView(){
   const el=document.getElementById('compareCards');el.innerHTML='';const i=state.rTo;
   document.getElementById('compTitle').textContent='All '+(state.level==='tier'?'tiers':state.level==='city'?'cities':state.level==='clinic'?'clinics':'doctors')+' — '+WEEKS[i];
+  if(state.scope==='online'){el.innerHTML='<div class="loading">Online demand (Practo / tele) isn\'t split by city, clinic or doctor in the warehouse — it lives only at the network level. Compare is available in <b>All</b> and <b>Offline</b> scope. Switch scope to All or Offline to rank entities.</div>';return;}
   let ids;
   if(state.level==='tier')ids=['T1','T2'];
   else if(state.level==='city')ids=UNIV.cities;
@@ -618,6 +653,7 @@ document.addEventListener('click',e=>{if(!e.target.closest('.picker'))document.g
 function renderSelRow(){
   const el=document.getElementById('selRow');el.innerHTML='';
   document.querySelectorAll('#levelSeg button').forEach(b=>b.classList.toggle('on',b.dataset.l===state.level));
+  document.querySelectorAll('#scopeSeg button').forEach(b=>b.classList.toggle('on',b.dataset.s===state.scope));
   // update pick button label
   document.getElementById('pickLbl').textContent=state.level.charAt(0).toUpperCase()+state.level.slice(1);
   document.getElementById('pickBtn').textContent=(state.sel.includes('__all__')?('All '+(state.level==='tier'?'India':state.level+'s')):state.sel.length+' selected')+' ▾';
@@ -644,6 +680,7 @@ function setView(v){state.view=v;document.querySelectorAll('#viewswitch button')
   document.getElementById('viewHint').textContent=HINTS[v]||'';renderAll();}
 document.querySelectorAll('#viewswitch button').forEach(b=>b.onclick=()=>setView(b.dataset.v));
 document.querySelectorAll('#levelSeg button').forEach(b=>b.onclick=()=>{document.querySelectorAll('#levelSeg button').forEach(x=>x.classList.remove('on'));b.classList.add('on');state.level=b.dataset.l;state.sel=['__all__'];pickQuery='';renderSelRow();renderAll();});
+document.querySelectorAll('#scopeSeg button').forEach(b=>b.onclick=()=>{state.scope=b.dataset.s;if(b.dataset.s==='online')state.sel=['__all__'];renderSelRow();renderAll();});
 
 function renderAll(){
   if(!NW){return;}
