@@ -137,9 +137,11 @@ const STAGES=[
    {m:'CPP (cost / conversion)',desc:'Google-Ads conversions basis',lvl:'city',src:'GADS',paid:'cpp',fmt:'rupee'},
    {m:'Time to first PCC contact',lvl:'setup',desc:'30-min response ≈ 9× conversion · needs CRM timestamps'},
  ]},
- {n:4,t:'Qualification',q:'PCC layer — relevant? what category?',rows:[
-   {m:'Category mix (consults)',desc:'STI / ED+ / PE+ / MH … share of this clinic’s consults',star:1,lvl:'clinic',src:'CRM',special:'catmix'},
-   {m:'Relevant leads (lead-stage)',lvl:'setup',desc:'needs PCC tagging at the lead stage (clinic + category)'},
+ {n:4,t:'Qualification',q:'What category of demand is converting? (category = consult diagnosis)',rows:[
+   {m:'STI share %',desc:'STI ÷ all consults — the demand-owner’s key cut',star:1,lvl:'clinic',src:'CRM',special:'cat_share',cat:'STI',fmt:'pct'},
+   {m:'SH share % (ED + PE)',desc:'ED+ + PE+ + ED+PE+ ÷ all consults',star:1,lvl:'clinic',src:'CRM',special:'cat_share',cat:'SH',fmt:'pct'},
+   {m:'Category mix (count · %)',desc:'Diagnosis tag on the consult — STI / ED+ / PE+ / ED+PE+ / NSSD / other',lvl:'clinic',src:'CRM',special:'catmix'},
+   {m:'Relevant leads by category (lead-stage)',lvl:'setup',desc:'category is a consult diagnosis (known only once done) — lead-stage category needs PCC tagging at the call'},
  ]},
  {n:5,t:'Booking',q:'Did they book an appointment?',rows:[
    {m:'Total bookings',desc:'Confirmed appointments this week',star:1,lvl:'clinic',src:'BOOKING',key:'booking.bookings'},
@@ -162,6 +164,7 @@ const STAGES=[
    {m:'Revenue (realized)',desc:'Paid invoices on completed consults this week',star:1,lvl:'clinic',src:'BOOKING',key:'revenue.rev',fmt:'rupee'},
    {m:'Paid consults',desc:'Consults with a paid invoice',lvl:'clinic',src:'BOOKING',key:'revenue.paid_consults'},
    {m:'RPC (revenue / paid consult)',lvl:'clinic',src:'derived',special:'rpc',fmt:'rupee'},
+   {m:'Revenue by category (₹ · %)',desc:'Which diagnoses drive the money — STI / ED+ / PE+ / ED+PE+ / other',lvl:'clinic',src:'BOOKING',special:'revcat'},
    {m:'Revenue / active day',desc:'How much each working day generates',star:1,lvl:'clinic',src:'derived',special:'rev_per_day',fmt:'rupee'},
    {m:'Rev ÷ ad spend (allocated)',desc:'Total clinic revenue ÷ this clinic’s allocated city ad spend — rough, not channel-attributed',lvl:'city',src:'derived',special:'roas',fmt:'x'},
  ]},
@@ -184,6 +187,10 @@ function rowValueSeries(r){ // returns {series:[12], inv, badge, badgeClass, src
     if(r.special==='b2d') return {series:D.done.map((dn,i)=>{const bk=B.bookings[i];return bk?dn/bk*100:null;}),lvl:'clinic',src:'BOOKING'};
     if(r.special==='util') return {series:D.done.map((dn,i)=>{const ah=S.avail_hours[i];return ah?dn/(ah*2)*100:null;}),lvl:'clinic',src:'BOOKING'};
     if(r.special==='catmix') return {catmix:true,lvl:'clinic',src:'CRM'};
+    if(r.special==='revcat') return {revcat:true,lvl:'clinic',src:'BOOKING'};
+    if(r.special==='cat_share'){ const cm=c.booking.catmix; const tot=i=>['STI','ED+','PE+','ED+PE+','NSSD','oth'].reduce((a,k)=>a+(cm[k][i]||0),0);
+      const num=i=>r.cat==='SH'?((cm['ED+'][i]||0)+(cm['PE+'][i]||0)+(cm['ED+PE+'][i]||0)):(cm[r.cat][i]||0);
+      return {series:cm['STI'].map((_,i)=>{const t=tot(i);return t?num(i)/t*100:null;}),lvl:'clinic',src:'CRM'}; }
     const RV=c.revenue||{rev:[],paid_consults:[]};
     if(r.special==='rpc') return {series:RV.rev.map((rv,i)=>{const pc=RV.paid_consults[i];return pc?rv/pc:null;}),lvl:'clinic',src:'derived'};
     if(r.special==='rev_per_day') return {series:RV.rev.map((rv,i)=>{const ad=S.active_days[i];return ad?rv/ad:null;}),lvl:'clinic',src:'derived'};
@@ -227,8 +234,13 @@ function render(){
       else if(rv.catmix){
         const cm=c.booking.catmix; const tot=Object.values(cm).reduce((a,x)=>a+(x[w]||0),0)||1;
         const order=['STI','ED+','PE+','ED+PE+','NSSD','oth'];
-        valCell='<div class="cat-block">'+order.filter(k=>cm[k][w]>0).map(k=>`<span class="cat-pill">${k} ${Math.round(cm[k][w]/tot*100)}%</span>`).join('')+'</div>';
+        valCell='<div class="cat-block" style="flex-direction:column;align-items:flex-end;gap:2px">'+order.filter(k=>cm[k][w]>0).map(k=>`<span class="cat-pill">${k} <b>${cm[k][w]}</b> · ${Math.round(cm[k][w]/tot*100)}%</span>`).join('')+'</div>';
         badge='CLINIC ✓'; badgeCls='b-clinic'; srcCell=`<span class="src CRM">CRM</span>`; trendCell='';
+      } else if(rv.revcat){
+        const bc=(c.revenue||{}).by_cat||{}; const order=['STI','ED+','PE+','ED+PE+','NSSD','oth'];
+        const tot=order.reduce((a,k)=>a+((bc[k]||[])[w]||0),0)||1;
+        valCell='<div class="cat-block" style="flex-direction:column;align-items:flex-end;gap:2px">'+order.filter(k=>(bc[k]||[])[w]>0).map(k=>`<span class="cat-pill">${k} <b>${R(bc[k][w])}</b> · ${Math.round(bc[k][w]/tot*100)}%</span>`).join('')+'</div>';
+        badge='CLINIC ✓'; badgeCls='b-clinic'; srcCell=`<span class="src BOOKING">BK</span>`; trendCell='';
       } else {
         const s=rv.series, cur=s[w], prev=s[w+1];
         valCell=`<span class="val ${cur==null?'na':''}">${cur==null?'—':fmtVal(cur,r.fmt)}</span>`+(r.noTrend?'':deltaHTML(cur,prev,false));

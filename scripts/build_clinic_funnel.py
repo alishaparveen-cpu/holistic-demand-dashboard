@@ -66,7 +66,8 @@ def main():
             "booking": {"bookings": bookings, "new": arr(bt, "new"), "repeat": arr(bt, "repeat"), "catmix": catmix},
             "showup": {"no_show": no_show, "reschedules": resched},
             "done": {"done": done},
-            "revenue": {"rev": arr(REVN.get(key, {}), "rev"), "paid_consults": arr(REVN.get(key, {}), "paid_consults")},
+            "revenue": {"rev": arr(REVN.get(key, {}), "rev"), "paid_consults": arr(REVN.get(key, {}), "paid_consults"),
+                        "by_cat": {c: arr((REVN.get(key, {}).get("rev_by_cat") or {}), c) for c in ["STI","ED+","PE+","ED+PE+","NSSD","oth"]}},
         }
     # velocity + allocation weight (needs city_book) + attach city paid
     for key, o in out_clinics.items():

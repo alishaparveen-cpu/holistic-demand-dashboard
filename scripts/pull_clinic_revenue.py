@@ -16,9 +16,22 @@ WEEKS = ["2026-06-01","2026-05-25","2026-05-18","2026-05-11","2026-05-04","2026-
 idx = {w: i for i, w in enumerate(WEEKS)}
 NW = len(WEEKS)
 
+CATS = ["STI", "ED+", "PE+", "ED+PE+", "NSSD", "oth"]
 SQL = """WITH loc AS (
     SELECT id, MAX(city) city, MAX(locality) locality
     FROM allo_health.locations WHERE deleted_at IS NULL AND is_active=1 GROUP BY id),
+  diag AS (
+    SELECT e.appointment_id ap_id,
+      CASE
+        WHEN MAX(CASE WHEN et.tag_type='sti'             THEN 1 ELSE 0 END)=1 THEN 'STI'
+        WHEN MAX(CASE WHEN et.tag_type='ed_plus_pe_plus' THEN 1 ELSE 0 END)=1 THEN 'ED+PE+'
+        WHEN MAX(CASE WHEN et.tag_type='ed_plus'         THEN 1 ELSE 0 END)=1 THEN 'ED+'
+        WHEN MAX(CASE WHEN et.tag_type='pe_plus'         THEN 1 ELSE 0 END)=1 THEN 'PE+'
+        WHEN MAX(CASE WHEN et.tag_type='nssd'            THEN 1 ELSE 0 END)=1 THEN 'NSSD'
+        ELSE 'oth' END diag_cat
+    FROM allo_encounters.encounters e
+    LEFT JOIN allo_analytics.encounter_tags et ON et.encounter_id=e.id AND et.tag_category='diagnosis' AND et.deleted_at IS NULL
+    WHERE e.deleted_at IS NULL GROUP BY 1),
   ap AS (
     SELECT a.id, TO_CHAR(DATE_TRUNC('week', a.start_time + INTERVAL '5 hours 30 minutes'),'YYYY-MM-DD') wk,
            l.city, l.locality
@@ -33,11 +46,11 @@ SQL = """WITH loc AS (
     FROM allo_encounters.encounters e
     JOIN allo_billing.invoices i ON i.encounter_id=e.id AND i.deleted_at IS NULL AND i.status='paid'
     WHERE e.deleted_at IS NULL GROUP BY 1)
-  SELECT ap.city, ap.locality, ap.wk,
+  SELECT ap.city, ap.locality, ap.wk, COALESCE(diag.diag_cat,'oth') cat,
          SUM(COALESCE(inv.amt,0)) rev_paise,
          COUNT(inv.ap_id) paid_consults
-  FROM ap LEFT JOIN inv ON inv.ap_id=ap.id
-  GROUP BY 1,2,3 ORDER BY 1,2,3;"""
+  FROM ap LEFT JOIN inv ON inv.ap_id=ap.id LEFT JOIN diag ON diag.ap_id=ap.id
+  GROUP BY 1,2,3,4 ORDER BY 1,2,3,4;"""
 
 
 def main():
@@ -47,22 +60,25 @@ def main():
     D = {}
     for line in p.stdout.strip().splitlines():
         c = line.split("\t")
-        if len(c) < 5: continue
-        city, loc, wk, rev_paise, n = c[0], c[1], c[2], c[3], c[4]
+        if len(c) < 6: continue
+        city, loc, wk, cat, rev_paise, n = c[0], c[1], c[2], c[3], c[4], c[5]
         if wk not in idx: continue
+        if cat not in CATS: cat = "oth"
         key = f"{city}|{loc}"
-        o = D.setdefault(key, {"rev": [0.0]*NW, "paid_consults": [0]*NW})
+        o = D.setdefault(key, {"rev": [0.0]*NW, "paid_consults": [0]*NW,
+                               "rev_by_cat": {k: [0.0]*NW for k in CATS}})
         i = idx[wk]
         try:
-            o["rev"][i] += round(int(float(rev_paise)) / 100.0)   # paise → ₹
-            o["paid_consults"][i] += int(float(n))
+            r = round(int(float(rev_paise)) / 100.0)   # paise → ₹
+            o["rev"][i] += r; o["rev_by_cat"][cat][i] += r; o["paid_consults"][i] += int(float(n))
         except ValueError:
             pass
     for o in D.values():
         o["rev"] = [round(x) for x in o["rev"]]
+        o["rev_by_cat"] = {k: [round(x) for x in v] for k, v in o["rev_by_cat"].items()}
     out = {"_meta": {"weeks": WEEKS,
-                     "source": "allo_billing.invoices (status=paid) × COMPLETED Screening Calls × location · ₹ per clinic-week",
-                     "fields": "rev=paid invoice ₹ that week (slot-week, IST); paid_consults=consults with a paid invoice"}}
+                     "source": "allo_billing.invoices (status=paid) × COMPLETED Screening Calls × location × diagnosis tag · ₹ per clinic-week",
+                     "fields": "rev=paid invoice ₹ that week; paid_consults=consults with a paid invoice; rev_by_cat=revenue split by encounter diagnosis (STI/ED+/PE+/ED+PE+/NSSD/oth)"}}
     out.update(D)
     json.dump(out, open(os.path.join(ROOT, "data_clinic_revenue.json"), "w"), separators=(",", ":"))
     tot = sum(sum(o["rev"]) for o in D.values())
