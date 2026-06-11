@@ -37,6 +37,11 @@ def main():
         if not o: return [0]*NW
         src = o.get(field) or []
         return [ (src[lpos[w]] if w in lpos and lpos[w] < len(src) else 0) for w in WEEKS ]
+    def ai_lead_cats(key):                                  # inbound leads split into STI / SH / MH / Other
+        o = LEADF.get(key); bc = (o or {}).get("by_cat") or {}
+        def rs(cks):
+            return [ sum((bc.get(ck) or [])[lpos[w]] if (w in lpos and lpos[w] < len(bc.get(ck) or [])) else 0 for ck in cks) for w in WEEKS ]
+        return {"STI": rs(["STI"]), "SH": rs(["SEXUAL_HEALTH_GENERAL"]), "MH": rs(["MENTAL_HEALTH"]), "Other": rs(["OTHER", "NOT_MENTIONED"])}
     WC = BIG.get("all", {}).get("weekly_clinic", {})
     # weekly_clinic is keyed by "City_Clinic"; map a pipe key → its weekly per-field arrays
     def wc_series(pipe):
@@ -72,7 +77,8 @@ def main():
                           "review_vel": arr(rv, "n"), "rating": [ (REV.get(key,{}).get("rating") or [None]*NW)[i] if i < len(REV.get(key,{}).get("rating") or []) else None for i in range(NW)]},
             "engagement": {"interactions": interactions, "directions": directions, "website": website, "gmb_calls": gmb_calls},
             "lead": {"leads_total": leads_total, "by_chan": leads_by, "gmb_organic_calls": gmb_calls, "gmb_leads": arr(d, "gmbLeads"),
-                     "ai_lead_calls": ai_series(key, "lead_calls"), "ai_relevant": ai_series(key, "relevant"), "ai_strong": ai_series(key, "strong")},
+                     "ai_lead_calls": ai_series(key, "lead_calls"), "ai_relevant": ai_series(key, "relevant"), "ai_strong": ai_series(key, "strong"),
+                     "ai_lead_by_cat": ai_lead_cats(key)},
             "booking": {"bookings": bookings, "new": arr(bt, "new"), "repeat": arr(bt, "repeat"), "catmix": catmix},
             "showup": {"no_show": no_show, "reschedules": resched},
             "done": {"done": done},

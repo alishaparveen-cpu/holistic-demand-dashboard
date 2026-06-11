@@ -131,8 +131,8 @@ const STAGES=[
    {m:'ePCLC',desc:'Cost per location click',lvl:'city',src:'GADS',paid:'eplc',fmt:'rupee'},
  ]},
  {n:3,t:'Lead',q:'Did interest convert to a lead?',rows:[
-   {m:'Lead calls (AI audit · clinic)',desc:'Inbound lead calls the AI call-audit placed at THIS clinic (its locality) · live from 27 May',star:1,lvl:'clinic',src:'CRM',key:'lead.ai_lead_calls'},
-   {m:'Relevant leads (clinic)',desc:'Of those, service-intent (talk-to-doctor / needs-tests) — the clinic-specific relevant leads',star:1,lvl:'clinic',src:'CRM',key:'lead.ai_relevant'},
+   {m:'Lead calls (AI audit · clinic)',desc:'Inbound lead calls the AI call-audit placed at THIS clinic (its locality) · live from 27 May (trend builds as weeks accrue)',star:1,lvl:'clinic',src:'CRM',key:'lead.ai_lead_calls',noTrend:1},
+   {m:'Relevant leads (clinic)',desc:'Of those, service-intent (talk-to-doctor / needs-tests) — the clinic-specific relevant leads',star:1,lvl:'clinic',src:'CRM',key:'lead.ai_relevant',noTrend:1},
    {m:'GMB organic calls',desc:'Direct calls from the GMB listing',lvl:'clinic',src:'GMB',key:'lead.gmb_organic_calls'},
    {m:'Tracked leads (clinic-engaged)',desc:'Leads attached to this clinic (engaged ≈ booked)',lvl:'clinic',src:'CRM',key:'lead.leads_total'},
    {m:'Ad spend',lvl:'city',src:'GADS',paid:'spend',allocable:1,fmt:'rupee'},
@@ -142,8 +142,8 @@ const STAGES=[
  {n:4,t:'Qualification',q:'What category of demand is converting? (category = consult diagnosis)',rows:[
    {m:'STI share %',desc:'STI ÷ all consults — the demand-owner’s key cut',star:1,lvl:'clinic',src:'CRM',special:'cat_share',cat:'STI',fmt:'pct'},
    {m:'SH share % (ED + PE)',desc:'ED+ + PE+ + ED+PE+ ÷ all consults',star:1,lvl:'clinic',src:'CRM',special:'cat_share',cat:'SH',fmt:'pct'},
-   {m:'Category mix (count · %)',desc:'Diagnosis tag on the consult — STI / ED+ / PE+ / ED+PE+ / NSSD / other',lvl:'clinic',src:'CRM',special:'catmix'},
-   {m:'Relevant leads by category (lead-stage)',lvl:'setup',desc:'category is a consult diagnosis (known only once done) — lead-stage category needs PCC tagging at the call'},
+   {m:'Lead calls by category (AI audit · clinic)',desc:'Category of the INBOUND lead call, from the AI audit — STI / SH / MH / Other · live from 27 May. This is the lead-stage category.',star:1,lvl:'clinic',src:'CRM',special:'ailcat'},
+   {m:'Category mix (consults)',desc:'Diagnosis tag on the completed consult — STI / ED+ / PE+ / ED+PE+ / NSSD / other',lvl:'clinic',src:'CRM',special:'catmix'},
  ]},
  {n:5,t:'Booking',q:'Did they book an appointment?',rows:[
    {m:'Total bookings',desc:'Confirmed appointments this week',star:1,lvl:'clinic',src:'BOOKING',key:'booking.bookings'},
@@ -190,6 +190,7 @@ function rowValueSeries(r){ // returns {series:[12], inv, badge, badgeClass, src
     if(r.special==='util') return {series:D.done.map((dn,i)=>{const ah=S.avail_hours[i];return ah?dn/(ah*2)*100:null;}),lvl:'clinic',src:'BOOKING'};
     if(r.special==='catmix') return {catmix:true,lvl:'clinic',src:'CRM'};
     if(r.special==='revcat') return {revcat:true,lvl:'clinic',src:'BOOKING'};
+    if(r.special==='ailcat') return {ailcat:true,lvl:'clinic',src:'CRM'};
     if(r.special==='cat_share'){ const cm=c.booking.catmix; const tot=i=>['STI','ED+','PE+','ED+PE+','NSSD','oth'].reduce((a,k)=>a+(cm[k][i]||0),0);
       const num=i=>r.cat==='SH'?((cm['ED+'][i]||0)+(cm['PE+'][i]||0)+(cm['ED+PE+'][i]||0)):(cm[r.cat][i]||0);
       return {series:cm['STI'].map((_,i)=>{const t=tot(i);return t?num(i)/t*100:null;}),lvl:'clinic',src:'CRM'}; }
@@ -243,6 +244,11 @@ function render(){
         const tot=order.reduce((a,k)=>a+((bc[k]||[])[w]||0),0)||1;
         valCell='<div class="cat-block" style="flex-direction:column;align-items:flex-end;gap:2px">'+order.filter(k=>(bc[k]||[])[w]>0).map(k=>`<span class="cat-pill">${k} <b>${R(bc[k][w])}</b> · ${Math.round(bc[k][w]/tot*100)}%</span>`).join('')+'</div>';
         badge='CLINIC ✓'; badgeCls='b-clinic'; srcCell=`<span class="src BOOKING">BK</span>`; trendCell='';
+      } else if(rv.ailcat){
+        const bc=(c.lead||{}).ai_lead_by_cat||{}; const order=['STI','SH','MH','Other'];
+        const tot=order.reduce((a,k)=>a+((bc[k]||[])[w]||0),0)||1;
+        valCell='<div class="cat-block" style="flex-direction:column;align-items:flex-end;gap:2px">'+order.filter(k=>(bc[k]||[])[w]>0).map(k=>`<span class="cat-pill">${k} <b>${bc[k][w]}</b> · ${Math.round(bc[k][w]/tot*100)}%</span>`).join('')+'</div>';
+        badge='CLINIC ✓'; badgeCls='b-clinic'; srcCell=`<span class="src CRM">CRM</span>`; trendCell='';
       } else {
         const s=rv.series, cur=s[w], prev=s[w+1];
         valCell=`<span class="val ${cur==null?'na':''}">${cur==null?'—':fmtVal(cur,r.fmt)}</span>`+(r.noTrend?'':deltaHTML(cur,prev,false));
