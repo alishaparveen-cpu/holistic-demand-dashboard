@@ -53,6 +53,8 @@ def main():
             return [ sum((bc.get(ck) or [])[lpos[w]] if (w in lpos and lpos[w] < len(bc.get(ck) or [])) else 0 for ck in cks) for w in WEEKS ]
         return {"STI": rs(["STI"]), "SH": rs(["SEXUAL_HEALTH_GENERAL"]), "MH": rs(["MENTAL_HEALTH"]), "Other": rs(["OTHER", "NOT_MENTIONED"])}
     WC = BIG.get("all", {}).get("weekly_clinic", {})
+    rweeks = (ROST.get("_meta", {}) or {}).get("weeks", [])
+    rpos = {w: i for i, w in enumerate(rweeks)}    # roster weeks lag diagnostic weeks by one — align by date
     # weekly_clinic is keyed by "City_Clinic"; map a pipe key → its weekly per-field arrays
     def wc_series(pipe):
         city, clinic = pipe.split("|", 1)
@@ -70,7 +72,17 @@ def main():
         d = DIAG.get(key, {}); g = GMB.get(key, {}); rv = REV.get(key, {}); ro = ROST.get(key, {})
         bt = BT.get(key, {}); ld = LEADS.get(key, {}); wc = wc_series(key)
         shr = (ro or {}).get("shr", {})
-        active_days = arr(d, "avail"); avail_hours = arr(shr, "avail"); weekend_days = arr(d, "weekend")
+        active_days = arr(d, "avail"); weekend_days = arr(d, "weekend")
+        # roster weeks LAG the diagnostic weeks by one — align hours by actual date, carry the last
+        # known week forward into the trailing gap, and never show hours on a 0-active-day week.
+        rsrc = (shr or {}).get("avail") or []
+        avail_hours = [ (rsrc[rpos[w]] if (w in rpos and rpos[w] < len(rsrc)) else None) for w in WEEKS ]
+        _last = None
+        for i in range(NW-1, -1, -1):
+            if avail_hours[i] is not None: _last = avail_hours[i]
+            elif _last is not None: avail_hours[i] = _last
+        avail_hours = [ (round(h, 1) if (h is not None and (active_days[i] or 0) > 0) else (0 if (active_days[i] or 0) == 0 else h))
+                        for i, h in enumerate(avail_hours) ]
         impressions = arr(g, "searches"); gmb_days = arr(g, "days"); interactions = arr(g, "interactions")
         directions = arr(g, "directions"); gmb_calls = arr(g, "calls"); website = arr(g, "website")
         bookings = wc["gross"]; done = wc["calls_done"]; no_show = wc["no_show"]; resched = wc["rescheduled"]
@@ -82,7 +94,7 @@ def main():
             city_book[city][i] += bookings[i] or 0
         out_clinics[key] = {
             "city": city,
-            "supply": {"active_days": active_days, "avail_hours": [round(x,1) for x in avail_hours], "weekend_days": weekend_days},
+            "supply": {"active_days": active_days, "avail_hours": avail_hours, "weekend_days": weekend_days},
             "discovery": {"impressions": impressions, "gmb_days": gmb_days,
                           "review_vel": arr(rv, "n"), "rating": rating_fill((rv or {}).get("rating"))},
             "engagement": {"interactions": interactions, "directions": directions, "website": website, "gmb_calls": gmb_calls},
