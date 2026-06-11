@@ -26,6 +26,8 @@ def main():
     GMB = L("data_gmb_insights.json"); DIAG = L("data_diagnostic.json"); REV = L("data_reviews.json")
     ROST = L("data_roster.json"); BT = L("data_booktype.json"); LEADS = L("data_leads.json")
     PAID = L("data_ga_city_paid.json"); BIG = L("data.json")
+    try: REVN = L("data_clinic_revenue.json")
+    except Exception: REVN = {}
     WC = BIG.get("all", {}).get("weekly_clinic", {})
     # weekly_clinic is keyed by "City_Clinic"; map a pipe key → its weekly per-field arrays
     def wc_series(pipe):
@@ -64,6 +66,7 @@ def main():
             "booking": {"bookings": bookings, "new": arr(bt, "new"), "repeat": arr(bt, "repeat"), "catmix": catmix},
             "showup": {"no_show": no_show, "reschedules": resched},
             "done": {"done": done},
+            "revenue": {"rev": arr(REVN.get(key, {}), "rev"), "paid_consults": arr(REVN.get(key, {}), "paid_consults")},
         }
     # velocity + allocation weight (needs city_book) + attach city paid
     for key, o in out_clinics.items():

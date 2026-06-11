@@ -159,8 +159,11 @@ const STAGES=[
    {m:'Doctor utilisation %',desc:'done ÷ (avail hours × 2 slots/hr)',lvl:'clinic',src:'BOOKING',special:'util',fmt:'pct'},
  ]},
  {n:8,t:'Revenue & Outcome',q:'What did it generate?',rows:[
-   {m:'Revenue (by clinic)',lvl:'setup',desc:'per-clinic billing pull — follow-up (allo_billing.invoices)'},
-   {m:'ROAS',lvl:'city',src:'GADS',special:'roas_na',desc:'needs clinic revenue join'},
+   {m:'Revenue (realized)',desc:'Paid invoices on completed consults this week',star:1,lvl:'clinic',src:'BOOKING',key:'revenue.rev',fmt:'rupee'},
+   {m:'Paid consults',desc:'Consults with a paid invoice',lvl:'clinic',src:'BOOKING',key:'revenue.paid_consults'},
+   {m:'RPC (revenue / paid consult)',lvl:'clinic',src:'derived',special:'rpc',fmt:'rupee'},
+   {m:'Revenue / active day',desc:'How much each working day generates',star:1,lvl:'clinic',src:'derived',special:'rev_per_day',fmt:'rupee'},
+   {m:'Rev ÷ ad spend (allocated)',desc:'Total clinic revenue ÷ this clinic’s allocated city ad spend — rough, not channel-attributed',lvl:'city',src:'derived',special:'roas',fmt:'x'},
  ]},
  {n:9,t:'Velocity',q:'Is the clinic accelerating or slowing?',rows:[
    {m:'Bookings / active day',desc:'Best proxy for how busy the doctor is',star:1,lvl:'clinic',src:'derived',key:'velocity.bk_per_day'},
@@ -169,7 +172,7 @@ const STAGES=[
  ]},
 ];
 
-function fmtVal(v,fmt){ if(v==null)return null; if(fmt==='rupee')return R(v); if(fmt==='pct')return P(v); if(fmt==='h')return N(v)+'h'; if(fmt==='star')return v+'★'; return N(v); }
+function fmtVal(v,fmt){ if(v==null)return null; if(fmt==='rupee')return R(v); if(fmt==='pct')return P(v); if(fmt==='h')return N(v)+'h'; if(fmt==='star')return v+'★'; if(fmt==='x')return (+v).toFixed(1)+'×'; return N(v); }
 function cityPaid(){ const c=DATA.cities[CL.city]; return c?c.paid:null; }
 function rowValueSeries(r){ // returns {series:[12], inv, badge, badgeClass, srcShown}
   const c=CL, w=WK;
@@ -181,7 +184,10 @@ function rowValueSeries(r){ // returns {series:[12], inv, badge, badgeClass, src
     if(r.special==='b2d') return {series:D.done.map((dn,i)=>{const bk=B.bookings[i];return bk?dn/bk*100:null;}),lvl:'clinic',src:'BOOKING'};
     if(r.special==='util') return {series:D.done.map((dn,i)=>{const ah=S.avail_hours[i];return ah?dn/(ah*2)*100:null;}),lvl:'clinic',src:'BOOKING'};
     if(r.special==='catmix') return {catmix:true,lvl:'clinic',src:'CRM'};
-    if(r.special==='roas_na') return {series:Array(12).fill(null),lvl:'city',src:'GADS'};
+    const RV=c.revenue||{rev:[],paid_consults:[]};
+    if(r.special==='rpc') return {series:RV.rev.map((rv,i)=>{const pc=RV.paid_consults[i];return pc?rv/pc:null;}),lvl:'clinic',src:'derived'};
+    if(r.special==='rev_per_day') return {series:RV.rev.map((rv,i)=>{const ad=S.active_days[i];return ad?rv/ad:null;}),lvl:'clinic',src:'derived'};
+    if(r.special==='roas'){ const p=cityPaid(); return {series:RV.rev.map((rv,i)=>{const sp=p?(p.spend[i]||0)*(c.alloc_w[i]||0):0;return sp?rv/sp:null;}),lvl:'city',src:'derived',allocated:true}; }
   }
   if(r.lvl==='city'){
     const p=cityPaid(); if(!p) return {series:Array(12).fill(null),lvl:'city',src:r.src};
@@ -205,6 +211,7 @@ function render(){
     ['Bookings',N(c.booking.bookings[w]),'BOOKING',c.booking.bookings,'#E65C00'],
     ['Show-up %',P(b2d),'done÷booked',c.done.done.map((d,i)=>c.booking.bookings[i]?d/c.booking.bookings[i]*100:null),'#2E7D5B'],
     ['Done',N(c.done.done[w]),'BOOKING',c.done.done,'#1F4A5C'],
+    ['Revenue',R((c.revenue||{rev:[]}).rev[w]),'paid invoices',(c.revenue||{rev:[]}).rev,'#2E7D5B'],
     ['Bk / active day',N(c.velocity.bk_per_day[w]),'velocity',c.velocity.bk_per_day,'#B5722A'],
   ];
   $('score').innerHTML=sc.map(([l,v,d,arr,col])=>`<div class="scard"><div class="sl">${l}</div><div class="sv">${v}</div><div class="sd" style="color:var(--muted)">${d}${spark(arr.slice(0,8).reverse(),52,16,col)}</div></div>`).join('');
