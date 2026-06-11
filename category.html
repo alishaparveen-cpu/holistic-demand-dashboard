@@ -283,6 +283,10 @@ let cityFromIdx  = 0;     // City section date range (period indices)
 let cityToIdx    = -1;
 let charts       = {};
 let pcmMetric    = 'cat';  // channel-mix section: 'cat' | 'total'
+let stiSearch    = '';     // STI finder: search query
+let stiFromIdx   = 0;      // STI finder: range start (period idx)
+let stiToIdx     = -1;     // STI finder: range end (-1 = latest)
+let _stiPeriods  = null;   // periods snapshot for the STI finder (set in render)
 let pcmMode      = 'abs';  // 'abs' | 'pct'
 let _pcmData     = null;   // {labels, series, channels} stashed for post-render draw
 function setPcm(k,v){ if(k==='metric')pcmMetric=v; else pcmMode=v; render(); }
@@ -291,6 +295,43 @@ function setChWeek(i){ chWeekIdx = +i; render(); }
 function setChTier(t){ chTier = t; render(); }
 function setCityFrom(i){ cityFromIdx = +i; if(cityToIdx>=0 && cityToIdx<cityFromIdx) cityToIdx=cityFromIdx; render(); }
 function setCityTo(i){ cityToIdx = +i; if(cityToIdx<cityFromIdx) cityFromIdx=cityToIdx; render(); }
+// ── STI performance finder (search + rank clinics & doctors by STI calls over a range) ──
+function setStiSearch(v){ stiSearch = v; renderStiResults(); }   // updates results only — input keeps focus
+function setStiFrom(i){ stiFromIdx = +i; if(stiToIdx>=0 && stiToIdx<stiFromIdx) stiToIdx=stiFromIdx; renderStiResults(); }
+function setStiTo(i){ stiToIdx = +i; if(stiToIdx<stiFromIdx) stiFromIdx=stiToIdx; renderStiResults(); }
+function renderStiResults(){
+  const el = document.getElementById('stiResults'); if(!el || !_stiPeriods) return;
+  const periods = _stiPeriods;
+  const f = Math.max(0, Math.min(stiFromIdx, periods.length-1));
+  const t = (stiToIdx<0 || stiToIdx>=periods.length) ? periods.length-1 : stiToIdx;
+  const weeks = periods.slice(f, t+1).flatMap(p => p.weeks);
+  const scope = S();
+  const agg = src => { const m={}; for(const wk of weeks){ for(const [k,d] of Object.entries(scope[src]?.[wk] || {})){ if(!m[k]) m[k]={sti:0,total:0}; m[k].sti+=d.STI||0; m[k].total+=d.total||0; } } return m; };
+  const q = (stiSearch||'').trim().toLowerCase();
+  const clinRows = Object.entries(agg('weekly_clinic'))
+    .map(([k,a])=>({name:k.replace('_',' · '), ...a, rate:a.total?a.sti/a.total*100:0}))
+    .filter(r=>r.sti>0).filter(r=>!q||r.name.toLowerCase().includes(q)).sort((a,b)=>b.sti-a.sti);
+  const docRows = Object.entries(agg('weekly_doctor'))
+    .map(([k,a])=>({name:k.split('|')[1]||k, clinic:k.split('|')[0].replace('_',' · '), ...a, rate:a.total?a.sti/a.total*100:0}))
+    .filter(r=>r.sti>0).filter(r=>!q||r.name.toLowerCase().includes(q)||r.clinic.toLowerCase().includes(q)).sort((a,b)=>b.sti-a.sti);
+  const mC=Math.max(...clinRows.map(r=>r.sti),1), mD=Math.max(...docRows.map(r=>r.sti),1);
+  const tbl=(title,rows,mx,withClinic)=>`<div style="flex:1;min-width:320px;">
+    <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#94a3b8;margin-bottom:6px;">${title} · ${rows.length}</div>
+    <div style="max-height:520px;overflow:auto;border:1px solid var(--line);border-radius:8px;"><table style="width:100%;border-collapse:collapse;font-size:12px;">
+      <thead><tr style="position:sticky;top:0;background:#fff;border-bottom:2px solid var(--line);font-size:9.5px;text-transform:uppercase;color:#94a3b8;">
+        <th style="text-align:left;padding:5px 7px;">#</th><th style="text-align:left;padding:5px 7px;">Name</th>${withClinic?'<th style="text-align:left;padding:5px 7px;">Clinic</th>':''}<th style="text-align:right;padding:5px 7px;">STI calls</th><th style="text-align:right;padding:5px 7px;">Total</th><th style="text-align:right;padding:5px 7px;">STI%</th></tr></thead>
+      <tbody>${rows.map((r,i)=>{ const bw=Math.max(2,r.sti/mx*54); const low=i>=rows.length-Math.max(1,Math.ceil(rows.length*0.25)); const bc=i<3?'#10b981':low?'#ef4444':'#94a3b8';
+        return `<tr style="border-bottom:1px solid var(--line);">
+          <td style="text-align:left;padding:4px 7px;color:#94a3b8;">${i+1}</td>
+          <td style="text-align:left;padding:4px 7px;font-weight:600;">${r.name}</td>
+          ${withClinic?`<td style="text-align:left;padding:4px 7px;color:var(--muted);font-size:11px;">${r.clinic}</td>`:''}
+          <td style="text-align:right;padding:4px 7px;font-weight:700;white-space:nowrap;"><span style="display:inline-block;width:${bw}px;height:8px;background:${bc};border-radius:2px;margin-right:5px;vertical-align:middle;"></span>${r.sti}</td>
+          <td style="text-align:right;padding:4px 7px;color:var(--muted);">${r.total}</td>
+          <td style="text-align:right;padding:4px 7px;font-weight:600;color:${r.rate>=20?'#059669':'#64748b'};">${r.rate.toFixed(0)}%</td></tr>`;
+      }).join('') || '<tr><td colspan="6" style="padding:12px;color:#94a3b8;text-align:center;">No matches</td></tr>'}</tbody></table></div></div>`;
+  el.innerHTML = `<div style="display:flex;gap:18px;flex-wrap:wrap;">${tbl('Clinics by STI calls',clinRows,mC,false)}${tbl('Top doctors by STI calls',docRows,mD,true)}</div>
+    <div style="font-size:10.5px;color:#94a3b8;margin-top:8px;">Green = top 3 · red = bottom 25% (watch) · sorted high → low STI calls · scope: ${activeScope}.</div>`;
+}
 
 function S() { return DATA[activeScope]; }
 
@@ -904,6 +945,7 @@ function render() {
   if (dataMode === 'kpi') { try { renderKpiSnapshot(); } catch(e){ console.error('kpi', e); } return; }
   const scope    = S();
   const periods  = tAllPeriods();                  // full timeline (page shows all data, bucketed by granularity)
+  _stiPeriods = periods;                            // snapshot for the STI finder's standalone re-render
   const weeks    = periods.flatMap(p => p.weeks);
   const cat      = activeCat;
   const m        = CAT_META[cat] || CAT_META['oth'];
@@ -1233,12 +1275,25 @@ function render() {
 
     ${citySection ? sect('🏙️ City-level ' + catLabel + ' share — average',
       catLabel + '% by city · aggregated over the selected date range',
-      citySection) : ''}`;
+      citySection) : ''}
+
+    ${(()=>{ const f=Math.max(0,Math.min(stiFromIdx,periods.length-1)); const t=(stiToIdx<0||stiToIdx>=periods.length)?periods.length-1:stiToIdx;
+      return sect('🔎 STI performance finder — clinics & doctors',
+        'Search &amp; rank clinics and doctors by STI calls over a time range · top → bottom to spot under-performers',
+        `<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px;">
+           <input id="stiSearchInput" type="text" value="${(stiSearch||'').replace(/"/g,'&quot;')}" oninput="setStiSearch(this.value)" placeholder="Search a clinic or doctor…" style="flex:1;min-width:240px;padding:7px 11px;border:1.5px solid #4f46e5;border-radius:8px;font-size:13px;">
+           <span class="tb-lbl">From</span><select class="tb-sel" style="padding:3px 7px;" onchange="setStiFrom(+this.value)">${periods.map((p,i)=>`<option value="${i}" ${i===f?'selected':''}>${p.label}</option>`).join('')}</select>
+           <span class="tb-lbl">To</span><select class="tb-sel" style="padding:3px 7px;" onchange="setStiTo(+this.value)">${periods.map((p,i)=>`<option value="${i}" ${i===t?'selected':''}>${p.label}${i===periods.length-1?' (latest)':''}</option>`).join('')}</select>
+         </div>
+         <div id="stiResults"></div>`,
+        'stifinder');
+    })()}`;
 
   Object.values(charts).forEach(c => { try { c.destroy(); } catch(e){} });
   charts = {};
   renderDrill();
   drawPageChMix();
+  renderStiResults();
 }
 function drawPageChMix(){
   const ctx=document.getElementById('pageChMix'); if(!ctx||!_pcmData) return;
