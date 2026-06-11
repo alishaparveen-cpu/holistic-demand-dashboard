@@ -22,6 +22,16 @@ def arr(o, k, n=NW):
     a = (o or {}).get(k) or []
     a = list(a[:n]); a += [0]*(n-len(a)); return a
 
+def rating_fill(a, n=NW):
+    # GMB rating is reported with a lag (newest weeks null). It's a current-state value — carry the
+    # most recent known rating forward so every week shows the clinic's last-known stars, not "—".
+    a = list((a or [])[:n]); a += [None]*(n-len(a))
+    out = a[:]; last = None
+    for i in range(n-1, -1, -1):            # oldest → newest
+        if a[i] is not None: last = a[i]
+        elif last is not None: out[i] = last
+    return out
+
 def main():
     GMB = L("data_gmb_insights.json"); DIAG = L("data_diagnostic.json"); REV = L("data_reviews.json")
     ROST = L("data_roster.json"); BT = L("data_booktype.json"); LEADS = L("data_leads.json")
@@ -74,7 +84,7 @@ def main():
             "city": city,
             "supply": {"active_days": active_days, "avail_hours": [round(x,1) for x in avail_hours], "weekend_days": weekend_days},
             "discovery": {"impressions": impressions, "gmb_days": gmb_days,
-                          "review_vel": arr(rv, "n"), "rating": [ (REV.get(key,{}).get("rating") or [None]*NW)[i] if i < len(REV.get(key,{}).get("rating") or []) else None for i in range(NW)]},
+                          "review_vel": arr(rv, "n"), "rating": rating_fill((rv or {}).get("rating"))},
             "engagement": {"interactions": interactions, "directions": directions, "website": website, "gmb_calls": gmb_calls},
             "lead": {"leads_total": leads_total, "by_chan": leads_by, "gmb_organic_calls": gmb_calls, "gmb_leads": arr(d, "gmbLeads"),
                      "ai_lead_calls": ai_series(key, "lead_calls"), "ai_relevant": ai_series(key, "relevant"), "ai_strong": ai_series(key, "strong"),

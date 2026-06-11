@@ -39,8 +39,8 @@ WHERE ca.deleted_at IS NULL
   AND (ca.created_at + INTERVAL '5 hours 30 minutes') >= '2026-05-25'
 GROUP BY 1,2,3,4,5,6 ORDER BY 1,2,3;"""
 
-# locality (audit) → clinic locality (dashboard key) where names differ
-LOC_FIX = {"Sahakara Nagar": "Sahakaranagar", "Connaught Place": "Connaught Place"}
+# locality (audit) → clinic locality (dashboard key) where the AI name differs from our clinic key
+LOC_FIX = {}
 
 
 def main():
