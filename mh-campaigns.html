@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MH Campaign Comparison · Allo Health</title>
+<style>
+:root{--red:#C0392B;--dark:#1f2937;--grey:#64748b;--line:#e2e8f0;--bg:#faf7f3;--green:#1e7a46;--amber:#d97706;--blue:#2563eb}
+*{box-sizing:border-box}
+body{margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:var(--bg);color:var(--dark);padding:24px 28px;}
+h1{font-size:23px;font-weight:800;margin:0 0 2px}
+.sub{color:var(--grey);font-size:12.5px;margin-bottom:18px}
+.kpis{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px}
+.kpi{flex:1;min-width:150px;background:#fff;border:1px solid var(--line);border-radius:13px;padding:14px 16px}
+.kpi .v{font-size:24px;font-weight:800}
+.kpi .l{font-size:11px;color:var(--grey);margin-top:3px}
+.kpi.dark{background:var(--dark);color:#fff}.kpi.dark .l{color:#cbd5e1}
+.warn{background:#fef3f2;border:1px solid #fca5a5;border-radius:12px;padding:12px 15px;margin-bottom:18px;font-size:13px}
+.warn b{color:var(--red)}
+.card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:16px 18px;margin-bottom:18px}
+.card h2{font-size:14px;font-weight:700;margin:0 0 12px}
+table{width:100%;border-collapse:collapse;font-size:12.5px}
+th,td{padding:8px 9px;text-align:right;border-bottom:1px solid var(--line)}
+th{background:var(--red);color:#fff;font-weight:600;font-size:11px;text-align:right;position:sticky;top:0}
+th:first-child,td:first-child{text-align:left}
+tr:hover td{background:#f8fafc}
+.bad{color:var(--red);font-weight:700}.good{color:var(--green);font-weight:700}.muted{color:#94a3b8}
+.bar-row{display:flex;align-items:center;gap:10px;margin:6px 0;font-size:12px}
+.bar-row .nm{width:230px;color:#475569;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bar-wrap{flex:1;background:#f1f5f9;border-radius:6px;height:20px;position:relative;overflow:hidden}
+.bar{height:100%;border-radius:6px}
+.bar-row .val{width:74px;text-align:right;font-weight:600}
+.flex2{display:flex;gap:18px;flex-wrap:wrap}.flex2>.card{flex:1;min-width:340px}
+.tag{display:inline-block;font-size:9px;font-weight:700;padding:1px 6px;border-radius:4px;vertical-align:middle}
+.t-paused{background:#fee2e2;color:#b91c1c}.t-enabled{background:#dcfce7;color:#166534}
+.spark{display:block}
+.foot{color:#94a3b8;font-size:10.5px;margin-top:8px}
+</style></head>
+<body>
+<h1>Mental Health — Campaign Comparison</h1>
+<div class="sub" id="sub">Google Ads · customer 3190189170 · loading…</div>
+<div id="warn"></div>
+<div class="kpis" id="kpis"></div>
+
+<div class="card"><h2>30-day comparison (all MH campaigns)</h2>
+<div style="overflow-x:auto"><table id="tbl"><thead><tr>
+<th>Campaign</th><th>Impr</th><th>Clicks</th><th>CTR</th><th>Spend</th><th>Conv*</th><th>CPL*</th><th>CPC</th><th>Impr&nbsp;Share</th>
+</tr></thead><tbody></tbody></table></div>
+<div class="foot">*Conv / CPL unreliable where conversion tracking differs across campaigns — see warning above.</div>
+</div>
+
+<div class="flex2">
+  <div class="card"><h2>Spend (30d)</h2><div id="bar-cost"></div></div>
+  <div class="card"><h2>Impression share — headroom</h2><div id="bar-is"></div></div>
+</div>
+<div class="flex2">
+  <div class="card"><h2>CTR (engagement quality)</h2><div id="bar-ctr"></div></div>
+  <div class="card"><h2>CPC (₹ / click)</h2><div id="bar-cpc"></div></div>
+</div>
+
+<div class="card"><h2>Weekly trend — spend by campaign</h2><div id="trend"></div></div>
+
+<script>
+const fmt=n=>n>=1e5?(n/1e5).toFixed(1)+'L':n>=1e3?(n/1e3).toFixed(1)+'k':(''+Math.round(n));
+const inr=n=>'₹'+fmt(n);
+const PAL=['#C0392B','#2563eb','#1e7a46','#d97706','#7c3aed','#0891b2','#db2777','#475569'];
+
+fetch('data_mh_campaigns.json').then(r=>r.json()).then(d=>{
+  const C=d.campaigns;
+  document.getElementById('sub').textContent='Google Ads · customer 3190189170 · last 30 days · '+C.length+' MH campaigns';
+
+  // KPIs
+  const tSpend=C.reduce((s,c)=>s+c.cost,0), tClk=C.reduce((s,c)=>s+c.clicks,0), tImpr=C.reduce((s,c)=>s+c.impr,0);
+  const active=C.filter(c=>c.status==='ENABLED').length;
+  const k=[['dark',inr(tSpend),'Total MH spend (30d)'],['',C.length+' ('+active+' live)','MH campaigns'],
+           [' ',fmt(tImpr),'Impressions'],[' ',fmt(tClk),'Clicks'],
+           [' ',(tClk/tImpr*100).toFixed(1)+'%','Blended CTR']];
+  document.getElementById('kpis').innerHTML=k.map(x=>`<div class="kpi ${x[0]==='dark'?'dark':''}"><div class="v">${x[1]}</div><div class="l">${x[2]}</div></div>`).join('');
+
+  // conversion-tracking warning (detect CPL outliers)
+  const cpls=C.filter(c=>c.cpl).map(c=>c.cpl); const mx=Math.max(...cpls),mn=Math.min(...cpls);
+  document.getElementById('warn').innerHTML=`<div class="warn">⚠️ <b>Conversion tracking is inconsistent across MH campaigns.</b> CPL ranges from <b>₹${mn}</b> to <b>₹${mx.toLocaleString()}</b> on near-identical click volumes — e.g. Coimbatore logs 1,271 conversions vs Bangalore's 14 from a similar click base. Treat Conv/CPL as <b>directional only</b>; spend, impressions, CTR, CPC and impression share are reliable. Fix conversion-action mapping before judging MH CPL.</div>`;
+
+  // table
+  const tb=document.querySelector('#tbl tbody');
+  tb.innerHTML=C.map(c=>{
+    const st=c.status==='ENABLED'?'<span class="tag t-enabled">LIVE</span>':'<span class="tag t-paused">'+c.status.slice(0,6)+'</span>';
+    const cplCls=c.cpl&&c.cpl>1500?'bad':(c.cpl&&c.cpl<50?'muted':'');
+    const isCls=c.is!=null&&c.is<20?'bad':(c.is!=null&&c.is>=50?'good':'');
+    return `<tr><td>${c.name} ${st}</td><td>${fmt(c.impr)}</td><td>${c.clicks.toLocaleString()}</td><td>${c.ctr}%</td>
+    <td>${inr(c.cost)}</td><td>${c.conv}</td><td class="${cplCls}">${c.cpl?('₹'+c.cpl.toLocaleString()):'—'}</td>
+    <td>₹${c.cpc}</td><td class="${isCls}">${c.is!=null?c.is+'%':'—'}</td></tr>`;
+  }).join('');
+
+  // horizontal bars helper
+  function bars(elId,vals,fmtFn,colorFn){
+    const mx=Math.max(...vals.map(v=>v.v))||1;
+    document.getElementById(elId).innerHTML=vals.map((v,i)=>`<div class="bar-row">
+      <div class="nm" title="${v.n}">${v.n}</div>
+      <div class="bar-wrap"><div class="bar" style="width:${Math.max(2,v.v/mx*100)}%;background:${colorFn?colorFn(v):PAL[i%PAL.length]}"></div></div>
+      <div class="val">${fmtFn(v.v)}</div></div>`).join('');
+  }
+  const short=n=>n.replace('_Exact_Local','').replace('_Phrase_Local',' (Phr)').replace(/_/g,' ');
+  bars('bar-cost',C.map(c=>({n:short(c.name),v:c.cost})),inr);
+  bars('bar-is',C.filter(c=>c.is!=null).map(c=>({n:short(c.name),v:c.is})),v=>v+'%',v=>v.v<20?'#C0392B':v.v>=50?'#1e7a46':'#d97706');
+  bars('bar-ctr',C.map(c=>({n:short(c.name),v:c.ctr})),v=>v+'%');
+  bars('bar-cpc',C.map(c=>({n:short(c.name),v:c.cpc})),v=>'₹'+v);
+
+  // weekly trend spend (SVG multi-line)
+  const T=d.trend, weeks=d.weeks, names=Object.keys(T).filter(n=>T[n].cost.some(x=>x>0));
+  const W=820,Hh=220,pad=34;
+  const allv=[].concat(...names.map(n=>T[n].cost)); const my=Math.max(...allv,1);
+  const X=i=>pad+i*((W-pad*2)/(weeks.length-1||1)), Y=v=>Hh-pad-(v/my)*(Hh-pad*2);
+  let svg=`<svg class="spark" width="100%" viewBox="0 0 ${W} ${Hh+20}">`;
+  // gridlines
+  for(let g=0;g<=2;g++){const y=pad+g*(Hh-pad*2)/2;svg+=`<line x1="${pad}" y1="${y}" x2="${W-pad}" y2="${y}" stroke="#eef2f6"/>`+
+    `<text x="4" y="${y+3}" font-size="9" fill="#94a3b8">${fmt(my*(1-g/2))}</text>`;}
+  names.forEach((n,ci)=>{const pts=T[n].cost.map((v,i)=>`${X(i)},${Y(v)}`).join(' ');
+    svg+=`<polyline points="${pts}" fill="none" stroke="${PAL[ci%PAL.length]}" stroke-width="2"/>`;});
+  weeks.forEach((w,i)=>{if(i%2===0||i===weeks.length-1)svg+=`<text x="${X(i)}" y="${Hh+2}" font-size="8.5" fill="#94a3b8" text-anchor="middle">${w.slice(5)}</text>`;});
+  svg+='</svg>';
+  const leg=names.map((n,ci)=>`<span style="font-size:11px;margin-right:12px;white-space:nowrap"><span style="display:inline-block;width:10px;height:10px;background:${PAL[ci%PAL.length]};border-radius:2px;margin-right:4px;vertical-align:middle"></span>${short(n)}</span>`).join('');
+  document.getElementById('trend').innerHTML=svg+'<div style="margin-top:6px">'+leg+'</div>';
+}).catch(e=>{document.getElementById('sub').textContent='Error loading data_mh_campaigns.json: '+e;});
+</script>
+</body></html>
