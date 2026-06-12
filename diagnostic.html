@@ -137,6 +137,8 @@ const MIXCOL='#be185d';
 let JDATA=null, SDATA={}, L0=null, PRACTO={}, ROSTER={};   // PRACTO['City|Clinic'] = [7 weekly counts aligned to WEEKS]; ROSTER['City|Clinic']={hrs:[7],we_hrs:[7]} scheduled bookable hours
 let LEADS={}, REVIEWS={}, MKT=null, BOOKTYPE={}, GACITY={}, NEGREV={}, GMBINS={};   // Redshift leads-by-source · GMB review velocity · Google Ads impression-share · booking-type split · city-level Google Ads health · recent negative reviews · GMB profile Insights (searches/interactions)
 let DAILY={};   // data_daily.json — daily bk/done per "City|Clinic" + _network (bk/done/leads), last 35 days to yesterday
+let LEADFUNNEL={};   // data_clinic_lead_funnel.json — AI call-audit clinic leads by category (STI/SH/MH), live from 27 May
+function aiCat(city,clinic){ const o=LEADFUNNEL[city+'|'+clinic]; if(!o)return null; const w=(LEADFUNNEL._meta&&LEADFUNNEL._meta.weeks)||[]; return {weeks:w, by:o.by_cat||{}, total:o.lead_calls||[], rel:o.relevant||[]}; }
 let viewMode='weekly';   // 'weekly' (the RCA) | 'daily' (recent daily pulse, up to yesterday)
 function setViewMode(m){ viewMode=m; render(); window.scrollTo(0,0); }
 function gmbInsArr(city,clinic,field){ const o=GMBINS[city+'|'+clinic]; return o&&o[field] ? o[field].slice(0,WEEKS.length) : Array(WEEKS.length).fill(0); }
@@ -2766,8 +2768,7 @@ function renderDeepDive(r){
   const ov = `<div class="card" style="margin-bottom:12px;">${winBar}
     <div style="font-size:10.5px;color:#94a3b8;margin:0 0 9px;">📅 Trailing <b>${winN}</b> weeks · ${WEEKS[Math.min(wkIdx+winN-1,WEEKS.length-1)].label} → <b>${wl}</b> · chart dates are week-ending · click ⛶ on any chart to zoom.</div>
     <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;">
-      ${vchip('🆕','New bookings', new_w,'', newPct, 'first-time · vs '+r1(new_n)+' norm', spark(rev(r.bkNewArr),'#4f46e5',hi,null,new_n))}
-      ${vchip('📅','All scheduled bookings', r.bk_w,'', gapPct, 'new+repeat · vs '+exp+' exp', spark(rev(r.bkArr),'#6366f1',hi,null,r.bkBase))}
+      ${vchip('🆕','New bookings', new_w,'', newPct, 'first-time · vs '+r1(new_n)+' norm · full breakdown below', spark(rev(r.bkNewArr),'#4f46e5',hi,null,new_n))}
       ${vchip('🔎','Leads', r.ld_w,'', Math.round(r.dLeadPct), 'inbound · vs '+Math.round(r.ld_avg)+' norm', spark(rev(r.ldArr),'#0ea5e9',hi,null,r.ld_avg))}
       ${vchip('📞','Consults done', done_w,'', pctOf(done_w-done_n,done_n), doneRate+'% of '+r.bk_w+' scheduled completed', spark(rev(r.bkDoneArr),'#0891b2',hi,null,done_n))}
       ${_hasRosterH
@@ -2832,6 +2833,39 @@ function renderDeepDive(r){
   </div>
   ${verdictBanner}
   ${ov}
+  ${(()=>{ const W=wkIdx, allBk=r.bkArr[W]||0, newBk=r.bkNewArr[W]||0; if(allBk<=0) return '';
+    const same=(r.aggSame&&r.aggSame[W])||0, aged=Math.max(0,allBk-same);
+    const prBk=practoBookedArr(r.city,r.clinic), practo=prBk[W]||0;
+    const gmb=(r.gmbOnlyArr&&r.gmbOnlyArr[W])||0, gad=(r.gAdArr&&r.gAdArr[W])||0, org=(r.orgArr&&r.orgArr[W])||0;
+    const meta=(r.fbArr&&r.fbArr[W])||0;
+    const named=gmb+gad+org+meta+practo;           // named tracked channels
+    const direct=Math.max(0,allBk-named);          // others + justdial + walk-in residual = Direct/WhatsApp/Walk-in
+    const bar=(lbl,v,col,base)=>{ const tot=base||allBk; const p=tot?Math.round(v/tot*100):0;
+      return `<div style="display:grid;grid-template-columns:148px 1fr 56px;align-items:center;gap:8px;margin:3px 0;"><span style="font-size:11px;color:#475569;">${lbl}</span><div style="height:14px;background:#f1f5f9;border-radius:4px;overflow:hidden;"><div style="height:100%;width:${Math.max(2,p)}%;background:${col};border-radius:4px;"></div></div><span style="font-size:11px;font-weight:700;color:#334155;text-align:right;">${v} · ${p}%</span></div>`; };
+    const ai=aiCat(r.city,r.clinic); let catHtml='';
+    if(ai){ const wi=ai.weeks.indexOf(WEEKS[wkIdx].json);
+      if(wi>=0){ const g=c=>(ai.by[c]&&ai.by[c][wi])||0;
+        const cats=[['STI',g('STI'),'#E65100'],['SH (sexual health)',g('SEXUAL_HEALTH_GENERAL'),'#7c3aed'],['MH',g('MENTAL_HEALTH'),'#4f46e5'],['Other',g('OTHER')+g('NOT_MENTIONED'),'#94a3b8']];
+        const ct=cats.reduce((a,c)=>a+c[1],0);
+        if(ct>0) catHtml=`<details style="margin-top:9px;"><summary style="font-size:9px;font-weight:700;text-transform:uppercase;color:#0e7490;cursor:pointer;list-style:none;">▸ By category · AI call-audit lead tag (${ct} tagged lead-calls · live from 27 May)</summary><div style="margin-top:5px;">`+cats.filter(c=>c[1]>0).map(c=>bar(c[0],c[1],c[2],ct)).join('')+`</div></details>`;
+      }
+    }
+    if(!catHtml) catHtml='<div style="font-size:10px;color:#cbd5e1;margin-top:9px;">By category — available from 27 May (AI call-audit lead tags); no tag data for this week yet.</div>';
+    return `<div class="card" style="margin:12px 0;">
+      <div style="font-size:13px;font-weight:800;color:#0f172a;margin-bottom:2px;">🗓️ SC bookings this week — where they came from</div>
+      <div style="font-size:10.5px;color:#94a3b8;margin-bottom:10px;"><b>${allBk}</b> scheduled · <b>${newBk}</b> first-time · ${WEEKS[wkIdx].label}. Source &amp; age use tracked-lead attribution; <b>Direct</b> = bookings beyond tracked leads (walk-in / repeat / untracked).</div>
+      <div style="font-size:9px;font-weight:700;text-transform:uppercase;color:#94a3b8;margin-bottom:3px;">By lead age <span style="text-transform:none;font-weight:400;color:#cbd5e1;">· this-week is a floor (same-week bookings keep maturing)</span></div>
+      ${bar('From this-week leads',same,'#0ea5e9')}
+      ${bar('From aged-lead backlog',aged,'#94a3b8')}
+      <div style="font-size:9px;font-weight:700;text-transform:uppercase;color:#94a3b8;margin:10px 0 3px;">By channel</div>
+      ${bar('GMB call (free)',gmb,'#34A853')}
+      ${bar('Google Ads (paid)',gad,'#4285F4')}
+      ${bar('Practo',practo,'#ea580c')}
+      ${bar('Organic',org,'#B5722A')}
+      ${meta>0?bar('Meta (FB)',meta,'#3A5A8C'):''}
+      ${bar('Direct / WhatsApp / Walk-in',direct,'#64748b')}
+      ${catHtml}
+    </div>`; })()}
   <div style="margin:16px 0 6px;font-size:13px;font-weight:800;color:#0f172a;display:flex;align-items:center;gap:8px;">🔎 Leads — complete breakdown &amp; source detail</div>
   ${whyIntro}${leadsCard}${leadLossDrill(r)}
   <div style="font-size:11px;color:#94a3b8;text-align:center;margin:6px 0 2px;">Full availability ladder, conversion funnel &amp; model live in the <b>Detailed View</b> (clinic scorecard).</div>`;
@@ -2877,7 +2911,7 @@ function renderOnline(){
 async function init(){
   try{
     const safe=u=>fetch(u,{cache:'no-store'}).catch(()=>({ok:false}));
-    const [jr,sr,lr,pr,rr,ld,rv,mk,bt,dg,ga,nr,gi,la,df,pbk,pl,lm,pd,lc,ah,dd]=await Promise.all([ fetch('data.json',{cache:'no-store'}), safe(SHEET_URL), safe(L0_URL), safe(PRACTO_URL), safe('data_roster.json'), safe('data_leads.json'), safe('data_reviews.json'), safe('data_marketing.json'), safe('data_booktype.json'), safe('data_diagnostic.json'), safe('data_ga_city.json'), safe('data_reviews_neg.json'), safe('data_gmb_insights.json'), safe('data_lead_age.json'), safe('data_demand_funnel.json'), safe('data_practo_booked.json'), safe('data_practo_leads.json'), safe('data_lead_maturation.json'), safe('data_practo_by_doctor.json'), safe('data_lead_conv.json'), safe('data_avail_hod.json'), safe('data_daily.json') ]);
+    const [jr,sr,lr,pr,rr,ld,rv,mk,bt,dg,ga,nr,gi,la,df,pbk,pl,lm,pd,lc,ah,dd,clf]=await Promise.all([ fetch('data.json',{cache:'no-store'}), safe(SHEET_URL), safe(L0_URL), safe(PRACTO_URL), safe('data_roster.json'), safe('data_leads.json'), safe('data_reviews.json'), safe('data_marketing.json'), safe('data_booktype.json'), safe('data_diagnostic.json'), safe('data_ga_city.json'), safe('data_reviews_neg.json'), safe('data_gmb_insights.json'), safe('data_lead_age.json'), safe('data_demand_funnel.json'), safe('data_practo_booked.json'), safe('data_practo_leads.json'), safe('data_lead_maturation.json'), safe('data_practo_by_doctor.json'), safe('data_lead_conv.json'), safe('data_avail_hod.json'), safe('data_daily.json'), safe('data_clinic_lead_funnel.json') ]);
     if(!jr.ok) throw new Error('data.json not found');
     JDATA=await jr.json();
     // SDATA now comes from Redshift (data_diagnostic.json); the Google Sheet is a fallback only.
@@ -2905,6 +2939,7 @@ async function init(){
     if(lc&&lc.ok){ try{ LEADCONV=await lc.json(); }catch(_){ } }
     if(ah&&ah.ok){ try{ AVAILHOD=await ah.json(); }catch(_){ } }
     if(dd&&dd.ok){ try{ DAILY=await dd.json(); }catch(_){ } }
+    if(clf&&clf.ok){ try{ LEADFUNNEL=await clf.json(); }catch(_){ } }
     render(); updateRefreshBadge();   // week picker now lives in the control bar (built per-render in ctrlBar)
   }catch(e){
     document.getElementById('mainContent').innerHTML=`<div class="loading-msg" style="color:#dc2626">Error: ${e.message}</div>`;
