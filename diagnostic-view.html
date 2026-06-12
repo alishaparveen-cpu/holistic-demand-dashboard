@@ -64,6 +64,8 @@ select.fsel{font-family:'Inter';font-size:12px;font-weight:500;color:var(--ink);
 .mchip.active.vol{background:var(--good-bg);border-color:var(--good);color:var(--good)}
 .mchip.active.vel{background:#EEF2FC;border-color:#3A5A8C;color:#3A5A8C}
 .mchip.active.conv{background:#F3EEFE;border-color:#6D3A7A;color:#6D3A7A}
+.mchip.na{opacity:.4;border-style:dashed}
+.lvl-note{margin:10px 0 2px;padding:8px 12px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;font-size:12px;color:#92400e;line-height:1.5}
 .mchip-grp-sep{width:1px;height:16px;background:var(--line-2);flex-shrink:0;margin:0 2px}
 .fp-conds{display:flex;flex-direction:column;gap:4px}
 .cond-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
@@ -340,16 +342,28 @@ function barsHTML(e,against){
   return html;
 }
 
+// ── which metrics actually have data at each level ──────────────────────────
+// Doctor objects in data_drops.json carry only Bookings & Done (leads aren't doctor-
+// attributable; active-days/availability live at clinic/city level only). So at doctor
+// level we can show Bookings, Done and Bk→Done (derived from the two) — nothing else.
+function curLevel(){const b=document.querySelector('#ltabs button.on');return b?b.dataset.lv:'city';}
+const DOCTOR_OK=new Set(['book','done','b2d']);
+function metricAvailAtLevel(key,level){ return level!=='doctor' ? true : DOCTOR_OK.has(key); }
+function naReason(level){ return level==='doctor' ? 'Not tracked at doctor level — doctors carry Bookings & Done only (leads, active days & availability are clinic/city-level).' : ''; }
+
 function buildFilterUI(){
   const chipWrap=document.getElementById('metric-chips');
   const activeKeys=new Set(mfState.map(f=>f.key));
+  const lvl=curLevel();
   let h='<span style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">';
   let lastGrp='';
   ALL_MDEFS.forEach(d=>{
     if(d.grp!==lastGrp&&lastGrp){h+='<span class="mchip-grp-sep"></span>';}
     lastGrp=d.grp;
     const on=activeKeys.has(d.key);
-    h+=`<span class="mchip ${on?'active ':' '}${d.grp}" data-key="${d.key}" onclick="toggleMetric('${d.key}')"${d.note?` title="${d.note.replace(/"/g,'&quot;')}"`:''}>${d.label}${d.note?' <span style="opacity:.55;font-size:.85em">ⓘ</span>':''}</span>`;
+    const na=!metricAvailAtLevel(d.key,lvl);
+    const tip=na?naReason(lvl):(d.note||'');
+    h+=`<span class="mchip ${on?'active ':' '}${d.grp}${na?' na':''}" data-key="${d.key}" onclick="toggleMetric('${d.key}')"${tip?` title="${tip.replace(/"/g,'&quot;')}"`:''}>${d.label}${na?' <span style="opacity:.5;font-size:.8em">·n/a</span>':(d.note?' <span style="opacity:.55;font-size:.85em">ⓘ</span>':'')}</span>`;
   });
   h+='</span>';
   chipWrap.innerHTML=h;
@@ -494,7 +508,12 @@ function render(){
   }
   const bad=visible.filter(x=>x.wd<=-20),mid=visible.filter(x=>x.wd>-20&&x.wd<=-10),low=visible.filter(x=>x.wd>-10&&x.wd<=-5),good=visible.filter(x=>x.wd>-5);
   let html=section(bad,'>20% drop on selected metrics','bad')+section(mid,'10–20% drop','warn')+section(low,'5–10% drop','warn')+section(good,'< 5% / growing','good');
+  // tell the user up-front if any SELECTED metric simply doesn't exist at this level (e.g. Active days at
+  // doctor level) — otherwise its bar silently vanishes and looks like a bug.
+  const naSel=mfState.filter(f=>!metricAvailAtLevel(f.key,level)).map(f=>(ALL_MDEFS.find(d=>d.key===f.key)||{}).label).filter(Boolean);
+  const naNote=naSel.length?`<div class="lvl-note">⚠ <b>${naSel.join(', ')}</b> ${naSel.length>1?'are':'is'} not tracked at <b>${level}</b> level — only <b>Bookings</b> &amp; <b>Done</b> exist per doctor, so ${naSel.length>1?'those bars are':'that bar is'} hidden here. Switch to <b>Clinic</b> or <b>City</b> to see ${naSel.length>1?'them':'it'}.</div>`:'';
   if(!html) html=`<div class="empty">No entities match the current conditions.<br>Try changing metric conditions above, or check that the selected metrics have data at this level.</div>`;
+  html=naNote+html;
   document.getElementById('main').innerHTML=html;
   const tot=items.filter(x=>x.show).length;
   document.getElementById('scount').textContent=`${visible.length} of ${tot} ${level}s match all conditions`;
@@ -502,7 +521,7 @@ function render(){
 
 document.querySelectorAll('#ltabs button').forEach(b=>b.onclick=()=>{
   document.querySelectorAll('#ltabs button').forEach(x=>x.classList.remove('on'));
-  b.classList.add('on');render();
+  b.classList.add('on');buildFilterUI();render();
 });
 
 // ── INIT ──
