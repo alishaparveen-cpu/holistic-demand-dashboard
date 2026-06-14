@@ -231,16 +231,20 @@ const rto=(a,b)=>a.map((v,i)=>b[i]>0?+(v/b[i]).toFixed(2):null);
 
 const ALL_MDEFS=[
   {key:'leads',   label:'Leads',       grp:'vol',  unit:'',   color:'#1F6F5C', def:true},
-  {key:'book',    label:'Bookings',    grp:'vol',  unit:'',   color:'#2E7D5B', def:true},
+  {key:'book',    label:'New bookings',grp:'vol',  unit:'',   color:'#2E7D5B', def:true,
+    note:'First-time SC bookings — each patient’s first-ever screening call, counted once (reschedules collapsed, online excluded). This is the city-head sheet’s "1st Time Bookings" and the clean signal of NEW demand reaching the clinic.'},
+  {key:'bookall', label:'All bookings',grp:'vol',  unit:'',   color:'#6B8E7A', def:false,
+    note:'Every SC booking — first-time + returning patients (reschedules still collapsed). The city-head sheet’s "Overall Bookings". Use New bookings for fresh demand; the gap (All − New) is returning/reactivation.'},
   {key:'adays',   label:'Active days', grp:'vol',  unit:'d',  color:'#2A5A8C', def:true},
-  {key:'done',    label:'Done',        grp:'vol',  unit:'',   color:'#3A7D5C', def:false},
+  {key:'done',    label:'Done',        grp:'vol',  unit:'',   color:'#3A7D5C', def:false,
+    note:'First-time bookings that completed (showed up). Pairs with New bookings so Bk→Done is the new-patient completion rate.'},
   {key:'avail',   label:'Avail hrs',   grp:'vol',  unit:'h',  color:'#4A7A6C', def:false},
   {key:'adays_wd',label:'Weekdays',    grp:'vol',  unit:'d',  color:'#3A6A9C', def:false},
   {key:'adays_we',label:'Weekends',    grp:'vol',  unit:'d',  color:'#7A5ABC', def:false},
   {key:'bkday',   label:'Bk/day',      grp:'vel',  unit:'/d', color:'#3A5A8C', def:false},
   {key:'bkhr',    label:'Bk/hr',       grp:'vel',  unit:'/h', color:'#4A6A9C', def:false},
   {key:'l2b',     label:'Book÷Lead',   grp:'conv', unit:'%',  color:'#6D3A7A', def:false,
-    note:'Bookings ÷ tracked leads, same week — a demand-capture ratio, NOT a cohort conversion. Tracked leads count only engaged tracked-channel leads, while bookings include walk-in / repeat / untracked demand, so >100% is normal & means demand beyond tracked leads. A true cohort (this week’s leads → their eventual bookings) is ≤100% but needs lead-level tracking we only have at network level.'},
+    note:'New bookings ÷ tracked leads, same week — a demand-capture ratio, NOT a cohort conversion. Tracked leads count only engaged tracked-channel leads, while bookings include walk-in / untracked demand, so >100% is possible & means demand beyond tracked leads. A true cohort (this week’s leads → their eventual bookings) is ≤100% but needs lead-level tracking we only have at network level.'},
   {key:'b2d',     label:'Bk→Done',     grp:'conv', unit:'%',  color:'#8B4A9A', def:false,
     note:'Done ÷ Bookings (same week) — show-up / completion rate.'},
 ];
@@ -252,15 +256,15 @@ function wsum(arr,ei){if(!arr)return null;const v=arr.slice(Math.max(0,ei-3),ei+
 function makeMonthlyArr(fn){const a=Array(WKS.length).fill(null);const c=fn(weekIdx);if(c!=null)a[weekIdx]=c;const p=fn(weekIdx-4);if(p!=null&&weekIdx-4>=0)a[weekIdx-4]=p;return a;}
 
 function getM(e){
-  const {book:b,done:d,avail:a,adays:ad,adays_wd:wd,adays_we:we,leads:l}=e;
+  const {book:b,done:d,avail:a,adays:ad,adays_wd:wd,adays_we:we,leads:l,bookall:ba}=e;
   if(!isMonthly){
-    return{leads:l||null,book:b,done:d,avail:a||null,adays:ad||null,adays_wd:wd||null,adays_we:we||null,
+    return{leads:l||null,book:b,bookall:ba||null,done:d,avail:a||null,adays:ad||null,adays_wd:wd||null,adays_we:we||null,
       bkday:(b&&ad)?rto(b,ad):null,bkhr:(b&&a)?rto(b,a):null,l2b:l?mkr(b,l):null,b2d:mkr(d,b)};
   }
   const bs=wi=>wsum(b,wi),ds=wi=>wsum(d,wi),avs=wi=>wsum(a,wi),ads=wi=>wsum(ad,wi);
-  const ls=wi=>l?wsum(l,wi):null,wds=wi=>wsum(wd,wi),wes=wi=>wsum(we,wi);
+  const ls=wi=>l?wsum(l,wi):null,wds=wi=>wsum(wd,wi),wes=wi=>wsum(we,wi),bas=wi=>ba?wsum(ba,wi):null;
   return{
-    leads:l?makeMonthlyArr(ls):null,book:makeMonthlyArr(bs),done:makeMonthlyArr(ds),
+    leads:l?makeMonthlyArr(ls):null,book:makeMonthlyArr(bs),bookall:ba?makeMonthlyArr(bas):null,done:makeMonthlyArr(ds),
     avail:a?makeMonthlyArr(avs):null,adays:ad?makeMonthlyArr(ads):null,
     adays_wd:wd?makeMonthlyArr(wds):null,adays_we:we?makeMonthlyArr(wes):null,
     bkday:(b&&ad)?makeMonthlyArr(wi=>{const bv=bs(wi),av=ads(wi);return av>0?+(bv/av).toFixed(2):null;}):null,
@@ -347,9 +351,11 @@ function barsHTML(e,against){
 // attributable; active-days/availability live at clinic/city level only). So at doctor
 // level we can show Bookings, Done and Bk→Done (derived from the two) — nothing else.
 function curLevel(){const b=document.querySelector('#ltabs button.on');return b?b.dataset.lv:'city';}
-const DOCTOR_OK=new Set(['book','done','b2d']);
+// At doctor level we have first-time/all/done bookings (episode pull, by provider) + active days (roster).
+// Leads aren't doctor-attributable, and availability-HOURS are only pulled at clinic/city.
+const DOCTOR_OK=new Set(['book','bookall','done','b2d','adays','adays_wd','adays_we','bkday']);
 function metricAvailAtLevel(key,level){ return level!=='doctor' ? true : DOCTOR_OK.has(key); }
-function naReason(level){ return level==='doctor' ? 'Not tracked at doctor level — doctors carry Bookings & Done only (leads, active days & availability are clinic/city-level).' : ''; }
+function naReason(level){ return level==='doctor' ? 'Not tracked at doctor level — leads aren’t doctor-attributable and availability-hours are pulled at clinic/city level only.' : ''; }
 
 function buildFilterUI(){
   const chipWrap=document.getElementById('metric-chips');

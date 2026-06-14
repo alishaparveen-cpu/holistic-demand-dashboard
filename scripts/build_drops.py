@@ -52,6 +52,45 @@ def main():
     except Exception as e:
         sys.stderr.write(f"WARN per-doctor avail skipped: {e}\n")
 
+    # ── episode-based FIRST-TIME / total / done SC bookings, per city|locality|doctor (oldest-first) ──
+    # first = patient's all-time first episode ("1st Time Bookings" the city heads track), all = every
+    # episode (total), donen = first episodes that completed. Validated to match the city-head sheet.
+    BK = {}
+    try:
+        sql = open(os.path.join(ROOT,"scripts","fetch_drops_bookings.sql")).read()
+        p = subprocess.run([sys.executable, os.path.join(ROOT,"scripts","redshift_query.py")],
+                           input=sql, capture_output=True, text=True)
+        if p.returncode==0 and "ERROR" not in p.stderr:
+            for line in p.stdout.strip().splitlines():
+                c = line.split("\t")
+                if len(c) < 7: continue
+                city_, loc_, doc_, wk_, fb_, ab_, dn_ = c[:7]
+                if wk_ not in widx: continue
+                o = BK.setdefault(f"{city_}|{loc_}|{doc_}", {"first":[0]*NW,"all":[0]*NW,"donen":[0]*NW})
+                i = widx[wk_]
+                try: o["first"][i]+=int(float(fb_)); o["all"][i]+=int(float(ab_)); o["donen"][i]+=int(float(dn_))
+                except (ValueError,IndexError): pass
+            print(f"  episode bookings: {len(BK)} city|clinic|doctor rows")
+        else:
+            sys.stderr.write("WARN drops-bookings query failed; falling back to data.json gross\n")
+    except Exception as e:
+        sys.stderr.write(f"WARN drops-bookings skipped: {e}\n")
+
+    def bk_for(city, loc=None, doc=None):
+        """Sum episode bookings (first/all/donen) over matching keys: whole city, one clinic, or one doctor."""
+        f=[0]*NW; a=[0]*NW; dn=[0]*NW
+        for k,o in BK.items():
+            kc = k.split("|",2)
+            if len(kc) < 3: continue
+            if doc is not None:
+                if not (kc[0]==city and kc[1]==loc and kc[2]==doc): continue
+            elif loc is not None:
+                if not (kc[0]==city and kc[1]==loc): continue
+            else:
+                if kc[0]!=city: continue
+            for i in range(NW): f[i]+=o["first"][i]; a[i]+=o["all"][i]; dn[i]+=o["donen"][i]
+        return f,a,dn
+
     def rev(a):  # newest-first 12 → oldest-first 12, missing→0
         a = a or []; out=[0]*NW
         for i in range(NW):
@@ -90,40 +129,42 @@ def main():
             leads = [sum((rev(lead.get(s))[i]) for s in SRC) for i in range(NW)]
             aday  = rev(diag.get("avail")); awe = rev(diag.get("weekend"))
             awd   = [max(0,aday[i]-awe[i]) for i in range(NW)]
-            book  = dj("clinic", uk, "gross"); done = dj("clinic", uk, "calls_done")
+            cbook, cbookall, cdone = bk_for(city, clinic)              # first-time / all / done(new)
+            if not any(cbookall):                                       # fallback: episode pull unavailable
+                cbook = dj("clinic", uk, "gross"); cbookall = cbook; cdone = dj("clinic", uk, "calls_done")
             ravail= roster_avail(pk)
-            # doctors
+            # doctors — driven by the episode-bookings provider names (same name source as DOC_AVAIL)
             docs=[]
-            dprefix = uk+"|"
-            docnames=set()
-            for w in WK:
-                for dk in (big.get("weekly_doctor",{}).get(w,{}) or {}):
-                    if dk.startswith(dprefix): docnames.add(dk)
-            for dk in sorted(docnames):
-                dname = dk.split("|",1)[1]
-                if dname=="(unassigned)": continue
-                dbook=dj("doctor",dk,"gross"); ddone=dj("doctor",dk,"calls_done")
-                if not any(dbook): continue
-                dobj={"id":slug(dname),"name":dname,"spec":"SH","book":dbook,"done":ddone}
+            docnames = sorted({k.split("|",2)[2] for k in BK
+                               if k.startswith(f"{city}|{clinic}|") and not k.endswith("|(unassigned)")})
+            for dname in docnames:
+                dbook, dbookall, ddone = bk_for(city, clinic, dname)
+                if not any(dbookall): continue
+                dobj={"id":slug(dname),"name":dname,"spec":"SH","book":dbook,"bookall":dbookall,"done":ddone}
                 da=DOC_AVAIL.get(f"{city}|{clinic}|{dname}")
                 if da and any(da["a"]):
                     dobj["adays"]=da["a"]; dobj["adays_we"]=da["we"]
                     dobj["adays_wd"]=[max(0,da["a"][i]-da["we"][i]) for i in range(NW)]
                 docs.append(dobj)
-            cl={"id":slug(clinic),"name":clinic,"leads":leads,"book":book,"done":done,
+            cl={"id":slug(clinic),"name":clinic,"leads":leads,"book":cbook,"bookall":cbookall,"done":cdone,
                 "adays":aday,"adays_wd":awd,"adays_we":awe,"doctors":docs}
             if ravail: cl["avail"]=ravail
             clinics_out.append(cl)
             for i in range(NW):
                 c_leads[i]+=leads[i]; c_aday[i]+=aday[i]; c_awd[i]+=awd[i]; c_awe[i]+=awe[i]
                 if ravail and ravail[i]: c_avail[i]+=ravail[i]; c_avail_any=True
+        citybook, citybookall, citydone = bk_for(city)
+        if not any(citybookall):
+            citybook = dj("city",uk_city,"gross"); citybookall = citybook; citydone = dj("city",uk_city,"calls_done")
         cobj={"id":slug(city),"name":city,"tier":1 if city in T1 else 2,
-              "leads":c_leads,"book":dj("city",uk_city,"gross"),"done":dj("city",uk_city,"calls_done"),
+              "leads":c_leads,"book":citybook,"bookall":citybookall,"done":citydone,
               "adays":c_aday,"adays_wd":c_awd,"adays_we":c_awe,"clinics":clinics_out}
         if c_avail_any: cobj["avail"]=c_avail
         out_cities.append(cobj)
 
-    out={"_meta":{"weeks":labels,"weeks_iso":WK,"source":"data.json (book/done) · data_diagnostic (doctor-days) · data_leads (leads) · data_roster (avail hrs)"},
+    out={"_meta":{"weeks":labels,"weeks_iso":WK,
+         "book_def":"book = first-time SC bookings (patient's first-ever episode, reschedules collapsed, online excluded) — the city-head '1st Time Bookings'. bookall = all episodes (new + returning). done = first-time episodes completed.",
+         "source":"fetch_drops_bookings.sql episodes (book/bookall/done) · data_diagnostic (doctor-days) · data_leads (leads) · data_roster (avail hrs)"},
          "cities":out_cities}
     json.dump(out, open(os.path.join(ROOT,"data_drops.json"),"w"), separators=(",",":"))
     nclin=sum(len(c["clinics"]) for c in out_cities); ndoc=sum(len(cl["doctors"]) for c in out_cities for cl in c["clinics"])
