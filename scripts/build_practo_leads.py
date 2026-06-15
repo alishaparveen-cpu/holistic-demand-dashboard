@@ -12,7 +12,7 @@ import os, sys, csv, io, json, re, datetime, urllib.request, urllib.parse
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SHEET_ID = "1bZWGVKu6b4EFPDt3aKHn21gYjdhN1aT1-LT60BFe8g0"
 SHEET_TAB = "RD_Practo_Leads"
-WEEKS=["2026-06-01","2026-05-25","2026-05-18","2026-05-11","2026-05-04","2026-04-27","2026-04-20","2026-04-13","2026-04-06","2026-03-30","2026-03-23","2026-03-16"]
+WEEKS=["2026-06-08","2026-06-01","2026-05-25","2026-05-18","2026-05-11","2026-05-04","2026-04-27","2026-04-20","2026-04-13","2026-04-06","2026-03-30","2026-03-23"]
 idx = {w:i for i,w in enumerate(WEEKS)}
 
 def main():

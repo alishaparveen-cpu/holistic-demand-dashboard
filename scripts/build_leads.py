@@ -6,7 +6,7 @@ Practo is excluded here (external feed; lives in data_practo_leads.json).
 Run: python3 scripts/build_leads.py   (needs AWS SSO / IAM)"""
 import os, sys, subprocess, json
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-WEEKS=["2026-06-01","2026-05-25","2026-05-18","2026-05-11","2026-05-04","2026-04-27","2026-04-20","2026-04-13","2026-04-06","2026-03-30","2026-03-23","2026-03-16"]
+WEEKS=["2026-06-08","2026-06-01","2026-05-25","2026-05-18","2026-05-11","2026-05-04","2026-04-27","2026-04-20","2026-04-13","2026-04-06","2026-03-30","2026-03-23"]
 idx = {w:i for i,w in enumerate(WEEKS)}
 CHANS = ["gmb","google_ad","organic","fb","justdial","others"]
 # fetch_leads.sql column order: city, clinic, wk_mon, google_ad, gmb, organic, fb, justdial, others, total

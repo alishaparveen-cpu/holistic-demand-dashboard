@@ -19,8 +19,8 @@ CUSTOMER_ID = "3190189170"; LOGIN_CUSTOMER_ID = "5098518843"
 API = "https://googleads.googleapis.com/v20"; TOKEN_URL = "https://oauth2.googleapis.com/token"
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT = os.path.join(ROOT, "data_ga_city_paid.json")
-WEEKS = ["2026-06-01","2026-05-25","2026-05-18","2026-05-11","2026-05-04","2026-04-27",
-         "2026-04-20","2026-04-13","2026-04-06","2026-03-30","2026-03-23","2026-03-16"]   # newest-first
+WEEKS = ["2026-06-08","2026-06-01","2026-05-25","2026-05-18","2026-05-11","2026-05-04","2026-04-27",
+         "2026-04-20","2026-04-13","2026-04-06","2026-03-30","2026-03-23"]   # newest-first
 widx = {w: i for i, w in enumerate(WEEKS)}
 NW = len(WEEKS)
 LOC_CLICK_TYPES = {"CALLS", "GET_DIRECTIONS", "LOCATION_EXPANSION", "LOCATION_FORMAT_CALL_TRACKING"}

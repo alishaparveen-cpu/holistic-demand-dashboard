@@ -18,8 +18,8 @@ Run: AWS_PROFILE=redshift-data python3 scripts/build_practo_conv.py   (needs AWS
 import os, sys, io, csv, json, datetime, subprocess, urllib.request
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-WEEKS = ["2026-06-01","2026-05-25","2026-05-18","2026-05-11","2026-05-04","2026-04-27",
-         "2026-04-20","2026-04-13","2026-04-06","2026-03-30","2026-03-23","2026-03-16"]
+WEEKS = ["2026-06-08","2026-06-01","2026-05-25","2026-05-18","2026-05-11","2026-05-04","2026-04-27",
+         "2026-04-20","2026-04-13","2026-04-06","2026-03-30","2026-03-23"]
 idx = {w: i for i, w in enumerate(WEEKS)}
 # Rich Practo connections export (same sheet build_practo_booked uses for the phone universe).
 # Cols: 1 Date(lead, DD-MM-YYYY) · 4 Practice Locality(clinic) · 5 Practice City · 6 Doctor Name · 9 Patient_Phone_Number

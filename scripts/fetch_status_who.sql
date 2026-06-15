@@ -19,7 +19,7 @@ j AS (
          ELSE 'return' END AS who, s.st, s.prev,
     (s.rsn LIKE '%provider%' OR s.rsn LIKE '%doctor%' OR s.rsn LIKE '%nonbookable%' OR s.rsn LIKE '%hms%' OR s.rsn LIKE '%block%') AS is_clinic_resched
   FROM ranked s
-  WHERE s.start_time >= '2026-03-16' AND s.start_time < '2026-06-08'
+  WHERE s.start_time >= '2026-03-16' AND s.start_time < '2026-06-15'
     AND LOWER(COALESCE(s.locality,'')) <> 'online' AND s.locality IS NOT NULL
 )
 SELECT city, clinic, wk,

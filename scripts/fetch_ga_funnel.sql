@@ -4,7 +4,7 @@ WITH ga_leads AS (
   SELECT DISTINCT RIGHT(phone_no,10) AS ph, DATE(created_at) AS ld_date,
     TO_CHAR(DATE_TRUNC('week', created_at),'YYYY-MM-DD') AS wk
   FROM allo_persons.lead
-  WHERE created_at >= '2026-03-16' AND created_at < '2026-06-08'
+  WHERE created_at >= '2026-03-16' AND created_at < '2026-06-15'
     AND gclid IS NOT NULL AND LEN(gclid)>3 AND phone_no IS NOT NULL AND LEN(phone_no)>=10
 ),
 bk AS (

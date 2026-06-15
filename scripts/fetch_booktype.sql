@@ -18,6 +18,6 @@ SELECT s.city, s.locality,
   SUM(CASE WHEN LOWER(s.status)='cancelled' THEN 1 ELSE 0 END) AS cancelled,
   COUNT(*) AS total
 FROM sc_all s JOIN firsts f ON s.patient_id = f.patient_id
-WHERE s.start_time >= '2026-03-16' AND s.start_time < '2026-06-08'
+WHERE s.start_time >= '2026-03-16' AND s.start_time < '2026-06-15'
   AND LOWER(COALESCE(s.locality,'')) <> 'online' AND s.locality IS NOT NULL
 GROUP BY 1,2,3 ORDER BY 1,2,3 DESC

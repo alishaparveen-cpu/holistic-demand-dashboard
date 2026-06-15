@@ -12,6 +12,6 @@ SELECT
   LEAST(GREATEST(DATEDIFF(week, DATE_TRUNC('week',l.created_on), DATE_TRUNC('week',l.call_booking_ts)),0),4) AS age,
   COUNT(*) AS n
 FROM production.public.main_source_wise_leads l
-WHERE l.call_booking_ts >= '2026-03-16' AND l.call_booking_ts < '2026-06-08'
+WHERE l.call_booking_ts >= '2026-03-16' AND l.call_booking_ts < '2026-06-15'
   AND l.created_on IS NOT NULL
 GROUP BY 1,2,3 ORDER BY 1,2,3

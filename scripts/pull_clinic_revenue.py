@@ -11,8 +11,8 @@ import os, sys, subprocess, json
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RQ = os.path.join(ROOT, "scripts", "redshift_query.py")
-WEEKS = ["2026-06-01","2026-05-25","2026-05-18","2026-05-11","2026-05-04","2026-04-27",
-         "2026-04-20","2026-04-13","2026-04-06","2026-03-30","2026-03-23","2026-03-16"]
+WEEKS = ["2026-06-08","2026-06-01","2026-05-25","2026-05-18","2026-05-11","2026-05-04","2026-04-27",
+         "2026-04-20","2026-04-13","2026-04-06","2026-03-30","2026-03-23"]
 idx = {w: i for i, w in enumerate(WEEKS)}
 NW = len(WEEKS)
 
@@ -38,7 +38,7 @@ SQL = """WITH loc AS (
     FROM allo_consultations.appointments a
     JOIN allo_consultations.types typ ON typ.id=a.type_id AND typ.name='Screening Call'
     JOIN loc l ON l.id=a.location_id
-    WHERE a.start_time >= '2026-03-16' AND a.start_time < '2026-06-08'
+    WHERE a.start_time >= '2026-03-16' AND a.start_time < '2026-06-15'
       AND a.deleted_at IS NULL AND a.status='COMPLETED'
       AND l.locality IS NOT NULL AND LOWER(l.locality) <> 'online' AND l.city <> 'Practo Online'),
   inv AS (

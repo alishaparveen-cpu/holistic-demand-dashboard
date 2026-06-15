@@ -82,7 +82,7 @@ def main():
         FROM allo_consultations.appointments a
         JOIN allo_consultations.types typ ON typ.id=a.type_id AND typ.name='Screening Call'
         LEFT JOIN loc_dedup loc ON loc.id=a.location_id
-        WHERE a.start_time>='2026-03-09' AND a.start_time<'2026-06-08'
+        WHERE a.start_time>='2026-03-09' AND a.start_time<'2026-06-15'
           AND a.deleted_at IS NULL AND a.status='COMPLETED'),
       inv AS (
         SELECT e.appointment_id ap_id, i.amount amt

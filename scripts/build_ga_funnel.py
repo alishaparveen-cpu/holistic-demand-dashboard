@@ -56,7 +56,7 @@ for line in open(LEADS_TSV):
         a = acc[dimkey][wk]
         a['leads'] += leads; a['booked'] += booked
 
-weeks = [w for w in sorted(weeks) if w < '2026-06-08']   # drop the current incomplete week (Jun 8+)
+weeks = [w for w in sorted(weeks) if w < '2026-06-15']   # drop the current incomplete week (Jun 8+)
 def series(dimkey):
     out = {k:[0]*len(weeks) for k in ('impr','clicks','cost','conv','leads','booked')}
     for wi, wk in enumerate(weeks):
