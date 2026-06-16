@@ -319,8 +319,8 @@ const HINTS={
 // ── load ──
 async function boot(){
   const j=async f=>{try{const r=await fetch(f+'?t='+Date.now());return r.ok?await r.json():{};}catch(e){return {};}};
-  const [L,G,D,A,LC,R,big,PC]=await Promise.all([j('data_leads.json'),j('data_gmb_insights.json'),j('data_diagnostic.json'),j('data_lead_age.json'),j('data_lead_cohort.json'),j('data_roster.json'),j('data.json'),j('data_practo_conv.json')]);
-  DAT={L,G,D,A,LC,R,PC};
+  const [L,G,D,A,LC,R,big,PC,BS]=await Promise.all([j('data_leads.json'),j('data_gmb_insights.json'),j('data_diagnostic.json'),j('data_lead_age.json'),j('data_lead_cohort.json'),j('data_roster.json'),j('data.json'),j('data_practo_conv.json'),j('data_booking_source.json')]);
+  DAT={L,G,D,A,LC,R,PC,BS};
   WEEKS=(L._meta&&L._meta.weeks)||(D._meta&&D._meta.weeks)||[];
   NW=WEEKS.length;LI=NW-1;
   // roster weeks lag the diagnostic weeks by one — map each demand week to its roster column (or -1)
@@ -371,6 +371,7 @@ function clinicEnrich(keys){
   const L=DAT.L,G=DAT.G,D=DAT.D,A=DAT.A,LC=DAT.LC||{};
   const R=DAT.R||{},rIdx=DAT.rIdx||[];
   const out={searches:z(),interactions:z(),leads:z(),avail:z(),weekend:z(),age_same:z(),age_last:z(),age_older:z(),src:{},_allBk:z(),_bkNew:z(),_bkDone:z(),_bkDoneNew:z(),
+    newSrc:{gmb:z(),google_ad:z(),organic:z(),fb:z(),practo:z()},
     coh:{leads:z(),booked:z(),same:z(),nextw:z(),later:z(),inb:z(),byChan:{}},
     rost:{sched:z(),shrunk:z(),avhrs:z(),we_hrs:z(),hrs:z()}};
   SRC.forEach(([k])=>{out.src[k]=z();out.coh.byChan[k]={leads:z(),booked:z()};});
@@ -394,6 +395,13 @@ function clinicEnrich(keys){
     const pc=(DAT.PC&&DAT.PC[key])||{};
     out.coh.byChan.practo.leads=addA(out.coh.byChan.practo.leads,pc.leads);
     out.coh.byChan.practo.booked=addA(out.coh.byChan.practo.booked,pc.booked);
+    // NEW (first-time) bookings split by the channel they actually came through (booking→lead→source cube).
+    // Sums EXACTLY to bkNew; Walk-in/No-tag/Other are computed as the reconciling residual in rval().
+    const bs=DAT.BS&&DAT.BS[key];
+    if(bs&&bs.cube){const NM={'Google Maps (GMB)':'gmb','Google Ads':'google_ad','Organic':'organic','Meta':'fb','Practo':'practo'};
+      for(const ch in bs.cube){const dest=NM[ch];if(!dest)continue;const ages=bs.cube[ch];
+        for(const age in ages){const nd=ages[age].new;if(!nd)continue;
+          for(const oc in nd){const arr=nd[oc];for(let w=0;w<NW;w++)out.newSrc[dest][w]+=(arr[w]||0);}}}}
   });
   // fold Practo engaged-bookings into the source total (non-network/engaged view; network view recomputes below)
   for(let i=0;i<NW;i++)out.coh.leads[i]+=(out.coh.byChan.practo.booked[i]||0);
@@ -546,6 +554,12 @@ function mrows(){return [
   {t:'edge',k:'_inbound',label:'· of which inbound calls',formula:'phoned the clinic (PC-Inbound)',fmt:N},
   {grp:'acq',label:'New (first-time) bookings'},
   {t:'stage',k:'newBk',label:'New bookings (first-time patients)',fmt:N},
+  {t:'edge',k:'newsrc.gmb',label:'· GMB call',fmt:N},
+  {t:'edge',k:'newsrc.google_ad',label:'· Google Ads',fmt:N},
+  {t:'edge',k:'newsrc.organic',label:'· Organic',fmt:N},
+  {t:'edge',k:'newsrc.fb',label:'· Meta',fmt:N},
+  {t:'edge',k:'newsrc.practo',label:'· Practo',fmt:N},
+  {t:'edge',k:'newsrc.walkin',label:'· Walk-in / direct / other',formula:'first-time bookings with no trackable digital lead — walk-ins, direct phone, referrals, JustDial. Computed as New bookings − the tracked sources above, so the source rows always sum to New bookings.',fmt:N},
   {grp:'bookage',label:'Bookings by lead age (network · ALL tracked bookings — new + repeat)'},
   {t:'stage',k:'_batotal',label:'Tracked bookings (matched to a lead)',formula:'all bookings — new + repeat — attributed to a tracked digital lead, split by how old that lead was. The 5 rows below sum to this. ≈ total bookings minus a small unattributed residual (walk-ins / untracked) — it does NOT equal "New bookings" above, which is first-time only.',fmt:N},
   {t:'edge',k:'_ba0',label:'· from same-week leads',fmt:N},
@@ -576,6 +590,11 @@ function mrows(){return [
   {t:'edge',k:'r_we_hrs',label:'· weekend hours',fmt:N},
 ];}
 function deriv(s,k){
+  // New bookings by the channel each first-time patient came through. Tracked sources from the booking cube;
+  // walk-in = New bookings − tracked, so the rows always reconcile to "New bookings (first-time)".
+  if(k.startsWith('newsrc.')){const sub=k.slice(7);if(!s.newSrc||!s.newBk)return null;
+    if(sub==='walkin')return s.newBk.map((nb,i)=>nb==null?null:Math.max(0,nb-['gmb','google_ad','organic','fb','practo'].reduce((a,c)=>a+((s.newSrc[c]||[])[i]||0),0)));
+    return s.newSrc[sub]||null;}
   if(k==='_intrate')return (s.searches&&s.searches.some(v=>v>0))?s.searches.map((v,i)=>pct(s.interactions[i],v)):null;
   if(k==='_b2d')return s.bookings.map((v,i)=>pct(s.done[i],v));
   if(k==='_newshow')return s.newBk?s.newBk.map((v,i)=>pct((s.newDone||z())[i],v)):null;
