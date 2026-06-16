@@ -404,13 +404,15 @@ function buildCh(key){
   const c=contr[key],d=direct[key]||{},ch={contr:c};
   ch.spend=d.spend||pctOf(c.spend,ALL.spend);
   const free=ch.spend.every(v=>v==null||v===0);ch.free=free;  // null (incomplete network week) counts as no-spend, not paid
-  ch.leads=pctOf(c.lead,ALL.leads); ch.vleads=pctOf(c.lead,ALL.vleads); ch.vpct=ALL.vpct;
+  // Practo has no Redshift leads (external feed) → use sheet-derived leads (spend÷CPL); it has no "verified" concept, so leads = vleads.
+  ch.leads=(d.leads&&d.leads.some(x=>x!=null))?d.leads.slice():pctOf(c.lead,ALL.leads);
+  ch.vleads=(d.leads&&d.leads.some(x=>x!=null))?d.leads.slice():pctOf(c.lead,ALL.vleads); ch.vpct=ALL.vpct;
   ch.bookings=pctOf(c.book,ALL.bookings); ch.done=pctOf(c.done,ALL.done);
   ch.bkOn=ch.bookings.map(v=>v==null?null:Math.round(v*0.26)); ch.bkOff=ch.bookings.map((v,i)=>v==null?null:v-ch.bkOn[i]);
   ch.dnOn=ch.done.map(v=>v==null?null:Math.round(v*0.34)); ch.dnOff=ch.done.map((v,i)=>v==null?null:v-ch.dnOn[i]);
   ch.tp=ch.done.map((v,i)=>v==null?null:Math.round(v*ALL.done2tp[i]/100)); ch.tpOn=ch.tp.map(v=>v==null?null:Math.round(v*0.22)); ch.tpOff=ch.tp.map((v,i)=>v==null?null:v-ch.tpOn[i]);
   ch.done2tp=ALL.done2tp.slice(); ch.convOn=ALL.convOn.slice(); ch.convOff=ALL.convOff.slice();
-  ch.b2l=ch.bookings.map((v,i)=>(v==null||ch.vleads[i]==null)?null:+(v/ch.vleads[i]*100).toFixed(0));
+  ch.b2l=ch.bookings.map((v,i)=>(v==null||!ch.vleads[i])?null:+(v/ch.vleads[i]*100).toFixed(0));  // !vleads guards 0/null → no Infinity%
   ch.b2d=d.b2d||c.book.map((_,i)=>Math.round(c.done[i]/c.book[i]*ALL.b2d[i]));
   ch.b2dOn=ALL.b2dOn.slice(); ch.b2dOff=ALL.b2dOff.slice();
   ch.newRev=d.newRev||pctOf(c.book,ALL.newRev); ch.tpRev=ch.newRev.map(v=>v==null?null:+(v*0.835).toFixed(2)); ch.consultRev=ch.newRev.map((v,i)=>v==null?null:+(v-ch.tpRev[i]).toFixed(2));

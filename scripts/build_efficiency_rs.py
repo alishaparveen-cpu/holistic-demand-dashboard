@@ -160,6 +160,10 @@ def main():
     for gk in ('gsearch','gmbgoogle'):                         # override Google spend with the native series
         DIRECT.setdefault(gk,{})['spend']=list(google)
     DIRECT.setdefault('gmb',{})['spend']=[0]*len(weeks)        # GMB Maps = organic, no paid spend
+    # Practo is excluded from the Redshift leads table (external feed) → its lead count is 0, which made
+    # Book/Lead = bookings÷0 = Infinity. Recover Practo leads from the sheet: leads = spend ÷ CPL.
+    _pcpl=DIRECT.get('practo',{}).get('cpl') or []; _psp=DIRECT.get('practo',{}).get('spend') or []
+    DIRECT.setdefault('practo',{})['leads']=[ round(_psp[i]/_pcpl[i]) if (i<len(_psp) and i<len(_pcpl) and _psp[i] and _pcpl[i]) else None for i in range(len(weeks)) ]
     # spend SHARE per channel = channel spend ÷ network spend (×100). From DIRECT (external-platform spend)
     # so the scorecard's "Spend %" column works on the Redshift build too, and Meta/Practo split out.
     for k in CONTR:
