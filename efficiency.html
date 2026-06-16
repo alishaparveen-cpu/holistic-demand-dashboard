@@ -400,7 +400,7 @@ const pctOf=(a,b)=>a.map((v,i)=>(v==null||b[i]==null)?null:+(v/100*b[i]).toFixed
 function buildCh(key){
   const c=contr[key],d=direct[key]||{},ch={contr:c};
   ch.spend=d.spend||pctOf(c.spend,ALL.spend);
-  const free=ch.spend.every(v=>v===0);ch.free=free;
+  const free=ch.spend.every(v=>v==null||v===0);ch.free=free;  // null (incomplete network week) counts as no-spend, not paid
   ch.leads=pctOf(c.lead,ALL.leads); ch.vleads=pctOf(c.lead,ALL.vleads); ch.vpct=ALL.vpct;
   ch.bookings=pctOf(c.book,ALL.bookings); ch.done=pctOf(c.done,ALL.done);
   ch.bkOn=ch.bookings.map(v=>v==null?null:Math.round(v*0.26)); ch.bkOff=ch.bookings.map((v,i)=>v==null?null:v-ch.bkOn[i]);
@@ -772,7 +772,7 @@ function renderCompareCards(){const el=document.getElementById('compareCards');e
   const vmn=Math.min(...vals),vmx=Math.max(...vals),vr=(vmx-vmn)||1;
   COMPARE_SET.forEach(k=>{const c=CH[k];if(c.template){el.insertAdjacentHTML('beforeend',`<div class="ccard tmpl"><div><b>${c.label}</b>paste from sheet</div></div>`);return;}
     let chips='';state.activeChips.forEach(mk=>{const s=series(c,mk);const has=s&&s[i]!=null&&!isNaN(s[i]);
-      chips+=`<div class="cmini${state.selMetric===mk?' sel':''}" data-m="${mk}"><div class="ml">${METRICS[mk].label}</div><div class="mv">${has?METRICS[mk].fmt(s[i]):'—'}</div></div>`;});
+      chips+=`<div class="cmini${state.selMetric===mk?' sel':''}" data-m="${mk}" ${c.free&&!has?'title="free channel — no ad spend, so this metric is not applicable"':''}><div class="ml">${METRICS[mk].label}</div><div class="mv">${has?METRICS[mk].fmt(s[i]):(c.free?'n/a':'—')}</div></div>`;});
     const sFull=series(c,state.selMetric),sel=sFull&&sFull[i]!=null,s=sel?sliceR(sFull):null;
     // headline heat color
     let hc='';if(sel){const t=(sFull[i]-vmn)/vr,p=m.inv?1-t:t;hc=p>=0.6?'color:var(--good)':p<=0.4?'color:var(--bad)':'';}
@@ -781,7 +781,7 @@ function renderCompareCards(){const el=document.getElementById('compareCards');e
       <div class="cspend">${c.free?'zero spend':(spc!=null?'spend '+Lk(spc/100000):'')} · ${c.contr.book[i]}% of bookings</div>
       <div class="cfunnel"><b>${(series(c,'vleads')[i]||0).toLocaleString('en-IN')}</b><span>→</span><b>${(series(c,'bookings')[i]||0).toLocaleString('en-IN')}</b><span>→</span><b>${(series(c,'done')[i]||0).toLocaleString('en-IN')}</b></div>
       <div class="cgrid">${chips}</div><div class="ctrend" data-ch="${k}"><div class="ct-top"><span class="ct-name">${m.label}</span>${sel?deltaHtml(last(sFull),prev(sFull),m.inv):''}</div>
-      <div class="ct-top"><span class="ct-val serif" style="${hc}">${sel?m.fmt(sFull[i]):'—'}</span><span class="zoomhint">tap to zoom ⤢</span></div>
+      <div class="ct-top"><span class="ct-val serif" style="${hc}">${sel?m.fmt(sFull[i]):(c.free?'n/a':'—')}</span><span class="zoomhint">tap to zoom ⤢</span></div>
       ${sel?spark(s,m.inv,210,42):'<div style="font-size:12px;color:var(--muted);padding:8px 0">n/a here</div>'}</div></div>`);});
   el.querySelectorAll('.cmini').forEach(n=>n.onclick=()=>{state.selMetric=n.dataset.m;renderCompare();});
   el.querySelectorAll('.ctrend').forEach(n=>n.onclick=()=>{const c=CH[n.dataset.ch],s=series(c,state.selMetric);if(s)zoomChartShow(m.label+' — '+c.label,'',s,m.fmt,c.color,WEEKS,state.gran==='monthly'?'Month':'Week');});}
