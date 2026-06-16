@@ -337,7 +337,18 @@ table.sc tr:last-child td{border-bottom:0}
 </div></div>
 
 <script>
-let WEEKLY_PERIODS=['19 Apr','26 Apr','3 May','10 May','17 May','24 May'];
+// Week labels in the data are the week-ENDING Sunday ("7 Jun"), which reads ambiguously.
+// Show the full Mon–Sun range instead ("1–7 Jun"), matching the clinic-funnel style.
+// Leaves month labels ("Mar") and anything not "DD Mon" untouched.
+function toRange(lbl){
+  const MO=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'], ML=[31,28,31,30,31,30,31,31,30,31,30,31];
+  const m=/^(\d{1,2})\s+([A-Za-z]{3})$/.exec(String(lbl).trim()); if(!m) return lbl;
+  const mi=MO.indexOf(m[2]); if(mi<0) return lbl;
+  let day=+m[1], sd=day-6, sm=mi;
+  if(sd<1){ sm=(mi+11)%12; sd+=ML[sm]; }
+  return sm===mi ? `${sd}–${day} ${m[2]}` : `${sd} ${MO[sm]}–${day} ${m[2]}`;
+}
+let WEEKLY_PERIODS=['19 Apr','26 Apr','3 May','10 May','17 May','24 May'].map(toRange);
 let MONTHLY_PERIODS=['Mar','Apr'];
 let ALL_W={
  spend:[514085,492117,476548,535658,556130,539570],
@@ -592,7 +603,7 @@ function renderMatrix(){
 /* zoom */
 function openZoom(ch,k){
   const r=ROWS_FM.find(x=>x.k===k);if(!r)return;const s=series(ch,k);if(!s)return;
-  zoomChartShow(r.label+' — '+ch.label, r.formula||'', s, r.fmt, r.color||'#1F6F5C', WEEKS, state.gran==='monthly'?'Month':'Week ending');
+  zoomChartShow(r.label+' — '+ch.label, r.formula||'', s, r.fmt, r.color||'#1F6F5C', WEEKS, state.gran==='monthly'?'Month':'Week');
 }
 function zoomChartShow(title,formula,sFull,fmt,color,periods,xtitle){
   const s=sFull.slice(rFrom(),rTo()+1), per=periods.slice(rFrom(),rTo()+1);
@@ -773,7 +784,7 @@ function renderCompareCards(){const el=document.getElementById('compareCards');e
       <div class="ct-top"><span class="ct-val serif" style="${hc}">${sel?m.fmt(sFull[i]):'—'}</span><span class="zoomhint">tap to zoom ⤢</span></div>
       ${sel?spark(s,m.inv,210,42):'<div style="font-size:12px;color:var(--muted);padding:8px 0">n/a here</div>'}</div></div>`);});
   el.querySelectorAll('.cmini').forEach(n=>n.onclick=()=>{state.selMetric=n.dataset.m;renderCompare();});
-  el.querySelectorAll('.ctrend').forEach(n=>n.onclick=()=>{const c=CH[n.dataset.ch],s=series(c,state.selMetric);if(s)zoomChartShow(m.label+' — '+c.label,'',s,m.fmt,c.color,WEEKS,state.gran==='monthly'?'Month':'Week ending');});}
+  el.querySelectorAll('.ctrend').forEach(n=>n.onclick=()=>{const c=CH[n.dataset.ch],s=series(c,state.selMetric);if(s)zoomChartShow(m.label+' — '+c.label,'',s,m.fmt,c.color,WEEKS,state.gran==='monthly'?'Month':'Week');});}
 function renderCompare(){renderChips();renderEditPanel();renderCompareCards();renderOverlay();}
 
 /* ===== SCORECARD (reused) ===== */
@@ -933,7 +944,7 @@ async function initEff(){
   const isRS=new URLSearchParams(location.search).get('src')!=='sheet';
   try{
     const d=await fetch((isRS?'data_efficiency_rs.json':'data_efficiency.json')+'?t='+Date.now()).then(r=>r.ok?r.json():Promise.reject('http '+r.status));
-    WEEKLY_PERIODS=d.weekly.periods;  MONTHLY_PERIODS=d.monthly.periods;
+    WEEKLY_PERIODS=d.weekly.periods.map(toRange);  MONTHLY_PERIODS=d.monthly.periods;
     ALL_W=d.weekly.ALL;     ALL_M=d.monthly.ALL;
     CONTR_W=d.weekly.CONTR; CONTR_M=d.monthly.CONTR;
     DIRECT_W=d.weekly.DIRECT; DIRECT_M=d.monthly.DIRECT;
