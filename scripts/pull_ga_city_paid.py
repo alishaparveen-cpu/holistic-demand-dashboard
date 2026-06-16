@@ -16,7 +16,7 @@ import os, json, sys, re, datetime, urllib.request, urllib.parse
 from collections import defaultdict
 
 CUSTOMER_ID = "3190189170"; LOGIN_CUSTOMER_ID = "5098518843"
-API = "https://googleads.googleapis.com/v20"; TOKEN_URL = "https://oauth2.googleapis.com/token"
+API = "https://googleads.googleapis.com/v21"; TOKEN_URL = "https://oauth2.googleapis.com/token"
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT = os.path.join(ROOT, "data_ga_city_paid.json")
 WEEKS = ["2026-06-08","2026-06-01","2026-05-25","2026-05-18","2026-05-11","2026-05-04","2026-04-27",

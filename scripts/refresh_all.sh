@@ -40,6 +40,8 @@ step "Leads by source (build_leads)"      python3 scripts/build_leads.py   # mus
 step "Scorecard (build_scorecard)"        python3 scripts/build_scorecard.py
 step "Phase-2 metrics (build_phase2)"     python3 scripts/build_phase2.py
 step "Diagnostic RCA (build_diagnostic)"  python3 scripts/build_diagnostic.py
+step "Roster availability (build_roster)"    python3 scripts/build_roster.py
+step "GMB review velocity (build_reviews)"  python3 scripts/build_reviews.py
 step "Lead→conversion (build_lead_conv)"  python3 scripts/build_lead_conv.py
 step "Contact mode (build_contact_mode)"  python3 scripts/build_contact_mode.py
 step "Booking hour×day (build_booking_hod)" python3 scripts/build_booking_hod.py

@@ -18,7 +18,7 @@ import os, json, sys, re, datetime, urllib.request, urllib.parse
 from collections import defaultdict
 
 CUSTOMER_ID = "3190189170"; LOGIN_CUSTOMER_ID = "5098518843"
-API = "https://googleads.googleapis.com/v20"; TOKEN_URL = "https://oauth2.googleapis.com/token"
+API = "https://googleads.googleapis.com/v21"; TOKEN_URL = "https://oauth2.googleapis.com/token"
 OUT = os.path.join(os.path.dirname(__file__), "..", "data_ga_campaigns.json")
 
 def _creds():
