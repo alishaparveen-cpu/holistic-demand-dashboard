@@ -40,7 +40,7 @@ for cm in ga['campaigns']:
     city, prod = cm['city'], cm['product']
     for i, day in enumerate(ga['days']):
         wk = monday(day); weeks.add(wk)
-        for dimkey in (('city',city),('product',prod),('total','All')):
+        for dimkey in (('city',city),('product',prod),('citycat',city+'|'+prod),('total','All')):
             a = acc[dimkey][wk]
             a['impr'] += cm['impr'][i]; a['clicks'] += cm['clicks'][i]
             a['cost'] += cm['cost'][i]; a['conv'] += cm['conv'][i]
@@ -52,7 +52,7 @@ for line in open(LEADS_TSV):
     wk, camp, leads, booked = p[0], p[1], int(p[2]), int(p[3])
     weeks.add(wk)
     city, prod = parse_name(camp)
-    for dimkey in (('city',city),('product',prod),('total','All')):
+    for dimkey in (('city',city),('product',prod),('citycat',city+'|'+prod),('total','All')):
         a = acc[dimkey][wk]
         a['leads'] += leads; a['booked'] += booked
 
@@ -65,7 +65,7 @@ def series(dimkey):
         for k in out: out[k][wi] = round(m[k],2) if k=='cost' else (round(m[k]) if k=='conv' else m[k])
     return out
 
-dims = {'city':{}, 'product':{}, 'total':{}}
+dims = {'city':{}, 'product':{}, 'citycat':{}, 'total':{}}
 for (dim,key) in acc:
     dims[dim][key] = series((dim,key))
 

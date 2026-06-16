@@ -236,13 +236,13 @@ text-align:right;padding:9px 8px;border-bottom:1.5px solid var(--line);backgroun
     <label class="lbl">Tier <select class="sel" id="fTierSel" style="margin-left:4px"><option value="all">All</option><option value="T1">Tier 1</option><option value="T2">Tier 2</option></select></label>
     <label class="lbl">City <select class="sel" id="fCitySel" style="margin-left:4px"><option value="all">All</option></select></label>
     <label class="lbl">Category <select class="sel" id="fCatSel" style="margin-left:4px"><option value="all">All</option><option value="SH">Sexual Health</option><option value="STD">STD/STI</option><option value="MH">Mental Health</option><option value="ED">ED</option><option value="Brand">Brand</option></select></label>
-    <label class="lbl">Show only <select class="sel" id="fAdvSel" style="margin-left:4px"><option value="all">—</option>
-      <option value="conv_drop">Conversions ▼ dropped</option><option value="conv_grow">Conversions ▲ grew</option>
-      <option value="spend_drop">Spend ▼ dropped</option><option value="spend_grow">Spend ▲ grew</option>
-      <option value="is_drop">Impr. Share ▼ dropped</option><option value="is_grow">Impr. Share ▲ grew</option>
-      <option value="cpc_up">CPC ▲ rose</option><option value="cpc_down">CPC ▼ fell</option>
-      <option value="loc_drop">Loc % ▼ dropped</option><option value="rank_up">Losing more to rank</option>
-      <option value="lp_high">High LP drag</option><option value="low_qs">Low QS (&lt;5)</option><option value="high_budlost">Budget-capped</option></select></label>
+    <label class="lbl">Find <select class="sel" id="fMetric" style="margin-left:4px">
+      <option value="">— metric —</option>
+      <option value="v">Conversions</option><option value="spendH">Spend</option><option value="clicks">Clicks</option>
+      <option value="cpc">CPC</option><option value="is">Impr. Share</option><option value="cpp">Cost / conv</option>
+      <option value="qs">Quality Score</option><option value="bl">Lost-budget %</option><option value="rl">Lost-rank %</option>
+      <option value="ar">Ad-rel drag %</option><option value="lp">LP drag %</option><option value="loc">Loc % (local)</option></select></label>
+    <select class="sel" id="fDir"><option value="drop">▼ dropped (WoW)</option><option value="grow">▲ grew (WoW)</option><option value="high">highest</option><option value="low">lowest</option></select>
     <button id="fClear" class="editbtn" style="display:none">✕ clear</button>
   </div>
   <div id="searchResult"></div>
@@ -365,7 +365,7 @@ function parseCamp(n){const u=' '+n.toUpperCase().replace(/[_]/g,' ')+' ';
   let cat=/ STD | STI /.test(u)?'STD':/ SH | SHE | SEXUAL /.test(u)?'SH':/ MH | MENTAL /.test(u)?'MH':/ ED /.test(u)?'ED':/ BRAND /.test(u)?'Brand':null;
   if(!tier&&city) tier=T1_CITIES.includes(city)?'T1':'T2';
   return {tier,city,cat};}
-const state={view:'search',searchCi:null,sfTier:'all',sfCity:'all',sfCat:'all',sfAdv:'all',week:0,cmpTo:0,cmpFrom:1,fCat:'all',fCity:'all',fTier:'all',scoreBy:'group',
+const state={view:'search',searchCi:null,sfTier:'all',sfCity:'all',sfCat:'all',sfMetric:'',sfDir:'drop',week:0,cmpTo:0,cmpFrom:1,fCat:'all',fCity:'all',fTier:'all',scoreBy:'group',
   funCamps:[0],cmpCamps:[0,1,2,3,4],activeMetrics:['is','qs','cpc','rankLost'],selMetric:'is',trendMetric:'is',
   conds:[{key:'is',dir:'drop',mag:0}],matchMode:'all'};
 const short=n=>n.replace(/_/g,' ');
@@ -849,9 +849,9 @@ function renderSearch(){
         '<optgroup label="'+gl+'">'+groups[gl].sort((a,b)=>(CAMP[b].sp||0)-(CAMP[a].sp||0)).map(i=>`<option value="${i}">${CAMP[i].n}</option>`).join('')+'</optgroup>').join('');
     }
   }
-  {const sel=document.getElementById('campSelect'); if(sel&&!(state.sfTier!=='all'||state.sfCity!=='all'||state.sfCat!=='all'||(state.sfAdv&&state.sfAdv!=='all'))) sel.value=(state.searchCi!=null?String(state.searchCi):'');}
+  {const sel=document.getElementById('campSelect'); if(sel&&!(state.sfTier!=='all'||state.sfCity!=='all'||state.sfCat!=='all'||state.sfMetric)) sel.value=(state.searchCi!=null?String(state.searchCi):'');}
   const anyFilter=state.sfTier!=='all'||state.sfCity!=='all'||state.sfCat!=='all';
-  const advOn=state.sfAdv&&state.sfAdv!=='all';
+  const advOn=!!state.sfMetric;
   document.getElementById('fClear').style.display=(anyFilter||advOn)?'inline-block':'none';
   if(advOn){ renderDroppers(); return; }
   if(anyFilter){ renderCombined(); return; }
@@ -890,39 +890,44 @@ function renderSearch(){
    +'<div style="font-size:11px;color:var(--muted);margin-top:10px">Click any chart to zoom the full weekly trend. Clicks = spend ÷ CPC. <b>Latest week’s conversions are provisional</b> — Google backfills conversions for up to 7 days, so a recent 0 often fills in later. QS / ad-rel / LP / lost-budget are current snapshots (Google gives no weekly history, so those lines are flat). Leads / bookings aren’t per-campaign — combine by city or category to see the lead→booking funnel.</div>';
   res.innerHTML=h;
 }
-// Advanced "show only" filters — surface campaigns matching a condition this week
+// Exhaustive-but-concise filter: any metric × {dropped / grew / highest / lowest}
 function renderDroppers(){
-  ZREG=[]; const res=document.getElementById('searchResult'); const cond=state.sfAdv;
-  const drop=(a)=>(a&&a[0]!=null&&a[1]!=null)?a[0]-a[1]:null;   // this wk − last wk
-  const dd=(a,sign)=>{const d=drop(a);return (d!=null&&((sign<0&&d<0)||(sign>0&&d>0)))?Math.abs(d):null;};
-  const arrow=(a,inv)=>{const d=drop(a);if(d==null)return '';const up=d>0;const good=inv?!up:up;return `<b style="color:${good?'#1F6F5C':'#C0503F'}">${up?'▲':'▼'}${Math.abs(+d.toFixed(2))}</b>`;};
-  const DEFS={
-    conv_drop:{lab:'Conversions dropped (WoW)',pick:c=>dd(c.v,-1),show:c=>`${c.v[1]}→${c.v[0]} ${arrow(c.v,0)}`,arr:c=>c.v,fmt:v=>(+v).toLocaleString('en-IN')},
-    conv_grow:{lab:'Conversions grew (WoW)',pick:c=>dd(c.v,1),show:c=>`${c.v[1]}→${c.v[0]} ${arrow(c.v,0)}`,arr:c=>c.v,fmt:v=>(+v).toLocaleString('en-IN')},
-    spend_drop:{lab:'Spend dropped',pick:c=>dd(c.spendH,-1),show:c=>rupee(c.spendH[1])+'→'+rupee(c.spendH[0])+' '+arrow(c.spendH,0),arr:c=>c.spendH,fmt:rupee},
-    spend_grow:{lab:'Spend grew',pick:c=>dd(c.spendH,1),show:c=>rupee(c.spendH[1])+'→'+rupee(c.spendH[0])+' '+arrow(c.spendH,0),arr:c=>c.spendH,fmt:rupee},
-    is_drop:{lab:'Impr. Share dropped',pick:c=>dd(c.is,-1),show:c=>c.is[1]+'%→'+c.is[0]+'% '+arrow(c.is,0),arr:c=>c.is,fmt:pct},
-    is_grow:{lab:'Impr. Share grew',pick:c=>dd(c.is,1),show:c=>c.is[1]+'%→'+c.is[0]+'% '+arrow(c.is,0),arr:c=>c.is,fmt:pct},
-    cpc_up:{lab:'CPC rose',pick:c=>dd(c.cpc,1),show:c=>rupee(c.cpc[1])+'→'+rupee(c.cpc[0])+' '+arrow(c.cpc,1),arr:c=>c.cpc,fmt:rupee},
-    cpc_down:{lab:'CPC fell',pick:c=>dd(c.cpc,-1),show:c=>rupee(c.cpc[1])+'→'+rupee(c.cpc[0])+' '+arrow(c.cpc,1),arr:c=>c.cpc,fmt:rupee},
-    loc_drop:{lab:'Loc % dropped (local campaigns)',pick:c=>c.dt==='loc'?dd(c.d,-1):null,show:c=>c.d[1]+'%→'+c.d[0]+'% '+arrow(c.d,0),arr:c=>c.d,fmt:pct},
-    rank_up:{lab:'Losing more to rank',pick:c=>dd(c.rl,1),show:c=>'lost-rank '+c.rl[1]+'%→'+c.rl[0]+'% '+arrow(c.rl,1),arr:c=>c.rl,fmt:pct},
-    lp_high:{lab:'High LP drag (≥40%)',pick:c=>(c.lp&&c.lp[0]!=null&&c.lp[0]>=40)?c.lp[0]:null,show:c=>'LP drag '+c.lp[0]+'%',arr:c=>c.lp,fmt:pct},
-    low_qs:{lab:'Low Quality Score (<5)',pick:c=>(c.qs&&c.qs[0]!=null&&c.qs[0]<5&&c.sp>500)?(5-c.qs[0]):null,show:c=>'QS '+c.qs[0]+'/10',arr:c=>c.qs,fmt:v=>v+'/10'},
-    high_budlost:{lab:'Budget-capped (lost-budget ≥40%)',pick:c=>(c.bl&&c.bl[0]!=null&&c.bl[0]>=40)?c.bl[0]:null,show:c=>'lost-budget '+c.bl[0]+'%',arr:c=>c.bl,fmt:pct},
+  ZREG=[]; const res=document.getElementById('searchResult');
+  const m=state.sfMetric, dir=state.sfDir, N=v=>(+v).toLocaleString('en-IN');
+  const MD={
+    v:{lab:'Conversions',arr:c=>c.v,fmt:N,inv:false},
+    spendH:{lab:'Spend',arr:c=>c.spendH,fmt:rupee,inv:false},
+    clicks:{lab:'Clicks',arr:c=>(c.spendH||[]).map((s,i)=>(c.cpc&&c.cpc[i])?Math.round(s/c.cpc[i]):null),fmt:N,inv:false},
+    cpc:{lab:'CPC',arr:c=>c.cpc,fmt:rupee,inv:true},
+    is:{lab:'Impr. Share',arr:c=>c.is,fmt:pct,inv:false},
+    cpp:{lab:'Cost / conv',arr:c=>c.dt==='loc'?null:c.d,fmt:rupee,inv:true},
+    qs:{lab:'Quality Score',arr:c=>c.qs,fmt:v=>v+'/10',inv:false},
+    bl:{lab:'Lost-budget %',arr:c=>c.bl,fmt:pct,inv:true},
+    rl:{lab:'Lost-rank %',arr:c=>c.rl,fmt:pct,inv:true},
+    ar:{lab:'Ad-rel drag %',arr:c=>c.ar,fmt:pct,inv:true},
+    lp:{lab:'LP drag %',arr:c=>c.lp,fmt:pct,inv:true},
+    loc:{lab:'Loc %',arr:c=>c.dt==='loc'?c.d:null,fmt:pct,inv:false},
   };
-  const D=DEFS[cond]; if(!D){res.innerHTML='';return;}
-  const rows=CAMP.map((c,i)=>({i,c,score:D.pick(c)})).filter(r=>r.score!=null&&r.c.sp>0).sort((a,b)=>b.score-a.score);
-  let h=`<div style="margin-bottom:12px"><h2 style="margin:0;font-size:19px">${D.lab}</h2>
-    <div style="font-size:12px;color:var(--muted);margin-top:3px">${rows.length} campaigns · this week vs last · click a row to open it</div></div>`;
-  if(!rows.length){ res.innerHTML=h+'<div style="color:var(--muted);padding:16px 2px">None this week.</div>'; return; }
-  const labs=(WKISO||[]).slice().reverse().map(wkRange);
-  h+='<div style="display:flex;flex-direction:column;gap:6px">'+rows.slice(0,30).map(r=>{
-    const g=GMAP[r.c.g]||{color:'#2E7D5B'};
+  const D=MD[m]; if(!D){res.innerHTML='';return;}
+  const dirLab={drop:'dropped (WoW)',grow:'grew (WoW)',high:'highest',low:'lowest'}[dir];
+  const score=c=>{const a=D.arr(c); if(!a)return null; const cur=a[0],prev=a.length>1?a[1]:null;
+    if(dir==='drop') return (cur!=null&&prev!=null&&cur<prev)?prev-cur:null;
+    if(dir==='grow') return (cur!=null&&prev!=null&&cur>prev)?cur-prev:null;
+    if(dir==='high') return cur!=null?cur:null;
+    if(dir==='low')  return cur!=null?-cur:null;};
+  const arrowOf=a=>{if(!a||a[0]==null||a[1]==null)return'';const d=a[0]-a[1],up=d>0,good=D.inv?!up:up;
+    return `<b style="color:${good?'#1F6F5C':'#C0503F'}">${up?'▲':'▼'}${Math.abs(+d.toFixed(2))}</b>`;};
+  const rows=CAMP.map((c,i)=>({i,c,a:D.arr(c),s:score(c)})).filter(r=>r.s!=null&&r.a&&r.c.sp>0).sort((x,y)=>y.s-x.s);
+  let h=`<div style="margin-bottom:12px"><h2 style="margin:0;font-size:19px">${D.lab} — ${dirLab}</h2>
+    <div style="font-size:12px;color:var(--muted);margin-top:3px">${rows.length} campaigns · click a row to open it</div></div>`;
+  if(!rows.length){ res.innerHTML=h+'<div style="color:var(--muted);padding:16px 2px">None.</div>'; return; }
+  h+='<div style="display:flex;flex-direction:column;gap:6px">'+rows.slice(0,40).map(r=>{
+    const g=GMAP[r.c.g]||{color:'#2E7D5B'}, cur=r.a[0], prev=r.a.length>1?r.a[1]:null;
+    const showVal=(dir==='drop'||dir==='grow')?`${prev!=null?D.fmt(prev):'—'}→${D.fmt(cur)} ${arrowOf(r.a)}`:D.fmt(cur);
     return `<div data-ci="${r.i}" style="display:flex;align-items:center;gap:12px;background:#fff;border:1px solid var(--line);border-radius:9px;padding:9px 13px;cursor:pointer">
       <span style="flex:1;font-weight:600;font-size:13px"><span class="cdot" style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${g.color};margin-right:6px"></span>${r.c.n}</span>
-      <span style="font-family:'JetBrains Mono';font-size:11px;color:var(--ink-2)">${D.show(r.c)}</span>
-      <span>${spark(D.arr(r.c).slice().reverse(),false,120,30,g.color)}</span></div>`;
+      <span style="font-family:'JetBrains Mono';font-size:11px;color:var(--ink-2)">${showVal}</span>
+      <span>${spark(r.a.slice().reverse(),false,120,30,g.color)}</span></div>`;
   }).join('')+'</div>';
   res.innerHTML=h;
 }
@@ -933,12 +938,13 @@ function renderCombined(){
   const {sfTier,sfCity,sfCat}=state;
   const match=CAMP.filter(c=>{const p=parseCamp(c.n);return (sfTier==='all'||p.tier===sfTier)&&(sfCity==='all'||p.city===sfCity)&&(sfCat==='all'||p.cat===sfCat);});
   const active=[sfTier,sfCity,sfCat].filter(x=>x!=='all');
-  // full funnel from GAF2 when exactly one dimension is selected
+  // full funnel from GAF2: city×category cross, or a single dimension
   let src=null, basis='';
-  if(GAF2 && active.length===1){const D=GAF2.dims,F=['impr','clicks','cost','conv','leads','booked'];
-    if(sfCity!=='all' && D.city[sfCity]){src=D.city[sfCity]; basis='full funnel · city data';}
-    else if(sfCat!=='all' && D.product[sfCat]){src=D.product[sfCat]; basis='full funnel · category data';}
-    else if(sfTier!=='all'){const ks=Object.keys(D.city).filter(c=>sfTier==='T1'?T1_CITIES.includes(c):(c!=='National / Online'&&!T1_CITIES.includes(c)));
+  if(GAF2){const D=GAF2.dims,F=['impr','clicks','cost','conv','leads','booked'];
+    if(sfCity!=='all' && sfCat!=='all' && D.citycat && D.citycat[sfCity+'|'+sfCat]){src=D.citycat[sfCity+'|'+sfCat]; basis='full funnel · '+sfCity+' × '+sfCat;}
+    else if(active.length===1 && sfCity!=='all' && D.city[sfCity]){src=D.city[sfCity]; basis='full funnel · city data';}
+    else if(active.length===1 && sfCat!=='all' && D.product[sfCat]){src=D.product[sfCat]; basis='full funnel · category data';}
+    else if(active.length===1 && sfTier!=='all'){const ks=Object.keys(D.city).filter(c=>sfTier==='T1'?T1_CITIES.includes(c):(c!=='National / Online'&&!T1_CITIES.includes(c)));
       src={}; F.forEach(f=>src[f]=GAF2.weeks.map((_,i)=>ks.reduce((a,k)=>a+((D.city[k]&&D.city[k][f]&&D.city[k][f][i])||0),0))); basis='full funnel · '+ks.length+' cities';}
   }
   let h=`<div style="margin-bottom:14px"><h2 style="margin:0;font-size:19px">Combined · ${active.join(' + ')}</h2>
@@ -978,8 +984,9 @@ function renderCombined(){
   res.innerHTML=h;
 }
 document.getElementById('tabs').onclick=e=>{if(e.target.dataset.v)setView(e.target.dataset.v);};
-function srResetFilters(){state.sfTier='all';state.sfCity='all';state.sfCat='all';state.sfAdv='all';
-  ['fTierSel','fCitySel','fCatSel','fAdvSel'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='all';});}
+function srResetFilters(){state.sfTier='all';state.sfCity='all';state.sfCat='all';state.sfMetric='';
+  ['fTierSel','fCitySel','fCatSel'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='all';});
+  const fm=document.getElementById('fMetric');if(fm)fm.value='';}
 document.getElementById('campSelect').onchange=e=>{const ci=e.target.value; if(ci==='')return;
   srResetFilters(); document.getElementById('campSearch').value=''; state.searchCi=+ci; renderSearch();};
 document.getElementById('campSearch').addEventListener('input',e=>{
@@ -990,9 +997,10 @@ document.getElementById('campSearch').addEventListener('input',e=>{
   if(ci>=0 && ci!==state.searchCi){state.searchCi=ci;renderSearch();}
 });
 [['fTierSel','sfTier'],['fCitySel','sfCity'],['fCatSel','sfCat']].forEach(([id,key])=>{
-  document.getElementById(id).onchange=e=>{state[key]=e.target.value; state.sfAdv='all'; document.getElementById('fAdvSel').value='all'; document.getElementById('campSearch').value=''; renderSearch();};});
-document.getElementById('fAdvSel').onchange=e=>{state.sfAdv=e.target.value; state.sfTier='all';state.sfCity='all';state.sfCat='all';
+  document.getElementById(id).onchange=e=>{state[key]=e.target.value; state.sfMetric=''; document.getElementById('fMetric').value=''; document.getElementById('campSearch').value=''; renderSearch();};});
+document.getElementById('fMetric').onchange=e=>{state.sfMetric=e.target.value; state.sfTier='all';state.sfCity='all';state.sfCat='all';
   ['fTierSel','fCitySel','fCatSel'].forEach(id=>document.getElementById(id).value='all'); document.getElementById('campSearch').value=''; renderSearch();};
+document.getElementById('fDir').onchange=e=>{state.sfDir=e.target.value; if(state.sfMetric)renderSearch();};
 document.getElementById('fClear').onclick=()=>{srResetFilters(); renderSearch();};
 document.getElementById('searchResult').addEventListener('click',e=>{
   const zc=e.target.closest('[data-z]'); if(zc){const r=ZREG[+zc.dataset.z]; if(r) zoomShow(r.label,'by week (ending date)',r.series,r.labels,r.fmt,r.color); return;}
