@@ -675,14 +675,14 @@ function buildChannelBreakdown(analysis) {
 //    GMB call / Google paid / Web / Practo. Styled after the google-ads-audit consolidated funnel.
 //    GMB & Practo are clinic-direct; Google-paid & Web are clinic-engaged (tracked leads that booked
 //    here, from data_clinic_funnel); Rel Lead is the AI call-audit relevant subset (live from 27 May).
-function buildLeadFunnel(key) {
+function buildLeadFunnel(key, nWeeks) {
   if (!LF?.clinics) return '';
   const fk = clinicKey_city(key) + '|' + clinicKey_name(key);
   const o = LF.clinics[fk];
   if (!o) return '';
   const pl = (PL && PL[fk]) || null;
   const W = LF._meta.weeks;                               // newest-first
-  const ncol = Math.min(4, W.length);
+  const ncol = Math.min(nWeeks || 4, W.length);           // card = 4 weeks; zoom = all weeks side by side
   const cols = []; for (let i = ncol - 1; i >= 0; i--) cols.push(i);   // oldest → newest
   const A = a => a || [];
   const gmb = A(o.lead.gmb_organic_calls), paid = A(o.lead.by_chan.google_ad),
@@ -697,7 +697,10 @@ function buildLeadFunnel(key) {
   const subRow = (label, arr) => `<tr><td style="padding:2px 8px;color:#64748b;font-size:10px;"><span style="color:#cbd5e1;">·</span> ${label}</td>${cols.map(i => td(arr[i] ?? 0, 'color:#475569;')).join('')}</tr>`;
   const pctRow = (label, num, den) => `<tr><td style="padding:1px 8px 1px 16px;color:#94a3b8;font-size:9.5px;">${label}</td>${cols.map(i => td(pc(num[i], den[i]), 'color:#94a3b8;font-size:9.5px;')).join('')}</tr>`;
   return `<div style="margin-top:10px;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;">
-    <div style="font-size:10px;font-weight:700;color:#475569;padding:6px 8px;background:#f1f5f9;border-bottom:1px solid #e2e8f0;">🎯 Lead-source funnel · ${clinicKey_name(key)}</div>
+    <div style="font-size:10px;font-weight:700;color:#475569;padding:6px 8px;background:#f1f5f9;border-bottom:1px solid #e2e8f0;display:flex;justify-content:space-between;align-items:center;">
+      <span>🎯 Lead-source funnel · ${clinicKey_name(key)}</span>
+      ${nWeeks ? '' : `<button onclick="zoomLeadFunnel('${key.replace(/\\/g,'\\\\').replace(/'/g,"\\'")}')" title="Compare all weeks side by side" style="border:1px solid #cbd5e1;background:#fff;border-radius:5px;cursor:pointer;font-size:11px;line-height:1;color:#64748b;padding:2px 6px;">⛶ all weeks</button>`}
+    </div>
     <table style="width:100%;border-collapse:collapse;font-size:11px;">
       <tr><th style="text-align:left;padding:2px 8px;font-size:9px;color:#94a3b8;font-weight:600;">stage</th>${cols.map(i => `<th style="text-align:right;padding:3px 7px;font-size:9px;color:#94a3b8;font-weight:600;">${wkLab(W[i])}</th>`).join('')}</tr>
       ${stageRow('Lead', lead)}
@@ -715,6 +718,24 @@ function buildLeadFunnel(key) {
     <div style="font-size:8.5px;color:#94a3b8;padding:5px 8px;line-height:1.45;background:#fafafa;border-top:1px solid #eef2f7;">GMB &amp; Practo = clinic-direct · Google-paid &amp; Web = clinic-engaged (tracked leads that booked here) · Rel Lead = AI call-audit relevant subset (from 27 May). Latest week ends ${wkLab(W[0])}.</div>
   </div>`;
 }
+
+// Pop the lead-source funnel out to a modal showing ALL weeks side by side (week-over-week compare).
+function zoomLeadFunnel(key) {
+  let m = document.getElementById('funnelModal');
+  if (!m) {
+    m = document.createElement('div'); m.id = 'funnelModal';
+    m.style.cssText = 'display:none;position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:9999;align-items:flex-start;justify-content:center;padding:28px 14px;overflow:auto;';
+    m.onclick = e => { if (e.target === m) closeFunnelModal(); };
+    m.innerHTML = '<div style="background:#fff;border-radius:12px;max-width:97vw;box-shadow:0 20px 60px rgba(0,0,0,.3);">'
+      + '<div style="display:flex;justify-content:flex-end;padding:6px 10px 0;"><button onclick="closeFunnelModal()" style="border:none;background:none;font-size:18px;cursor:pointer;color:#94a3b8;line-height:1;">✕</button></div>'
+      + '<div id="funnelModalBody" style="padding:0 16px 18px;overflow-x:auto;"></div></div>';
+    document.body.appendChild(m);
+  }
+  document.getElementById('funnelModalBody').innerHTML = buildLeadFunnel(key, 99);  // 99 → all available weeks
+  m.style.display = 'flex';
+}
+function closeFunnelModal() { const m = document.getElementById('funnelModal'); if (m) m.style.display = 'none'; }
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeFunnelModal(); });
 
 // ── BUILD CLINIC TABLE (compact, sortable — shown when table mode is active) ─
 function buildClinicTable() {
