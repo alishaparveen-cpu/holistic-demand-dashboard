@@ -56,6 +56,19 @@ tr.mrow.key td:first-child{border-left:3px solid var(--warn)}
 .cat-pill{font-family:'JetBrains Mono';font-size:9px;font-weight:600;padding:1px 6px;border-radius:3px;background:#EEE;color:#555}
 .note{font-size:11px;color:var(--muted);margin:6px 2px 0;line-height:1.5}
 .spark{display:inline-block;vertical-align:middle;margin-left:8px}
+.sparkclick{cursor:zoom-in;display:inline-flex;align-items:center;border-radius:6px;padding:1px 2px;transition:background .12s}
+.sparkclick:hover{background:#EAF3EF;box-shadow:0 0 0 1px #BFE0D5 inset}
+.col-hdr th .wr{display:block;font-size:7.5px;color:var(--faint);font-weight:500;letter-spacing:0;text-transform:none;margin-top:1px}
+.col-hdr th.cur{color:var(--ink)}
+tr.mrow td.prevw .val{color:var(--ink-2);font-size:12.5px}
+/* zoom modal */
+.zoom-ov{position:fixed;inset:0;background:rgba(26,26,23,.55);display:none;align-items:center;justify-content:center;z-index:90;padding:24px}
+.zoom-ov.on{display:flex}
+.zoom-box{background:var(--sheet);border-radius:14px;box-shadow:0 24px 60px rgba(0,0,0,.3);max-width:840px;width:100%;padding:20px 24px 24px;position:relative}
+.zoom-box h3{font-family:'Newsreader';font-weight:500;font-size:21px;margin:0 0 2px;padding-right:36px}
+.zoom-box .zsub{font-family:'JetBrains Mono';font-size:10.5px;color:var(--muted);margin-bottom:8px}
+.zoom-x{position:absolute;top:14px;right:16px;border:none;background:#EFECE2;color:var(--ink-2);width:28px;height:28px;border-radius:8px;font-size:16px;cursor:pointer;line-height:1}
+.zoom-x:hover{background:#E2DECF}
 @media(max-width:640px){.hdr,.ctrls,.wrap,.legend,.score,.nav{padding-left:14px;padding-right:14px}}
 </style></head><body>
 <script>if(sessionStorage.getItem('allo_dash_auth')!=='1'){/* standalone: allow direct view */}</script>
@@ -88,6 +101,8 @@ tr.mrow.key td:first-child{border-left:3px solid var(--warn)}
 </div>
 <div class="score" id="score"></div>
 <div class="wrap" id="stages"></div>
+<div class="zoom-ov" id="zoomOv"><div class="zoom-box"><button class="zoom-x" id="zoomX">×</button>
+  <h3 id="zoomTitle"></h3><div class="zsub" id="zoomSub"></div><div id="zoomChart"></div></div></div>
 
 <script>
 let DATA=null, CL=null, WK=0, ALLOC='city';
@@ -105,6 +120,42 @@ function spark(arr,w,h,col){ w=w||64;h=h||20;col=col||'#8A8A80'; const a=arr.map
   const vs=pts.map(p=>p.v),mn=Math.min(...vs),mx=Math.max(...vs),rg=(mx-mn)||1,n=a.length-1;
   const X=i=>3+i/n*(w-6),Y=v=>h-3-((v-mn)/rg)*(h-6); const dpath=pts.map((p,j)=>(j?'L':'M')+X(p.i).toFixed(1)+' '+Y(p.v).toFixed(1)).join(' ');
   const last=pts[pts.length-1]; return `<svg class="spark" width="${w}" height="${h}"><path d="${dpath}" fill="none" stroke="${col}" stroke-width="1.4"/><circle cx="${X(last.i).toFixed(1)}" cy="${Y(last.v).toFixed(1)}" r="2" fill="${col}"/></svg>`; }
+
+// ---- zoomable trend ----
+let TRENDS=[];                                   // registry of charts for the current render
+function clickSpark(full,col,label,fmt){         // full = 12-wk series newest-first; wraps a sparkline → zoom modal
+  const sp=spark(full.slice(0,8).reverse(),70,20,col); if(!sp) return '';
+  const id=TRENDS.push({label,fmt,col,series:full})-1;
+  return `<span class="sparkclick" data-ti="${id}" title="click to zoom">${sp}</span>`;
+}
+function bigChart(series,col,fmt){                // series newest-first (idx0=latest); plot oldest→newest
+  const W=780,H=380,padL=70,padR=22,padT=24,padB=78, wks=DATA._meta.weeks;
+  const data=series.map((v,i)=>({v:v==null?null:+v,wk:wks[i]})).reverse();   // oldest first
+  const pts=data.map((d,j)=>({...d,j})).filter(p=>p.v!=null&&!isNaN(p.v));
+  if(pts.length<2) return '<div style="padding:48px;text-align:center;color:var(--muted)">Not enough data points to chart.</div>';
+  const vs=pts.map(p=>p.v); let mn=Math.min(...vs),mx=Math.max(...vs); if(mn===mx){mn-=1;mx+=1;}
+  mn=Math.min(mn,0)===0&&mn>=0?0:mn;                                          // anchor to 0 when all ≥0
+  const rg=(mx-mn)||1, n=data.length-1;
+  const X=j=>padL+j/n*(W-padL-padR), Y=v=>H-padB-((v-mn)/rg)*(H-padT-padB);
+  let g='';
+  for(let t=0;t<=4;t++){const val=mn+rg*t/4, y=Y(val);
+    g+=`<line x1="${padL}" y1="${y.toFixed(1)}" x2="${W-padR}" y2="${y.toFixed(1)}" stroke="#ECEAE0"/>`+
+       `<text x="${padL-8}" y="${(y+3).toFixed(1)}" text-anchor="end" font-family="JetBrains Mono" font-size="9.5" fill="#8A8A80">${fmtVal(val,fmt)}</text>`;}
+  data.forEach((d,j)=>{ if(j%2&&j!==n)return; const x=X(j);
+    g+=`<text x="${x.toFixed(1)}" y="${H-padB+16}" text-anchor="end" font-family="JetBrains Mono" font-size="8.5" fill="#8A8A80" transform="rotate(-40 ${x.toFixed(1)} ${H-padB+16})">${wkRange(d.wk)}</text>`;});
+  const dp=pts.map((p,k)=>(k?'L':'M')+X(p.j).toFixed(1)+' '+Y(p.v).toFixed(1)).join(' ');
+  g+=`<path d="${dp}" fill="none" stroke="${col}" stroke-width="2.2"/>`;
+  pts.forEach((p,k)=>{const x=X(p.j),y=Y(p.v),lastTwo=k>=pts.length-2;
+    g+=`<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="3.2" fill="${col}"/>`;
+    if(k===0||k===pts.length-1||lastTwo) g+=`<text x="${x.toFixed(1)}" y="${(y-8).toFixed(1)}" text-anchor="middle" font-family="JetBrains Mono" font-size="9.5" font-weight="600" fill="${col}">${fmtVal(p.v,fmt)}</text>`;});
+  return `<svg width="100%" viewBox="0 0 ${W} ${H}" style="display:block">${g}</svg>`;
+}
+function zoomTrend(id){const t=TRENDS[id]; if(!t)return;
+  $('zoomTitle').textContent=t.label;
+  $('zoomSub').textContent=`${CL.city.replace('|',' · ')} · ${CL._clinic} · 12-week trend (oldest → latest)`;
+  $('zoomChart').innerHTML=bigChart(t.series,t.col,t.fmt);
+  $('zoomOv').classList.add('on');}
+function closeZoom(){$('zoomOv').classList.remove('on');}
 
 const STAGE_COLORS=['#1A1A17','#1F3A5C','#1F5C3A','#5C3A1F','#5C1F3A','#3A1F5C','#5C4A1F','#1F4A5C','#4A5C1F','#5C1F1F'];
 // rows: {m,desc,star, lvl:'clinic'|'city'|'setup', src, fmt:'n'|'rupee'|'pct'|'h'|'star', key (data path on clinic), paid (field on city.paid), allocable, special}
@@ -226,39 +277,39 @@ function render(){
   ];
   $('score').innerHTML=sc.map(([l,v,d,arr,col])=>`<div class="scard"><div class="sl">${l}</div><div class="sv">${v}</div><div class="sd" style="color:var(--muted)">${d}${spark(arr.slice(0,8).reverse(),52,16,col)}</div></div>`).join('');
   // stages
+  TRENDS=[];                                            // reset zoom registry for this render
+  const WC=[w,w+1,w+2], wks=DATA._meta.weeks;           // current week + 2 prior, for side-by-side compare
+  const whdr=(wi,lab)=>wi<wks.length?`<th class="${wi===w?'cur':''}">${lab}<span class="wr">${wkRange(wks[wi])}</span></th>`:'<th>—</th>';
+  // pill block for a category-style row at a given week index
+  const catBlock=(order,getv,fmtb,wi)=>{ const tot=order.reduce((a,k)=>a+(getv(k,wi)||0),0)||1;
+    const cells=order.filter(k=>getv(k,wi)>0); if(!cells.length)return '<span class="val na">—</span>';
+    return '<div class="cat-block" style="flex-direction:column;align-items:flex-end;gap:2px">'+cells.map(k=>`<span class="cat-pill">${k} <b>${fmtb(getv(k,wi))}</b> · ${Math.round(getv(k,wi)/tot*100)}%</span>`).join('')+'</div>'; };
   let html='';
   STAGES.forEach(st=>{
-    html+=`<div class="tbl-wrap"><table><tr class="stage-hdr"><td colspan="5" style="background:${STAGE_COLORS[st.n]}">Stage ${st.n} — ${st.t} &nbsp;·&nbsp; ${st.q}</td></tr>`;
-    html+=`<tr class="col-hdr"><th style="width:46%">Metric</th><th>This week</th><th>Trend (8w)</th><th>Level</th><th>Source</th></tr>`;
+    html+=`<div class="tbl-wrap"><table><tr class="stage-hdr"><td colspan="7" style="background:${STAGE_COLORS[st.n]}">Stage ${st.n} — ${st.t} &nbsp;·&nbsp; ${st.q}</td></tr>`;
+    html+=`<tr class="col-hdr"><th style="width:38%">Metric</th>${whdr(w,'This week')}${whdr(w+1,'−1 wk')}${whdr(w+2,'−2 wk')}<th>Trend (8w) · click to zoom</th><th>Level</th><th>Source</th></tr>`;
     st.rows.forEach(r=>{
       const rv=rowValueSeries(r);
-      let valCell, badge, badgeCls, srcCell, trendCell='';
-      if(rv.setup){ valCell='<span class="val na">needs setup</span>'; badge='NEEDS SETUP'; badgeCls='b-setup'; srcCell=''; }
-      else if(rv.catmix){
-        const cm=c.booking.catmix; const tot=Object.values(cm).reduce((a,x)=>a+(x[w]||0),0)||1;
-        const order=['STI','ED+','PE+','ED+PE+','NSSD','oth'];
-        valCell='<div class="cat-block" style="flex-direction:column;align-items:flex-end;gap:2px">'+order.filter(k=>cm[k][w]>0).map(k=>`<span class="cat-pill">${k} <b>${cm[k][w]}</b> · ${Math.round(cm[k][w]/tot*100)}%</span>`).join('')+'</div>';
-        badge='CLINIC ✓'; badgeCls='b-clinic'; srcCell=`<span class="src CRM">CRM</span>`; trendCell='';
-      } else if(rv.revcat){
-        const bc=(c.revenue||{}).by_cat||{}; const order=['STI','ED+','PE+','ED+PE+','NSSD','oth'];
-        const tot=order.reduce((a,k)=>a+((bc[k]||[])[w]||0),0)||1;
-        valCell='<div class="cat-block" style="flex-direction:column;align-items:flex-end;gap:2px">'+order.filter(k=>(bc[k]||[])[w]>0).map(k=>`<span class="cat-pill">${k} <b>${R(bc[k][w])}</b> · ${Math.round(bc[k][w]/tot*100)}%</span>`).join('')+'</div>';
-        badge='CLINIC ✓'; badgeCls='b-clinic'; srcCell=`<span class="src BOOKING">BK</span>`; trendCell='';
-      } else if(rv.ailcat){
-        const bc=(c.lead||{}).ai_lead_by_cat||{}; const order=['STI','SH','MH','Other'];
-        const tot=order.reduce((a,k)=>a+((bc[k]||[])[w]||0),0)||1;
-        valCell='<div class="cat-block" style="flex-direction:column;align-items:flex-end;gap:2px">'+order.filter(k=>(bc[k]||[])[w]>0).map(k=>`<span class="cat-pill">${k} <b>${bc[k][w]}</b> · ${Math.round(bc[k][w]/tot*100)}%</span>`).join('')+'</div>';
-        badge='CLINIC ✓'; badgeCls='b-clinic'; srcCell=`<span class="src CRM">CRM</span>`; trendCell='';
+      let valTds, badge, badgeCls, srcCell, trendCell='';
+      if(rv.setup){ valTds='<td colspan="3"><span class="val na">needs setup</span></td>'; badge='NEEDS SETUP'; badgeCls='b-setup'; srcCell=''; }
+      else if(rv.catmix||rv.revcat||rv.ailcat){
+        let order,getv,fmtb;
+        if(rv.catmix){ const cm=c.booking.catmix; order=['STI','ED+','PE+','ED+PE+','NSSD','oth']; getv=(k,wi)=>cm[k][wi]||0; fmtb=x=>x; srcCell=`<span class="src CRM">CRM</span>`; }
+        else if(rv.revcat){ const bc=(c.revenue||{}).by_cat||{}; order=['STI','ED+','PE+','ED+PE+','NSSD','oth']; getv=(k,wi)=>(bc[k]||[])[wi]||0; fmtb=R; srcCell=`<span class="src BOOKING">BK</span>`; }
+        else { const bc=(c.lead||{}).ai_lead_by_cat||{}; order=['STI','SH','MH','Other']; getv=(k,wi)=>(bc[k]||[])[wi]||0; fmtb=x=>x; srcCell=`<span class="src CRM">CRM</span>`; }
+        valTds=WC.map(wi=>`<td class="${wi===w?'':'prevw'}">${wi<wks.length?catBlock(order,getv,fmtb,wi):'<span class="val na">—</span>'}</td>`).join('');
+        badge='CLINIC ✓'; badgeCls='b-clinic';
       } else {
-        const s=rv.series, cur=s[w], prev=s[w+1];
-        valCell=`<span class="val ${cur==null?'na':''}">${cur==null?'—':fmtVal(cur,r.fmt)}</span>`+(r.noTrend?'':deltaHTML(cur,prev,false));
-        trendCell=r.noTrend?'':spark(s.slice(0,8).reverse(),70,20, rv.lvl==='city'?'#4285F4':'#1F6F5C');
+        const s=rv.series;
+        valTds=WC.map(wi=>{const cur=s[wi]; const d=r.noTrend?'':deltaHTML(cur,s[wi+1],false);
+          return `<td class="${wi===w?'':'prevw'}"><span class="val ${cur==null?'na':''}">${cur==null?'—':fmtVal(cur,r.fmt)}</span>${wi<wks.length?d:''}</td>`;}).join('');
+        trendCell=r.noTrend?'':clickSpark(s, rv.lvl==='city'?'#4285F4':'#1F6F5C', r.m, r.fmt);
         if(rv.lvl==='city'){ badge=rv.allocated?'CITY · alloc':'CITY'; badgeCls='b-city'; }
         else { badge='CLINIC ✓'; badgeCls='b-clinic'; }
         srcCell=rv.src?`<span class="src ${rv.src}">${rv.src==='GADS'?'GADS':rv.src==='BOOKING'?'BK':rv.src}</span>`:'';
       }
       html+=`<tr class="mrow${r.star?' key':''}"><td><div class="m-name">${r.star?'<span class="star">★</span>':''}${r.m}</div>${r.desc?`<div class="m-desc">${r.desc}</div>`:''}</td>`+
-            `<td>${valCell}</td><td>${trendCell}</td><td><span class="leg-badge ${badgeCls}">${badge}</span></td><td>${srcCell}</td></tr>`;
+            `${valTds}<td>${trendCell}</td><td><span class="leg-badge ${badgeCls}">${badge}</span></td><td>${srcCell}</td></tr>`;
     });
     html+='</table></div>';
   });
@@ -272,10 +323,17 @@ function boot(){
     const byCity={}; Object.keys(j.clinics).forEach(k=>{const c=k.split('|')[0];(byCity[c]=byCity[c]||[]).push(k);});
     cs.innerHTML=Object.keys(byCity).sort().map(city=>`<optgroup label="${city}">`+byCity[city].sort().map(k=>`<option value="${k}">${k.split('|')[1]}</option>`).join('')+'</optgroup>').join('');
     $('weekSel').innerHTML=j._meta.weeks.map((w,i)=>`<option value="${i}">${wkRange(w)}${i===0?' (latest)':''}</option>`).join('');
-    const first=Object.keys(j.clinics)[0]; cs.value=first; select(first);
+    // default to the most-active clinic (latest-week bookings + GMB impressions), not the alphabetical first —
+    // some clinics (e.g. Ahmedabad·Paldi) have no GMB data and look "empty" on open.
+    const score=k=>{const c=j.clinics[k]||{};const bk=(c.booking&&c.booking.bookings&&c.booking.bookings[0])||0;const im=(c.discovery&&c.discovery.impressions&&c.discovery.impressions[0])||0;return bk*100+im;};
+    const first=Object.keys(j.clinics).sort((a,b)=>score(b)-score(a))[0]; cs.value=first; select(first);
     cs.onchange=e=>select(e.target.value);
     $('weekSel').onchange=e=>{WK=+e.target.value;render();};
     $('allocSeg').onclick=e=>{if(!e.target.dataset.a)return;ALLOC=e.target.dataset.a;[...$('allocSeg').children].forEach(b=>b.classList.toggle('on',b.dataset.a===ALLOC));render();};
+    $('stages').addEventListener('click',e=>{const sc=e.target.closest('.sparkclick'); if(sc)zoomTrend(+sc.dataset.ti);});
+    $('zoomX').onclick=closeZoom;
+    $('zoomOv').onclick=e=>{if(e.target===$('zoomOv'))closeZoom();};
+    document.addEventListener('keydown',e=>{if(e.key==='Escape')closeZoom();});
   }).catch(e=>{$('sub').textContent='Failed to load data_clinic_funnel.json — run scripts/build_clinic_funnel.py';console.error(e);});
 }
 function select(key){ CL=DATA.clinics[key]; CL._clinic=key.split('|')[1]; render(); }

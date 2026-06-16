@@ -69,6 +69,17 @@ def perf(loc_num, at):
             "website":metric.get("WEBSITE_CLICKS",[0]*len(WEEKS)),
             "directions":metric.get("BUSINESS_DIRECTION_REQUESTS",[0]*len(WEEKS))}
 
+# Explicit location-ID → "City|Locality" overrides for listings the title-matcher misses:
+# several clinics carry a generic "Allo Health" title (no locality) or a tagline so long the
+# locality token is buried. Resolved by inspecting storefrontAddress addressLines.
+OVERRIDE = {
+    "7222177911995979844":  "Navi Mumbai|Vashi",        # title "Allo Health"; addr "...Vashi"
+    "13412576936814792533": "Navi Mumbai|Kharghar",     # long tagline title
+    "1678025661527334352":  "Ahmedabad|Paldi",          # title "Allo Health"; addr "...Paldi"
+    "16859390687673316202": "Mumbai|Andheri East",      # title "Allo Health"; addr "Andheri East"
+    "16734770786722847016": "Bangalore|RT Nagar",       # title "Allo Health"; addr Ganganagar/CBI Rd
+}
+
 def main():
     at = token()
     diag = json.load(open(os.path.join(ROOT,"data_diagnostic.json")))
@@ -86,16 +97,19 @@ def main():
             "fields":"searches=impressions(search+maps); interactions=calls+website+directions"}}, 0, []
     for L in locs:
         title = L.get("title","")
-        # location token = first segment after the brand; handles both
-        # "Allo Health, <loc> - <tagline>" and "Allo Health - <city> | <tagline>".
-        t = re.sub(r"\ballo health\b", "", title, flags=re.I)
-        parts = [p.strip().lower() for p in re.split(r"[,\-–|]", t) if p.strip()]
-        if not parts: continue
-        cand = parts[0]
-        key = loc_by_clinic.get(cand) or city_single.get(cand) \
-              or next((v for kk,v in loc_by_clinic.items() if kk and (kk==cand or kk in cand or cand in kk)), None)
-        if not key: miss.append(title[:50]); continue
         num = L["name"].split("/")[-1]
+        if num in OVERRIDE:
+            key = OVERRIDE[num]
+        else:
+            # location token = first segment after the brand; handles both
+            # "Allo Health, <loc> - <tagline>" and "Allo Health - <city> | <tagline>".
+            t = re.sub(r"\ballo health\b", "", title, flags=re.I)
+            parts = [p.strip().lower() for p in re.split(r"[,\-–|]", t) if p.strip()]
+            if not parts: continue
+            cand = parts[0]
+            key = loc_by_clinic.get(cand) or city_single.get(cand) \
+                  or next((v for kk,v in loc_by_clinic.items() if kk and (kk==cand or kk in cand or cand in kk)), None)
+            if not key: miss.append(title[:50]); continue
         try:
             p = perf(num, at)
         except Exception as e:
