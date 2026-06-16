@@ -27,8 +27,9 @@ def main():
     rows = rs(f"""SELECT TO_CHAR(DATE(week)::date-6,'YYYY-MM-DD') wk, {CH_CASE} ch,
       COUNT(*) leads, COUNT(call_booking_ts) booked
       FROM production.public.main_source_wise_leads WHERE week>='2026-03-16' GROUP BY 1,2;""")
-    weeks = sorted({r[0] for r in rows})                       # oldest-first
-    weeks = [w for w in weeks if w<='2026-06-01']              # drop the current partial week
+    weeks = sorted({r[0] for r in rows})                       # oldest-first (Mondays)
+    _today = datetime.date.today()                              # keep only FULLY-COMPLETE weeks (week-ending Sunday already past)
+    weeks = [w for w in weeks if datetime.date.fromisoformat(w)+datetime.timedelta(days=6) < _today]  # dynamic — never goes stale like the old hardcoded cutoff
     weeks = weeks[-12:]
     idx = {w:i for i,w in enumerate(weeks)}
     CHANS = ['google_ad','gmb','organic','meta','practo','justdial','others']
