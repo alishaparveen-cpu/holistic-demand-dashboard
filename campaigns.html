@@ -225,8 +225,9 @@ text-align:right;padding:9px 8px;border-bottom:1.5px solid var(--line);backgroun
 
 <section id="view-search">
   <div style="margin-bottom:10px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-    <input id="campSearch" list="campList" placeholder="Type a campaign name…" autocomplete="off"
-      style="font-family:Inter;font-size:14px;font-weight:600;padding:9px 14px;border:1.5px solid var(--line);border-radius:9px;min-width:320px;color:var(--ink);background:#fff">
+    <select class="sel" id="campSelect" style="min-width:300px;font-weight:600"><option value="">— Select a campaign —</option></select>
+    <input id="campSearch" list="campList" placeholder="…or type to search" autocomplete="off"
+      style="font-family:Inter;font-size:14px;font-weight:600;padding:9px 14px;border:1.5px solid var(--line);border-radius:9px;min-width:240px;color:var(--ink);background:#fff">
     <datalist id="campList"></datalist>
     <span class="lbl" id="searchCount" style="color:var(--muted)"></span>
   </div>
@@ -235,7 +236,13 @@ text-align:right;padding:9px 8px;border-bottom:1.5px solid var(--line);backgroun
     <label class="lbl">Tier <select class="sel" id="fTierSel" style="margin-left:4px"><option value="all">All</option><option value="T1">Tier 1</option><option value="T2">Tier 2</option></select></label>
     <label class="lbl">City <select class="sel" id="fCitySel" style="margin-left:4px"><option value="all">All</option></select></label>
     <label class="lbl">Category <select class="sel" id="fCatSel" style="margin-left:4px"><option value="all">All</option><option value="SH">Sexual Health</option><option value="STD">STD/STI</option><option value="MH">Mental Health</option><option value="ED">ED</option><option value="Brand">Brand</option></select></label>
-    <label class="lbl">Show only <select class="sel" id="fAdvSel" style="margin-left:4px"><option value="all">—</option><option value="conv_drop">Conversions dropped</option><option value="spend_drop">Spend dropped</option><option value="is_drop">Impr. Share dropped</option><option value="rank_up">Losing more to rank</option><option value="cpc_up">CPC rising</option><option value="low_qs">Low QS (&lt;5)</option><option value="high_budlost">Budget-capped</option></select></label>
+    <label class="lbl">Show only <select class="sel" id="fAdvSel" style="margin-left:4px"><option value="all">—</option>
+      <option value="conv_drop">Conversions ▼ dropped</option><option value="conv_grow">Conversions ▲ grew</option>
+      <option value="spend_drop">Spend ▼ dropped</option><option value="spend_grow">Spend ▲ grew</option>
+      <option value="is_drop">Impr. Share ▼ dropped</option><option value="is_grow">Impr. Share ▲ grew</option>
+      <option value="cpc_up">CPC ▲ rose</option><option value="cpc_down">CPC ▼ fell</option>
+      <option value="loc_drop">Loc % ▼ dropped</option><option value="rank_up">Losing more to rank</option>
+      <option value="lp_high">High LP drag</option><option value="low_qs">Low QS (&lt;5)</option><option value="high_budlost">Budget-capped</option></select></label>
     <button id="fClear" class="editbtn" style="display:none">✕ clear</button>
   </div>
   <div id="searchResult"></div>
@@ -831,10 +838,18 @@ function renderSearch(){
   const dl=document.getElementById('campList');
   if(dl && !dl.children.length){
     dl.innerHTML=CAMP.map(c=>`<option value="${(c.n||'').replace(/"/g,'&quot;')}"></option>`).join('');
-    document.getElementById('searchCount').textContent=CAMP.length+' campaigns · type to search';
+    document.getElementById('searchCount').textContent=CAMP.length+' campaigns';
     const cities=[...new Set(CAMP.map(c=>parseCamp(c.n).city).filter(Boolean))].sort();
     const cs=document.getElementById('fCitySel'); if(cs&&cs.children.length<=1) cs.innerHTML='<option value="all">All</option>'+cities.map(c=>`<option value="${c}">${c}</option>`).join('');
+    // grouped campaign <select>, sorted by spend within each group
+    const sel=document.getElementById('campSelect');
+    if(sel&&sel.children.length<=1){
+      const groups={}; CAMP.forEach((c,i)=>{const gl=(GMAP[c.g]||{}).label||'Other';(groups[gl]=groups[gl]||[]).push(i);});
+      sel.innerHTML='<option value="">— Select a campaign —</option>'+Object.keys(groups).sort().map(gl=>
+        '<optgroup label="'+gl+'">'+groups[gl].sort((a,b)=>(CAMP[b].sp||0)-(CAMP[a].sp||0)).map(i=>`<option value="${i}">${CAMP[i].n}</option>`).join('')+'</optgroup>').join('');
+    }
   }
+  {const sel=document.getElementById('campSelect'); if(sel&&!(state.sfTier!=='all'||state.sfCity!=='all'||state.sfCat!=='all'||(state.sfAdv&&state.sfAdv!=='all'))) sel.value=(state.searchCi!=null?String(state.searchCi):'');}
   const anyFilter=state.sfTier!=='all'||state.sfCity!=='all'||state.sfCat!=='all';
   const advOn=state.sfAdv&&state.sfAdv!=='all';
   document.getElementById('fClear').style.display=(anyFilter||advOn)?'inline-block':'none';
@@ -872,19 +887,27 @@ function renderSearch(){
     card('Ad-rel drag',c.ar,pct,true),
     card('LP drag',c.lp,pct,true),
   ].filter(Boolean).join('')+'</div>'
-   +'<div style="font-size:11px;color:var(--muted);margin-top:10px">Click any chart to zoom the full weekly trend. Clicks = spend ÷ CPC. Leads / bookings aren’t per-campaign — combine by city or category to see the lead→booking funnel.</div>';
+   +'<div style="font-size:11px;color:var(--muted);margin-top:10px">Click any chart to zoom the full weekly trend. Clicks = spend ÷ CPC. <b>Latest week’s conversions are provisional</b> — Google backfills conversions for up to 7 days, so a recent 0 often fills in later. QS / ad-rel / LP / lost-budget are current snapshots (Google gives no weekly history, so those lines are flat). Leads / bookings aren’t per-campaign — combine by city or category to see the lead→booking funnel.</div>';
   res.innerHTML=h;
 }
 // Advanced "show only" filters — surface campaigns matching a condition this week
 function renderDroppers(){
   ZREG=[]; const res=document.getElementById('searchResult'); const cond=state.sfAdv;
   const drop=(a)=>(a&&a[0]!=null&&a[1]!=null)?a[0]-a[1]:null;   // this wk − last wk
+  const dd=(a,sign)=>{const d=drop(a);return (d!=null&&((sign<0&&d<0)||(sign>0&&d>0)))?Math.abs(d):null;};
+  const arrow=(a,inv)=>{const d=drop(a);if(d==null)return '';const up=d>0;const good=inv?!up:up;return `<b style="color:${good?'#1F6F5C':'#C0503F'}">${up?'▲':'▼'}${Math.abs(+d.toFixed(2))}</b>`;};
   const DEFS={
-    conv_drop:{lab:'Conversions dropped (this week)',pick:c=>{const d=drop(c.v);return d!=null&&d<0?-d:null;},show:c=>`${c.v[1]}→${c.v[0]} conv`,arr:c=>c.v,fmt:v=>(+v).toLocaleString('en-IN')},
-    spend_drop:{lab:'Spend dropped',pick:c=>{const d=drop(c.spendH);return d!=null&&d<0?-d:null;},show:c=>rupee(c.spendH[1])+'→'+rupee(c.spendH[0]),arr:c=>c.spendH,fmt:rupee},
-    is_drop:{lab:'Impr. Share dropped',pick:c=>{const d=drop(c.is);return d!=null&&d<0?-d:null;},show:c=>c.is[1]+'%→'+c.is[0]+'%',arr:c=>c.is,fmt:pct},
-    rank_up:{lab:'Losing more to rank',pick:c=>{const d=drop(c.rl);return d!=null&&d>0?d:null;},show:c=>'lost-rank '+c.rl[1]+'%→'+c.rl[0]+'%',arr:c=>c.rl,fmt:pct},
-    cpc_up:{lab:'CPC rising',pick:c=>{const d=drop(c.cpc);return d!=null&&d>0?d:null;},show:c=>rupee(c.cpc[1])+'→'+rupee(c.cpc[0]),arr:c=>c.cpc,fmt:rupee},
+    conv_drop:{lab:'Conversions dropped (WoW)',pick:c=>dd(c.v,-1),show:c=>`${c.v[1]}→${c.v[0]} ${arrow(c.v,0)}`,arr:c=>c.v,fmt:v=>(+v).toLocaleString('en-IN')},
+    conv_grow:{lab:'Conversions grew (WoW)',pick:c=>dd(c.v,1),show:c=>`${c.v[1]}→${c.v[0]} ${arrow(c.v,0)}`,arr:c=>c.v,fmt:v=>(+v).toLocaleString('en-IN')},
+    spend_drop:{lab:'Spend dropped',pick:c=>dd(c.spendH,-1),show:c=>rupee(c.spendH[1])+'→'+rupee(c.spendH[0])+' '+arrow(c.spendH,0),arr:c=>c.spendH,fmt:rupee},
+    spend_grow:{lab:'Spend grew',pick:c=>dd(c.spendH,1),show:c=>rupee(c.spendH[1])+'→'+rupee(c.spendH[0])+' '+arrow(c.spendH,0),arr:c=>c.spendH,fmt:rupee},
+    is_drop:{lab:'Impr. Share dropped',pick:c=>dd(c.is,-1),show:c=>c.is[1]+'%→'+c.is[0]+'% '+arrow(c.is,0),arr:c=>c.is,fmt:pct},
+    is_grow:{lab:'Impr. Share grew',pick:c=>dd(c.is,1),show:c=>c.is[1]+'%→'+c.is[0]+'% '+arrow(c.is,0),arr:c=>c.is,fmt:pct},
+    cpc_up:{lab:'CPC rose',pick:c=>dd(c.cpc,1),show:c=>rupee(c.cpc[1])+'→'+rupee(c.cpc[0])+' '+arrow(c.cpc,1),arr:c=>c.cpc,fmt:rupee},
+    cpc_down:{lab:'CPC fell',pick:c=>dd(c.cpc,-1),show:c=>rupee(c.cpc[1])+'→'+rupee(c.cpc[0])+' '+arrow(c.cpc,1),arr:c=>c.cpc,fmt:rupee},
+    loc_drop:{lab:'Loc % dropped (local campaigns)',pick:c=>c.dt==='loc'?dd(c.d,-1):null,show:c=>c.d[1]+'%→'+c.d[0]+'% '+arrow(c.d,0),arr:c=>c.d,fmt:pct},
+    rank_up:{lab:'Losing more to rank',pick:c=>dd(c.rl,1),show:c=>'lost-rank '+c.rl[1]+'%→'+c.rl[0]+'% '+arrow(c.rl,1),arr:c=>c.rl,fmt:pct},
+    lp_high:{lab:'High LP drag (≥40%)',pick:c=>(c.lp&&c.lp[0]!=null&&c.lp[0]>=40)?c.lp[0]:null,show:c=>'LP drag '+c.lp[0]+'%',arr:c=>c.lp,fmt:pct},
     low_qs:{lab:'Low Quality Score (<5)',pick:c=>(c.qs&&c.qs[0]!=null&&c.qs[0]<5&&c.sp>500)?(5-c.qs[0]):null,show:c=>'QS '+c.qs[0]+'/10',arr:c=>c.qs,fmt:v=>v+'/10'},
     high_budlost:{lab:'Budget-capped (lost-budget ≥40%)',pick:c=>(c.bl&&c.bl[0]!=null&&c.bl[0]>=40)?c.bl[0]:null,show:c=>'lost-budget '+c.bl[0]+'%',arr:c=>c.bl,fmt:pct},
   };
@@ -957,6 +980,8 @@ function renderCombined(){
 document.getElementById('tabs').onclick=e=>{if(e.target.dataset.v)setView(e.target.dataset.v);};
 function srResetFilters(){state.sfTier='all';state.sfCity='all';state.sfCat='all';state.sfAdv='all';
   ['fTierSel','fCitySel','fCatSel','fAdvSel'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='all';});}
+document.getElementById('campSelect').onchange=e=>{const ci=e.target.value; if(ci==='')return;
+  srResetFilters(); document.getElementById('campSearch').value=''; state.searchCi=+ci; renderSearch();};
 document.getElementById('campSearch').addEventListener('input',e=>{
   const v=e.target.value.trim().toLowerCase(); if(!v)return;
   srResetFilters();                                                    // typing a name clears combine/advanced filters
