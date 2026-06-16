@@ -235,6 +235,7 @@ text-align:right;padding:9px 8px;border-bottom:1.5px solid var(--line);backgroun
     <label class="lbl">Tier <select class="sel" id="fTierSel" style="margin-left:4px"><option value="all">All</option><option value="T1">Tier 1</option><option value="T2">Tier 2</option></select></label>
     <label class="lbl">City <select class="sel" id="fCitySel" style="margin-left:4px"><option value="all">All</option></select></label>
     <label class="lbl">Category <select class="sel" id="fCatSel" style="margin-left:4px"><option value="all">All</option><option value="SH">Sexual Health</option><option value="STD">STD/STI</option><option value="MH">Mental Health</option><option value="ED">ED</option><option value="Brand">Brand</option></select></label>
+    <label class="lbl">Show only <select class="sel" id="fAdvSel" style="margin-left:4px"><option value="all">—</option><option value="conv_drop">Conversions dropped</option><option value="spend_drop">Spend dropped</option><option value="is_drop">Impr. Share dropped</option><option value="rank_up">Losing more to rank</option><option value="cpc_up">CPC rising</option><option value="low_qs">Low QS (&lt;5)</option><option value="high_budlost">Budget-capped</option></select></label>
     <button id="fClear" class="editbtn" style="display:none">✕ clear</button>
   </div>
   <div id="searchResult"></div>
@@ -357,7 +358,7 @@ function parseCamp(n){const u=' '+n.toUpperCase().replace(/[_]/g,' ')+' ';
   let cat=/ STD | STI /.test(u)?'STD':/ SH | SHE | SEXUAL /.test(u)?'SH':/ MH | MENTAL /.test(u)?'MH':/ ED /.test(u)?'ED':/ BRAND /.test(u)?'Brand':null;
   if(!tier&&city) tier=T1_CITIES.includes(city)?'T1':'T2';
   return {tier,city,cat};}
-const state={view:'search',searchCi:null,sfTier:'all',sfCity:'all',sfCat:'all',week:0,cmpTo:0,cmpFrom:1,fCat:'all',fCity:'all',fTier:'all',scoreBy:'group',
+const state={view:'search',searchCi:null,sfTier:'all',sfCity:'all',sfCat:'all',sfAdv:'all',week:0,cmpTo:0,cmpFrom:1,fCat:'all',fCity:'all',fTier:'all',scoreBy:'group',
   funCamps:[0],cmpCamps:[0,1,2,3,4],activeMetrics:['is','qs','cpc','rankLost'],selMetric:'is',trendMetric:'is',
   conds:[{key:'is',dir:'drop',mag:0}],matchMode:'all'};
 const short=n=>n.replace(/_/g,' ');
@@ -806,37 +807,58 @@ function reRender(){const v=state.view;
   else if(v==='funnel')renderFunnel();else if(v==='compare')renderCompare();
   else if(v==='trends')renderTrends();else if(v==='filter')renderFilter();
   else if(v==='actions')renderActions();else renderScore();}
-function srCard(label,arr,fmt,inv,color,oldestFirst){
+let ZREG=[];   // zoom registry for search cards (so every chart is click-to-zoom)
+function srCard(label,arr,fmt,inv,color,oldestFirst,labels){
   if(!arr||!arr.some(x=>x!=null)) return '';
   const cur=oldestFirst?arr[arr.length-1]:arr[0], prev=oldestFirst?arr[arr.length-2]:arr[1];
   const sp=oldestFirst?arr:arr.slice().reverse();
-  return `<div style="background:#fff;border:1px solid var(--line);border-radius:11px;padding:12px 14px">
-    <div style="font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted)">${label}</div>
+  const labs=labels&&labels.length===sp.length?labels:sp.map((_,i)=>'w'+(sp.length-i));
+  const zi=ZREG.push({label,series:sp,labels:labs,fmt,color:color||'#2E7D5B'})-1;
+  return `<div data-z="${zi}" title="click to zoom" style="background:#fff;border:1px solid var(--line);border-radius:11px;padding:12px 14px;cursor:zoom-in">
+    <div style="font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted)">${label}<span style="float:right;opacity:.45">⤢</span></div>
     <div style="font-size:21px;font-weight:700;margin:1px 0 5px;line-height:1.1">${cur!=null?fmt(cur):'—'} ${deltaSpan(cur,prev,inv)}</div>
     ${spark(sp,inv,250,46,color||'#2E7D5B')}</div>`;
 }
+function funnelStrip(stages){
+  return '<div style="display:flex;flex-wrap:wrap;margin-bottom:16px;border:1px solid var(--line);border-radius:11px;overflow:hidden;background:#fff">'+
+   stages.map((s,i)=>`<div style="flex:1;min-width:120px;padding:12px 15px;${i?'border-left:1px solid var(--line)':''}">
+     <div style="font-family:'JetBrains Mono';font-size:9px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)">${s.lab}</div>
+     <div style="font-size:23px;font-weight:700;line-height:1.05;margin-top:2px">${s.val}</div>
+     ${s.sub?`<div style="font-size:10px;color:var(--muted);margin-top:3px">${s.sub}</div>`:''}</div>`).join('')+'</div>';
+}
 function renderSearch(){
+  ZREG=[];
   const dl=document.getElementById('campList');
   if(dl && !dl.children.length){
     dl.innerHTML=CAMP.map(c=>`<option value="${(c.n||'').replace(/"/g,'&quot;')}"></option>`).join('');
     document.getElementById('searchCount').textContent=CAMP.length+' campaigns · type to search';
-    // populate city filter from cities present in campaign names
     const cities=[...new Set(CAMP.map(c=>parseCamp(c.n).city).filter(Boolean))].sort();
     const cs=document.getElementById('fCitySel'); if(cs&&cs.children.length<=1) cs.innerHTML='<option value="all">All</option>'+cities.map(c=>`<option value="${c}">${c}</option>`).join('');
   }
   const anyFilter=state.sfTier!=='all'||state.sfCity!=='all'||state.sfCat!=='all';
-  document.getElementById('fClear').style.display=anyFilter?'inline-block':'none';
+  const advOn=state.sfAdv&&state.sfAdv!=='all';
+  document.getElementById('fClear').style.display=(anyFilter||advOn)?'inline-block':'none';
+  if(advOn){ renderDroppers(); return; }
   if(anyFilter){ renderCombined(); return; }
   const inp=document.getElementById('campSearch'); const ci=state.searchCi;
   const res=document.getElementById('searchResult');
-  if(ci==null||!CAMP[ci]){ res.innerHTML='<div style="color:var(--muted);padding:34px 4px">Type a campaign name above, or combine campaigns by tier / city / category below.</div>'; return; }
+  if(ci==null||!CAMP[ci]){ res.innerHTML='<div style="color:var(--muted);padding:34px 4px">Type a campaign name above, combine by tier / city / category, or use “Show only” to find droppers.</div>'; return; }
   const c=CAMP[ci]; if(inp && inp.value!==c.n) inp.value=c.n;
   const g=GMAP[c.g]||{color:'#2E7D5B',label:''};
-  const card=(label,arr,fmt,inv)=>srCard(label,arr,fmt,inv,g.color,false);
+  const labs=(c.weeks_iso&&c.weeks_iso.length?c.weeks_iso:WKISO||[]).slice().reverse().map(wkRange);
+  const card=(label,arr,fmt,inv)=>srCard(label,arr,fmt,inv,g.color,false,labs);
   const clicks=(c.spendH||[]).map((s,i)=>(c.cpc&&c.cpc[i])?Math.round(s/c.cpc[i]):null);
   const dtOut=c.dt==='loc'?card('Loc %',c.d,pct,false):c.dt==='cpb'?card('CPB',c.d,rupee,true):card('Cost / conversion',c.d,rupee,true);
   let h=`<div style="margin-bottom:14px"><h2 style="margin:0;font-size:19px">${c.n}</h2>
     <div style="font-size:12px;color:var(--muted);margin-top:3px"><span class="cdot" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${g.color};margin-right:5px"></span>${g.label} · budget ₹${(c.bud||0).toLocaleString('en-IN')}/day · ${c.nweeks||(WKISO||[]).length} weeks${c.sug?' · <b style="color:var(--amber)">'+c.sug+'</b>':''}</div></div>`;
+  // funnel strip (this week): Spend → Clicks → Conversions
+  const cv=(c.v&&c.v[0]!=null)?c.v[0]:null, ck=clicks[0];
+  h+=funnelStrip([
+    {lab:'Spend (this wk)',val:c.spendH&&c.spendH[0]!=null?rupee(c.spendH[0]):'—'},
+    {lab:'Clicks',val:ck!=null?ck.toLocaleString('en-IN'):'—',sub:c.cpc&&c.cpc[0]?'CPC '+rupee(c.cpc[0]):''},
+    {lab:volLabel(c.dt),val:cv!=null?cv.toLocaleString('en-IN'):'—',sub:(cv!=null&&ck)?'conv rate '+(cv/ck*100).toFixed(1)+'%':''},
+    {lab:'Cost / conv',val:(c.d&&c.d[0]!=null)?rupee(c.d[0]):'—'},
+  ]);
   h+='<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(255px,1fr));gap:12px">'+[
     card('Spend',c.spendH,rupee,false),
     card('Clicks',clicks,v=>(+v).toLocaleString('en-IN'),false),
@@ -850,11 +872,41 @@ function renderSearch(){
     card('Ad-rel drag',c.ar,pct,true),
     card('LP drag',c.lp,pct,true),
   ].filter(Boolean).join('')+'</div>'
-   +'<div style="font-size:11px;color:var(--muted);margin-top:10px">Clicks = spend ÷ CPC. Leads / bookings aren’t attributed to a single campaign — combine by city or category below to see the full lead→booking funnel.</div>';
+   +'<div style="font-size:11px;color:var(--muted);margin-top:10px">Click any chart to zoom the full weekly trend. Clicks = spend ÷ CPC. Leads / bookings aren’t per-campaign — combine by city or category to see the lead→booking funnel.</div>';
+  res.innerHTML=h;
+}
+// Advanced "show only" filters — surface campaigns matching a condition this week
+function renderDroppers(){
+  ZREG=[]; const res=document.getElementById('searchResult'); const cond=state.sfAdv;
+  const drop=(a)=>(a&&a[0]!=null&&a[1]!=null)?a[0]-a[1]:null;   // this wk − last wk
+  const DEFS={
+    conv_drop:{lab:'Conversions dropped (this week)',pick:c=>{const d=drop(c.v);return d!=null&&d<0?-d:null;},show:c=>`${c.v[1]}→${c.v[0]} conv`,arr:c=>c.v,fmt:v=>(+v).toLocaleString('en-IN')},
+    spend_drop:{lab:'Spend dropped',pick:c=>{const d=drop(c.spendH);return d!=null&&d<0?-d:null;},show:c=>rupee(c.spendH[1])+'→'+rupee(c.spendH[0]),arr:c=>c.spendH,fmt:rupee},
+    is_drop:{lab:'Impr. Share dropped',pick:c=>{const d=drop(c.is);return d!=null&&d<0?-d:null;},show:c=>c.is[1]+'%→'+c.is[0]+'%',arr:c=>c.is,fmt:pct},
+    rank_up:{lab:'Losing more to rank',pick:c=>{const d=drop(c.rl);return d!=null&&d>0?d:null;},show:c=>'lost-rank '+c.rl[1]+'%→'+c.rl[0]+'%',arr:c=>c.rl,fmt:pct},
+    cpc_up:{lab:'CPC rising',pick:c=>{const d=drop(c.cpc);return d!=null&&d>0?d:null;},show:c=>rupee(c.cpc[1])+'→'+rupee(c.cpc[0]),arr:c=>c.cpc,fmt:rupee},
+    low_qs:{lab:'Low Quality Score (<5)',pick:c=>(c.qs&&c.qs[0]!=null&&c.qs[0]<5&&c.sp>500)?(5-c.qs[0]):null,show:c=>'QS '+c.qs[0]+'/10',arr:c=>c.qs,fmt:v=>v+'/10'},
+    high_budlost:{lab:'Budget-capped (lost-budget ≥40%)',pick:c=>(c.bl&&c.bl[0]!=null&&c.bl[0]>=40)?c.bl[0]:null,show:c=>'lost-budget '+c.bl[0]+'%',arr:c=>c.bl,fmt:pct},
+  };
+  const D=DEFS[cond]; if(!D){res.innerHTML='';return;}
+  const rows=CAMP.map((c,i)=>({i,c,score:D.pick(c)})).filter(r=>r.score!=null&&r.c.sp>0).sort((a,b)=>b.score-a.score);
+  let h=`<div style="margin-bottom:12px"><h2 style="margin:0;font-size:19px">${D.lab}</h2>
+    <div style="font-size:12px;color:var(--muted);margin-top:3px">${rows.length} campaigns · this week vs last · click a row to open it</div></div>`;
+  if(!rows.length){ res.innerHTML=h+'<div style="color:var(--muted);padding:16px 2px">None this week.</div>'; return; }
+  const labs=(WKISO||[]).slice().reverse().map(wkRange);
+  h+='<div style="display:flex;flex-direction:column;gap:6px">'+rows.slice(0,30).map(r=>{
+    const g=GMAP[r.c.g]||{color:'#2E7D5B'};
+    return `<div data-ci="${r.i}" style="display:flex;align-items:center;gap:12px;background:#fff;border:1px solid var(--line);border-radius:9px;padding:9px 13px;cursor:pointer">
+      <span style="flex:1;font-weight:600;font-size:13px"><span class="cdot" style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${g.color};margin-right:6px"></span>${r.c.n}</span>
+      <span style="font-family:'JetBrains Mono';font-size:11px;color:var(--ink-2)">${D.show(r.c)}</span>
+      <span>${spark(D.arr(r.c).slice().reverse(),false,120,30,g.color)}</span></div>`;
+  }).join('')+'</div>';
   res.innerHTML=h;
 }
 function renderCombined(){
+  ZREG=[];
   const res=document.getElementById('searchResult'); const C='#1F6F5C';
+  const f2labs=GAF2?GAF2.weeks.map(wkRange):null;   // funnel2 weeks oldest-first
   const {sfTier,sfCity,sfCat}=state;
   const match=CAMP.filter(c=>{const p=parseCamp(c.n);return (sfTier==='all'||p.tier===sfTier)&&(sfCity==='all'||p.city===sfCity)&&(sfCat==='all'||p.cat===sfCat);});
   const active=[sfTier,sfCity,sfCat].filter(x=>x!=='all');
@@ -868,13 +920,20 @@ function renderCombined(){
   }
   let h=`<div style="margin-bottom:14px"><h2 style="margin:0;font-size:19px">Combined · ${active.join(' + ')}</h2>
     <div style="font-size:12px;color:var(--muted);margin-top:3px">${match.length} campaign${match.length===1?'':'s'} matched${basis?' · '+basis:' · ad metrics only'}</div></div>`;
-  let cards;
+  const N=v=>(+v).toLocaleString('en-IN'); let cards, strip='';
   if(src){
+    const li=src.cost.length-1;
     const cpc=src.clicks.map((cl,i)=>cl?src.cost[i]/cl:null), cpl=src.leads.map((l,i)=>l?src.cost[i]/l:null), cpb=src.booked.map((b,i)=>b?src.cost[i]/b:null);
-    const N=v=>(+v).toLocaleString('en-IN');
-    cards=[srCard('Spend',src.cost,rupee,false,C,true),srCard('Impressions',src.impr,N,false,C,true),srCard('Clicks',src.clicks,N,false,C,true),
-           srCard('Conversions',src.conv,N,false,C,true),srCard('Leads',src.leads,N,false,C,true),srCard('Booked',src.booked,N,false,C,true),
-           srCard('CPC',cpc,rupee,true,C,true),srCard('CPL',cpl,rupee,true,C,true),srCard('CPB',cpb,rupee,true,C,true)];
+    strip=funnelStrip([
+      {lab:'Impressions',val:N(src.impr[li])},
+      {lab:'Clicks',val:N(src.clicks[li]),sub:src.impr[li]?'CTR '+(src.clicks[li]/src.impr[li]*100).toFixed(1)+'%':''},
+      {lab:'Conversions',val:N(src.conv[li])},
+      {lab:'Leads',val:N(src.leads[li])},
+      {lab:'Booked',val:N(src.booked[li]),sub:src.leads[li]?'lead→book '+(src.booked[li]/src.leads[li]*100).toFixed(0)+'%':''},
+    ]);
+    cards=[srCard('Spend',src.cost,rupee,false,C,true,f2labs),srCard('Impressions',src.impr,N,false,C,true,f2labs),srCard('Clicks',src.clicks,N,false,C,true,f2labs),
+           srCard('Conversions',src.conv,N,false,C,true,f2labs),srCard('Leads',src.leads,N,false,C,true,f2labs),srCard('Booked',src.booked,N,false,C,true,f2labs),
+           srCard('CPC',cpc,rupee,true,C,true,f2labs),srCard('CPL',cpl,rupee,true,C,true,f2labs),srCard('CPB',cpb,rupee,true,C,true,f2labs)];
   } else {
     if(!match.length){res.innerHTML=h+'<div style="color:var(--muted);padding:20px 4px">No campaigns match these filters.</div>';return;}
     const NW=Math.max(0,...match.map(c=>(c.spendH||[]).length));
@@ -882,27 +941,38 @@ function renderCombined(){
     const spend=sum('spendH'),conv=sum('v');
     const clicks=Array.from({length:NW},(_,i)=>Math.round(match.reduce((a,c)=>a+((c.spendH&&c.cpc&&c.cpc[i])?c.spendH[i]/c.cpc[i]:0),0)));
     const cpc=spend.map((s,i)=>clicks[i]?+(s/clicks[i]).toFixed(2):null), cpa=spend.map((s,i)=>conv[i]?Math.round(s/conv[i]):null);
-    const N=v=>(+v).toLocaleString('en-IN');
-    cards=[srCard('Spend',spend,rupee,false,C,false),srCard('Clicks',clicks,N,false,C,false),srCard('Conversions',conv,N,false,C,false),
-           srCard('CPC',cpc,rupee,true,C,false),srCard('Cost / conversion',cpa,rupee,true,C,false)];
+    const clabs=(WKISO||[]).slice(0,NW).reverse().map(wkRange);
+    strip=funnelStrip([
+      {lab:'Spend (this wk)',val:spend[0]!=null?rupee(spend[0]):'—'},
+      {lab:'Clicks',val:N(clicks[0])},
+      {lab:'Conversions',val:N(conv[0]),sub:clicks[0]?'conv rate '+(conv[0]/clicks[0]*100).toFixed(1)+'%':''},
+    ]);
+    cards=[srCard('Spend',spend,rupee,false,C,false,clabs),srCard('Clicks',clicks,N,false,C,false,clabs),srCard('Conversions',conv,N,false,C,false,clabs),
+           srCard('CPC',cpc,rupee,true,C,false,clabs),srCard('Cost / conversion',cpa,rupee,true,C,false,clabs)];
     h=h.replace('ad metrics only','ad metrics only — pick a single city OR category for the full lead→booking funnel');
   }
-  h+='<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(255px,1fr));gap:12px">'+cards.filter(Boolean).join('')+'</div>';
+  h+=strip+'<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(255px,1fr));gap:12px">'+cards.filter(Boolean).join('')+'</div>';
   res.innerHTML=h;
 }
 document.getElementById('tabs').onclick=e=>{if(e.target.dataset.v)setView(e.target.dataset.v);};
+function srResetFilters(){state.sfTier='all';state.sfCity='all';state.sfCat='all';state.sfAdv='all';
+  ['fTierSel','fCitySel','fCatSel','fAdvSel'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='all';});}
 document.getElementById('campSearch').addEventListener('input',e=>{
   const v=e.target.value.trim().toLowerCase(); if(!v)return;
-  state.sfTier='all';state.sfCity='all';state.sfCat='all';            // typing a name clears combine filters
-  document.getElementById('fTierSel').value='all';document.getElementById('fCitySel').value='all';document.getElementById('fCatSel').value='all';
+  srResetFilters();                                                    // typing a name clears combine/advanced filters
   let ci=CAMP.findIndex(c=>(c.n||'').toLowerCase()===v);
   if(ci<0) ci=CAMP.findIndex(c=>(c.n||'').toLowerCase().includes(v));   // partial match while typing
   if(ci>=0 && ci!==state.searchCi){state.searchCi=ci;renderSearch();}
 });
 [['fTierSel','sfTier'],['fCitySel','sfCity'],['fCatSel','sfCat']].forEach(([id,key])=>{
-  document.getElementById(id).onchange=e=>{state[key]=e.target.value; document.getElementById('campSearch').value=''; renderSearch();};});
-document.getElementById('fClear').onclick=()=>{state.sfTier='all';state.sfCity='all';state.sfCat='all';
-  ['fTierSel','fCitySel','fCatSel'].forEach(id=>document.getElementById(id).value='all'); renderSearch();};
+  document.getElementById(id).onchange=e=>{state[key]=e.target.value; state.sfAdv='all'; document.getElementById('fAdvSel').value='all'; document.getElementById('campSearch').value=''; renderSearch();};});
+document.getElementById('fAdvSel').onchange=e=>{state.sfAdv=e.target.value; state.sfTier='all';state.sfCity='all';state.sfCat='all';
+  ['fTierSel','fCitySel','fCatSel'].forEach(id=>document.getElementById(id).value='all'); document.getElementById('campSearch').value=''; renderSearch();};
+document.getElementById('fClear').onclick=()=>{srResetFilters(); renderSearch();};
+document.getElementById('searchResult').addEventListener('click',e=>{
+  const zc=e.target.closest('[data-z]'); if(zc){const r=ZREG[+zc.dataset.z]; if(r) zoomShow(r.label,'by week (ending date)',r.series,r.labels,r.fmt,r.color); return;}
+  const rc=e.target.closest('[data-ci]'); if(rc){state.searchCi=+rc.dataset.ci; srResetFilters(); renderSearch();}
+});
 document.getElementById('weekSeg').onclick=e=>{if(!e.target.dataset.w)return;
   document.querySelectorAll('#weekSeg button').forEach(b=>b.classList.remove('on'));e.target.classList.add('on');
   state.week=+e.target.dataset.w;reRender();};
