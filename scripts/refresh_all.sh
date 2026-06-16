@@ -32,6 +32,7 @@ echo "════ Dashboard data refresh · $(date '+%Y-%m-%d %H:%M') ═══
 echo "── Google Ads (needs ~/.allo_google_ads.env) ──"
 step "GA city health (pull_ga_city)"      python3 scripts/pull_ga_city.py
 step "GA daily metrics (pull_ga_daily)"   python3 scripts/pull_ga_daily.py
+step "GA total spend (pull_ga_total_spend)" python3 scripts/pull_ga_total_spend.py   # native Google spend for efficiency
 step "GA gclid leads→bookings (SQL)"      bash -c 'cat scripts/fetch_ga_leads.sql | python3 scripts/redshift_query.py > /tmp/ga_leads.tsv'
 step "GA funnel build (build_ga_funnel)"  python3 scripts/build_ga_funnel.py
 

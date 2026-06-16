@@ -117,7 +117,24 @@ def main():
     # Consult Rev (L0 row 34, pure formula): online done × ₹199 + offline done × ₹499, in ₹ lakhs
     consultRev=[round((dnOn[i]*199+dnOff[i]*499)/1e5,2) for i in range(len(weeks))]
     newRev=[round(tpRev[i]+consultRev[i],2) for i in range(len(weeks))]   # row 35
-    spend=l0('spend'); sti=l0('sti'); vpct=l0('vpct')
+    # ── SPEND: Google is NATIVE (Google Ads API total × 1.18 GST — verified to match the L0 sheet to the
+    #    rupee, and it covers weeks the sheet doesn't). Meta + Practo still come from the sheet (no warehouse
+    #    source; Meta needs a token we don't have, Practo has no API). align() carries the sheet series. ──
+    def align(a):
+        o=[None]*len(weeks)
+        for w in weeks:
+            p=wk_label(w)
+            if p in L0P and p in [wk_label(x) for x in weeks]: o[idx[w]]=a[L0P.index(p)] if L0P.index(p)<len(a) else None
+        return o
+    L0D = L0['DIRECT']
+    _gmap = (lambda g: dict(zip(g['weeks'], g['net'])))(json.load(open(os.path.join(ROOT,'data_ga_total_spend.json'))))
+    google   = [round(_gmap[w]*1.18) if w in _gmap else None for w in weeks]      # GST-inclusive, full history
+    meta_sp  = align(L0D.get('meta',{}).get('spend',[]))                          # sheet (SyncWith→Meta)
+    practo_sp= align(L0D.get('practo',{}).get('spend',[]))                        # sheet (manual)
+    # NETWORK spend only where ALL three channels are present — else None ("—") rather than a misleading
+    # Google-only total. The Google CHANNEL card still gets full native history via DIRECT below.
+    spend    = [ (google[i]+meta_sp[i]+practo_sp[i]) if (google[i] is not None and meta_sp[i] is not None and practo_sp[i] is not None) else None for i in range(len(weeks)) ]
+    sti=l0('sti'); vpct=l0('vpct')
     _vl=l0('vleads'); vleads=[_vl[i] if _vl[i] is not None else leadsT[i] for i in range(len(weeks))]  # element-wise fallback to total leads ([None]*n is truthy, so `or leadsT` never fired)
     roas=[round(newRev[i]*1e5/spend[i]*100,1) if spend[i] else None for i in range(len(weeks))]  # row 36 (% form, matches L0)
     aov=[round(tpRev[i]*1e5/tp[i]) if tp[i] else None for i in range(len(weeks))]
@@ -137,24 +154,18 @@ def main():
     for k in ['gmbgoogle','gsearch','gmb','organic','meta','practo']:
         CONTR[k]={'lead':pctOf(lead.get(k,[0]*len(weeks)),leadsT),'book':pctOf(chBk.get(k,[0]*len(weeks)),bookingsT),
                   'done':pctOf(chDn.get(k,[0]*len(weeks)),doneT),'spend':[0]*len(weeks)}
-    # Google spend share from data_marketing (approx); Meta/Practo flagged 0 (need source)
     plabels=[wk_label(w) for w in weeks]
-    # per-channel spend/cost (Google from Redshift-via-sheet, Meta from SyncWith/FB sheet, Practo from Practo sheet)
-    # carried from the L0 build aligned to RS weeks — these are external-platform spends, not in the warehouse.
-    L0D=json.load(open(os.path.join(ROOT,'data_efficiency.json')))['weekly']['DIRECT']
-    def align(a):
-        o=[None]*len(weeks)
-        for w in weeks:
-            p=wk_label(w)
-            if p and p in L0P and p in [wk_label(x) for x in weeks]: o[idx[w]]=a[L0P.index(p)] if L0P.index(p)<len(a) else None
-        return o
+    # per-channel spend: Google is NATIVE (full history); Meta/Practo carried from the sheet (L0D/align above).
     DIRECT={ch:{m:align(v) for m,v in d.items()} for ch,d in L0D.items()}
+    for gk in ('gsearch','gmbgoogle'):                         # override Google spend with the native series
+        DIRECT.setdefault(gk,{})['spend']=list(google)
+    DIRECT.setdefault('gmb',{})['spend']=[0]*len(weeks)        # GMB Maps = organic, no paid spend
     # spend SHARE per channel = channel spend ÷ network spend (×100). From DIRECT (external-platform spend)
     # so the scorecard's "Spend %" column works on the Redshift build too, and Meta/Practo split out.
     for k in CONTR:
         dsp=DIRECT.get(k,{}).get('spend')
         CONTR[k]['spend']=[ (round(dsp[i]/spend[i]*100) if (dsp and i<len(dsp) and dsp[i] and spend[i]) else 0) for i in range(len(weeks)) ]
-    out={'_meta':{'source':'Redshift-native funnel + revenue. Leads/booked: main_source_wise_leads. Bookings/done: data.json gross. Revenue (1st TP Rev): allo_billing.invoices status=paid over COMPLETED screening calls, split offline/online; Consult Rev = done_on×199+done_off×499; New Rev = TP+Consult; RoAS/AOV/RPC derived. Spend: Google=Redshift, Meta=SyncWith/FB sheet, Practo=Practo sheet (external platforms, carried from L0). Verified-lead% carried from L0.','weekly':plabels},
+    out={'_meta':{'source':'Redshift-native funnel + revenue. Leads/booked: main_source_wise_leads. Bookings/done: data.json gross. Revenue (1st TP Rev): allo_billing.invoices status=paid over COMPLETED screening calls, split offline/online; Consult Rev = done_on×199+done_off×499; New Rev = TP+Consult; RoAS/AOV/RPC derived. Spend: Google=NATIVE Google Ads API (total cost ×1.18 GST — matches L0 sheet exactly, full history); Meta=SyncWith/FB sheet, Practo=Practo sheet (no warehouse/API source). Network spend/CPL/CPB/RoAS are null for weeks before the sheet window (Meta/Practo missing) to avoid Google-only distortion; the Google channel card has full history. Verified-lead% carried from L0.','weekly':plabels},
          'weekly':{'periods':plabels,'ALL':ALL,'CONTR':CONTR,'DIRECT':DIRECT},
          'monthly':json.load(open(os.path.join(ROOT,'data_efficiency.json')))['monthly']}
     json.dump(out, open(os.path.join(ROOT,'data_efficiency_rs.json'),'w'), separators=(',',':'))
