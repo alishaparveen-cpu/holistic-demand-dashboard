@@ -238,7 +238,7 @@ text-align:right;padding:9px 8px;border-bottom:1.5px solid var(--line);backgroun
     <label class="lbl">Category <select class="sel" id="fCatSel" style="margin-left:4px"><option value="all">All</option><option value="SH">Sexual Health</option><option value="STD">STD/STI</option><option value="MH">Mental Health</option><option value="ED">ED</option><option value="Brand">Brand</option></select></label>
     <label class="lbl">Find <select class="sel" id="fMetric" style="margin-left:4px">
       <option value="">— metric —</option>
-      <option value="v">Conversions</option><option value="leads">Leads (UTM)</option><option value="booked">Bookings (UTM)</option><option value="spendH">Spend</option><option value="clicks">Clicks</option>
+      <option value="v">Conversions</option><option value="leads">Leads (UTM)</option><option value="booked">Bookings (UTM)</option><option value="done">Done (UTM)</option><option value="spendH">Spend</option><option value="clicks">Clicks</option>
       <option value="cpc">CPC</option><option value="is">Impr. Share</option><option value="cpp">Cost / conv</option>
       <option value="qs">Quality Score</option><option value="bl">Lost-budget %</option><option value="rl">Lost-rank %</option>
       <option value="ar">Ad-rel drag %</option><option value="lp">LP drag %</option><option value="loc">Loc % (local)</option></select></label>
@@ -872,6 +872,7 @@ function renderSearch(){
     card(volLabel(c.dt),c.v,v=>(+v).toLocaleString('en-IN'),false),
     card('Leads (UTM)',c.leads,v=>(+v).toLocaleString('en-IN'),false),
     card('Bookings (UTM)',c.booked,v=>(+v).toLocaleString('en-IN'),false),
+    card('Done (UTM)',c.done,v=>(+v).toLocaleString('en-IN'),false),
     dtOut,
     card('CPC',c.cpc,rupee,true),
     card('Impr. Share',c.is,pct,false),
@@ -892,6 +893,7 @@ function renderDroppers(){
     v:{lab:'Conversions',arr:c=>c.v,fmt:N,inv:false},
     leads:{lab:'Leads (UTM)',arr:c=>c.leads,fmt:N,inv:false},
     booked:{lab:'Bookings (UTM)',arr:c=>c.booked,fmt:N,inv:false},
+    done:{lab:'Done (UTM)',arr:c=>c.done,fmt:N,inv:false},
     spendH:{lab:'Spend',arr:c=>c.spendH,fmt:rupee,inv:false},
     clicks:{lab:'Clicks',arr:c=>(c.spendH||[]).map((s,i)=>(c.cpc&&c.cpc[i])?Math.round(s/c.cpc[i]):null),fmt:N,inv:false},
     cpc:{lab:'CPC',arr:c=>c.cpc,fmt:rupee,inv:true},
@@ -947,18 +949,19 @@ function renderCombined(){
     <div style="font-size:12px;color:var(--muted);margin-top:3px">${match.length} campaign${match.length===1?'':'s'} matched${basis?' · '+basis:' · ad metrics only'}</div></div>`;
   const N=v=>(+v).toLocaleString('en-IN'); let cards, strip='';
   if(src){
-    const li=src.cost.length-1;
-    const cpc=src.clicks.map((cl,i)=>cl?src.cost[i]/cl:null), cpl=src.leads.map((l,i)=>l?src.cost[i]/l:null), cpb=src.booked.map((b,i)=>b?src.cost[i]/b:null);
+    const li=src.cost.length-1, done=src.done||src.booked.map(()=>0);
+    const cpc=src.clicks.map((cl,i)=>cl?src.cost[i]/cl:null), cpl=src.leads.map((l,i)=>l?src.cost[i]/l:null), cpb=src.booked.map((b,i)=>b?src.cost[i]/b:null), cpd=done.map((dn,i)=>dn?src.cost[i]/dn:null);
     strip=funnelStrip([
       {lab:'Impressions',val:N(src.impr[li])},
       {lab:'Clicks',val:N(src.clicks[li]),sub:src.impr[li]?'CTR '+(src.clicks[li]/src.impr[li]*100).toFixed(1)+'%':''},
       {lab:'Conversions',val:N(src.conv[li])},
       {lab:'Leads',val:N(src.leads[li])},
       {lab:'Booked',val:N(src.booked[li]),sub:src.leads[li]?'lead→book '+(src.booked[li]/src.leads[li]*100).toFixed(0)+'%':''},
+      {lab:'Done',val:N(done[li]),sub:src.booked[li]?'show '+(done[li]/src.booked[li]*100).toFixed(0)+'%':''},
     ]);
     cards=[srCard('Spend',src.cost,rupee,false,C,true,f2labs),srCard('Impressions',src.impr,N,false,C,true,f2labs),srCard('Clicks',src.clicks,N,false,C,true,f2labs),
-           srCard('Conversions',src.conv,N,false,C,true,f2labs),srCard('Leads',src.leads,N,false,C,true,f2labs),srCard('Booked',src.booked,N,false,C,true,f2labs),
-           srCard('CPC',cpc,rupee,true,C,true,f2labs),srCard('CPL',cpl,rupee,true,C,true,f2labs),srCard('CPB',cpb,rupee,true,C,true,f2labs)];
+           srCard('Conversions',src.conv,N,false,C,true,f2labs),srCard('Leads',src.leads,N,false,C,true,f2labs),srCard('Booked',src.booked,N,false,C,true,f2labs),srCard('Done',done,N,false,C,true,f2labs),
+           srCard('CPC',cpc,rupee,true,C,true,f2labs),srCard('CPL',cpl,rupee,true,C,true,f2labs),srCard('CPB',cpb,rupee,true,C,true,f2labs),srCard('CPD',cpd,rupee,true,C,true,f2labs)];
   } else {
     if(!match.length){res.innerHTML=h+'<div style="color:var(--muted);padding:20px 4px">No campaigns match these filters.</div>';return;}
     const NW=Math.max(0,...match.map(c=>(c.spendH||[]).length));

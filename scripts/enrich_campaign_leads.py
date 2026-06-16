@@ -22,16 +22,18 @@ def main():
         p = line.rstrip("\n").split("\t")
         if len(p) < 4: continue
         wk, camp, leads, booked = p[0], p[1], p[2], p[3]
-        try: leads, booked = int(float(leads)), int(float(booked))
+        done = p[4] if len(p) > 4 else 0
+        try: leads, booked, done = int(float(leads)), int(float(booked)), int(float(done))
         except ValueError: continue
-        by.setdefault(camp, {})[wk] = [leads, booked]
+        by.setdefault(camp, {})[wk] = [leads, booked, done]
     d = json.load(open(CAMP_JSON)); n_match = 0
     for c in d["campaigns"]:
         wk_iso = c.get("weeks_iso") or []
         m = by.get(c["n"])
         if m: n_match += 1
-        c["leads"]  = [ (m.get(w, [0, 0])[0] if m else None) for w in wk_iso ]
-        c["booked"] = [ (m.get(w, [0, 0])[1] if m else None) for w in wk_iso ]
+        c["leads"]  = [ (m.get(w, [0, 0, 0])[0] if m else None) for w in wk_iso ]
+        c["booked"] = [ (m.get(w, [0, 0, 0])[1] if m else None) for w in wk_iso ]
+        c["done"]   = [ (m.get(w, [0, 0, 0])[2] if m else None) for w in wk_iso ]
     json.dump(d, open(CAMP_JSON, "w"), separators=(",", ":"))
     print(f"enriched {n_match}/{len(d['campaigns'])} campaigns with per-campaign leads/booked")
 

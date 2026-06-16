@@ -32,7 +32,7 @@ def monday(dstr):
 
 ga = json.load(open(DAILY))
 # accumulate per (dim,key,week) metrics
-acc = defaultdict(lambda: defaultdict(lambda: {'impr':0,'clicks':0,'cost':0.0,'conv':0.0,'leads':0,'booked':0}))
+acc = defaultdict(lambda: defaultdict(lambda: {'impr':0,'clicks':0,'cost':0.0,'conv':0.0,'leads':0,'booked':0,'done':0}))
 weeks = set()
 
 # clicks/impr/cost/conv from GA daily
@@ -50,15 +50,16 @@ for line in open(LEADS_TSV):
     p = line.rstrip('\n').split('\t')
     if len(p) < 4: continue
     wk, camp, leads, booked = p[0], p[1], int(p[2]), int(p[3])
+    done = int(p[4]) if len(p) > 4 else 0
     weeks.add(wk)
     city, prod = parse_name(camp)
     for dimkey in (('city',city),('product',prod),('citycat',city+'|'+prod),('total','All')):
         a = acc[dimkey][wk]
-        a['leads'] += leads; a['booked'] += booked
+        a['leads'] += leads; a['booked'] += booked; a['done'] += done
 
 weeks = [w for w in sorted(weeks) if w < '2026-06-15']   # drop the current incomplete week (Jun 8+)
 def series(dimkey):
-    out = {k:[0]*len(weeks) for k in ('impr','clicks','cost','conv','leads','booked')}
+    out = {k:[0]*len(weeks) for k in ('impr','clicks','cost','conv','leads','booked','done')}
     for wi, wk in enumerate(weeks):
         m = acc[dimkey].get(wk)
         if not m: continue
