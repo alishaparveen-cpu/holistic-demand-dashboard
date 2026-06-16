@@ -8,7 +8,7 @@ Revenue / verified-leads / Meta+Practo spend are carried from the L0 build for n
 pending their Redshift sources. Writes data_efficiency_rs.json (same shape as data_efficiency.json)
 and prints an RS-vs-L0 comparison so we can spot sheet errors (e.g. the 26-Apr leads bug).
 Run: AWS_PROFILE=redshift-data python3 scripts/build_efficiency_rs.py"""
-import os, sys, subprocess, json
+import os, sys, subprocess, json, datetime
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 def rs(sql):
     p = subprocess.run([sys.executable, os.path.join(ROOT,'scripts','redshift_query.py')], input=sql, capture_output=True, text=True)
@@ -59,14 +59,18 @@ def main():
     chBk['gmbgoogle']=[chBk['gmb'][i]+chBk['gsearch'][i] for i in range(len(weeks))]
     chDn['gmbgoogle']=[chDn['gmb'][i]+chDn['gsearch'][i] for i in range(len(weeks))]
 
-    # ── week→L0-label map; spend / verified-lead% / STI stay external (platform spend, not in warehouse) ──
-    lab = {'2026-06-01':'7 Jun','2026-05-25':'31 May','2026-05-18':'24 May','2026-05-11':'17 May','2026-05-04':'10 May','2026-04-27':'3 May','2026-04-20':'26 Apr','2026-04-13':'19 Apr'}
+    # ── carry spend / verified-leads / STI from the L0 build (platform spend isn't in the warehouse) ──
+    # L0 period labels are the week-ENDING Sunday ("3 May"); our RS weeks are Mondays, so the label
+    # is Monday+6 days. Computed (not a hardcoded map) so it never goes stale on a window shift.
+    def wk_label(w):
+        sun = datetime.date.fromisoformat(w) + datetime.timedelta(days=6)
+        return f"{sun.day} {sun.strftime('%b')}"
     L0 = json.load(open(os.path.join(ROOT,'data_efficiency.json')))['weekly']; L0A=L0['ALL']; L0P=L0['periods']
     def l0(field):
         out=[None]*len(weeks)
         for w in weeks:
-            p=lab.get(w);
-            if p and p in L0P: out[idx[w]]=L0A.get(field,[None]*len(L0P))[L0P.index(p)]
+            p=wk_label(w)
+            if p in L0P: out[idx[w]]=L0A.get(field,[None]*len(L0P))[L0P.index(p)]
         return out
 
     # ── REVENUE BLOCK — DB-native from allo_billing.invoices (status='paid' = realized revenue) ──
@@ -112,7 +116,8 @@ def main():
     # Consult Rev (L0 row 34, pure formula): online done × ₹199 + offline done × ₹499, in ₹ lakhs
     consultRev=[round((dnOn[i]*199+dnOff[i]*499)/1e5,2) for i in range(len(weeks))]
     newRev=[round(tpRev[i]+consultRev[i],2) for i in range(len(weeks))]   # row 35
-    spend=l0('spend'); vleads=l0('vleads') or leadsT; sti=l0('sti'); vpct=l0('vpct')
+    spend=l0('spend'); sti=l0('sti'); vpct=l0('vpct')
+    _vl=l0('vleads'); vleads=[_vl[i] if _vl[i] is not None else leadsT[i] for i in range(len(weeks))]  # element-wise fallback to total leads ([None]*n is truthy, so `or leadsT` never fired)
     roas=[round(newRev[i]*1e5/spend[i]*100,1) if spend[i] else None for i in range(len(weeks))]  # row 36 (% form, matches L0)
     aov=[round(tpRev[i]*1e5/tp[i]) if tp[i] else None for i in range(len(weeks))]
     rpc=[round(tpRev[i]*1e5/doneT[i]) if doneT[i] else None for i in range(len(weeks))]     # row 37
@@ -132,15 +137,15 @@ def main():
         CONTR[k]={'lead':pctOf(lead.get(k,[0]*len(weeks)),leadsT),'book':pctOf(chBk.get(k,[0]*len(weeks)),bookingsT),
                   'done':pctOf(chDn.get(k,[0]*len(weeks)),doneT),'spend':[0]*len(weeks)}
     # Google spend share from data_marketing (approx); Meta/Practo flagged 0 (need source)
-    plabels=[lab.get(w,w) for w in weeks]
+    plabels=[wk_label(w) for w in weeks]
     # per-channel spend/cost (Google from Redshift-via-sheet, Meta from SyncWith/FB sheet, Practo from Practo sheet)
     # carried from the L0 build aligned to RS weeks — these are external-platform spends, not in the warehouse.
     L0D=json.load(open(os.path.join(ROOT,'data_efficiency.json')))['weekly']['DIRECT']
     def align(a):
         o=[None]*len(weeks)
         for w in weeks:
-            p=lab.get(w)
-            if p and p in L0P and p in [lab.get(x) for x in weeks]: o[idx[w]]=a[L0P.index(p)] if L0P.index(p)<len(a) else None
+            p=wk_label(w)
+            if p and p in L0P and p in [wk_label(x) for x in weeks]: o[idx[w]]=a[L0P.index(p)] if L0P.index(p)<len(a) else None
         return o
     DIRECT={ch:{m:align(v) for m,v in d.items()} for ch,d in L0D.items()}
     # spend SHARE per channel = channel spend ÷ network spend (×100). From DIRECT (external-platform spend)
@@ -157,7 +162,7 @@ def main():
     print('=== RS vs L0 (sheet) — network leads / bookings / done ===')
     print('%-8s | %-15s | %-15s | %-15s'%('week','LEADS rs/L0','BOOKINGS rs/L0','DONE rs/L0'))
     for w in weeks:
-        i=idx[w]; p=lab.get(w)
+        i=idx[w]; p=wk_label(w)
         l0l=L0A['leads'][L0P.index(p)] if p in L0P else None
         l0b=L0A['bookings'][L0P.index(p)] if p in L0P else None
         l0d=L0A['done'][L0P.index(p)] if p in L0P else None
@@ -166,7 +171,7 @@ def main():
     print('\n=== RS vs L0 — revenue (₹ lakhs) ===')
     print('%-8s | %-13s | %-13s | %-13s'%('week','tpRev rs/L0','consult rs/L0','newRev rs/L0'))
     for w in weeks:
-        i=idx[w]; p=lab.get(w)
+        i=idx[w]; p=wk_label(w)
         def g(f): return L0A[f][L0P.index(p)] if p in L0P and f in L0A else None
         print('%-8s | %5.1f / %-5s | %5.2f / %-5s | %5.1f / %s'%(p or w, tpRev[i], g('tpRev'), consultRev[i], g('consultRev'), newRev[i], g('newRev')))
 
