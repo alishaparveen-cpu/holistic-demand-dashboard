@@ -148,6 +148,8 @@ function cityTier(c) {
 // ── STATE ─────────────────────────────────────────────────────────────────
 let JDATA          = null;
 let CDATA          = null;   // data_clinic.json
+let LF             = null;   // data_clinic_funnel.json — clinic lead-source funnel (GMB/paid/web + AI relevant)
+let PL             = null;   // data_practo_leads.json — Practo leads per clinic
 let ALL_WEEKS      = [];     // newest-first
 let activeTier     = 'ALL';
 let activeCity     = 'ALL';
@@ -540,15 +542,15 @@ function buildClinicCard(key) {
   const slotColor = '#0ea5e9';
 
   // Channel breakdown (expanded)
-  const channelSection = isExpanded && analysis
-    ? buildChannelBreakdown(analysis)
+  const channelSection = isExpanded
+    ? (analysis ? buildChannelBreakdown(analysis) : '') + buildLeadFunnel(key)
     : '';
 
   // Expand button (only if data_clinic.json has this clinic)
   const expandBtn = analysis
     ? `<button onclick="toggleCard('${key.replace(/\\/g,'\\\\').replace(/'/g,"\\'")}')"
          style="margin-top:10px;width:100%;padding:5px 10px;border:1px solid #e2e8f0;border-radius:7px;background:#f8fafc;cursor:pointer;font-size:11px;color:#475569;display:flex;justify-content:space-between;align-items:center;font-weight:600;">
-        <span>📊 Channel Breakdown (W5→W6)</span>
+        <span>📊 Channel Breakdown + 🎯 Lead-source funnel</span>
         <span style="font-size:10px;">${isExpanded ? '▲ Hide' : '▼ Show'}</span>
       </button>
       ${channelSection}`
@@ -666,6 +668,51 @@ function buildChannelBreakdown(analysis) {
     </div>
     ${rows}
     ${remark ? `<div style="font-size:10px;color:#475569;margin-top:6px;line-height:1.5;border-top:1px solid #e2e8f0;padding-top:6px;">💬 ${remarkSnip}</div>` : ''}
+  </div>`;
+}
+
+// ── LEAD-SOURCE FUNNEL (clinic-wise): Lead → Rel Lead → Book → Done, split by
+//    GMB call / Google paid / Web / Practo. Styled after the google-ads-audit consolidated funnel.
+//    GMB & Practo are clinic-direct; Google-paid & Web are clinic-engaged (tracked leads that booked
+//    here, from data_clinic_funnel); Rel Lead is the AI call-audit relevant subset (live from 27 May).
+function buildLeadFunnel(key) {
+  if (!LF?.clinics) return '';
+  const fk = clinicKey_city(key) + '|' + clinicKey_name(key);
+  const o = LF.clinics[fk];
+  if (!o) return '';
+  const pl = (PL && PL[fk]) || null;
+  const W = LF._meta.weeks;                               // newest-first
+  const ncol = Math.min(4, W.length);
+  const cols = []; for (let i = ncol - 1; i >= 0; i--) cols.push(i);   // oldest → newest
+  const A = a => a || [];
+  const gmb = A(o.lead.gmb_organic_calls), paid = A(o.lead.by_chan.google_ad),
+        web = A(o.lead.by_chan.organic),  practo = A(pl && pl.leads);
+  const lead = W.map((_, i) => (gmb[i] || 0) + (paid[i] || 0) + (web[i] || 0) + (practo[i] || 0));
+  const rel = A(o.lead.ai_relevant), book = A(o.booking.bookings), done = A(o.done.done);
+  const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const wkLab = wk => { const d = new Date(wk + 'T00:00:00'); d.setDate(d.getDate() + 6); return d.getDate() + ' ' + MON[d.getMonth()]; };
+  const pc = (n, d) => d > 0 ? Math.round(n / d * 100) + '%' : '—';
+  const td = (v, st) => `<td style="text-align:right;padding:2px 7px;${st || ''}">${v}</td>`;
+  const stageRow = (label, arr) => `<tr style="background:#f8fafc;"><td style="padding:3px 8px;font-weight:800;color:#0f172a;">${label}</td>${cols.map((i, c) => td(arr[i] ?? 0, 'font-weight:800;' + (c === cols.length - 1 ? 'color:#4338ca;' : ''))).join('')}</tr>`;
+  const subRow = (label, arr) => `<tr><td style="padding:2px 8px;color:#64748b;font-size:10px;"><span style="color:#cbd5e1;">·</span> ${label}</td>${cols.map(i => td(arr[i] ?? 0, 'color:#475569;')).join('')}</tr>`;
+  const pctRow = (label, num, den) => `<tr><td style="padding:1px 8px 1px 16px;color:#94a3b8;font-size:9.5px;">${label}</td>${cols.map(i => td(pc(num[i], den[i]), 'color:#94a3b8;font-size:9.5px;')).join('')}</tr>`;
+  return `<div style="margin-top:10px;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;">
+    <div style="font-size:10px;font-weight:700;color:#475569;padding:6px 8px;background:#f1f5f9;border-bottom:1px solid #e2e8f0;">🎯 Lead-source funnel · ${clinicKey_name(key)}</div>
+    <table style="width:100%;border-collapse:collapse;font-size:11px;">
+      <tr><th style="text-align:left;padding:2px 8px;font-size:9px;color:#94a3b8;font-weight:600;">stage</th>${cols.map(i => `<th style="text-align:right;padding:3px 7px;font-size:9px;color:#94a3b8;font-weight:600;">${wkLab(W[i])}</th>`).join('')}</tr>
+      ${stageRow('Lead', lead)}
+      ${subRow('GMB call', gmb)}
+      ${subRow('Google paid', paid)}
+      ${subRow('Web', web)}
+      ${subRow('Practo', practo)}
+      ${stageRow('Rel Lead (AI)', rel)}
+      ${pctRow('Lead → Rel %', rel, lead)}
+      ${stageRow('Booked', book)}
+      ${pctRow('Lead → Book %', book, lead)}
+      ${stageRow('Done', done)}
+      ${pctRow('Book → Done %', done, book)}
+    </table>
+    <div style="font-size:8.5px;color:#94a3b8;padding:5px 8px;line-height:1.45;background:#fafafa;border-top:1px solid #eef2f7;">GMB &amp; Practo = clinic-direct · Google-paid &amp; Web = clinic-engaged (tracked leads that booked here) · Rel Lead = AI call-audit relevant subset (from 27 May). Latest week ends ${wkLab(W[0])}.</div>
   </div>`;
 }
 
@@ -1045,15 +1092,19 @@ function toggleCard(key) {
 async function init() {
   try {
     // Fetch both data files in parallel
-    const [res, cRes] = await Promise.all([
+    const [res, cRes, fRes, pRes] = await Promise.all([
       fetch('data.json'),
       fetch('data_clinic.json').catch(() => null),
+      fetch('data_clinic_funnel.json').catch(() => null),
+      fetch('data_practo_leads.json').catch(() => null),
     ]);
     if (!res.ok) throw new Error('data.json not found');
     JDATA = await res.json();
     if (cRes?.ok) {
       try { CDATA = await cRes.json(); } catch(e) { CDATA = null; }
     }
+    if (fRes?.ok) { try { LF = await fRes.json(); } catch(e) { LF = null; } }
+    if (pRes?.ok) { try { PL = await pRes.json(); } catch(e) { PL = null; } }
 
     // Build ALL_WEEKS newest-first
     ALL_WEEKS = [...(JDATA.weeks || [])].reverse();
