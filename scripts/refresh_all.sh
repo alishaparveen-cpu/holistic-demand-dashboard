@@ -38,6 +38,7 @@ step "GA funnel build (build_ga_funnel)"  python3 scripts/build_ga_funnel.py
 
 echo "── Redshift core (needs aws sso login) ──"
 step "Leads by source (build_leads)"      python3 scripts/build_leads.py   # must precede scorecard (leads denom)
+step "Organic sub-channels (pull_organic_sub)" python3 scripts/pull_organic_sub.py   # WhatsApp/PC-Inbound/etc. for efficiency organic drill-down
 step "Scorecard (build_scorecard)"        python3 scripts/build_scorecard.py
 step "Phase-2 metrics (build_phase2)"     python3 scripts/build_phase2.py
 step "Diagnostic RCA (build_diagnostic)"  python3 scripts/build_diagnostic.py

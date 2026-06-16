@@ -399,6 +399,7 @@ let DIRECT_M={
 };
 let WEEKS,ALL,contr,direct,CH;  // active set by buildAll()
 let ALL_T1=null,ALL_T2=null;    // tier-split ALL datasets (weekly only)
+let ORGSUB=null;                // organic sub-channels (WhatsApp/PC-Inbound/GMB-Listing/High-intent/Other) from data_organic_sub.json
 const pctOf=(a,b)=>a.map((v,i)=>(v==null||b[i]==null)?null:+(v/100*b[i]).toFixed(b[i]>1000?0:1));
 function buildCh(key){
   const c=contr[key],d=direct[key]||{},ch={contr:c};
@@ -430,6 +431,23 @@ function buildCh(key){
   }
   return ch;
 }
+// organic sub-channel as a free channel from data_organic_sub.json (weekly only). leads + bookings measured;
+// no spend (free) so CPL/CPB/RoAS are n/a; done/revenue aren't tracked per organic sub-type.
+function orgSubCh(bucket,label,g){
+  if(g!=='weekly'||!ORGSUB||!ORGSUB.buckets||!ORGSUB.buckets[bucket]) return {label,color:'#9C6A1F',template:true,sub:true};
+  const b=ORGSUB.buckets[bucket], rev=a=>(a||[]).slice().reverse();
+  const leads=rev(b.leads), book=rev(b.booked), n=leads.length, NA=Array(n).fill(null);
+  const ch={label,color:'#9C6A1F',sub:true,free:true};
+  ch.contr={lead:leads.map((v,i)=>(ALL.leads&&ALL.leads[i])?Math.round(v/ALL.leads[i]*100):0),book:NA.slice(),done:NA.slice(),spend:Array(n).fill(0)};
+  ch.spend=Array(n).fill(0); ch.leads=leads.slice(); ch.vleads=leads.slice(); ch.vpct=(ALL.vpct||NA).slice();
+  ch.bookings=book.slice(); ch.done=NA.slice(); ch.tp=NA.slice();
+  ch.b2l=book.map((v,i)=>leads[i]?+(v/leads[i]*100).toFixed(0):null);
+  ch.b2d=NA.slice(); ch.done2tp=NA.slice(); ch.aov=NA.slice(); ch.newRev=NA.slice(); ch.tpRev=NA.slice();
+  ch.cpl=null; ch.cpb=null; ch.cpd=null; ch.roas=null;
+  ch.bkOn=NA.slice(); ch.bkOff=NA.slice(); ch.dnOn=NA.slice(); ch.dnOff=NA.slice(); ch.tpOn=NA.slice(); ch.tpOff=NA.slice();
+  ch.b2dOn=NA.slice(); ch.b2dOff=NA.slice(); ch.convOn=NA.slice(); ch.convOff=NA.slice(); ch.sti=NA.slice();
+  return ch;
+}
 function buildAll(g){
   if(g==='monthly'){WEEKS=MONTHLY_PERIODS;ALL=ALL_M;contr=CONTR_M;direct=DIRECT_M;}
   else{WEEKS=WEEKLY_PERIODS;ALL=ALL_W;contr=CONTR_W;direct=DIRECT_W;}
@@ -445,17 +463,17 @@ function buildAll(g){
    organic:Object.assign(buildCh('organic'),{label:'Organic',color:'#B5722A'}),
    meta:(contr.meta?Object.assign(buildCh('meta'),{label:'Meta / FB',color:'#3A5A8C'}):{label:'Meta / FB',color:'#3A5A8C',template:true}),
    practo:(contr.practo?Object.assign(buildCh('practo'),{label:'Practo',color:'#B23A2E'}):{label:'Practo',color:'#B23A2E',template:true}),
-   org_wa:{label:'· WhatsApp',color:'#9C6A1F',template:true,sub:true},
-   org_hi:{label:'· High-intent',color:'#9C6A1F',template:true,sub:true},
-   org_pc:{label:'· PC-inbound',color:'#9C6A1F',template:true,sub:true},
-   org_blog:{label:'· Blog',color:'#9C6A1F',template:true,sub:true},
-   org_oth:{label:'· Others',color:'#9C6A1F',template:true,sub:true}
+   org_wa:orgSubCh('WhatsApp','· WhatsApp',g),
+   org_hi:orgSubCh('High-intent','· High-intent',g),
+   org_pc:orgSubCh('PC-Inbound','· PC-inbound',g),
+   org_gmb:orgSubCh('GMB/Listing','· GMB/Listing',g),
+   org_oth:orgSubCh('Other','· Others',g)
   };
 }
 buildAll('weekly');
 const LI=()=>WEEKS.length-1;
 const CHAN_ORDER=['all','gmbgoogle','gsearch','gmb','organic','meta','practo'];
-const ORG_SUBS=['org_wa','org_hi','org_pc','org_blog','org_oth'];
+const ORG_SUBS=['org_wa','org_hi','org_pc','org_gmb','org_oth'];
 
 
 const METRICS={
@@ -957,6 +975,7 @@ async function initEff(){
     WEEKLY_PERIODS=d.weekly.periods.map(toRange);  MONTHLY_PERIODS=d.monthly.periods;
     ALL_W=d.weekly.ALL;     ALL_M=d.monthly.ALL;
     {const T=d.weekly.TIERS||{}; ALL_T1=T.T1||null; ALL_T2=T.T2||null;}
+    try{ ORGSUB=await fetch('data_organic_sub.json?t='+Date.now()).then(r=>r.ok?r.json():null); }catch(_){}
     CONTR_W=d.weekly.CONTR; CONTR_M=d.monthly.CONTR;
     DIRECT_W=d.weekly.DIRECT; DIRECT_M=d.monthly.DIRECT;
     const dl=document.querySelector('.dateline');
