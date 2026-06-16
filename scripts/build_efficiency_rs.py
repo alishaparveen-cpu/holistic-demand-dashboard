@@ -165,8 +165,63 @@ def main():
     for k in CONTR:
         dsp=DIRECT.get(k,{}).get('spend')
         CONTR[k]['spend']=[ (round(dsp[i]/spend[i]*100) if (dsp and i<len(dsp) and dsp[i] and spend[i]) else 0) for i in range(len(weeks)) ]
-    out={'_meta':{'source':'Redshift-native funnel + revenue. Leads/booked: main_source_wise_leads. Bookings/done: data.json gross. Revenue (1st TP Rev): allo_billing.invoices status=paid over COMPLETED screening calls, split offline/online; Consult Rev = done_on×199+done_off×499; New Rev = TP+Consult; RoAS/AOV/RPC derived. Spend: Google=NATIVE Google Ads API (total cost ×1.18 GST — matches L0 sheet exactly, full history); Meta=SyncWith/FB sheet, Practo=Practo sheet (no warehouse/API source). Network spend/CPL/CPB/RoAS are null for weeks before the sheet window (Meta/Practo missing) to avoid Google-only distortion; the Google channel card has full history. Verified-lead% carried from L0.','weekly':plabels},
-         'weekly':{'periods':plabels,'ALL':ALL,'CONTR':CONTR,'DIRECT':DIRECT},
+    # ── TIER SPLIT (T1/T2): tier SHARES from per-clinic data (data_clinic_funnel) applied to the network ALL,
+    #    so tiers reconcile to network. Google spend measured by city→tier; Meta+Practo allocated by booking share. ──
+    T1C={'Bangalore','Mumbai','Pune','Hyderabad','Chennai'}
+    T2C={'Navi Mumbai','Coimbatore','Nagpur','Ranchi','Jaipur','Ahmedabad','Surat','Nashik','Aurangabad','Hubli',
+         'Mysuru','Mangaluru','Bhopal','Visakhapatnam','Thane','Gandhinagar','Vijayawada'}
+    TIERS={}
+    try:
+        CF=json.load(open(os.path.join(ROOT,'data_clinic_funnel.json'))); cfi={w:i for i,w in enumerate(CF['_meta']['weeks'])}
+        def _share(path,cities,DATA,idxmap,arrf):
+            out=[]
+            for w in weeks:
+                j=idxmap.get(w)
+                if j is None: out.append(None); continue
+                num=den=0.0
+                for k,c in DATA.items():
+                    if k=='_meta': continue
+                    a=arrf(c,path); v=(a[j] if a and j<len(a) else 0) or 0; den+=v
+                    if k.split('|')[0] in cities: num+=v
+                out.append(num/den if den else 0.0)
+            return out
+        def _cfarr(c,path):
+            a=c
+            for p in path.split('.'): a=a.get(p) if isinstance(a,dict) else None
+            return a
+        GAP=json.load(open(os.path.join(ROOT,'data_ga_city_paid.json'))); gpi={w:i for i,w in enumerate(GAP['_meta']['weeks'])}
+        def _garr(c,path): return c.get('spend')
+        def onfrac(on,tot): return [ (on[i]/tot[i] if tot[i] else 0) for i in range(len(weeks)) ]
+        of_bk=onfrac(bkOn,bookingsT); of_dn=onfrac(dnOn,doneT); of_tp=onfrac(tpOn,tp)
+        def tier_block(cities):
+            bs=_share('booking.bookings',cities,CF['clinics'],cfi,_cfarr); ds=_share('done.done',cities,CF['clinics'],cfi,_cfarr)
+            rs=_share('revenue.rev',cities,CF['clinics'],cfi,_cfarr);     ls=_share('lead.leads_total',cities,CF['clinics'],cfi,_cfarr)
+            gs=_share('spend',cities,{k:GAP[k] for k in GAP if k!='_meta'},gpi,_garr)
+            M=lambda arr,sh,nd=0:[ (round(arr[i]*sh[i],nd) if nd else round(arr[i]*sh[i])) if (arr[i] is not None and sh[i] is not None) else None for i in range(len(weeks)) ]
+            t_l=M(leadsT,ls); t_vl=M(vleads,ls); t_b=M(bookingsT,bs); t_d=M(doneT,ds); t_tp=M(tp,ds)
+            t_nr=M(newRev,rs,2); t_tpr=M(tpRev,rs,2); t_cr=M(consultRev,rs,2)
+            t_g=M(google,gs); t_m=M(meta_sp,bs); t_p=M(practo_sp,bs)
+            t_sp=[ (t_g[i]+t_m[i]+t_p[i]) if (t_g[i] is not None and t_m[i] is not None and t_p[i] is not None) else None for i in range(len(weeks)) ]
+            t_bkOn=[round(t_b[i]*of_bk[i]) if t_b[i] is not None else None for i in range(len(weeks))]; t_bkOff=[t_b[i]-t_bkOn[i] if t_b[i] is not None else None for i in range(len(weeks))]
+            t_dnOn=[round(t_d[i]*of_dn[i]) if t_d[i] is not None else None for i in range(len(weeks))]; t_dnOff=[t_d[i]-t_dnOn[i] if t_d[i] is not None else None for i in range(len(weeks))]
+            t_tpOn=[round(t_tp[i]*of_tp[i]) if t_tp[i] is not None else None for i in range(len(weeks))]; t_tpOff=[t_tp[i]-t_tpOn[i] if t_tp[i] is not None else None for i in range(len(weeks))]
+            R=lambda n,dd:[round(n[i]/dd[i]*100) if (n[i] is not None and dd[i]) else None for i in range(len(weeks))]
+            D=lambda n,dd,k=1:[round(n[i]/dd[i]*k) if (n[i] is not None and dd[i]) else None for i in range(len(weeks))]
+            return {'leads':t_l,'vleads':t_vl,'vpct':vpct,'bookings':t_b,'done':t_d,'tp':t_tp,
+                    'newRev':t_nr,'tpRev':t_tpr,'consultRev':t_cr,'spend':t_sp,'sti':sti,
+                    'cpl':[round(t_sp[i]/t_vl[i]) if (t_sp[i] and t_vl[i]) else None for i in range(len(weeks))],
+                    'cpb':[round(t_sp[i]/t_b[i]) if (t_sp[i] and t_b[i]) else None for i in range(len(weeks))],
+                    'cpd':[round(t_sp[i]/t_d[i]) if (t_sp[i] and t_d[i]) else None for i in range(len(weeks))],
+                    'roas':[round(t_nr[i]*1e5/t_sp[i]*100,1) if (t_nr[i] is not None and t_sp[i]) else None for i in range(len(weeks))],
+                    'aov':D(t_tpr,t_tp,100000),'rpc':D(t_tpr,t_d,100000),
+                    'b2l':R(t_b,t_l),'b2d':R(t_d,t_b),'done2tp':R(t_tp,t_d),
+                    'bkOn':t_bkOn,'bkOff':t_bkOff,'dnOn':t_dnOn,'dnOff':t_dnOff,'tpOn':t_tpOn,'tpOff':t_tpOff,
+                    'b2dOn':R(t_dnOn,t_bkOn),'b2dOff':R(t_dnOff,t_bkOff),'convOn':R(t_tpOn,t_dnOn),'convOff':R(t_tpOff,t_dnOff)}
+        TIERS={'T1':tier_block(T1C),'T2':tier_block(T2C)}
+    except Exception as e:
+        sys.stderr.write('tier split skipped: '+repr(e)+'\n')
+    out={'_meta':{'source':'Redshift-native funnel + revenue. Leads/booked: main_source_wise_leads. Bookings/done: data.json gross. Revenue (1st TP Rev): allo_billing.invoices status=paid over COMPLETED screening calls, split offline/online; Consult Rev = done_on×199+done_off×499; New Rev = TP+Consult; RoAS/AOV/RPC derived. Spend: Google=NATIVE Google Ads API (total cost ×1.18 GST — matches L0 sheet exactly, full history); Meta=SyncWith/FB sheet, Practo=Practo sheet (no warehouse/API source). Network spend/CPL/CPB/RoAS are null for weeks before the sheet window (Meta/Practo missing) to avoid Google-only distortion; the Google channel card has full history. Verified-lead% carried from L0. TIERS (T1/T2): volume+revenue split by per-clinic share, Google spend measured by city, Meta/Practo allocated by booking share.','weekly':plabels},
+         'weekly':{'periods':plabels,'ALL':ALL,'CONTR':CONTR,'DIRECT':DIRECT,'TIERS':TIERS},
          'monthly':json.load(open(os.path.join(ROOT,'data_efficiency.json')))['monthly']}
     json.dump(out, open(os.path.join(ROOT,'data_efficiency_rs.json'),'w'), separators=(',',':'))
 

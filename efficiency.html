@@ -264,6 +264,8 @@ table.sc tr:last-child td{border-bottom:0}
     <div class="seg" id="scopeSeg"><button data-s="all" class="on">All</button><button data-s="online">Online</button><button data-s="offline">Offline</button></div></div>
   <div class="cg"><span class="lbl">Category</span>
     <div class="seg" id="catSeg"><button data-c="all" class="on">All</button><button data-c="sh">SH</button><button data-c="sti">STI</button></div></div>
+  <div class="cg"><span class="lbl">City tier</span>
+    <div class="seg" id="tierSeg"><button data-t="ALL" class="on">All</button><button data-t="T1">Tier 1</button><button data-t="T2">Tier 2</button></div></div>
   <div class="cg" id="mediaCg"><span class="lbl">Media</span>
     <button class="tg-btn" id="mediaToggle">Impressions / clicks</button></div>
   <span class="estflag" id="estFlag" style="display:none;margin-left:auto">estimated</span>
@@ -396,6 +398,7 @@ let DIRECT_M={
  gmbgoogle:{spend:[763772,990063]}, gsearch:{spend:[763772,990063]}, organic:{}
 };
 let WEEKS,ALL,contr,direct,CH;  // active set by buildAll()
+let ALL_T1=null,ALL_T2=null;    // tier-split ALL datasets (weekly only)
 const pctOf=(a,b)=>a.map((v,i)=>(v==null||b[i]==null)?null:+(v/100*b[i]).toFixed(b[i]>1000?0:1));
 function buildCh(key){
   const c=contr[key],d=direct[key]||{},ch={contr:c};
@@ -428,8 +431,12 @@ function buildCh(key){
 function buildAll(g){
   if(g==='monthly'){WEEKS=MONTHLY_PERIODS;ALL=ALL_M;contr=CONTR_M;direct=DIRECT_M;}
   else{WEEKS=WEEKLY_PERIODS;ALL=ALL_W;contr=CONTR_W;direct=DIRECT_W;}
+  // City-tier filter narrows the All-Channels funnel (weekly only). Per-channel cards stay network.
+  const _t=(()=>{try{return state.tier;}catch(e){return 'ALL';}})();  // buildAll runs once before `state` exists (TDZ)
+  const tierData=(g==='weekly'&&_t==='T1'&&ALL_T1)?ALL_T1:(g==='weekly'&&_t==='T2'&&ALL_T2)?ALL_T2:ALL;
+  const tierLbl=_t==='T1'?'All Channels · Tier 1':_t==='T2'?'All Channels · Tier 2':'All Channels';
   CH={
-   all:Object.assign({},ALL,{label:'All Channels',color:'#1A1A17',free:false}),
+   all:Object.assign({},tierData,{label:tierLbl,color:'#1A1A17',free:false}),
    gmbgoogle:Object.assign(buildCh('gmbgoogle'),{label:'Google + GMB',color:'#1F6F5C'}),
    gsearch:Object.assign(buildCh('gsearch'),{label:'Google Search',color:'#13503F'}),
    gmb:Object.assign(buildCh('gmb'),{label:'GMB (Maps)',color:'#5FB3A6'}),
@@ -486,7 +493,7 @@ const HINTS={funnel:'One channel, full funnel from impressions to revenue. Multi
  simulator:'Drag each paid channel’s budget and the assumption sliders — projected leads, bookings, revenue and RoAS update live off this week’s real numbers.'};
 
 const COMPARE_SET=['gmbgoogle','gsearch','gmb','organic','meta','practo'];
-let state={view:'funnel',funnelChs:['all'],gran:'weekly',scope:'all',cat:'all',funnelWeeks:[5],
+let state={view:'funnel',funnelChs:['all'],gran:'weekly',scope:'all',cat:'all',tier:'ALL',funnelWeeks:[5],
   rFrom:0,rTo:5,media:false,orgExpand:false,
   activeChips:['b2l','cpl','cpb','roas','aov'],selMetric:'cpb',cmpChans:['gmbgoogle','gsearch','gmb','organic','meta','practo']};
 let cmpChart=null,zoomChart=null;
@@ -845,6 +852,7 @@ function setView(v){state.view=v;document.querySelectorAll('#viewswitch button')
 document.getElementById('viewswitch').onclick=e=>{if(e.target.dataset.v)setView(e.target.dataset.v);};
 document.getElementById('scopeSeg').onclick=e=>{if(e.target.dataset.s){document.querySelectorAll('#scopeSeg button').forEach(b=>b.classList.remove('on'));e.target.classList.add('on');state.scope=e.target.dataset.s;reRender();}};
 document.getElementById('catSeg').onclick=e=>{if(e.target.dataset.c){document.querySelectorAll('#catSeg button').forEach(b=>b.classList.remove('on'));e.target.classList.add('on');state.cat=e.target.dataset.c;reRender();}};
+document.getElementById('tierSeg').onclick=e=>{if(!e.target.dataset.t||e.target.dataset.t===state.tier)return;document.querySelectorAll('#tierSeg button').forEach(b=>b.classList.remove('on'));e.target.classList.add('on');state.tier=e.target.dataset.t;buildAll(state.gran);reRender();};
 document.getElementById('mediaToggle').onclick=e=>{state.media=!state.media;e.target.classList.toggle('on',state.media);renderFunnelView();};
 document.getElementById('addWeek').onclick=()=>{for(let i=rTo();i>=rFrom();i--){if(!state.funnelWeeks.includes(i)){state.funnelWeeks.push(i);break;}}renderFunnelView();};
 document.getElementById('editBtn').onclick=()=>document.getElementById('editPanel').classList.toggle('open');
@@ -946,6 +954,7 @@ async function initEff(){
     const d=await fetch((isRS?'data_efficiency_rs.json':'data_efficiency.json')+'?t='+Date.now()).then(r=>r.ok?r.json():Promise.reject('http '+r.status));
     WEEKLY_PERIODS=d.weekly.periods.map(toRange);  MONTHLY_PERIODS=d.monthly.periods;
     ALL_W=d.weekly.ALL;     ALL_M=d.monthly.ALL;
+    {const T=d.weekly.TIERS||{}; ALL_T1=T.T1||null; ALL_T2=T.T2||null;}
     CONTR_W=d.weekly.CONTR; CONTR_M=d.monthly.CONTR;
     DIRECT_W=d.weekly.DIRECT; DIRECT_M=d.monthly.DIRECT;
     const dl=document.querySelector('.dateline');
