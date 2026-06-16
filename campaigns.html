@@ -213,7 +213,8 @@ text-align:right;padding:9px 8px;border-bottom:1.5px solid var(--line);backgroun
 <div class="sub" id="subline">Allo Health · live Google Ads · loading…</div>
 
 <div class="tabs" id="tabs">
-  <button data-v="filter" class="on">Filter</button>
+  <button data-v="search" class="on">Search</button>
+  <button data-v="filter">Filter</button>
   <button data-v="funnel">Auction funnel</button>
   <button data-v="compare">Compare</button>
   <button data-v="trends">Trends</button>
@@ -221,6 +222,16 @@ text-align:right;padding:9px 8px;border-bottom:1.5px solid var(--line);backgroun
   <button data-v="score">Scorecards</button>
 </div>
 <div class="hint" id="hint"></div>
+
+<section id="view-search">
+  <div style="margin-bottom:16px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+    <input id="campSearch" list="campList" placeholder="Type a campaign name…" autocomplete="off"
+      style="font-family:Inter;font-size:14px;font-weight:600;padding:9px 14px;border:1.5px solid var(--line);border-radius:9px;min-width:360px;color:var(--ink);background:#fff">
+    <datalist id="campList"></datalist>
+    <span class="lbl" id="searchCount" style="color:var(--muted)"></span>
+  </div>
+  <div id="searchResult"></div>
+</section>
 
 <div class="ctrls">
   <div class="cg" id="weekCg"><span class="lbl">Week</span>
@@ -330,7 +341,7 @@ function deriveMeta(){
 // deriveMeta() is invoked in boot() after CAMP loads from JSON.
 
 /* ============ HELPERS ============ */
-const state={view:'filter',week:0,cmpTo:0,cmpFrom:1,fCat:'all',fCity:'all',fTier:'all',scoreBy:'group',
+const state={view:'search',searchCi:null,week:0,cmpTo:0,cmpFrom:1,fCat:'all',fCity:'all',fTier:'all',scoreBy:'group',
   funCamps:[0],cmpCamps:[0,1,2,3,4],activeMetrics:['is','qs','cpc','rankLost'],selMetric:'is',trendMetric:'is',
   conds:[{key:'is',dir:'drop',mag:0}],matchMode:'all'};
 const short=n=>n.replace(/_/g,' ');
@@ -762,8 +773,9 @@ function rebuildAddSel(){const s=document.getElementById('campAdd'),set=filtered
   s.innerHTML=h;s.value='';}
 function setView(v){state.view=v;
   document.querySelectorAll('#tabs button').forEach(b=>b.classList.toggle('on',b.dataset.v===v));
-  ['funnel','compare','trends','filter','actions','score'].forEach(x=>{const el=document.getElementById('view-'+x);if(el)el.style.display=x===v?'block':'none';});
-  document.getElementById('hint').textContent=HINTS[v];
+  ['search','funnel','compare','trends','filter','actions','score'].forEach(x=>{const el=document.getElementById('view-'+x);if(el)el.style.display=x===v?'block':'none';});
+  const ctrls=document.querySelector('.ctrls'); if(ctrls) ctrls.style.display=(v==='search')?'none':'flex';  // search has its own input
+  document.getElementById('hint').textContent=HINTS[v]||'';
   const pick=(v==='funnel'||v==='compare');
   document.getElementById('chipsWrap').style.display=pick?'flex':'none';
   document.getElementById('addCg').style.display=pick?'flex':'none';
@@ -774,10 +786,53 @@ function setView(v){state.view=v;
   document.getElementById('addLbl').textContent=v==='compare'?'Add to compare':'Add campaign';
   reRender();}
 function reRender(){const v=state.view;
-  if(v==='funnel')renderFunnel();else if(v==='compare')renderCompare();
+  if(v==='search')renderSearch();
+  else if(v==='funnel')renderFunnel();else if(v==='compare')renderCompare();
   else if(v==='trends')renderTrends();else if(v==='filter')renderFilter();
   else if(v==='actions')renderActions();else renderScore();}
+function renderSearch(){
+  const dl=document.getElementById('campList');
+  if(dl && !dl.children.length){
+    dl.innerHTML=CAMP.map(c=>`<option value="${(c.n||'').replace(/"/g,'&quot;')}"></option>`).join('');
+    document.getElementById('searchCount').textContent=CAMP.length+' campaigns · type to search';
+  }
+  const inp=document.getElementById('campSearch'); const ci=state.searchCi;
+  const res=document.getElementById('searchResult');
+  if(ci==null||!CAMP[ci]){ res.innerHTML='<div style="color:var(--muted);padding:34px 4px">Type a campaign name above to see its full trend — spend, conversions, CPC, impression share, quality score, and every rank lever, week by week.</div>'; return; }
+  const c=CAMP[ci]; if(inp && inp.value!==c.n) inp.value=c.n;
+  const g=GMAP[c.g]||{color:'#2E7D5B',label:''};
+  const card=(label,arr,fmt,inv)=>{
+    if(!arr||!arr.some(x=>x!=null)) return '';
+    const cur=arr[0],prev=arr[1];
+    return `<div style="background:#fff;border:1px solid var(--line);border-radius:11px;padding:12px 14px">
+      <div style="font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted)">${label}</div>
+      <div style="font-size:21px;font-weight:700;margin:1px 0 5px;line-height:1.1">${cur!=null?fmt(cur):'—'} ${deltaSpan(cur,prev,inv)}</div>
+      ${spark(arr.slice().reverse(),inv,250,46,g.color)}</div>`;
+  };
+  const dtOut=c.dt==='loc'?card('Loc %',c.d,pct,false):c.dt==='cpb'?card('CPB',c.d,rupee,true):card('Cost / conversion',c.d,rupee,true);
+  let h=`<div style="margin-bottom:14px"><h2 style="margin:0;font-size:19px">${c.n}</h2>
+    <div style="font-size:12px;color:var(--muted);margin-top:3px"><span class="cdot" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${g.color};margin-right:5px"></span>${g.label} · budget ₹${(c.bud||0).toLocaleString('en-IN')}/day · ${c.nweeks||(WKISO||[]).length} weeks${c.sug?' · <b style="color:var(--amber)">'+c.sug+'</b>':''}</div></div>`;
+  h+='<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(255px,1fr));gap:12px">'+[
+    card('Spend',c.spendH,rupee,false),
+    card(volLabel(c.dt),c.v,v=>(+v).toLocaleString('en-IN'),false),
+    dtOut,
+    card('CPC',c.cpc,rupee,true),
+    card('Impr. Share',c.is,pct,false),
+    card('Avg QS',c.qs,v=>v+'/10',false),
+    card('Lost — budget',c.bl,pct,true),
+    card('Lost — rank',c.rl,pct,true),
+    card('Ad-rel drag',c.ar,pct,true),
+    card('LP drag',c.lp,pct,true),
+  ].filter(Boolean).join('')+'</div>';
+  res.innerHTML=h;
+}
 document.getElementById('tabs').onclick=e=>{if(e.target.dataset.v)setView(e.target.dataset.v);};
+document.getElementById('campSearch').addEventListener('input',e=>{
+  const v=e.target.value.trim().toLowerCase(); if(!v)return;
+  let ci=CAMP.findIndex(c=>(c.n||'').toLowerCase()===v);
+  if(ci<0) ci=CAMP.findIndex(c=>(c.n||'').toLowerCase().includes(v));   // partial match while typing
+  if(ci>=0 && ci!==state.searchCi){state.searchCi=ci;renderSearch();}
+});
 document.getElementById('weekSeg').onclick=e=>{if(!e.target.dataset.w)return;
   document.querySelectorAll('#weekSeg button').forEach(b=>b.classList.remove('on'));e.target.classList.add('on');
   state.week=+e.target.dataset.w;reRender();};
@@ -816,7 +871,9 @@ function boot(){
       .map(p=>`<option value="${p[0]},${p[1]}">${wkRange(WKISO[p[1]])} → ${wkRange(WKISO[p[0]])}</option>`).join('');}
     state.funCamps=[0];
     state.cmpCamps=CAMP.slice(0,5).map((_,i)=>i);
-    rebuildFilters();rebuildAddSel();setView('filter');
+    // default search to the highest-spend campaign so the tab isn't empty on open
+    state.searchCi=CAMP.map((c,i)=>i).sort((a,b)=>(CAMP[b].sp||0)-(CAMP[a].sp||0))[0]??0;
+    rebuildFilters();rebuildAddSel();setView('search');
   }).catch(e=>{
     document.getElementById('subline').textContent='Failed to load data_ga_campaigns.json — run scripts/pull_ga_campaigns.py';
     console.error(e);
