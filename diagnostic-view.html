@@ -129,6 +129,11 @@ select.mag-sel.vis{display:block}
 .stag{font-family:'JetBrains Mono';font-size:8px;font-weight:700;padding:1px 4px;border-radius:4px;margin-left:3px;white-space:nowrap}
 .stag.blip{background:#FEF3C7;color:#B9770E}
 .stag.sust{background:#FDE2E0;color:#C0392B}
+.lead-ch-tog{font-family:'JetBrains Mono';font-size:9px;font-weight:700;color:#1F6F5C;cursor:pointer;margin:1px 0 3px 78px;user-select:none;display:inline-block}
+.lead-ch-tog:hover{text-decoration:underline}
+.brow.ch-sub{margin-left:14px;opacity:.92}
+.brow.ch-sub .blbl{width:62px;font-size:8px}
+.ch-wrap{border-left:2px solid #d8efe4;margin:0 0 5px 78px;padding-left:6px}
 .qvlink{font-family:'JetBrains Mono';font-size:9px;font-weight:700;color:#4338ca;background:#eef2ff;border:1px solid #c7d2fe;border-radius:5px;padding:2px 6px;text-decoration:none;white-space:nowrap;flex-shrink:0;margin-left:auto}
 .qvlink:hover{background:#e0e7ff}
 .tz-overlay{display:none;position:fixed;inset:0;background:rgba(20,18,14,.55);z-index:9999;align-items:center;justify-content:center;padding:20px}
@@ -388,7 +393,36 @@ function zoomTrend(el){
   m.innerHTML=`<div class="tz-box"><div class="tz-head"><div><b>${label}</b> <span style="color:#94a3b8">· ${name}</span></div><button class="tz-x" onclick="document.getElementById('trendZoom').style.display='none'">✕</button></div>${bigTrendSVG(arr,base,color,unit)}<div style="font-size:11px;color:#94a3b8;margin-top:6px">Full ${arr.length}-week trend · filled dot = selected week (${WKS[weekIdx]||''}) · dashed = baseline. Several weeks below the line = a sustained decline, not a one-week blip.</div></div>`;
   m.style.display='flex';
 }
-function barsHTML(e,against){
+// ── Leads-by-channel second-level drill: when leads drop, which channel drove it? ──
+const LEAD_CH=[['gmb','GMB','#34A853'],['google_ad','Google Ads','#4285F4'],['organic','Organic','#B5722A'],['fb','Meta (FB)','#3A5A8C'],['justdial','JustDial','#E5572A'],['others','Other','#7A7A7A']];
+let leadChExp={};
+function togLeadCh(id){ leadChExp[id]=!leadChExp[id]; render(); }
+function leadChannelRows(e,against,id){
+  if(!e.leadCh) return '';
+  const open=!!leadChExp[id];
+  let h=`<div class="lead-ch-tog" onclick="togLeadCh('${id}')">${open?'▾ hide channels':'▸ leads by channel'}</div>`;
+  if(!open) return h;
+  const al=isMonthly?'prev mo':(AGAINST_SHORT[against]||against);
+  let rows='';
+  // sort channels by biggest drop first so the mover surfaces at top
+  const enriched=LEAD_CH.map(([k,lbl,col])=>{ const arr=e.leadCh[k]; if(!arr) return null;
+    const cur=getCurVal(arr); if(cur==null) return null; const base=getBaseline(arr,against);
+    return {k,lbl,col,arr,cur,base,p:base?Math.round((cur-base)/base*100):0}; }).filter(Boolean)
+    .filter(r=>r.cur>0 || (r.base&&r.base>=1))   // hide channels with no presence at all
+    .sort((a,b)=>a.p-b.p);
+  enriched.forEach(r=>{
+    const c=cls(r.p), fw=Math.min(100,Math.max(0,r.base?Math.round(r.cur/r.base*100):0)), hw=100-fw;
+    const arrJson=JSON.stringify(r.arr).replace(/'/g,"&#39;");
+    rows+=`<div class="brow ch-sub">
+      <div class="blbl" style="color:${r.col}">${r.lbl}</div>
+      <div class="btrack"><div class="bfill ${c}" style="width:${fw}%"></div><div class="bhatch ${c}" style="left:${fw}%;width:${hw}%"></div><div class="bbase"></div></div>
+      <div class="btrend" style="cursor:zoom-in" title="Click to zoom" onclick='zoomTrend(this)' data-arr='${arrJson}' data-label="${r.lbl} leads" data-color="${r.col}" data-unit="" data-base="${r.base==null?'':r.base}" data-name="${(e.name||'').replace(/"/g,'&quot;')}">${miniTrend(r.arr,r.base,r.col)}</div>
+      <div class="bvals"><span class="bvc">${r.cur}</span><span class="bvs">←</span><span class="against-lbl">${al}</span><span class="bvb">${Math.round(r.base)}</span><span class="bvp ${c}">${r.p>0?'+':''}${r.p}%</span>${streakTag(r.arr,r.base)}</div>
+    </div>`;
+  });
+  return h+`<div class="ch-wrap">${rows||'<div style="font-size:9px;color:#94a3b8;padding:3px 0">No channel detail.</div>'}</div>`;
+}
+function barsHTML(e,against,id){
   const m=getM(e);
   const al=isMonthly?'prev mo':(AGAINST_SHORT[against]||against);
   let html='';
@@ -422,6 +456,7 @@ function barsHTML(e,against){
         ${streakTag(arr,base)}${vs}${condDot}
       </div>
     </div>`;
+    if(def.key==='leads' && e.leadCh) html+=leadChannelRows(e,against,id);
   });
   return html;
 }
@@ -590,7 +625,7 @@ function render(){
         <div class="pills">${pills}</div>
         ${qv}
       </div>
-      <div class="bars">${barsHTML(e,against)}</div>
+      <div class="bars">${barsHTML(e,against,id)}</div>
       ${hc?`<div class="ch ${isOpen?'open':''}"><div class="chi">${chHtml}</div></div>`:''}
     </div>`;
   }
@@ -635,13 +670,31 @@ function attachCohort(D, DMF){
     c.swbook=cityArr.map((v,i)=> missing[i]?null:v);
   });
 }
+// Attach per-clinic leads-by-channel (data_leads.json: gmb/google_ad/organic/fb/justdial/others) aligned to WKS.
+// Same leads universe as data_drops' total leads, so the channels sum to the Leads bar. City = sum of clinics.
+function attachLeadChannels(D, LJ){
+  if(!LJ) return;
+  const W=WKS.length;
+  const align=arr=>{ if(!arr)return null; const r=arr.slice().reverse(); return r.length>=W?r.slice(r.length-W):Array(W-r.length).fill(0).concat(r); };
+  D.cities.forEach(c=>{
+    const cityCh={}; LEAD_CH.forEach(([k])=>cityCh[k]=Array(W).fill(0));
+    let anyCl=false;
+    (c.clinics||[]).forEach(cl=>{
+      const o=LJ[c.name+'|'+cl.name];
+      if(o){ anyCl=true; cl.leadCh={}; LEAD_CH.forEach(([k])=>{ const a=align(o[k]); cl.leadCh[k]=a; if(a)a.forEach((v,i)=>cityCh[k][i]+=(v||0)); }); }
+    });
+    if(anyCl) c.leadCh=cityCh;
+  });
+}
 // ── INIT ──
 Promise.all([
   fetch('data_drops.json?t='+Date.now()).then(r=>r.json()),
-  fetch('data_demand_funnel.json?t='+Date.now()).then(r=>r.ok?r.json():null).catch(()=>null)
-]).then(([D,DMF])=>{
+  fetch('data_demand_funnel.json?t='+Date.now()).then(r=>r.ok?r.json():null).catch(()=>null),
+  fetch('data_leads.json?t='+Date.now()).then(r=>r.ok?r.json():null).catch(()=>null)
+]).then(([D,DMF,LJ])=>{
   CITIES=D.cities; WKS=D._meta.weeks; weekIdx=WKS.length-1;
   try{ attachCohort(D,DMF); }catch(e){ console.warn('cohort attach failed',e); }
+  try{ attachLeadChannels(D,LJ); }catch(e){ console.warn('lead-channel attach failed',e); }
   buildPeriodOptions(); setDateline(); buildFilterUI(); render();
 }).catch(e=>{document.getElementById('main').innerHTML='<div class="empty">Could not load demand data: '+e.message+'</div>';});
 </script>
