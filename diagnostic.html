@@ -2962,6 +2962,22 @@ function renderOnline(){
       <div class="kpi"><div class="kpi-l">Calls done</div><div class="kpi-v">${O.callsW.toLocaleString()}</div><div class="kpi-s">B2D ~100% — completion is fine</div></div>
       <div class="kpi"><div class="kpi-l">Lead driver</div><div class="kpi-v" style="color:#dc2626">${O.driver?(CHN[O.driver]||O.driver):'—'}</div><div class="kpi-s">${O.driver?signed(Math.round(O.driverDelta))+' leads':'leads flat'}</div></div>
     </div>
+    <div style="margin-top:13px;padding-top:11px;border-top:1px solid var(--line);">
+      <div style="font-size:11px;font-weight:700;color:#475569;margin-bottom:5px;">📉 Online bookings — trend (oldest → latest)</div>
+      ${spark(O.bk.slice(0,8).reverse(), '#4f46e5', 7, v=>Math.round(v))}
+    </div>
+  </div>`;
+  // ── Which category drove the online drop (online demand is ED / PE / STI-led) ──
+  const wkj=WEEKS[wkIdx].json, catNow=k=>JDATA.online.weekly_total[wkj]?.by_cat?.[k]||0,
+        catBase=k=>avg(WEEKS.slice(wkIdx+1,wkIdx+6).map(w=>JDATA.online.weekly_total[w.json]?.by_cat?.[k]||0));
+  const catRows=[['ED+','ED'],['PE+','PE'],['ED+PE+','ED + PE'],['STI','STI'],['oth','Other']]
+    .map(([k,lbl])=>({lbl,now:catNow(k),base:catBase(k),d:Math.round(catNow(k)-catBase(k))})).sort((a,b)=>a.d-b.d);
+  const catMax=Math.max(1,...catRows.map(c=>Math.abs(c.d)));
+  const catWorst=catRows[0];
+  const catCard=`<div class="card">
+    <div class="sec-h"><span class="sec-num">3</span>Which category drove it</div>
+    <div class="sec-sub">Online demand is category-led (ED / PE / STI). Booking Δ vs prior-weeks average, by category${catWorst&&catWorst.d<0?` — biggest fall is <b>${catWorst.lbl}</b> (${signed(catWorst.d)})`:''}.</div>
+    ${catRows.map(c=>`<div class="barrow"><div class="bl">${c.lbl}</div><div class="bt" style="background:#f8fafc;display:flex;justify-content:center;"><div class="bf" style="width:${Math.max(5,Math.abs(c.d)/catMax*50)}%;margin-left:${c.d<0?(50-Math.max(5,Math.abs(c.d)/catMax*50)):50}%;background:${c.d<0?'#dc2626':'#059669'};justify-content:${c.d<0?'flex-start':'flex-end'};padding:0 7px;">${signed(c.d)}</div></div><div style="font-size:10px;color:#94a3b8;width:64px;text-align:right;">${c.now} vs ${Math.round(c.base)}</div></div>`).join('')}
   </div>`;
   const driverCard=`<div class="card">
     <div class="sec-h"><span class="sec-num">2</span>The driver — channel ${onBk?'booking':'lead'} movement</div>
@@ -2970,7 +2986,7 @@ function renderOnline(){
     <div style="font-size:11px;color:#94a3b8;margin-top:6px;">${onBk?'Booking Δ vs prior-weeks average · online first-time SC bookings by channel (L0 / bookings_data_raw).':'Lead Δ vs 8-wk average · network leads from the L0 sheet.'}</div>
   </div>`;
   const why=`<div class="card">
-    <div class="sec-h"><span class="sec-num">3</span>Why this is cleanly an online problem</div>
+    <div class="sec-h"><span class="sec-num">4</span>Why this is cleanly an online problem</div>
     <ul style="font-size:12px;color:#475569;line-height:1.7;margin:0;padding-left:18px;">
       <li><b>No availability dimension.</b> Online has no doctor-days to lose — none of this is a roster/supply issue.</li>
       <li><b>B2D ~100%.</b> Tele consults complete — the drop isn't no-shows or scheduling.</li>
@@ -2978,10 +2994,10 @@ function renderOnline(){
     </ul>
   </div>`;
   const bottom=`<div class="card">
-    <div class="sec-h"><span class="sec-num">4</span>Bottom line — online</div>
-    <div class="sec-sub">Total addressable online: ~${Math.abs(O.dBk)} bookings/week. ${O.driver?`Concentrated in <b>${CHN[O.driver]||O.driver}</b> — one lever: adjust that channel's spend/targeting.`:'No single channel driver this week.'} Not a clinic, availability, or conversion problem — those belong to the offline funnel.</div>
+    <div class="sec-h"><span class="sec-num">5</span>Bottom line — online</div>
+    <div class="sec-sub">Total addressable online: ~${Math.abs(O.dBk)} bookings/week. ${O.driver?`Concentrated in <b>${CHN[O.driver]||O.driver}</b>`:'No single channel driver this week'}${catWorst&&catWorst.d<0?` and <b>${catWorst.lbl}</b> category`:''} — levers: adjust that channel's spend/targeting${catWorst&&catWorst.d<0?` and ${catWorst.lbl} creative/landing`:''}. Not a clinic, availability, or completion problem — those belong to the offline funnel.</div>
   </div>`;
-  return headline+driverCard+why+bottom;
+  return headline+driverCard+catCard+why+bottom;
 }
 
 // ═══════════════ INIT ═══════════════
