@@ -26,16 +26,14 @@ INDIRANAGAR_PLACE_ID = "ChIJx1bpQMYXrjsRJX-BbUHi294"
 WEEKS = ["2026-06-08","2026-06-01","2026-05-25","2026-05-18","2026-05-11","2026-05-04",
          "2026-04-27","2026-04-20","2026-04-13","2026-04-06","2026-03-30","2026-03-23"]  # Mon, newest-first
 widx = {w: i for i, w in enumerate(WEEKS)}; NW = len(WEEKS)
-CATS = ['SH','STD','MH','ED','Brand','Other']
+CATS = ['STI','SH','MH','Other']   # unified across the funnel
 
 def cat_of(name):
     u = name.upper()
     if re.search(r'(^|_)MH(_|$)', u) or 'MENTAL' in u: return 'MH'
-    if re.search(r'(^|_)STD(_|$)', u) or re.search(r'(^|_)STI(_|$)', u): return 'STD'
-    if re.search(r'(^|_)ED(_|$)', u): return 'ED'
-    if 'BRAND' in u: return 'Brand'
-    if re.search(r'(^|_)SH(_|$)', u) or 'SEXUAL' in u: return 'SH'
-    return 'Other'
+    if re.search(r'(^|_)STD(_|$)', u) or re.search(r'(^|_)STI(_|$)', u): return 'STI'
+    if re.search(r'(^|_)(SH|ED|PE)(_|$)', u) or 'SEXUAL' in u: return 'SH'
+    return 'Other'   # Brand / online / national
 
 def _creds():
     keys = ["GOOGLE_ADS_CLIENT_ID","GOOGLE_ADS_CLIENT_SECRET","GOOGLE_ADS_DEVELOPER_TOKEN","GOOGLE_ADS_REFRESH_TOKEN"]

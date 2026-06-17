@@ -151,7 +151,8 @@ function buildStages(M){
   const gc=R.google.by_cat||{};
   const gcat=(c,f)=>(gc[c]&&gc[c][f])||[];
   const bcat=(c,f)=>(B.by_cat[c]&&B.by_cat[c][f])||[];
-  const GCATS=['SH','STD','MH','ED','Brand'], aic=ai.by_cat||{};
+  const GCATS=['STI','SH','MH','Other'], aic=ai.by_cat||{};
+  const cc=D.leads.call_channels||{}, ccA=k=>(cc[k]&&cc[k].total)||[];
   return [
     {t:'stage',k:'impr',label:'Impressions',color:'#1F6F5C',fmt:N,children:[
       ...GCATS.map(c=>({label:'Google · '+c,arr:gcat(c,'impr'),fmt:N})),
@@ -162,7 +163,10 @@ function buildStages(M){
       {label:'GMB listing',arr:R.gmb.clicks,fmt:N}]},
     {t:'edge',k:'c2l',label:'Click → lead',formula:'leads ÷ clicks',fmt:PCT},
     {t:'stage',k:'leads',label:'Leads (total)',color:'#3E6F8E',fmt:N,children:[
-      {label:'Inbound (call)',arr:M.callLeads,fmt:N},
+      {sep:1,label:'By source'},
+      {label:'Paid Google call',arr:ccA('paid'),fmt:N},
+      {label:'GMB organic call',arr:ccA('gmb'),fmt:N},
+      {label:'Other call (pool)',arr:ccA('other'),fmt:N},
       {label:'Web / UTM',arr:M.web,fmt:N},
       {label:'Organic',arr:M.org,fmt:N},
       {label:'Practo',arr:M.pr,fmt:N},
@@ -255,11 +259,17 @@ function render(){
   h+=snapshot(M,i);
   h+=`<div class="funnel-read">Reach <b>${N(M.impr[i])}</b> impressions (Google ${N(M.gImpr[i])} + GMB ${N(M.mImpr[i])}) → <b>${N(M.clicks[i])}</b> clicks (CTR ${PCT(M.ctr[i])}) → <b>${N(M.leads[i])}</b> leads (call ${N(M.callLeads[i])} + web ${N(M.web[i])} + organic/Practo) → <b>${N(M.booked[i])}</b> booked → <b>${N(M.done[i])}</b> done (${PCT(M.b2d[i])}) → <b>${N(M.purch[i])}</b> purchased (${PCT(M.d2p[i])}) → <b>${RUP(M.rev[i])}</b>. <span style="color:var(--muted)">Lead→book can exceed 100% when bookings include repeat/walk-in patients beyond tracked new leads.</span></div>`;
 
+  // L2RL — each category's share of total leads (categorised from inbound calls)
+  {const lc=ai.by_cat||{}, tl=M.leads[i]||1, sh=c=>PCT(((lc[c]&&lc[c][i])||0)/tl*100);
+   h+=`<div style="font-size:12px;color:var(--ink2);margin:9px 2px 0;padding:9px 13px;background:#FBF9F3;border:1px dashed var(--line);border-radius:9px">
+     <b>Lead category mix (L2RL = category ÷ total leads):</b> STI <b style="color:#B8862E">${sh('STI')}</b> · Sexual health <b style="color:#2E7D5B">${sh('SH')}</b> · Mental health <b style="color:#7B5EA7">${sh('MH')}</b> · Other ${sh('Other')}
+     <span style="color:var(--muted)"> — categorised from inbound calls; the remainder are web/organic leads (no category).</span></div>`;}
+
   // 2) WEEKLY MOVEMENT (matrix with nested breakdowns)
   h+=`<div class="shead"><h2>The funnel, last 6 weeks — with breakdowns</h2><span class="sub2">latest on the right · <b style="color:var(--good)">green = high</b> / <b style="color:var(--bad)">red = low</b> per row · ▲▼ vs prior week · ▾ collapse a stage · click a trend to zoom</span></div>`;
   h+=matrix(M);
 
-  h+=`<div class="note"><b>Sources.</b> Reach: Google = the Indiranagar location-asset (Assets→Location, by category); GMB = Business-Profile insights (no category). Leads: <b>inbound calls</b> from the AI call audit (clinic-attributed by caller intent, incl. paid calls), split by category (STI/SH/MH); web from UTM; organic/Practo from CRM. Booked → Done → Purchased → Revenue: exact Redshift (Screening Calls × diagnosis × paid invoices). <b>Two category layers</b> — reach/leads use marketing intent (SH/STD/MH), booked→revenue use consultation diagnosis (STI/ED+/PE+) — so they don't map 1:1. Lead→book can exceed 100% when bookings include repeat/walk-in patients beyond tracked new leads.</div>`;
+  h+=`<div class="note"><b>Sources.</b> Reach: Google = the Indiranagar location-asset (Assets→Location), by category; GMB = Business-Profile insights (no category). Leads: <b>inbound calls</b> from the AI call audit, clinic-attributed by caller intent and split by channel — <b>Paid Google call</b> (city call-asset #), <b>GMB organic call</b> (clinic listing #), <b>Other</b> (shared pool) — and by category (STI/SH/MH/Other); web from UTM; organic/Practo from CRM. Booked → Done → Purchased → Revenue: exact Redshift (Screening Calls × diagnosis × paid invoices). <b>Mental Health note:</b> demand (reach + calls) splits STI/SH/MH/Other, but the consultation <i>diagnosis</i> has no MH tag — so on the booked→revenue side MH sits inside <b>Other</b> (only STI &amp; SH are clinically separable). Lead→book can exceed 100% when bookings include repeat/walk-in patients beyond tracked new leads.</div>`;
 
   $('app').innerHTML=h;
 }
