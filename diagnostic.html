@@ -1261,6 +1261,58 @@ function renderDailyPulse(){
     ${charts}`;
 }
 
+// compact 8-week sparkline for the Top-movers cards (bkArr is newest-first; window = current..7-back, drawn oldest→newest)
+function miniSparkOff(arr,base){
+  if(!arr) return '';
+  const W=wkIdx, win=[];
+  for(let i=Math.min(arr.length-1,W+7);i>=W;i--){ if(arr[i]!=null) win.push(arr[i]); }
+  if(win.length<2) return '';
+  let mn=Math.min(...win,base!=null?base:Infinity), mx=Math.max(...win,base!=null?base:-Infinity); if(mx===mn)mx=mn+1;
+  const W0=72,H=18,pad=2, X=i=>pad+i/(win.length-1)*(W0-2*pad), Y=v=>pad+(1-(v-mn)/(mx-mn))*(H-2*pad);
+  const path=win.map((v,i)=>(i?'L':'M')+X(i).toFixed(1)+' '+Y(v).toFixed(1)).join(' ');
+  const bl=base!=null?`<line x1="${pad}" y1="${Y(base).toFixed(1)}" x2="${W0-pad}" y2="${Y(base).toFixed(1)}" stroke="#c4bdb0" stroke-width="0.8" stroke-dasharray="2 2"/>`:'';
+  const last=win[win.length-1], col=base&&last<base*0.95?'#dc2626':base&&last>base*1.05?'#059669':'#64748b';
+  return `<svg width="${W0}" height="${H}" viewBox="0 0 ${W0} ${H}" style="flex-shrink:0">${bl}<path d="${path}" fill="none" stroke="#94a3b8" stroke-width="1.2"/><circle cx="${X(win.length-1).toFixed(1)}" cy="${Y(last).toFixed(1)}" r="2.2" fill="${col}"/></svg>`;
+}
+// Top movers — auto-pick biggest offline growth & drops, with the cause + data-derived "what changed" + an
+// action slot the user fills live. Growth answers "where did offline grow & why"; drops are the 5-clinic RCA.
+function topMoversOffline(R){
+  const rows=(R&&R.rows)||[];
+  const growth=rows.filter(r=>r.dBk>0).sort((a,b)=>b.dBk-a.dBk).slice(0,5);
+  const drops=rows.filter(r=>['avail','l2b','leads'].includes(r.cause)&&r.dBk<0).sort((a,b)=>a.dBk-b.dBk).slice(0,5);
+  if(!growth.length && !drops.length) return '';
+  const card=(r,grow)=>{
+    const m=CAUSE[r.cause]||{label:'Growth',col:'#059669',owner:''};
+    const col=grow?'#059669':(m.col||'#64748b'), lbl=grow?'GROWTH':(m.label||'—');
+    const dBkP=r.bkBase?Math.round(r.dBk/r.bkBase*100):0;
+    const actTxt=`Active days <b>${r1(r.av_avg)}→${r1(r.av_w)}</b> (${signed(r1(r.dAct))})`;
+    const ldTxt=`Leads <b>${Math.round(r.ld_avg)}→${r.ld_w}</b> (${signed(Math.round(r.dLeadPct),'%')})`;
+    return `<div style="border:1px solid ${col}44;border-left:4px solid ${col};border-radius:11px;padding:12px 14px;background:#fff;">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;">
+        <div><b style="font-size:13.5px;">${r.clinic}</b> <span style="color:#94a3b8;font-size:11px;">${r.city}</span></div>
+        <div style="text-align:right;"><span style="font-family:'JetBrains Mono';font-size:15px;font-weight:800;color:${dCol(r.dBk)}">${signed(r.dBk)}</span> <span style="color:#94a3b8;font-size:10px;">bk ${signed(dBkP,'%')}</span></div>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;margin:7px 0 5px;">
+        <span style="font-size:11px;color:#475569;white-space:nowrap;">New bk <b>${Math.round(r.bk_avg)}→${r.bk_w}</b></span>
+        ${miniSparkOff(r.bkArr,r.bkBase)}
+        <span style="font-size:9px;color:#94a3b8;">vs ${baseShort()}</span>
+      </div>
+      <div style="font-size:11px;line-height:1.5;">
+        <span style="display:inline-block;background:${col}18;color:${col};border-radius:5px;padding:1px 7px;font-weight:700;font-size:10px;">${lbl}</span>
+        ${r.note?`<span style="color:#64748b;"> ${r.note}.</span>`:''}
+      </div>
+      <div style="font-size:11px;color:#475569;margin-top:5px;">What changed: ${actTxt} · ${ldTxt}</div>
+      <div style="font-size:10.5px;color:#b45309;background:#fffbeb;border:1px dashed #fcd34d;border-radius:6px;padding:4px 8px;margin-top:7px;">Why / what we did <span style="color:#cbd5e1;">— add live</span></div>
+    </div>`;
+  };
+  const gridStyle='display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));gap:12px;';
+  return `<div class="card">
+    <div class="sec-h"><span class="sec-num">★</span>Top movers — where offline grew &amp; dropped</div>
+    <div class="sec-sub">Auto-picked biggest movers vs <b>${baseShort()}</b>. The cause &amp; "what changed" are data-derived; add the "why / what we did" live. Trend dot: red = below norm, green = above. Open a clinic's full RCA via the picker above.</div>
+    ${drops.length?`<div style="font-size:11px;font-weight:800;color:#dc2626;text-transform:uppercase;letter-spacing:.04em;margin:4px 0 8px;">▼ Biggest drops — RCA</div><div style="${gridStyle}margin-bottom:14px;">${drops.map(r=>card(r,false)).join('')}</div>`:''}
+    ${growth.length?`<div style="font-size:11px;font-weight:800;color:#059669;text-transform:uppercase;letter-spacing:.04em;margin:4px 0 8px;">▲ Biggest growth — where &amp; why</div><div style="${gridStyle}">${growth.map(r=>card(r,true)).join('')}</div>`:''}
+  </div>`;
+}
 function renderOffline(){
   if(!Object.keys(SDATA).length) return '<div class="card">Demand-tracker sheet didn\'t load (leads & availability unavailable). Check the sheet is published.</div>';
   const Rall=rcaOffline();
@@ -1414,8 +1466,8 @@ function renderOffline(){
   const _aggLabel = geoSel.size ? geoScopeText() : '🇮🇳 India — all clinics';
   let _aggBlock='';
   try{ if(R.rows&&R.rows.length){ _aggBlock = renderAggView(aggregateRows(R.rows, _aggLabel), _aggLabel); } }catch(e){ console.warn('agg view',e); }
-  // Clean metric-first flow: just the funnel. Drilling a step shows the city→clinic story (renderMetricDrill).
-  return ctrl+fNote+_aggBlock;
+  // Clean metric-first flow: top movers (growth + drop RCA), then the funnel/city→clinic story.
+  return ctrl+fNote+topMoversOffline(R)+_aggBlock;
 }
 
 // Dedicated Practo section for the Quick View — leads + phone-matched bookings + by-doctor,
