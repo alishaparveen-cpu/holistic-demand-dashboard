@@ -19,7 +19,8 @@ RQ = os.path.join(ROOT, "scripts", "redshift_query.py")
 WEEKS = ["2026-06-08","2026-06-01","2026-05-25","2026-05-18","2026-05-11","2026-05-04",
          "2026-04-27","2026-04-20","2026-04-13","2026-04-06","2026-03-30","2026-03-23"]
 idx = {w: i for i, w in enumerate(WEEKS)}; NW = len(WEEKS)
-CATS = ["STI", "ED+", "PE+", "ED+PE+", "NSSD", "oth"]
+CATS = ["STI", "SH", "Other"]   # simplified: all ED/PE diagnoses roll up to Sexual Health
+COLLAPSE = {"STI": "STI", "ED+": "SH", "PE+": "SH", "ED+PE+": "SH", "NSSD": "Other", "oth": "Other"}
 
 SQL = """WITH loc AS (
     SELECT id FROM allo_health.locations
@@ -65,7 +66,7 @@ def main():
     for line in p.stdout.strip().splitlines():
         c = line.split("\t")
         if len(c) < 6: continue
-        wk, cat = c[0], (c[1] if c[1] in CATS else "oth")
+        wk, cat = c[0], COLLAPSE.get(c[1], "Other")
         if wk not in idx: continue
         i = idx[wk]
         try: bk, dn, pu, rp = int(c[2]), int(c[3]), int(c[4]), int(float(c[5]))
@@ -75,7 +76,7 @@ def main():
             tgt["booked"][i]+=bk; tgt["done"][i]+=dn; tgt["purchased"][i]+=pu; tgt["rev"][i]+=rev
     out = {"_meta": {"weeks": WEEKS, "clinic": "Bangalore|Indiranagar", "cats": CATS,
             "source": "allo_consultations.appointments (Screening Call) × encounter diagnosis tag × paid invoices, clinic-filtered",
-            "note": "booked=all SCs; done=COMPLETED; purchased=completed+paid invoice; rev=₹ paid. Category=consultation diagnosis (only consulted SCs have one; no-shows fall in 'oth' for booked)."},
+            "note": "booked=all SCs; done=COMPLETED; purchased=completed+paid invoice; rev=₹ paid. Category=consultation diagnosis simplified to STI / SH (all ED·PE) / Other (only consulted SCs have one; no-shows fall in 'Other' for booked)."},
         "total": tot, "by_cat": bycat}
     json.dump(out, open(os.path.join(ROOT, "data_indiranagar_bottom.json"), "w"), separators=(",", ":"))
     print(f"wrote data_indiranagar_bottom.json")
