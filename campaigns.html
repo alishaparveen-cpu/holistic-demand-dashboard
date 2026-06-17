@@ -862,28 +862,32 @@ function renderSearch(){
   const c=CAMP[ci]; if(inp && inp.value!==c.n) inp.value=c.n;
   const g=GMAP[c.g]||{color:'#2E7D5B',label:''};
   const labs=(c.weeks_iso&&c.weeks_iso.length?c.weeks_iso:WKISO||[]).slice().reverse().map(wkRange);
-  const card=(label,arr,fmt,inv)=>srCard(label,arr,fmt,inv,g.color,false,labs);
   const clicks=(c.spendH||[]).map((s,i)=>(c.cpc&&c.cpc[i])?Math.round(s/c.cpc[i]):null);
-  const dtOut=c.dt==='loc'?card('Loc %',c.d,pct,false):c.dt==='cpb'?card('CPB',c.d,rupee,true):card('Cost / conversion',c.d,rupee,true);
+  const NN=v=>(+v).toLocaleString('en-IN');
+  const dtRow=c.dt==='loc'?['Loc %',c.d,pct,false]:c.dt==='cpb'?['CPB',c.d,rupee,true]:['Cost / conv',c.d,rupee,true];
+  const ROWS=[['Spend',c.spendH,rupee,false],['Clicks',clicks,NN,false],[volLabel(c.dt),c.v,NN,false],
+    ['Leads (UTM)',c.leads,NN,false],['Bookings (UTM)',c.booked,NN,false],['Done (UTM)',c.done,NN,false],
+    dtRow,['CPC',c.cpc,rupee,true],['Impr. Share',c.is,pct,false],['Avg QS',c.qs,v=>v+'/10',false],
+    ['Lost — budget',c.bl,pct,true],['Lost — rank',c.rl,pct,true],['Ad-rel drag',c.ar,pct,true],['LP drag',c.lp,pct,true]];
+  const nW=labs.length;
+  const heat=(v,vals,inv)=>{const a=vals.filter(x=>x!=null&&!isNaN(x));if(a.length<2||v==null||isNaN(v))return '';
+    const mn=Math.min(...a),mx=Math.max(...a),rg=mx-mn||1;let t=(v-mn)/rg;if(inv)t=1-t;
+    return t>=0.5?`background:rgba(46,125,91,${((t-0.5)*0.5).toFixed(2)})`:`background:rgba(192,80,63,${((0.5-t)*0.5).toFixed(2)})`;};
   let h=`<div style="margin-bottom:14px"><h2 style="margin:0;font-size:19px">${c.n}</h2>
     <div style="font-size:12px;color:var(--muted);margin-top:3px"><span class="cdot" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${g.color};margin-right:5px"></span>${g.label} · budget ₹${(c.bud||0).toLocaleString('en-IN')}/day · ${c.nweeks||(WKISO||[]).length} weeks${c.sug?' · <b style="color:var(--amber)">'+c.sug+'</b>':''}</div></div>`;
-  h+='<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(255px,1fr));gap:12px">'+[
-    card('Spend',c.spendH,rupee,false),
-    card('Clicks',clicks,v=>(+v).toLocaleString('en-IN'),false),
-    card(volLabel(c.dt),c.v,v=>(+v).toLocaleString('en-IN'),false),
-    card('Leads (UTM)',c.leads,v=>(+v).toLocaleString('en-IN'),false),
-    card('Bookings (UTM)',c.booked,v=>(+v).toLocaleString('en-IN'),false),
-    card('Done (UTM)',c.done,v=>(+v).toLocaleString('en-IN'),false),
-    dtOut,
-    card('CPC',c.cpc,rupee,true),
-    card('Impr. Share',c.is,pct,false),
-    card('Avg QS',c.qs,v=>v+'/10',false),
-    card('Lost — budget',c.bl,pct,true),
-    card('Lost — rank',c.rl,pct,true),
-    card('Ad-rel drag',c.ar,pct,true),
-    card('LP drag',c.lp,pct,true),
-  ].filter(Boolean).join('')+'</div>'
-   +'<div style="font-size:11px;color:var(--muted);margin-top:10px">Click any chart to zoom the full weekly trend. Clicks = spend ÷ CPC. <b>Latest week’s conversions are provisional</b> — Google backfills conversions for up to 7 days, so a recent 0 often fills in later. QS / ad-rel / LP / lost-budget are current snapshots (Google gives no weekly history, so those lines are flat). Leads / bookings aren’t per-campaign — combine by city or category to see the lead→booking funnel.</div>';
+  h+='<div style="overflow-x:auto"><table class="tbl" style="font-size:12.5px"><thead><tr><th style="text-align:left">Metric</th>'+
+     labs.map(l=>`<th style="text-align:right;white-space:nowrap">${l}</th>`).join('')+'<th style="text-align:right;white-space:nowrap">Trend ⤢</th></tr></thead><tbody>';
+  ROWS.forEach(([label,arr,fmt,inv])=>{
+    const padded=Array.from({length:nW},(_,i)=>(arr&&i<arr.length)?arr[i]:null);
+    if(!padded.some(x=>x!=null))return;
+    const oldest=padded.slice().reverse();   // oldest→newest, aligned to labs
+    const zi=ZREG.push({label,series:oldest,labels:labs,fmt,color:g.color})-1;
+    h+=`<tr><td style="text-align:left;font-weight:600;white-space:nowrap">${label}</td>`;
+    oldest.forEach(v=>{h+=`<td style="text-align:right;${heat(v,oldest,inv)}">${v==null?'—':fmt(v)}</td>`;});
+    h+=`<td data-z="${zi}" title="click to zoom" style="cursor:zoom-in;text-align:right">${spark(oldest,inv,90,26,g.color)}</td></tr>`;
+  });
+  h+='</tbody></table></div>'
+   +'<div style="font-size:11px;color:var(--muted);margin-top:10px">Week-by-week; click a row’s Trend to zoom. Clicks = spend ÷ CPC. <b>Latest week’s conversions are provisional</b> (Google backfills up to 7 days). QS / ad-rel / LP / lost-budget are current snapshots (no weekly history). Leads / Bookings / Done are UTM-attributed per campaign — combine by city or category for the full lead→booking funnel.</div>';
   res.innerHTML=h;
 }
 // Exhaustive-but-concise filter: any metric × {dropped / grew / highest / lowest}
