@@ -143,6 +143,11 @@ select.mag-sel.vis{display:block}
 .lcf-row select.on{border-color:#1F6F5C;color:#1F6F5C;background:#F0F7F3}
 .ch-sub.lcf-hit .blbl{font-weight:800}
 .ch-sub.lcf-hit .btrack{outline:1.5px solid #1F6F5C55;border-radius:2px}
+.lcf-inline{display:inline-flex;align-items:center;gap:6px;margin-left:10px;padding-left:10px;border-left:1px dashed var(--line)}
+.lcf-inline .lcf-lbl{font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;color:var(--faint)}
+.lcf-inline select{font-family:inherit;font-size:11px;border:1.5px solid var(--line);border-radius:6px;padding:2px 6px;background:#fff;cursor:pointer;font-weight:600}
+.lcf-inline select.on{border-color:#1F6F5C;color:#1F6F5C;background:#F0F7F3}
+.lcf-inline .dir-btn{padding:2px 7px}
 .qvlink{font-family:'JetBrains Mono';font-size:9px;font-weight:700;color:#4338ca;background:#eef2ff;border:1px solid #c7d2fe;border-radius:5px;padding:2px 6px;text-decoration:none;white-space:nowrap;flex-shrink:0;margin-left:auto}
 .qvlink:hover{background:#e0e7ff}
 .tz-overlay{display:none;position:fixed;inset:0;background:rgba(20,18,14,.55);z-index:9999;align-items:center;justify-content:center;padding:20px}
@@ -502,7 +507,7 @@ function buildFilterUI(){
     h+='</div></div>';
   });
   chipWrap.innerHTML=h;
-  buildLeadChFilter();
+  const _lcf=document.getElementById('leadch-filter'); if(_lcf) _lcf.innerHTML='';   // channel filter now lives inline on the Leads condition row
   const condWrap=document.getElementById('cond-rows');
   if(!mfState.length){condWrap.innerHTML='<div class="no-conds">Select metrics above to track drops</div>';return;}
   condWrap.innerHTML='';
@@ -522,25 +527,22 @@ function buildFilterUI(){
         <option value="20" ${f.mag===20?'selected':''}>&gt; 20%</option>
         <option value="30" ${f.mag===30?'selected':''}>&gt; 30%</option>
       </select>
+      ${f.key==='leads'?leadChInline():''}
       <button class="cond-remove" onclick="removeMetric('${f.key}')">✕</button>`;
     condWrap.appendChild(row);
   });
 }
 // ── Leads-by-channel FILTER — show only clinics where a chosen channel's leads moved ──
 let leadChFilter={channel:'all',dir:'drop',mag:10};
-function buildLeadChFilter(){
-  const el=document.getElementById('leadch-filter'); if(!el) return;
+// Inline channel filter rendered ON the Leads condition row (only shows when Leads is selected).
+function leadChInline(){
   const f=leadChFilter;
-  const chSel=`<select onchange="setLeadChFilter('channel',this.value)" class="${f.channel!=='all'?'on':''}"><option value="all">All channels (off)</option>${LEAD_CH.map(([k,lbl])=>`<option value="${k}" ${f.channel===k?'selected':''}>${lbl}</option>`).join('')}</select>`;
-  let h=`<div class="lcf-row"><span class="fp-section-lbl">Leads channel filter:</span>${chSel}`;
+  let h=`<span class="lcf-inline"><span class="lcf-lbl">by channel</span><select onchange="setLeadChFilter('channel',this.value)" class="${f.channel!=='all'?'on':''}"><option value="all">All (off)</option>${LEAD_CH.map(([k,lbl])=>`<option value="${k}" ${f.channel===k?'selected':''}>${lbl}</option>`).join('')}</select>`;
   if(f.channel!=='all'){
-    h+=`<div class="dir-grp">${['drop','grow'].map(d=>`<button class="dir-btn ${d}${f.dir===d?' on':''}" onclick="setLeadChFilter('dir','${d}')">${d==='drop'?'↓ Dropped':'↑ Growing'}</button>`).join('')}</div>`;
-    h+=`<select class="mag-sel vis" onchange="setLeadChFilter('mag',this.value)">${[['1','any amount'],['5','&gt; 5%'],['10','&gt; 10%'],['20','&gt; 20%'],['30','&gt; 30%']].map(([v,l])=>`<option value="${v}" ${(+f.mag||1)===+v?'selected':''}>${l}</option>`).join('')}</select>`;
-    const lbl=(LEAD_CH.find(c=>c[0]===f.channel)||[])[1]||f.channel;
-    h+=`<span style="color:#94a3b8;font-size:10.5px;">→ only clinics where <b style="color:#475569">${lbl}</b> leads ${f.dir==='drop'?'dropped':'grew'}${(+f.mag>1)?' &gt;'+f.mag+'%':''} · drill auto-opens</span>`;
+    h+=`<div class="dir-grp">${['drop','grow'].map(d=>`<button class="dir-btn ${d}${f.dir===d?' on':''}" onclick="setLeadChFilter('dir','${d}')" title="${d==='drop'?'dropped':'grew'}">${d==='drop'?'↓':'↑'}</button>`).join('')}</div>`;
+    h+=`<select class="mag-sel vis" onchange="setLeadChFilter('mag',this.value)">${[['1','any'],['5','&gt;5%'],['10','&gt;10%'],['20','&gt;20%'],['30','&gt;30%']].map(([v,l])=>`<option value="${v}" ${(+f.mag||1)===+v?'selected':''}>${l}</option>`).join('')}</select>`;
   }
-  h+='</div>';
-  el.innerHTML=h;
+  return h+'</span>';
 }
 function setLeadChFilter(k,v){
   leadChFilter[k]=(k==='mag')?+v:v;
@@ -556,7 +558,7 @@ function leadChPasses(e,against){
 }
 function toggleMetric(key){
   const idx=mfState.findIndex(f=>f.key===key);
-  if(idx>=0) mfState.splice(idx,1);
+  if(idx>=0){ mfState.splice(idx,1); if(key==='leads') leadChFilter.channel='all'; }   // dropping Leads clears its channel filter
   else mfState.push({key,dirs:new Set(['any']),mag:0});
   buildFilterUI();render();
 }
@@ -568,7 +570,7 @@ function toggleDir(key,dir){
   buildFilterUI();render();
 }
 function setMag(key,mag){const f=mfState.find(x=>x.key===key);if(f)f.mag=+mag;render();}
-function removeMetric(key){mfState=mfState.filter(f=>f.key!==key);buildFilterUI();render();}
+function removeMetric(key){if(key==='leads')leadChFilter.channel='all';mfState=mfState.filter(f=>f.key!==key);buildFilterUI();render();}
 
 let searchQ='';
 function onSearch(v){searchQ=v.trim().toLowerCase();document.getElementById('sc-btn').className='sc-btn'+(searchQ?' vis':'');render();}
