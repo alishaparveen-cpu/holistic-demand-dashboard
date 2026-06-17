@@ -138,6 +138,7 @@ let JDATA=null, SDATA={}, L0=null, PRACTO={}, ROSTER={};   // PRACTO['City|Clini
 let LEADS={}, REVIEWS={}, MKT=null, BOOKTYPE={}, GACITY={}, NEGREV={}, GMBINS={};   // Redshift leads-by-source · GMB review velocity · Google Ads impression-share · booking-type split · city-level Google Ads health · recent negative reviews · GMB profile Insights (searches/interactions)
 let DAILY={};   // data_daily.json — daily bk/done per "City|Clinic" + _network (bk/done/leads), last 35 days to yesterday
 let LEADFUNNEL={};   // data_clinic_lead_funnel.json — AI call-audit clinic leads by category (STI/SH/MH), live from 27 May
+let NEWBK=null;      // data_newbk_rca.json — L0 first-time SC bookings (phone_rank=1) by week × online/offline × channel; reconciles online scope to L0
 function aiCat(city,clinic){ const o=LEADFUNNEL[city+'|'+clinic]; if(!o)return null; const w=(LEADFUNNEL._meta&&LEADFUNNEL._meta.weeks)||[]; return {weeks:w, by:o.by_cat||{}, total:o.lead_calls||[], rel:o.relevant||[]}; }
 let viewMode='weekly';   // 'weekly' (the RCA) | 'daily' (recent daily pulse, up to yesterday)
 function setViewMode(m){ viewMode=m; render(); window.scrollTo(0,0); }
@@ -963,18 +964,34 @@ function rcaOffline(){
 // ═══════════════ ONLINE RCA ENGINE ═══════════════
 function rcaOnline(){
   const W=wkIdx;
-  const ser=k=>{ const o=JDATA.online.weekly_total; return WEEKS.map(w=>o[w.json]?.total||0); };
-  const bk=ser(), bkW=bk[W], bkAvg=avg(bk.slice(W+1,W+6));
+  // Online bookings = L0 first-time SC (phone_rank=1, offline_location_flag=0) from data_newbk_rca.json — matches the
+  // Efficiency tab and the L0 sheet (latest 420). Falls back to data.json online weekly_total if the cube isn't loaded.
+  let bk, srcL0=false;
+  if(NEWBK && NEWBK.online){ const m={}; NEWBK.weeks.forEach((wk,i)=>m[wk]=NEWBK.online[i]);
+    bk=WEEKS.map(w=> (w.json in m)? m[w.json] : (JDATA.online.weekly_total[w.json]?.total||0)); srcL0=true; }
+  else { bk=WEEKS.map(w=>JDATA.online.weekly_total[w.json]?.total||0); }
+  const bkW=bk[W], bkAvg=avg(bk.slice(W+1,W+6));
   const callsArr=WEEKS.map(w=>JDATA.online.weekly_funnel?.[w.json]?.calls_done||0);
-  const ch={};
-  if(L0){ const ovl=L0.overallLeads||[]; const goodWk=i=>ovl[i]!=null && ovl[i]>2000;   // skip incomplete L0 weeks
+  // Channel movement — prefer L0 online BOOKINGS-by-channel (same basis as the headline, so the parts tie to the whole).
+  // Fall back to L0-sheet channel LEADS only if the bookings cube isn't loaded.
+  const ch={}; let chBasis='bookings';
+  if(NEWBK && NEWBK.online_ch){
+    const cm={}; (NEWBK.ch_weeks||[]).forEach((wk,i)=>cm[wk]=i);   // json week -> index in the 6-wk channel arrays
+    for(const k of (NEWBK.channels||['organic','google','fb','others'])){
+      const arr=WEEKS.map(w=> (w.json in cm)? (NEWBK.online_ch[k][cm[w.json]]||0) : null);
+      const wv=arr[W]; if(wv==null) continue;   // selected week is outside the 6-wk channel-detail window
+      const prior=arr.slice(W+1,W+6).filter(x=>x!=null);
+      ch[k]={w:wv, base: prior.length? prior.reduce((x,y)=>x+y,0)/prior.length : wv};
+    }
+  }
+  if(!Object.keys(ch).length && L0){ chBasis='leads'; const ovl=L0.overallLeads||[]; const goodWk=i=>ovl[i]!=null && ovl[i]>2000;
     for(const k of ['fb','google','gmb','practo']){ const a=L0[k]||[]; const bv=[];
       for(let i=W+1;i<=W+5;i++){ if(goodWk(i)&&a[i]!=null) bv.push(a[i]); }
       ch[k]={w:a[W]||0, base: bv.length? bv.reduce((x,y)=>x+y,0)/bv.length : 0 }; } }
-  // dominant lead mover (the channel that fell most)
+  // dominant mover (the channel that fell most)
   let driver=null,worst=0;
   for(const [k,v] of Object.entries(ch)){ const d=v.w-v.base; if(d<worst){worst=d;driver=k;} }
-  return {bk,bkW,bkAvg,dBk:bkW-bkAvg,callsArr,callsW:callsArr[W],callsAvg:avg(callsArr.slice(W+1,W+6)),ch,driver,driverDelta:worst};
+  return {bk,bkW,bkAvg,dBk:bkW-bkAvg,callsArr,callsW:callsArr[W],callsAvg:avg(callsArr.slice(W+1,W+6)),ch,driver,driverDelta:worst,srcL0,chBasis};
 }
 
 // ═══════════════ RENDER ═══════════════
@@ -2880,24 +2897,25 @@ function renderDeepDive(r){
 function renderOnline(){
   if(!JDATA.online) return '<div class="card">No online scope in data.json.</div>';
   const O=rcaOnline(), wl=WEEKS[wkIdx].label;
-  const CHN={fb:'Meta (FB)',google:'Google',gmb:'GMB',organic:'Organic',practo:'Practo'};
+  const CHN={fb:'Meta (FB)',google:'Google',gmb:'GMB',organic:'Organic',practo:'Practo',others:'Other / Direct'};
+  const onBk=O.chBasis==='bookings';   // channel movement measured in bookings (L0) vs leads (sheet fallback)
   const chRows=Object.entries(O.ch).map(([k,v])=>{ const d=v.w-v.base; return {k,name:CHN[k]||k,w:v.w,base:v.base,d}; }).sort((a,b)=>a.d-b.d);
   const maxAbs=Math.max(1,...chRows.map(c=>Math.abs(c.d)));
   const headline=`<div class="card">
     <div class="sec-h"><span class="sec-num">1</span>Online (tele-pool) — ${wl}</div>
     <div class="sec-sub">Online has no clinics and no doctor-availability — the funnel is simply demand → bookings → completed calls. So an online drop is always a <b>demand or conversion</b> story, never a supply one.</div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px;">
-      <div class="kpi"><div class="kpi-l">Online bookings · ${wl}</div><div class="kpi-v">${O.bkW.toLocaleString()}</div><div class="kpi-s">vs 8-wk avg ${Math.round(O.bkAvg).toLocaleString()}</div></div>
+      <div class="kpi"><div class="kpi-l">Online bookings · ${wl}</div><div class="kpi-v">${O.bkW.toLocaleString()}</div><div class="kpi-s">${O.srcL0?'first-time SC (L0) · ':''}vs 8-wk avg ${Math.round(O.bkAvg).toLocaleString()}</div></div>
       <div class="kpi"><div class="kpi-l">Δ vs average</div><div class="kpi-v" style="color:${dCol(O.dBk)}">${signed(O.dBk)}</div><div class="kpi-s">${O.bkAvg?signed(Math.round(O.dBk/O.bkAvg*100),'%'):''}</div></div>
       <div class="kpi"><div class="kpi-l">Calls done</div><div class="kpi-v">${O.callsW.toLocaleString()}</div><div class="kpi-s">B2D ~100% — completion is fine</div></div>
       <div class="kpi"><div class="kpi-l">Lead driver</div><div class="kpi-v" style="color:#dc2626">${O.driver?(CHN[O.driver]||O.driver):'—'}</div><div class="kpi-s">${O.driver?signed(Math.round(O.driverDelta))+' leads':'leads flat'}</div></div>
     </div>
   </div>`;
   const driverCard=`<div class="card">
-    <div class="sec-h"><span class="sec-num">2</span>The driver — channel lead movement (network)</div>
-    <div class="sec-sub">Which channel moved? An online drop is usually one paid channel — its lead change flows straight into the tele-pool.</div>
+    <div class="sec-h"><span class="sec-num">2</span>The driver — channel ${onBk?'booking':'lead'} movement</div>
+    <div class="sec-sub">Which channel moved? ${onBk?'Online first-time bookings split by the channel each patient came through — the parts sum to the headline.':'An online drop is usually one paid channel — its lead change flows straight into the tele-pool.'}</div>
     ${chRows.map(c=>`<div class="barrow"><div class="bl">${c.name}</div><div class="bt" style="background:#f8fafc;display:flex;justify-content:center;"><div class="bf" style="width:${Math.max(5,Math.abs(c.d)/maxAbs*50)}%;margin-left:${c.d<0?(50-Math.max(5,Math.abs(c.d)/maxAbs*50)):50}%;background:${c.d<0?'#dc2626':'#059669'};justify-content:${c.d<0?'flex-start':'flex-end'};padding:0 7px;">${signed(Math.round(c.d))}</div></div></div>`).join('')}
-    <div style="font-size:11px;color:#94a3b8;margin-top:6px;">Lead Δ vs 8-wk average · network leads from the L0 sheet.</div>
+    <div style="font-size:11px;color:#94a3b8;margin-top:6px;">${onBk?'Booking Δ vs prior-weeks average · online first-time SC bookings by channel (L0 / bookings_data_raw).':'Lead Δ vs 8-wk average · network leads from the L0 sheet.'}</div>
   </div>`;
   const why=`<div class="card">
     <div class="sec-h"><span class="sec-num">3</span>Why this is cleanly an online problem</div>
@@ -2918,7 +2936,7 @@ function renderOnline(){
 async function init(){
   try{
     const safe=u=>fetch(u,{cache:'no-store'}).catch(()=>({ok:false}));
-    const [jr,sr,lr,pr,rr,ld,rv,mk,bt,dg,ga,nr,gi,la,df,pbk,pl,lm,pd,lc,ah,dd,clf]=await Promise.all([ fetch('data.json',{cache:'no-store'}), safe(SHEET_URL), safe(L0_URL), safe(PRACTO_URL), safe('data_roster.json'), safe('data_leads.json'), safe('data_reviews.json'), safe('data_marketing.json'), safe('data_booktype.json'), safe('data_diagnostic.json'), safe('data_ga_city.json'), safe('data_reviews_neg.json'), safe('data_gmb_insights.json'), safe('data_lead_age.json'), safe('data_demand_funnel.json'), safe('data_practo_booked.json'), safe('data_practo_leads.json'), safe('data_lead_maturation.json'), safe('data_practo_by_doctor.json'), safe('data_lead_conv.json'), safe('data_avail_hod.json'), safe('data_daily.json'), safe('data_clinic_lead_funnel.json') ]);
+    const [jr,sr,lr,pr,rr,ld,rv,mk,bt,dg,ga,nr,gi,la,df,pbk,pl,lm,pd,lc,ah,dd,clf,nb]=await Promise.all([ fetch('data.json',{cache:'no-store'}), safe(SHEET_URL), safe(L0_URL), safe(PRACTO_URL), safe('data_roster.json'), safe('data_leads.json'), safe('data_reviews.json'), safe('data_marketing.json'), safe('data_booktype.json'), safe('data_diagnostic.json'), safe('data_ga_city.json'), safe('data_reviews_neg.json'), safe('data_gmb_insights.json'), safe('data_lead_age.json'), safe('data_demand_funnel.json'), safe('data_practo_booked.json'), safe('data_practo_leads.json'), safe('data_lead_maturation.json'), safe('data_practo_by_doctor.json'), safe('data_lead_conv.json'), safe('data_avail_hod.json'), safe('data_daily.json'), safe('data_clinic_lead_funnel.json'), safe('data_newbk_rca.json') ]);
     if(!jr.ok) throw new Error('data.json not found');
     JDATA=await jr.json();
     // SDATA now comes from Redshift (data_diagnostic.json); the Google Sheet is a fallback only.
@@ -2947,6 +2965,7 @@ async function init(){
     if(ah&&ah.ok){ try{ AVAILHOD=await ah.json(); }catch(_){ } }
     if(dd&&dd.ok){ try{ DAILY=await dd.json(); }catch(_){ } }
     if(clf&&clf.ok){ try{ LEADFUNNEL=await clf.json(); }catch(_){ } }
+    if(nb&&nb.ok){ try{ NEWBK=await nb.json(); }catch(_){ } }   // L0 first-time bookings cube (online/offline + channel) — reconciles online scope to L0
     render(); updateRefreshBadge();   // week picker now lives in the control bar (built per-render in ctrlBar)
   }catch(e){
     document.getElementById('mainContent').innerHTML=`<div class="loading-msg" style="color:#dc2626">Error: ${e.message}</div>`;
