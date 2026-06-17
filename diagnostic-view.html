@@ -162,6 +162,8 @@ select.mag-sel.vis{display:block}
 .rsn-delta{font-family:'JetBrains Mono';font-size:13px;font-weight:800;white-space:nowrap}
 .rsn-why{font-size:11px;color:#475569;line-height:1.5;margin-top:4px}
 .rsn-fix{font-size:10.5px;color:#b45309;background:#fffbeb;border:1px dashed #fcd34d;border-radius:6px;padding:4px 8px;margin-top:7px}
+.rsn-drill{display:inline-block;margin-top:8px;font-family:'JetBrains Mono';font-size:10px;font-weight:700;color:#4338ca;background:#eef2ff;border:1px solid #c7d2fe;border-radius:6px;padding:4px 9px;text-decoration:none}
+.rsn-drill:hover{background:#e0e7ff}
 .qvlink{font-family:'JetBrains Mono';font-size:9px;font-weight:700;color:#4338ca;background:#eef2ff;border:1px solid #c7d2fe;border-radius:5px;padding:2px 6px;text-decoration:none;white-space:nowrap;flex-shrink:0;margin-left:auto}
 .qvlink:hover{background:#e0e7ff}
 .tz-overlay{display:none;position:fixed;inset:0;background:rgba(20,18,14,.55);z-index:9999;align-items:center;justify-content:center;padding:20px}
@@ -605,12 +607,19 @@ function renderChannelReason(ch){
   const netCur=getCurVal(net), netBase=getBaseline(net,against), netP=netBase?Math.round((netCur-netBase)/netBase*100):0;
   // rank by ABSOLUTE leads lost (volume), not %, and ignore trivially-small channels — surfaces the meaningful movers for a founder
   const fell=rows.filter(r=>r.p<0 && r.base>=2).sort((a,b)=>(a.cur-a.base)-(b.cur-b.base)).slice(0,9);
+  // resolve the deep-dive target: clinic card → itself; city card → the clinic in that city where THIS channel fell most
+  const worstClinicFor=(city)=>{ let best=null,worst=0; (city.clinics||[]).forEach(cl=>{ const a=cl.leadCh&&cl.leadCh[k]; if(!a)return; const cu=getCurVal(a),ba=getBaseline(a,against); if(cu==null||ba==null)return; const loss=cu-ba; if(loss<worst){worst=loss;best=cl;} }); return best||(city.clinics&&city.clinics[0]); };
   const card=r=>{
     const lt=r.e.leads, bk=r.e.book;
     const ltCur=getCurVal(lt), ltBase=getBaseline(lt,against), ltP=ltBase?Math.round((ltCur-ltBase)/ltBase*100):0;
     const bkCur=getCurVal(bk), bkBase=getBaseline(bk,against), bkP=bkBase?Math.round((bkCur-bkBase)/bkBase*100):0;
     const broad=ltP<=-10;
     const arrJson=JSON.stringify(r.arr).replace(/'/g,"&#39;");
+    let linkCity, linkClinic;
+    if(r.sub){ linkCity=r.sub; linkClinic=r.e.name; }                 // clinic-level card
+    else { linkCity=r.e.name; const wc=worstClinicFor(r.e); linkClinic=wc?wc.name:null; }  // city card → worst clinic for this channel
+    const href = linkClinic ? `diagnostic.html?clinic=${encodeURIComponent(linkCity+'|'+linkClinic)}&chan=${k}` : null;
+    const drill = href ? `<a class="rsn-drill" href="${href}">Full reason → Quick View${(!r.sub&&linkClinic)?` · ${linkClinic}`:''} →</a>` : '';
     return `<div class="rsn-card">
       <div class="rsn-head"><div><b style="font-size:13.5px">${r.name}</b> ${r.sub?`<span style="color:#94a3b8;font-size:11px">${r.sub}</span>`:''}</div>
         <div class="rsn-delta" style="color:${dCol(r.p)}">${r.cur}<span style="font-size:10px;color:#94a3b8"> vs ${Math.round(r.base)} </span>${r.p}%</div></div>
@@ -619,6 +628,7 @@ function renderChannelReason(ch){
         <span style="font-size:10.5px;color:#475569">All leads <b>${ltCur}</b> (${ltP>0?'+':''}${ltP}%) · Bookings <b>${bkCur}</b> (${bkP>0?'+':''}${bkP}%)</span></div>
       <div class="rsn-why">${broad?`<b style="color:#dc2626">Broad demand drop</b> — total leads down ${ltP}%, not just ${lbl}.`:`<b style="color:#b45309">${lbl}-specific</b> — total leads ${ltP>=0?'held':'down only '+ltP+'%'}; the fall is concentrated in ${lbl}.`} ${bkP<=-10?`Bookings followed (${bkP}%).`:(bkP>=0?`Bookings held so far.`:`Bookings ${bkP}%.`)}</div>
       <div class="rsn-fix">🛠 <b>What we're doing to fix</b> <span style="color:#cbd5e1">— add live</span></div>
+      ${drill}
     </div>`;
   };
   return `<div class="card">
