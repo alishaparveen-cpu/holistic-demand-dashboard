@@ -54,6 +54,17 @@ background:#EFEBDF;color:var(--muted);font-size:13px;cursor:pointer}
 .b-amber{background:rgba(201,154,46,.16);color:#946d12}
 .b-grey{background:#ECE8DC;color:var(--muted)}
 .seclbl{font-family:'JetBrains Mono';font-size:9.5px;letter-spacing:.11em;text-transform:uppercase;color:var(--muted);margin:15px 0 7px}
+.campfunnel{display:flex;align-items:stretch;gap:4px;background:#F7F5EF;border:1px solid var(--line);border-radius:9px;padding:9px 8px;margin-bottom:4px}
+.cf-step{flex:1;text-align:center;min-width:0}
+.cf-v{font-family:'JetBrains Mono';font-size:16px;font-weight:700;line-height:1.1}
+.cf-l{font-size:9px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);margin-top:2px}
+.cf-ar{align-self:center;font-family:'JetBrains Mono';font-size:9.5px;font-weight:700;color:#94908a;white-space:nowrap;padding:0 1px}
+.funfilter{display:flex;flex-wrap:wrap;align-items:center;gap:8px;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:9px 12px;margin-bottom:12px}
+.funfilter select{font-family:Inter;font-size:12.5px;border:1.5px solid var(--line);border-radius:7px;padding:4px 9px;background:#fff;cursor:pointer;font-weight:600}
+.funfilter .ff-lbl{font-size:9.5px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
+.newcamp{background:#F0F7F3;border:1px solid #BBD9C8;border-radius:10px;padding:11px 14px;margin-bottom:12px;font-size:12.5px;line-height:1.6}
+.newcamp b{color:var(--greenD)}
+.nc-pill{display:inline-block;font-family:'JetBrains Mono';font-size:10px;background:#fff;border:1px solid #BBD9C8;border-radius:5px;padding:1px 6px;margin:2px 3px 0 0;color:#1F6F5C}
 /* auction bar */
 .auc{display:flex;height:30px;border-radius:7px;overflow:hidden;border:1px solid var(--line2)}
 .auc>div{display:flex;align-items:center;justify-content:center;color:#fff;font-family:'JetBrains Mono';font-weight:600;font-size:12px;min-width:0}
@@ -268,7 +279,18 @@ text-align:right;padding:9px 8px;border-bottom:1.5px solid var(--line);backgroun
 
 <div id="chipsWrap" class="chips"></div>
 
-<section id="view-funnel"><div class="cardgrid single" id="funGrid"></div></section>
+<section id="view-funnel">
+  <div class="funfilter" id="funFilter">
+    <span class="ff-lbl">Show campaigns</span>
+    <select id="ffCat" onchange="applyFunnelFilter()"><option value="all">All categories</option></select>
+    <select id="ffTier" onchange="applyFunnelFilter()"><option value="all">All tiers</option></select>
+    <select id="ffCity" onchange="applyFunnelFilter()"><option value="all">All cities</option></select>
+    <span id="ffCount" style="font-size:11.5px;color:var(--muted)"></span>
+    <button onclick="clearFunnelFilter()" style="font-family:Inter;font-size:11.5px;font-weight:600;border:1px solid var(--line);background:#fff;border-radius:7px;padding:4px 10px;cursor:pointer;margin-left:auto">Clear</button>
+  </div>
+  <div id="newCampPanel"></div>
+  <div class="cardgrid single" id="funGrid"></div>
+</section>
 
 <section id="view-compare" style="display:none">
   <div class="metricchips" id="metricChips"></div>
@@ -366,7 +388,7 @@ function parseCamp(n){const u=' '+n.toUpperCase().replace(/[_]/g,' ')+' ';
   let cat=/ STD | STI /.test(u)?'STD':/ SH | SHE | SEXUAL /.test(u)?'SH':/ MH | MENTAL /.test(u)?'MH':/ ED /.test(u)?'ED':/ BRAND /.test(u)?'Brand':null;
   if(!tier&&city) tier=T1_CITIES.includes(city)?'T1':'T2';
   return {tier,city,cat};}
-const state={view:'search',searchCi:null,sfTier:'all',sfCity:'all',sfCat:'all',sfMetric:'',sfDir:'drop',week:0,cmpTo:0,cmpFrom:1,fCat:'all',fCity:'all',fTier:'all',scoreBy:'group',
+const state={view:'search',searchCi:null,sfTier:'all',sfCity:'all',sfCat:'all',sfMetric:'',sfDir:'drop',week:0,cmpTo:0,cmpFrom:1,fCat:'all',fCity:'all',fTier:'all',ffCat:'all',ffTier:'all',ffCity:'all',funCapNote:'',scoreBy:'group',
   funCamps:[0],cmpCamps:[0,1,2,3,4],activeMetrics:['is','qs','cpc','rankLost'],selMetric:'is',trendMetric:'is',
   conds:[{key:'is',dir:'drop',mag:0}],matchMode:'all'};
 const short=n=>n.replace(/_/g,' ');
@@ -450,11 +472,26 @@ function lever(name,val,prev,max,color,inv,fmt,ci,zk){
   if(val==null)return`<div class="lever"${z}><span class="ln">${name}</span><div class="lbar"></div><span class="lv" style="color:var(--muted)">—</span></div>`;
   const wd=Math.max(2,Math.min(100,val/max*100));
   return`<div class="lever"${z}><span class="ln">${name}</span><div class="lbar"><div style="width:${wd}%;background:${color}"></div></div><span class="lv">${fmt(val)}${deltaSpan(val,prev,inv)}</span></div>`;}
+// Leads -> Booked -> Done (UTM-attributed per campaign) — "the funnel my manager built". WoW deltas + step %.
+function campFunnel(c,w){
+  const g=v=>(v&&v.length)?v[w]:null, gp=v=>(v&&v.length)?v[w+1]:null;
+  const L=g(c.leads),B=g(c.booked),D=g(c.done), Lp=gp(c.leads),Bp=gp(c.booked),Dp=gp(c.done);
+  const l2b=(L)?Math.round(B/L*100):null, b2d=(B)?Math.round(D/B*100):null;
+  const step=(lbl,v,pv,col)=>`<div class="cf-step"><div class="cf-v" style="color:${col}">${v==null?'—':v}${(v!=null&&pv!=null)?deltaSpan(v,pv,false):''}</div><div class="cf-l">${lbl}</div></div>`;
+  return `<div class="seclbl">Funnel — Leads → Booked → Done (UTM) · ${weekLbl(c,w)}</div>
+   <div class="campfunnel">
+     ${step('Leads',L,Lp,'#1F6F5C')}<div class="cf-ar" title="lead→book">${l2b!=null?l2b+'%':'›'}</div>
+     ${step('Booked',B,Bp,'#2E7D5B')}<div class="cf-ar" title="book→done">${b2d!=null?b2d+'%':'›'}</div>
+     ${step('Done',D,Dp,'#3A7D5C')}
+   </div>
+   <div class="note" style="margin:0 0 4px">UTM-attributed to this campaign. Combine campaigns (filter by city/category) for the full city funnel; latest week is provisional (Google backfills ≤7 days).</div>`;
+}
 function campCard(ci,full){
   const c=CAMP[ci],w=state.week,g=GMAP[c.g],cat=sugCat(c.sug);
   let h=`<div class="campcard" style="border-top-color:${g.color}">
    <div class="cc-head"><div><div class="cc-name">${short(c.n)}</div><div class="cc-grp"><span class="cdot" style="background:${g.color}"></span> ${g.label}</div></div>
    <span class="badge ${sugCls[cat]}">${c.sug}</span></div>`;
+  h+=campFunnel(c,w);
   h+=`<div class="seclbl">Impression share — where the auction goes · <span style="text-transform:none;letter-spacing:0">click any metric for its trend</span></div>`;
   h+=`<div data-zoom="is" data-ci="${ci}" title="Click for impression-share trend" style="cursor:zoom-in">${auctionBar(c,w,true)}</div>`;
   h+=`<div class="seclbl">Why impressions are lost (rank levers)</div>`;
@@ -488,8 +525,41 @@ function renderChips(){
   el.querySelectorAll('.cx').forEach(x=>x.onclick=()=>{const ci=+x.dataset.ci;
     if(state.funCamps.length>1)state.funCamps=state.funCamps.filter(i=>i!==ci);renderFunnel();});
 }
+function funMatch(c){return (state.ffCat==='all'||c.cat===state.ffCat)&&(state.ffTier==='all'||c.tier===state.ffTier)&&(state.ffCity==='all'||c.city===state.ffCity);}
+function applyFunnelFilter(){
+  state.ffCat=document.getElementById('ffCat').value;
+  state.ffTier=document.getElementById('ffTier').value;
+  state.ffCity=document.getElementById('ffCity').value;
+  let idx=CAMP.map((_,i)=>i).filter(i=>funMatch(CAMP[i]));
+  idx.sort((a,b)=>(CAMP[b].sp||0)-(CAMP[a].sp||0));
+  const CAP=24, capped=idx.length>CAP, total=idx.length; if(capped)idx=idx.slice(0,CAP);
+  state.funCamps=idx.length?idx:[0];
+  state.funCapNote=capped?`top ${CAP} by spend of ${total} matching`:(total?`${total} matching`:'none match — showing default');
+  renderFunnel();
+}
+function clearFunnelFilter(){state.ffCat='all';state.ffTier='all';state.ffCity='all';['ffCat','ffTier','ffCity'].forEach(id=>{const e=document.getElementById(id);if(e)e.value='all';});state.funCamps=[0];state.funCapNote='';renderFunnel();}
+function populateFunnelFilters(){
+  const uniq=k=>[...new Set(CAMP.map(c=>c[k]).filter(v=>v&&v!=='—'&&v!=='Other'))].sort();
+  const fill=(id,arr)=>{const el=document.getElementById(id);if(!el)return;arr.forEach(v=>{const o=document.createElement('option');o.value=v;o.textContent=v;el.appendChild(o);});};
+  fill('ffCat',uniq('cat')); fill('ffTier',[...new Set(CAMP.map(c=>c.tier).filter(t=>t&&t!=='Other'))]); fill('ffCity',uniq('city'));
+}
+function renderNewCampPanel(){
+  const box=document.getElementById('newCampPanel'); if(!box)return;
+  const set=CAMP.filter(funMatch);
+  const isNew=c=>{const s=c.spendH||[];return s.length>=2 && (s[s.length-1]===0||s[s.length-1]==null) && s[0]>0;};
+  const news=set.filter(isNew);
+  const byCat={}; set.forEach(c=>{const s=c.spendH||[],now=s[0]||0,pre=s[1]||0;(byCat[c.cat]=byCat[c.cat]||{now:0,pre:0});byCat[c.cat].now+=now;byCat[c.cat].pre+=pre;});
+  const shifts=Object.entries(byCat).map(([k,v])=>({k,d:v.now-v.pre,now:v.now})).filter(x=>x.now>0).sort((a,b)=>Math.abs(b.d)-Math.abs(a.d)).slice(0,4);
+  if(!news.length && !shifts.some(s=>Math.abs(s.d)>1000)){box.innerHTML='';return;}
+  let h='<div class="newcamp">';
+  if(news.length)h+=`🆕 <b>${news.length} new campaign${news.length>1?'s':''} launched</b> <span style="color:var(--muted)">(first spend within last 6 wks)</span>: ${news.slice(0,10).map(c=>`<span class="nc-pill">${short(c.n)}</span>`).join('')}${news.length>10?` +${news.length-10} more`:''}`;
+  if(shifts.length)h+=`<div style="margin-top:${news.length?'7px':'0'}"><b>Spend reallocation</b> <span style="color:var(--muted)">(WoW)</span>: ${shifts.map(s=>`${s.k} <b style="color:${s.d>=0?'#1F6F5C':'#B23A2E'}">${s.d>=0?'+':'−'}₹${Math.abs(Math.round(s.d/1000))}k</b>`).join(' · ')}</div>`;
+  h+='</div>'; box.innerHTML=h;
+}
 function renderFunnel(){
   renderChips();
+  renderNewCampPanel();
+  const cnt=document.getElementById('ffCount'); if(cnt)cnt.textContent=state.funCapNote?('· '+state.funCapNote):`${state.funCamps.length} shown`;
   const grid=document.getElementById('funGrid'),single=state.funCamps.length===1;
   grid.className='cardgrid '+(single?'single':'multi');
   grid.innerHTML=state.funCamps.map(ci=>campCard(ci,single)).join('');
@@ -1097,6 +1167,7 @@ function boot(){
     state.cmpCamps=CAMP.slice(0,5).map((_,i)=>i);
     // default search to the highest-spend campaign so the tab isn't empty on open
     state.searchCi=CAMP.map((c,i)=>i).sort((a,b)=>(CAMP[b].sp||0)-(CAMP[a].sp||0))[0]??0;
+    populateFunnelFilters();
     rebuildFilters();rebuildAddSel();setView('search');
   }).catch(e=>{
     document.getElementById('subline').textContent='Failed to load data_ga_campaigns.json — run scripts/pull_ga_campaigns.py';
