@@ -761,7 +761,7 @@ let viewMode='tile';   // 'tile' = entity bar-cards · 'grid' = reason cards (Ad
 const FUNNEL=[
   {key:'adays', icon:'🏥', name:'Availability'},
   {key:'leads', icon:'📞', name:'Leads'},
-  {key:'l2b',   icon:'🔁', name:'Lead→Book'},
+  {key:'l2bc',  icon:'🔁', name:'Lead→Book'},
   {key:'book',  icon:'📅', name:'New bookings'},
 ];
 let funnelSig={}; FUNNEL.forEach(s=>funnelSig[s.key]='any');   // per-stage signature: any|down|ok|up
@@ -781,13 +781,14 @@ function renderFunnelBar(against){
   const net=key=>{ if(key in netCache)return netCache[key]; const W=WKS.length,a=Array(W).fill(0); let any=false;
     CITIES.forEach(c=>(c.clinics||[]).forEach(cl=>{ const arr=getM(cl)[key]; if(arr){any=true;arr.forEach((v,i)=>{if(v!=null)a[i]+=v;});} }));
     return netCache[key]=any?a:null; };
-  const stageArr=key=>{ if(key==='l2b'){ const b=net('book'),l=net('leads'); if(!b||!l)return null; const W=WKS.length,a=Array(W).fill(null); for(let i=0;i<W;i++) if(l[i]>0)a[i]=Math.round(b[i]/l[i]*100); return a; } return net(key); };
+  // Lead→Book = COHORT conversion: of this week's leads, the share that booked same week = net(this-wk-lead bookings) ÷ net(leads)
+  const stageArr=key=>{ if(key==='l2bc'){ const b=net('swbook'),l=net('leads'); if(!b||!l)return null; const W=WKS.length,a=Array(W).fill(null); for(let i=0;i<W;i++) if(l[i]>0&&b[i]!=null)a[i]=Math.round(b[i]/l[i]*100); return a; } return net(key); };
   let h='<div class="fbar-inner">';
   FUNNEL.forEach((s,si)=>{
     const arr=stageArr(s.key), cur=arr?getCurVal(arr):null, base=arr?getBaseline(arr,against):null;
     const p=(cur!=null&&base)?Math.round((cur-base)/base*100):null, c=p==null?'flat':cls(p);
     const sig=funnelSig[s.key], drilled=funnelDrill===s.key;
-    const valTxt=cur==null?'—':(s.key==='l2b'?cur+'%':cur.toLocaleString('en-IN'));
+    const valTxt=cur==null?'—':(s.key==='l2bc'?cur+'%':cur.toLocaleString('en-IN'));
     h+=`<div class="fstage${drilled?' drilled':''}">
       <div class="fstage-top" onclick="setFunnelDrill('${s.key}')" title="Click → see where ${s.name} broke (reason cards by clinic)">
         <div class="fs-name">${s.icon} ${s.name}</div>
