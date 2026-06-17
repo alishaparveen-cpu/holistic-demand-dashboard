@@ -54,6 +54,10 @@ tr.edge td{color:var(--ink2);font-size:12px}
 .fm td.lastcol{font-weight:700}
 .sparkcell{padding:3px 10px!important;cursor:zoom-in}.sparkcell:hover{background:var(--goodbg)}
 .wowd{font-size:9.5px;font-weight:700;margin-top:2px}
+.chev{cursor:pointer;color:var(--muted);font-size:10px;display:inline-block;width:12px}
+tr.kid td{color:var(--ink2);font-size:11.5px}
+.kid-lbl{padding-left:26px;color:var(--ink2);font-size:11.5px;font-family:'Inter'}
+tr.subhead td{background:var(--inset);font-family:'JetBrains Mono';font-size:8.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--faint);font-weight:600;padding:4px 13px 4px 26px;text-align:left}
 /* category cards */
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:11px}
 .card{background:var(--sheet);border:1px solid var(--line);border-radius:var(--r);padding:13px 15px}
@@ -86,10 +90,11 @@ tr.edge td{color:var(--ink2);font-size:12px}
 </div>
 <div class="modal" id="modal"><div class="mbox"><button class="mclose" onclick="closeZ()">✕</button><h3 id="mTitle"></h3><div id="mBody"></div></div></div>
 <script>
-let D=null, wk=0;
+let D=null, wk=0, ZREG=[], expanded={};
 const NSHOW=6;   // show the most recent 6 weeks in the matrix / trend
 const $=id=>document.getElementById(id);
 const hexA=(hex,a)=>{const n=parseInt(hex.slice(1),16);return `rgba(${(n>>16)&255},${(n>>8)&255},${n&255},${a})`;};
+function toggle(k){expanded[k]=expanded[k]===false?true:false;render();}
 const N=v=>v==null||isNaN(v)?'—':Math.round(v).toLocaleString('en-IN');
 const PCT=v=>v==null||isNaN(v)?'—':v.toFixed(1)+'%';
 const RUP=v=>v==null||isNaN(v)?'—':'₹'+Math.round(v).toLocaleString('en-IN');
@@ -140,45 +145,65 @@ function snapshot(M,i){
 }
 
 // ---- weekly matrix (stages + edges × weeks, newest on the right, trend column) ----
-const ROWS=[
-  {k:'impr',  t:'stage',label:'Impressions',          fmt:N,  color:'#1F6F5C'},
-  {k:'ctr',   t:'edge', label:'CTR',                   fmt:PCT,formula:'clicks ÷ impr'},
-  {k:'clicks',t:'stage',label:'Clicks',               fmt:N,  color:'#2E7D5B'},
-  {k:'c2l',   t:'edge', label:'Click → lead',          fmt:PCT,formula:'leads ÷ clicks'},
-  {k:'leads', t:'stage',label:'Leads',                fmt:N,  color:'#3E6F8E'},
-  {k:'l2b',   t:'edge', label:'Lead → book',           fmt:PCT,formula:'booked ÷ leads'},
-  {k:'booked',t:'stage',label:'Booked',               fmt:N,  color:'#7B5EA7'},
-  {k:'b2d',   t:'edge', label:'Book → done',           fmt:PCT,formula:'done ÷ booked'},
-  {k:'done',  t:'stage',label:'Done',                 fmt:N,  color:'#B8862E'},
-  {k:'d2p',   t:'edge', label:'Done → purchased',      fmt:PCT,formula:'purchased ÷ done'},
-  {k:'purch', t:'stage',label:'Purchased',            fmt:N,  color:'#B8862E'},
-  {k:'rev',   t:'stage',label:'Revenue',              fmt:RUP,color:'#1F6F5C'},
-];
+// funnel rows WITH nested breakdowns: reach by category, leads by source + by category, bottom by diagnosis
+function buildStages(M){
+  const R=D.reach, B=D.bottom, ai=D.leads.ai||{}, cats=B.cats||[];
+  const gc=R.google.by_cat||{};
+  const gcat=(c,f)=>(gc[c]&&gc[c][f])||[];
+  const bcat=(c,f)=>(B.by_cat[c]&&B.by_cat[c][f])||[];
+  const GCATS=['SH','STD','MH','ED','Brand'], aic=ai.by_cat||{};
+  return [
+    {t:'stage',k:'impr',label:'Impressions',color:'#1F6F5C',fmt:N,children:[
+      ...GCATS.map(c=>({label:'Google · '+c,arr:gcat(c,'impr'),fmt:N})),
+      {label:'GMB listing',arr:R.gmb.impr,fmt:N}]},
+    {t:'edge',k:'ctr',label:'CTR',formula:'clicks ÷ impr',fmt:PCT},
+    {t:'stage',k:'clicks',label:'Clicks',color:'#2E7D5B',fmt:N,children:[
+      ...GCATS.map(c=>({label:'Google · '+c,arr:gcat(c,'clicks'),fmt:N})),
+      {label:'GMB listing',arr:R.gmb.clicks,fmt:N}]},
+    {t:'edge',k:'c2l',label:'Click → lead',formula:'leads ÷ clicks',fmt:PCT},
+    {t:'stage',k:'leads',label:'Leads (total)',color:'#3E6F8E',fmt:N,children:[
+      {label:'Inbound (call)',arr:M.callLeads,fmt:N},
+      {label:'Web / UTM',arr:M.web,fmt:N},
+      {label:'Organic',arr:M.org,fmt:N},
+      {label:'Practo',arr:M.pr,fmt:N},
+      {label:'Other',arr:M.oth,fmt:N},
+      {sep:1,label:'Inbound calls — by category (AI audit)'},
+      {label:'STI',arr:aic.STI||[],fmt:N},
+      {label:'Sexual health',arr:aic.SH||[],fmt:N},
+      {label:'Mental health',arr:aic.MH||[],fmt:N},
+      {label:'Other',arr:aic.Other||[],fmt:N}]},
+    {t:'edge',k:'l2b',label:'Lead → book',formula:'booked ÷ leads',fmt:PCT},
+    {t:'stage',k:'booked',label:'Booked',color:'#7B5EA7',fmt:N,children:cats.map(c=>({label:c,arr:bcat(c,'booked'),fmt:N}))},
+    {t:'edge',k:'b2d',label:'Book → done',formula:'done ÷ booked',fmt:PCT},
+    {t:'stage',k:'done',label:'Done',color:'#B8862E',fmt:N,children:cats.map(c=>({label:c,arr:bcat(c,'done'),fmt:N}))},
+    {t:'edge',k:'d2p',label:'Done → purchased',formula:'purchased ÷ done',fmt:PCT},
+    {t:'stage',k:'purch',label:'Purchased',color:'#B8862E',fmt:N,children:cats.map(c=>({label:c,arr:bcat(c,'purchased'),fmt:N}))},
+    {t:'stage',k:'rev',label:'Revenue',color:'#1F6F5C',fmt:RUP,children:cats.map(c=>({label:c,arr:bcat(c,'rev'),fmt:RUP}))},
+  ];
+}
+function heatBg(v,mn,mx){if(v==null||isNaN(v)||!isFinite(mn))return'';const rng=(mx-mn)||1,t=(v-mn)/rng;
+  if(t>=0.6)return hexA('#2E7D5B',0.07+0.18*((t-0.6)/0.4));
+  if(t<=0.4)return hexA('#B23A2E',0.07+0.18*((0.4-t)/0.4));return'';}
+function rowCells(arr,fmt,cols,wow){let mn=Infinity,mx=-Infinity;cols.forEach(ci=>{const v=arr[ci];if(v!=null&&!isNaN(v)){mn=Math.min(mn,v);mx=Math.max(mx,v);}});
+  let cells='';cols.forEach((ci,j)=>{const v=arr[ci],last=j===cols.length-1,bg=heatBg(v,mn,mx);
+    let w='';if(wow&&last&&v!=null&&!isNaN(v)&&arr[1]!=null&&!isNaN(arr[1])){const d=v-arr[1];if(d){const up=d>0;w=`<div class="wowd" style="color:${up?'var(--good)':'var(--bad)'}">${up?'▲':'▼'} ${fmt(Math.abs(d))}</div>`;}}
+    cells+=`<td class="${last?'lastcol':''}"${bg?` style="background:${bg}"`:''}>${v==null||isNaN(v)?'—':fmt(v)}${w}</td>`;});
+  return cells;}
+function sparkCell(arr,color,label,fmt,formula){const idx=ZREG.length;ZREG.push({label,arr:arr.slice(0,NSHOW),fmt,color,formula:formula||''});
+  return `<td class="sparkcell" onclick="zoomReg(${idx})">${spark(arr.slice(0,NSHOW),color)}</td>`;}
 function matrix(M){
-  const W=D._meta.weeks;
-  // 6 most recent weeks, displayed oldest → newest (newest-first index NSHOW-1 … 0)
-  const cols=[]; for(let j=NSHOW-1;j>=0;j--) cols.push(j);
+  ZREG=[]; const W=D._meta.weeks; const cols=[]; for(let j=NSHOW-1;j>=0;j--) cols.push(j);
   let h='<div class="fmwrap"><table class="fm"><thead><tr><th>Stage &amp; transition</th>'
     +cols.map((ci,j)=>`<th class="${j===cols.length-1?'lastcol':''}">${wkShort(W[ci])}</th>`).join('')+'<th>trend</th></tr></thead><tbody>';
-  ROWS.forEach(r=>{
-    const s=M[r.k];
-    // heat range over the shown weeks (higher = better for every row here)
-    let mn=Infinity,mx=-Infinity; cols.forEach(ci=>{const v=s[ci]; if(v!=null&&!isNaN(v)){mn=Math.min(mn,v);mx=Math.max(mx,v);}});
-    const rng=(mx-mn)||1;
-    let cells='';
-    cols.forEach((ci,j)=>{const v=s[ci]; const last=j===cols.length-1;
-      let bg='';
-      if(v!=null&&!isNaN(v)&&isFinite(mn)){const t=(v-mn)/rng;
-        if(t>=0.6) bg=hexA('#2E7D5B',0.07+0.18*((t-0.6)/0.4));
-        else if(t<=0.4) bg=hexA('#B23A2E',0.07+0.18*((0.4-t)/0.4));}
-      let wow='';
-      if(last && v!=null && !isNaN(v) && s[1]!=null && !isNaN(s[1])){
-        const d=v-s[1]; if(d){const up=d>0; const col=up?'var(--good)':'var(--bad)';
-          wow=`<div class="wowd" style="color:${col}">${up?'▲':'▼'} ${r.fmt(Math.abs(d))}</div>`;}}
-      cells+=`<td class="${last?'lastcol':''}"${bg?` style="background:${bg}"`:''}>${v==null||isNaN(v)?'—':r.fmt(v)}${wow}</td>`;});
-    const lbl=r.t==='stage'?`<div class="snode" style="border-color:${r.color}">${r.label}</div>`
-      :`<div class="edge-lbl">↳ ${r.label}<span class="formula">${r.formula||''}</span></div>`;
-    h+=`<tr class="${r.t}"><td>${lbl}</td>${cells}<td class="sparkcell" onclick="zoomK('${r.k}')">${spark(s.slice(0,NSHOW),r.color||'#3E6F8E')}</td></tr>`;
+  buildStages(M).forEach(r=>{
+    if(r.t==='edge'){const a=M[r.k];
+      h+=`<tr class="edge"><td><div class="edge-lbl">↳ ${r.label}<span class="formula">${r.formula||''}</span></div></td>${rowCells(a,r.fmt,cols,true)}${sparkCell(a,'#A8B0A0',r.label,r.fmt,r.formula)}</tr>`;return;}
+    const a=M[r.k], kids=(r.children||[]).filter(c=>c.sep||(c.arr&&cols.some(ci=>c.arr[ci])));
+    const open=expanded[r.k]!==false, chev=kids.length?`<span class="chev" onclick="event.stopPropagation();toggle('${r.k}')">${open?'▾':'▸'}</span> `:'';
+    h+=`<tr class="stage"><td><div class="snode" style="border-color:${r.color}">${chev}${r.label}</div></td>${rowCells(a,r.fmt,cols,true)}${sparkCell(a,r.color,r.label,r.fmt)}</tr>`;
+    if(open) kids.forEach(c=>{
+      if(c.sep){h+=`<tr class="subhead"><td colspan="${cols.length+2}">${c.label}</td></tr>`;return;}
+      h+=`<tr class="kid"><td><div class="kid-lbl">${c.label}</div></td>${rowCells(c.arr,c.fmt||N,cols,false)}${sparkCell(c.arr,r.color,r.label+' · '+c.label,c.fmt||N)}</tr>`;});
   });
   return h+'</tbody></table></div>';
 }
@@ -191,7 +216,7 @@ function spark(arr,color){
   return `<svg class="sp" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}"><path d="${p}" fill="none" stroke="${color}" stroke-width="1.6"/><circle cx="${x(n-1).toFixed(1)}" cy="${y(v[n-1]).toFixed(1)}" r="2.6" fill="${color}"/></svg>`;
 }
 let _M=null;
-function zoomK(k){const r=ROWS.find(x=>x.k===k); if(!r)return; zoomShow(r.label, _M[k].slice(0,NSHOW), r.fmt, r.color||'#3E6F8E', r.formula||'');}
+function zoomReg(i){const z=ZREG[i];if(!z)return;zoomShow(z.label,z.arr,z.fmt,z.color,z.formula);}
 function zoomShow(title,sNewestFirst,fmt,color,formula){
   $('mTitle').textContent=title;
   const W=700,H=300,pad=38; const wks=D._meta.weeks.slice(0,NSHOW).reverse();
@@ -230,27 +255,11 @@ function render(){
   h+=snapshot(M,i);
   h+=`<div class="funnel-read">Reach <b>${N(M.impr[i])}</b> impressions (Google ${N(M.gImpr[i])} + GMB ${N(M.mImpr[i])}) → <b>${N(M.clicks[i])}</b> clicks (CTR ${PCT(M.ctr[i])}) → <b>${N(M.leads[i])}</b> leads (call ${N(M.callLeads[i])} + web ${N(M.web[i])} + organic/Practo) → <b>${N(M.booked[i])}</b> booked → <b>${N(M.done[i])}</b> done (${PCT(M.b2d[i])}) → <b>${N(M.purch[i])}</b> purchased (${PCT(M.d2p[i])}) → <b>${RUP(M.rev[i])}</b>. <span style="color:var(--muted)">Lead→book can exceed 100% when bookings include repeat/walk-in patients beyond tracked new leads.</span></div>`;
 
-  // 2) WEEKLY MOVEMENT (matrix)
-  h+=`<div class="shead"><h2>The same funnel, last 6 weeks</h2><span class="sub2">latest on the right · <b style="color:var(--good)">green = high</b> / <b style="color:var(--bad)">red = low</b> per row · ▲▼ = vs prior week · click a trend to zoom</span></div>`;
+  // 2) WEEKLY MOVEMENT (matrix with nested breakdowns)
+  h+=`<div class="shead"><h2>The funnel, last 6 weeks — with breakdowns</h2><span class="sub2">latest on the right · <b style="color:var(--good)">green = high</b> / <b style="color:var(--bad)">red = low</b> per row · ▲▼ vs prior week · ▾ collapse a stage · click a trend to zoom</span></div>`;
   h+=matrix(M);
 
-  // 3) CATEGORY BREAKDOWNS (selected week)
-  h+=`<div class="shead"><h2>By category</h2><span class="sub2">week of ${wkLabel(D._meta.weeks[i])} · reach &amp; call-leads use intent (SH/STD/MH); booked→revenue use diagnosis (STI/ED+/PE+)</span></div>`;
-  h+='<div class="grid">';
-  h+=`<div class="card"><div class="k">Google reach — impressions</div>${catBars(mapCat(R.google.by_cat,'impr'),['SH','STD','MH','ED','Brand','Other'])}</div>`;
-  // Leads hierarchy: total → composition (inbound within total) → inbound split by category
-  const comp={'Inbound (call)':M.callLeads,'Web/UTM':M.web,'Organic':M.org,'Practo':M.pr,'Other':M.oth};
-  const inboundPct=M.leads[i]?Math.round(M.callLeads[i]/M.leads[i]*100):0;
-  h+=`<div class="card"><div class="k">Leads — total ${N(M.leads[i])}, by source</div>${catBars(comp,['Inbound (call)','Web/UTM','Organic','Practo','Other'])}</div>`;
-  h+=`<div class="card"><div class="k">↳ Inbound (call) leads — ${N(M.callLeads[i])} of ${N(M.leads[i])} (${inboundPct}%), split by category${ai.calls&&ai.calls[i]?` · ${N(ai.relevant[i])} relevant`:''}</div>${catBars(ai.by_cat||{},['STI','SH','MH','Other'])}</div>`;
-  const catObj=f=>{const o={};cats.forEach(c=>o[c]=B.by_cat[c]?B.by_cat[c][f]:null);return o;};
-  h+=`<div class="card"><div class="k">Booked — by diagnosis</div>${catBars(catObj('booked'),cats)}</div>`;
-  h+=`<div class="card"><div class="k">Done — by diagnosis</div>${catBars(catObj('done'),cats)}</div>`;
-  h+=`<div class="card"><div class="k">Purchased — by diagnosis</div>${catBars(catObj('purchased'),cats)}</div>`;
-  h+=`<div class="card"><div class="k">Revenue — by diagnosis</div>${catBars(catObj('rev'),cats,RUP)}</div>`;
-  h+='</div>';
-
-  h+=`<div class="note"><b>Sources.</b> Reach: Google = the Indiranagar location-asset (Assets→Location, by caller's clinic); GMB = Business-Profile insights. Leads: call leads from the AI call audit (clinic-attributed by caller intent, incl. paid calls), web from UTM, organic/Practo from CRM. Booked/Done/Purchased/Revenue: exact Redshift (Screening Calls × diagnosis × paid invoices). Categories are two layers (intent vs diagnosis) — not 1:1.</div>`;
+  h+=`<div class="note"><b>Sources.</b> Reach: Google = the Indiranagar location-asset (Assets→Location, by category); GMB = Business-Profile insights (no category). Leads: <b>inbound calls</b> from the AI call audit (clinic-attributed by caller intent, incl. paid calls), split by category (STI/SH/MH); web from UTM; organic/Practo from CRM. Booked → Done → Purchased → Revenue: exact Redshift (Screening Calls × diagnosis × paid invoices). <b>Two category layers</b> — reach/leads use marketing intent (SH/STD/MH), booked→revenue use consultation diagnosis (STI/ED+/PE+) — so they don't map 1:1. Lead→book can exceed 100% when bookings include repeat/walk-in patients beyond tracked new leads.</div>`;
 
   $('app').innerHTML=h;
 }
