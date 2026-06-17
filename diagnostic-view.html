@@ -156,6 +156,9 @@ select.mag-sel.vis{display:block}
 .rb-btn{font-family:'JetBrains Mono';font-size:11px;font-weight:700;padding:4px 12px;border:1.5px solid var(--line);border-radius:999px;background:#fff;cursor:pointer;color:var(--ink-2)}
 .rb-btn:hover{border-color:var(--ink-2)}
 .rb-btn.on{color:#fff}
+.reason-sel{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding-bottom:10px;margin-bottom:8px;border-bottom:1px solid var(--line-2)}
+.reason-sel .rb-lbl{font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;color:var(--faint)}
+.reason-sel .rb-sep{width:1px;height:16px;background:var(--line-2);margin:0 3px}
 .rsn-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:12px}
 .rsn-card{border:1px solid var(--line);border-radius:11px;padding:12px 14px;background:#fff}
 .rsn-head{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
@@ -282,8 +285,6 @@ select.mag-sel.vis{display:block}
     <div id="leadch-filter"></div>
   </div>
 </div>
-
-<div id="reason-bar" class="reason-bar"></div>
 
 <div class="legend" style="margin-top:10px">
   <div class="leg"><div class="lhatch bad"></div>solid = this week · hatch = gap below baseline</div>
@@ -547,7 +548,6 @@ function buildFilterUI(){
   });
   chipWrap.innerHTML=h;
   const _lcf=document.getElementById('leadch-filter'); if(_lcf) _lcf.innerHTML='';   // channel filter now lives inline on the Leads condition row
-  buildReasonBar();
   const condWrap=document.getElementById('cond-rows');
   if(!mfState.length){condWrap.innerHTML='<div class="no-conds">Select metrics above to track drops</div>';return;}
   condWrap.innerHTML='';
@@ -605,60 +605,76 @@ function leadChPasses(e,against){
   const p=dropPct(comb,against);                 // combined leads across selected channels
   return f.dir==='drop' ? p<=-(f.mag||1) : p>=(f.mag||1);
 }
-// ── Founder drill: per-channel "where leads fell & why" reason view ──
-let reasonChannel=null;
-function buildReasonBar(){
-  const el=document.getElementById('reason-bar'); if(!el) return;
-  el.innerHTML=`<span class="rb-lbl">Founder drill — why did a channel's leads fall?</span>`+
-    LEAD_CH.map(([k,lbl,col])=>`<button class="rb-btn${reasonChannel===k?' on':''}" style="${reasonChannel===k?`background:${col};border-color:${col}`:`color:${col};border-color:${col}66`}" onclick="setReasonChannel('${reasonChannel===k?'':k}')">${lbl}</button>`).join('');
+// ── Reason grid (the "Grid" view): "where did X fall & why" cards for ANY metric or lead channel ──
+let gridDim=null;   // {type:'metric'|'channel', key} — what the Grid view analyzes; null → defaults to Leads
+function setGridDim(type,key){ gridDim={type,key}; render(); window.scrollTo(0,0); }
+const dCol=v=>v<=-1?'#dc2626':v>=1?'#059669':'#94a3b8';
+// the lead channel that fell most for an entity — used in the 'why' for total leads
+function worstChannel(e,against){ if(!e.leadCh) return null; let best=null,worst=0; LEAD_CH.forEach(([k,lbl])=>{ const a=e.leadCh[k]; if(!a)return; const cu=getCurVal(a),ba=getBaseline(a,against); if(cu==null||!ba)return; const loss=cu-ba; if(loss<worst){worst=loss;best={k,lbl,p:Math.round((cu-ba)/ba*100)};} }); return best; }
+// metric-appropriate 'why' line
+function reasonWhy(def,e,against){
+  const mp=key=>{ const a=getM(e)[key]; if(!a)return null; const cu=getCurVal(a),ba=getBaseline(a,against); return (cu==null||!ba)?null:Math.round((cu-ba)/ba*100); };
+  const bk=mp('book'), ld=mp('leads'), av=mp('adays'), l2=mp('l2b');
+  const bkTxt=bk==null?'':(bk<=-10?` Bookings followed (${bk}%).`:(bk>=0?` Bookings held (${bk>0?'+':''}${bk}%).`:` Bookings ${bk}%.`));
+  if(def.grp==='avail') return `<b style="color:#b45309">Supply</b> — capacity down.${bkTxt}`;
+  if(def.grp==='conv') return `<b style="color:#6D3A7A">Conversion</b> slipped${ld!=null?` (leads ${ld>0?'+':''}${ld}%)`:''}.${bkTxt}`;
+  if(def.grp==='vel') return `<b>Throughput</b> down.${bkTxt}`;
+  if(def.key==='leads'){ const wc=worstChannel(e,against); return (wc&&wc.p<0)?`Mostly <b style="color:#b45309">${wc.lbl}</b> (${wc.p}%).${bkTxt}`:`Broad inbound fall.${bkTxt}`; }
+  if(def.key==='book'){ const dr=[]; if(ld!=null&&ld<=-8)dr.push(`leads ${ld}% (demand)`); if(av!=null&&av<=-8)dr.push(`active days ${av}% (supply)`); if(l2!=null&&l2<=-8)dr.push(`conversion ${l2}%`); return dr.length?`Driven by <b>${dr.join(' + ')}</b>.`:`Leads, supply &amp; conversion all roughly held — likely mix/timing.`; }
+  return bkTxt.trim()||'';
 }
-function setReasonChannel(ch){ reasonChannel=ch||null; buildReasonBar(); render(); window.scrollTo(0,0); }
-function renderChannelReason(ch){
-  const def=LEAD_CH.find(c=>c[0]===ch); if(!def) return '<div class="empty">Unknown channel.</div>';
-  const [k,lbl,col]=def;
-  const dCol=v=>v<=-1?'#dc2626':v>=1?'#059669':'#94a3b8';
+function renderReasonGrid(){
   const against=document.getElementById('sel-against').value, level=curLevel();
+  let dim=gridDim||{type:'metric',key:'leads'};
+  if(dim.type==='metric'){ const d=ALL_MDEFS.find(x=>x.key===dim.key); if(!d||!metricAvailAtLevel(dim.key,level)) dim={type:'metric',key:(mfState.find(f=>metricAvailAtLevel(f.key,level))||{key:'book'}).key}; }
+  if(dim.type==='channel' && level==='doctor') dim={type:'metric',key:'book'};
+  // selector strip — metrics you've selected + leads-by-channel
+  const metBtns=mfState.map(f=>ALL_MDEFS.find(d=>d.key===f.key)).filter(d=>d&&metricAvailAtLevel(d.key,level))
+    .map(d=>`<button class="rb-btn${dim.type==='metric'&&dim.key===d.key?' on':''}" style="${dim.type==='metric'&&dim.key===d.key?`background:${d.color};border-color:${d.color};color:#fff`:`color:${d.color};border-color:${d.color}66`}" onclick="setGridDim('metric','${d.key}')">${d.label}</button>`).join('');
+  const showCh=level!=='doctor';
+  const chBtns=showCh?LEAD_CH.map(([k,lbl,col])=>`<button class="rb-btn${dim.type==='channel'&&dim.key===k?' on':''}" style="${dim.type==='channel'&&dim.key===k?`background:${col};border-color:${col};color:#fff`:`color:${col};border-color:${col}66`}" onclick="setGridDim('channel','${k}')">${lbl}</button>`).join(''):'';
+  const selector=`<div class="reason-sel"><span class="rb-lbl">Reason cards for:</span>${metBtns||'<span style="color:#94a3b8;font-size:11px">select metrics above</span>'}${showCh?`<span class="rb-sep"></span><span class="rb-lbl">leads · by channel</span>${chBtns}`:''}</div>`;
+  // resolve dimension
+  const isChan=dim.type==='channel'; let label,col,def=null;
+  if(isChan){ const cd=LEAD_CH.find(c=>c[0]===dim.key); label=cd[1]; col=cd[2]; }
+  else { def=ALL_MDEFS.find(d=>d.key===dim.key)||ALL_MDEFS.find(d=>d.key==='book'); label=def.label; col=def.color; }
+  const getArr = isChan ? (e=>e.leadCh&&e.leadCh[dim.key]) : (e=>getM(e)[def.key]);
   const ents=[];
-  CITIES.forEach(c=>{ if(level==='city'){ if(c.leadCh) ents.push({e:c,name:c.name,sub:''}); }
-    else (c.clinics||[]).forEach(cl=>{ if(cl.leadCh) ents.push({e:cl,name:cl.name,sub:c.name}); }); });
-  const rows=ents.map(x=>{ const arr=x.e.leadCh[k]; if(!arr) return null;
-    const cur=getCurVal(arr), base=getBaseline(arr,against); if(cur==null||!base) return null;
-    return Object.assign(x,{arr,cur,base,p:Math.round((cur-base)/base*100)}); }).filter(Boolean);
-  const W=WKS.length, net=Array(W).fill(0); rows.forEach(r=>r.arr.forEach((v,i)=>{ if(v!=null) net[i]+=v; }));
-  const netCur=getCurVal(net), netBase=getBaseline(net,against), netP=netBase?Math.round((netCur-netBase)/netBase*100):0;
-  // rank by ABSOLUTE leads lost (volume), not %, and ignore trivially-small channels — surfaces the meaningful movers for a founder
-  const fell=rows.filter(r=>r.p<0 && r.base>=2).sort((a,b)=>(a.cur-a.base)-(b.cur-b.base)).slice(0,9);
-  // resolve the deep-dive target: clinic card → itself; city card → the clinic in that city where THIS channel fell most
-  const worstClinicFor=(city)=>{ let best=null,worst=0; (city.clinics||[]).forEach(cl=>{ const a=cl.leadCh&&cl.leadCh[k]; if(!a)return; const cu=getCurVal(a),ba=getBaseline(a,against); if(cu==null||ba==null)return; const loss=cu-ba; if(loss<worst){worst=loss;best=cl;} }); return best||(city.clinics&&city.clinics[0]); };
+  CITIES.forEach(c=>{ if(level==='city'){ if(getArr(c)) ents.push({e:c,name:c.name,sub:''}); }
+    else (c.clinics||[]).forEach(cl=>{ if(getArr(cl)) ents.push({e:cl,name:cl.name,sub:c.name}); }); });
+  const rows=ents.map(x=>{ const arr=getArr(x.e); if(!arr)return null; const cur=getCurVal(arr),base=getBaseline(arr,against); if(cur==null||!base)return null; return Object.assign(x,{arr,cur,base,p:Math.round((cur-base)/base*100)}); }).filter(Boolean);
+  const isRatio = !isChan && def && def.unit==='%';
+  const fell=rows.filter(r=>r.p<0 && (isChan? r.base>=2 : true)).sort(isRatio?(a,b)=>a.p-b.p:(a,b)=>(a.cur-a.base)-(b.cur-b.base)).slice(0,12);
+  const fmtV=v=>isChan?Math.round(v):fmtVal(def,v);
+  const worstFor=(city)=>{ let best=null,worst=0; (city.clinics||[]).forEach(cl=>{ const a=getArr(cl); if(!a)return; const cu=getCurVal(a),ba=getBaseline(a,against); if(cu==null||ba==null)return; const loss=cu-ba; if(loss<worst){worst=loss;best=cl;} }); return best||(city.clinics&&city.clinics[0]); };
   const card=r=>{
-    const lt=r.e.leads, bk=r.e.book;
-    const ltCur=getCurVal(lt), ltBase=getBaseline(lt,against), ltP=ltBase?Math.round((ltCur-ltBase)/ltBase*100):0;
-    const bkCur=getCurVal(bk), bkBase=getBaseline(bk,against), bkP=bkBase?Math.round((bkCur-bkBase)/bkBase*100):0;
-    const broad=ltP<=-10;
     const arrJson=JSON.stringify(r.arr).replace(/'/g,"&#39;");
-    let linkCity, linkClinic;
-    if(r.sub){ linkCity=r.sub; linkClinic=r.e.name; }                 // clinic-level card
-    else { linkCity=r.e.name; const wc=worstClinicFor(r.e); linkClinic=wc?wc.name:null; }  // city card → worst clinic for this channel
-    const href = linkClinic ? `diagnostic.html?clinic=${encodeURIComponent(linkCity+'|'+linkClinic)}&chan=${k}` : null;
-    const drill = href ? `<a class="rsn-drill" href="${href}">Full reason → Quick View${(!r.sub&&linkClinic)?` · ${linkClinic}`:''} →</a>` : '';
+    const lt=r.e.leads, bk=r.e.book;
+    const ltP=(()=>{const cu=getCurVal(lt),ba=getBaseline(lt,against);return ba?Math.round((cu-ba)/ba*100):null;})();
+    const bkP=(()=>{const cu=getCurVal(bk),ba=getBaseline(bk,against);return ba?Math.round((cu-ba)/ba*100):null;})();
+    let whyHtml, ctx;
+    if(isChan){ const broad=ltP!=null&&ltP<=-10; whyHtml=`${broad?`<b style="color:#dc2626">Broad demand drop</b> — total leads down ${ltP}%, not just ${label}.`:`<b style="color:#b45309">${label}-specific</b> — total leads ${ltP>=0?'held':'down only '+ltP+'%'}; concentrated in ${label}.`} ${bkP==null?'':bkP<=-10?`Bookings followed (${bkP}%).`:(bkP>=0?`Bookings held.`:`Bookings ${bkP}%.`)}`;
+      ctx=`All leads <b>${getCurVal(lt)}</b> (${ltP>0?'+':''}${ltP}%) · Bookings <b>${getCurVal(bk)}</b> (${bkP>0?'+':''}${bkP}%)`; }
+    else { whyHtml=reasonWhy(def,r.e,against);
+      ctx = (def.key==='book')? `Leads ${ltP==null?'—':(ltP>0?'+':'')+ltP+'%'} · Active days context` : (bkP==null?'':`Bookings <b>${getCurVal(bk)}</b> (${bkP>0?'+':''}${bkP}%)`); }
+    let linkCity,linkClinic;
+    if(r.sub){ linkCity=r.sub; linkClinic=r.e.name; } else { linkCity=r.e.name; const wc=worstFor(r.e); linkClinic=wc?wc.name:null; }
+    const href=linkClinic?`diagnostic.html?clinic=${encodeURIComponent(linkCity+'|'+linkClinic)}${isChan?`&chan=${dim.key}`:''}`:null;
+    const drill=href?`<a class="rsn-drill" href="${href}">Full reason → Quick View${(!r.sub&&linkClinic)?` · ${linkClinic}`:''} →</a>`:'';
     return `<div class="rsn-card">
       <div class="rsn-head"><div><b style="font-size:13.5px">${r.name}</b> ${r.sub?`<span style="color:#94a3b8;font-size:11px">${r.sub}</span>`:''}</div>
-        <div class="rsn-delta" style="color:${dCol(r.p)}">${r.cur}<span style="font-size:10px;color:#94a3b8"> vs ${Math.round(r.base)} </span>${r.p}%</div></div>
+        <div class="rsn-delta" style="color:${dCol(r.p)}">${fmtV(r.cur)}<span style="font-size:10px;color:#94a3b8"> vs ${fmtV(r.base)} </span>${r.p}%</div></div>
       <div style="display:flex;align-items:center;gap:10px;margin:7px 0 2px;">
-        <div class="btrend" style="cursor:zoom-in" title="Click to zoom" onclick='zoomTrend(this)' data-arr='${arrJson}' data-label="${lbl} leads" data-color="${col}" data-unit="" data-base="${r.base}" data-name="${r.name}">${miniTrend(r.arr,r.base,col)}</div>
-        <span style="font-size:10.5px;color:#475569">All leads <b>${ltCur}</b> (${ltP>0?'+':''}${ltP}%) · Bookings <b>${bkCur}</b> (${bkP>0?'+':''}${bkP}%)</span></div>
-      <div class="rsn-why">${broad?`<b style="color:#dc2626">Broad demand drop</b> — total leads down ${ltP}%, not just ${lbl}.`:`<b style="color:#b45309">${lbl}-specific</b> — total leads ${ltP>=0?'held':'down only '+ltP+'%'}; the fall is concentrated in ${lbl}.`} ${bkP<=-10?`Bookings followed (${bkP}%).`:(bkP>=0?`Bookings held so far.`:`Bookings ${bkP}%.`)}</div>
+        <div class="btrend" style="cursor:zoom-in" title="Click to zoom" onclick='zoomTrend(this)' data-arr='${arrJson}' data-label="${label}" data-color="${col}" data-unit="${isChan?'':def.unit}" data-base="${r.base}" data-name="${r.name}">${miniTrend(r.arr,r.base,col)}</div>
+        <span style="font-size:10.5px;color:#475569">${ctx}</span></div>
+      <div class="rsn-why">${whyHtml}</div>
       <div class="rsn-fix">🛠 <b>What we're doing to fix</b> <span style="color:#cbd5e1">— add live</span></div>
       ${drill}
     </div>`;
   };
-  return `<div class="card">
-    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:4px;">
-      <div style="font-size:17px;font-weight:800;color:${col}">${lbl} leads — where they fell &amp; why</div>
-      <button class="rb-btn" onclick="setReasonChannel('')">← back to grid</button></div>
-    <div style="font-size:12px;color:#475569;margin-bottom:12px;line-height:1.5;">Network <b>${lbl}</b> leads <b>${netCur}</b> this week vs <b>${Math.round(netBase)}</b> (${AGAINST_SHORT[against]||against}) — <b style="color:${dCol(netP)}">${netP>0?'+':''}${netP}%</b>. The ${fell.length} ${level==='city'?'cities':'clinics'} where ${lbl} fell most are below; each flags whether the drop is <b>${lbl}-specific</b> or a <b>broad</b> demand fall, plus the booking impact. Click a trend to zoom; narrate the fix.</div>
-    <div class="rsn-grid">${fell.map(card).join('')||`<div style="color:#94a3b8">No ${lbl} drops at the ${level} level this week.</div>`}</div>
-  </div>`;
+  const head=`<div style="font-size:17px;font-weight:800;color:${col};margin:6px 0 2px;">${label} — where it fell &amp; why</div>
+    <div style="font-size:12px;color:#475569;margin-bottom:12px;line-height:1.5;">The ${fell.length} ${level==='city'?'cities':level+'s'} where <b>${label}</b> fell most are below — each with the trend, the likely cause, and the booking impact. Click a trend to zoom; narrate the fix; <b>Full reason →</b> drills to the clinic deep-dive.</div>`;
+  return `<div class="card">${selector}${head}<div class="rsn-grid">${fell.map(card).join('')||`<div style="color:#94a3b8;padding:6px 0">No ${label} drops at the ${level} level this week — pick another metric/channel above.</div>`}</div></div>`;
 }
 function toggleMetric(key){
   const idx=mfState.findIndex(f=>f.key===key);
@@ -705,39 +721,13 @@ function toggleMonthly(){
   setDateline();render();
 }
 
-// shared metric value formatter (used by bars + grid)
+// shared metric value formatter (used by bars + reason cards)
 function fmtVal(def,v){ return def.unit==='%'?Math.round(v)+'%':def.unit==='/d'?(+v).toFixed(1)+'/d':def.unit==='/h'?(+v).toFixed(2)+'/h':def.unit==='d'?(+v).toFixed(1)+'d':def.unit==='h'?(+v).toFixed(1)+'h':Math.round(v)+''; }
-// ── Grid (table) view — dense scan of every entity × selected metric; same filters; click a header to sort, QV→ to drill ──
-let viewMode='tile', gridSort=null;
-function setGridSort(k){ gridSort=(gridSort===k)?null:k; render(); }
-function renderGridView(visible, against, level){
-  const mets=mfState.map(f=>ALL_MDEFS.find(d=>d.key===f.key)).filter(d=>d&&metricAvailAtLevel(d.key,level));
-  if(!mets.length) return '<div class="empty">Select metrics above to populate the grid.</div>';
-  let rows=visible.slice();
-  if(gridSort){ rows.sort((a,b)=>dropPct(getM(a.e)[gridSort],against)-dropPct(getM(b.e)[gridSort],against)); }
-  let h=`<div class="card" style="padding:0;overflow:auto;"><table class="dgrid"><thead><tr><th class="dg-name">${level}</th>`;
-  mets.forEach(m=>{ h+=`<th class="dg-met${gridSort===m.key?' sorted':''}" onclick="setGridSort('${m.key}')" title="Click to sort by ${m.label} drop · ${(m.note||'').replace(/"/g,'&quot;')}">${m.label}${gridSort===m.key?' ↓':''}</th>`; });
-  h+=`<th></th></tr></thead><tbody>`;
-  rows.forEach(item=>{
-    const e=item.e, m=getM(e);
-    const tier=item.tier?`<span class="tbadge t${item.tier}">T${item.tier}</span>`:'';
-    const sub=item.type==='clinic'?`<div class="dg-sub">${item.cityName}</div>`:item.type==='doctor'?`<div class="dg-sub">${item.clinicName} · ${item.cityName}</div>`:'';
-    h+=`<tr><td class="dg-name"><b>${hl(e.name)}</b> ${tier}${sub}</td>`;
-    mets.forEach(def=>{ const arr=m[def.key];
-      const cur=arr?getCurVal(arr):null, base=arr?getBaseline(arr,against):null;
-      if(cur==null){ h+=`<td class="dg-cell na">—</td>`; return; }
-      const p=base?Math.round((cur-base)/base*100):0;
-      h+=`<td class="dg-cell ${cls(p)}"><span class="dg-val">${fmtVal(def,cur)}</span><span class="dg-d">${p>0?'+':''}${p}%</span></td>`;
-    });
-    const qv=item.type==='clinic'?`<a class="qvlink" href="diagnostic.html?clinic=${encodeURIComponent(item.cityName+'|'+e.name)}" title="Open full RCA in Quick View">QV →</a>`:'';
-    h+=`<td>${qv}</td></tr>`;
-  });
-  return h+`</tbody></table></div>`;
-}
+let viewMode='tile';   // 'tile' = entity bar-cards · 'grid' = reason cards (where each thing fell & why)
 function render(){
   if(!CITIES.length)return;
   const against=document.getElementById('sel-against').value;
-  if(reasonChannel){ document.getElementById('main').innerHTML=renderChannelReason(reasonChannel); const sc=document.getElementById('scount'); if(sc)sc.textContent=''; return; }
+  if(viewMode==='grid'){ document.getElementById('main').innerHTML=renderReasonGrid(); const sc=document.getElementById('scount'); if(sc)sc.textContent=''; return; }
   const level=document.querySelector('#ltabs button.on').dataset.lv;
   const cityList=[],clinicList=[],docList=[];
   CITIES.forEach(city=>{
@@ -814,16 +804,10 @@ function render(){
   // doctor level) — otherwise its bar silently vanishes and looks like a bug.
   const naSel=mfState.filter(f=>!metricAvailAtLevel(f.key,level)).map(f=>(ALL_MDEFS.find(d=>d.key===f.key)||{}).label).filter(Boolean);
   const naNote=naSel.length?`<div class="lvl-note">⚠ <b>${naSel.join(', ')}</b> ${naSel.length>1?'are':'is'} not tracked at <b>${level}</b> level — only <b>Bookings</b> &amp; <b>Done</b> exist per doctor, so ${naSel.length>1?'those bars are':'that bar is'} hidden here. Switch to <b>Clinic</b> or <b>City</b> to see ${naSel.length>1?'them':'it'}.</div>`:'';
-  let html;
-  if(viewMode==='grid'){
-    html = naNote + (visible.length ? renderGridView(visible,against,level) : `<div class="empty">No ${level}s match the current conditions.</div>`);
-  } else {
-    const bad=visible.filter(x=>x.wd<=-20),mid=visible.filter(x=>x.wd>-20&&x.wd<=-10),good=visible.filter(x=>x.wd>-10);
-    let body=section(bad,`Worst selected metric ≥20% below ${baseLbl}`,'bad')+section(mid,`Worst metric 10–20% below ${baseLbl}`,'warn')+section(good,`All selected metrics within 10% of / above ${baseLbl}`,'good');
-    if(!body) body=`<div class="empty">No entities match the current conditions.<br>Try changing metric conditions above, or check that the selected metrics have data at this level.</div>`;
-    html=naNote+body;
-  }
-  document.getElementById('main').innerHTML=html;
+  const bad=visible.filter(x=>x.wd<=-20),mid=visible.filter(x=>x.wd>-20&&x.wd<=-10),good=visible.filter(x=>x.wd>-10);
+  let body=section(bad,`Worst selected metric ≥20% below ${baseLbl}`,'bad')+section(mid,`Worst metric 10–20% below ${baseLbl}`,'warn')+section(good,`All selected metrics within 10% of / above ${baseLbl}`,'good');
+  if(!body) body=`<div class="empty">No entities match the current conditions.<br>Try changing metric conditions above, or check that the selected metrics have data at this level.</div>`;
+  document.getElementById('main').innerHTML=naNote+body;
   const tot=items.filter(x=>x.show).length;
   document.getElementById('scount').textContent=`${visible.length} of ${tot} ${level}s match all conditions`;
 }
