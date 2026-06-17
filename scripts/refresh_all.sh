@@ -36,6 +36,7 @@ step "GA total spend (pull_ga_total_spend)" python3 scripts/pull_ga_total_spend.
 step "GA gclid leads→bookings (SQL)"      bash -c 'cat scripts/fetch_ga_leads.sql | python3 scripts/redshift_query.py > /tmp/ga_leads.tsv'
 step "GA funnel build (build_ga_funnel)"  python3 scripts/build_ga_funnel.py
 step "Per-campaign leads (enrich_campaign_leads)" python3 scripts/enrich_campaign_leads.py
+step "Total Google leads by city (pull_ga_city_leads)" python3 scripts/pull_ga_city_leads.py
 
 echo "── Redshift core (needs aws sso login) ──"
 step "Leads by source (build_leads)"      python3 scripts/build_leads.py   # must precede scorecard (leads denom)

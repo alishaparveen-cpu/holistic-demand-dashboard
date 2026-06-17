@@ -357,6 +357,7 @@ function deriveMeta(){
 
 /* ============ HELPERS ============ */
 let GAF2=null;  // data_ga_funnel2.json — full funnel (impr→clicks→conv→leads→booked) by city & category
+let GCL=null;   // data_ga_city_leads.json — TOTAL Google leads (web+call) → booked → done, by city
 const T1_CITIES=['Bangalore','Mumbai','Pune','Hyderabad','Chennai'];
 const CITY_TOKENS=['Bangalore','Mumbai','Navi Mumbai','Pune','Hyderabad','Chennai','Coimbatore','Nagpur','Nashik','Surat','Ahmedabad','Jaipur','Bhopal','Ranchi','Aurangabad','Hubballi','Hubli','Mysuru','Mysore','Mangalore','Mangaluru','Visakhapatnam','Vizag','Thane','Gandhinagar','Vijayawada','Kolkata','Delhi'];
 function parseCamp(n){const u=' '+n.toUpperCase().replace(/[_]/g,' ')+' ';
@@ -950,6 +951,17 @@ function renderCombined(){
     else if(active.length===1 && sfTier!=='all'){const ks=Object.keys(D.city).filter(c=>sfTier==='T1'?T1_CITIES.includes(c):(c!=='National / Online'&&!T1_CITIES.includes(c)));
       src={}; F.forEach(f=>src[f]=GAF2.weeks.map((_,i)=>ks.reduce((a,k)=>a+((D.city[k]&&D.city[k][f]&&D.city[k][f][i])||0),0))); basis='full funnel · '+ks.length+' cities';}
   }
+  // For city / tier groupings, replace leads/booked/done with TOTAL Google leads (web+call), city-attributed
+  if(src && GCL){
+    let gcities=null;
+    if(active.length===1 && sfCity!=='all' && GCL.city[sfCity]) gcities=[sfCity];
+    else if(active.length===1 && sfTier!=='all') gcities=Object.keys(GCL.city).filter(c=>sfTier==='T1'?T1_CITIES.includes(c):(c!=='National / Online'&&!T1_CITIES.includes(c)));
+    if(gcities){
+      const gs=field=>GAF2.weeks.map(w=>{const gi=GCL._meta.weeks.indexOf(w);return gi<0?null:gcities.reduce((a,cy)=>a+((GCL.city[cy]&&GCL.city[cy][field]&&GCL.city[cy][field][gi])||0),0);});
+      src={...src, leads:gs('leads'), booked:gs('booked'), done:gs('done')};
+      basis=basis.replace('full funnel','full funnel · total leads (web+call)');
+    }
+  }
   let h=`<div style="margin-bottom:14px"><h2 style="margin:0;font-size:19px">Combined · ${active.join(' + ')}</h2>
     <div style="font-size:12px;color:var(--muted);margin-top:3px">${match.length} campaign${match.length===1?'':'s'} matched${basis?' · '+basis:' · ad metrics only'}</div></div>`;
   const N=v=>(+v).toLocaleString('en-IN'); let cards, strip='';
@@ -1032,6 +1044,7 @@ document.getElementById('zoom').onclick=e=>{if(e.target.id==='zoom')document.get
 /* ============ BOOT: load live campaign data, then init ============ */
 function boot(){
   fetch('data_ga_funnel2.json?v='+Date.now()).then(r=>r.ok?r.json():null).then(j=>{GAF2=j; if(state.view==='search'&&(state.sfTier!=='all'||state.sfCity!=='all'||state.sfCat!=='all'))renderSearch();}).catch(()=>{});
+  fetch('data_ga_city_leads.json?v='+Date.now()).then(r=>r.ok?r.json():null).then(j=>{GCL=j; if(state.view==='search'&&(state.sfTier!=='all'||state.sfCity!=='all'))renderSearch();}).catch(()=>{});
   fetch('data_ga_campaigns.json?v='+Date.now()).then(r=>r.json()).then(j=>{
     CAMP=(j.campaigns||[]).map(C);
     deriveMeta();
