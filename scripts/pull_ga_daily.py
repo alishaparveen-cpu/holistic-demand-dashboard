@@ -17,6 +17,8 @@ CUSTOMER_ID = "3190189170"; LOGIN_CUSTOMER_ID = "5098518843"
 API = "https://googleads.googleapis.com/v21"; TOKEN_URL = "https://oauth2.googleapis.com/token"
 OUT = os.path.join(os.path.dirname(__file__), "..", "data_ga_daily.json")
 DAYS_BACK = 120
+# Location-asset click types — taps on the address/call/directions (the "near me" local intent).
+LOC_CLICK_TYPES = {"CALLS", "GET_DIRECTIONS", "LOCATION_EXPANSION", "LOCATION_FORMAT_CALL_TRACKING"}
 
 def _creds():
     keys = ["GOOGLE_ADS_CLIENT_ID","GOOGLE_ADS_CLIENT_SECRET","GOOGLE_ADS_DEVELOPER_TOKEN","GOOGLE_ADS_REFRESH_TOKEN"]
@@ -69,7 +71,7 @@ def main():
         AND segments.date BETWEEN '{ymd(start)}' AND '{ymd(today)}'
       ORDER BY campaign.name, segments.date""")
     # camp -> date -> metrics
-    camp = defaultdict(lambda: defaultdict(lambda: {'impr':0,'clicks':0,'cost':0.0,'conv':0.0}))
+    camp = defaultdict(lambda: defaultdict(lambda: {'impr':0,'clicks':0,'cost':0.0,'conv':0.0,'locclicks':0}))
     meta = {}
     alldates = set()
     for r in rows:
@@ -80,16 +82,30 @@ def main():
         a['impr'] += int(m.get("impressions",0) or 0); a['clicks'] += int(m.get("clicks",0) or 0)
         a['cost'] += int(m.get("costMicros",0) or 0)/1e6; a['conv'] += float(m.get("conversions",0) or 0)
         meta[name] = (city, prod); alldates.add(d)
+
+    # location-asset clicks (segmented by click_type) → daily per campaign
+    crows = gaql(token, c, f"""
+      SELECT campaign.name, segments.date, segments.click_type, metrics.clicks
+      FROM campaign
+      WHERE campaign.advertising_channel_type = 'SEARCH' AND campaign.status = 'ENABLED'
+        AND segments.date BETWEEN '{ymd(start)}' AND '{ymd(today)}'""")
+    for r in crows:
+        name = r["campaign"]["name"]; city, prod = parse_name(name)
+        if not city: continue
+        if r["segments"].get("clickType") not in LOC_CLICK_TYPES: continue
+        d = r["segments"]["date"]
+        camp[name][d]['locclicks'] += int(r.get("metrics", {}).get("clicks", 0) or 0)
+        alldates.add(d)
     days = sorted(alldates)
     di = {d:i for i,d in enumerate(days)}
     campaigns = []
     for name, byd in camp.items():
         city, prod = meta[name]
-        impr=[0]*len(days); clk=[0]*len(days); cost=[0.0]*len(days); conv=[0.0]*len(days)
+        impr=[0]*len(days); clk=[0]*len(days); cost=[0.0]*len(days); conv=[0.0]*len(days); lcl=[0]*len(days)
         for d, a in byd.items():
-            i = di[d]; impr[i]=a['impr']; clk[i]=a['clicks']; cost[i]=round(a['cost'],2); conv[i]=round(a['conv'],2)
+            i = di[d]; impr[i]=a['impr']; clk[i]=a['clicks']; cost[i]=round(a['cost'],2); conv[i]=round(a['conv'],2); lcl[i]=a['locclicks']
         campaigns.append({'name':re.sub(r'^T[12]_'+re.escape(city.replace(' ','_'))+r'_','',name),
-            'full':name,'city':city,'product':prod,'impr':impr,'clicks':clk,'cost':cost,'conv':conv})
+            'full':name,'city':city,'product':prod,'impr':impr,'clicks':clk,'cost':cost,'conv':conv,'locclicks':lcl})
     campaigns.sort(key=lambda x:-sum(x['impr']))
     out = {'_meta':{'source':'LIVE Google Ads daily pull (scripts/pull_ga_daily.py)','account':CUSTOMER_ID,
         'pulled':ymd(today),'days_back':DAYS_BACK,
