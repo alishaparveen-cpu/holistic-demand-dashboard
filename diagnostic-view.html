@@ -159,6 +159,28 @@ select.mag-sel.vis{display:block}
 .reason-sel{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding-bottom:10px;margin-bottom:8px;border-bottom:1px solid var(--line-2)}
 .reason-sel .rb-lbl{font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;color:var(--faint)}
 .reason-sel .rb-sep{width:1px;height:16px;background:var(--line-2);margin:0 3px}
+.funnel-bar{margin-top:12px}
+.fbar-inner{display:flex;align-items:stretch;gap:0;flex-wrap:wrap}
+.fstage{flex:1;min-width:150px;border:1.5px solid var(--line);border-radius:11px;padding:9px 11px;background:#fff;display:flex;flex-direction:column;gap:7px}
+.fstage.drilled{border-color:#4338ca;background:#eef2ff;box-shadow:0 0 0 3px #4338ca22}
+.fstage-top{cursor:pointer}
+.fs-name{font-size:11px;font-weight:800;color:var(--ink-2)}
+.fs-val{font-family:'JetBrains Mono';font-size:17px;font-weight:800;color:var(--ink);margin-top:2px;line-height:1.1}
+.fs-d{font-size:11px;font-weight:700}
+.fs-d.good{color:#2E7D5B}.fs-d.warn{color:#B9770E}.fs-d.bad{color:#C0392B}.fs-d.flat{color:#94a3b8}
+.fs-why{font-family:'JetBrains Mono';font-size:9px;font-weight:700;color:#4338ca;margin-top:3px}
+.fstage.drilled .fs-why{color:#4338ca}
+.fsig{display:flex;gap:3px}
+.fsig-btn{flex:1;font-family:'JetBrains Mono';font-size:9px;font-weight:700;padding:3px 4px;border:1px solid var(--line);border-radius:5px;background:#fbfaf7;color:var(--muted);cursor:pointer;white-space:nowrap}
+.fsig-btn.down.on{background:#FDE2E0;border-color:#C0392B;color:#C0392B}
+.fsig-btn.ok.on{background:#E7F2EB;border-color:#2E7D5B;color:#2E7D5B}
+.fsig-btn.up.on{background:#EAF1F8;border-color:#2A5A8C;color:#2A5A8C}
+.fbar-arrow{display:flex;align-items:center;color:#cbd5e1;font-weight:800;padding:0 5px}
+.fbar-sig{font-size:11px;color:#475569;margin-top:9px;padding:6px 10px;background:#f6f4ee;border-radius:8px}
+details.adv{margin-top:12px;border-top:1px solid var(--line-2);padding-top:8px}
+details.adv>summary{cursor:pointer;font-size:11px;font-weight:700;color:#64748b;list-style:none;user-select:none}
+details.adv>summary::-webkit-details-marker{display:none}
+details.adv[open]>summary{color:var(--ink-2);margin-bottom:4px}
 .rsn-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:12px}
 .rsn-card{border:1px solid var(--line);border-radius:11px;padding:12px 14px;background:#fff}
 .rsn-head{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
@@ -264,26 +286,31 @@ select.mag-sel.vis{display:block}
       <button data-lv="clinic">Clinic</button>
       <button data-lv="doctor">Doctor</button>
     </div>
-    <div class="fb-sep"></div>
-    <span class="fb-lbl">View</span>
-    <div class="tg" id="viewtabs">
-      <button data-vm="tile" class="on">▦ Tile</button>
-      <button data-vm="grid">▤ Grid</button>
-    </div>
     <div class="fb-r">
       <span class="fb-lbl">Period</span>
       <select class="period-sel" id="period-week" onchange="onPeriodChange()"></select>
       <button class="monthly-btn" id="monthly-btn" onclick="toggleMonthly()">Monthly (4w)</button>
     </div>
   </div>
-  <div class="frow2">
-    <div class="fp-top">
-      <span class="fp-section-lbl">Show metrics:</span>
-      <div id="metric-chips"></div>
+  <div id="funnel-bar" class="funnel-bar"></div>
+  <details class="adv" id="advBox">
+    <summary>⚙ Advanced filters — per-metric conditions, leads channel filter, tile/grid view</summary>
+    <div class="frow1" style="margin-top:8px">
+      <span class="fb-lbl">View</span>
+      <div class="tg" id="viewtabs">
+        <button data-vm="tile" class="on">▦ Tile</button>
+        <button data-vm="grid">▤ Grid (reason cards)</button>
+      </div>
     </div>
-    <div class="fp-conds" id="cond-rows"></div>
-    <div id="leadch-filter"></div>
-  </div>
+    <div class="frow2">
+      <div class="fp-top">
+        <span class="fp-section-lbl">Show metrics:</span>
+        <div id="metric-chips"></div>
+      </div>
+      <div class="fp-conds" id="cond-rows"></div>
+      <div id="leadch-filter"></div>
+    </div>
+  </details>
 </div>
 
 <div class="legend" style="margin-top:10px">
@@ -623,7 +650,7 @@ function reasonWhy(def,e,against){
   if(def.key==='book'){ const dr=[]; if(ld!=null&&ld<=-8)dr.push(`leads ${ld}% (demand)`); if(av!=null&&av<=-8)dr.push(`active days ${av}% (supply)`); if(l2!=null&&l2<=-8)dr.push(`conversion ${l2}%`); return dr.length?`Driven by <b>${dr.join(' + ')}</b>.`:`Leads, supply &amp; conversion all roughly held — likely mix/timing.`; }
   return bkTxt.trim()||'';
 }
-function renderReasonGrid(visible, against, level){
+function renderReasonGrid(visible, against, level, fromFunnel){
   let dim=gridDim||{type:'metric',key:'leads'};
   if(dim.type==='metric'){ const d=ALL_MDEFS.find(x=>x.key===dim.key); if(!d||!metricAvailAtLevel(dim.key,level)) dim={type:'metric',key:(mfState.find(f=>metricAvailAtLevel(f.key,level))||{key:'book'}).key}; }
   if(dim.type==='channel' && level==='doctor') dim={type:'metric',key:'book'};
@@ -632,7 +659,10 @@ function renderReasonGrid(visible, against, level){
     .map(d=>`<button class="rb-btn${dim.type==='metric'&&dim.key===d.key?' on':''}" style="${dim.type==='metric'&&dim.key===d.key?`background:${d.color};border-color:${d.color};color:#fff`:`color:${d.color};border-color:${d.color}66`}" onclick="setGridDim('metric','${d.key}')">${d.label}</button>`).join('');
   const showCh=level!=='doctor';
   const chBtns=showCh?LEAD_CH.map(([k,lbl,col])=>`<button class="rb-btn${dim.type==='channel'&&dim.key===k?' on':''}" style="${dim.type==='channel'&&dim.key===k?`background:${col};border-color:${col};color:#fff`:`color:${col};border-color:${col}66`}" onclick="setGridDim('channel','${k}')">${lbl}</button>`).join(''):'';
-  const selector=`<div class="reason-sel"><span class="rb-lbl">Reason cards for:</span>${metBtns||'<span style="color:#94a3b8;font-size:11px">select metrics above</span>'}${showCh?`<span class="rb-sep"></span><span class="rb-lbl">leads · by channel</span>${chBtns}`:''}</div>`;
+  // when driven by the funnel bar, the funnel IS the selector → show a back link instead of the metric/channel strip
+  const selector = fromFunnel
+    ? `<div class="reason-sel"><a class="rb-btn" style="border-color:var(--line)" onclick="setFunnelDrill(null)">← back to clinics</a><span class="rb-lbl" style="margin-left:4px">drilling the funnel stage above</span></div>`
+    : `<div class="reason-sel"><span class="rb-lbl">Reason cards for:</span>${metBtns||'<span style="color:#94a3b8;font-size:11px">select metrics above</span>'}${showCh?`<span class="rb-sep"></span><span class="rb-lbl">leads · by channel</span>${chBtns}`:''}</div>`;
   // resolve dimension
   const isChan=dim.type==='channel'; let label,col,def=null;
   if(isChan){ const cd=LEAD_CH.find(c=>c[0]===dim.key); label=cd[1]; col=cd[2]; }
@@ -726,11 +756,64 @@ function toggleMonthly(){
 
 // shared metric value formatter (used by bars + reason cards)
 function fmtVal(def,v){ return def.unit==='%'?Math.round(v)+'%':def.unit==='/d'?(+v).toFixed(1)+'/d':def.unit==='/h'?(+v).toFixed(2)+'/h':def.unit==='d'?(+v).toFixed(1)+'d':def.unit==='h'?(+v).toFixed(1)+'h':Math.round(v)+''; }
-let viewMode='tile';   // 'tile' = entity bar-cards · 'grid' = reason cards (where each thing fell & why)
+let viewMode='tile';   // 'tile' = entity bar-cards · 'grid' = reason cards (Advanced)
+// ── The funnel is the primary interface: Availability → Leads → Lead→Book → Bookings ──
+const FUNNEL=[
+  {key:'adays', icon:'🏥', name:'Availability'},
+  {key:'leads', icon:'📞', name:'Leads'},
+  {key:'l2b',   icon:'🔁', name:'Lead→Book'},
+  {key:'book',  icon:'📅', name:'New bookings'},
+];
+let funnelSig={}; FUNNEL.forEach(s=>funnelSig[s.key]='any');   // per-stage signature: any|down|ok|up
+let funnelDrill=null;   // stage key currently drilled (shows reason cards); null = clinic list
+function setFunnelSig(key,sig){ funnelSig[key]=sig; render(); }
+function clearFunnelSig(){ FUNNEL.forEach(s=>funnelSig[s.key]='any'); render(); }
+function setFunnelDrill(key){ funnelDrill=(funnelDrill===key)?null:key; if(funnelDrill) gridDim={type:'metric',key:funnelDrill}; render(); window.scrollTo(0,0); }
+function setFunnelChan(k){ gridDim=(k==='__all'||(gridDim&&gridDim.type==='channel'&&gridDim.key===k))?{type:'metric',key:'leads'}:{type:'channel',key:k}; render(); }
+function funnelPasses(e, against){
+  return FUNNEL.every(s=>{ const sig=funnelSig[s.key]; if(sig==='any')return true;
+    const arr=getM(e)[s.key]; if(!arr)return true; const p=dropPct(arr,against);
+    if(sig==='down') return p<=-10; if(sig==='up') return p>=10; if(sig==='ok') return p>-10; return true; });
+}
+function renderFunnelBar(against){
+  const el=document.getElementById('funnel-bar'); if(!el) return;
+  const netCache={};
+  const net=key=>{ if(key in netCache)return netCache[key]; const W=WKS.length,a=Array(W).fill(0); let any=false;
+    CITIES.forEach(c=>(c.clinics||[]).forEach(cl=>{ const arr=getM(cl)[key]; if(arr){any=true;arr.forEach((v,i)=>{if(v!=null)a[i]+=v;});} }));
+    return netCache[key]=any?a:null; };
+  const stageArr=key=>{ if(key==='l2b'){ const b=net('book'),l=net('leads'); if(!b||!l)return null; const W=WKS.length,a=Array(W).fill(null); for(let i=0;i<W;i++) if(l[i]>0)a[i]=Math.round(b[i]/l[i]*100); return a; } return net(key); };
+  let h='<div class="fbar-inner">';
+  FUNNEL.forEach((s,si)=>{
+    const arr=stageArr(s.key), cur=arr?getCurVal(arr):null, base=arr?getBaseline(arr,against):null;
+    const p=(cur!=null&&base)?Math.round((cur-base)/base*100):null, c=p==null?'flat':cls(p);
+    const sig=funnelSig[s.key], drilled=funnelDrill===s.key;
+    const valTxt=cur==null?'—':(s.key==='l2b'?cur+'%':cur.toLocaleString('en-IN'));
+    h+=`<div class="fstage${drilled?' drilled':''}">
+      <div class="fstage-top" onclick="setFunnelDrill('${s.key}')" title="Click → see where ${s.name} broke (reason cards by clinic)">
+        <div class="fs-name">${s.icon} ${s.name}</div>
+        <div class="fs-val">${valTxt} <span class="fs-d ${c}">${p==null?'':((p>0?'+':'')+p+'%')}</span></div>
+        <div class="fs-why">${drilled?'▾ showing why':'why →'}</div>
+      </div>
+      <div class="fsig">${[['down','↓ Down'],['ok','✓ OK'],['up','↑ Up']].map(([v,l])=>`<button class="fsig-btn ${v}${sig===v?' on':''}" onclick="setFunnelSig('${s.key}','${sig===v?'any':v}')" title="Filter to ${s.name} ${v}">${l}</button>`).join('')}</div>
+    </div>`;
+    if(si<FUNNEL.length-1) h+=`<div class="fbar-arrow">→</div>`;
+  });
+  h+='</div>';
+  // when drilling Leads, expose the by-channel sub-selector (your "if leads dropped → reasons by channel")
+  if(funnelDrill==='leads'){
+    h+=`<div class="fbar-sig" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center"><span class="rb-lbl" style="font-size:9px;font-weight:800;color:var(--faint)">LEADS · drill a channel:</span>
+      <button class="rb-btn${(!gridDim||gridDim.type!=='channel')?' on':''}" style="${(!gridDim||gridDim.type!=='channel')?'background:#1F6F5C;border-color:#1F6F5C;color:#fff':'color:#1F6F5C;border-color:#1F6F5C66'}" onclick="setFunnelChan('__all')">Σ All channels</button>`+
+      LEAD_CH.map(([k,lbl,col])=>`<button class="rb-btn${gridDim&&gridDim.type==='channel'&&gridDim.key===k?' on':''}" style="${gridDim&&gridDim.type==='channel'&&gridDim.key===k?`background:${col};border-color:${col};color:#fff`:`color:${col};border-color:${col}66`}" onclick="setFunnelChan('${k}')">${lbl}</button>`).join('')+`</div>`;
+  }
+  const active=FUNNEL.filter(s=>funnelSig[s.key]!=='any');
+  if(active.length) h+=`<div class="fbar-sig">Filtering to: ${active.map(s=>`<b>${s.name} ${({down:'↓ down',ok:'✓ ok',up:'↑ up'})[funnelSig[s.key]]}</b>`).join(' &nbsp;·&nbsp; ')} <a onclick="clearFunnelSig()" style="cursor:pointer;color:#94a3b8;text-decoration:underline;margin-left:8px">clear</a></div>`;
+  el.innerHTML=h;
+}
 function render(){
   if(!CITIES.length)return;
   const against=document.getElementById('sel-against').value;
   const level=document.querySelector('#ltabs button.on').dataset.lv;
+  renderFunnelBar(against);
   const cityList=[],clinicList=[],docList=[];
   CITIES.forEach(city=>{
     const allSubs=(city.clinics||[]).flatMap(c=>[c.name,...(c.doctors||[]).map(d=>d.name)]);
@@ -747,12 +830,13 @@ function render(){
     });
   });
   const items=level==='city'?cityList:level==='clinic'?clinicList:docList;
-  const visible=items.filter(x=>x.show&&x.passes&&leadChPasses(x.e,against)&&(searchQ||enoughHistory(x.e)));
+  const visible=items.filter(x=>x.show&&x.passes&&leadChPasses(x.e,against)&&funnelPasses(x.e,against)&&(searchQ||enoughHistory(x.e)));
   visible.sort((a,b)=>a.wd-b.wd);
-  if(viewMode==='grid'){
-    document.getElementById('main').innerHTML=renderReasonGrid(visible,against,level);
-    const tot=items.filter(x=>x.show).length;
-    document.getElementById('scount').textContent=`${visible.length} of ${tot} ${level}s match all conditions`;
+  const tot=items.filter(x=>x.show).length;
+  document.getElementById('scount').textContent=`${visible.length} of ${tot} ${level}s match`;
+  // Funnel drill (primary) or Advanced Grid → reason cards. Funnel drill drives the dimension via the funnel bar.
+  if(funnelDrill || viewMode==='grid'){
+    document.getElementById('main').innerHTML=renderReasonGrid(visible,against,level,!!funnelDrill);
     return;
   }
 
@@ -814,10 +898,8 @@ function render(){
   const naNote=naSel.length?`<div class="lvl-note">⚠ <b>${naSel.join(', ')}</b> ${naSel.length>1?'are':'is'} not tracked at <b>${level}</b> level — only <b>Bookings</b> &amp; <b>Done</b> exist per doctor, so ${naSel.length>1?'those bars are':'that bar is'} hidden here. Switch to <b>Clinic</b> or <b>City</b> to see ${naSel.length>1?'them':'it'}.</div>`:'';
   const bad=visible.filter(x=>x.wd<=-20),mid=visible.filter(x=>x.wd>-20&&x.wd<=-10),good=visible.filter(x=>x.wd>-10);
   let body=section(bad,`Worst selected metric ≥20% below ${baseLbl}`,'bad')+section(mid,`Worst metric 10–20% below ${baseLbl}`,'warn')+section(good,`All selected metrics within 10% of / above ${baseLbl}`,'good');
-  if(!body) body=`<div class="empty">No entities match the current conditions.<br>Try changing metric conditions above, or check that the selected metrics have data at this level.</div>`;
+  if(!body) body=`<div class="empty">No clinics match the current funnel signature / filters.<br>Loosen a funnel stage above, or clear the signature.</div>`;
   document.getElementById('main').innerHTML=naNote+body;
-  const tot=items.filter(x=>x.show).length;
-  document.getElementById('scount').textContent=`${visible.length} of ${tot} ${level}s match all conditions`;
 }
 
 document.querySelectorAll('#ltabs button').forEach(b=>b.onclick=()=>{
