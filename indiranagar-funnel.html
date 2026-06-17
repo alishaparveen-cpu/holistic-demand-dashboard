@@ -117,10 +117,13 @@ function metrics(){
   const web=ch.google_web, org=ch.organic, pr=ch.practo, oth=arr(i=>(ch.fb[i]||0)+(ch.other[i]||0));
   const leads=arr(i=>callLeads[i]+(web[i]||0)+(org[i]||0)+(pr[i]||0)+oth[i]);
   const booked=B.total.booked, done=B.total.done, purch=B.total.purchased, rev=B.total.rev;
+  const bwl=B.total.booked_wk_lead||booked.map(()=>0);          // booked from THIS week's leads
+  const bprior=arr(i=>(booked[i]||0)-(bwl[i]||0));               // booked from earlier leads
   const rate=(a,b)=>arr(i=>b[i]?a[i]/b[i]*100:null);
-  return {impr,clicks,callLeads,web,org,pr,oth,leads,booked,done,purch,rev,
+  return {impr,clicks,callLeads,web,org,pr,oth,leads,booked,bookedWkLead:bwl,bookedPrior:bprior,done,purch,rev,
     gImpr:R.google.impr,gClk:R.google.clicks,mImpr:R.gmb.impr,mClk:R.gmb.clicks,
-    ctr:rate(clicks,impr),c2l:rate(leads,clicks),l2b:rate(booked,leads),b2d:rate(done,booked),d2p:rate(purch,done),
+    ctr:rate(clicks,impr),c2l:rate(leads,clicks),l2b:rate(booked,leads),l2b_cohort:rate(bwl,leads),
+    b2d:rate(done,booked),d2p:rate(purch,done),
     arpu:arr(i=>purch[i]?rev[i]/purch[i]:null)};
 }
 
@@ -168,7 +171,7 @@ function buildStages(M){
       {label:'GMB organic call',arr:ccA('gmb'),fmt:N},
       {label:'Other call (pool)',arr:ccA('other'),fmt:N},
       {label:'Web / UTM',arr:M.web,fmt:N},
-      {label:'Organic',arr:M.org,fmt:N},
+      {label:'Organic (web/WhatsApp)',arr:M.org,fmt:N},
       {label:'Practo',arr:M.pr,fmt:N},
       {label:'Other',arr:M.oth,fmt:N},
       {sep:1,label:'Inbound calls — by category (AI audit)'},
@@ -176,8 +179,14 @@ function buildStages(M){
       {label:'Sexual health',arr:aic.SH||[],fmt:N},
       {label:'Mental health',arr:aic.MH||[],fmt:N},
       {label:'Other',arr:aic.Other||[],fmt:N}]},
-    {t:'edge',k:'l2b',label:'Lead → book',formula:'booked ÷ leads',fmt:PCT},
-    {t:'stage',k:'booked',label:'Booked',color:'#7B5EA7',fmt:N,children:cats.map(c=>({label:c,arr:bcat(c,'booked'),fmt:N}))},
+    {t:'edge',k:'l2b_cohort',label:'Lead → book (this week’s leads)',formula:'same-week booked ÷ leads',fmt:PCT},
+    {t:'edge',k:'l2b',label:'Lead → book (all bookings)',formula:'all booked ÷ leads · >100% = older/repeat patients',fmt:PCT},
+    {t:'stage',k:'booked',label:'Booked',color:'#7B5EA7',fmt:N,children:[
+      {sep:1,label:'By lead recency'},
+      {label:'From this week’s leads',arr:M.bookedWkLead,fmt:N},
+      {label:'From earlier leads / repeat',arr:M.bookedPrior,fmt:N},
+      {sep:1,label:'By category (diagnosis: STI / SH / Other)'},
+      ...cats.map(c=>({label:c,arr:bcat(c,'booked'),fmt:N}))]},
     {t:'edge',k:'b2d',label:'Book → done',formula:'done ÷ booked',fmt:PCT},
     {t:'stage',k:'done',label:'Done',color:'#B8862E',fmt:N,children:cats.map(c=>({label:c,arr:bcat(c,'done'),fmt:N}))},
     {t:'edge',k:'d2p',label:'Done → purchased',formula:'purchased ÷ done',fmt:PCT},

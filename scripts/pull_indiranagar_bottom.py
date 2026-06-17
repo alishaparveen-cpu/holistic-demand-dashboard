@@ -39,10 +39,15 @@ SQL = """WITH loc AS (
     WHERE e.deleted_at IS NULL GROUP BY 1),
   ap AS (
     SELECT a.id, TO_CHAR(DATE_TRUNC('week', a.start_time + INTERVAL '5 hours 30 minutes'),'YYYY-MM-DD') wk,
-           a.status
+           a.status,
+           -- 1 when the patient's originating lead was created the SAME week as this booking
+           CASE WHEN DATE_TRUNC('week', l.created_at + INTERVAL '5 hours 30 minutes')
+                   = DATE_TRUNC('week', a.start_time + INTERVAL '5 hours 30 minutes') THEN 1 ELSE 0 END AS from_wk_lead
     FROM allo_consultations.appointments a
     JOIN allo_consultations.types typ ON typ.id=a.type_id AND typ.name='Screening Call'
-    JOIN loc l ON l.id=a.location_id
+    JOIN loc l2 ON l2.id=a.location_id
+    LEFT JOIN allo_persons.patient p ON p.id=a.patient_id
+    LEFT JOIN allo_persons.lead l ON l.id=p.lead_id
     WHERE a.start_time >= '2026-03-23' AND a.start_time < '2026-06-15' AND a.deleted_at IS NULL),
   inv AS (
     SELECT e.appointment_id ap_id, SUM(i.amount) amt
@@ -53,7 +58,8 @@ SQL = """WITH loc AS (
     COUNT(*) booked,
     SUM(CASE WHEN ap.status='COMPLETED' THEN 1 ELSE 0 END) done,
     COUNT(CASE WHEN ap.status='COMPLETED' AND inv.ap_id IS NOT NULL THEN 1 END) purchased,
-    SUM(CASE WHEN ap.status='COMPLETED' THEN COALESCE(inv.amt,0) ELSE 0 END) rev_paise
+    SUM(CASE WHEN ap.status='COMPLETED' THEN COALESCE(inv.amt,0) ELSE 0 END) rev_paise,
+    SUM(ap.from_wk_lead) booked_wk_lead
   FROM ap LEFT JOIN diag ON diag.ap_id=ap.id LEFT JOIN inv ON inv.ap_id=ap.id
   GROUP BY 1,2 ORDER BY 1,2;"""
 
@@ -61,19 +67,19 @@ def main():
     p = subprocess.run([sys.executable, RQ], input=SQL, capture_output=True, text=True)
     if p.returncode != 0 or "ERROR" in (p.stderr or ""):
         sys.stderr.write("indiranagar bottom query failed: " + (p.stderr or "")[:400] + "\n"); sys.exit(1)
-    def blank(): return {k: [0]*NW for k in ("booked","done","purchased","rev")}
+    def blank(): return {k: [0]*NW for k in ("booked","done","purchased","rev","booked_wk_lead")}
     bycat = {ct: blank() for ct in CATS}; tot = blank()
     for line in p.stdout.strip().splitlines():
         c = line.split("\t")
-        if len(c) < 6: continue
+        if len(c) < 7: continue
         wk, cat = c[0], COLLAPSE.get(c[1], "Other")
         if wk not in idx: continue
         i = idx[wk]
-        try: bk, dn, pu, rp = int(c[2]), int(c[3]), int(c[4]), int(float(c[5]))
+        try: bk, dn, pu, rp, bwl = int(c[2]), int(c[3]), int(c[4]), int(float(c[5])), int(c[6])
         except ValueError: continue
         rev = round(rp/100.0)
         for tgt in (bycat[cat], tot):
-            tgt["booked"][i]+=bk; tgt["done"][i]+=dn; tgt["purchased"][i]+=pu; tgt["rev"][i]+=rev
+            tgt["booked"][i]+=bk; tgt["done"][i]+=dn; tgt["purchased"][i]+=pu; tgt["rev"][i]+=rev; tgt["booked_wk_lead"][i]+=bwl
     out = {"_meta": {"weeks": WEEKS, "clinic": "Bangalore|Indiranagar", "cats": CATS,
             "source": "allo_consultations.appointments (Screening Call) × encounter diagnosis tag × paid invoices, clinic-filtered",
             "note": "booked=all SCs; done=COMPLETED; purchased=completed+paid invoice; rev=₹ paid. Category=consultation diagnosis simplified to STI / SH (all ED·PE) / Other (only consulted SCs have one; no-shows fall in 'Other' for booked)."},
