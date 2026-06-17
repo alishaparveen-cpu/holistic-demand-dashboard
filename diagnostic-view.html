@@ -623,8 +623,7 @@ function reasonWhy(def,e,against){
   if(def.key==='book'){ const dr=[]; if(ld!=null&&ld<=-8)dr.push(`leads ${ld}% (demand)`); if(av!=null&&av<=-8)dr.push(`active days ${av}% (supply)`); if(l2!=null&&l2<=-8)dr.push(`conversion ${l2}%`); return dr.length?`Driven by <b>${dr.join(' + ')}</b>.`:`Leads, supply &amp; conversion all roughly held — likely mix/timing.`; }
   return bkTxt.trim()||'';
 }
-function renderReasonGrid(){
-  const against=document.getElementById('sel-against').value, level=curLevel();
+function renderReasonGrid(visible, against, level){
   let dim=gridDim||{type:'metric',key:'leads'};
   if(dim.type==='metric'){ const d=ALL_MDEFS.find(x=>x.key===dim.key); if(!d||!metricAvailAtLevel(dim.key,level)) dim={type:'metric',key:(mfState.find(f=>metricAvailAtLevel(f.key,level))||{key:'book'}).key}; }
   if(dim.type==='channel' && level==='doctor') dim={type:'metric',key:'book'};
@@ -639,12 +638,16 @@ function renderReasonGrid(){
   if(isChan){ const cd=LEAD_CH.find(c=>c[0]===dim.key); label=cd[1]; col=cd[2]; }
   else { def=ALL_MDEFS.find(d=>d.key===dim.key)||ALL_MDEFS.find(d=>d.key==='book'); label=def.label; col=def.color; }
   const getArr = isChan ? (e=>e.leadCh&&e.leadCh[dim.key]) : (e=>getM(e)[def.key]);
-  const ents=[];
-  CITIES.forEach(c=>{ if(level==='city'){ if(getArr(c)) ents.push({e:c,name:c.name,sub:''}); }
-    else (c.clinics||[]).forEach(cl=>{ if(getArr(cl)) ents.push({e:cl,name:cl.name,sub:c.name}); }); });
+  // entities = the SAME filtered set the Tile view shows (respects metric conditions, channel filter, search)
+  const ents=visible.map(x=>({e:x.e, name:x.e.name, sub: x.type==='clinic'?x.cityName : x.type==='doctor'?(x.clinicName+' · '+x.cityName):''}));
   const rows=ents.map(x=>{ const arr=getArr(x.e); if(!arr)return null; const cur=getCurVal(arr),base=getBaseline(arr,against); if(cur==null||!base)return null; return Object.assign(x,{arr,cur,base,p:Math.round((cur-base)/base*100)}); }).filter(Boolean);
   const isRatio = !isChan && def && def.unit==='%';
-  const fell=rows.filter(r=>r.p<0 && (isChan? r.base>=2 : true)).sort(isRatio?(a,b)=>a.p-b.p:(a,b)=>(a.cur-a.base)-(b.cur-b.base)).slice(0,12);
+  // when the user has applied conditions/search/channel filter, show the WHOLE filtered set (ranked by this dimension's drop);
+  // with no filter, fall back to "only where this dimension fell" so the default isn't a wall of flat cards.
+  const anyFilter = mfState.some(f=>f.dirs && !f.dirs.has('any')) || (leadChFilter.channels&&leadChFilter.channels.length) || !!searchQ;
+  let fell=rows.slice().sort(isRatio?(a,b)=>a.p-b.p:(a,b)=>(a.cur-a.base)-(b.cur-b.base));
+  if(!anyFilter) fell=fell.filter(r=>r.p<0 && (isChan? r.base>=2 : true)).slice(0,12);
+  else fell=fell.slice(0,36);
   const fmtV=v=>isChan?Math.round(v):fmtVal(def,v);
   const worstFor=(city)=>{ let best=null,worst=0; (city.clinics||[]).forEach(cl=>{ const a=getArr(cl); if(!a)return; const cu=getCurVal(a),ba=getBaseline(a,against); if(cu==null||ba==null)return; const loss=cu-ba; if(loss<worst){worst=loss;best=cl;} }); return best||(city.clinics&&city.clinics[0]); };
   const card=r=>{
@@ -668,13 +671,13 @@ function renderReasonGrid(){
         <div class="btrend" style="cursor:zoom-in" title="Click to zoom" onclick='zoomTrend(this)' data-arr='${arrJson}' data-label="${label}" data-color="${col}" data-unit="${isChan?'':def.unit}" data-base="${r.base}" data-name="${r.name}">${miniTrend(r.arr,r.base,col)}</div>
         <span style="font-size:10.5px;color:#475569">${ctx}</span></div>
       <div class="rsn-why">${whyHtml}</div>
-      <div class="rsn-fix">🛠 <b>What we're doing to fix</b> <span style="color:#cbd5e1">— add live</span></div>
       ${drill}
     </div>`;
   };
-  const head=`<div style="font-size:17px;font-weight:800;color:${col};margin:6px 0 2px;">${label} — where it fell &amp; why</div>
-    <div style="font-size:12px;color:#475569;margin-bottom:12px;line-height:1.5;">The ${fell.length} ${level==='city'?'cities':level+'s'} where <b>${label}</b> fell most are below — each with the trend, the likely cause, and the booking impact. Click a trend to zoom; narrate the fix; <b>Full reason →</b> drills to the clinic deep-dive.</div>`;
-  return `<div class="card">${selector}${head}<div class="rsn-grid">${fell.map(card).join('')||`<div style="color:#94a3b8;padding:6px 0">No ${label} drops at the ${level} level this week — pick another metric/channel above.</div>`}</div></div>`;
+  const lvlWord=level==='city'?'cities':level+'s';
+  const head=`<div style="font-size:17px;font-weight:800;color:${col};margin:6px 0 2px;">${label} — ${anyFilter?'across your filtered '+lvlWord:'where it fell & why'}</div>
+    <div style="font-size:12px;color:#475569;margin-bottom:12px;line-height:1.5;">${anyFilter?`<b>${fell.length}</b> ${lvlWord} match your filters above — ranked by <b>${label}</b> drop.`:`The <b>${fell.length}</b> ${lvlWord} where <b>${label}</b> fell most.`} Each shows the trend, likely cause &amp; booking impact. Click a trend to zoom; <b>Full reason →</b> drills to the clinic deep-dive.</div>`;
+  return `<div class="card">${selector}${head}<div class="rsn-grid">${fell.map(card).join('')||`<div style="color:#94a3b8;padding:6px 0">No ${anyFilter?lvlWord+' match the current filters':label+' drops at the '+level+' level'} — adjust the filters or pick another metric/channel above.</div>`}</div></div>`;
 }
 function toggleMetric(key){
   const idx=mfState.findIndex(f=>f.key===key);
@@ -727,7 +730,6 @@ let viewMode='tile';   // 'tile' = entity bar-cards · 'grid' = reason cards (wh
 function render(){
   if(!CITIES.length)return;
   const against=document.getElementById('sel-against').value;
-  if(viewMode==='grid'){ document.getElementById('main').innerHTML=renderReasonGrid(); const sc=document.getElementById('scount'); if(sc)sc.textContent=''; return; }
   const level=document.querySelector('#ltabs button.on').dataset.lv;
   const cityList=[],clinicList=[],docList=[];
   CITIES.forEach(city=>{
@@ -747,6 +749,12 @@ function render(){
   const items=level==='city'?cityList:level==='clinic'?clinicList:docList;
   const visible=items.filter(x=>x.show&&x.passes&&leadChPasses(x.e,against)&&(searchQ||enoughHistory(x.e)));
   visible.sort((a,b)=>a.wd-b.wd);
+  if(viewMode==='grid'){
+    document.getElementById('main').innerHTML=renderReasonGrid(visible,against,level);
+    const tot=items.filter(x=>x.show).length;
+    document.getElementById('scount').textContent=`${visible.length} of ${tot} ${level}s match all conditions`;
+    return;
+  }
 
   function section(arr,label,bc){
     if(!arr.length)return'';
