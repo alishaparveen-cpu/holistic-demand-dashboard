@@ -37,6 +37,7 @@ step "GA gclid leads→bookings (SQL)"      bash -c 'cat scripts/fetch_ga_leads.
 step "GA funnel build (build_ga_funnel)"  python3 scripts/build_ga_funnel.py
 step "Per-campaign leads (enrich_campaign_leads)" python3 scripts/enrich_campaign_leads.py
 step "Total Google leads by city (pull_ga_city_leads)" python3 scripts/pull_ga_city_leads.py
+step "Indiranagar paid reach (location asset)" python3 scripts/pull_indiranagar_google_asset.py   # clinic-level Google paid for the Indiranagar funnel
 
 echo "── Redshift core (needs aws sso login) ──"
 step "Leads by source (build_leads)"      python3 scripts/build_leads.py   # must precede scorecard (leads denom)
@@ -66,6 +67,8 @@ step "Category bookings pull (fetch_bookings)" python3 scripts/fetch_bookings.py
 step "Category data build (rebuild_data)"      python3 scripts/rebuild_data.py
 step "Channel cube (build_channel_data)"       python3 scripts/build_channel_data.py
 step "Efficiency RS-native (build_efficiency_rs)" python3 scripts/build_efficiency_rs.py
+step "Indiranagar bottom funnel (booked/done/purchased/rev by cat)" python3 scripts/pull_indiranagar_bottom.py
+step "Indiranagar funnel assemble"            python3 scripts/assemble_indiranagar.py   # combines geo+gmb+leads+bottom → data_indiranagar.json
 
 echo "── Sheets / API (no Redshift creds needed) ──"
 step "Practo leads (build_practo_leads)"  python3 scripts/build_practo_leads.py
