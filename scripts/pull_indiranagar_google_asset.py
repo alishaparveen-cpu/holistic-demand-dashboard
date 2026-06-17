@@ -90,9 +90,14 @@ def main():
         seg = r["segments"]; ait = seg.get("assetInteractionTarget") or {}
         aid = (ait.get("asset") or "").split("/")[-1]
         if aid not in indi_ids: continue
+        name = r["campaign"]["name"]
+        # CLINIC-LEVEL only: keep city-local campaigns (T1_/T2_<City>_…). This drops national/online
+        # (ROI_Online, CC_Online, ONL_LT) and Brand, which aren't clinic-level — matching Google's
+        # Assets→Location view for the 3 local campaigns per category (Exact Local + Phrase Local + Exact).
+        if not name.startswith(("T1_", "T2_")): continue
         wk = seg.get("week")
         if wk not in widx: continue
-        i = widx[wk]; ct = cat_of(r["campaign"]["name"]); m = r.get("metrics", {})
+        i = widx[wk]; ct = cat_of(name); m = r.get("metrics", {})
         clk = int(m.get("clicks",0) or 0); imp = int(m.get("impressions",0) or 0)
         on_asset = ait.get("interactionOnThisAsset", False)
         # impressions only from the serving row (false) to avoid double-count; clicks from both rows
@@ -103,7 +108,7 @@ def main():
     ctr = lambda dd: [round(dd['clicks'][i]/dd['impr'][i]*100,1) if dd['impr'][i] else None for i in range(NW)]
     out = {"_meta": {"weeks": WEEKS, "place_id": INDIRANAGAR_PLACE_ID, "asset_ids": sorted(indi_ids),
             "source": "LIVE Google Ads · location-asset performance (Assets→Location), Indiranagar GBP asset",
-            "note": "Per-clinic paid reach = the Indiranagar location asset's served impressions; clicks = clicks on the ad + clicks on the asset (matches the Google Ads UI). category from campaign name. Paid CALLS still route via a shared city number, so call-leads are not clinic-split."},
+            "note": "Per-clinic paid reach = the Indiranagar location asset's served impressions, CITY-LOCAL campaigns only (T1_/T2_; national/online + Brand excluded — not clinic-level). clicks = clicks on the ad + clicks on the asset (matches Google Ads Assets→Location). category from campaign name (STI/SH/MH/Other)."},
         "total": {**tot, "ctr": ctr(tot)},
         "by_cat": {ct: {**bycat[ct], "ctr": ctr(bycat[ct])} for ct in CATS}}
     json.dump(out, open(OUT,"w"), separators=(",",":"))
