@@ -46,7 +46,7 @@ def main():
     def catblank(): return {c: [0]*NW for c in CATS}
     def chanblank(): return {"total": [0]*NW, "by_cat": catblank()}
     channel = {"paid": chanblank(), "gmb": chanblank(), "other": chanblank()}
-    total = {"total": [0]*NW, "relevant": [0]*NW, "strong": [0]*NW, "by_cat": catblank()}
+    total = {"total": [0]*NW, "relevant": [0]*NW, "strong": [0]*NW, "by_cat": catblank(), "relevant_by_cat": catblank()}
     for line in p.stdout.strip().splitlines():
         c = line.split("\t")
         if len(c) < 6: continue
@@ -57,7 +57,7 @@ def main():
         i = idx[wk]; cat = CATMAP.get(rawcat, "Other")
         channel[chan]["total"][i] += n; channel[chan]["by_cat"][cat][i] += n
         total["total"][i] += n; total["by_cat"][cat][i] += n
-        if intent in RELEVANT: total["relevant"][i] += n
+        if intent in RELEVANT: total["relevant"][i] += n; total["relevant_by_cat"][cat][i] += n
         if strength == "STRONG": total["strong"][i] += n
     out = {"_meta": {"weeks": WEEKS, "clinic": "Bangalore|Indiranagar", "paid_number": PAID_NUM, "gmb_number": GMB_NUM,
             "source": "allo_analytics.call_analyses × exotel_calls(lead_to_call), Indiranagar locality intent",

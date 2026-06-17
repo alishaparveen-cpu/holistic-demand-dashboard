@@ -128,9 +128,10 @@ function metrics(){
   const purch  = cohort ? (B.total.purchased_wk_lead||B.total.purchased) : B.total.purchased;
   const rev    = cohort ? (B.total.rev_wk_lead||B.total.rev)    : B.total.rev;
   const rate=(a,b)=>arr(i=>b[i]?a[i]/b[i]*100:null);
-  return {impr,clicks,callLeads,web,org,pr,oth,leads,booked,bookedWkLead:bwl,bookedPrior:bprior,done,purch,rev,
+  return {impr,clicks,callLeads,relevant:callLeads,web,org,pr,oth,leads,booked,bookedWkLead:bwl,bookedPrior:bprior,done,purch,rev,
     gImpr:R.google.impr,gClk:R.google.clicks,mImpr:R.gmb.impr,mClk:R.gmb.clicks,
     ctr:rate(clicks,impr),c2l:rate(leads,clicks),l2b:rate(booked,leads),
+    l2rl:rate(callLeads,leads),rl2b:rate(booked,callLeads),
     b2d:rate(done,booked),d2p:rate(purch,done),
     arpu:arr(i=>purch[i]?rev[i]/purch[i]:null)};
 }
@@ -163,32 +164,44 @@ function buildStages(M){
   const gcat=(c,f)=>(gc[c]&&gc[c][f])||[];
   const bcat=(c,f)=>(B.by_cat[c]&&B.by_cat[c][f])||[];
   const cf=f=>cohort?f+'_wk_lead':f;   // cohort → same-week-lead field variant
+  const NWv=D._meta.weeks.length, mk=f=>Array.from({length:NWv},(_,i)=>f(i));
   const GCATS=['STI','SH','MH','Other'], aic=ai.by_cat||{};
   const cc=D.leads.call_channels||{}, ccA=k=>(cc[k]&&cc[k].total)||[];
   return [
     {t:'stage',k:'impr',label:'Impressions',color:'#1F6F5C',fmt:N,children:[
       ...GCATS.map(c=>({label:'Google · '+c,arr:gcat(c,'impr'),fmt:N})),
       {label:'GMB listing',arr:R.gmb.impr,fmt:N}]},
-    {t:'edge',k:'ctr',label:'CTR',formula:'clicks ÷ impr',fmt:PCT},
+    {t:'edge',k:'ctr',label:'CTR',formula:'clicks ÷ impr',fmt:PCT,children:[
+      {sep:1,label:'CTR by category (Google)'},
+      ...GCATS.map(c=>({label:c,arr:mk(i=>gcat(c,'impr')[i]?gcat(c,'clicks')[i]/gcat(c,'impr')[i]*100:null),fmt:PCT}))]},
     {t:'stage',k:'clicks',label:'Clicks',color:'#2E7D5B',fmt:N,children:[
       ...GCATS.map(c=>({label:'Google · '+c,arr:gcat(c,'clicks'),fmt:N})),
       {label:'GMB listing',arr:R.gmb.clicks,fmt:N}]},
     {t:'edge',k:'c2l',label:'Click → lead',formula:'leads ÷ clicks',fmt:PCT},
     {t:'stage',k:'leads',label:'Leads (total)',color:'#3E6F8E',fmt:N,children:[
-      {sep:1,label:'By source'},
-      {label:'Paid Google call',arr:ccA('paid'),fmt:N},
-      {label:'GMB organic call',arr:ccA('gmb'),fmt:N},
-      {label:'Other call (pool)',arr:ccA('other'),fmt:N},
-      {label:'Web / UTM',arr:M.web,fmt:N},
-      {label:'Organic (web/WhatsApp)',arr:M.org,fmt:N},
+      {sep:1,label:'Google'},
+      {label:'Google paid · call',arr:ccA('paid'),fmt:N},
+      {label:'Google paid · web',arr:M.web,fmt:N},
+      {sep:1,label:'GMB'},
+      {label:'GMB organic · call',arr:ccA('gmb'),fmt:N},
+      {sep:1,label:'Other organic'},
+      {label:'Direct / WhatsApp (web)',arr:M.org,fmt:N},
+      {label:'Other inbound call (pool)',arr:ccA('other'),fmt:N},
+      {sep:1,label:'Practo'},
       {label:'Practo',arr:M.pr,fmt:N},
-      {label:'Other',arr:M.oth,fmt:N},
-      {sep:1,label:'Inbound calls — by category (AI audit)'},
-      {label:'STI',arr:aic.STI||[],fmt:N},
-      {label:'Sexual health',arr:aic.SH||[],fmt:N},
-      {label:'Mental health',arr:aic.MH||[],fmt:N},
-      {label:'Other',arr:aic.Other||[],fmt:N}]},
-    {t:'edge',k:'l2b',label:'Lead → book',formula: cohort?'this-week-lead booked ÷ leads':'all booked ÷ leads · >100% = older/repeat',fmt:PCT},
+      {sep:1,label:'Other (FB / JustDial)'},
+      {label:'Other',arr:M.oth,fmt:N}]},
+    {t:'edge',k:'l2rl',label:'Lead → relevant lead',formula:'inbound calls ÷ leads',fmt:PCT},
+    {t:'stage',k:'relevant',label:'Relevant leads (inbound calls)',color:'#3E6F8E',fmt:N,children:[
+      {sep:1,label:'By category'},
+      ...[['STI','STI'],['SH','Sexual health'],['MH','Mental health'],['Other','Other']].map(([k,lbl])=>({label:lbl,arr:aic[k]||[],fmt:N})),
+      {sep:1,label:'Google click → relevant lead % (by category)'},
+      ...['STI','SH','MH'].map(c=>({label:c==='SH'?'Sexual health':c==='MH'?'Mental health':c,
+        arr:mk(i=>{const cl=gcat(c,'clicks')[i];const rl=(aic[c]||[])[i]||0;return cl?rl/cl*100:null;}),fmt:PCT})),
+      {sep:1,label:'Relevant lead → book % (by category · >100% = web/walk-in too)'},
+      ...['STI','SH'].map(c=>({label:c==='SH'?'Sexual health':c,
+        arr:mk(i=>{const rl=(aic[c]||[])[i]||0;const bk=bcat(c,cf('booked'))[i]||0;return rl?bk/rl*100:null;}),fmt:PCT}))]},
+    {t:'edge',k:'rl2b',label:'Relevant lead → book',formula: cohort?'this-week-lead booked ÷ inbound calls':'booked ÷ inbound calls · >100% = web/walk-in too',fmt:PCT},
     {t:'stage',k:'booked',label: cohort?'Booked · this week’s leads':'Booked',color:'#7B5EA7',fmt:N,children:[
       ...(cohort?[]:[{sep:1,label:'By lead recency'},
         {label:'From this week’s leads',arr:M.bookedWkLead,fmt:N},
@@ -217,14 +230,18 @@ function matrix(M){
   let h='<div class="fmwrap"><table class="fm"><thead><tr><th>Stage &amp; transition</th>'
     +cols.map((ci,j)=>`<th class="${j===cols.length-1?'lastcol':''}">${wkShort(W[ci])}</th>`).join('')+'<th>trend</th></tr></thead><tbody>';
   buildStages(M).forEach(r=>{
-    if(r.t==='edge'){const a=M[r.k];
-      h+=`<tr class="edge"><td><div class="edge-lbl">↳ ${r.label}<span class="formula">${r.formula||''}</span></div></td>${rowCells(a,r.fmt,cols,true)}${sparkCell(a,'#A8B0A0',r.label,r.fmt,r.formula)}</tr>`;return;}
-    const a=M[r.k], kids=(r.children||[]).filter(c=>c.sep||(c.arr&&cols.some(ci=>c.arr[ci])));
-    const open=expanded[r.k]!==false, chev=kids.length?`<span class="chev" onclick="event.stopPropagation();toggle('${r.k}')">${open?'▾':'▸'}</span> `:'';
-    h+=`<tr class="stage"><td><div class="snode" style="border-color:${r.color}">${chev}${r.label}</div></td>${rowCells(a,r.fmt,cols,true)}${sparkCell(a,r.color,r.label,r.fmt)}</tr>`;
+    const a=M[r.k];
+    const kids=(r.children||[]).filter(c=>c.sep||(c.arr&&cols.some(ci=>c.arr[ci])));
+    const open=expanded[r.k]!==false;
+    const chev=kids.length?`<span class="chev" onclick="event.stopPropagation();toggle('${r.k}')">${open?'▾':'▸'}</span> `:'';
+    if(r.t==='edge'){
+      h+=`<tr class="edge"><td><div class="edge-lbl">${chev}↳ ${r.label}<span class="formula">${r.formula||''}</span></div></td>${rowCells(a,r.fmt,cols,true)}${sparkCell(a,'#A8B0A0',r.label,r.fmt,r.formula)}</tr>`;
+    } else {
+      h+=`<tr class="stage"><td><div class="snode" style="border-color:${r.color}">${chev}${r.label}</div></td>${rowCells(a,r.fmt,cols,true)}${sparkCell(a,r.color,r.label,r.fmt)}</tr>`;
+    }
     if(open) kids.forEach(c=>{
       if(c.sep){h+=`<tr class="subhead"><td colspan="${cols.length+2}">${c.label}</td></tr>`;return;}
-      h+=`<tr class="kid"><td><div class="kid-lbl">${c.label}</div></td>${rowCells(c.arr,c.fmt||N,cols,false)}${sparkCell(c.arr,r.color,r.label+' · '+c.label,c.fmt||N)}</tr>`;});
+      h+=`<tr class="kid"><td><div class="kid-lbl">${c.label}</div></td>${rowCells(c.arr,c.fmt||N,cols,false)}${sparkCell(c.arr,r.color||'#3E6F8E',r.label+' · '+c.label,c.fmt||N)}</tr>`;});
   });
   return h+'</tbody></table></div>';
 }
@@ -279,7 +296,7 @@ function render(){
   // L2RL — each category's share of total leads (categorised from inbound calls)
   {const lc=ai.by_cat||{}, tl=M.leads[i]||1, sh=c=>PCT(((lc[c]&&lc[c][i])||0)/tl*100);
    h+=`<div style="font-size:12px;color:var(--ink2);margin:9px 2px 0;padding:9px 13px;background:#FBF9F3;border:1px dashed var(--line);border-radius:9px">
-     <b>Lead category mix (L2RL = category ÷ total leads):</b> STI <b style="color:#B8862E">${sh('STI')}</b> · Sexual health <b style="color:#2E7D5B">${sh('SH')}</b> · Mental health <b style="color:#7B5EA7">${sh('MH')}</b> · Other ${sh('Other')}
+     <b>Lead category mix (share of total leads):</b> STI <b style="color:#B8862E">${sh('STI')}</b> · Sexual health <b style="color:#2E7D5B">${sh('SH')}</b> · Mental health <b style="color:#7B5EA7">${sh('MH')}</b> · Other ${sh('Other')}
      <span style="color:var(--muted)"> — categorised from inbound calls; the remainder are web/organic leads (no category).</span></div>`;}
 
   // Cohort toggle — booked → revenue either follows this week's leads, or counts all activity this week
