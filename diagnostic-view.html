@@ -189,6 +189,9 @@ details.adv[open]>summary{color:var(--ink-2);margin-bottom:4px}
 .rsn-fix{font-size:10.5px;color:#b45309;background:#fffbeb;border:1px dashed #fcd34d;border-radius:6px;padding:4px 8px;margin-top:7px}
 .rsn-drill{display:inline-block;margin-top:8px;font-family:'JetBrains Mono';font-size:10px;font-weight:700;color:#4338ca;background:#eef2ff;border:1px solid #c7d2fe;border-radius:6px;padding:4px 9px;text-decoration:none}
 .rsn-drill:hover{background:#e0e7ff}
+.rsn-citygrp{margin-bottom:14px}
+.rsn-city-h{font-family:'JetBrains Mono';font-size:12px;font-weight:800;color:var(--ink);padding:5px 2px 6px;border-bottom:1.5px solid var(--line);margin-bottom:9px}
+.rsn-city-h span{font-weight:400;color:#94a3b8;font-size:10px}
 .dgrid{width:100%;border-collapse:collapse;font-family:'JetBrains Mono';font-size:11px;background:#fff;border:1px solid var(--line);border-radius:10px;overflow:hidden}
 .dgrid thead th{position:sticky;top:0;background:#f6f4ee;border-bottom:1.5px solid var(--line);padding:7px 9px;text-align:right;font-size:9.5px;font-weight:800;text-transform:uppercase;letter-spacing:.03em;color:var(--muted);white-space:nowrap;cursor:pointer;z-index:2}
 .dgrid thead th.dg-name{text-align:left}
@@ -668,8 +671,20 @@ function renderReasonGrid(visible, against, level, fromFunnel){
   if(isChan){ const cd=LEAD_CH.find(c=>c[0]===dim.key); label=cd[1]; col=cd[2]; }
   else { def=ALL_MDEFS.find(d=>d.key===dim.key)||ALL_MDEFS.find(d=>d.key==='book'); label=def.label; col=def.color; }
   const getArr = isChan ? (e=>e.leadCh&&e.leadCh[dim.key]) : (e=>getM(e)[def.key]);
-  // entities = the SAME filtered set the Tile view shows (respects metric conditions, channel filter, search)
-  const ents=visible.map(x=>({e:x.e, name:x.e.name, sub: x.type==='clinic'?x.cityName : x.type==='doctor'?(x.clinicName+' · '+x.cityName):''}));
+  // The reason drill is always CLINIC-level, grouped by city — causes like availability/conversion live at the
+  // clinic, not the city aggregate (a city total rarely moves because one clinic's gap is masked by the others).
+  // Funnel signature + advanced filters + search are re-applied at clinic granularity. (Doctor level stays as-is.)
+  let ents;
+  if(level==='doctor'){ ents=visible.map(x=>({e:x.e, name:x.e.name, sub:x.clinicName+' · '+x.cityName})); }
+  else {
+    ents=[];
+    CITIES.forEach(c=>(c.clinics||[]).forEach(cl=>{
+      if(!(funnelPasses(cl,against) && leadChPasses(cl,against) && entityPasses(cl,against))) return;
+      if(searchQ && !(matches(cl.name,[]) || matches(c.name,[]))) return;
+      if(!searchQ && !enoughHistory(cl)) return;
+      ents.push({e:cl, name:cl.name, sub:c.name});
+    }));
+  }
   const rows=ents.map(x=>{ const arr=getArr(x.e); if(!arr)return null; const cur=getCurVal(arr),base=getBaseline(arr,against); if(cur==null||!base)return null; return Object.assign(x,{arr,cur,base,p:Math.round((cur-base)/base*100)}); }).filter(Boolean);
   const isRatio = !isChan && def && def.unit==='%';
   // when the user has applied conditions/search/channel filter, show the WHOLE filtered set (ranked by this dimension's drop);
@@ -707,10 +722,19 @@ function renderReasonGrid(visible, against, level, fromFunnel){
       ${drill}
     </div>`;
   };
-  const lvlWord=level==='city'?'cities':level+'s';
-  const head=`<div style="font-size:17px;font-weight:800;color:${col};margin:6px 0 2px;">${label} — ${anyFilter?'across your filtered '+lvlWord:'where it fell & why'}</div>
-    <div style="font-size:12px;color:#475569;margin-bottom:12px;line-height:1.5;">${anyFilter?`<b>${fell.length}</b> ${lvlWord} match your filters above — ranked by <b>${label}</b> drop.`:`The <b>${fell.length}</b> ${lvlWord} where <b>${label}</b> fell most.`} Each shows the trend, likely cause &amp; booking impact. Click a trend to zoom; <b>Full reason →</b> drills to the clinic deep-dive.</div>`;
-  return `<div class="card">${selector}${head}<div class="rsn-grid">${fell.map(card).join('')||`<div style="color:#94a3b8;padding:6px 0">No ${anyFilter?lvlWord+' match the current filters':label+' drops at the '+level+' level'} — adjust the filters or pick another metric/channel above.</div>`}</div></div>`;
+  const unit=level==='doctor'?'doctors':'clinics';
+  const nCities=new Set(fell.map(r=>r.sub)).size;
+  const head=`<div style="font-size:17px;font-weight:800;color:${col};margin:6px 0 2px;">${label} — ${anyFilter?'across your filtered '+unit:'where it fell & why'}</div>
+    <div style="font-size:12px;color:#475569;margin-bottom:12px;line-height:1.5;">${anyFilter?`<b>${fell.length}</b> ${unit}${level!=='doctor'?` across <b>${nCities}</b> cities`:''} match your filters above — grouped by city, ranked by <b>${label}</b> drop.`:`The <b>${fell.length}</b> ${unit} where <b>${label}</b> fell most, grouped by city.`} Each shows the trend, likely cause &amp; booking impact; <b>Full reason →</b> drills to the clinic deep-dive.</div>`;
+  // group cards by city (cities ordered by their worst-ranked clinic, since fell is already drop-sorted)
+  let body;
+  if(level==='doctor'){ body=`<div class="rsn-grid">${fell.map(card).join('')}</div>`; }
+  else {
+    const byCity={}, order=[]; fell.forEach(r=>{ if(!byCity[r.sub]){byCity[r.sub]=[];order.push(r.sub);} byCity[r.sub].push(r); });
+    body=order.map(city=>`<div class="rsn-citygrp"><div class="rsn-city-h">${city} <span>· ${byCity[city].length} clinic${byCity[city].length>1?'s':''}</span></div><div class="rsn-grid">${byCity[city].map(card).join('')}</div></div>`).join('');
+  }
+  if(!fell.length) body=`<div style="color:#94a3b8;padding:6px 0">No ${unit} ${anyFilter?'match the current filters':label+' fell'} — loosen a funnel stage above, or pick another metric/channel.</div>`;
+  return `<div class="card">${selector}${head}${body}</div>`;
 }
 function toggleMetric(key){
   const idx=mfState.findIndex(f=>f.key===key);
