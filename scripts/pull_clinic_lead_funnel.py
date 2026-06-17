@@ -25,7 +25,7 @@ CATS = ["STI", "SEXUAL_HEALTH_GENERAL", "MENTAL_HEALTH", "OTHER", "NOT_MENTIONED
 RELEVANT_INTENT = ("TALK_TO_DOCTOR", "NEEDS_TESTS", "BOOK_APPOINTMENT", "BOOK_TEST", "BOOK_SLOT")
 
 SQL = """SELECT
-  TO_CHAR(DATE_TRUNC('week', ca.created_at + INTERVAL '5 hours 30 minutes'),'YYYY-MM-DD') AS wk,
+  TO_CHAR(DATE_TRUNC('week', ec.start_time + INTERVAL '5 hours 30 minutes'),'YYYY-MM-DD') AS wk,
   ca.analysis.user_intent.user_city.best_match::varchar          AS city,
   ca.analysis.user_intent.locality_mentioned.best_match::varchar AS loc,
   COALESCE(ca.analysis.diagnoses.category::varchar,'NOT_MENTIONED') AS cat,
@@ -36,7 +36,7 @@ FROM allo_analytics.call_analyses ca
 JOIN allo_vendors.exotel_calls ec ON ec.call_id = ca.call_id AND ec.routed_to='lead_to_call'
 WHERE ca.deleted_at IS NULL
   AND ca.analysis.user_intent.locality_mentioned.is_our_locality = true
-  AND (ca.created_at + INTERVAL '5 hours 30 minutes') >= '2026-05-25'
+  AND (ec.start_time + INTERVAL '5 hours 30 minutes') >= '2026-03-16'
 GROUP BY 1,2,3,4,5,6 ORDER BY 1,2,3;"""
 
 # locality (audit) → clinic locality (dashboard key) where the AI name differs from our clinic key
@@ -68,8 +68,8 @@ def main():
         if strength == "STRONG": o["strong"][i] += n
 
     out = {"_meta": {"weeks": WEEKS,
-                     "source": "allo_analytics.call_analyses (AI call audit) × exotel_calls(lead_to_call) — clinic tag from audit locality",
-                     "available_from": "2026-05-27 (audit start) — earlier weeks are 0",
+                     "source": "allo_analytics.call_analyses (AI call audit) × exotel_calls(lead_to_call) — clinic tag from audit locality; bucketed by CALL time (ec.start_time), not analysis date",
+                     "available_from": "audit backfilled historical calls (~late Apr on); bucketing by call time avoids the analysis-date pile-up. Weeks with thin coverage may under-count.",
                      "fields": "lead_calls=inbound lead calls placed at this clinic by the AI locality; relevant=service-intent; strong=STRONG intent; by_cat=diagnosis category (level-2 layer)"}}
     out.update(D)
     json.dump(out, open(os.path.join(ROOT, "data_clinic_lead_funnel.json"), "w"), separators=(",", ":"))

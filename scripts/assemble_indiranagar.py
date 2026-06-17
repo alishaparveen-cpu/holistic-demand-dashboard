@@ -25,12 +25,34 @@ def L(f):
 def ctr(impr, clicks): return [round(clicks[i]/impr[i]*100,1) if impr[i] else None for i in range(NW)]
 def add(a, b): return [(a[i] or 0)+(b[i] or 0) for i in range(NW)]
 
+def ai_call_layer(clf, clf_weeks):
+    """AI call-audit layer (clinic-attributed via locality intent, categorized), aligned to WEEKS.
+    Covers BOTH GMB and paid calls — the audit knows the clinic the caller wanted, so even paid
+    calls on the shared city number land at this clinic. Maps audit categories → STI/SH/MH/Other."""
+    pos = {w: j for j, w in enumerate(clf_weeks)}
+    def al(arr):  # realign a clf array (its own week order) to our 12-week WEEKS
+        return [ (arr[pos[w]] if (w in pos and arr and pos[w] < len(arr)) else 0) for w in WEEKS ]
+    if not clf:
+        z=[0]*NW; return {"calls":z,"relevant":z,"strong":z,"by_cat":{},"available":False}
+    bc = clf.get("by_cat", {})
+    cat = {
+        "STI":   al(bc.get("STI", [])),
+        "SH":    al(bc.get("SEXUAL_HEALTH_GENERAL", [])),
+        "MH":    al(bc.get("MENTAL_HEALTH", [])),
+        "Other": [ (a or 0)+(b or 0) for a,b in zip(al(bc.get("OTHER", [])), al(bc.get("NOT_MENTIONED", []))) ],
+    }
+    calls = al(clf.get("lead_calls", []))
+    return {"calls": calls, "relevant": al(clf.get("relevant", [])), "strong": al(clf.get("strong", [])),
+            "by_cat": cat, "available": any(calls)}
+
 def main():
     geo = L("data_indiranagar_google_geo.json")
     gmb = (L("data_gmb_insights.json") or {}).get(K, {})
     cf  = (L("data_clinic_funnel.json") or {}).get("clinics", {}).get(K, {})
     bot = L("data_indiranagar_bottom.json")
     practo = (L("data_practo_leads.json") or {}).get(K, {})
+    clf_all = L("data_clinic_lead_funnel.json"); clf = clf_all.get(K, {})   # AI call audit (clinic-attributed, categorized)
+    clf_weeks = (clf_all.get("_meta") or {}).get("weeks", [])
 
     # ---- REACH ----
     g_impr = geo.get("total",{}).get("impr",[0]*NW); g_clk = geo.get("total",{}).get("clicks",[0]*NW)
@@ -62,12 +84,7 @@ def main():
             "other":      [ (bychan.get("others",Z)[i] or 0)+(bychan.get("justdial",Z)[i] or 0) for i in range(NW) ],
         },
         "gmb_call_volume": lead.get("gmb_organic_calls", Z),     # raw GMB phone-call volume (context)
-        "ai": {
-            "calls":    lead.get("ai_lead_calls", Z),
-            "relevant": lead.get("ai_relevant", Z),
-            "strong":   lead.get("ai_strong", Z),
-            "by_cat":   lead.get("ai_lead_by_cat", {}),
-        },
+        "ai": ai_call_layer(clf, clf_weeks),
     }
 
     # ---- BOTTOM (exact) ----
@@ -76,9 +93,9 @@ def main():
     out = {"_meta": {"weeks": WEEKS, "clinic": K,
             "notes": {
                 "google_reach": "Google paid impr/clicks for users physically in Indiranagar (geographic_view location-of-presence) — clinic-level, by campaign category. Real, not estimated.",
-                "paid_calls": "Google PAID calls cannot be split below city (one call-asset number per city) — not shown at clinic level.",
-                "gmb": "GMB impr=searches, clicks=calls+website+directions (Google Business Profile, this clinic). GMB has no category.",
-                "leads": "Clinic CRM leads by channel (deduped). gmb_call_volume = raw GMB phone-call count (context). AI audit categories cover audited weeks only.",
+                "paid_calls": "Paid Google calls ride a shared city number, BUT the AI call audit resolves the clinic the caller wanted (locality intent), so AI-audited call leads ARE clinic-attributed — incl. paid calls.",
+                "gmb": "GMB impr=searches, clicks=calls+website+directions (Google Business Profile, this clinic). GMB reach itself has no category.",
+                "leads": "Clinic CRM leads by channel (deduped). gmb_call_volume = raw GMB phone-call count (context). AI call-audit layer = inbound call leads attributed to this clinic by intent and split by category (STI/SH/MH/Other), with relevant/strong intent; bucketed by call time (covers ~late-Apr on).",
                 "bottom": "booked/done/purchased/revenue exact from Redshift; category = consultation diagnosis (STI/ED+/PE+/ED+PE+/NSSD/oth)."}},
         "reach": reach, "leads": leads, "bottom": bottom}
     json.dump(out, open(os.path.join(ROOT, "data_indiranagar.json"), "w"), separators=(",", ":"))
