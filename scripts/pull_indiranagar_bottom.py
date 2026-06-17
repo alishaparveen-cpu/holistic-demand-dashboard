@@ -59,7 +59,10 @@ SQL = """WITH loc AS (
     SUM(CASE WHEN ap.status='COMPLETED' THEN 1 ELSE 0 END) done,
     COUNT(CASE WHEN ap.status='COMPLETED' AND inv.ap_id IS NOT NULL THEN 1 END) purchased,
     SUM(CASE WHEN ap.status='COMPLETED' THEN COALESCE(inv.amt,0) ELSE 0 END) rev_paise,
-    SUM(ap.from_wk_lead) booked_wk_lead
+    SUM(ap.from_wk_lead) booked_wk_lead,
+    SUM(CASE WHEN ap.status='COMPLETED' AND ap.from_wk_lead=1 THEN 1 ELSE 0 END) done_wk_lead,
+    COUNT(CASE WHEN ap.status='COMPLETED' AND inv.ap_id IS NOT NULL AND ap.from_wk_lead=1 THEN 1 END) purchased_wk_lead,
+    SUM(CASE WHEN ap.status='COMPLETED' AND ap.from_wk_lead=1 THEN COALESCE(inv.amt,0) ELSE 0 END) rev_wk_lead_paise
   FROM ap LEFT JOIN diag ON diag.ap_id=ap.id LEFT JOIN inv ON inv.ap_id=ap.id
   GROUP BY 1,2 ORDER BY 1,2;"""
 
@@ -67,19 +70,24 @@ def main():
     p = subprocess.run([sys.executable, RQ], input=SQL, capture_output=True, text=True)
     if p.returncode != 0 or "ERROR" in (p.stderr or ""):
         sys.stderr.write("indiranagar bottom query failed: " + (p.stderr or "")[:400] + "\n"); sys.exit(1)
-    def blank(): return {k: [0]*NW for k in ("booked","done","purchased","rev","booked_wk_lead")}
+    FIELDS = ("booked","done","purchased","rev","booked_wk_lead","done_wk_lead","purchased_wk_lead","rev_wk_lead")
+    def blank(): return {k: [0]*NW for k in FIELDS}
     bycat = {ct: blank() for ct in CATS}; tot = blank()
     for line in p.stdout.strip().splitlines():
         c = line.split("\t")
-        if len(c) < 7: continue
+        if len(c) < 10: continue
         wk, cat = c[0], COLLAPSE.get(c[1], "Other")
         if wk not in idx: continue
         i = idx[wk]
-        try: bk, dn, pu, rp, bwl = int(c[2]), int(c[3]), int(c[4]), int(float(c[5])), int(c[6])
+        try:
+            bk, dn, pu, rp, bwl, dwl, pwl, rwlp = (int(c[2]), int(c[3]), int(c[4]), int(float(c[5])),
+                                                   int(c[6]), int(c[7]), int(c[8]), int(float(c[9])))
         except ValueError: continue
-        rev = round(rp/100.0)
+        rev = round(rp/100.0); rev_wl = round(rwlp/100.0)
         for tgt in (bycat[cat], tot):
-            tgt["booked"][i]+=bk; tgt["done"][i]+=dn; tgt["purchased"][i]+=pu; tgt["rev"][i]+=rev; tgt["booked_wk_lead"][i]+=bwl
+            tgt["booked"][i]+=bk; tgt["done"][i]+=dn; tgt["purchased"][i]+=pu; tgt["rev"][i]+=rev
+            tgt["booked_wk_lead"][i]+=bwl; tgt["done_wk_lead"][i]+=dwl
+            tgt["purchased_wk_lead"][i]+=pwl; tgt["rev_wk_lead"][i]+=rev_wl
     out = {"_meta": {"weeks": WEEKS, "clinic": "Bangalore|Indiranagar", "cats": CATS,
             "source": "allo_consultations.appointments (Screening Call) × encounter diagnosis tag × paid invoices, clinic-filtered",
             "note": "booked=all SCs; done=COMPLETED; purchased=completed+paid invoice; rev=₹ paid. Category=consultation diagnosis simplified to STI / SH (all ED·PE) / Other (only consulted SCs have one; no-shows fall in 'Other' for booked)."},

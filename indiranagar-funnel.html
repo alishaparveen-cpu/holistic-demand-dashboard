@@ -55,6 +55,9 @@ tr.edge td{color:var(--ink2);font-size:12px}
 .sparkcell{padding:3px 10px!important;cursor:zoom-in}.sparkcell:hover{background:var(--goodbg)}
 .wowd{font-size:9.5px;font-weight:700;margin-top:2px}
 .chev{cursor:pointer;color:var(--muted);font-size:10px;display:inline-block;width:12px}
+.cohortbar{display:flex;align-items:center;gap:7px;flex-wrap:wrap;font-size:12.5px;color:var(--ink2);margin:6px 0 2px}
+.tg{border:1px solid var(--line);background:var(--sheet);border-radius:999px;padding:6px 13px;font-size:12.5px;font-weight:600;color:var(--ink2);cursor:pointer;font-family:inherit}
+.tg.on{background:var(--accentd);color:#fff;border-color:var(--accentd)}
 tr.kid td{color:var(--ink2);font-size:11.5px}
 .kid-lbl{padding-left:26px;color:var(--ink2);font-size:11.5px;font-family:'Inter'}
 tr.subhead td{background:var(--inset);font-family:'JetBrains Mono';font-size:8.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--faint);font-weight:600;padding:4px 13px 4px 26px;text-align:left}
@@ -90,11 +93,12 @@ tr.subhead td{background:var(--inset);font-family:'JetBrains Mono';font-size:8.5
 </div>
 <div class="modal" id="modal"><div class="mbox"><button class="mclose" onclick="closeZ()">✕</button><h3 id="mTitle"></h3><div id="mBody"></div></div></div>
 <script>
-let D=null, wk=0, ZREG=[], expanded={};
+let D=null, wk=0, ZREG=[], expanded={}, cohort=false;
 const NSHOW=6;   // show the most recent 6 weeks in the matrix / trend
 const $=id=>document.getElementById(id);
 const hexA=(hex,a)=>{const n=parseInt(hex.slice(1),16);return `rgba(${(n>>16)&255},${(n>>8)&255},${n&255},${a})`;};
 function toggle(k){expanded[k]=expanded[k]===false?true:false;render();}
+function setCohort(v){cohort=v;render();}
 const N=v=>v==null||isNaN(v)?'—':Math.round(v).toLocaleString('en-IN');
 const PCT=v=>v==null||isNaN(v)?'—':v.toFixed(1)+'%';
 const RUP=v=>v==null||isNaN(v)?'—':'₹'+Math.round(v).toLocaleString('en-IN');
@@ -116,13 +120,17 @@ function metrics(){
   const callLeads=arr(i=>(ai.calls&&ai.calls[i])? ai.calls[i] : (ch.gmb[i]||0));
   const web=ch.google_web, org=ch.organic, pr=ch.practo, oth=arr(i=>(ch.fb[i]||0)+(ch.other[i]||0));
   const leads=arr(i=>callLeads[i]+(web[i]||0)+(org[i]||0)+(pr[i]||0)+oth[i]);
-  const booked=B.total.booked, done=B.total.done, purch=B.total.purchased, rev=B.total.rev;
-  const bwl=B.total.booked_wk_lead||booked.map(()=>0);          // booked from THIS week's leads
-  const bprior=arr(i=>(booked[i]||0)-(bwl[i]||0));               // booked from earlier leads
+  // cohort=true → follow only THIS week's leads (booked→done→purchased→revenue from same-week leads)
+  const allB=B.total.booked, bwl=B.total.booked_wk_lead||allB.map(()=>0);
+  const bprior=arr(i=>(allB[i]||0)-(bwl[i]||0));
+  const booked = cohort ? bwl                                   : allB;
+  const done   = cohort ? (B.total.done_wk_lead||B.total.done)  : B.total.done;
+  const purch  = cohort ? (B.total.purchased_wk_lead||B.total.purchased) : B.total.purchased;
+  const rev    = cohort ? (B.total.rev_wk_lead||B.total.rev)    : B.total.rev;
   const rate=(a,b)=>arr(i=>b[i]?a[i]/b[i]*100:null);
   return {impr,clicks,callLeads,web,org,pr,oth,leads,booked,bookedWkLead:bwl,bookedPrior:bprior,done,purch,rev,
     gImpr:R.google.impr,gClk:R.google.clicks,mImpr:R.gmb.impr,mClk:R.gmb.clicks,
-    ctr:rate(clicks,impr),c2l:rate(leads,clicks),l2b:rate(booked,leads),l2b_cohort:rate(bwl,leads),
+    ctr:rate(clicks,impr),c2l:rate(leads,clicks),l2b:rate(booked,leads),
     b2d:rate(done,booked),d2p:rate(purch,done),
     arpu:arr(i=>purch[i]?rev[i]/purch[i]:null)};
 }
@@ -154,6 +162,7 @@ function buildStages(M){
   const gc=R.google.by_cat||{};
   const gcat=(c,f)=>(gc[c]&&gc[c][f])||[];
   const bcat=(c,f)=>(B.by_cat[c]&&B.by_cat[c][f])||[];
+  const cf=f=>cohort?f+'_wk_lead':f;   // cohort → same-week-lead field variant
   const GCATS=['STI','SH','MH','Other'], aic=ai.by_cat||{};
   const cc=D.leads.call_channels||{}, ccA=k=>(cc[k]&&cc[k].total)||[];
   return [
@@ -179,19 +188,18 @@ function buildStages(M){
       {label:'Sexual health',arr:aic.SH||[],fmt:N},
       {label:'Mental health',arr:aic.MH||[],fmt:N},
       {label:'Other',arr:aic.Other||[],fmt:N}]},
-    {t:'edge',k:'l2b_cohort',label:'Lead → book (this week’s leads)',formula:'same-week booked ÷ leads',fmt:PCT},
-    {t:'edge',k:'l2b',label:'Lead → book (all bookings)',formula:'all booked ÷ leads · >100% = older/repeat patients',fmt:PCT},
-    {t:'stage',k:'booked',label:'Booked',color:'#7B5EA7',fmt:N,children:[
-      {sep:1,label:'By lead recency'},
-      {label:'From this week’s leads',arr:M.bookedWkLead,fmt:N},
-      {label:'From earlier leads / repeat',arr:M.bookedPrior,fmt:N},
+    {t:'edge',k:'l2b',label:'Lead → book',formula: cohort?'this-week-lead booked ÷ leads':'all booked ÷ leads · >100% = older/repeat',fmt:PCT},
+    {t:'stage',k:'booked',label: cohort?'Booked · this week’s leads':'Booked',color:'#7B5EA7',fmt:N,children:[
+      ...(cohort?[]:[{sep:1,label:'By lead recency'},
+        {label:'From this week’s leads',arr:M.bookedWkLead,fmt:N},
+        {label:'From earlier leads / repeat',arr:M.bookedPrior,fmt:N}]),
       {sep:1,label:'By category (diagnosis: STI / SH / Other)'},
-      ...cats.map(c=>({label:c,arr:bcat(c,'booked'),fmt:N}))]},
+      ...cats.map(c=>({label:c,arr:bcat(c,cf('booked')),fmt:N}))]},
     {t:'edge',k:'b2d',label:'Book → done',formula:'done ÷ booked',fmt:PCT},
-    {t:'stage',k:'done',label:'Done',color:'#B8862E',fmt:N,children:cats.map(c=>({label:c,arr:bcat(c,'done'),fmt:N}))},
+    {t:'stage',k:'done',label:'Done',color:'#B8862E',fmt:N,children:cats.map(c=>({label:c,arr:bcat(c,cf('done')),fmt:N}))},
     {t:'edge',k:'d2p',label:'Done → purchased',formula:'purchased ÷ done',fmt:PCT},
-    {t:'stage',k:'purch',label:'Purchased',color:'#B8862E',fmt:N,children:cats.map(c=>({label:c,arr:bcat(c,'purchased'),fmt:N}))},
-    {t:'stage',k:'rev',label:'Revenue',color:'#1F6F5C',fmt:RUP,children:cats.map(c=>({label:c,arr:bcat(c,'rev'),fmt:RUP}))},
+    {t:'stage',k:'purch',label:'Purchased',color:'#B8862E',fmt:N,children:cats.map(c=>({label:c,arr:bcat(c,cf('purchased')),fmt:N}))},
+    {t:'stage',k:'rev',label:'Revenue',color:'#1F6F5C',fmt:RUP,children:cats.map(c=>({label:c,arr:bcat(c,cf('rev')),fmt:RUP}))},
   ];
 }
 function heatBg(v,mn,mx){if(v==null||isNaN(v)||!isFinite(mn))return'';const rng=(mx-mn)||1,t=(v-mn)/rng;
@@ -273,6 +281,12 @@ function render(){
    h+=`<div style="font-size:12px;color:var(--ink2);margin:9px 2px 0;padding:9px 13px;background:#FBF9F3;border:1px dashed var(--line);border-radius:9px">
      <b>Lead category mix (L2RL = category ÷ total leads):</b> STI <b style="color:#B8862E">${sh('STI')}</b> · Sexual health <b style="color:#2E7D5B">${sh('SH')}</b> · Mental health <b style="color:#7B5EA7">${sh('MH')}</b> · Other ${sh('Other')}
      <span style="color:var(--muted)"> — categorised from inbound calls; the remainder are web/organic leads (no category).</span></div>`;}
+
+  // Cohort toggle — booked → revenue either follows this week's leads, or counts all activity this week
+  h+=`<div class="cohortbar"><b>Booked → revenue follows:</b>
+    <button class="tg ${!cohort?'on':''}" onclick="setCohort(false)">All activity this week</button>
+    <button class="tg ${cohort?'on':''}" onclick="setCohort(true)">This week’s leads → done (cohort)</button>
+    <span style="color:var(--muted)">${cohort?'Booked/Done/Purchased/Revenue = only patients whose lead came in that same week — a true forward cohort (rates ≤100%).':'Booked/Done/Purchased/Revenue = everything that happened that week, incl. older/repeat patients.'}</span></div>`;
 
   // 2) WEEKLY MOVEMENT (matrix with nested breakdowns)
   h+=`<div class="shead"><h2>The funnel, last 6 weeks — with breakdowns</h2><span class="sub2">latest on the right · <b style="color:var(--good)">green = high</b> / <b style="color:var(--bad)">red = low</b> per row · ▲▼ vs prior week · ▾ collapse a stage · click a trend to zoom</span></div>`;
