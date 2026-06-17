@@ -164,6 +164,21 @@ select.mag-sel.vis{display:block}
 .rsn-fix{font-size:10.5px;color:#b45309;background:#fffbeb;border:1px dashed #fcd34d;border-radius:6px;padding:4px 8px;margin-top:7px}
 .rsn-drill{display:inline-block;margin-top:8px;font-family:'JetBrains Mono';font-size:10px;font-weight:700;color:#4338ca;background:#eef2ff;border:1px solid #c7d2fe;border-radius:6px;padding:4px 9px;text-decoration:none}
 .rsn-drill:hover{background:#e0e7ff}
+.dgrid{width:100%;border-collapse:collapse;font-family:'JetBrains Mono';font-size:11px;background:#fff;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.dgrid thead th{position:sticky;top:0;background:#f6f4ee;border-bottom:1.5px solid var(--line);padding:7px 9px;text-align:right;font-size:9.5px;font-weight:800;text-transform:uppercase;letter-spacing:.03em;color:var(--muted);white-space:nowrap;cursor:pointer;z-index:2}
+.dgrid thead th.dg-name{text-align:left}
+.dgrid thead th.sorted{color:var(--ink);background:#eee9dd}
+.dgrid tbody tr{border-bottom:1px solid var(--line-2)}
+.dgrid tbody tr:hover{background:#faf9f5}
+.dgrid td{padding:6px 9px;text-align:right;white-space:nowrap;vertical-align:middle}
+.dgrid td.dg-name{text-align:left;max-width:230px}
+.dg-name b{font-size:12px;color:var(--ink)}
+.dg-sub{font-size:9px;color:#94a3b8;font-weight:400}
+.dg-cell .dg-val{font-weight:700;color:var(--ink)}
+.dg-cell .dg-d{font-size:9.5px;font-weight:700;margin-left:5px}
+.dg-cell.good .dg-d{color:#2E7D5B}.dg-cell.warn .dg-d{color:#B9770E}.dg-cell.bad .dg-d{color:#C0392B}
+.dg-cell.na{color:#cbd5e1}
+.dgrid .qvlink{margin-left:0}
 .qvlink{font-family:'JetBrains Mono';font-size:9px;font-weight:700;color:#4338ca;background:#eef2ff;border:1px solid #c7d2fe;border-radius:5px;padding:2px 6px;text-decoration:none;white-space:nowrap;flex-shrink:0;margin-left:auto}
 .qvlink:hover{background:#e0e7ff}
 .tz-overlay{display:none;position:fixed;inset:0;background:rgba(20,18,14,.55);z-index:9999;align-items:center;justify-content:center;padding:20px}
@@ -245,6 +260,12 @@ select.mag-sel.vis{display:block}
       <button data-lv="city" class="on">City</button>
       <button data-lv="clinic">Clinic</button>
       <button data-lv="doctor">Doctor</button>
+    </div>
+    <div class="fb-sep"></div>
+    <span class="fb-lbl">View</span>
+    <div class="tg" id="viewtabs">
+      <button data-vm="tile" class="on">▦ Tile</button>
+      <button data-vm="grid">▤ Grid</button>
     </div>
     <div class="fb-r">
       <span class="fb-lbl">Period</span>
@@ -684,6 +705,35 @@ function toggleMonthly(){
   setDateline();render();
 }
 
+// shared metric value formatter (used by bars + grid)
+function fmtVal(def,v){ return def.unit==='%'?Math.round(v)+'%':def.unit==='/d'?(+v).toFixed(1)+'/d':def.unit==='/h'?(+v).toFixed(2)+'/h':def.unit==='d'?(+v).toFixed(1)+'d':def.unit==='h'?(+v).toFixed(1)+'h':Math.round(v)+''; }
+// ── Grid (table) view — dense scan of every entity × selected metric; same filters; click a header to sort, QV→ to drill ──
+let viewMode='tile', gridSort=null;
+function setGridSort(k){ gridSort=(gridSort===k)?null:k; render(); }
+function renderGridView(visible, against, level){
+  const mets=mfState.map(f=>ALL_MDEFS.find(d=>d.key===f.key)).filter(d=>d&&metricAvailAtLevel(d.key,level));
+  if(!mets.length) return '<div class="empty">Select metrics above to populate the grid.</div>';
+  let rows=visible.slice();
+  if(gridSort){ rows.sort((a,b)=>dropPct(getM(a.e)[gridSort],against)-dropPct(getM(b.e)[gridSort],against)); }
+  let h=`<div class="card" style="padding:0;overflow:auto;"><table class="dgrid"><thead><tr><th class="dg-name">${level}</th>`;
+  mets.forEach(m=>{ h+=`<th class="dg-met${gridSort===m.key?' sorted':''}" onclick="setGridSort('${m.key}')" title="Click to sort by ${m.label} drop · ${(m.note||'').replace(/"/g,'&quot;')}">${m.label}${gridSort===m.key?' ↓':''}</th>`; });
+  h+=`<th></th></tr></thead><tbody>`;
+  rows.forEach(item=>{
+    const e=item.e, m=getM(e);
+    const tier=item.tier?`<span class="tbadge t${item.tier}">T${item.tier}</span>`:'';
+    const sub=item.type==='clinic'?`<div class="dg-sub">${item.cityName}</div>`:item.type==='doctor'?`<div class="dg-sub">${item.clinicName} · ${item.cityName}</div>`:'';
+    h+=`<tr><td class="dg-name"><b>${hl(e.name)}</b> ${tier}${sub}</td>`;
+    mets.forEach(def=>{ const arr=m[def.key];
+      const cur=arr?getCurVal(arr):null, base=arr?getBaseline(arr,against):null;
+      if(cur==null){ h+=`<td class="dg-cell na">—</td>`; return; }
+      const p=base?Math.round((cur-base)/base*100):0;
+      h+=`<td class="dg-cell ${cls(p)}"><span class="dg-val">${fmtVal(def,cur)}</span><span class="dg-d">${p>0?'+':''}${p}%</span></td>`;
+    });
+    const qv=item.type==='clinic'?`<a class="qvlink" href="diagnostic.html?clinic=${encodeURIComponent(item.cityName+'|'+e.name)}" title="Open full RCA in Quick View">QV →</a>`:'';
+    h+=`<td>${qv}</td></tr>`;
+  });
+  return h+`</tbody></table></div>`;
+}
 function render(){
   if(!CITIES.length)return;
   const against=document.getElementById('sel-against').value;
@@ -758,16 +808,21 @@ function render(){
       ${hc?`<div class="ch ${isOpen?'open':''}"><div class="chi">${chHtml}</div></div>`:''}
     </div>`;
   }
-  const bad=visible.filter(x=>x.wd<=-20),mid=visible.filter(x=>x.wd>-20&&x.wd<=-10),good=visible.filter(x=>x.wd>-10);
   const baseLbl=isMonthly?'prev month':(AGAINST_SHORT[against]||against);
   const _lb=document.getElementById('leg-base'); if(_lb)_lb.textContent=baseLbl;
-  let html=section(bad,`Worst selected metric ≥20% below ${baseLbl}`,'bad')+section(mid,`Worst metric 10–20% below ${baseLbl}`,'warn')+section(good,`All selected metrics within 10% of / above ${baseLbl}`,'good');
   // tell the user up-front if any SELECTED metric simply doesn't exist at this level (e.g. Active days at
   // doctor level) — otherwise its bar silently vanishes and looks like a bug.
   const naSel=mfState.filter(f=>!metricAvailAtLevel(f.key,level)).map(f=>(ALL_MDEFS.find(d=>d.key===f.key)||{}).label).filter(Boolean);
   const naNote=naSel.length?`<div class="lvl-note">⚠ <b>${naSel.join(', ')}</b> ${naSel.length>1?'are':'is'} not tracked at <b>${level}</b> level — only <b>Bookings</b> &amp; <b>Done</b> exist per doctor, so ${naSel.length>1?'those bars are':'that bar is'} hidden here. Switch to <b>Clinic</b> or <b>City</b> to see ${naSel.length>1?'them':'it'}.</div>`:'';
-  if(!html) html=`<div class="empty">No entities match the current conditions.<br>Try changing metric conditions above, or check that the selected metrics have data at this level.</div>`;
-  html=naNote+html;
+  let html;
+  if(viewMode==='grid'){
+    html = naNote + (visible.length ? renderGridView(visible,against,level) : `<div class="empty">No ${level}s match the current conditions.</div>`);
+  } else {
+    const bad=visible.filter(x=>x.wd<=-20),mid=visible.filter(x=>x.wd>-20&&x.wd<=-10),good=visible.filter(x=>x.wd>-10);
+    let body=section(bad,`Worst selected metric ≥20% below ${baseLbl}`,'bad')+section(mid,`Worst metric 10–20% below ${baseLbl}`,'warn')+section(good,`All selected metrics within 10% of / above ${baseLbl}`,'good');
+    if(!body) body=`<div class="empty">No entities match the current conditions.<br>Try changing metric conditions above, or check that the selected metrics have data at this level.</div>`;
+    html=naNote+body;
+  }
   document.getElementById('main').innerHTML=html;
   const tot=items.filter(x=>x.show).length;
   document.getElementById('scount').textContent=`${visible.length} of ${tot} ${level}s match all conditions`;
@@ -776,6 +831,10 @@ function render(){
 document.querySelectorAll('#ltabs button').forEach(b=>b.onclick=()=>{
   document.querySelectorAll('#ltabs button').forEach(x=>x.classList.remove('on'));
   b.classList.add('on');buildFilterUI();render();
+});
+document.querySelectorAll('#viewtabs button').forEach(b=>b.onclick=()=>{
+  document.querySelectorAll('#viewtabs button').forEach(x=>x.classList.remove('on'));
+  b.classList.add('on'); viewMode=b.dataset.vm; render();
 });
 
 // Attach same-week cohort bookings (sw_booked from data_demand_funnel.json) onto each clinic/city entity,
