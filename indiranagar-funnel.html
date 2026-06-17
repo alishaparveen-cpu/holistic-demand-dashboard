@@ -87,7 +87,9 @@ tr.edge td{color:var(--ink2);font-size:12px}
 <div class="modal" id="modal"><div class="mbox"><button class="mclose" onclick="closeZ()">✕</button><h3 id="mTitle"></h3><div id="mBody"></div></div></div>
 <script>
 let D=null, wk=0;
+const NSHOW=6;   // show the most recent 6 weeks in the matrix / trend
 const $=id=>document.getElementById(id);
+const hexA=(hex,a)=>{const n=parseInt(hex.slice(1),16);return `rgba(${(n>>16)&255},${(n>>8)&255},${n&255},${a})`;};
 const N=v=>v==null||isNaN(v)?'—':Math.round(v).toLocaleString('en-IN');
 const PCT=v=>v==null||isNaN(v)?'—':v.toFixed(1)+'%';
 const RUP=v=>v==null||isNaN(v)?'—':'₹'+Math.round(v).toLocaleString('en-IN');
@@ -153,23 +155,30 @@ const ROWS=[
   {k:'rev',   t:'stage',label:'Revenue',              fmt:RUP,color:'#1F6F5C'},
 ];
 function matrix(M){
-  const W=D._meta.weeks, NW=W.length;
-  // columns oldest → newest
-  const cols=[]; for(let j=NW-1;j>=0;j--) cols.push(j);
+  const W=D._meta.weeks;
+  // 6 most recent weeks, displayed oldest → newest (newest-first index NSHOW-1 … 0)
+  const cols=[]; for(let j=NSHOW-1;j>=0;j--) cols.push(j);
   let h='<div class="fmwrap"><table class="fm"><thead><tr><th>Stage &amp; transition</th>'
     +cols.map((ci,j)=>`<th class="${j===cols.length-1?'lastcol':''}">${wkShort(W[ci])}</th>`).join('')+'<th>trend</th></tr></thead><tbody>';
   ROWS.forEach(r=>{
     const s=M[r.k];
+    // heat range over the shown weeks (higher = better for every row here)
+    let mn=Infinity,mx=-Infinity; cols.forEach(ci=>{const v=s[ci]; if(v!=null&&!isNaN(v)){mn=Math.min(mn,v);mx=Math.max(mx,v);}});
+    const rng=(mx-mn)||1;
     let cells='';
     cols.forEach((ci,j)=>{const v=s[ci]; const last=j===cols.length-1;
+      let bg='';
+      if(v!=null&&!isNaN(v)&&isFinite(mn)){const t=(v-mn)/rng;
+        if(t>=0.6) bg=hexA('#2E7D5B',0.07+0.18*((t-0.6)/0.4));
+        else if(t<=0.4) bg=hexA('#B23A2E',0.07+0.18*((0.4-t)/0.4));}
       let wow='';
       if(last && v!=null && !isNaN(v) && s[1]!=null && !isNaN(s[1])){
         const d=v-s[1]; if(d){const up=d>0; const col=up?'var(--good)':'var(--bad)';
           wow=`<div class="wowd" style="color:${col}">${up?'▲':'▼'} ${r.fmt(Math.abs(d))}</div>`;}}
-      cells+=`<td class="${last?'lastcol':''}">${v==null||isNaN(v)?'—':r.fmt(v)}${wow}</td>`;});
+      cells+=`<td class="${last?'lastcol':''}"${bg?` style="background:${bg}"`:''}>${v==null||isNaN(v)?'—':r.fmt(v)}${wow}</td>`;});
     const lbl=r.t==='stage'?`<div class="snode" style="border-color:${r.color}">${r.label}</div>`
       :`<div class="edge-lbl">↳ ${r.label}<span class="formula">${r.formula||''}</span></div>`;
-    h+=`<tr class="${r.t}"><td>${lbl}</td>${cells}<td class="sparkcell" onclick="zoomK('${r.k}')">${spark(s,r.color||'#3E6F8E')}</td></tr>`;
+    h+=`<tr class="${r.t}"><td>${lbl}</td>${cells}<td class="sparkcell" onclick="zoomK('${r.k}')">${spark(s.slice(0,NSHOW),r.color||'#3E6F8E')}</td></tr>`;
   });
   return h+'</tbody></table></div>';
 }
@@ -182,10 +191,10 @@ function spark(arr,color){
   return `<svg class="sp" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}"><path d="${p}" fill="none" stroke="${color}" stroke-width="1.6"/><circle cx="${x(n-1).toFixed(1)}" cy="${y(v[n-1]).toFixed(1)}" r="2.6" fill="${color}"/></svg>`;
 }
 let _M=null;
-function zoomK(k){const r=ROWS.find(x=>x.k===k); if(!r)return; zoomShow(r.label, _M[k], r.fmt, r.color||'#3E6F8E', r.formula||'');}
+function zoomK(k){const r=ROWS.find(x=>x.k===k); if(!r)return; zoomShow(r.label, _M[k].slice(0,NSHOW), r.fmt, r.color||'#3E6F8E', r.formula||'');}
 function zoomShow(title,sNewestFirst,fmt,color,formula){
   $('mTitle').textContent=title;
-  const W=700,H=300,pad=38; const wks=D._meta.weeks.slice().reverse();
+  const W=700,H=300,pad=38; const wks=D._meta.weeks.slice(0,NSHOW).reverse();
   const v=sNewestFirst.slice().reverse().map(x=>x==null||isNaN(x)?null:x); const n=v.length;
   const mx=Math.max(1,...v.map(x=>x||0)); const x=i=>pad+i*(W-2*pad)/(n-1),y=val=>H-pad-((val||0)/mx)*(H-2*pad-10);
   let p='',pts='',started=false;
@@ -222,7 +231,7 @@ function render(){
   h+=`<div class="funnel-read">Reach <b>${N(M.impr[i])}</b> impressions (Google ${N(M.gImpr[i])} + GMB ${N(M.mImpr[i])}) → <b>${N(M.clicks[i])}</b> clicks (CTR ${PCT(M.ctr[i])}) → <b>${N(M.leads[i])}</b> leads (call ${N(M.callLeads[i])} + web ${N(M.web[i])} + organic/Practo) → <b>${N(M.booked[i])}</b> booked → <b>${N(M.done[i])}</b> done (${PCT(M.b2d[i])}) → <b>${N(M.purch[i])}</b> purchased (${PCT(M.d2p[i])}) → <b>${RUP(M.rev[i])}</b>. <span style="color:var(--muted)">Lead→book can exceed 100% when bookings include repeat/walk-in patients beyond tracked new leads.</span></div>`;
 
   // 2) WEEKLY MOVEMENT (matrix)
-  h+=`<div class="shead"><h2>The same funnel, week by week</h2><span class="sub2">latest on the right · ▲▼ = vs prior week · click a trend to zoom</span></div>`;
+  h+=`<div class="shead"><h2>The same funnel, last 6 weeks</h2><span class="sub2">latest on the right · <b style="color:var(--good)">green = high</b> / <b style="color:var(--bad)">red = low</b> per row · ▲▼ = vs prior week · click a trend to zoom</span></div>`;
   h+=matrix(M);
 
   // 3) CATEGORY BREAKDOWNS (selected week)
