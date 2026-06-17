@@ -92,7 +92,8 @@ const N=v=>v==null||isNaN(v)?'—':Math.round(v).toLocaleString('en-IN');
 const PCT=v=>v==null||isNaN(v)?'—':v.toFixed(1)+'%';
 const RUP=v=>v==null||isNaN(v)?'—':'₹'+Math.round(v).toLocaleString('en-IN');
 const Lk=v=>v==null?'—':v>=1000?'₹'+(v/1000).toFixed(1)+'k':'₹'+Math.round(v);
-const CCOL={SH:'#2E7D5B',STD:'#B8862E',STI:'#B8862E',MH:'#7B5EA7',ED:'#3E6F8E','ED+':'#3E6F8E','PE+':'#5B9E8C','ED+PE+':'#8E6FB0',NSSD:'#9E8E5B',Brand:'#6B6B6B',Other:'#B0A99A',oth:'#B0A99A'};
+const CCOL={SH:'#2E7D5B',STD:'#B8862E',STI:'#B8862E',MH:'#7B5EA7',ED:'#3E6F8E','ED+':'#3E6F8E','PE+':'#5B9E8C','ED+PE+':'#8E6FB0',NSSD:'#9E8E5B',Brand:'#6B6B6B',Other:'#B0A99A',oth:'#B0A99A',
+  'Inbound (call)':'#3E6F8E','Web/UTM':'#2E7D5B','Organic':'#7B5EA7','Practo':'#B8862E'};
 const wkLabel=w=>{const d=new Date(w);const e=new Date(d);e.setDate(d.getDate()+6);
   const M=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   return d.getDate()+' '+M[d.getMonth()]+'–'+e.getDate()+' '+M[e.getMonth()];};
@@ -110,7 +111,7 @@ function metrics(){
   const leads=arr(i=>callLeads[i]+(web[i]||0)+(org[i]||0)+(pr[i]||0)+oth[i]);
   const booked=B.total.booked, done=B.total.done, purch=B.total.purchased, rev=B.total.rev;
   const rate=(a,b)=>arr(i=>b[i]?a[i]/b[i]*100:null);
-  return {impr,clicks,callLeads,web,leads,booked,done,purch,rev,
+  return {impr,clicks,callLeads,web,org,pr,oth,leads,booked,done,purch,rev,
     gImpr:R.google.impr,gClk:R.google.clicks,mImpr:R.gmb.impr,mClk:R.gmb.clicks,
     ctr:rate(clicks,impr),c2l:rate(leads,clicks),l2b:rate(booked,leads),b2d:rate(done,booked),d2p:rate(purch,done),
     arpu:arr(i=>purch[i]?rev[i]/purch[i]:null)};
@@ -125,7 +126,7 @@ function snapshot(M,i){
    +arrow(PCT(M.ctr[i]),'CTR')
    +cell('Clicks',N(M.clicks[i]),`Google ${N(M.gClk[i])} · GMB ${N(M.mClk[i])}`)
    +arrow(PCT(M.c2l[i]),'click→lead')
-   +cell('Leads',N(M.leads[i]),`call <b>${N(M.callLeads[i])}</b> · web ${N(M.web[i])}`)
+   +cell('Leads (total)',N(M.leads[i]),`inbound <b>${N(M.callLeads[i])}</b> · web ${N(M.web[i])}`)
    +arrow(PCT(M.l2b[i]),'lead→book')
    +cell('Booked',N(M.booked[i]),'screening calls')
    +arrow(PCT(M.b2d[i]),'book→done')
@@ -228,7 +229,11 @@ function render(){
   h+=`<div class="shead"><h2>By category</h2><span class="sub2">week of ${wkLabel(D._meta.weeks[i])} · reach &amp; call-leads use intent (SH/STD/MH); booked→revenue use diagnosis (STI/ED+/PE+)</span></div>`;
   h+='<div class="grid">';
   h+=`<div class="card"><div class="k">Google reach — impressions</div>${catBars(mapCat(R.google.by_cat,'impr'),['SH','STD','MH','ED','Brand','Other'])}</div>`;
-  h+=`<div class="card"><div class="k">Call leads (AI audit) — by intent${ai.calls&&ai.calls[i]?` · ${N(ai.calls[i])} calls, ${N(ai.relevant[i])} relevant`:''}</div>${catBars(ai.by_cat||{},['STI','SH','MH','Other'])}</div>`;
+  // Leads hierarchy: total → composition (inbound within total) → inbound split by category
+  const comp={'Inbound (call)':M.callLeads,'Web/UTM':M.web,'Organic':M.org,'Practo':M.pr,'Other':M.oth};
+  const inboundPct=M.leads[i]?Math.round(M.callLeads[i]/M.leads[i]*100):0;
+  h+=`<div class="card"><div class="k">Leads — total ${N(M.leads[i])}, by source</div>${catBars(comp,['Inbound (call)','Web/UTM','Organic','Practo','Other'])}</div>`;
+  h+=`<div class="card"><div class="k">↳ Inbound (call) leads — ${N(M.callLeads[i])} of ${N(M.leads[i])} (${inboundPct}%), split by category${ai.calls&&ai.calls[i]?` · ${N(ai.relevant[i])} relevant`:''}</div>${catBars(ai.by_cat||{},['STI','SH','MH','Other'])}</div>`;
   const catObj=f=>{const o={};cats.forEach(c=>o[c]=B.by_cat[c]?B.by_cat[c][f]:null);return o;};
   h+=`<div class="card"><div class="k">Booked — by diagnosis</div>${catBars(catObj('booked'),cats)}</div>`;
   h+=`<div class="card"><div class="k">Done — by diagnosis</div>${catBars(catObj('done'),cats)}</div>`;
