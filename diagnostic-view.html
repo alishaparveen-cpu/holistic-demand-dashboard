@@ -131,6 +131,10 @@ select.mag-sel.vis{display:block}
 .stag.sust{background:#FDE2E0;color:#C0392B}
 .qvlink{font-family:'JetBrains Mono';font-size:9px;font-weight:700;color:#4338ca;background:#eef2ff;border:1px solid #c7d2fe;border-radius:5px;padding:2px 6px;text-decoration:none;white-space:nowrap;flex-shrink:0;margin-left:auto}
 .qvlink:hover{background:#e0e7ff}
+.tz-overlay{display:none;position:fixed;inset:0;background:rgba(20,18,14,.55);z-index:9999;align-items:center;justify-content:center;padding:20px}
+.tz-box{background:#fff;border-radius:14px;padding:18px 20px;max-width:720px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.3)}
+.tz-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;font-size:14px}
+.tz-x{border:none;background:#f1f5f9;border-radius:8px;width:30px;height:30px;cursor:pointer;font-size:14px;color:#475569}
 .brow:last-child{margin-bottom:0}
 .blbl{font-family:'JetBrains Mono';font-size:8.5px;color:var(--muted);width:70px;flex-shrink:0;text-align:right;text-transform:uppercase;letter-spacing:.02em;white-space:nowrap}
 .btrack{flex:1;height:9px;background:#EAE7DE;border-radius:2px;overflow:hidden;position:relative}
@@ -177,6 +181,7 @@ select.mag-sel.vis{display:block}
   <div class="eyebrow">India · Demand Health · City → Clinic → Doctor</div>
   <h1 style="font-family:'Newsreader',Georgia,serif;font-weight:500;font-size:28px;margin:4px 0 2px">Where did demand drop?</h1>
   <div class="dateline" id="dateline">loading…</div>
+  <div style="font-size:11px;color:#94a3b8;margin-top:5px;">This view is <b>offline clinics</b> (online has no clinic/availability dimension). For <b>online demand RCA</b> — bookings &amp; the channel that moved — open <a href="diagnostic.html" style="color:#4338ca;font-weight:600;text-decoration:none;">Quick View</a> and toggle <b>📞 Online</b>.</div>
 </div>
 
 <div class="search-bar">
@@ -249,16 +254,21 @@ const ALL_MDEFS=[
   {key:'adays_we',label:'· Weekends',  grp:'avail', unit:'d',  color:'#7A5ABC', def:false, sub:1},
   {key:'avail',   label:'Avail hrs',   grp:'avail', unit:'h',  color:'#4A7A6C', def:false},
   // ── Demand (volume reaching the clinic) ──
-  {key:'leads',   label:'Leads',       grp:'demand',unit:'',   color:'#1F6F5C', def:true},
+  {key:'leads',   label:'Leads',       grp:'demand',unit:'',   color:'#1F6F5C', def:true,
+    note:'Inbound leads that reached the clinic this week (Redshift). The top of the demand funnel.'},
   {key:'book',    label:'New bookings',grp:'demand',unit:'',   color:'#2E7D5B', def:true,
-    note:'First-time SC bookings — each patient’s first-ever screening call, counted once (reschedules collapsed, online excluded). This is the city-head sheet’s "1st Time Bookings" and the clean signal of NEW demand reaching the clinic.'},
+    note:'First-time SC bookings made THIS week — every new patient who booked, regardless of when their lead first came in (so it includes bookings from older leads + walk-ins). The city-head sheet’s "1st Time Bookings".'},
+  {key:'swbook',  label:'New bk · this-wk leads',grp:'demand',unit:'',color:'#2E8B57', def:false,
+    note:'Bookings that came from THIS week’s leads only (same-week cohort) — the slice of new bookings directly attributable to this week’s inbound. A floor: this week’s leads keep booking for ~2–4 more weeks (network: ~92% book same-week). The latest week is pending (the demand superset table loads ~1 week behind), shown as “—”.'},
   {key:'bookall', label:'All bookings',grp:'demand',unit:'',   color:'#6B8E7A', def:false,
     note:'Every SC booking — first-time + returning patients (reschedules still collapsed). The city-head sheet’s "Overall Bookings". Use New bookings for fresh demand; the gap (All − New) is returning/reactivation.'},
-  {key:'done',    label:'Done',        grp:'demand',unit:'',   color:'#3A7D5C', def:false,
-    note:'First-time bookings that completed (showed up). Pairs with New bookings so Bk→Done is the new-patient completion rate.'},
+  {key:'done',    label:'Calls done',  grp:'demand',unit:'',   color:'#3A7D5C', def:false,
+    note:'First-time bookings that completed (the screening call happened). Pairs with New bookings so Bk→Done is the new-patient completion rate.'},
   // ── Conversion (turning what arrived into bookings/completions) ──
-  {key:'l2b',     label:'Book÷Lead',   grp:'conv', unit:'%',  color:'#6D3A7A', def:false,
-    note:'New bookings ÷ tracked leads, same week — a demand-capture ratio, NOT a cohort conversion. Tracked leads count only engaged tracked-channel leads, while bookings include walk-in / untracked demand, so >100% is possible & means demand beyond tracked leads. A true cohort (this week’s leads → their eventual bookings) is ≤100% but needs lead-level tracking we only have at network level.'},
+  {key:'l2bc',    label:'L2B (cohort)',grp:'conv', unit:'%',  color:'#5B2E8A', def:false,
+    note:'TRUE conversion: of THIS week’s leads, the share that booked the same week = (New bk · this-wk leads) ÷ Leads. Bounded ≤100% (a floor — late bookings push it a few points higher over the next weeks). Use this to judge how well this week’s demand was captured. Latest week pending → “—”.'},
+  {key:'l2b',     label:'Book/Lead',   grp:'conv', unit:'%',  color:'#6D3A7A', def:false,
+    note:'GROSS ratio: total bookings this week (All bookings — new + returning) ÷ total Leads this week. NOT a cohort — the bookings include walk-ins, returning patients and bookings from older leads, so it can exceed 100%. Read it as throughput/demand-capture; compare against L2B (cohort) to see how much demand came from beyond this week’s leads.'},
   {key:'b2d',     label:'Bk→Done',     grp:'conv', unit:'%',  color:'#8B4A9A', def:false,
     note:'Done ÷ Bookings (same week) — show-up / completion rate.'},
   // ── Velocity (throughput) ──
@@ -273,20 +283,22 @@ function wsum(arr,ei){if(!arr)return null;const v=arr.slice(Math.max(0,ei-3),ei+
 function makeMonthlyArr(fn){const a=Array(WKS.length).fill(null);const c=fn(weekIdx);if(c!=null)a[weekIdx]=c;const p=fn(weekIdx-4);if(p!=null&&weekIdx-4>=0)a[weekIdx-4]=p;return a;}
 
 function getM(e){
-  const {book:b,done:d,avail:a,adays:ad,adays_wd:wd,adays_we:we,leads:l,bookall:ba}=e;
+  const {book:b,done:d,avail:a,adays:ad,adays_wd:wd,adays_we:we,leads:l,bookall:ba,swbook:sw}=e;
   if(!isMonthly){
-    return{leads:l||null,book:b,bookall:ba||null,done:d,avail:a||null,adays:ad||null,adays_wd:wd||null,adays_we:we||null,
-      bkday:(b&&ad)?rto(b,ad):null,bkhr:(b&&a)?rto(b,a):null,l2b:l?mkr(b,l):null,b2d:mkr(d,b)};
+    return{leads:l||null,book:b,swbook:sw||null,bookall:ba||null,done:d,avail:a||null,adays:ad||null,adays_wd:wd||null,adays_we:we||null,
+      bkday:(b&&ad)?rto(b,ad):null,bkhr:(b&&a)?rto(b,a):null,
+      l2b:(l&&ba)?mkr(ba,l):null, l2bc:(sw&&l)?mkr(sw,l):null, b2d:mkr(d,b)};
   }
   const bs=wi=>wsum(b,wi),ds=wi=>wsum(d,wi),avs=wi=>wsum(a,wi),ads=wi=>wsum(ad,wi);
-  const ls=wi=>l?wsum(l,wi):null,wds=wi=>wsum(wd,wi),wes=wi=>wsum(we,wi),bas=wi=>ba?wsum(ba,wi):null;
+  const ls=wi=>l?wsum(l,wi):null,wds=wi=>wsum(wd,wi),wes=wi=>wsum(we,wi),bas=wi=>ba?wsum(ba,wi):null,sws=wi=>sw?wsum(sw,wi):null;
   return{
-    leads:l?makeMonthlyArr(ls):null,book:makeMonthlyArr(bs),bookall:ba?makeMonthlyArr(bas):null,done:makeMonthlyArr(ds),
+    leads:l?makeMonthlyArr(ls):null,book:makeMonthlyArr(bs),swbook:sw?makeMonthlyArr(sws):null,bookall:ba?makeMonthlyArr(bas):null,done:makeMonthlyArr(ds),
     avail:a?makeMonthlyArr(avs):null,adays:ad?makeMonthlyArr(ads):null,
     adays_wd:wd?makeMonthlyArr(wds):null,adays_we:we?makeMonthlyArr(wes):null,
     bkday:(b&&ad)?makeMonthlyArr(wi=>{const bv=bs(wi),av=ads(wi);return av>0?+(bv/av).toFixed(2):null;}):null,
     bkhr:(b&&a)?makeMonthlyArr(wi=>{const bv=bs(wi),av=avs(wi);return av>0?+(bv/av).toFixed(2):null;}):null,
-    l2b:l?makeMonthlyArr(wi=>{const lv=ls(wi),bv=bs(wi);return lv>0?Math.round(bv/lv*100):null;}):null,
+    l2b:(l&&ba)?makeMonthlyArr(wi=>{const lv=ls(wi),bv=bas(wi);return lv>0?Math.round(bv/lv*100):null;}):null,
+    l2bc:(sw&&l)?makeMonthlyArr(wi=>{const lv=ls(wi),sv=sws(wi);return(lv>0&&sv!=null)?Math.round(sv/lv*100):null;}):null,
     b2d:makeMonthlyArr(wi=>{const bv=bs(wi),dv=ds(wi);return bv>0?Math.round(dv/bv*100):null;}),
   };
 }
@@ -352,6 +364,30 @@ function streakTag(arr,base){
   if(streak===1) return '<span class="stag blip" title="Below baseline this week only — a one-week dip, watch before acting.">1-wk dip</span>';
   return `<span class="stag sust" title="Below baseline for ${streak} consecutive weeks — a sustained decline, not noise.">${streak}w ↓</span>`;
 }
+// Zoomable trend — click any mini-sparkline to see the full weekly trend with week labels & baseline.
+function bigTrendSVG(arr, base, color, unit){
+  const W=arr.length, w=660,h=240,padL=20,padR=20,padT=22,padB=34;
+  const valid=arr.filter(v=>v!=null);
+  if(valid.length<2) return '<div style="padding:40px;text-align:center;color:#94a3b8">Not enough data to plot.</div>';
+  let mn=Math.min(...valid, base!=null?base:Infinity), mx=Math.max(...valid, base!=null?base:-Infinity);
+  mn=Math.min(mn, mn>0?mn*0.92:mn); mx=(mx*1.06)||1; if(mx===mn)mx=mn+1;
+  const X=i=>padL+i/(W-1)*(w-padL-padR), Y=v=>h-padB-(v-mn)/(mx-mn)*(h-padT-padB);
+  const fmt=v=>unit==='%'?Math.round(v)+'%':unit==='/d'?(+v).toFixed(1):unit==='/h'?(+v).toFixed(2):(unit==='d'||unit==='h')?(+v).toFixed(1):Math.round(v);
+  let path='',pen=false;
+  arr.forEach((v,i)=>{ if(v==null){pen=false;return;} path+=(pen?'L':'M')+X(i).toFixed(1)+' '+Y(v).toFixed(1)+' '; pen=true; });
+  const baseLine=base!=null?`<line x1="${padL}" y1="${Y(base).toFixed(1)}" x2="${w-padR}" y2="${Y(base).toFixed(1)}" stroke="#c4853a" stroke-width="1.3" stroke-dasharray="5 4"/><text x="${w-padR}" y="${(Y(base)-5).toFixed(1)}" font-size="11" fill="#b06d1f" text-anchor="end" font-weight="700">baseline ${fmt(base)}</text>`:'';
+  const dots=arr.map((v,i)=> v==null?'':`<circle cx="${X(i).toFixed(1)}" cy="${Y(v).toFixed(1)}" r="${i===weekIdx?5:3}" fill="${i===weekIdx?color:'#fff'}" stroke="${color}" stroke-width="2"/>`+((i===weekIdx||i%2===0)?`<text x="${X(i).toFixed(1)}" y="${(Y(v)-9).toFixed(1)}" font-size="10" fill="${i===weekIdx?color:'#64748b'}" text-anchor="middle" font-weight="${i===weekIdx?800:500}">${fmt(v)}</text>`:'')).join('');
+  const xlabs=WKS.map((wk,i)=> (i%2===0||i===W-1)?`<text x="${X(i).toFixed(1)}" y="${h-12}" font-size="9.5" fill="#94a3b8" text-anchor="middle">${wk}</text>`:'').join('');
+  return `<svg width="100%" viewBox="0 0 ${w} ${h}">${baseLine}<path d="${path}" fill="none" stroke="${color}" stroke-width="2.5"/>${dots}${xlabs}</svg>`;
+}
+function zoomTrend(el){
+  let arr; try{ arr=JSON.parse(el.dataset.arr); }catch(_){ arr=[]; }
+  const base=el.dataset.base===''?null:+el.dataset.base, color=el.dataset.color||'#2E7D5B', unit=el.dataset.unit||'', label=el.dataset.label||'', name=el.dataset.name||'';
+  let m=document.getElementById('trendZoom');
+  if(!m){ m=document.createElement('div'); m.id='trendZoom'; m.className='tz-overlay'; m.onclick=ev=>{ if(ev.target===m) m.style.display='none'; }; document.body.appendChild(m); }
+  m.innerHTML=`<div class="tz-box"><div class="tz-head"><div><b>${label}</b> <span style="color:#94a3b8">· ${name}</span></div><button class="tz-x" onclick="document.getElementById('trendZoom').style.display='none'">✕</button></div>${bigTrendSVG(arr,base,color,unit)}<div style="font-size:11px;color:#94a3b8;margin-top:6px">Full ${arr.length}-week trend · filled dot = selected week (${WKS[weekIdx]||''}) · dashed = baseline. Several weeks below the line = a sustained decline, not a one-week blip.</div></div>`;
+  m.style.display='flex';
+}
 function barsHTML(e,against){
   const m=getM(e);
   const al=isMonthly?'prev mo':(AGAINST_SHORT[against]||against);
@@ -376,7 +412,7 @@ function barsHTML(e,against){
         <div class="bhatch ${c}" style="left:${fw}%;width:${hw}%"></div>
         <div class="bbase"></div>
       </div>
-      <div class="btrend" title="Last 8 weeks · dashed = ${al} baseline · dot = this week">${miniTrend(arr,base,def.color)}</div>
+      <div class="btrend" style="cursor:zoom-in" title="Click to zoom this trend" onclick='zoomTrend(this)' data-arr='${JSON.stringify(arr).replace(/'/g,"&#39;")}' data-label="${def.label.replace(/"/g,'&quot;')}" data-color="${def.color}" data-unit="${def.unit||''}" data-base="${base==null?'':base}" data-name="${(e.name||'').replace(/"/g,'&quot;')}">${miniTrend(arr,base,def.color)}</div>
       <div class="bvals">
         <span class="bvc">${fmt(cur)}</span>
         <span class="bvs">←</span>
@@ -578,9 +614,34 @@ document.querySelectorAll('#ltabs button').forEach(b=>b.onclick=()=>{
   b.classList.add('on');buildFilterUI();render();
 });
 
+// Attach same-week cohort bookings (sw_booked from data_demand_funnel.json) onto each clinic/city entity,
+// aligned to WKS. We use ONLY sw_booked from this file (its `leads` field is undercounted); the L2B-cohort
+// denominator is data_drops' real `leads`. Weeks where the whole network is 0 = the demand superset table
+// hasn't loaded yet (it lags ~1 wk) → nulled so they render "—" instead of a false 0%.
+function attachCohort(D, DMF){
+  if(!DMF) return;
+  const W=WKS.length;
+  const align=arr=>{ if(!arr) return null; const r=arr.slice().reverse(); return r.length>=W ? r.slice(r.length-W) : Array(W-r.length).fill(0).concat(r); };
+  const clinicSw={};
+  D.cities.forEach(c=>(c.clinics||[]).forEach(cl=>{ const o=DMF[c.name+'|'+cl.name]&&DMF[c.name+'|'+cl.name].all; clinicSw[c.name+'|'+cl.name]=o?align(o.sw_booked):null; }));
+  const net=Array(W).fill(0);
+  Object.values(clinicSw).forEach(a=>{ if(a) a.forEach((v,i)=>{ if(v!=null) net[i]+=v; }); });
+  const missing=net.map(v=>v===0);   // zero network cohort = table not loaded (or pre-launch) → render "—"
+  const nullMissing=a=> a? a.map((v,i)=> missing[i]?null:v) : null;
+  D.cities.forEach(c=>{
+    const cityArr=Array(W).fill(null);
+    (c.clinics||[]).forEach(cl=>{ const a=nullMissing(clinicSw[c.name+'|'+cl.name]); cl.swbook=a;
+      if(a) a.forEach((v,i)=>{ if(v!=null) cityArr[i]=(cityArr[i]||0)+v; }); });
+    c.swbook=cityArr.map((v,i)=> missing[i]?null:v);
+  });
+}
 // ── INIT ──
-fetch('data_drops.json?t='+Date.now()).then(r=>r.json()).then(D=>{
+Promise.all([
+  fetch('data_drops.json?t='+Date.now()).then(r=>r.json()),
+  fetch('data_demand_funnel.json?t='+Date.now()).then(r=>r.ok?r.json():null).catch(()=>null)
+]).then(([D,DMF])=>{
   CITIES=D.cities; WKS=D._meta.weeks; weekIdx=WKS.length-1;
+  try{ attachCohort(D,DMF); }catch(e){ console.warn('cohort attach failed',e); }
   buildPeriodOptions(); setDateline(); buildFilterUI(); render();
 }).catch(e=>{document.getElementById('main').innerHTML='<div class="empty">Could not load demand data: '+e.message+'</div>';});
 </script>
