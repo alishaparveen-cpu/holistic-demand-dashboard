@@ -951,7 +951,8 @@ function renderCombined(){
     else if(active.length===1 && sfTier!=='all'){const ks=Object.keys(D.city).filter(c=>sfTier==='T1'?T1_CITIES.includes(c):(c!=='National / Online'&&!T1_CITIES.includes(c)));
       src={}; F.forEach(f=>src[f]=GAF2.weeks.map((_,i)=>ks.reduce((a,k)=>a+((D.city[k]&&D.city[k][f]&&D.city[k][f][i])||0),0))); basis='full funnel · '+ks.length+' cities';}
   }
-  // For city / tier groupings, replace leads/booked/done with TOTAL Google leads (web+call), city-attributed
+  // For city / tier groupings, replace leads/booked/done with TOTAL Google leads (web+GMB), city-attributed
+  let srcSplit=null;
   if(src && GCL){
     let gcities=null;
     if(active.length===1 && sfCity!=='all' && GCL.city[sfCity]) gcities=[sfCity];
@@ -959,11 +960,19 @@ function renderCombined(){
     if(gcities){
       const gs=field=>GAF2.weeks.map(w=>{const gi=GCL._meta.weeks.indexOf(w);return gi<0?null:gcities.reduce((a,cy)=>a+((GCL.city[cy]&&GCL.city[cy][field]&&GCL.city[cy][field][gi])||0),0);});
       src={...src, leads:gs('leads'), booked:gs('booked'), done:gs('done')};
-      basis=basis.replace('full funnel','full funnel · total leads (web+call)');
+      basis=basis.replace('full funnel','full funnel · total leads (web+GMB)');
+      const lw=GAF2.weeks[GAF2.weeks.length-1], gi=GCL._meta.weeks.indexOf(lw);  // source split at latest week
+      if(gi>=0){const sm=f=>gcities.reduce((a,cy)=>a+((GCL.city[cy]&&GCL.city[cy][f]&&GCL.city[cy][f][gi])||0),0);
+        srcSplit={total:sm('leads'),web:sm('web'),call:sm('call'),gmb:sm('gmb')};}
     }
   }
   let h=`<div style="margin-bottom:14px"><h2 style="margin:0;font-size:19px">Combined · ${active.join(' + ')}</h2>
     <div style="font-size:12px;color:var(--muted);margin-top:3px">${match.length} campaign${match.length===1?'':'s'} matched${basis?' · '+basis:' · ad metrics only'}</div></div>`;
+  if(srcSplit){const pc=v=>srcSplit.total?Math.round(v/srcSplit.total*100):0;
+    h+=`<div style="margin-bottom:14px;background:#fff;border:1px solid var(--line);border-radius:11px;padding:11px 15px;font-size:13px">
+      <b>${srcSplit.total.toLocaleString('en-IN')} total Google leads</b> <span style="color:var(--muted)">(latest week, this city) =</span>
+      &nbsp; Web/UTM <b>${srcSplit.web}</b> (${pc(srcSplit.web)}%) &nbsp;·&nbsp; Paid call <b>${srcSplit.call}</b> (${pc(srcSplit.call)}%) &nbsp;·&nbsp; GMB call <b>${srcSplit.gmb}</b> (${pc(srcSplit.gmb)}%)
+      <div style="font-size:10.5px;color:var(--muted);margin-top:4px">Web = paid Google leads with a UTM (attributable). GMB call = Google Business listing calls. Paid-call (location-asset number) usually carries a UTM or routes via GMB, so it rarely splits out separately here — the manager's sheet isolates it via the call number.</div></div>`;}
   const N=v=>(+v).toLocaleString('en-IN'); let cards, strip='';
   if(src){
     const li=src.cost.length-1, done=src.done||src.booked.map(()=>0);
