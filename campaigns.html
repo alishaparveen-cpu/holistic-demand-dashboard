@@ -834,6 +834,34 @@ function funnelStrip(stages){
      <div style="font-size:23px;font-weight:700;line-height:1.05;margin-top:2px">${s.val}</div>
      ${s.sub?`<div style="font-size:10px;color:var(--muted);margin-top:3px">${s.sub}</div>`:''}</div>`).join('')+'</div>';
 }
+// reusable week-by-week metric matrix for one campaign (rows=metrics, cols=weeks, + trend/zoom column)
+function campMatrix(c){
+  const g=GMAP[c.g]||{color:'#2E7D5B'};
+  const labs=(c.weeks_iso&&c.weeks_iso.length?c.weeks_iso:WKISO||[]).slice().reverse().map(wkRange);
+  const clicks=(c.spendH||[]).map((s,i)=>(c.cpc&&c.cpc[i])?Math.round(s/c.cpc[i]):null);
+  const NN=v=>(+v).toLocaleString('en-IN');
+  const dtRow=c.dt==='loc'?['Loc %',c.d,pct,false]:c.dt==='cpb'?['CPB',c.d,rupee,true]:['Cost / conv',c.d,rupee,true];
+  const ROWS=[['Spend',c.spendH,rupee,false],['Clicks',clicks,NN,false],[volLabel(c.dt),c.v,NN,false],
+    ['Leads (UTM)',c.leads,NN,false],['Bookings (UTM)',c.booked,NN,false],['Done (UTM)',c.done,NN,false],
+    dtRow,['CPC',c.cpc,rupee,true],['Impr. Share',c.is,pct,false],['Avg QS',c.qs,v=>v+'/10',false],
+    ['Lost — budget',c.bl,pct,true],['Lost — rank',c.rl,pct,true],['Ad-rel drag',c.ar,pct,true],['LP drag',c.lp,pct,true]];
+  const nW=labs.length;
+  const heat=(v,vals,inv)=>{const a=vals.filter(x=>x!=null&&!isNaN(x));if(a.length<2||v==null||isNaN(v))return '';
+    const mn=Math.min(...a),mx=Math.max(...a),rg=mx-mn||1;let t=(v-mn)/rg;if(inv)t=1-t;
+    return t>=0.5?`background:rgba(46,125,91,${((t-0.5)*0.5).toFixed(2)})`:`background:rgba(192,80,63,${((0.5-t)*0.5).toFixed(2)})`;};
+  let h='<div style="overflow-x:auto"><table class="tbl" style="font-size:12.5px"><thead><tr><th style="text-align:left">Metric</th>'+
+    labs.map(l=>`<th style="text-align:right;white-space:nowrap">${l}</th>`).join('')+'<th style="text-align:right;white-space:nowrap">Trend ⤢</th></tr></thead><tbody>';
+  ROWS.forEach(([label,arr,fmt,inv])=>{
+    const padded=Array.from({length:nW},(_,i)=>(arr&&i<arr.length)?arr[i]:null);
+    if(!padded.some(x=>x!=null))return;
+    const oldest=padded.slice().reverse();
+    const zi=ZREG.push({label,series:oldest,labels:labs,fmt,color:g.color})-1;
+    h+=`<tr><td style="text-align:left;font-weight:600;white-space:nowrap">${label}</td>`;
+    oldest.forEach(v=>{h+=`<td style="text-align:right;${heat(v,oldest,inv)}">${v==null?'—':fmt(v)}</td>`;});
+    h+=`<td data-z="${zi}" title="click to zoom" style="cursor:zoom-in;text-align:right">${spark(oldest,inv,90,26,g.color)}</td></tr>`;
+  });
+  return h+'</tbody></table></div>';
+}
 function renderSearch(){
   ZREG=[];
   const dl=document.getElementById('campList');
@@ -861,18 +889,6 @@ function renderSearch(){
   if(ci==null||!CAMP[ci]){ res.innerHTML='<div style="color:var(--muted);padding:34px 4px">Type a campaign name above, combine by tier / city / category, or use “Show only” to find droppers.</div>'; return; }
   const c=CAMP[ci]; if(inp && inp.value!==c.n) inp.value=c.n;
   const g=GMAP[c.g]||{color:'#2E7D5B',label:''};
-  const labs=(c.weeks_iso&&c.weeks_iso.length?c.weeks_iso:WKISO||[]).slice().reverse().map(wkRange);
-  const clicks=(c.spendH||[]).map((s,i)=>(c.cpc&&c.cpc[i])?Math.round(s/c.cpc[i]):null);
-  const NN=v=>(+v).toLocaleString('en-IN');
-  const dtRow=c.dt==='loc'?['Loc %',c.d,pct,false]:c.dt==='cpb'?['CPB',c.d,rupee,true]:['Cost / conv',c.d,rupee,true];
-  const ROWS=[['Spend',c.spendH,rupee,false],['Clicks',clicks,NN,false],[volLabel(c.dt),c.v,NN,false],
-    ['Leads (UTM)',c.leads,NN,false],['Bookings (UTM)',c.booked,NN,false],['Done (UTM)',c.done,NN,false],
-    dtRow,['CPC',c.cpc,rupee,true],['Impr. Share',c.is,pct,false],['Avg QS',c.qs,v=>v+'/10',false],
-    ['Lost — budget',c.bl,pct,true],['Lost — rank',c.rl,pct,true],['Ad-rel drag',c.ar,pct,true],['LP drag',c.lp,pct,true]];
-  const nW=labs.length;
-  const heat=(v,vals,inv)=>{const a=vals.filter(x=>x!=null&&!isNaN(x));if(a.length<2||v==null||isNaN(v))return '';
-    const mn=Math.min(...a),mx=Math.max(...a),rg=mx-mn||1;let t=(v-mn)/rg;if(inv)t=1-t;
-    return t>=0.5?`background:rgba(46,125,91,${((t-0.5)*0.5).toFixed(2)})`:`background:rgba(192,80,63,${((0.5-t)*0.5).toFixed(2)})`;};
   let h=`<div style="margin-bottom:14px"><h2 style="margin:0;font-size:19px">${c.n}</h2>
     <div style="font-size:12px;color:var(--muted);margin-top:3px"><span class="cdot" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${g.color};margin-right:5px"></span>${g.label} · budget ₹${(c.bud||0).toLocaleString('en-IN')}/day · ${c.nweeks||(WKISO||[]).length} weeks${c.sug?' · <b style="color:var(--amber)">'+c.sug+'</b>':''}</div></div>`;
   // this campaign's CITY total leads + source split (its own UTM leads are a subset of the city's web)
@@ -880,20 +896,9 @@ function renderSearch(){
   if(GCL && pcity && GCL.city[pcity]){const cc=GCL.city[pcity], gi=0, pc=v=>cc.leads[gi]?Math.round(v/cc.leads[gi]*100):0;
     h+=`<div style="margin-bottom:14px;background:#fff;border:1px solid var(--line);border-radius:11px;padding:11px 15px;font-size:13px">
       📍 <b>${pcity}</b> — <b>${(cc.leads[gi]||0).toLocaleString('en-IN')} total Google leads</b> <span style="color:var(--muted)">(${wkRange(GCL._meta.weeks[gi])}) =</span>
-      &nbsp; Web/UTM <b>${cc.web[gi]||0}</b> (${pc(cc.web[gi]||0)}%) &nbsp;·&nbsp; Paid call <b>${cc.call[gi]||0}</b> (${pc(cc.call[gi]||0)}%) &nbsp;·&nbsp; GMB call <b>${cc.gmb[gi]||0}</b> (${pc(cc.gmb[gi]||0)}%)
-      <div style="font-size:10.5px;color:var(--muted);margin-top:4px">This campaign’s own UTM leads (in the table below) are part of ${pcity}’s Web/UTM total. Paid-call rarely splits out (carries UTM or routes via GMB). Combine by City for the full city funnel to Done.</div></div>`;}
-  h+='<div style="overflow-x:auto"><table class="tbl" style="font-size:12.5px"><thead><tr><th style="text-align:left">Metric</th>'+
-     labs.map(l=>`<th style="text-align:right;white-space:nowrap">${l}</th>`).join('')+'<th style="text-align:right;white-space:nowrap">Trend ⤢</th></tr></thead><tbody>';
-  ROWS.forEach(([label,arr,fmt,inv])=>{
-    const padded=Array.from({length:nW},(_,i)=>(arr&&i<arr.length)?arr[i]:null);
-    if(!padded.some(x=>x!=null))return;
-    const oldest=padded.slice().reverse();   // oldest→newest, aligned to labs
-    const zi=ZREG.push({label,series:oldest,labels:labs,fmt,color:g.color})-1;
-    h+=`<tr><td style="text-align:left;font-weight:600;white-space:nowrap">${label}</td>`;
-    oldest.forEach(v=>{h+=`<td style="text-align:right;${heat(v,oldest,inv)}">${v==null?'—':fmt(v)}</td>`;});
-    h+=`<td data-z="${zi}" title="click to zoom" style="cursor:zoom-in;text-align:right">${spark(oldest,inv,90,26,g.color)}</td></tr>`;
-  });
-  h+='</tbody></table></div>'
+      &nbsp; Web/UTM <b>${cc.web[gi]||0}</b> (${pc(cc.web[gi]||0)}%) &nbsp;·&nbsp; GMB call <b>${cc.gmb[gi]||0}</b> (${pc(cc.gmb[gi]||0)}%)
+      <div style="font-size:10.5px;color:var(--muted);margin-top:4px">This campaign’s own UTM leads (in the table below) are part of ${pcity}’s Web/UTM total. (Paid-call leads carry a UTM or route via GMB, so they fold into those two.) Combine by City for the full city funnel to Done.</div></div>`;}
+  h+=campMatrix(c)
    +'<div style="font-size:11px;color:var(--muted);margin-top:10px">Week-by-week; click a row’s Trend to zoom. Clicks = spend ÷ CPC. <b>Latest week’s conversions are provisional</b> (Google backfills up to 7 days). QS / ad-rel / LP / lost-budget are current snapshots (no weekly history). Leads / Bookings / Done are UTM-attributed per campaign — combine by city or category for the full lead→booking funnel.</div>';
   res.innerHTML=h;
 }
@@ -982,8 +987,8 @@ function renderCombined(){
   if(srcSplit){const pc=v=>srcSplit.total?Math.round(v/srcSplit.total*100):0;
     h+=`<div style="margin-bottom:14px;background:#fff;border:1px solid var(--line);border-radius:11px;padding:11px 15px;font-size:13px">
       <b>${srcSplit.total.toLocaleString('en-IN')} total Google leads</b> <span style="color:var(--muted)">(latest week, this city) =</span>
-      &nbsp; Web/UTM <b>${srcSplit.web}</b> (${pc(srcSplit.web)}%) &nbsp;·&nbsp; Paid call <b>${srcSplit.call}</b> (${pc(srcSplit.call)}%) &nbsp;·&nbsp; GMB call <b>${srcSplit.gmb}</b> (${pc(srcSplit.gmb)}%)
-      <div style="font-size:10.5px;color:var(--muted);margin-top:4px">Web = paid Google leads with a UTM (attributable). GMB call = Google Business listing calls. Paid-call (location-asset number) usually carries a UTM or routes via GMB, so it rarely splits out separately here — the manager's sheet isolates it via the call number.</div></div>`;}
+      &nbsp; Web/UTM <b>${srcSplit.web}</b> (${pc(srcSplit.web)}%) &nbsp;·&nbsp; GMB call <b>${srcSplit.gmb}</b> (${pc(srcSplit.gmb)}%)
+      <div style="font-size:10.5px;color:var(--muted);margin-top:4px">Web = paid Google leads with a UTM. GMB call = Google Business listing calls. (Paid-call leads carry a UTM or route via GMB, so they fold into those two — not a separate bucket here.)</div></div>`;}
   const N=v=>(+v).toLocaleString('en-IN'); let cards, strip='';
   if(src){
     const li=src.cost.length-1, done=src.done||src.booked.map(()=>0);
@@ -1017,6 +1022,12 @@ function renderCombined(){
     h=h.replace('ad metrics only','ad metrics only — pick a single city OR category for the full lead→booking funnel');
   }
   h+=strip+'<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(255px,1fr));gap:12px">'+cards.filter(Boolean).join('')+'</div>';
+  // each matching campaign, week by week (scroll through them)
+  if(match.length){
+    h+='<div style="margin:24px 0 10px;font-weight:700;font-size:14px">Campaigns in this filter — week by week ('+match.length+')</div>';
+    match.slice().sort((a,b)=>(b.sp||0)-(a.sp||0)).forEach(c=>{const gc=GMAP[c.g]||{color:'#2E7D5B'};
+      h+=`<div style="margin-bottom:20px"><div style="font-weight:600;font-size:13px;margin-bottom:5px"><span class="cdot" style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${gc.color};margin-right:6px"></span>${c.n}</div>${campMatrix(c)}</div>`;});
+  }
   res.innerHTML=h;
 }
 document.getElementById('tabs').onclick=e=>{if(e.target.dataset.v)setView(e.target.dataset.v);};
