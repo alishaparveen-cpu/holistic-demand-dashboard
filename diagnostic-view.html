@@ -209,6 +209,28 @@ select.mag-sel.vis{display:block}
 .chi{padding:5px 7px 7px}
 .hl{background:rgba(31,111,92,.13);border-radius:2px;padding:0 1px}
 .empty{text-align:center;padding:32px;color:var(--muted);font-size:13px;font-style:italic}
+/* ── Cause RCA view ── */
+.cz-bar{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:12px}
+.cz-bar .cz-lbl{font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--faint)}
+.cz-chip{font-family:'JetBrains Mono';font-size:11px;font-weight:700;padding:4px 11px;border:1.5px solid var(--line);border-radius:999px;background:#fff;cursor:pointer;color:var(--ink-2);white-space:nowrap}
+.cz-chip.on{color:#fff}
+.cz-chip .n{opacity:.65;font-weight:600}
+.cz-sel{font-family:inherit;font-size:11.5px;border:1.5px solid var(--line);border-radius:7px;padding:4px 9px;background:#fff;cursor:pointer;font-weight:600}
+.cz-citygrp{margin-bottom:13px}
+.cz-city-h{font-family:'JetBrains Mono';font-size:12px;font-weight:800;color:var(--ink);padding:5px 2px 6px;border-bottom:1.5px solid var(--line);margin-bottom:8px}
+.cz-city-h span{font-weight:400;color:#94a3b8;font-size:10px}
+.cz-row{display:flex;align-items:center;gap:12px;padding:8px 11px;border:1px solid var(--line);border-radius:10px;background:#fff;margin-bottom:7px}
+.cz-row:hover{background:#faf9f5}
+.cz-badge{font-family:'JetBrains Mono';font-size:9.5px;font-weight:800;padding:3px 8px;border-radius:6px;white-space:nowrap;flex-shrink:0;width:92px;text-align:center}
+.cz-name{flex:1;min-width:120px}
+.cz-name b{font-size:13px;color:var(--ink)}.cz-name span{font-size:10px;color:#94a3b8;margin-left:5px}
+.cz-why{flex:2;min-width:180px;font-size:11px;color:#475569;line-height:1.45}
+.cz-delta{font-family:'JetBrains Mono';font-size:13px;font-weight:800;white-space:nowrap;text-align:right;width:96px;flex-shrink:0}
+.cz-delta small{font-size:9px;color:#94a3b8;font-weight:600}
+.cz-spark{width:60px;flex-shrink:0}
+.cz-drill{font-family:'JetBrains Mono';font-size:9.5px;font-weight:700;color:#4338ca;background:#eef2ff;border:1px solid #c7d2fe;border-radius:6px;padding:4px 8px;text-decoration:none;white-space:nowrap;flex-shrink:0}
+.cz-drill:hover{background:#e0e7ff}
+.cz-head{font-size:12px;color:#475569;margin:12px 0 10px;line-height:1.5}
 </style>
 </head>
 <body>
@@ -265,10 +287,10 @@ select.mag-sel.vis{display:block}
       <button data-lv="doctor">Doctor</button>
     </div>
     <div class="fb-sep"></div>
-    <span class="fb-lbl">View</span>
-    <div class="tg" id="viewtabs">
-      <button data-vm="tile" class="on">▦ Tile</button>
-      <button data-vm="grid">▤ Grid</button>
+    <span class="fb-lbl">Mode</span>
+    <div class="tg" id="modetabs">
+      <button data-mm="cause" class="on">🔍 Cause RCA</button>
+      <button data-mm="advanced">⚙ Advanced</button>
     </div>
     <div class="fb-r">
       <span class="fb-lbl">Period</span>
@@ -276,13 +298,23 @@ select.mag-sel.vis{display:block}
       <button class="monthly-btn" id="monthly-btn" onclick="toggleMonthly()">Monthly (4w)</button>
     </div>
   </div>
-  <div class="frow2">
-    <div class="fp-top">
-      <span class="fp-section-lbl">Show metrics:</span>
-      <div id="metric-chips"></div>
+  <div id="cause-controls"></div>
+  <div id="adv-area" style="display:none">
+    <div class="frow1" style="margin-top:8px">
+      <span class="fb-lbl">View</span>
+      <div class="tg" id="viewtabs">
+        <button data-vm="tile" class="on">▦ Tile</button>
+        <button data-vm="grid">▤ Grid (reason cards)</button>
+      </div>
     </div>
-    <div class="fp-conds" id="cond-rows"></div>
-    <div id="leadch-filter"></div>
+    <div class="frow2">
+      <div class="fp-top">
+        <span class="fp-section-lbl">Show metrics:</span>
+        <div id="metric-chips"></div>
+      </div>
+      <div class="fp-conds" id="cond-rows"></div>
+      <div id="leadch-filter"></div>
+    </div>
   </div>
 </div>
 
@@ -726,8 +758,81 @@ function toggleMonthly(){
 
 // shared metric value formatter (used by bars + reason cards)
 function fmtVal(def,v){ return def.unit==='%'?Math.round(v)+'%':def.unit==='/d'?(+v).toFixed(1)+'/d':def.unit==='/h'?(+v).toFixed(2)+'/h':def.unit==='d'?(+v).toFixed(1)+'d':def.unit==='h'?(+v).toFixed(1)+'h':Math.round(v)+''; }
-let viewMode='tile';   // 'tile' = entity bar-cards · 'grid' = reason cards (where each thing fell & why)
+let viewMode='tile';   // 'tile' = entity bar-cards · 'grid' = reason cards (Advanced mode)
+// ── Cause RCA (default mode): one ranked list of clinics where bookings dropped, each auto-tagged with the cause ──
+const CAUSES=[
+  {k:'avail',  icon:'🏥', label:'Availability', col:'#2A5A8C', bg:'#EAF1F8'},
+  {k:'leads',  icon:'📞', label:'Leads',        col:'#1F6F5C', bg:'#E7F2EB'},
+  {k:'conv',   icon:'🔁', label:'Lead→Book',    col:'#6D3A7A', bg:'#F3EEFE'},
+  {k:'showup', icon:'✅', label:'Show-up',       col:'#B9770E', bg:'#FEF6E7'},
+  {k:'other',  icon:'•',  label:'Mixed',         col:'#64748B', bg:'#F1F5F9'},
+];
+const CMETA=Object.fromEntries(CAUSES.map(c=>[c.k,c]));
+let mainMode='cause', causeFilter='all', cityFilter='all';
+function setMainMode(m){ mainMode=m;
+  document.querySelectorAll('#modetabs button').forEach(b=>b.classList.toggle('on',b.dataset.mm===m));
+  document.getElementById('cause-controls').style.display = m==='cause'?'':'none';
+  document.getElementById('adv-area').style.display = m==='cause'?'none':'';
+  document.querySelectorAll('.legend').forEach(l=>l.style.display = m==='cause'?'none':'');   // tile/grid legend is meaningless in Cause mode
+  render();
+}
+function setCauseFilter(k){ causeFilter=k; render(); }
+function setCityFilter(v){ cityFilter=v; render(); }
+// primary cause for a clinic, upstream-first: availability → leads(channel) → lead→book → show-up
+function computeCause(e, against){
+  const mp=k=>{ const a=getM(e)[k]; if(!a)return null; const c=getCurVal(a),b=getBaseline(a,against); return (c==null||!b)?null:Math.round((c-b)/b*100); };
+  const av=mp('adays'), ld=mp('leads'), cv=mp('l2bc'), sh=mp('b2d');
+  if(av!=null && av<=-10) return {cause:'avail', why:`<b>Active days ${av}%</b> — supply gap (fewer days open).`};
+  if(ld!=null && ld<=-10){ const wc=worstChannel(e,against); return {cause:'leads', why:`<b>Leads ${ld}%</b>${wc&&wc.p<0?`, mostly <b style="color:#b45309">${wc.lbl}</b> (${wc.p}%)`:''}.`}; }
+  if(cv!=null && cv<=-10) return {cause:'conv', why:`Availability &amp; leads held; <b>same-week conversion ${cv}%</b> — capture problem.`};
+  if(sh!=null && sh<=-10) return {cause:'showup', why:`Leads &amp; bookings ok; <b>show-up (Done) ${sh}%</b>.`};
+  return {cause:'other', why:`No single upstream stage down ≥10% — likely mix / timing.`};
+}
+function buildCauseControls(){
+  const el=document.getElementById('cause-controls'); if(!el || mainMode!=='cause'){ if(el)el.innerHTML=''; return; }
+  const against=document.getElementById('sel-against').value;
+  // tally causes across clinics where bookings dropped (respecting the city filter)
+  const tally={all:0}; CAUSES.forEach(c=>tally[c.k]=0);
+  CITIES.forEach(c=>{ if(cityFilter!=='all'&&c.name!==cityFilter)return; (c.clinics||[]).forEach(cl=>{ if(!enoughHistory(cl))return; const a=getM(cl).book; if(!a)return; const cu=getCurVal(a),ba=getBaseline(a,against); if(cu==null||!ba)return; if(cu>=ba)return; tally.all++; tally[computeCause(cl,against).cause]++; }); });
+  const chip=(k,lbl,col)=>`<span class="cz-chip${causeFilter===k?' on':''}" style="${causeFilter===k?`background:${col||'#1A1A17'};border-color:${col||'#1A1A17'}`:(col?`color:${col};border-color:${col}55`:'')}" onclick="setCauseFilter('${k}')">${lbl} <span class="n">${tally[k]||0}</span></span>`;
+  const cityOpts=['<option value="all">All cities</option>'].concat(CITIES.map(c=>c.name).sort().map(n=>`<option value="${n}" ${cityFilter===n?'selected':''}>${n}</option>`)).join('');
+  el.innerHTML=`<div class="cz-bar"><span class="cz-lbl">Cause</span>${chip('all','All')}${CAUSES.map(c=>chip(c.k,c.icon+' '+c.label,c.col)).join('')}
+    <span style="width:1px;height:18px;background:var(--line-2);margin:0 3px"></span>
+    <span class="cz-lbl">City</span><select class="cz-sel" onchange="setCityFilter(this.value)">${cityOpts}</select></div>`;
+}
+function renderCauseView(){
+  buildCauseControls();
+  const against=document.getElementById('sel-against').value;
+  let rows=[];
+  CITIES.forEach(c=>{ if(cityFilter!=='all'&&c.name!==cityFilter)return;
+    (c.clinics||[]).forEach(cl=>{ if(!enoughHistory(cl))return;
+      if(searchQ && !(matches(cl.name,[])||matches(c.name,[])))return;
+      const a=getM(cl).book; if(!a)return;
+      const cur=getCurVal(a),base=getBaseline(a,against); if(cur==null||!base)return; const p=Math.round((cur-base)/base*100);
+      if(cur>=base)return; const ca=computeCause(cl,against);
+      rows.push({cl,city:c.name,cur,base,p,ca}); }); });
+  if(causeFilter!=='all') rows=rows.filter(r=>r.ca.cause===causeFilter);
+  rows.sort((a,b)=>(a.cur-a.base)-(b.cur-b.base));
+  const byCity={},order=[]; rows.forEach(r=>{ if(!byCity[r.city]){byCity[r.city]=[];order.push(r.city);} byCity[r.city].push(r); });
+  const row=r=>{ const cm=CMETA[r.ca.cause];
+    const arrJson=JSON.stringify(getM(r.cl).book).replace(/'/g,"&#39;");
+    const href=`diagnostic.html?clinic=${encodeURIComponent(r.city+'|'+r.cl.name)}`;
+    return `<div class="cz-row">
+      <span class="cz-badge" style="background:${cm.bg};color:${cm.col}">${cm.icon} ${cm.label}</span>
+      <div class="cz-name"><b>${hl(r.cl.name)}</b><span>${r.city}</span></div>
+      <div class="cz-spark"><div class="btrend" style="cursor:zoom-in" title="Click to zoom" onclick='zoomTrend(this)' data-arr='${arrJson}' data-label="New bookings" data-color="#2E7D5B" data-unit="" data-base="${r.base}" data-name="${r.cl.name.replace(/"/g,'&quot;')}">${miniTrend(getM(r.cl).book,r.base,'#2E7D5B')}</div></div>
+      <div class="cz-delta"><span style="color:var(--ink)">${r.cur}</span> <small>vs ${Math.round(r.base)}</small> <b style="color:#C0392B">${r.p}%</b></div>
+      <div class="cz-why">${r.ca.why}</div>
+      <a class="cz-drill" href="${href}">Quick View →</a>
+    </div>`; };
+  const body = order.length ? order.map(city=>`<div class="cz-citygrp"><div class="cz-city-h">${city} <span>· ${byCity[city].length} clinic${byCity[city].length>1?'s':''} ↓</span></div>${byCity[city].map(row).join('')}</div>`).join('')
+    : `<div class="empty">No clinics with a New-bookings drop${causeFilter!=='all'?` from <b>${CMETA[causeFilter].label}</b>`:''}${cityFilter!=='all'?` in ${cityFilter}`:''} this week — try a different cause/city.</div>`;
+  const head=`<div class="cz-head"><b>${rows.length}</b> clinic${rows.length===1?'':'s'} where <b>New bookings</b> fell vs ${AGAINST_SHORT[against]||against}${causeFilter!=='all'?`, cause = <b style="color:${CMETA[causeFilter].col}">${CMETA[causeFilter].label}</b>`:''} — grouped by city, biggest drop first. Each row is auto-tagged with the primary cause; <b>Quick View →</b> opens the full clinic deep-dive.</div>`;
+  document.getElementById('main').innerHTML=head+body;
+  const sc=document.getElementById('scount'); if(sc) sc.textContent=`${rows.length} clinics with a bookings drop`;
+}
 function render(){
+  if(mainMode==='cause'){ if(CITIES.length) renderCauseView(); return; }
   if(!CITIES.length)return;
   const against=document.getElementById('sel-against').value;
   const level=document.querySelector('#ltabs button.on').dataset.lv;
@@ -828,6 +933,7 @@ document.querySelectorAll('#viewtabs button').forEach(b=>b.onclick=()=>{
   document.querySelectorAll('#viewtabs button').forEach(x=>x.classList.remove('on'));
   b.classList.add('on'); viewMode=b.dataset.vm; render();
 });
+document.querySelectorAll('#modetabs button').forEach(b=>b.onclick=()=>setMainMode(b.dataset.mm));
 
 // Attach same-week cohort bookings (sw_booked from data_demand_funnel.json) onto each clinic/city entity,
 // aligned to WKS. We use ONLY sw_booked from this file (its `leads` field is undercounted); the L2B-cohort
@@ -880,7 +986,7 @@ Promise.all([
   CITIES=D.cities; WKS=D._meta.weeks; weekIdx=WKS.length-1;
   try{ attachCohort(D,DMF); }catch(e){ console.warn('cohort attach failed',e); }
   try{ attachLeadChannels(D,LJ,PJ); }catch(e){ console.warn('lead-channel attach failed',e); }
-  buildPeriodOptions(); setDateline(); buildFilterUI(); render();
+  buildPeriodOptions(); setDateline(); buildFilterUI(); setMainMode('cause');
 }).catch(e=>{document.getElementById('main').innerHTML='<div class="empty">Could not load demand data: '+e.message+'</div>';});
 </script>
 </body>
