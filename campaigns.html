@@ -966,8 +966,8 @@ function renderSearch(){
   if(GCL && pcity && GCL.city[pcity]){const cc=GCL.city[pcity], gi=0, pc=v=>cc.leads[gi]?Math.round(v/cc.leads[gi]*100):0;
     h+=`<div style="margin-bottom:14px;background:#fff;border:1px solid var(--line);border-radius:11px;padding:11px 15px;font-size:13px">
       📍 <b>${pcity}</b> — <b>${(cc.leads[gi]||0).toLocaleString('en-IN')} total Google leads</b> <span style="color:var(--muted)">(${wkRange(GCL._meta.weeks[gi])}) =</span>
-      &nbsp; Web/UTM <b>${cc.web[gi]||0}</b> (${pc(cc.web[gi]||0)}%) &nbsp;·&nbsp; GMB call <b>${cc.gmb[gi]||0}</b> (${pc(cc.gmb[gi]||0)}%)
-      <div style="font-size:10.5px;color:var(--muted);margin-top:4px">This campaign’s own UTM leads (in the table below) are part of ${pcity}’s Web/UTM total. (Paid-call leads carry a UTM or route via GMB, so they fold into those two.) Combine by City for the full city funnel to Done.</div></div>`;}
+      &nbsp; Web/UTM <b>${cc.web[gi]||0}</b> (${pc(cc.web[gi]||0)}%) &nbsp;·&nbsp; Paid call <b>${cc.call[gi]||0}</b> (${pc(cc.call[gi]||0)}%) &nbsp;·&nbsp; GMB call <b>${cc.gmb[gi]||0}</b> (${pc(cc.gmb[gi]||0)}%)
+      <div style="font-size:10.5px;color:var(--muted);margin-top:4px">Manager-style: Lead = Web/UTM (form) + Paid call (Google call-asset number) + GMB call (clinic listing). This campaign’s own UTM leads (table below) sit inside ${pcity}’s Web/UTM total. Combine by City for the full city funnel to Done.</div></div>`;}
   h+=campMatrix(c)
    +'<div style="font-size:11px;color:var(--muted);margin-top:10px">Week-by-week; click a row’s Trend to zoom. Clicks = spend ÷ CPC. <b>Latest week’s conversions are provisional</b> (Google backfills up to 7 days). QS / ad-rel / LP / lost-budget are current snapshots (no weekly history). Leads / Bookings / Done are UTM-attributed per campaign — combine by city or category for the full lead→booking funnel.</div>';
   res.innerHTML=h;
@@ -1045,8 +1045,8 @@ function renderCombined(){
     else if(active.length===1 && sfTier!=='all') gcities=Object.keys(GCL.city).filter(c=>sfTier==='T1'?T1_CITIES.includes(c):(c!=='National / Online'&&!T1_CITIES.includes(c)));
     if(gcities){
       const gs=field=>GAF2.weeks.map(w=>{const gi=GCL._meta.weeks.indexOf(w);return gi<0?null:gcities.reduce((a,cy)=>a+((GCL.city[cy]&&GCL.city[cy][field]&&GCL.city[cy][field][gi])||0),0);});
-      src={...src, leads:gs('leads'), booked:gs('booked'), done:gs('done'), web:gs('web'), gmb:gs('gmb')};
-      basis=basis.replace('full funnel','full funnel · total leads (web+GMB)');
+      src={...src, leads:gs('leads'), booked:gs('booked'), done:gs('done'), web:gs('web'), call:gs('call'), gmb:gs('gmb')};
+      basis=basis.replace('full funnel','full funnel · total leads (web+paid call+GMB)');
       const lw=GAF2.weeks[GAF2.weeks.length-1], gi=GCL._meta.weeks.indexOf(lw);  // source split at latest week
       if(gi>=0){const sm=f=>gcities.reduce((a,cy)=>a+((GCL.city[cy]&&GCL.city[cy][f]&&GCL.city[cy][f][gi])||0),0);
         srcSplit={total:sm('leads'),web:sm('web'),call:sm('call'),gmb:sm('gmb')};}
@@ -1057,8 +1057,8 @@ function renderCombined(){
   if(srcSplit){const pc=v=>srcSplit.total?Math.round(v/srcSplit.total*100):0;
     h+=`<div style="margin-bottom:14px;background:#fff;border:1px solid var(--line);border-radius:11px;padding:11px 15px;font-size:13px">
       <b>${srcSplit.total.toLocaleString('en-IN')} total Google leads</b> <span style="color:var(--muted)">(latest week, this city) =</span>
-      &nbsp; Web/UTM <b>${srcSplit.web}</b> (${pc(srcSplit.web)}%) &nbsp;·&nbsp; GMB call <b>${srcSplit.gmb}</b> (${pc(srcSplit.gmb)}%)
-      <div style="font-size:10.5px;color:var(--muted);margin-top:4px">Web = paid Google leads with a UTM. GMB call = Google Business listing calls. (Paid-call leads carry a UTM or route via GMB, so they fold into those two — not a separate bucket here.)</div></div>`;}
+      &nbsp; Web/UTM <b>${srcSplit.web}</b> (${pc(srcSplit.web)}%) &nbsp;·&nbsp; Paid call <b>${srcSplit.call}</b> (${pc(srcSplit.call)}%) &nbsp;·&nbsp; GMB call <b>${srcSplit.gmb}</b> (${pc(srcSplit.gmb)}%)
+      <div style="font-size:10.5px;color:var(--muted);margin-top:4px">Manager-style Lead = Web/UTM (form fills) + Paid call (new callers to the Google call-asset number) + GMB call (new callers to the clinic’s Google listing). Calls = connected new-lead calls, distinct by phone.</div></div>`;}
   const N=v=>(+v).toLocaleString('en-IN'); let cards, strip='';
   if(src){
     const li=src.cost.length-1, done=src.done||src.booked.map(()=>0);
@@ -1067,13 +1067,13 @@ function renderCombined(){
       {lab:'Impressions',val:N(src.impr[li])},
       {lab:'Clicks',val:N(src.clicks[li]),sub:src.impr[li]?'CTR '+(src.clicks[li]/src.impr[li]*100).toFixed(1)+'%':''},
       {lab:'Conversions',val:N(src.conv[li])},
-      {lab:'Leads (total)',val:N(src.leads[li]),sub:src.web?'Web '+N(src.web[li]||0)+' · GMB '+N((src.gmb&&src.gmb[li])||0):''},
+      {lab:'Leads (total)',val:N(src.leads[li]),sub:src.web?'Web '+N(src.web[li]||0)+' · Paid call '+N((src.call&&src.call[li])||0)+' · GMB '+N((src.gmb&&src.gmb[li])||0):''},
       {lab:'Booked',val:N(src.booked[li]),sub:src.leads[li]?'lead→book '+(src.booked[li]/src.leads[li]*100).toFixed(0)+'%':''},
       {lab:'Done',val:N(done[li]),sub:src.booked[li]?'show '+(done[li]/src.booked[li]*100).toFixed(0)+'%':''},
     ]);
     cards=[srCard('Spend',src.cost,rupee,false,C,true,f2labs),srCard('Impressions',src.impr,N,false,C,true,f2labs),srCard('Clicks',src.clicks,N,false,C,true,f2labs),
            srCard('Conversions',src.conv,N,false,C,true,f2labs),srCard('Leads (total)',src.leads,N,false,C,true,f2labs),
-           ...(src.web?[srCard('Leads · Web/UTM',src.web,N,false,C,true,f2labs),srCard('Leads · GMB call',src.gmb,N,false,C,true,f2labs)]:[]),
+           ...(src.web?[srCard('Leads · Web/UTM',src.web,N,false,C,true,f2labs),srCard('Leads · Paid call',src.call,N,false,C,true,f2labs),srCard('Leads · GMB call',src.gmb,N,false,C,true,f2labs)]:[]),
            srCard('Booked',src.booked,N,false,C,true,f2labs),srCard('Done',done,N,false,C,true,f2labs),
            srCard('CPC',cpc,rupee,true,C,true,f2labs),srCard('CPL',cpl,rupee,true,C,true,f2labs),srCard('CPB',cpb,rupee,true,C,true,f2labs),srCard('CPD',cpd,rupee,true,C,true,f2labs)];
   } else {
