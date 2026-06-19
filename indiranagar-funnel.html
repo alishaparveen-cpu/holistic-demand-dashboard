@@ -96,7 +96,7 @@ tr.subhead td{background:var(--inset);font-family:'JetBrains Mono';font-size:8.5
 </div>
 <div class="modal" id="modal"><div class="mbox"><button class="mclose" onclick="closeZ()">✕</button><h3 id="mTitle"></h3><div id="mBody"></div></div></div>
 <script>
-let D=null, POOL=null, PD=null, AT=null, wk=0, ZREG=[], expanded={}, cohort=false;
+let D=null, POOL=null, PD=null, AT=null, JOURNEY=null, wk=0, ZREG=[], expanded={}, cohort=false;
 const NSHOW=6;   // show the most recent 6 weeks in the matrix / trend
 const $=id=>document.getElementById(id);
 const hexA=(hex,a)=>{const n=parseInt(hex.slice(1),16);return `rgba(${(n>>16)&255},${(n>>8)&255},${n&255},${a})`;};
@@ -207,6 +207,12 @@ function buildStages(M){
   const pdoc=(PD && PD['Bangalore|Indiranagar'])||{};
   const practoKids=Object.entries(pdoc).filter(([n,a])=>a&&Array.isArray(a.leads)&&a.leads.some(v=>v))
     .map(([n,a])=>({label:'· '+n,arr:a.leads,fmt:N,info:/^Dr\.?\s/i.test(n)?'Practo DOCTOR-profile leads for '+n+' (maps to Indiranagar).':'Practo CLINIC-profile leads ('+n+').'}));
+  // jpaths(bucketKeys) → exact "how they came" sub-rows for the given attribution bucket(s), from data_indiranagar_journey.json
+  const jpaths=(...bks)=>!JOURNEY||!JOURNEY.paths ? [] :
+    JOURNEY.paths.filter(p=>bks.includes(p.bucket)&&p.weeks.some(v=>v))
+      .sort((a,b)=>(b.weeks.reduce((x,y)=>x+y,0))-(a.weeks.reduce((x,y)=>x+y,0)))
+      .map(p=>({label:'· '+p.path,arr:p.weeks,fmt:N,
+        info:'Exact entry path (channel: '+p.channel+'). Source: main_source_wise_leads organic_l2 / paid-campaign name. Placed by the week the lead was CREATED.'}));
   return [
     {t:'stage',k:'impr',label:'Impressions',color:'#1F6F5C',fmt:N,children:[
       ...GCATS.map(c=>({label:'Google · '+c,arr:gcat(c,'impr'),fmt:N})),
@@ -224,13 +230,13 @@ function buildStages(M){
       info:'Clinic leads classified from main_source_wise_leads — every lead here is booking-attributed to Indiranagar (~99% clean; misattribution <1%). Tier A = clinic identified at capture (direct). Tier B = a city/online source where the clinic was set when the patient booked offline. The shared-number CITY POOL (exotel) below is a separate validation lens and is NOT summed in, to avoid double-counting.',
       children:[
       {sep:1,label:'— TIER A · Captured at clinic (direct) —',info:'Indiranagar was the explicit destination at lead capture (clinic code BLR_80FT / own GBP number / clinic page / walk-in / Practo).'},
-      {label:'GMB direct (calls + listing)',arr:M.gmbDirect,fmt:N,info:'Calls to Indiranagar’s OWN Google Business Profile number (8047160881) plus its listing actions. Organic, direct, no city pool. ✓ Validated: 85% of these callers who book, book at Indiranagar.'},
-      {label:'On-site web / clinic page',arr:M.onsiteWeb,fmt:N,info:'Web-form leads where lead_location = the Indiranagar clinic code (BLR_80FT) — the patient landed on / selected this clinic at capture. Source: main_source_wise_leads. ✓ Direct.'},
-      {label:'Walk-in',arr:M.walkin,fmt:N,info:'Patients who walked into the Indiranagar clinic and were registered on-site.'},
+      {label:'GMB direct (calls + listing)',arr:M.gmbDirect,fmt:N,kids:jpaths('gmb_direct'),info:'Calls to Indiranagar’s OWN Google Business Profile number (8047160881) plus its listing actions. Organic, direct, no city pool. ✓ Validated: 85% of these callers who book, book at Indiranagar. Click ▸ for the exact split (inbound call vs listing click).'},
+      {label:'On-site web / clinic page',arr:M.onsiteWeb,fmt:N,kids:jpaths('onsite_web'),info:'Leads where the Indiranagar clinic code (BLR_80FT) / clinic page was identified at capture — patient landed on or selected this clinic. Click ▸ for the exact path: which landing page (Clinic / Assessment / ED / PE Page), or which named Google-paid / Meta campaign they came through. Source: main_source_wise_leads.'},
+      {label:'Walk-in',arr:M.walkin,fmt:N,kids:jpaths('walkin'),info:'Patients who walked into the Indiranagar clinic and were registered on-site.'},
       {label:'Practo (clinic + doctor)',arr:M.pr,fmt:N,kids:practoKids,info:'Leads from Indiranagar’s Practo clinic profile AND its doctors’ profiles (both map to this clinic). Source: RD_Practo_Leads public Google Sheet (no API/credentials) — clinic total = sum of the profiles inside (click ▸ to expand). ⚠ Latest week often 0 because the sheet is filled with a lag; prior weeks are real.'},
-      {label:'Other / misc',arr:M.miscLead,fmt:N,info:'FB / JustDial / Newspaper / opaque "Others" CRM leads tagged to Indiranagar at capture, plus the small (<1%) residual misattribution.'},
+      {label:'Other / misc',arr:M.miscLead,fmt:N,kids:jpaths('other','misattrib'),info:'FB / Newspaper / YouTube / opaque "Others" CRM leads tagged to Indiranagar at capture, plus the small (<1%) residual misattribution. Click ▸ for the exact source. Note: WhatsApp & Direct are NOT separately tagged in main_source_wise_leads, so they cannot be split out here.'},
       {sep:1,label:'— TIER B · Online → offline (clinic set at booking) —',info:'lead_location = ONLINE (a generic city/online source — paid Google city #, online form). The clinic was not chosen at capture; Indiranagar was set when the patient booked offline. Attributed by the booking, not a guess.'},
-      {label:'Online → booked here',arr:M.onlineBk,fmt:N,info:'City/online-sourced leads whose offline booking landed at Indiranagar. ⚠ Latest 1–2 weeks can undercount while bookings firm up.'}]},
+      {label:'Online → booked here',arr:M.onlineBk,fmt:N,kids:jpaths('online_booking'),info:'City/online-sourced leads whose offline booking landed at Indiranagar. Click ▸ for the exact origin (named Google-paid campaign, etc.). ⚠ Latest 1–2 weeks can undercount while bookings firm up.'}]},
     {t:'edge',k:'pool_share',label:'City pool — Indiranagar’s capture',formula:'won ÷ pool callers',fmt:PCT,
       info:'Of all city shared-number callers, the share that booked at Indiranagar. Low is expected (one of ~16 Bangalore clinics).',
       children:[
@@ -375,8 +381,9 @@ Promise.all([
   fetch('data_indiranagar.json?v='+Date.now()).then(r=>r.json()),
   fetch('data_indiranagar_pool.json?v='+Date.now()).then(r=>r.ok?r.json():null).catch(()=>null),
   fetch('data_practo_by_doctor.json?v='+Date.now()).then(r=>r.ok?r.json():null).catch(()=>null),
-  fetch('data_indiranagar_attribution.json?v='+Date.now()).then(r=>r.ok?r.json():null).catch(()=>null)
-]).then(([j,p,pd,at])=>{D=j;POOL=p;PD=pd;AT=at;wk=0;render();})
+  fetch('data_indiranagar_attribution.json?v='+Date.now()).then(r=>r.ok?r.json():null).catch(()=>null),
+  fetch('data_indiranagar_journey.json?v='+Date.now()).then(r=>r.ok?r.json():null).catch(()=>null)
+]).then(([j,p,pd,at,jr])=>{D=j;POOL=p;PD=pd;AT=at;JOURNEY=jr;wk=0;render();})
   .catch(()=>{$('app').innerHTML='<div class="note">Could not load data_indiranagar.json — run scripts/assemble_indiranagar.py.</div>';});
 </script>
 </body>
