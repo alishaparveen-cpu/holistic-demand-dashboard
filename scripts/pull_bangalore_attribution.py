@@ -40,13 +40,24 @@ SELECT l.call_location AS clinic,
     WHEN l.source IN ('Fb','Instagram')                        THEN 'meta'
     ELSE 'other'
   END AS bucket,
+  -- category, ONLY where attributable: a call (→ categorised by the call-audit, data_indiranagar_calls.json),
+  -- or a web landing page / paid campaign that names the condition. Everything else = uncategorised.
+  CASE
+    WHEN l.organic_l2='PC-Inbound' THEN 'cat_call'
+    WHEN l.organic_l2 LIKE 'ED%' OR LOWER(l.google_campaign) LIKE '%\\_ed\\_%' OR LOWER(l.google_campaign) LIKE '%erectile%' THEN 'cat_ed'
+    WHEN l.organic_l2 LIKE 'PE%' OR LOWER(l.google_campaign) LIKE '%\\_pe\\_%' THEN 'cat_pe'
+    WHEN LOWER(l.google_campaign) LIKE '%std%' OR LOWER(l.google_campaign) LIKE '%sti%' THEN 'cat_sti'
+    WHEN LOWER(l.google_campaign) LIKE '%\\_sh\\_%' OR l.organic_l2 LIKE '%Sexual%' THEN 'cat_sh'
+    ELSE 'cat_uncat'
+  END AS category,
   COUNT(*) AS n
 FROM production.public.main_source_wise_leads l
 JOIN allo_prod.allo_health.locations loc
   ON loc.locality=l.call_location AND loc.deleted_at IS NULL AND loc.is_active=1
 WHERE loc.city='Bangalore' AND l.created_on_date >= '{WEEKS[-1]}'
-GROUP BY 1,2,3 ORDER BY 1,2;
+GROUP BY 1,2,3,4 ORDER BY 1,2;
 """
+CATS = ["cat_call","cat_ed","cat_pe","cat_sti","cat_sh","cat_uncat"]
 
 p = subprocess.run([sys.executable, os.path.join(ROOT,"scripts","redshift_query.py")],
                    input=SQL, capture_output=True, text=True)
@@ -56,17 +67,18 @@ if p.returncode != 0 or "ERROR" in (p.stderr or ""):
 clinics = {}
 for line in p.stdout.strip().splitlines():
     c = line.split("\t")
-    if len(c) < 4: continue
-    clinic, mon, bucket, n = c[0], c[1], c[2], int(float(c[3]))
+    if len(c) < 5: continue
+    clinic, mon, bucket, cat, n = c[0], c[1], c[2], c[3], int(float(c[4]))
     if mon not in idx or bucket not in BUCKETS: continue
-    o = clinics.setdefault(clinic, {b:[0]*NW for b in BUCKETS})
+    o = clinics.setdefault(clinic, {**{b:[0]*NW for b in BUCKETS}, **{k:[0]*NW for k in CATS}})
     o[bucket][idx[mon]] += n
+    if cat in CATS: o[cat][idx[mon]] += n
 
 # totals per clinic + city rollup (city = sum of clinics → reconciles by construction)
-city = {b:[0]*NW for b in BUCKETS}
+city = {**{b:[0]*NW for b in BUCKETS}, **{k:[0]*NW for k in CATS}}
 for clinic, o in clinics.items():
     o["total"] = [sum(o[b][i] for b in BUCKETS) for i in range(NW)]
-    for b in BUCKETS:
+    for b in BUCKETS+CATS:
         for i in range(NW): city[b][i] += o[b][i]
 city["total"] = [sum(city[b][i] for b in BUCKETS) for i in range(NW)]
 
