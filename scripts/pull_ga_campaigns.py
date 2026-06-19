@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """LIVE Google Ads pull → data_ga_campaigns.json — per-campaign auction & outcomes for the
 Google Campaigns view (campaigns.html). One record per enabled SEARCH campaign, matching the
-view's CAMP shape. AUCTION metrics are exact from the API; OUTCOME = Google-Ads conversions +
-cost-per-conversion (Loc%/CPLC/CPB aren't API fields, so we use conversions/CPA — API-only mode).
+view's CAMP shape. AUCTION + funnel metrics are exact from the API. Location clicks ARE available
+via segments.click_type (CALLS/GET_DIRECTIONS/LOCATION_EXPANSION/LOCATION_FORMAT_CALL_TRACKING) — same
+method as pull_ga_city_paid.py — so loc/loc%/CPLC are populated. QS is cost-weighted across keywords.
 
 Per campaign:
   bud  daily budget ₹              ceil  null (manual-CPC ceiling not exposed per campaign)
@@ -80,12 +81,12 @@ def main():
         try: return (datetime.date.fromisoformat(wk) + datetime.timedelta(days=7)) <= today
         except Exception: return False
 
-    # 1) weekly per-campaign auction + cost + conversions
+    # 1) weekly per-campaign auction + cost + conversions + impressions + clicks
     rows = gaql(token, c, f"""
       SELECT campaign.name, campaign_budget.amount_micros, segments.week,
         metrics.search_impression_share, metrics.search_rank_lost_impression_share,
         metrics.search_budget_lost_impression_share, metrics.average_cpc,
-        metrics.cost_micros, metrics.clicks, metrics.conversions
+        metrics.cost_micros, metrics.impressions, metrics.clicks, metrics.conversions
       FROM campaign
       WHERE campaign.advertising_channel_type='SEARCH' AND campaign.status='ENABLED'
         AND segments.date BETWEEN '{ymd(start6)}' AND '{ymd(today)}'
@@ -100,24 +101,43 @@ def main():
             'bl': float(m.get("searchBudgetLostImpressionShare", 0) or 0)*100,
             'cpc': int(m.get("averageCpc", 0) or 0) / 1e6,
             'cost': int(m.get("costMicros", 0) or 0) / 1e6,
+            'imp': int(m.get("impressions", 0) or 0),
+            'clicks': int(m.get("clicks", 0) or 0),
+            'loc': 0,                                  # location-asset clicks, filled by query 1b
             'conv': float(m.get("conversions", 0) or 0),
         }
 
-    # 2) keyword quality components per campaign (current snapshot) → QS + ad-rel / LP drag
+    # 1b) location-asset clicks per campaign/week — segments.click_type (the "loc clicks" Google Ads DOES expose)
+    LOC_CLICK_TYPES = {"CALLS", "GET_DIRECTIONS", "LOCATION_EXPANSION", "LOCATION_FORMAT_CALL_TRACKING"}
+    lrows = gaql(token, c, f"""
+      SELECT campaign.name, segments.week, segments.click_type, metrics.clicks
+      FROM campaign
+      WHERE campaign.advertising_channel_type='SEARCH' AND campaign.status='ENABLED'
+        AND segments.date BETWEEN '{ymd(start6)}' AND '{ymd(today)}'""")
+    for r in lrows:
+        n = r["campaign"]["name"]; wk = r["segments"]["week"]; ct = r["segments"].get("clickType","")
+        if ct in LOC_CLICK_TYPES and wk in cw[n]:
+            cw[n][wk]['loc'] += int(r.get("metrics", {}).get("clicks", 0) or 0)
+
+    # 2) keyword quality components per campaign (current snapshot) → COST-weighted QS + ad-rel / LP drag.
+    #    QS is weighted by each keyword's SPEND (Σ QS·cost ÷ Σ cost) so it surfaces QS problems where they
+    #    cost money — a low-QS keyword burning 20% of budget matters far more than one spending ₹5/wk.
     krows = gaql(token, c, f"""
-      SELECT campaign.name, metrics.impressions,
+      SELECT campaign.name, metrics.impressions, metrics.cost_micros,
         ad_group_criterion.quality_info.quality_score,
         ad_group_criterion.quality_info.creative_quality_score,
         ad_group_criterion.quality_info.post_click_quality_score
       FROM keyword_view
       WHERE campaign.advertising_channel_type='SEARCH' AND ad_group_criterion.status='ENABLED'
         AND segments.date BETWEEN '{ymd(qstart)}' AND '{ymd(today)}'""")
-    q = defaultdict(lambda: {'imp':0,'qsw':0,'qs_imp':0,'ad_bad':0,'lp_bad':0})
+    q = defaultdict(lambda: {'imp':0,'qsw':0,'qs_imp':0,'qsw_cost':0.0,'qs_cost':0.0,'ad_bad':0,'lp_bad':0})
     for r in krows:
-        n = r["campaign"]["name"]; imp = int(r.get("metrics", {}).get("impressions", 0) or 0)
+        n = r["campaign"]["name"]; m = r.get("metrics", {})
+        imp = int(m.get("impressions", 0) or 0); cost = int(m.get("costMicros", 0) or 0)/1e6
         qi = r.get("adGroupCriterion", {}).get("qualityInfo", {}); a = q[n]; a['imp'] += imp
-        # QS is impression-weighted over keywords that HAVE a score (unscored kws must not dilute toward 0)
-        if qi.get("qualityScore"): a['qsw'] += qi["qualityScore"] * imp; a['qs_imp'] += imp
+        if qi.get("qualityScore"):
+            a['qsw'] += qi["qualityScore"] * imp; a['qs_imp'] += imp           # impression-weighted (fallback)
+            a['qsw_cost'] += qi["qualityScore"] * cost; a['qs_cost'] += cost   # cost-weighted (primary)
         if qi.get("creativeQualityScore") == "BELOW_AVERAGE": a['ad_bad'] += imp
         if qi.get("postClickQualityScore") == "BELOW_AVERAGE": a['lp_bad'] += imp
 
@@ -138,16 +158,21 @@ def main():
         arr = lambda fn: [fn(x) for x in rec]
         cpa = lambda x: round(x['cost']/x['conv']) if x['conv'] else None
         cpcA = arr(lambda x: round(x['cpc'], 2) if x['cpc'] else None)
-        a = q.get(n, {'imp':0,'qsw':0,'qs_imp':0,'ad_bad':0,'lp_bad':0}); imp = a['imp'] or 0
-        qs = round(a['qsw']/a['qs_imp'], 1) if a['qs_imp'] else None
+        a = q.get(n, {'imp':0,'qsw':0,'qs_imp':0,'qsw_cost':0.0,'qs_cost':0.0,'ad_bad':0,'lp_bad':0}); imp = a['imp'] or 0
+        # cost-weighted QS (primary); fall back to impression-weighted if a campaign had no spend in the QS window
+        qs = round(a['qsw_cost']/a['qs_cost'], 1) if a['qs_cost'] else (round(a['qsw']/a['qs_imp'], 1) if a['qs_imp'] else None)
         ar = round(a['ad_bad']/imp*100) if imp else None
         lp = round(a['lp_bad']/imp*100) if imp else None
+        ctr = lambda x: round(x['clicks']/x['imp']*100, 1) if x['imp'] else None       # %
+        locpct = lambda x: round(x['loc']/x['clicks']*100, 1) if x['clicks'] else None # location clicks ÷ total clicks
+        cplc = lambda x: round(x['cost']/x['loc']) if x['loc'] else None               # ₹ per location click
         g = {
             'n': n, 'g': group_of(n), 'bud': round(budget.get(n, 0)), 'ceil': None,
             'sp': round(w0['cost']),
             'weeks_iso': nf,                       # ISO week-START dates, newest-first (W0,W1,…)
             'd': arr(cpa), 'v': arr(lambda x: round(x['conv'])),
-            'cplc': [None, None],
+            'impr': arr(lambda x: x['imp']), 'clicks': arr(lambda x: x['clicks']), 'ctr': arr(ctr),
+            'loc': arr(lambda x: x['loc']), 'locpct': arr(locpct), 'cplc': arr(cplc),
             'cpc': cpcA,
             'spendH': arr(lambda x: round(x['cost'])),
             'qs': [qs, qs], 'is': arr(lambda x: round(x['is'])),
@@ -166,7 +191,7 @@ def main():
     out = {'_meta': {'source': 'LIVE Google Ads API (scripts/pull_ga_campaigns.py) · per-campaign auction & outcomes',
                      'account': CUSTOMER_ID, 'pulled': ymd(today), 'latest_week': latest_wk,
                      'weeks': gweeks, 'n': len(camps),
-                     'note': 'API-only: outcomes = Google Ads conversions + cost-per-conversion (CPA); Loc%/CPLC/CPB not available via API. dt=cpp for all. weekly arrays (is/bl/rl/cpc/v/d/spendH) are newest-first; weeks_iso gives their week-START dates. QS/ad-rel/LP = current snapshot (no API week history).'},
+                     'note': 'Per-campaign auction + funnel. Weekly arrays (impr/clicks/ctr/loc/locpct/cplc/cpc/is/bl/rl/v/d/spendH) newest-first; weeks_iso = their week-START dates. loc = location-asset clicks (segments.click_type ∈ CALLS/GET_DIRECTIONS/LOCATION_EXPANSION/LOCATION_FORMAT_CALL_TRACKING); locpct = loc÷clicks; cplc = ₹/loc-click. qs = COST-weighted Quality Score (Σ QS·spend ÷ Σ spend) over scored keywords; ar/lp = ad-relevance / LP below-avg %% (current snapshot). d/v = CPA / conversions.'},
            'campaigns': camps}
     json.dump(out, open(OUT, 'w'), separators=(',', ':'))
     print(f"wrote {OUT} · {len(camps)} campaigns · latest week {latest_wk}")
