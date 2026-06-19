@@ -101,6 +101,7 @@ const NSHOW=6;   // show the most recent 6 weeks in the matrix / trend
 const $=id=>document.getElementById(id);
 const hexA=(hex,a)=>{const n=parseInt(hex.slice(1),16);return `rgba(${(n>>16)&255},${(n>>8)&255},${n&255},${a})`;};
 function toggle(k){expanded[k]=expanded[k]===false?true:false;render();}
+function toggle2(k){expanded[k]=!expanded[k];render();}   // for nested kids (collapsed by default)
 function setCohort(v){cohort=v;render();}
 const N=v=>v==null||isNaN(v)?'—':Math.round(v).toLocaleString('en-IN');
 const PCT=v=>v==null||isNaN(v)?'—':v.toFixed(1)+'%';
@@ -218,8 +219,7 @@ function buildStages(M){
       {sep:1,label:'— TIER 1 · Direct (clinic actually chosen) —',info:'Unambiguous: the lead came in through a channel where Indiranagar was the explicit destination.'},
       {label:'GMB call (own number)',arr:M.gmbCall,fmt:N,info:'Calls to Indiranagar’s OWN Google Business Profile number (8047160881). ✓ Validated: 85% of these callers who book, book at Indiranagar.'},
       {label:'Web · form (clinic picked)',arr:mk(i=>(D.leads.by_chan.google_web[i]||0)+(D.leads.by_chan.organic[i]||0)),fmt:N,info:'Web-form leads (paid + organic/direct/WhatsApp) where the patient selected Indiranagar on the form. Source: clinic CRM. ✓ Direct.'},
-      {label:'Practo (clinic + doctor)',arr:M.pr,fmt:N,info:'Leads from Indiranagar’s Practo clinic profile AND its doctors’ profiles (both map to this clinic). Source: RD_Practo_Leads public Google Sheet (no API/credentials) — clinic total = sum of the profiles below. ⚠ Latest week often 0 because the sheet is filled with a lag; prior weeks are real.'},
-      ...practoKids,
+      {label:'Practo (clinic + doctor)',arr:M.pr,fmt:N,kids:practoKids,info:'Leads from Indiranagar’s Practo clinic profile AND its doctors’ profiles (both map to this clinic). Source: RD_Practo_Leads public Google Sheet (no API/credentials) — clinic total = sum of the profiles inside (click ▸ to expand). ⚠ Latest week often 0 because the sheet is filled with a lag; prior weeks are real.'},
       {label:'FB / JustDial',arr:M.oth,fmt:N,info:'Meta + JustDial + misc CRM leads tagged to Indiranagar by the lead’s clinic field.'},
       {sep:1,label:'— TIER 2 · City-pool WON here (booked, backtracked) —',info:'Shared-number callers (no clinic chosen) who later BOOKED at Indiranagar — credited by the booking, not by a guess. Source: exotel_calls (paid # 8045680561) → bookings_data_raw, −2/+30d.'},
       {label:'Pool callers → booked here',arr:M.poolWon,fmt:N,info:'City-pool callers whose booking landed at Indiranagar. ⚠ Latest 1–2 weeks undercount — the +30-day booking window is still open, so they firm up over the next few weeks.'}]},
@@ -283,7 +283,13 @@ function matrix(M){
     }
     if(open) kids.forEach(c=>{
       if(c.sep){h+=`<tr class="subhead"><td colspan="${cols.length+2}">${c.label}${ix(c.info)}</td></tr>`;return;}
-      h+=`<tr class="kid"><td><div class="kid-lbl">${c.label}${ix(c.info)}</div></td>${rowCells(c.arr,c.fmt||N,cols,false)}${sparkCell(c.arr,r.color||'#3E6F8E',r.label+' · '+c.label,c.fmt||N)}</tr>`;});
+      const sub=(c.kids||[]).filter(s=>s.arr&&cols.some(ci=>s.arr[ci]));
+      const sk='sub_'+r.k+'_'+(c.label||'').replace(/\W+/g,''), so=expanded[sk]===true;   // nested kids collapsed by default
+      const chev2=sub.length?`<span class="chev" onclick="event.stopPropagation();toggle2('${sk}')">${so?'▾':'▸'}</span> `:'';
+      h+=`<tr class="kid"><td><div class="kid-lbl">${chev2}${c.label}${ix(c.info)}</div></td>${rowCells(c.arr,c.fmt||N,cols,false)}${sparkCell(c.arr,r.color||'#3E6F8E',r.label+' · '+c.label,c.fmt||N)}</tr>`;
+      if(sub.length&&so) sub.forEach(s=>{
+        h+=`<tr class="kid"><td><div class="kid-lbl" style="padding-left:34px">${s.label}${ix(s.info)}</div></td>${rowCells(s.arr,s.fmt||N,cols,false)}${sparkCell(s.arr,r.color||'#3E6F8E',r.label+' · '+s.label,s.fmt||N)}</tr>`;});
+    });
   });
   return h+'</tbody></table></div>';
 }
