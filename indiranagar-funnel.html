@@ -71,6 +71,8 @@ tr.subhead td{background:var(--inset);font-family:'JetBrains Mono';font-size:8.5
 .catrow .fill{height:100%;border-radius:4px}
 .catrow .cn{color:var(--muted)}.catrow .cv{text-align:right;font-weight:600}
 .note{background:#FBF9F3;border:1px dashed var(--line);border-radius:9px;padding:9px 13px;font-size:11.5px;color:var(--muted);margin-top:12px}
+.ix{display:inline-block;width:13px;height:13px;line-height:13px;text-align:center;border-radius:50%;background:#e8e4d8;color:#8a8270;font-size:9px;font-weight:700;cursor:help;margin-left:5px;vertical-align:middle;font-family:Inter}
+.ix:hover{background:#d8d2c2;color:#5a5345}
 .sp{display:block}
 /* modal */
 .modal{position:fixed;inset:0;background:rgba(20,28,24,.55);display:none;align-items:center;justify-content:center;z-index:50;padding:20px}
@@ -102,6 +104,7 @@ function setCohort(v){cohort=v;render();}
 const N=v=>v==null||isNaN(v)?'—':Math.round(v).toLocaleString('en-IN');
 const PCT=v=>v==null||isNaN(v)?'—':v.toFixed(1)+'%';
 const RUP=v=>v==null||isNaN(v)?'—':'₹'+Math.round(v).toLocaleString('en-IN');
+function ix(t){return t?` <span class="ix" title="${String(t).replace(/"/g,'&quot;')}">i</span>`:'';}
 const Lk=v=>v==null?'—':v>=1000?'₹'+(v/1000).toFixed(1)+'k':'₹'+Math.round(v);
 const CCOL={SH:'#2E7D5B',STD:'#B8862E',STI:'#B8862E',MH:'#7B5EA7',ED:'#3E6F8E','ED+':'#3E6F8E','PE+':'#5B9E8C','ED+PE+':'#8E6FB0',NSSD:'#9E8E5B',Brand:'#6B6B6B',Other:'#B0A99A',oth:'#B0A99A',
   'Inbound (call)':'#3E6F8E','Web/UTM':'#2E7D5B','Organic':'#7B5EA7','Practo':'#B8862E'};
@@ -171,28 +174,36 @@ function buildStages(M){
     {t:'stage',k:'impr',label:'Impressions',color:'#1F6F5C',fmt:N,children:[
       ...GCATS.map(c=>({label:'Google · '+c,arr:gcat(c,'impr'),fmt:N})),
       {label:'GMB listing',arr:R.gmb.impr,fmt:N}]},
-    {t:'edge',k:'ctr',label:'CTR',formula:'clicks ÷ impr',fmt:PCT,children:[
-      {sep:1,label:'CTR by category (Google)'},
-      ...GCATS.map(c=>({label:c,arr:mk(i=>gcat(c,'impr')[i]?gcat(c,'clicks')[i]/gcat(c,'impr')[i]*100:null),fmt:PCT}))]},
     {t:'stage',k:'clicks',label:'Clicks',color:'#2E7D5B',fmt:N,children:[
       ...GCATS.map(c=>({label:'Google · '+c,arr:gcat(c,'clicks'),fmt:N})),
-      {label:'GMB listing',arr:R.gmb.clicks,fmt:N}]},
+      {label:'GMB listing',arr:R.gmb.clicks,fmt:N},
+      {sep:1,label:'Click-through rate (clicks ÷ impressions)'},
+      {label:'CTR — overall',arr:M.ctr,fmt:PCT},
+      {label:'CTR · Google (paid)',arr:R.google.ctr,fmt:PCT},
+      {label:'CTR · GMB listing (actions ÷ profile views)',arr:R.gmb.ctr,fmt:PCT},
+      {sep:1,label:'CTR by category (Google)'},
+      ...GCATS.map(c=>({label:'CTR · '+c,arr:mk(i=>gcat(c,'impr')[i]?gcat(c,'clicks')[i]/gcat(c,'impr')[i]*100:null),fmt:PCT}))]},
     {t:'edge',k:'c2l',label:'Click → lead',formula:'leads ÷ clicks',fmt:PCT},
-    {t:'stage',k:'leads',label:'Leads (total)',color:'#3E6F8E',fmt:N,children:[
-      {sep:1,label:'Google'},
-      {label:'Google paid · call',arr:ccA('paid'),fmt:N},
-      {label:'Google paid · web',arr:M.web,fmt:N},
-      {sep:1,label:'GMB'},
-      {label:'GMB organic · call',arr:ccA('gmb'),fmt:N},
-      {sep:1,label:'Other organic'},
-      {label:'Direct / WhatsApp (web)',arr:M.org,fmt:N},
-      {label:'Other inbound call (pool)',arr:ccA('other'),fmt:N},
-      {sep:1,label:'Practo'},
-      {label:'Practo',arr:M.pr,fmt:N},
-      {sep:1,label:'Other (FB / JustDial)'},
-      {label:'Other',arr:M.oth,fmt:N}]},
-    {t:'edge',k:'l2rl',label:'Lead → relevant lead',formula:'inbound calls ÷ leads',fmt:PCT},
-    {t:'stage',k:'relevant',label:'Relevant leads (inbound calls)',color:'#3E6F8E',fmt:N,children:[
+    {t:'stage',k:'leads',label:'Leads (total)',color:'#3E6F8E',fmt:N,
+      info:'Every distinct lead reaching Indiranagar this week = inbound CALLS (AI call audit) + WEB-form, ORGANIC, PRACTO and FB/JustDial leads (clinic CRM, deduped). Calls are attributed to this clinic by the AI audit (caller intent / locality); CRM rows by the lead’s clinic field + UTM. ⚠ Attribution reliability varies by row — see each ⓘ. Validate by matching leads to bookings at THIS clinic (patient journey).',
+      children:[
+      {sep:1,label:'Google',info:'Paid Google Ads — split into phone calls (AI-audited) and web-form submissions (CRM/UTM).'},
+      {label:'Google paid · call',arr:ccA('paid'),fmt:N,info:'Phone calls from paid Google ads. Source: AI call audit (data_indiranagar_calls.json). ⚠ INFERRED: paid calls ride a SHARED city call-tracking number — attributed to Indiranagar only because the AI resolved the caller wanted this locality, not a clinic-specific number.'},
+      {label:'Google paid · web',arr:M.web,fmt:N,info:'Web-form leads from paid Google (landing-page form). Source: clinic CRM, channel=Google, attributed by the lead’s clinic field + UTM. Direct (form picked the clinic), deduped.'},
+      {sep:1,label:'GMB',info:'The clinic’s own Google Business Profile listing.'},
+      {label:'GMB organic · call',arr:ccA('gmb'),fmt:N,info:'Calls to the Indiranagar Business-Profile listing number. Source: AI call audit. ✓ CLINIC-DIRECT — the GBP number is Indiranagar’s own, so attribution is reliable (AI confirms intent).'},
+      {sep:1,label:'Other organic',info:'Organic web + shared-pool inbound calls.'},
+      {label:'Direct / WhatsApp (web)',arr:M.org,fmt:N,info:'Organic web leads — direct/website (and WhatsApp where tagged). Source: clinic CRM, channel=Organic, clinic-field attribution. NOTE: WhatsApp is NOT a separate channel in the CRM — it sits inside Organic here.'},
+      {label:'Other inbound call (pool)',arr:ccA('other'),fmt:N,info:'Inbound calls on the shared pool number that aren’t clearly paid or GMB. Source: AI call audit. ⚠ INFERRED — attributed to Indiranagar by the AI’s read of caller locality/intent.'},
+      {sep:1,label:'Practo',info:'Practo marketplace.'},
+      {label:'Practo',arr:M.pr,fmt:N,info:'Leads from the clinic’s Practo profile (clinic-specific). Source: CRM / Practo feed. ✓ Clinic-direct (Practo profile is per-clinic).'},
+      {sep:1,label:'Other (FB / JustDial)',info:'Meta (FB/Instagram) + JustDial + misc.'},
+      {label:'Other',arr:M.oth,fmt:N,info:'FB/Instagram + JustDial + miscellaneous CRM leads, attributed by the lead’s clinic field.'}]},
+    {t:'edge',k:'l2rl',label:'Lead → relevant lead',formula:'inbound calls ÷ leads',fmt:PCT,
+      info:'Of all leads, the share that are AI-audited inbound CALLS judged "relevant" (a genuine consultation enquiry — spam / wrong-number / admin calls excluded).'},
+    {t:'stage',k:'relevant',label:'Relevant leads (inbound calls)',color:'#3E6F8E',fmt:N,
+      info:'Inbound calls the AI call audit classified as RELEVANT (real consultation intent) and attributed to Indiranagar, split by category (STI/SH/MH/Other). Source: data_indiranagar_calls.json. Covers ~late-Apr onward.',
+      children:[
       {sep:1,label:'By category'},
       ...[['STI','STI'],['SH','Sexual health'],['MH','Mental health'],['Other','Other']].map(([k,lbl])=>({label:lbl,arr:aic[k]||[],fmt:N})),
       {sep:1,label:'Google click → relevant lead % (by category)'},
@@ -235,13 +246,13 @@ function matrix(M){
     const open=expanded[r.k]!==false;
     const chev=kids.length?`<span class="chev" onclick="event.stopPropagation();toggle('${r.k}')">${open?'▾':'▸'}</span> `:'';
     if(r.t==='edge'){
-      h+=`<tr class="edge"><td><div class="edge-lbl">${chev}↳ ${r.label}<span class="formula">${r.formula||''}</span></div></td>${rowCells(a,r.fmt,cols,true)}${sparkCell(a,'#A8B0A0',r.label,r.fmt,r.formula)}</tr>`;
+      h+=`<tr class="edge"><td><div class="edge-lbl">${chev}↳ ${r.label}${ix(r.info)}<span class="formula">${r.formula||''}</span></div></td>${rowCells(a,r.fmt,cols,true)}${sparkCell(a,'#A8B0A0',r.label,r.fmt,r.formula)}</tr>`;
     } else {
-      h+=`<tr class="stage"><td><div class="snode" style="border-color:${r.color}">${chev}${r.label}</div></td>${rowCells(a,r.fmt,cols,true)}${sparkCell(a,r.color,r.label,r.fmt)}</tr>`;
+      h+=`<tr class="stage"><td><div class="snode" style="border-color:${r.color}">${chev}${r.label}${ix(r.info)}</div></td>${rowCells(a,r.fmt,cols,true)}${sparkCell(a,r.color,r.label,r.fmt)}</tr>`;
     }
     if(open) kids.forEach(c=>{
-      if(c.sep){h+=`<tr class="subhead"><td colspan="${cols.length+2}">${c.label}</td></tr>`;return;}
-      h+=`<tr class="kid"><td><div class="kid-lbl">${c.label}</div></td>${rowCells(c.arr,c.fmt||N,cols,false)}${sparkCell(c.arr,r.color||'#3E6F8E',r.label+' · '+c.label,c.fmt||N)}</tr>`;});
+      if(c.sep){h+=`<tr class="subhead"><td colspan="${cols.length+2}">${c.label}${ix(c.info)}</td></tr>`;return;}
+      h+=`<tr class="kid"><td><div class="kid-lbl">${c.label}${ix(c.info)}</div></td>${rowCells(c.arr,c.fmt||N,cols,false)}${sparkCell(c.arr,r.color||'#3E6F8E',r.label+' · '+c.label,c.fmt||N)}</tr>`;});
   });
   return h+'</tbody></table></div>';
 }
