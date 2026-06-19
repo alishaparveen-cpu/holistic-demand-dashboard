@@ -35,6 +35,8 @@ SELECT
     WHEN source = 'Organic' AND lead_location = 'BLR_80FT' AND organic_l2 IN ('PC-Inbound','Google Listing') THEN 'gmb_direct'
     -- A Fb/Newspaper/YouTube inbound-call or listing lead is its OWN channel, not GMB and not on-site web.
     WHEN source IN ('Fb','Newspaper','Youtube') AND organic_l2 IN ('PC-Inbound','Google Listing') THEN 'other'
+    -- Google PAID ads = its own line (pulled out of on-site web / online so paid is visible).
+    WHEN source = 'Google' THEN 'google_paid'
     WHEN lead_location = 'BLR_80FT' OR organic_l2 = 'Clinic Page' THEN 'onsite_web'
     WHEN lead_location = 'ONLINE' THEN 'online_booking'
     WHEN lead_location IS NOT NULL AND lead_location NOT IN ('BLR_80FT','ONLINE') THEN 'misattrib'
@@ -70,7 +72,7 @@ p = subprocess.run([sys.executable, os.path.join(ROOT, "scripts", "redshift_quer
 if p.returncode != 0 or "ERROR" in (p.stderr or ""):
     sys.stderr.write("query failed: " + (p.stderr or "")[:400] + "\n"); sys.exit(1)
 
-BUCKETS = ["gmb_direct", "onsite_web", "walkin", "online_booking", "misattrib", "other"]
+BUCKETS = ["gmb_direct", "google_paid", "onsite_web", "walkin", "online_booking", "misattrib", "other"]
 # path key -> {bucket, channel, weeks[12]}
 paths = {}
 buck_tot = {b: [0]*NW for b in BUCKETS}

@@ -139,13 +139,14 @@ function metrics(){
   const A=k=>arr(i=>(AT&&AT[k]&&AT[k][i])||0);
   const gmbDirect=A('gmb_direct');        // own-GBP calls + listing
   const onsiteWeb=A('onsite_web');        // lead_location=clinic code / Clinic Page (clinic identified at capture)
+  const googlePaid=A('google_paid');      // source=Google paid ads (pulled out of on-site web / online)
   const walkin=A('walkin');
   const onlineBk=A('online_booking');     // lead_location=ONLINE (kept for reference; NOT a clinic-leads bucket)
   const miscLead=arr(i=>A('other')[i]+A('misattrib')[i]);
   const pr=ch.practo;                     // Practo (separate public sheet) — not in main_source_wise_leads
   const gmbCall=gmbDirect;                // alias for compatibility
-  // Tier A · DIRECT — the clinic was chosen at capture (own GBP number/page/walk-in/Practo). Source is known.
-  const tier1=arr(i=>gmbDirect[i]+onsiteWeb[i]+walkin[i]+(pr[i]||0)+miscLead[i]);
+  // Tier A · DIRECT — the clinic was chosen at capture (own GBP number/page/walk-in/Practo/paid ad). Source is known.
+  const tier1=arr(i=>gmbDirect[i]+googlePaid[i]+onsiteWeb[i]+walkin[i]+(pr[i]||0)+miscLead[i]);
   // Tier B · CITY POOL → booked here — callers to the shared Bangalore paid number (source-agnostic) who BOOKED
   // at Indiranagar, backtracked from the booking. This is the only pool slice credited to the clinic.
   const poolWon=arr(i=>(POOL&&POOL.won&&POOL.won[i])||0);
@@ -164,7 +165,7 @@ function metrics(){
   const rev    = cohort ? (B.total.rev_wk_lead||B.total.rev)    : B.total.rev;
   const rate=(a,b)=>arr(i=>b[i]?a[i]/b[i]*100:null);
   return {impr,clicks,callLeads,relevant:callLeads,pr,leads,
-    gmbDirect,onsiteWeb,walkin,onlineBk,miscLead,
+    gmbDirect,googlePaid,onsiteWeb,walkin,onlineBk,miscLead,
     gmbCall,tier1,poolWon,poolTot,poolElse,poolNo,
     booked,bookedWkLead:bwl,bookedPrior:bprior,done,purch,rev,
     gImpr:R.google.impr,gClk:R.google.clicks,mImpr:R.gmb.impr,mClk:R.gmb.clicks,
@@ -240,6 +241,7 @@ function buildStages(M){
       children:[
       {sep:1,label:'— TIER A · Captured at clinic (direct · source known) —',info:'Indiranagar was the explicit destination at lead capture (clinic code BLR_80FT / own GBP number / clinic page / walk-in / Practo). Click ▸ for the exact entry path.'},
       {label:'GMB direct (calls + listing)',arr:M.gmbDirect,fmt:N,kids:jpaths('gmb_direct'),info:'ORGANIC leads from Indiranagar’s own Google Business Profile (the free Maps/Search listing), source=Organic only — NOT paid ads. Two mechanisms (click ▸): (1) Inbound call (PC-Inbound) — the patient phoned the clinic number 8047160881 from the listing; (2) GMB listing → website — the patient tapped the WEBSITE link on the Google profile and landed on the clinic page (allohealth.com/clinics/bengaluru/…), then booked. ✓ VERIFIED in lead_rca_data UTMs: utm_source=gmb, utm_medium=listing, source_url=the clinic page. A Fb/Newspaper lead that merely phoned in is excluded (sits in Other). 85% of GMB callers who book, book at Indiranagar.'},
+      {label:'Google paid (ads)',arr:M.googlePaid,fmt:N,kids:jpaths('google_paid'),info:'Leads from Google PAID ads (source=Google) attributed to Indiranagar — pulled out of "on-site web" so the paid channel is visible on its own. Ads run at city level and land on the website / landing page; the clinic is set at capture (clinic code) or at booking. Click ▸ for the campaign (⚠ main_source_wise_leads stores few campaign names recently, so many show "(unnamed)"; named campaigns + spend live in the Campaigns tab).'},
       {label:'On-site web / clinic page',arr:M.onsiteWeb,fmt:N,kids:jpaths('onsite_web'),info:'Leads where the Indiranagar clinic code (BLR_80FT) / clinic page was identified at capture — patient landed on or selected this clinic. Click ▸ for the exact path: which landing page (Clinic / Assessment / ED / PE Page), or which named Google-paid / Meta campaign they came through. Source: main_source_wise_leads.'},
       {label:'Walk-in',arr:M.walkin,fmt:N,kids:jpaths('walkin'),info:'Patients who walked into the Indiranagar clinic and were registered on-site.'},
       {label:'Practo (clinic + doctor)',arr:M.pr,fmt:N,kids:practoKids,info:'Leads from Indiranagar’s Practo clinic profile AND its doctors’ profiles (both map to this clinic). Source: RD_Practo_Leads public Google Sheet (no API/credentials) — clinic total = sum of the profiles inside (click ▸ to expand). ⚠ Latest week often 0 because the sheet is filled with a lag; prior weeks are real.'},
