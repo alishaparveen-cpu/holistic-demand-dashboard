@@ -47,7 +47,7 @@ SELECT
     WHEN source = 'Newspaper' THEN 'Newspaper'
     WHEN source = 'Youtube'   THEN 'YouTube'
     WHEN organic_l2 = 'PC-Inbound'     THEN 'Inbound call (clinic number)'
-    WHEN organic_l2 = 'Google Listing' THEN 'GMB listing (organic · exact action unverified)'
+    WHEN organic_l2 = 'Google Listing' THEN 'GMB listing → website (clicked profile link)'
     WHEN organic_l2 = 'Walk In'        THEN 'Walk-in'
     WHEN organic_l2 LIKE '%Page%'      THEN 'Landing — ' || organic_l2
     WHEN organic_l2 = 'Doctor'         THEN 'Web — doctor page'
