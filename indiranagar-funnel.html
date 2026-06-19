@@ -73,6 +73,7 @@ tr.subhead td{background:var(--inset);font-family:'JetBrains Mono';font-size:8.5
 .note{background:#FBF9F3;border:1px dashed var(--line);border-radius:9px;padding:9px 13px;font-size:11.5px;color:var(--muted);margin-top:12px}
 .ix{display:inline-block;width:13px;height:13px;line-height:13px;text-align:center;border-radius:50%;background:#e8e4d8;color:#8a8270;font-size:9px;font-weight:700;cursor:help;margin-left:5px;vertical-align:middle;font-family:Inter}
 .ix:hover{background:#d8d2c2;color:#5a5345}
+.infopop{position:absolute;z-index:9999;max-width:320px;background:#1f2937;color:#f3f4f6;font-size:11.5px;line-height:1.55;padding:9px 12px;border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.28);display:none}
 .sp{display:block}
 /* modal */
 .modal{position:fixed;inset:0;background:rgba(20,28,24,.55);display:none;align-items:center;justify-content:center;z-index:50;padding:20px}
@@ -95,7 +96,7 @@ tr.subhead td{background:var(--inset);font-family:'JetBrains Mono';font-size:8.5
 </div>
 <div class="modal" id="modal"><div class="mbox"><button class="mclose" onclick="closeZ()">✕</button><h3 id="mTitle"></h3><div id="mBody"></div></div></div>
 <script>
-let D=null, POOL=null, wk=0, ZREG=[], expanded={}, cohort=false;
+let D=null, POOL=null, PD=null, wk=0, ZREG=[], expanded={}, cohort=false;
 const NSHOW=6;   // show the most recent 6 weeks in the matrix / trend
 const $=id=>document.getElementById(id);
 const hexA=(hex,a)=>{const n=parseInt(hex.slice(1),16);return `rgba(${(n>>16)&255},${(n>>8)&255},${n&255},${a})`;};
@@ -104,7 +105,18 @@ function setCohort(v){cohort=v;render();}
 const N=v=>v==null||isNaN(v)?'—':Math.round(v).toLocaleString('en-IN');
 const PCT=v=>v==null||isNaN(v)?'—':v.toFixed(1)+'%';
 const RUP=v=>v==null||isNaN(v)?'—':'₹'+Math.round(v).toLocaleString('en-IN');
-function ix(t){return t?` <span class="ix" title="${String(t).replace(/"/g,'&quot;')}">i</span>`:'';}
+function ix(t){return t?` <span class="ix" data-info="${String(t).replace(/"/g,'&quot;')}" title="${String(t).replace(/"/g,'&quot;')}" onclick="showInfo(event,this)">i</span>`:'';}
+function showInfo(e,el){
+  e.stopPropagation();
+  let pop=document.getElementById('infopop');
+  if(!pop){ pop=document.createElement('div'); pop.id='infopop'; pop.className='infopop'; document.body.appendChild(pop);
+    document.addEventListener('click',()=>{pop.style.display='none';}); }
+  pop.textContent=el.getAttribute('data-info');
+  pop.style.display='block';
+  const r=el.getBoundingClientRect();
+  pop.style.left=Math.max(8,Math.min(window.innerWidth-336, r.left-150))+'px';
+  pop.style.top=(window.scrollY+r.bottom+7)+'px';
+}
 const Lk=v=>v==null?'—':v>=1000?'₹'+(v/1000).toFixed(1)+'k':'₹'+Math.round(v);
 const CCOL={SH:'#2E7D5B',STD:'#B8862E',STI:'#B8862E',MH:'#7B5EA7',ED:'#3E6F8E','ED+':'#3E6F8E','PE+':'#5B9E8C','ED+PE+':'#8E6FB0',NSSD:'#9E8E5B',Brand:'#6B6B6B',Other:'#B0A99A',oth:'#B0A99A',
   'Inbound (call)':'#3E6F8E','Web/UTM':'#2E7D5B','Organic':'#7B5EA7','Practo':'#B8862E'};
@@ -183,6 +195,10 @@ function buildStages(M){
   const NWv=D._meta.weeks.length, mk=f=>Array.from({length:NWv},(_,i)=>f(i));
   const GCATS=['STI','SH','MH','Other'], aic=ai.by_cat||{};
   const cc=D.leads.call_channels||{}, ccA=k=>(cc[k]&&cc[k].total)||[];
+  // Practo per-profile breakdown (doctor + clinic profiles, from data_practo_by_doctor.json) — sums to the clinic Practo total
+  const pdoc=(PD && PD['Bangalore|Indiranagar'])||{};
+  const practoKids=Object.entries(pdoc).filter(([n,a])=>a&&a.some(v=>v))
+    .map(([n,a])=>({label:'· '+n,arr:a,fmt:N,info:/^Dr\.?\s/i.test(n)?'Practo DOCTOR-profile leads for '+n+' (maps to Indiranagar).':'Practo CLINIC-profile leads ('+n+').'}));
   return [
     {t:'stage',k:'impr',label:'Impressions',color:'#1F6F5C',fmt:N,children:[
       ...GCATS.map(c=>({label:'Google · '+c,arr:gcat(c,'impr'),fmt:N})),
@@ -203,7 +219,8 @@ function buildStages(M){
       {sep:1,label:'— TIER 1 · Direct (clinic actually chosen) —',info:'Unambiguous: the lead came in through a channel where Indiranagar was the explicit destination.'},
       {label:'GMB call (own number)',arr:M.gmbCall,fmt:N,info:'Calls to Indiranagar’s OWN Google Business Profile number (8047160881). ✓ Validated: 85% of these callers who book, book at Indiranagar.'},
       {label:'Web · form (clinic picked)',arr:mk(i=>(D.leads.by_chan.google_web[i]||0)+(D.leads.by_chan.organic[i]||0)),fmt:N,info:'Web-form leads (paid + organic/direct/WhatsApp) where the patient selected Indiranagar on the form. Source: clinic CRM. ✓ Direct.'},
-      {label:'Practo (clinic + doctor)',arr:M.pr,fmt:N,info:'Leads from Indiranagar’s Practo clinic profile (and its doctors’ profiles, which map to this clinic). ✓ Clinic-direct. (Doctor-profile leads to be added to the pull.)'},
+      {label:'Practo (clinic + doctor)',arr:M.pr,fmt:N,info:'Leads from Indiranagar’s Practo clinic profile AND its doctors’ profiles (both map to this clinic). Source: RD_Practo_Leads public Google Sheet (no API/credentials) — clinic total = sum of the profiles below. ⚠ Latest week often 0 because the sheet is filled with a lag; prior weeks are real.'},
+      ...practoKids,
       {label:'FB / JustDial',arr:M.oth,fmt:N,info:'Meta + JustDial + misc CRM leads tagged to Indiranagar by the lead’s clinic field.'},
       {sep:1,label:'— TIER 2 · City-pool WON here (booked, backtracked) —',info:'Shared-number callers (no clinic chosen) who later BOOKED at Indiranagar — credited by the booking, not by a guess. Source: exotel_calls (paid # 8045680561) → bookings_data_raw, −2/+30d.'},
       {label:'Pool callers → booked here',arr:M.poolWon,fmt:N,info:'City-pool callers whose booking landed at Indiranagar. ⚠ Latest 1–2 weeks undercount — the +30-day booking window is still open, so they firm up over the next few weeks.'}]},
@@ -343,8 +360,9 @@ $('wPrev').onclick=()=>{if(wk<D._meta.weeks.length-1){wk++;render();}};
 $('wNext').onclick=()=>{if(wk>0){wk--;render();}};
 Promise.all([
   fetch('data_indiranagar.json?v='+Date.now()).then(r=>r.json()),
-  fetch('data_indiranagar_pool.json?v='+Date.now()).then(r=>r.ok?r.json():null).catch(()=>null)
-]).then(([j,p])=>{D=j;POOL=p;wk=0;render();})
+  fetch('data_indiranagar_pool.json?v='+Date.now()).then(r=>r.ok?r.json():null).catch(()=>null),
+  fetch('data_practo_by_doctor.json?v='+Date.now()).then(r=>r.ok?r.json():null).catch(()=>null)
+]).then(([j,p,pd])=>{D=j;POOL=p;PD=pd;wk=0;render();})
   .catch(()=>{$('app').innerHTML='<div class="note">Could not load data_indiranagar.json — run scripts/assemble_indiranagar.py.</div>';});
 </script>
 </body>
