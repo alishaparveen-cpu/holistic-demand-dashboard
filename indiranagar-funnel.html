@@ -96,7 +96,7 @@ tr.subhead td{background:var(--inset);font-family:'JetBrains Mono';font-size:8.5
 </div>
 <div class="modal" id="modal"><div class="mbox"><button class="mclose" onclick="closeZ()">✕</button><h3 id="mTitle"></h3><div id="mBody"></div></div></div>
 <script>
-let D=null, POOL=null, PD=null, wk=0, ZREG=[], expanded={}, cohort=false;
+let D=null, POOL=null, PD=null, AT=null, wk=0, ZREG=[], expanded={}, cohort=false;
 const NSHOW=6;   // show the most recent 6 weeks in the matrix / trend
 const $=id=>document.getElementById(id);
 const hexA=(hex,a)=>{const n=parseInt(hex.slice(1),16);return `rgba(${(n>>16)&255},${(n>>8)&255},${n&255},${a})`;};
@@ -133,20 +133,26 @@ function metrics(){
   const arr=(f)=>Array.from({length:NW},(_,i)=>f(i)||0);
   const ccTot=k=>arr(i=>((cc[k]&&cc[k].total&&cc[k].total[i])||0));
   const impr=R.combined.impr, clicks=R.combined.clicks;
-  // ── 3-TIER attribution model ──
-  // Tier 1 DIRECT = clinic's OWN GMB-number calls + web/form leads (patient picked the clinic) + Practo + FB/JD
-  const gmbCall=ccTot('gmb');
-  const web=ch.google_web, org=ch.organic, pr=ch.practo, oth=arr(i=>(ch.fb[i]||0)+(ch.other[i]||0));
-  const tier1=arr(i=>gmbCall[i]+(web[i]||0)+(org[i]||0)+(pr[i]||0)+oth[i]);
-  // Tier 2 POOL-WON = shared-number callers who BOOKED at this clinic (backtracked, data_indiranagar_pool.json)
+  // ── Attribution model ── Tier A (captured at clinic: GMB direct, on-site web, walk-in, Practo, misc)
+  //    + Tier B (online → clinic set at offline booking). Exotel city pool below is a separate validation lens.
+  // ── Authoritative classification from main_source_wise_leads (booking-attributed, ~99% clean) ──
+  const A=k=>arr(i=>(AT&&AT[k]&&AT[k][i])||0);
+  const gmbDirect=A('gmb_direct');        // own-GBP calls + listing
+  const onsiteWeb=A('onsite_web');        // lead_location=clinic code / Clinic Page (clinic identified at capture)
+  const walkin=A('walkin');
+  const onlineBk=A('online_booking');     // city-source, clinic set at the offline booking (lead_location=ONLINE)
+  const miscLead=arr(i=>A('other')[i]+A('misattrib')[i]);
+  const pr=ch.practo;                     // Practo (separate public sheet) — not in main_source_wise_leads
+  const gmbCall=gmbDirect;                // alias for compatibility
+  // clinic leads = every attribution bucket + Practo. call-based subset = GMB direct calls.
+  const tier1=arr(i=>gmbDirect[i]+onsiteWeb[i]+walkin[i]+(pr[i]||0)+miscLead[i]);   // direct/on-site + Practo
+  const leads=arr(i=>tier1[i]+onlineBk[i]);
+  const callLeads=gmbDirect;
+  // City pool (separate validation lens — NOT summed into clinic leads, to avoid double-count with booked leads above)
   const poolWon=arr(i=>(POOL&&POOL.won&&POOL.won[i])||0);
-  // Tier 3 CITY POOL (context) — shared callers, booked elsewhere / didn't convert (not counted as clinic leads)
   const poolTot=arr(i=>(POOL&&POOL.pool_callers&&POOL.pool_callers[i])||0);
   const poolElse=arr(i=>(POOL&&POOL.elsewhere&&POOL.elsewhere[i])||0);
   const poolNo=arr(i=>(POOL&&POOL.noconv&&POOL.noconv[i])||0);
-  // attributable clinic leads = Tier 1 + Tier 2. call-based subset = own-# calls + pool-won.
-  const leads=arr(i=>tier1[i]+poolWon[i]);
-  const callLeads=arr(i=>gmbCall[i]+poolWon[i]);
   // cohort=true → follow only THIS week's leads (booked→done→purchased→revenue from same-week leads)
   const allB=B.total.booked, bwl=B.total.booked_wk_lead||allB.map(()=>0);
   const bprior=arr(i=>(allB[i]||0)-(bwl[i]||0));
@@ -155,7 +161,8 @@ function metrics(){
   const purch  = cohort ? (B.total.purchased_wk_lead||B.total.purchased) : B.total.purchased;
   const rev    = cohort ? (B.total.rev_wk_lead||B.total.rev)    : B.total.rev;
   const rate=(a,b)=>arr(i=>b[i]?a[i]/b[i]*100:null);
-  return {impr,clicks,callLeads,relevant:callLeads,web,org,pr,oth,leads,
+  return {impr,clicks,callLeads,relevant:callLeads,pr,leads,
+    gmbDirect,onsiteWeb,walkin,onlineBk,miscLead,
     gmbCall,tier1,poolWon,poolTot,poolElse,poolNo,
     booked,bookedWkLead:bwl,bookedPrior:bprior,done,purch,rev,
     gImpr:R.google.impr,gClk:R.google.clicks,mImpr:R.gmb.impr,mClk:R.gmb.clicks,
@@ -174,7 +181,7 @@ function snapshot(M,i){
    +arrow(PCT(M.ctr[i]),'CTR')
    +cell('Clicks',N(M.clicks[i]),`Google ${N(M.gClk[i])} · GMB ${N(M.mClk[i])}`)
    +arrow(PCT(M.c2l[i]),'click→lead')
-   +cell('Leads (total)',N(M.leads[i]),`inbound <b>${N(M.callLeads[i])}</b> · web ${N(M.web[i])}`)
+   +cell('Leads (total)',N(M.leads[i]),`GMB direct <b>${N(M.gmbDirect[i])}</b> · on-site ${N(M.onsiteWeb[i])} · online ${N(M.onlineBk[i])}`)
    +arrow(PCT(M.l2b[i]),'lead→book')
    +cell('Booked',N(M.booked[i]),'screening calls')
    +arrow(PCT(M.b2d[i]),'book→done')
@@ -213,16 +220,17 @@ function buildStages(M){
       {label:'CTR · Google (paid)',arr:R.google.ctr,fmt:PCT,info:'Google paid CTR — broken down by category below (CTR is only available by category for Google, not GMB).'},
       ...GCATS.map(c=>({label:'    ↳ '+c,arr:mk(i=>gcat(c,'impr')[i]?gcat(c,'clicks')[i]/gcat(c,'impr')[i]*100:null),fmt:PCT}))]},
     {t:'edge',k:'c2l',label:'Click → lead',formula:'leads ÷ clicks',fmt:PCT},
-    {t:'stage',k:'leads',label:'Clinic leads (Tier 1 + 2)',color:'#3E6F8E',fmt:N,
-      info:'ACCURATE clinic leads = Tier 1 DIRECT (the clinic was actually chosen) + Tier 2 POOL-WON (shared-number callers who BOOKED here, backtracked). Shared-number calls with no clinic chosen are NOT counted here — they live in the city pool (Tier 3) below. This replaces the old AI-locality guess, which leaked ~37% to other clinics.',
+    {t:'stage',k:'leads',label:'Clinic leads (attributed)',color:'#3E6F8E',fmt:N,
+      info:'Clinic leads classified from main_source_wise_leads — every lead here is booking-attributed to Indiranagar (~99% clean; misattribution <1%). Tier A = clinic identified at capture (direct). Tier B = a city/online source where the clinic was set when the patient booked offline. The shared-number CITY POOL (exotel) below is a separate validation lens and is NOT summed in, to avoid double-counting.',
       children:[
-      {sep:1,label:'— TIER 1 · Direct (clinic actually chosen) —',info:'Unambiguous: the lead came in through a channel where Indiranagar was the explicit destination.'},
-      {label:'GMB call (own number)',arr:M.gmbCall,fmt:N,info:'Calls to Indiranagar’s OWN Google Business Profile number (8047160881). ✓ Validated: 85% of these callers who book, book at Indiranagar.'},
-      {label:'Web · form (clinic picked)',arr:mk(i=>(D.leads.by_chan.google_web[i]||0)+(D.leads.by_chan.organic[i]||0)),fmt:N,info:'Web-form leads (paid + organic/direct/WhatsApp) where the patient selected Indiranagar on the form. Source: clinic CRM. ✓ Direct.'},
+      {sep:1,label:'— TIER A · Captured at clinic (direct) —',info:'Indiranagar was the explicit destination at lead capture (clinic code BLR_80FT / own GBP number / clinic page / walk-in / Practo).'},
+      {label:'GMB direct (calls + listing)',arr:M.gmbDirect,fmt:N,info:'Calls to Indiranagar’s OWN Google Business Profile number (8047160881) plus its listing actions. Organic, direct, no city pool. ✓ Validated: 85% of these callers who book, book at Indiranagar.'},
+      {label:'On-site web / clinic page',arr:M.onsiteWeb,fmt:N,info:'Web-form leads where lead_location = the Indiranagar clinic code (BLR_80FT) — the patient landed on / selected this clinic at capture. Source: main_source_wise_leads. ✓ Direct.'},
+      {label:'Walk-in',arr:M.walkin,fmt:N,info:'Patients who walked into the Indiranagar clinic and were registered on-site.'},
       {label:'Practo (clinic + doctor)',arr:M.pr,fmt:N,kids:practoKids,info:'Leads from Indiranagar’s Practo clinic profile AND its doctors’ profiles (both map to this clinic). Source: RD_Practo_Leads public Google Sheet (no API/credentials) — clinic total = sum of the profiles inside (click ▸ to expand). ⚠ Latest week often 0 because the sheet is filled with a lag; prior weeks are real.'},
-      {label:'FB / JustDial',arr:M.oth,fmt:N,info:'Meta + JustDial + misc CRM leads tagged to Indiranagar by the lead’s clinic field.'},
-      {sep:1,label:'— TIER 2 · City-pool WON here (booked, backtracked) —',info:'Shared-number callers (no clinic chosen) who later BOOKED at Indiranagar — credited by the booking, not by a guess. Source: exotel_calls (paid # 8045680561) → bookings_data_raw, −2/+30d.'},
-      {label:'Pool callers → booked here',arr:M.poolWon,fmt:N,info:'City-pool callers whose booking landed at Indiranagar. ⚠ Latest 1–2 weeks undercount — the +30-day booking window is still open, so they firm up over the next few weeks.'}]},
+      {label:'Other / misc',arr:M.miscLead,fmt:N,info:'FB / JustDial / Newspaper / opaque "Others" CRM leads tagged to Indiranagar at capture, plus the small (<1%) residual misattribution.'},
+      {sep:1,label:'— TIER B · Online → offline (clinic set at booking) —',info:'lead_location = ONLINE (a generic city/online source — paid Google city #, online form). The clinic was not chosen at capture; Indiranagar was set when the patient booked offline. Attributed by the booking, not a guess.'},
+      {label:'Online → booked here',arr:M.onlineBk,fmt:N,info:'City/online-sourced leads whose offline booking landed at Indiranagar. ⚠ Latest 1–2 weeks can undercount while bookings firm up.'}]},
     {t:'edge',k:'pool_share',label:'City pool — Indiranagar’s capture',formula:'won ÷ pool callers',fmt:PCT,
       info:'Of all city shared-number callers, the share that booked at Indiranagar. Low is expected (one of ~16 Bangalore clinics).',
       children:[
@@ -339,7 +347,7 @@ function render(){
   // 1) SNAPSHOT FUNNEL
   h+=`<div class="shead"><h2>The funnel</h2><span class="sub2">week of ${wkLabel(D._meta.weeks[i])}</span></div>`;
   h+=snapshot(M,i);
-  h+=`<div class="funnel-read">Reach <b>${N(M.impr[i])}</b> impressions (Google ${N(M.gImpr[i])} + GMB ${N(M.mImpr[i])}) → <b>${N(M.clicks[i])}</b> clicks (CTR ${PCT(M.ctr[i])}) → <b>${N(M.leads[i])}</b> leads (call ${N(M.callLeads[i])} + web ${N(M.web[i])} + organic/Practo) → <b>${N(M.booked[i])}</b> booked → <b>${N(M.done[i])}</b> done (${PCT(M.b2d[i])}) → <b>${N(M.purch[i])}</b> purchased (${PCT(M.d2p[i])}) → <b>${RUP(M.rev[i])}</b>. <span style="color:var(--muted)">Lead→book can exceed 100% when bookings include repeat/walk-in patients beyond tracked new leads.</span></div>`;
+  h+=`<div class="funnel-read">Reach <b>${N(M.impr[i])}</b> impressions (Google ${N(M.gImpr[i])} + GMB ${N(M.mImpr[i])}) → <b>${N(M.clicks[i])}</b> clicks (CTR ${PCT(M.ctr[i])}) → <b>${N(M.leads[i])}</b> leads (GMB direct ${N(M.gmbDirect[i])} + on-site ${N(M.onsiteWeb[i])} + online→booked ${N(M.onlineBk[i])} + Practo/misc) →<b>${N(M.booked[i])}</b> booked → <b>${N(M.done[i])}</b> done (${PCT(M.b2d[i])}) → <b>${N(M.purch[i])}</b> purchased (${PCT(M.d2p[i])}) → <b>${RUP(M.rev[i])}</b>. <span style="color:var(--muted)">Lead→book can exceed 100% when bookings include repeat/walk-in patients beyond tracked new leads.</span></div>`;
 
   // L2RL — each category's share of total leads (categorised from inbound calls)
   {const lc=ai.by_cat||{}, tl=M.leads[i]||1, sh=c=>PCT(((lc[c]&&lc[c][i])||0)/tl*100);
@@ -366,8 +374,9 @@ $('wNext').onclick=()=>{if(wk>0){wk--;render();}};
 Promise.all([
   fetch('data_indiranagar.json?v='+Date.now()).then(r=>r.json()),
   fetch('data_indiranagar_pool.json?v='+Date.now()).then(r=>r.ok?r.json():null).catch(()=>null),
-  fetch('data_practo_by_doctor.json?v='+Date.now()).then(r=>r.ok?r.json():null).catch(()=>null)
-]).then(([j,p,pd])=>{D=j;POOL=p;PD=pd;wk=0;render();})
+  fetch('data_practo_by_doctor.json?v='+Date.now()).then(r=>r.ok?r.json():null).catch(()=>null),
+  fetch('data_indiranagar_attribution.json?v='+Date.now()).then(r=>r.ok?r.json():null).catch(()=>null)
+]).then(([j,p,pd,at])=>{D=j;POOL=p;PD=pd;AT=at;wk=0;render();})
   .catch(()=>{$('app').innerHTML='<div class="note">Could not load data_indiranagar.json — run scripts/assemble_indiranagar.py.</div>';});
 </script>
 </body>
