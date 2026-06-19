@@ -413,22 +413,29 @@ const pct=v=>Math.round(v)+'%';
 function gv(c,k,w){ // generic value at week w
   switch(k){case'is':return c.is[w];case'qs':return c.qs[w];case'budgetLost':return c.bl[w];
    case'rankLost':return c.rl[w];case'adRel':return c.ar[w];case'lp':return c.lp[w];
-   case'cpc':return c.cpc[w];case'cplc':return c.cplc[w];case'util':return c.util;case'spend':return c.sp;
-   case'loc':return c.dt==='loc'?c.d[w]:null;case'cpb':return c.dt==='cpb'?c.d[w]:null;
+   case'cpc':return c.cpc[w];case'cplc':return c.cplc?c.cplc[w]:null;case'util':return c.util;case'spend':return c.sp;
+   case'impr':return c.impr?c.impr[w]:null;case'clicks':return c.clicks?c.clicks[w]:null;
+   case'ctr':return c.ctr?c.ctr[w]:null;case'locClicks':return c.loc?c.loc[w]:null;
+   case'loc':return c.locpct?c.locpct[w]:null;
+   case'cpb':return c.dt==='cpb'?c.d[w]:null;
    case'cpp':return c.dt==='cpp'?c.d[w]:null;case'vol':return c.v[w];}
   return null;}
 const METRICS={
+ impr:{label:'Impressions',grp:'Reach',fmt:v=>(+v).toLocaleString('en-IN'),inv:false,unit:''},
+ clicks:{label:'Clicks',grp:'Reach',fmt:v=>(+v).toLocaleString('en-IN'),inv:false,unit:''},
+ ctr:{label:'CTR',grp:'Reach',fmt:pct,inv:false,unit:'%'},
  is:{label:'Impr. Share',grp:'Auction',fmt:pct,inv:false,unit:'%'},
- qs:{label:'Avg QS',grp:'Auction',fmt:v=>v+'/10',inv:false,unit:''},
+ qs:{label:'Avg QS (cost-wtd)',grp:'Auction',fmt:v=>v+'/10',inv:false,unit:''},
  budgetLost:{label:'Lost — budget',grp:'Why impressions lost',fmt:pct,inv:true,unit:'%'},
  rankLost:{label:'Lost — rank',grp:'Why impressions lost',fmt:pct,inv:true,unit:'%'},
  adRel:{label:'Ad-rel drag',grp:'Why impressions lost',fmt:pct,inv:true,unit:'%'},
  lp:{label:'LP drag',grp:'Why impressions lost',fmt:pct,inv:true,unit:'%'},
  cpc:{label:'CPC',grp:'Cost',fmt:rupee,inv:true,unit:'₹',wk4:true},
- cplc:{label:'CPLC',grp:'Cost',fmt:rupee,inv:true,unit:'₹',only:'loc'},
+ cplc:{label:'CPLC',grp:'Cost',fmt:rupee,inv:true,unit:'₹'},
  cpb:{label:'CPB',grp:'Cost',fmt:rupee,inv:true,unit:'₹',only:'cpb'},
  cpp:{label:'CPP',grp:'Cost',fmt:rupee,inv:true,unit:'₹',only:'cpp'},
- loc:{label:'Loc %',grp:'Outcome',fmt:pct,inv:false,unit:'%',only:'loc'},
+ locClicks:{label:'Loc clicks',grp:'Outcome',fmt:v=>(+v).toLocaleString('en-IN'),inv:false,unit:''},
+ loc:{label:'Loc %',grp:'Outcome',fmt:pct,inv:false,unit:'%'},
  vol:{label:'Volume',grp:'Outcome',fmt:v=>(+v).toLocaleString('en-IN'),inv:false,unit:''},
  util:{label:'Util %',grp:'Pacing',fmt:pct,inv:false,unit:'%',neutral:true},
  spend:{label:'Spend',grp:'Pacing',fmt:v=>rupee(v),inv:false,unit:'₹',neutral:true}
@@ -782,7 +789,7 @@ function renderFilter(){
   const active=state.conds.filter(cd=>cd.dir!=='any');
   const desc=active.length?active.map(cd=>METRICS[cd.key].label+' '+({drop:'↓',flat:'→ flat',grow:'↑'}[cd.dir])+((cd.mag&&cd.dir!=='flat')?' ≥'+cd.mag+'%':'')).join(state.matchMode==='any'?'  OR  ':'  AND  '):'no active conditions (showing all)';
   document.getElementById('fresMeta').innerHTML=`<b style="color:var(--ink)">${set.length}</b> of ${base.length} campaigns match · ₹${spend.toLocaleString('en-IN')}/wk at stake<br>${desc}`;
-  const cols=active.length?active.map(cd=>cd.key):['is','cpc','qs'];
+  const cols=active.length?active.map(cd=>cd.key):['impr','clicks','ctr','locClicks','loc','cplc','cpc','qs','is','util'];
   const t=document.getElementById('filterTbl');
   let h='<thead><tr><th>Campaign</th><th>Spend ₹</th><th>City / region</th>'+cols.map(k=>`<th>${METRICS[k].label} · Δ</th>`).join('')+'<th>Status</th></tr></thead><tbody>';
   set.slice().sort((a,b)=>CAMP[b].sp-CAMP[a].sp).forEach(i=>{const c=CAMP[i],g=GMAP[c.g];
@@ -808,7 +815,9 @@ function zoomShow(title,formula,series,labels,fmt,color){
 function metricHistory(c,k){switch(k){
   case'is':return c.is;case'budgetLost':return c.bl;case'rankLost':return c.rl;
   case'cpc':return c.cpc;case'vol':return c.v;case'cpp':return c.d;case'spend':return c.spendH;
-  case'qs':return c.qs;case'adRel':return c.ar;case'lp':return c.lp;}return null;}
+  case'qs':return c.qs;case'adRel':return c.ar;case'lp':return c.lp;
+  case'impr':return c.impr;case'clicks':return c.clicks;case'ctr':return c.ctr;
+  case'locClicks':return c.loc;case'loc':return c.locpct;case'cplc':return c.cplc;}return null;}
 const SNAPSHOT_METRICS=['qs','adRel','lp'];   // Google Ads gives no weekly history for these
 function openZoom(ci,k){const c=CAMP[ci],g=GMAP[c.g],M=METRICS[k];if(!M)return;
   const hist=metricHistory(c,k);
