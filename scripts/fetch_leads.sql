@@ -2,22 +2,14 @@
 -- hourly QS2 job). Buckets:
 --   google_ad = paid Google Ads (source='Google')
 --   gmb       = GMB profile: listing clicks + inbound calls (Organic / Google Listing + PC-Inbound)
---   whatsapp  = Organic / WhatsApp (carved out of organic so it's visible at clinic level)
---   direct    = Organic / Direct / Website / Walk-in (carved out of organic)
---   organic   = remaining organic under source='Organic'
+--   organic   = other organic / web / walk-in
 --   fb        = Meta (Fb + Instagram) · justdial · others = everything else
 -- Practo intentionally excluded (external feed). Offline only (call_location).
--- NOTE: whatsapp/direct use ILIKE patterns on organic_l2 — verify the exact organic_l2 labels on the next
--- SSO session (SELECT DISTINCT organic_l2 ... WHERE source='Organic') and tighten if needed.
 SELECT loc.city AS city, l.call_location AS clinic,
   TO_CHAR(DATE(l.week)::date - 6, 'YYYY-MM-DD') AS wk_mon,
   SUM(CASE WHEN l.source='Google' THEN 1 ELSE 0 END) AS google_ad,
   SUM(CASE WHEN l.source='Organic' AND l.organic_l2 IN ('Google Listing','PC-Inbound') THEN 1 ELSE 0 END) AS gmb,
-  SUM(CASE WHEN l.source='Organic' AND l.organic_l2 ILIKE '%whatsapp%' THEN 1 ELSE 0 END) AS whatsapp,
-  SUM(CASE WHEN l.source='Organic' AND (l.organic_l2 ILIKE '%direct%' OR l.organic_l2 ILIKE '%website%' OR l.organic_l2 ILIKE '%walk%') THEN 1 ELSE 0 END) AS direct,
-  SUM(CASE WHEN l.source='Organic' AND COALESCE(l.organic_l2,'') NOT IN ('Google Listing','PC-Inbound')
-            AND l.organic_l2 NOT ILIKE '%whatsapp%' AND l.organic_l2 NOT ILIKE '%direct%'
-            AND l.organic_l2 NOT ILIKE '%website%' AND l.organic_l2 NOT ILIKE '%walk%' THEN 1 ELSE 0 END) AS organic,
+  SUM(CASE WHEN l.source='Organic' AND COALESCE(l.organic_l2,'') NOT IN ('Google Listing','PC-Inbound') THEN 1 ELSE 0 END) AS organic,
   SUM(CASE WHEN l.source IN ('Fb','Instagram') THEN 1 ELSE 0 END) AS fb,
   SUM(CASE WHEN l.source='Justdial' THEN 1 ELSE 0 END) AS justdial,
   SUM(CASE WHEN l.source NOT IN ('Google','Organic','Fb','Instagram','Justdial') THEN 1 ELSE 0 END) AS others,
