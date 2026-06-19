@@ -30,7 +30,11 @@ SELECT
   -- attribution bucket (matches data_indiranagar_attribution.json) --
   CASE
     WHEN organic_l2 = 'Walk In' THEN 'walkin'
-    WHEN lead_location = 'BLR_80FT' AND organic_l2 IN ('PC-Inbound','Google Listing') THEN 'gmb_direct'
+    -- GMB direct = ORGANIC channel only (own GBP). A Fb/Newspaper lead that merely
+    -- came via an inbound call is NOT GMB — it stays with its own channel below.
+    WHEN source = 'Organic' AND lead_location = 'BLR_80FT' AND organic_l2 IN ('PC-Inbound','Google Listing') THEN 'gmb_direct'
+    -- A Fb/Newspaper/YouTube inbound-call or listing lead is its OWN channel, not GMB and not on-site web.
+    WHEN source IN ('Fb','Newspaper','Youtube') AND organic_l2 IN ('PC-Inbound','Google Listing') THEN 'other'
     WHEN lead_location = 'BLR_80FT' OR organic_l2 = 'Clinic Page' THEN 'onsite_web'
     WHEN lead_location = 'ONLINE' THEN 'online_booking'
     WHEN lead_location IS NOT NULL AND lead_location NOT IN ('BLR_80FT','ONLINE') THEN 'misattrib'
@@ -43,7 +47,7 @@ SELECT
     WHEN source = 'Newspaper' THEN 'Newspaper'
     WHEN source = 'Youtube'   THEN 'YouTube'
     WHEN organic_l2 = 'PC-Inbound'     THEN 'Inbound call (clinic number)'
-    WHEN organic_l2 = 'Google Listing' THEN 'GMB listing click'
+    WHEN organic_l2 = 'Google Listing' THEN 'GMB listing (non-call lead)'
     WHEN organic_l2 = 'Walk In'        THEN 'Walk-in'
     WHEN organic_l2 LIKE '%Page%'      THEN 'Landing — ' || organic_l2
     WHEN organic_l2 = 'Doctor'         THEN 'Web — doctor page'
