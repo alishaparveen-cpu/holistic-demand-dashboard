@@ -95,7 +95,7 @@ tr.subhead td{background:var(--inset);font-family:'JetBrains Mono';font-size:8.5
 </div>
 <div class="modal" id="modal"><div class="mbox"><button class="mclose" onclick="closeZ()">✕</button><h3 id="mTitle"></h3><div id="mBody"></div></div></div>
 <script>
-let D=null, wk=0, ZREG=[], expanded={}, cohort=false;
+let D=null, POOL=null, wk=0, ZREG=[], expanded={}, cohort=false;
 const NSHOW=6;   // show the most recent 6 weeks in the matrix / trend
 const $=id=>document.getElementById(id);
 const hexA=(hex,a)=>{const n=parseInt(hex.slice(1),16);return `rgba(${(n>>16)&255},${(n>>8)&255},${n&255},${a})`;};
@@ -116,13 +116,24 @@ const wkShort=w=>{const d=new Date(w);const M=['Jan','Feb','Mar','Apr','May','Ju
 // ---- derive every funnel metric as a 12-week array (newest-first, matching D._meta.weeks) ----
 function metrics(){
   const R=D.reach, L=D.leads, B=D.bottom, NW=D._meta.weeks.length;
-  const ch=L.by_chan, ai=L.ai;
+  const ch=L.by_chan, ai=L.ai, cc=L.call_channels||{};
   const arr=(f)=>Array.from({length:NW},(_,i)=>f(i)||0);
+  const ccTot=k=>arr(i=>((cc[k]&&cc[k].total&&cc[k].total[i])||0));
   const impr=R.combined.impr, clicks=R.combined.clicks;
-  // call leads: AI audit (clinic-attributed, incl. paid) where present, else CRM GMB tag
-  const callLeads=arr(i=>(ai.calls&&ai.calls[i])? ai.calls[i] : (ch.gmb[i]||0));
+  // ── 3-TIER attribution model ──
+  // Tier 1 DIRECT = clinic's OWN GMB-number calls + web/form leads (patient picked the clinic) + Practo + FB/JD
+  const gmbCall=ccTot('gmb');
   const web=ch.google_web, org=ch.organic, pr=ch.practo, oth=arr(i=>(ch.fb[i]||0)+(ch.other[i]||0));
-  const leads=arr(i=>callLeads[i]+(web[i]||0)+(org[i]||0)+(pr[i]||0)+oth[i]);
+  const tier1=arr(i=>gmbCall[i]+(web[i]||0)+(org[i]||0)+(pr[i]||0)+oth[i]);
+  // Tier 2 POOL-WON = shared-number callers who BOOKED at this clinic (backtracked, data_indiranagar_pool.json)
+  const poolWon=arr(i=>(POOL&&POOL.won&&POOL.won[i])||0);
+  // Tier 3 CITY POOL (context) — shared callers, booked elsewhere / didn't convert (not counted as clinic leads)
+  const poolTot=arr(i=>(POOL&&POOL.pool_callers&&POOL.pool_callers[i])||0);
+  const poolElse=arr(i=>(POOL&&POOL.elsewhere&&POOL.elsewhere[i])||0);
+  const poolNo=arr(i=>(POOL&&POOL.noconv&&POOL.noconv[i])||0);
+  // attributable clinic leads = Tier 1 + Tier 2. call-based subset = own-# calls + pool-won.
+  const leads=arr(i=>tier1[i]+poolWon[i]);
+  const callLeads=arr(i=>gmbCall[i]+poolWon[i]);
   // cohort=true → follow only THIS week's leads (booked→done→purchased→revenue from same-week leads)
   const allB=B.total.booked, bwl=B.total.booked_wk_lead||allB.map(()=>0);
   const bprior=arr(i=>(allB[i]||0)-(bwl[i]||0));
@@ -131,10 +142,12 @@ function metrics(){
   const purch  = cohort ? (B.total.purchased_wk_lead||B.total.purchased) : B.total.purchased;
   const rev    = cohort ? (B.total.rev_wk_lead||B.total.rev)    : B.total.rev;
   const rate=(a,b)=>arr(i=>b[i]?a[i]/b[i]*100:null);
-  return {impr,clicks,callLeads,relevant:callLeads,web,org,pr,oth,leads,booked,bookedWkLead:bwl,bookedPrior:bprior,done,purch,rev,
+  return {impr,clicks,callLeads,relevant:callLeads,web,org,pr,oth,leads,
+    gmbCall,tier1,poolWon,poolTot,poolElse,poolNo,
+    booked,bookedWkLead:bwl,bookedPrior:bprior,done,purch,rev,
     gImpr:R.google.impr,gClk:R.google.clicks,mImpr:R.gmb.impr,mClk:R.gmb.clicks,
     ctr:rate(clicks,impr),c2l:rate(leads,clicks),l2b:rate(booked,leads),
-    l2rl:rate(callLeads,leads),rl2b:rate(booked,callLeads),
+    l2rl:rate(callLeads,leads),rl2b:rate(booked,callLeads),pool_share:rate(poolWon,poolTot),
     b2d:rate(done,booked),d2p:rate(purch,done),
     arpu:arr(i=>purch[i]?rev[i]/purch[i]:null)};
 }
@@ -184,21 +197,23 @@ function buildStages(M){
       {sep:1,label:'CTR by category (Google)'},
       ...GCATS.map(c=>({label:'CTR · '+c,arr:mk(i=>gcat(c,'impr')[i]?gcat(c,'clicks')[i]/gcat(c,'impr')[i]*100:null),fmt:PCT}))]},
     {t:'edge',k:'c2l',label:'Click → lead',formula:'leads ÷ clicks',fmt:PCT},
-    {t:'stage',k:'leads',label:'Leads (total)',color:'#3E6F8E',fmt:N,
-      info:'Every distinct lead reaching Indiranagar this week = inbound CALLS (AI call audit) + WEB-form, ORGANIC, PRACTO and FB/JustDial leads (clinic CRM, deduped). Calls are attributed to this clinic by the AI audit (caller intent / locality); CRM rows by the lead’s clinic field + UTM. ⚠ Attribution reliability varies by row — see each ⓘ. Validate by matching leads to bookings at THIS clinic (patient journey).',
+    {t:'stage',k:'leads',label:'Clinic leads (Tier 1 + 2)',color:'#3E6F8E',fmt:N,
+      info:'ACCURATE clinic leads = Tier 1 DIRECT (the clinic was actually chosen) + Tier 2 POOL-WON (shared-number callers who BOOKED here, backtracked). Shared-number calls with no clinic chosen are NOT counted here — they live in the city pool (Tier 3) below. This replaces the old AI-locality guess, which leaked ~37% to other clinics.',
       children:[
-      {sep:1,label:'Google',info:'Paid Google Ads — split into phone calls (AI-audited) and web-form submissions (CRM/UTM).'},
-      {label:'Google paid · call',arr:ccA('paid'),fmt:N,info:'Phone calls from paid Google ads. Source: AI call audit (data_indiranagar_calls.json). ⚠ INFERRED: paid calls ride a SHARED city call-tracking number — attributed to Indiranagar only because the AI resolved the caller wanted this locality, not a clinic-specific number.'},
-      {label:'Google paid · web',arr:M.web,fmt:N,info:'Web-form leads from paid Google (landing-page form). Source: clinic CRM, channel=Google, attributed by the lead’s clinic field + UTM. Direct (form picked the clinic), deduped.'},
-      {sep:1,label:'GMB',info:'The clinic’s own Google Business Profile listing.'},
-      {label:'GMB organic · call',arr:ccA('gmb'),fmt:N,info:'Calls to the Indiranagar Business-Profile listing number. Source: AI call audit. ✓ CLINIC-DIRECT — the GBP number is Indiranagar’s own, so attribution is reliable (AI confirms intent).'},
-      {sep:1,label:'Other organic',info:'Organic web + shared-pool inbound calls.'},
-      {label:'Direct / WhatsApp (web)',arr:M.org,fmt:N,info:'Organic web leads — direct/website (and WhatsApp where tagged). Source: clinic CRM, channel=Organic, clinic-field attribution. NOTE: WhatsApp is NOT a separate channel in the CRM — it sits inside Organic here.'},
-      {label:'Other inbound call (pool)',arr:ccA('other'),fmt:N,info:'Inbound calls on the shared pool number that aren’t clearly paid or GMB. Source: AI call audit. ⚠ INFERRED — attributed to Indiranagar by the AI’s read of caller locality/intent.'},
-      {sep:1,label:'Practo',info:'Practo marketplace.'},
-      {label:'Practo',arr:M.pr,fmt:N,info:'Leads from the clinic’s Practo profile (clinic-specific). Source: CRM / Practo feed. ✓ Clinic-direct (Practo profile is per-clinic).'},
-      {sep:1,label:'Other (FB / JustDial)',info:'Meta (FB/Instagram) + JustDial + misc.'},
-      {label:'Other',arr:M.oth,fmt:N,info:'FB/Instagram + JustDial + miscellaneous CRM leads, attributed by the lead’s clinic field.'}]},
+      {sep:1,label:'— TIER 1 · Direct (clinic actually chosen) —',info:'Unambiguous: the lead came in through a channel where Indiranagar was the explicit destination.'},
+      {label:'GMB call (own number)',arr:M.gmbCall,fmt:N,info:'Calls to Indiranagar’s OWN Google Business Profile number (8047160881). ✓ Validated: 85% of these callers who book, book at Indiranagar.'},
+      {label:'Web · form (clinic picked)',arr:mk(i=>(D.leads.by_chan.google_web[i]||0)+(D.leads.by_chan.organic[i]||0)),fmt:N,info:'Web-form leads (paid + organic/direct/WhatsApp) where the patient selected Indiranagar on the form. Source: clinic CRM. ✓ Direct.'},
+      {label:'Practo (clinic + doctor)',arr:M.pr,fmt:N,info:'Leads from Indiranagar’s Practo clinic profile (and its doctors’ profiles, which map to this clinic). ✓ Clinic-direct. (Doctor-profile leads to be added to the pull.)'},
+      {label:'FB / JustDial',arr:M.oth,fmt:N,info:'Meta + JustDial + misc CRM leads tagged to Indiranagar by the lead’s clinic field.'},
+      {sep:1,label:'— TIER 2 · City-pool WON here (booked, backtracked) —',info:'Shared-number callers (no clinic chosen) who later BOOKED at Indiranagar — credited by the booking, not by a guess. Source: exotel_calls (paid # 8045680561) → bookings_data_raw, −2/+30d.'},
+      {label:'Pool callers → booked here',arr:M.poolWon,fmt:N,info:'City-pool callers whose booking landed at Indiranagar. ⚠ Latest 1–2 weeks undercount — the +30-day booking window is still open, so they firm up over the next few weeks.'}]},
+    {t:'edge',k:'pool_share',label:'City pool — Indiranagar’s capture',formula:'won ÷ pool callers',fmt:PCT,
+      info:'Of all city shared-number callers, the share that booked at Indiranagar. Low is expected (one of ~16 Bangalore clinics).',
+      children:[
+      {sep:1,label:'— TIER 3 · City pool (context · NOT clinic leads) —',info:'The shared Bangalore paid number — these callers chose no clinic. Managed at city level; only the "won" slice above is credited to Indiranagar.'},
+      {label:'City-pool callers (total)',arr:M.poolTot,fmt:N,info:'All callers to the shared Bangalore paid number this week (no clinic chosen).'},
+      {label:'→ booked at OTHER clinics',arr:M.poolElse,fmt:N,info:'Pool callers who booked at a different Bangalore clinic — credited to THOSE clinics’ Tier 2, not Indiranagar.'},
+      {label:'→ didn’t convert',arr:M.poolNo,fmt:N,info:'Pool callers who didn’t book within the window — city-level unconverted demand. (Latest weeks still open.)'}]},
     {t:'edge',k:'l2rl',label:'Lead → relevant lead',formula:'inbound calls ÷ leads',fmt:PCT,
       info:'Of all leads, the share that are AI-audited inbound CALLS judged "relevant" (a genuine consultation enquiry — spam / wrong-number / admin calls excluded).'},
     {t:'stage',k:'relevant',label:'Relevant leads (inbound calls)',color:'#3E6F8E',fmt:N,
@@ -326,7 +341,10 @@ function render(){
 }
 $('wPrev').onclick=()=>{if(wk<D._meta.weeks.length-1){wk++;render();}};
 $('wNext').onclick=()=>{if(wk>0){wk--;render();}};
-fetch('data_indiranagar.json?v='+Date.now()).then(r=>r.json()).then(j=>{D=j;wk=0;render();})
+Promise.all([
+  fetch('data_indiranagar.json?v='+Date.now()).then(r=>r.json()),
+  fetch('data_indiranagar_pool.json?v='+Date.now()).then(r=>r.ok?r.json():null).catch(()=>null)
+]).then(([j,p])=>{D=j;POOL=p;wk=0;render();})
   .catch(()=>{$('app').innerHTML='<div class="note">Could not load data_indiranagar.json — run scripts/assemble_indiranagar.py.</div>';});
 </script>
 </body>
