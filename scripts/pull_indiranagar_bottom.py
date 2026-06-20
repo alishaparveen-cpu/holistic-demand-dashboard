@@ -37,8 +37,9 @@ SQL = """WITH loc AS (
     FROM allo_encounters.encounters e
     LEFT JOIN allo_analytics.encounter_tags et ON et.encounter_id=e.id AND et.tag_category='diagnosis' AND et.deleted_at IS NULL
     WHERE e.deleted_at IS NULL GROUP BY 1),
-  ap AS (
-    SELECT a.id, TO_CHAR(DATE_TRUNC('week', a.start_time + INTERVAL '5 hours 30 minutes'),'YYYY-MM-DD') wk,
+  ap0 AS (
+    SELECT a.id, a.patient_id, a.start_time,
+           TO_CHAR(DATE_TRUNC('week', a.start_time + INTERVAL '5 hours 30 minutes'),'YYYY-MM-DD') wk,
            a.status,
            -- 1 when the patient's originating lead was created the SAME week as this booking
            CASE WHEN DATE_TRUNC('week', l.created_at + INTERVAL '5 hours 30 minutes')
@@ -49,6 +50,11 @@ SQL = """WITH loc AS (
     LEFT JOIN allo_persons.patient p ON p.id=a.patient_id
     LEFT JOIN allo_persons.lead l ON l.id=p.lead_id
     WHERE a.start_time >= '2026-03-23' AND a.start_time < '2026-06-15' AND a.deleted_at IS NULL),
+  ap AS (   -- DEDUPE to UNIQUE patient booking per week: reschedules / multiple SCs collapse to 1
+    SELECT id, wk, status, from_wk_lead FROM (
+      SELECT ap0.*, ROW_NUMBER() OVER (PARTITION BY patient_id, wk
+        ORDER BY (CASE WHEN status='COMPLETED' THEN 0 ELSE 1 END), start_time) rn
+      FROM ap0) z WHERE rn=1),
   inv AS (
     SELECT e.appointment_id ap_id, SUM(i.amount) amt
     FROM allo_encounters.encounters e
@@ -90,7 +96,7 @@ def main():
             tgt["purchased_wk_lead"][i]+=pwl; tgt["rev_wk_lead"][i]+=rev_wl
     out = {"_meta": {"weeks": WEEKS, "clinic": "Bangalore|Indiranagar", "cats": CATS,
             "source": "allo_consultations.appointments (Screening Call) × encounter diagnosis tag × paid invoices, clinic-filtered",
-            "note": "booked=all SCs; done=COMPLETED; purchased=completed+paid invoice; rev=₹ paid. Category=consultation diagnosis simplified to STI / SH (all ED·PE) / Other (only consulted SCs have one; no-shows fall in 'Other' for booked)."},
+            "note": "booked=UNIQUE patient SC per week (reschedules / multiple SCs deduped, prefer the completed row); done=COMPLETED; purchased=completed+paid invoice; rev=₹ paid. Category=consultation diagnosis simplified to STI / SH (all ED·PE) / Other (only consulted SCs have one)."},
         "total": tot, "by_cat": bycat}
     json.dump(out, open(os.path.join(ROOT, "data_indiranagar_bottom.json"), "w"), separators=(",", ":"))
     print(f"wrote data_indiranagar_bottom.json")
