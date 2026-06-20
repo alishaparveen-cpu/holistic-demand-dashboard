@@ -144,6 +144,11 @@ function metrics(){
   // category — ONLY where attributable: calls (→ split STI/SH/MH by the call audit, shown in Relevant leads),
   // plus a small web sliver tagged by landing page / campaign. The rest has no category signal.
   const catCall=Bk('cat_call'), catEd=Bk('cat_ed'), catPe=Bk('cat_pe'), catSti=Bk('cat_sti'), catSh=Bk('cat_sh'), catUncat=Bk('cat_uncat');
+  // Inbound CALLS split by the NUMBER dialed (call-audit, data_indiranagar_calls.json) — the only source that
+  // can separate Google-paid calls (call-asset #) from organic GMB calls (clinic's own #). main_source_wise_leads can't.
+  const ccA=k=>arr(i=>((cc[k]&&cc[k].total&&cc[k].total[i])||0));
+  const callGmb=ccA('gmb'), callPaid=ccA('paid'), callOther=ccA('other');
+  const callsplit=arr(i=>callGmb[i]+callPaid[i]+callOther[i]);
   const gmbDirect=arr(i=>gmbCallB[i]+gmbWebB[i]);                 // GMB organic (call + website)
   const googlePaid=arr(i=>paidCallB[i]+paidWebB[i]);             // Google paid (call + web)
   const pr=ch.practo;                                            // Practo (external sheet) — not in main_source_wise_leads
@@ -170,6 +175,7 @@ function metrics(){
     gmbDirect,googlePaid,onsiteWeb,walkin,miscLead,
     gmbCallB,gmbWebB,paidCallB,paidWebB,webOrg,meta,otherB,
     catCall,catEd,catPe,catSti,catSh,catUncat,
+    callGmb,callPaid,callOther,callsplit,
     gmbCall,tier1,poolWon,poolTot,poolElse,poolNo,
     booked,bookedWkLead:bwl,bookedPrior:bprior,done,purch,rev,
     gImpr:R.google.impr,gClk:R.google.clicks,mImpr:R.gmb.impr,mClk:R.gmb.clicks,
@@ -239,7 +245,7 @@ function buildStages(M){
       {label:'GMB — organic profile',arr:M.gmbDirect,fmt:N,info:'Indiranagar’s own Google Business Profile (free listing) — NOT paid ads. Two mechanisms below.',kids:[
         {label:'· call (own number 8047160881)',arr:M.gmbCallB,fmt:N,info:'Patient phoned the clinic number on the GBP listing (organic_l2=PC-Inbound, source=Organic).'},
         {label:'· website (listing → clinic page)',arr:M.gmbWebB,fmt:N,info:'Patient tapped the WEBSITE link on the Google profile → clinic page → booked. ✓ verified utm_source=gmb,utm_medium=listing.'}]},
-      {label:'Google paid (ads)',arr:M.googlePaid,fmt:N,info:'Leads from Google PAID ads (source=Google), city-level campaigns. Two mechanisms below. ⚠ "ad-call" is ~0 here because main_source_wise_leads doesn’t separate calls to paid tracking numbers (they sit in GMB call) — that split needs the call-audit layer (your manager’s "paid (Google call)").',kids:[
+      {label:'Google paid (ads)',arr:M.googlePaid,fmt:N,info:'Leads from Google PAID ads (source=Google), city-level campaigns. Two mechanisms below — the ad-call figure is measured from the call data (calls dialed to the Google paid tracking numbers).',kids:[
         {label:'· ad-call (number on the ad)',arr:M.paidCallB,fmt:N,info:'Call extension / call-only ad — patient tapped the tracking number on the ad (routes to the shared pool #).'},
         {label:'· web (landing page)',arr:M.paidWebB,fmt:N,info:'Ad → landing page → form/booking. Named campaigns + spend live in the Campaigns tab.'}]},
       {label:'Other organic web',arr:M.webOrg,fmt:N,info:'Other organic web leads attributed to Indiranagar — clinic page, condition/landing pages (ED/PE/Assessment), doctor pages, and untagged organic. Source=Organic, not the GBP call/listing.'},
@@ -254,8 +260,14 @@ function buildStages(M){
       {label:'Web · STI',arr:M.catSti,fmt:N,info:'Web leads whose campaign / page names STI/STD.'},
       {label:'Web · SH (sexual health)',arr:M.catSh,fmt:N,info:'Web leads whose campaign / page names sexual health.'},
       {label:'Uncategorised (no category signal)',arr:M.catUncat,fmt:N,info:'GMB website, clinic page, walk-in, Meta, untagged organic — no landing-page/campaign category and not a call. Category genuinely unknown for these.'}]},
-    {t:'stage',k:'citypool',label:'City phone-pool — shared Bangalore number (context · NOT in clinic leads)',color:'#9E8E5B',fmt:N,
-      info:'CONTEXT, not added to clinic leads above. Callers to the shared Bangalore paid number 8045680561 — they chose no clinic, so they carry no source. Their booked-here bookings are ALREADY counted in clinic leads (resolved by call_location), so this block is shown only to size the city-pool demand and where it goes; it is NOT summed on top. Headline = total pool callers.',
+    {t:'stage',k:'callsplit',label:'Call VOLUME by number dialed — separate lens (raw calls, NOT leads)',color:'#9E8E5B',fmt:N,
+      info:'⚠ DIFFERENT UNIT from the leads above — do NOT expect these to match. This is raw CALL COUNT (one person calling twice = 2 calls; non-converting calls included), AI-attributed to Indiranagar by caller intent — from the call-audit, a different system than the leads table. The leads stage counts unique BOOKING-attributed leads (and includes web). Use this lens only to see the paid-vs-organic CALL mix and trend: GMB organic (clinic’s own listing number 8047160881) vs Google paid (the city Google call-asset number 8045680561) vs other/shared-pool. The leads table can’t see the dialed number, which is why it tags every call "organic".',
+      children:[
+      {label:'GMB organic call (own listing number)',arr:M.callGmb,fmt:N,info:'Calls dialed to Indiranagar’s own Google Business Profile number 8047160881 — organic, free.'},
+      {label:'Google paid call (call-asset number)',arr:M.callPaid,fmt:N,info:'Calls dialed to the city Google call-asset / tracking number 8045680561 shown on PAID ads — this is the "Google paid call" figure the main leads table cannot isolate.'},
+      {label:'Other / shared-pool call',arr:M.callOther,fmt:N,info:'Calls dialed to a shared / other-clinic number, AI-attributed to Indiranagar by caller intent. Higher uncertainty (shared-number callers often book elsewhere).'}]},
+    {t:'stage',k:'citypool',label:'Google paid city calls (call-asset 8045680561) — full pool & outcomes (context)',color:'#9E8E5B',fmt:N,
+      info:'CONTEXT, not added to clinic leads above. This is the FULL city volume of the SAME number as "Google paid call" in the lens above — 8045680561, the Google Ads call-asset (the call-button number on Bangalore paid ads). Callers chose no clinic, so they carry no source other than "Google paid". Their booked-here bookings are ALREADY counted in clinic leads (resolved by call_location), so this is shown only to size the pool and where it went — NOT summed on top. Headline = total pool callers; below = the only meaningful split (by outcome, since they’re all one source).',
       children:[
       {label:'→ booked at OTHER Bangalore clinics',arr:M.poolElse,fmt:N,info:'Pool callers who booked at a DIFFERENT Bangalore clinic. (Validated: ~63% of pool callers who book, book elsewhere.)'},
       {label:'→ didn’t book at all',arr:M.poolNo,fmt:N,info:'Pool callers who never booked within the window — unconverted city-level demand. (Latest weeks still open.)'},
