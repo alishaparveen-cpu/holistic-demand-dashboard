@@ -297,15 +297,14 @@ function buildStages(M){
       ...(cohort?[]:[{sep:1,label:'By lead recency'},
         {label:'From this week’s leads',arr:M.bookedWkLead,fmt:N},
         {label:'From earlier leads / repeat',arr:M.bookedPrior,fmt:N}]),
-      {sep:1,label:'By category (diagnosis · STI + SH + Other = the Booked total above)'},
-      ...cats.map(c=>({label:c,arr:bcat(c,cf('booked')),fmt:N,info:c==='Other'?'Diagnosis CATCH-ALL: every booked consult whose diagnosis is NOT clinically STI or SH. Includes Mental Health (the consultation diagnosis has no MH tag, so MH lands here), ED/PE, and general / undiagnosed Screening Calls. ⚠ This "Other" is by DIAGNOSIS — not the same as the lead-side "Other (untagged)" (which was about source).':'Booked consults diagnosed '+c+'.'}))]},
+      {sep:1,label:'By category (⚠ booked CAN’T be cleanly categorised — see info)',info:'A booking gets a diagnosis only AFTER it’s consulted. So the STI / SH rows here are really "consulted & diagnosed STI/SH", and "Other" = everything WITHOUT a diagnosis — overwhelmingly NO-SHOWS / reschedules / cancellations (verified: ~250 of ~324 "Other" booked SCs never completed), NOT mental health. The clean 3-category split is on DONE below. Category is by DIAGNOSIS (≠ the lead-side "Other (untagged)" which was about source).'},
+      ...cats.map(c=>({label:c,arr:bcat(c,cf('booked')),fmt:N,info:c==='Other'?'Booked SCs with NO STI/SH diagnosis — mostly NOT-YET-CONSULTED (no-shows / reschedules / cancellations / pending), plus a few non-sexual-health diagnoses. This is NOT mental health (MH isn’t a diagnosis tag and isn’t separable at booking).':'Consulted & diagnosed '+c+' (a diagnosis only exists once the SC is completed).'}))]},
     {t:'edge',k:'b2d',label:'Book → done',formula:'done ÷ booked',fmt:PCT,
-      info:'Of booked Screening Calls, the share completed (consulted). Total here; per-category below — note Other (incl. MH) typically converts very differently from STI/SH.',children:[
-      {sep:1,label:'Book → done % by category'},
-      ...cats.map(c=>({label:c,arr:mk(i=>{const bk=bcat(c,cf('booked'))[i]||0;const dn=bcat(c,cf('done'))[i]||0;return bk?dn/bk*100:null;}),fmt:PCT,info:c==='Other'?'Other (incl. MH/ED/PE/general) book→done — usually much lower than STI/SH.':undefined}))]},
-    {t:'stage',k:'done',label:'Done',color:'#B8862E',fmt:N,children:[
+      info:'Of booked Screening Calls, the share completed (consulted) — the real no-show / completion rate. NOT split by category, because the STI/SH categories are defined by the post-consult diagnosis (they’d always read ~100% by construction, with all no-shows piling into Other — a meaningless artifact). The honest category split is on Done below.'},
+    {t:'stage',k:'done',label:'Done',color:'#B8862E',fmt:N,
+      info:'Completed consults — these ALL have a diagnosis, so the category split here is clean and real.',children:[
       {sep:1,label:'By category (diagnosis · STI + SH + Other = the Done total above)'},
-      ...cats.map(c=>({label:c,arr:bcat(c,cf('done')),fmt:N,info:c==='Other'?'Same diagnosis catch-all as Booked → Other (incl. MH / ED/PE / general / undiagnosed).':'Completed consults diagnosed '+c+'.'}))]},
+      ...cats.map(c=>({label:c,arr:bcat(c,cf('done')),fmt:N,info:c==='Other'?'Completed consults diagnosed NSSD / general / non-sexual-health (no clean MH tag exists). The DEMAND side tracks MH separately via the AI call audit; it just can’t carry through to the diagnosis here.':'Completed consults diagnosed '+c+'.'}))]},
     {t:'edge',k:'d2p',label:'Done → purchased',formula:'purchased ÷ done',fmt:PCT},
     {t:'stage',k:'purch',label:'Purchased',color:'#B8862E',fmt:N,children:cats.map(c=>({label:c,arr:bcat(c,cf('purchased')),fmt:N}))},
     {t:'stage',k:'rev',label:'Revenue',color:'#1F6F5C',fmt:RUP,children:cats.map(c=>({label:c,arr:bcat(c,cf('rev')),fmt:RUP}))},
