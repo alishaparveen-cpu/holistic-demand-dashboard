@@ -155,6 +155,7 @@ function metrics(){
   const gmbDirect=arr(i=>gmbCallB[i]+gmbWebB[i]);                 // GMB organic (call + website)
   const googlePaid=arr(i=>paidCallB[i]+paidWebB[i]);             // Google paid (call + web)
   const gmbGoog=arr(i=>gmbDirect[i]+googlePaid[i]);              // Google + GMB combined (the clicks-driven channels)
+  const allOther=arr(i=>webOrg[i]+walkin[i]+meta[i]+otherB[i]);  // all non-Google/GMB/Practo channels combined
   const pr=ch.practo;                                            // Practo (external sheet) — not in main_source_wise_leads
   const gmbCall=gmbCallB, onsiteWeb=webOrg;                      // aliases for downstream refs
   const miscLead=arr(i=>meta[i]+otherB[i]);
@@ -181,7 +182,7 @@ function metrics(){
   const c2l_comb=rate(arr(i=>googlePaid[i]+gmbDirect[i]), arr(i=>gClkA[i]+mClkA[i]));  // Google+GMB combined
   return {impr,clicks,callLeads,relevant:callLeads,pr,leads,c2l_paid,c2l_gmb,
     gmbDirect,googlePaid,onsiteWeb,walkin,miscLead,
-    gmbCallB,gmbWebB,paidCallB,paidWebB,webOrg,webClinic,webPage,webUntagged,meta,otherB,gmbGoog,
+    gmbCallB,gmbWebB,paidCallB,paidWebB,webOrg,webClinic,webPage,webUntagged,meta,otherB,gmbGoog,allOther,
     catCall,catEd,catPe,catSti,catSh,catUncat,tierCaptured,tierResolved,c2l_comb,
     callGmb,callPaid,callOther,callsplit,
     gmbCall,tier1,poolWon,poolTot,poolElse,poolNo,
@@ -260,18 +261,19 @@ function buildStages(M){
         {label:'· ad-call (number on the ad)',arr:M.paidCallB,fmt:N,info:'Call lead that dialed the Google paid call-asset number (8045680561), reclassified from "organic" by matching phone→exotel→number-mapping. Books resolve to this clinic via call_location.'},
         {label:'· web (landing page)',arr:M.paidWebB,fmt:N,info:'Ad → landing page → form/booking. Named campaigns + spend live in the Campaigns tab.'}]},
       {sep:1,label:'— Click → lead (only GMB & Google paid have upstream clicks) —',info:'Best-effort cross-system RATIO, not a traced path. Only GMB & Google paid have a clicks number; walk-in/Practo/Meta/other-web don’t, so no ratio for them. Clicks are anonymous Google/GMB counts; leads from the lead table.'},
-      {label:'Click → lead · overall (Google + GMB)',arr:M.c2l_comb,fmt:PCT,info:'(Google-paid + GMB leads) ÷ (Google location-asset + GMB-listing clicks). The combined headline.'},
-      {label:'Click → lead · GMB',arr:M.c2l_gmb,fmt:PCT,info:'GMB leads ÷ GMB listing clicks. High-intent — these clickers already chose the clinic.'},
-      {label:'Click → lead · Google paid',arr:M.c2l_paid,fmt:PCT,info:'Google-paid leads ÷ Google location-asset clicks. Low is expected — city-wide anonymous clicks vs the booking-resolved Indiranagar slice; many bounce or call instead.'},
+      {label:'Click → lead · overall (Google + GMB)',arr:M.c2l_comb,fmt:PCT,info:'(Google-paid + GMB leads) ÷ (Google location-asset + GMB-listing clicks). The combined headline — click ▸ to split by GMB vs Google paid.',kids:[
+        {label:'Click → lead · GMB',arr:M.c2l_gmb,fmt:PCT,info:'GMB leads ÷ GMB listing clicks. High-intent — these clickers already chose the clinic.'},
+        {label:'Click → lead · Google paid',arr:M.c2l_paid,fmt:PCT,info:'Google-paid leads ÷ Google location-asset clicks. Low is expected — city-wide anonymous clicks vs the booking-resolved Indiranagar slice; many bounce or call instead.'}]},
       {sep:1,label:'— Other channels (no upstream clicks) —',info:'Organic web, walk-in, Meta, Practo, other — these have no Google/GMB click metric, so no click→lead ratio applies.'},
-      {label:'Other organic web',arr:M.webOrg,fmt:N,info:'Organic website leads attributed to Indiranagar that aren’t a GMB call/listing or walk-in (source=Organic). It’s the organic-web catch-all — split below into what we can name vs the untagged majority. Click ▸.',kids:[
+      {label:'Practo (clinic + doctor)',arr:M.pr,fmt:N,kids:practoKids,info:'Indiranagar’s Practo clinic + doctor profiles — the marketplace channel. EXTERNAL: from the RD_Practo_Leads public sheet, not main_source_wise_leads, so it is added on top of the unified table. ⚠ Latest week often 0 (sheet fills with a lag).'},
+      {label:'All others · combined',arr:M.allOther,fmt:N,info:'Everything else with no upstream clicks and not Practo — organic web, walk-in, Meta, and misc. Listed individually below.'},
+      {label:'· Other organic web',arr:M.webOrg,fmt:N,info:'Organic website leads attributed to Indiranagar that aren’t a GMB call/listing or walk-in (source=Organic). The organic-web catch-all — split below into what we can name vs the untagged majority. Click ▸.',kids:[
         {label:'· Clinic page (Indiranagar’s page)',arr:M.webClinic,fmt:N,info:'Landed on Indiranagar’s own clinic page on allohealth.com (organic_l2 = "Clinic Page") — clinic-level, the patient was on this clinic’s page.'},
         {label:'· Named condition/doctor page',arr:M.webPage,fmt:N,info:'A named page we can identify — condition pages (ED / PE / Assessment / Treatment) or a doctor/sexologist page. Usually city/topic-level (not a specific clinic).'},
         {label:'· Untagged organic (page not recorded)',arr:M.webUntagged,fmt:N,info:'organic_l2 = "Unknown" or blank — the entry page wasn’t recorded, so we genuinely don’t know which page. SEO / direct / other organic web that became a lead and booked at Indiranagar. This is the bulk (~89%); the clinic is known only via the booking (call_location).'}]},
-      {label:'Walk-in',arr:M.walkin,fmt:N,info:'Patients who walked into the Indiranagar clinic and were registered on-site.'},
-      {label:'Meta (Facebook / Instagram)',arr:M.meta,fmt:N,info:'Paid/organic Meta leads attributed to Indiranagar (source=Fb/Instagram).'},
-      {label:'Practo (clinic + doctor)',arr:M.pr,fmt:N,kids:practoKids,info:'Indiranagar’s Practo clinic + doctor profiles. EXTERNAL — from the RD_Practo_Leads public sheet, not main_source_wise_leads, so it is added on top of the unified table. ⚠ Latest week often 0 (sheet fills with a lag).'},
-      {label:'Other (newspaper / YouTube / untagged)',arr:M.otherB,fmt:N,info:'Newspaper / YouTube / opaque "Others" / Unknown leads attributed to Indiranagar. WhatsApp is NOT separately tagged here (WA-Inbound deprecated since early-2024).'},
+      {label:'· Walk-in',arr:M.walkin,fmt:N,info:'Patients who walked into the Indiranagar clinic and were registered on-site.'},
+      {label:'· Meta (Facebook / Instagram)',arr:M.meta,fmt:N,info:'Paid/organic Meta leads attributed to Indiranagar (source=Fb/Instagram).'},
+      {label:'· Other (newspaper / YouTube / untagged)',arr:M.otherB,fmt:N,info:'Newspaper / YouTube / opaque "Others" / Unknown leads attributed to Indiranagar. WhatsApp is NOT separately tagged here (WA-Inbound deprecated since early-2024).'},
       {sep:1,label:'— Category — where attributable (a re-cut of the SAME leads, not added on top) —',info:'Category can only be attributed for two parts: (1) CALLS — categorised STI/SH/MH/Other by the AI call audit (see "Relevant leads" stage below); (2) a small WEB sliver where the landing page or paid campaign names the condition (ED/PE/STI/SH). The rest of the web/organic leads carry NO category signal and stay "uncategorised". These rows partition the leads total above.'},
       {label:'Calls → categorised by call audit (STI/SH/MH below)',arr:M.catCall,fmt:N,info:'Inbound calls — the call audit splits these into STI / SH / MH / Other in the "Relevant leads (inbound calls)" stage just below. Here we only show how many leads are call-categorisable.'},
       {label:'Web · ED (landing page / campaign)',arr:M.catEd,fmt:N,info:'Web leads whose landing page (ED Page) or paid campaign names ED.'},
