@@ -177,10 +177,11 @@ function metrics(){
   // Click → lead by channel (best-effort cross-system ratio): only where a clicks number exists.
   const gClkA=arr(i=>(R.google.clicks&&R.google.clicks[i])||0), mClkA=arr(i=>(R.gmb.clicks&&R.gmb.clicks[i])||0);
   const c2l_paid=rate(googlePaid,gClkA), c2l_gmb=rate(gmbDirect,mClkA);
+  const c2l_comb=rate(arr(i=>googlePaid[i]+gmbDirect[i]), arr(i=>gClkA[i]+mClkA[i]));  // Google+GMB combined
   return {impr,clicks,callLeads,relevant:callLeads,pr,leads,c2l_paid,c2l_gmb,
     gmbDirect,googlePaid,onsiteWeb,walkin,miscLead,
     gmbCallB,gmbWebB,paidCallB,paidWebB,webOrg,webClinic,webPage,webUntagged,meta,otherB,
-    catCall,catEd,catPe,catSti,catSh,catUncat,tierCaptured,tierResolved,
+    catCall,catEd,catPe,catSti,catSh,catUncat,tierCaptured,tierResolved,c2l_comb,
     callGmb,callPaid,callOther,callsplit,
     gmbCall,tier1,poolWon,poolTot,poolElse,poolNo,
     booked,bookedWkLead:bwl,bookedPrior:bprior,done,purch,rev,
@@ -242,20 +243,20 @@ function buildStages(M){
       ...GCATS.map(c=>({label:'Google loc-asset · '+c,arr:gcat(c,'clicks'),fmt:N})),
       {label:'GMB listing',arr:R.gmb.clicks,fmt:N},
       {sep:1,label:'Click-through rate (clicks ÷ impressions)'},
-      {label:'CTR — overall',arr:M.ctr,fmt:PCT},
-      {label:'CTR · GMB listing (actions ÷ profile views)',arr:R.gmb.ctr,fmt:PCT},
-      {label:'CTR · Google (paid)',arr:R.google.ctr,fmt:PCT,info:'Google paid CTR — broken down by category below (CTR is only available by category for Google, not GMB).'},
-      ...GCATS.map(c=>({label:'    ↳ '+c,arr:mk(i=>gcat(c,'impr')[i]?gcat(c,'clicks')[i]/gcat(c,'impr')[i]*100:null),fmt:PCT}))]},
-    {t:'edge',k:'c2l',label:'Click → lead',formula:'leads ÷ clicks',fmt:PCT,
-      info:'BEST-EFFORT cross-system ratio — not a traced per-person path. Clicks are anonymous Google/GMB aggregate counts; leads come from the lead table. Computable only for the channels that have a clicks number (Google location-asset, GMB listing). Web/Meta/Practo/walk-in have no upstream clicks, so no ratio. Expect low Google paid ratios — most clicks bounce or convert by phone (a different system).',children:[
-      {label:'Google paid: leads ÷ location-asset clicks',arr:M.c2l_paid,fmt:PCT,info:'Indiranagar Google-paid LEADS ÷ Google location-asset CLICKS. Low is expected: clicks are city-wide & anonymous, leads are the booking-resolved Indiranagar slice; many clickers bounce or call instead.'},
-      {label:'GMB: leads ÷ listing clicks',arr:M.c2l_gmb,fmt:PCT,info:'Indiranagar GMB LEADS ÷ GMB listing CLICKS (Business-Profile actions).'}]},
+      {label:'CTR — overall',arr:M.ctr,fmt:PCT,info:'Overall click-through rate (Google location-asset + GMB combined). Click ▸ for the split by source and by category.',kids:[
+        {label:'CTR · GMB listing (actions ÷ profile views)',arr:R.gmb.ctr,fmt:PCT},
+        {label:'CTR · Google (paid)',arr:R.google.ctr,fmt:PCT,info:'Google paid CTR — by category below (CTR is only available by category for Google, not GMB).'},
+        ...GCATS.map(c=>({label:'    ↳ Google · '+c,arr:mk(i=>gcat(c,'impr')[i]?gcat(c,'clicks')[i]/gcat(c,'impr')[i]*100:null),fmt:PCT}))]}]},
+    {t:'edge',k:'c2l_comb',label:'Click → lead — overall (Google + GMB combined)',formula:'(paid+GMB leads) ÷ (loc-asset+listing clicks)',fmt:PCT,
+      info:'BEST-EFFORT cross-system ratio — not a traced per-person path. The headline is Google + GMB COMBINED: (Google-paid + GMB leads) ÷ (location-asset + GMB-listing clicks). Split by source below. Clicks are anonymous Google/GMB aggregate counts; leads come from the lead table. Web/Meta/Practo/walk-in have no upstream clicks, so no ratio. Expect low Google-paid ratios — most clicks bounce or convert by phone (a different system).',children:[
+      {label:'GMB: leads ÷ listing clicks',arr:M.c2l_gmb,fmt:PCT,info:'Indiranagar GMB LEADS ÷ GMB listing CLICKS (Business-Profile actions). High-intent — these clickers already chose the clinic.'},
+      {label:'Google paid: leads ÷ location-asset clicks',arr:M.c2l_paid,fmt:PCT,info:'Indiranagar Google-paid LEADS ÷ Google location-asset CLICKS. Low is expected: clicks are city-wide & anonymous, leads are the booking-resolved Indiranagar slice; many clickers bounce or call instead.'}]},
     {t:'stage',k:'leads',label:'Clinic leads — attributed to Indiranagar (sums into Bangalore city)',color:'#3E6F8E',fmt:N,
       info:'Every lead whose resolved clinic (call_location) is Indiranagar — so this is the Indiranagar slice of the unified Bangalore table, and all 14 Bangalore clinics SUM to the city total by construction. Includes leads where the clinic was known at capture AND leads where it was resolved at booking. Broken by CHANNEL, and each channel split into its CALL vs WEB mechanism (click ▸). Source: main_source_wise_leads (clinic=call_location) + Practo (external sheet).',
       children:[
-      {label:'GMB — organic profile',arr:M.gmbDirect,fmt:N,info:'Indiranagar’s own Google Business Profile (free listing) — NOT paid ads. Two mechanisms below.',kids:[
-        {label:'· call (own number 8047160881)',arr:M.gmbCallB,fmt:N,info:'Patient phoned the clinic number on the GBP listing (organic_l2=PC-Inbound, source=Organic).'},
-        {label:'· website (listing → clinic page)',arr:M.gmbWebB,fmt:N,info:'Patient tapped the WEBSITE link on the Google profile → clinic page → booked. ✓ verified utm_source=gmb,utm_medium=listing.'}]},
+      {label:'GMB organic (call + web)',arr:M.gmbDirect,fmt:N,info:'Indiranagar’s own Google Business Profile (free listing) — NOT paid ads. This is where ORGANIC CALLERS sit: an organic call = a call to the clinic’s own listing number (there is no organic call outside GMB). Split into call vs web below.',kids:[
+        {label:'· organic call (own number 8047160881)',arr:M.gmbCallB,fmt:N,info:'Patient PHONED the clinic’s own listing number — this is the organic-call channel (organic_l2=PC-Inbound, source=Organic). All organic calls land here.'},
+        {label:'· organic web (listing → clinic page)',arr:M.gmbWebB,fmt:N,info:'Patient tapped the WEBSITE link on the Google profile → clinic page → booked. ✓ verified utm_source=gmb,utm_medium=listing. (Other organic web pages are in the "Other organic web" row below.)'}]},
       {label:'Google paid (ads)',arr:M.googlePaid,fmt:N,info:'Leads from Google PAID ads attributed to Indiranagar, city-level campaigns. Two mechanisms below. The ad-call figure is now correct: a call lead whose caller phone DIALED a Google paid call-asset number is counted here — even though main_source_wise_leads tagged it "Organic" (it can’t see the dialed number). We recover it by matching the lead phone to the exotel call → number-mapping. So these moved OUT of GMB-call into Google paid; the clinic total is unchanged.',kids:[
         {label:'· ad-call (number on the ad)',arr:M.paidCallB,fmt:N,info:'Call lead that dialed the Google paid call-asset number (8045680561), reclassified from "organic" by matching phone→exotel→number-mapping. Books resolve to this clinic via call_location.'},
         {label:'· web (landing page)',arr:M.paidWebB,fmt:N,info:'Ad → landing page → form/booking. Named campaigns + spend live in the Campaigns tab.'}]},
