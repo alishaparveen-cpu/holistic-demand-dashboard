@@ -182,7 +182,9 @@ function metrics(){
   const gClkA=arr(i=>(R.google.clicks&&R.google.clicks[i])||0), mClkA=arr(i=>(R.gmb.clicks&&R.gmb.clicks[i])||0);
   const c2l_paid=rate(googlePaid,gClkA), c2l_gmb=rate(gmbDirect,mClkA);
   const c2l_comb=rate(arr(i=>googlePaid[i]+gmbDirect[i]), arr(i=>gClkA[i]+mClkA[i]));  // Google+GMB combined
-  return {impr,clicks,callLeads,relevant:callLeads,pr,leads,c2l_paid,c2l_gmb,
+  const aiCat=(ai&&ai.by_cat)||{};
+  const callCat=arr(i=>['STI','SH','MH','Other'].reduce((s,c)=>s+((aiCat[c]&&aiCat[c][i])||0),0));  // call-audit relevant total (its own universe)
+  return {impr,clicks,callLeads,relevant:callCat,pr,leads,c2l_paid,c2l_gmb,
     gmbDirect,googlePaid,onsiteWeb,walkin,miscLead,
     gmbCallB,gmbWebB,paidCallB,paidWebB,webOrg,webClinic,webPage,webUntagged,meta,otherB,gmbGoog,allOther,
     prBooked,prConv:rate(prBooked,pr),
@@ -278,33 +280,8 @@ function buildStages(M){
         {label:'Meta (Facebook / Instagram)',arr:M.meta,fmt:N,info:'Meta leads (source=Fb/Instagram). ▶ RESOLVES TO INDIRANAGAR: city/online campaigns with no clinic at capture, so the clinic is set at the booking (call_location=Indiranagar) — unless the lead carried Indiranagar’s clinic code, in which case it’s known at capture.'},
         {label:'Other (untagged)',arr:M.otherB,fmt:N,info:'Leads with NO usable source tag — ~95% are source="Others" (the CRM’s opaque catch-all: offline referrals, repeat patients, partner/doctor referrals, front-desk manual entries), plus a tiny bit of Newspaper. We do NOT actually know how they came, so we call it untagged rather than guess. ▶ HOW IT RESOLVES TO INDIRANAGAR (verified): all 68 carry lead_location=BLR_80FT — Indiranagar’s clinic code stamped AT capture (registered at the clinic) — and all 68 booked at Indiranagar. So the CLINIC is 100% certain (it’s a real Indiranagar patient); only the SOURCE is missing. ⚠ NOT RECOVERABLE: 0 of 68 have any UTM/digital footprint (vs Fb 9/11) — no trail exists. Fix = source tagging at lead capture (a process change), not data recovery.'}]},
       ]},
-    {t:'stage',k:'callsplit',label:'Call VOLUME by number dialed — separate lens (raw calls, NOT leads)',color:'#9E8E5B',fmt:N,
-      info:'⚠ DIFFERENT UNIT from the leads above — do NOT expect these to match. This is raw CALL COUNT (one person calling twice = 2 calls; non-converting calls included), AI-attributed to Indiranagar by caller intent — from the call-audit, a different system than the leads table. The leads stage counts unique BOOKING-attributed leads (and includes web). Use this lens only to see the paid-vs-organic CALL mix and trend: GMB organic (clinic’s own listing number 8047160881) vs Google paid (the city Google call-asset number 8045680561) vs other/shared-pool. The leads table can’t see the dialed number, which is why it tags every call "organic".',
-      children:[
-      {label:'GMB organic call (own listing number)',arr:M.callGmb,fmt:N,info:'Calls dialed to Indiranagar’s own Google Business Profile number 8047160881 — organic, free.'},
-      {label:'Google paid call (call-asset number)',arr:M.callPaid,fmt:N,info:'Calls dialed to the city Google call-asset / tracking number 8045680561 shown on PAID ads — this is the "Google paid call" figure the main leads table cannot isolate.'},
-      {label:'Other / shared-pool call',arr:M.callOther,fmt:N,info:'Calls dialed to a shared / other-clinic number, AI-attributed to Indiranagar by caller intent. Higher uncertainty (shared-number callers often book elsewhere).'}]},
-    {t:'stage',k:'citypool',label:'UNATTRIBUTED — city demand that did NOT become an Indiranagar lead',color:'#9E8E5B',fmt:N,
-      info:'NOT part of clinic leads above — this is the city-level demand Indiranagar competes for but did NOT capture. Headline = total callers to the shared Google call-asset number 8045680561 (the call-button on Bangalore PAID ads). ▶ ON SOURCE: city-level calls are by definition PAID — they dial the shared paid number; ORGANIC calls go to the clinic’s own number (8047160881) and are already clinic-direct, so they are never "city-unattributed". Below: where this paid-call demand went. (Booked-here is already inside clinic leads; the unattributed part is "booked elsewhere" + "never booked".) ⚠ WEB visitors who don’t book are also unattributed, but they’re city/national-level with no clinic — not separately shown here yet (needs a city-level pull).',
-      children:[
-      {sep:1,label:'— Unattributed (Indiranagar lost this demand) —'},
-      {label:'→ never booked at all',arr:M.poolNo,fmt:N,info:'Paid-number callers who NEVER booked within the window — pure unconverted city demand, lost to everyone. (Latest weeks still maturing.)'},
-      {label:'→ booked at ANOTHER Bangalore clinic',arr:M.poolElse,fmt:N,info:'Paid-number callers who booked, but at a DIFFERENT Bangalore clinic — demand Indiranagar competed for and lost. (Validated: ~63% of pool bookers book elsewhere.)'},
-      ]},
-    {t:'edge',k:'l2rl',label:'Lead → relevant lead',formula:'inbound calls ÷ leads',fmt:PCT,
-      info:'Of all leads, the share that are AI-audited inbound CALLS judged "relevant" (a genuine consultation enquiry — spam / wrong-number / admin calls excluded).'},
-    {t:'stage',k:'relevant',label:'Relevant leads (inbound calls)',color:'#3E6F8E',fmt:N,
-      info:'Inbound calls the AI call audit classified as RELEVANT (real consultation intent) and attributed to Indiranagar, split by category (STI/SH/MH/Other). Source: data_indiranagar_calls.json. Covers ~late-Apr onward.',
-      children:[
-      {sep:1,label:'By category'},
-      ...[['STI','STI'],['SH','Sexual health'],['MH','Mental health'],['Other','Other']].map(([k,lbl])=>({label:lbl,arr:aic[k]||[],fmt:N})),
-      {sep:1,label:'Google click → relevant lead % (by category)'},
-      ...['STI','SH','MH'].map(c=>({label:c==='SH'?'Sexual health':c==='MH'?'Mental health':c,
-        arr:mk(i=>{const cl=gcat(c,'clicks')[i];const rl=(aic[c]||[])[i]||0;return cl?rl/cl*100:null;}),fmt:PCT})),
-      {sep:1,label:'Relevant lead → book % (by category · >100% = web/walk-in too)'},
-      ...['STI','SH'].map(c=>({label:c==='SH'?'Sexual health':c,
-        arr:mk(i=>{const rl=(aic[c]||[])[i]||0;const bk=bcat(c,cf('booked'))[i]||0;return rl?bk/rl*100:null;}),fmt:PCT}))]},
-    {t:'edge',k:'rl2b',label:'Relevant lead → book',formula: cohort?'this-week-lead booked ÷ inbound calls':'booked ÷ inbound calls · >100% = web/walk-in too',fmt:PCT},
+    {t:'edge',k:'l2b',label:'Lead → book',formula: cohort?'this-week-lead booked ÷ leads':'booked ÷ leads · >100% = repeat/walk-in too',fmt:PCT,
+      info:'Of this clinic’s leads, the share that became a booking. Can exceed 100% when bookings include repeat/walk-in patients beyond the tracked new leads.'},
     {t:'stage',k:'booked',label: cohort?'Booked · this week’s leads':'Booked',color:'#7B5EA7',fmt:N,children:[
       ...(cohort?[]:[{sep:1,label:'By lead recency'},
         {label:'From this week’s leads',arr:M.bookedWkLead,fmt:N},
@@ -316,6 +293,24 @@ function buildStages(M){
     {t:'edge',k:'d2p',label:'Done → purchased',formula:'purchased ÷ done',fmt:PCT},
     {t:'stage',k:'purch',label:'Purchased',color:'#B8862E',fmt:N,children:cats.map(c=>({label:c,arr:bcat(c,cf('purchased')),fmt:N}))},
     {t:'stage',k:'rev',label:'Revenue',color:'#1F6F5C',fmt:RUP,children:cats.map(c=>({label:c,arr:bcat(c,cf('rev')),fmt:RUP}))},
+    {t:'sep',label:'CALL INTELLIGENCE — call volume &amp; intent · NOT leads (does NOT reconcile to the leads/booked above)',info:'A SEPARATE universe from the leads spine above. The leads spine counts unique BOOKING-attributed leads and sums to the Bangalore city total. This section is from the AI call-audit / exotel call-log — RAW CALLS (one person calling twice = 2; spam/non-converting included; attributed by caller intent). It does NOT tie out to the leads/booked figures, and it shouldn’t — different unit. Use it only for (a) what callers ask about (CATEGORY — only available here), and (b) city paid-call demand Indiranagar lost.'},
+    {t:'stage',k:'relevant',label:'Relevant calls by category (AI audit · call volume)',color:'#9E8E5B',fmt:N,
+      info:'⚠ CALL VOLUME, not leads. Inbound calls the AI audit judged relevant (real consultation intent), attributed by caller intent, split by category. This is the ONLY source of STI/SH/MH — used to understand demand, not to count leads. Source: data_indiranagar_calls.json (~late-Apr onward).',
+      children:[
+      {sep:1,label:'By category'},
+      ...[['STI','STI'],['SH','Sexual health'],['MH','Mental health'],['Other','Other']].map(([k,lbl])=>({label:lbl,arr:aic[k]||[],fmt:N})),
+      {sep:1,label:'Google click → relevant call % (by category)'},
+      ...['STI','SH','MH'].map(c=>({label:c==='SH'?'Sexual health':c==='MH'?'Mental health':c,
+        arr:mk(i=>{const cl=gcat(c,'clicks')[i];const rl=(aic[c]||[])[i]||0;return cl?rl/cl*100:null;}),fmt:PCT})),
+      {sep:1,label:'Relevant call → book % (by category · >100% = web/walk-in too)'},
+      ...['STI','SH'].map(c=>({label:c==='SH'?'Sexual health':c,
+        arr:mk(i=>{const rl=(aic[c]||[])[i]||0;const bk=bcat(c,cf('booked'))[i]||0;return rl?bk/rl*100:null;}),fmt:PCT}))]},
+    {t:'stage',k:'citypool',label:'City paid-call pool — UNATTRIBUTED / demand Indiranagar lost (call volume)',color:'#9E8E5B',fmt:N,
+      info:'⚠ CALL VOLUME (exotel call-log), not leads. City-level demand to the shared Google call-asset number 8045680561 (the call-button on Bangalore PAID ads) that Indiranagar did NOT capture. The booked-here slice is already in the leads spine (Google paid · ad-call) — shown below is only the LOST part. City calls are PAID by definition; organic calls go to the clinic’s own number (already clinic-direct), so they’re never city-unattributed. Headline = total city paid-call pool.',
+      children:[
+      {sep:1,label:'— Indiranagar lost this demand —'},
+      {label:'→ never booked at all',arr:M.poolNo,fmt:N,info:'Paid-number callers who NEVER booked within the window — pure unconverted city demand, lost to everyone.'},
+      {label:'→ booked at ANOTHER Bangalore clinic',arr:M.poolElse,fmt:N,info:'Paid-number callers who booked at a DIFFERENT Bangalore clinic — demand Indiranagar competed for and lost. (~63% of pool bookers book elsewhere.)'}]},
   ];
 }
 function heatBg(v,mn,mx){if(v==null||isNaN(v)||!isFinite(mn))return'';const rng=(mx-mn)||1,t=(v-mn)/rng;
@@ -333,6 +328,7 @@ function matrix(M){
   let h='<div class="fmwrap"><table class="fm"><thead><tr><th>Stage &amp; transition</th>'
     +cols.map((ci,j)=>`<th class="${j===cols.length-1?'lastcol':''}">${wkShort(W[ci])}</th>`).join('')+'<th>trend</th></tr></thead><tbody>';
   buildStages(M).forEach(r=>{
+    if(r.t==='sep'){ h+=`<tr><td colspan="${cols.length+2}" style="padding:16px 10px 6px;font-weight:700;font-size:12px;letter-spacing:.04em;color:var(--muted);border-top:2px solid var(--line)">${r.label}${ix(r.info)}</td></tr>`; return; }
     const a=M[r.k];
     const kids=(r.children||[]).filter(c=>c.sep||(c.arr&&cols.some(ci=>c.arr[ci])));
     const open=expanded[r.k]!==false;
