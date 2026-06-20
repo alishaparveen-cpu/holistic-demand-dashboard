@@ -66,6 +66,13 @@ SELECT l.call_location AS clinic,
     WHEN l.lead_location='ONLINE' OR l.lead_location IS NULL OR pp.phone IS NOT NULL THEN 'tier_resolved'
     ELSE 'tier_captured'
   END AS tier,
+  -- sub-split of the web_organic bucket only (clinic page vs a named condition/doctor page vs untagged)
+  CASE
+    WHEN NOT (l.source='Organic' AND l.organic_l2 NOT IN ('PC-Inbound','Google Listing','Walk In')) THEN 'web_na'
+    WHEN l.organic_l2='Clinic Page'                       THEN 'web_clinic'
+    WHEN l.organic_l2 IN ('Unknown') OR l.organic_l2 IS NULL THEN 'web_untagged'
+    ELSE 'web_page'
+  END AS websub,
   COUNT(*) AS n
 FROM production.public.main_source_wise_leads l
 JOIN allo_prod.allo_health.locations loc
@@ -74,10 +81,11 @@ LEFT JOIN paid_phones pp
   ON pp.phone = RIGHT(REGEXP_REPLACE(l.phone_no1,'[^0-9]',''),10)
   AND pp.wk = DATE_TRUNC('week', l.created_on_date)::date
 WHERE loc.city='Bangalore' AND l.created_on_date >= '{WEEKS[-1]}'
-GROUP BY 1,2,3,4,5 ORDER BY 1,2;
+GROUP BY 1,2,3,4,5,6 ORDER BY 1,2;
 """
 CATS = ["cat_call","cat_ed","cat_pe","cat_sti","cat_sh","cat_uncat"]
 TIERS = ["tier_captured","tier_resolved"]
+WEBS = ["web_clinic","web_page","web_untagged"]
 
 p = subprocess.run([sys.executable, os.path.join(ROOT,"scripts","redshift_query.py")],
                    input=SQL, capture_output=True, text=True)
@@ -87,19 +95,20 @@ if p.returncode != 0 or "ERROR" in (p.stderr or ""):
 clinics = {}
 for line in p.stdout.strip().splitlines():
     c = line.split("\t")
-    if len(c) < 6: continue
-    clinic, mon, bucket, cat, tier, n = c[0], c[1], c[2], c[3], c[4], int(float(c[5]))
+    if len(c) < 7: continue
+    clinic, mon, bucket, cat, tier, websub, n = c[0], c[1], c[2], c[3], c[4], c[5], int(float(c[6]))
     if mon not in idx or bucket not in BUCKETS: continue
-    o = clinics.setdefault(clinic, {**{b:[0]*NW for b in BUCKETS}, **{k:[0]*NW for k in CATS}, **{k:[0]*NW for k in TIERS}})
+    o = clinics.setdefault(clinic, {**{b:[0]*NW for b in BUCKETS}, **{k:[0]*NW for k in CATS}, **{k:[0]*NW for k in TIERS}, **{k:[0]*NW for k in WEBS}})
     o[bucket][idx[mon]] += n
     if cat in CATS: o[cat][idx[mon]] += n
     if tier in TIERS: o[tier][idx[mon]] += n
+    if websub in WEBS: o[websub][idx[mon]] += n
 
 # totals per clinic + city rollup (city = sum of clinics → reconciles by construction)
-city = {**{b:[0]*NW for b in BUCKETS}, **{k:[0]*NW for k in CATS}, **{k:[0]*NW for k in TIERS}}
+city = {**{b:[0]*NW for b in BUCKETS}, **{k:[0]*NW for k in CATS}, **{k:[0]*NW for k in TIERS}, **{k:[0]*NW for k in WEBS}}
 for clinic, o in clinics.items():
     o["total"] = [sum(o[b][i] for b in BUCKETS) for i in range(NW)]
-    for b in BUCKETS+CATS+TIERS:
+    for b in BUCKETS+CATS+TIERS+WEBS:
         for i in range(NW): city[b][i] += o[b][i]
 city["total"] = [sum(city[b][i] for b in BUCKETS) for i in range(NW)]
 
