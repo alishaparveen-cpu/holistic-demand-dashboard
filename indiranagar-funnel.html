@@ -144,6 +144,8 @@ function metrics(){
   // category — ONLY where attributable: calls (→ split STI/SH/MH by the call audit, shown in Relevant leads),
   // plus a small web sliver tagged by landing page / campaign. The rest has no category signal.
   const catCall=Bk('cat_call'), catEd=Bk('cat_ed'), catPe=Bk('cat_pe'), catSti=Bk('cat_sti'), catSh=Bk('cat_sh'), catUncat=Bk('cat_uncat');
+  // attribution timing: clinic known at capture vs only set at the booking
+  const tierCaptured=Bk('tier_captured'), tierResolved=Bk('tier_resolved');
   // Inbound CALLS split by the NUMBER dialed (call-audit, data_indiranagar_calls.json) — the only source that
   // can separate Google-paid calls (call-asset #) from organic GMB calls (clinic's own #). main_source_wise_leads can't.
   const ccA=k=>arr(i=>((cc[k]&&cc[k].total&&cc[k].total[i])||0));
@@ -177,7 +179,7 @@ function metrics(){
   return {impr,clicks,callLeads,relevant:callLeads,pr,leads,c2l_paid,c2l_gmb,
     gmbDirect,googlePaid,onsiteWeb,walkin,miscLead,
     gmbCallB,gmbWebB,paidCallB,paidWebB,webOrg,meta,otherB,
-    catCall,catEd,catPe,catSti,catSh,catUncat,
+    catCall,catEd,catPe,catSti,catSh,catUncat,tierCaptured,tierResolved,
     callGmb,callPaid,callOther,callsplit,
     gmbCall,tier1,poolWon,poolTot,poolElse,poolNo,
     booked,bookedWkLead:bwl,bookedPrior:bprior,done,purch,rev,
@@ -267,7 +269,10 @@ function buildStages(M){
       {label:'Web · PE',arr:M.catPe,fmt:N,info:'Web leads whose landing page (PE Page) or campaign names PE.'},
       {label:'Web · STI',arr:M.catSti,fmt:N,info:'Web leads whose campaign / page names STI/STD.'},
       {label:'Web · SH (sexual health)',arr:M.catSh,fmt:N,info:'Web leads whose campaign / page names sexual health.'},
-      {label:'Uncategorised (no category signal)',arr:M.catUncat,fmt:N,info:'GMB website, clinic page, walk-in, Meta, untagged organic — no landing-page/campaign category and not a call. Category genuinely unknown for these.'}]},
+      {label:'Uncategorised (no category signal)',arr:M.catUncat,fmt:N,info:'GMB website, clinic page, walk-in, Meta, untagged organic — no landing-page/campaign category and not a call. Category genuinely unknown for these.'},
+      {sep:1,label:'— Attribution timing — when the clinic was decided (re-cut of the same leads) —',info:'Every clinic lead is one of two: the clinic was known at CAPTURE (patient chose it up front — own GMB number/listing, clinic page, walk-in, Practo), or it was only RESOLVED AT BOOKING (came in city-level — Google paid, common-number call, online form — and Indiranagar was set when they booked). These two partition the leads total.'},
+      {label:'Captured at clinic (chose it up front)',arr:M.tierCaptured,fmt:N,info:'Clinic was explicit at lead capture (lead_location = clinic code / own number / clinic page / walk-in). The patient picked Indiranagar themselves.'},
+      {label:'Resolved at booking (clinic set when they booked)',arr:M.tierResolved,fmt:N,info:'Came in city-level with NO clinic chosen (Google paid, common-number call, online form), and Indiranagar was assigned when they booked (call_location). Same rule that makes paid & pool leads land here.'}]},
     {t:'stage',k:'callsplit',label:'Call VOLUME by number dialed — separate lens (raw calls, NOT leads)',color:'#9E8E5B',fmt:N,
       info:'⚠ DIFFERENT UNIT from the leads above — do NOT expect these to match. This is raw CALL COUNT (one person calling twice = 2 calls; non-converting calls included), AI-attributed to Indiranagar by caller intent — from the call-audit, a different system than the leads table. The leads stage counts unique BOOKING-attributed leads (and includes web). Use this lens only to see the paid-vs-organic CALL mix and trend: GMB organic (clinic’s own listing number 8047160881) vs Google paid (the city Google call-asset number 8045680561) vs other/shared-pool. The leads table can’t see the dialed number, which is why it tags every call "organic".',
       children:[
