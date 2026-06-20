@@ -156,7 +156,9 @@ function metrics(){
   const googlePaid=arr(i=>paidCallB[i]+paidWebB[i]);             // Google paid (call + web)
   const gmbGoog=arr(i=>gmbDirect[i]+googlePaid[i]);              // Google + GMB combined (the clicks-driven channels)
   const allOther=arr(i=>webOrg[i]+walkin[i]+meta[i]+otherB[i]);  // all non-Google/GMB/Practo channels combined
-  const pr=ch.practo;                                            // Practo (external sheet) — not in main_source_wise_leads
+  const pr=ch.practo;                                            // Practo LEADS (external sheet) — not in main_source_wise_leads
+  const pdoc2=(PD&&PD['Bangalore|Indiranagar'])||{};            // Practo per-doctor {leads,booked}
+  const prBooked=arr(i=>Object.values(pdoc2).reduce((s,a)=>s+((a&&Array.isArray(a.booked)&&a.booked[i])||0),0));  // subset who booked a consult
   const gmbCall=gmbCallB, onsiteWeb=webOrg;                      // aliases for downstream refs
   const miscLead=arr(i=>meta[i]+otherB[i]);
   // clinic leads = every unified bucket + Practo. call-mechanism subset = own-number + paid-tracking calls.
@@ -183,6 +185,7 @@ function metrics(){
   return {impr,clicks,callLeads,relevant:callLeads,pr,leads,c2l_paid,c2l_gmb,
     gmbDirect,googlePaid,onsiteWeb,walkin,miscLead,
     gmbCallB,gmbWebB,paidCallB,paidWebB,webOrg,webClinic,webPage,webUntagged,meta,otherB,gmbGoog,allOther,
+    prBooked,prConv:rate(prBooked,pr),
     catCall,catEd,catPe,catSti,catSh,catUncat,tierCaptured,tierResolved,c2l_comb,
     callGmb,callPaid,callOther,callsplit,
     gmbCall,tier1,poolWon,poolTot,poolElse,poolNo,
@@ -265,7 +268,9 @@ function buildStages(M){
         {label:'Click → lead · GMB',arr:M.c2l_gmb,fmt:PCT,info:'GMB leads ÷ GMB listing clicks. High-intent — these clickers already chose the clinic.'},
         {label:'Click → lead · Google paid',arr:M.c2l_paid,fmt:PCT,info:'Google-paid leads ÷ Google location-asset clicks. Low is expected — city-wide anonymous clicks vs the booking-resolved Indiranagar slice; many bounce or call instead.'}]},
       {sep:1,label:'— Other channels (no upstream clicks) —',info:'Organic web, walk-in, Meta, Practo, other — these have no Google/GMB click metric, so no click→lead ratio applies.'},
-      {label:'Practo (clinic + doctor)',arr:M.pr,fmt:N,kids:practoKids,info:'Indiranagar’s Practo clinic + doctor profiles — the marketplace channel. EXTERNAL: from the RD_Practo_Leads public sheet, not main_source_wise_leads, so it is added on top of the unified table. ⚠ Latest week often 0 (sheet fills with a lag).'},
+      {label:'Practo (clinic + doctor)',arr:M.pr,fmt:N,kids:practoKids,info:'Indiranagar’s Practo LEADS — every connection on the clinic + doctor Practo profiles (a patient who called OR booked via Practo — both are leads, both counted here). EXTERNAL: from the Practo connections sheet, not main_source_wise_leads, added on top of the unified table. The sheet does NOT record whether they came by call vs direct-book, so we can’t split entry mode — only lead vs converted (below). ⚠ Latest week often 0 (sheet fills with a lag).'},
+      {label:'· of which booked a consult',arr:M.prBooked,fmt:N,info:'SUBSET of the Practo leads above (not added on top) — those whose phone booked a Screening Call in our system (any time in the window). This is the lead→consult conversion, NOT a separate entry path.'},
+      {label:'· Practo lead → book %',arr:M.prConv,fmt:PCT,info:'Booked ÷ Practo leads (cohort, ≤100%). Recent weeks read low — those leads are still maturing (haven’t had time to book yet).'},
       {label:'All others · combined',arr:M.allOther,fmt:N,info:'Everything else with no upstream clicks and not Practo — organic web, walk-in, Meta, and misc. Listed individually below.'},
       {label:'· Other organic web',arr:M.webOrg,fmt:N,info:'Organic website leads attributed to Indiranagar that aren’t a GMB call/listing or walk-in (source=Organic). The organic-web catch-all — split below into what we can name vs the untagged majority. Click ▸.',kids:[
         {label:'· Clinic page (Indiranagar’s page)',arr:M.webClinic,fmt:N,info:'Landed on Indiranagar’s own clinic page on allohealth.com (organic_l2 = "Clinic Page") — clinic-level, the patient was on this clinic’s page.'},
