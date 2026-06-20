@@ -171,7 +171,10 @@ function metrics(){
   const purch  = cohort ? (B.total.purchased_wk_lead||B.total.purchased) : B.total.purchased;
   const rev    = cohort ? (B.total.rev_wk_lead||B.total.rev)    : B.total.rev;
   const rate=(a,b)=>arr(i=>b[i]?a[i]/b[i]*100:null);
-  return {impr,clicks,callLeads,relevant:callLeads,pr,leads,
+  // Click → lead by channel (best-effort cross-system ratio): only where a clicks number exists.
+  const gClkA=arr(i=>(R.google.clicks&&R.google.clicks[i])||0), mClkA=arr(i=>(R.gmb.clicks&&R.gmb.clicks[i])||0);
+  const c2l_paid=rate(googlePaid,gClkA), c2l_gmb=rate(gmbDirect,mClkA);
+  return {impr,clicks,callLeads,relevant:callLeads,pr,leads,c2l_paid,c2l_gmb,
     gmbDirect,googlePaid,onsiteWeb,walkin,miscLead,
     gmbCallB,gmbWebB,paidCallB,paidWebB,webOrg,meta,otherB,
     catCall,catEd,catPe,catSti,catSh,catUncat,
@@ -192,7 +195,7 @@ function snapshot(M,i){
   return '<div class="funnel">'
    +cell('Impressions',N(M.impr[i]),`Google <b>${N(M.gImpr[i])}</b> · GMB <b>${N(M.mImpr[i])}</b>`)
    +arrow(PCT(M.ctr[i]),'CTR')
-   +cell('Clicks',N(M.clicks[i]),`Google ${N(M.gClk[i])} · GMB ${N(M.mClk[i])}`)
+   +cell('Clicks',N(M.clicks[i]),`loc-asset ${N(M.gClk[i])} · GMB ${N(M.mClk[i])}`)
    +arrow(PCT(M.c2l[i]),'click→lead')
    +cell('Leads (total)',N(M.leads[i]),`GMB <b>${N(M.gmbDirect[i])}</b> · paid ${N(M.googlePaid[i])} · web ${N(M.webOrg[i])} · Practo ${N((M.pr&&M.pr[i])||0)}`)
    +arrow(PCT(M.l2b[i]),'lead→book')
@@ -227,18 +230,23 @@ function buildStages(M){
       .map(p=>({label:'· '+p.path,arr:p.weeks,fmt:N,
         info:'Exact entry path (channel: '+p.channel+'). Source: main_source_wise_leads organic_l2 / paid-campaign name. Placed by the week the lead was CREATED.'}));
   return [
-    {t:'stage',k:'impr',label:'Impressions',color:'#1F6F5C',fmt:N,children:[
-      ...GCATS.map(c=>({label:'Google · '+c,arr:gcat(c,'impr'),fmt:N})),
+    {t:'stage',k:'impr',label:'Impressions (Google location-asset + GMB)',color:'#1F6F5C',fmt:N,
+      info:'Google = impressions of the Indiranagar LOCATION ASSET (the clinic address shown in city-wide paid ads), by category. GMB = Business-Profile listing views. Anonymous aggregate counts — no per-user link to leads.',children:[
+      ...GCATS.map(c=>({label:'Google loc-asset · '+c,arr:gcat(c,'impr'),fmt:N})),
       {label:'GMB listing',arr:R.gmb.impr,fmt:N}]},
-    {t:'stage',k:'clicks',label:'Clicks',color:'#2E7D5B',fmt:N,children:[
-      ...GCATS.map(c=>({label:'Google · '+c,arr:gcat(c,'clicks'),fmt:N})),
+    {t:'stage',k:'clicks',label:'Clicks (Google location-asset + GMB listing)',color:'#2E7D5B',fmt:N,
+      info:'Google = clicks on the Indiranagar LOCATION ASSET in city-wide paid ads; GMB = listing actions. These are anonymous Google/GMB counts — we can’t follow an individual clicker to a lead. The "click → lead" below is a cross-system RATIO, not a traced path.',children:[
+      ...GCATS.map(c=>({label:'Google loc-asset · '+c,arr:gcat(c,'clicks'),fmt:N})),
       {label:'GMB listing',arr:R.gmb.clicks,fmt:N},
       {sep:1,label:'Click-through rate (clicks ÷ impressions)'},
       {label:'CTR — overall',arr:M.ctr,fmt:PCT},
       {label:'CTR · GMB listing (actions ÷ profile views)',arr:R.gmb.ctr,fmt:PCT},
       {label:'CTR · Google (paid)',arr:R.google.ctr,fmt:PCT,info:'Google paid CTR — broken down by category below (CTR is only available by category for Google, not GMB).'},
       ...GCATS.map(c=>({label:'    ↳ '+c,arr:mk(i=>gcat(c,'impr')[i]?gcat(c,'clicks')[i]/gcat(c,'impr')[i]*100:null),fmt:PCT}))]},
-    {t:'edge',k:'c2l',label:'Click → lead',formula:'leads ÷ clicks',fmt:PCT},
+    {t:'edge',k:'c2l',label:'Click → lead',formula:'leads ÷ clicks',fmt:PCT,
+      info:'BEST-EFFORT cross-system ratio — not a traced per-person path. Clicks are anonymous Google/GMB aggregate counts; leads come from the lead table. Computable only for the channels that have a clicks number (Google location-asset, GMB listing). Web/Meta/Practo/walk-in have no upstream clicks, so no ratio. Expect low Google paid ratios — most clicks bounce or convert by phone (a different system).',children:[
+      {label:'Google paid: leads ÷ location-asset clicks',arr:M.c2l_paid,fmt:PCT,info:'Indiranagar Google-paid LEADS ÷ Google location-asset CLICKS. Low is expected: clicks are city-wide & anonymous, leads are the booking-resolved Indiranagar slice; many clickers bounce or call instead.'},
+      {label:'GMB: leads ÷ listing clicks',arr:M.c2l_gmb,fmt:PCT,info:'Indiranagar GMB LEADS ÷ GMB listing CLICKS (Business-Profile actions).'}]},
     {t:'stage',k:'leads',label:'Clinic leads — attributed to Indiranagar (sums into Bangalore city)',color:'#3E6F8E',fmt:N,
       info:'Every lead whose resolved clinic (call_location) is Indiranagar — so this is the Indiranagar slice of the unified Bangalore table, and all 14 Bangalore clinics SUM to the city total by construction. Includes leads where the clinic was known at capture AND leads where it was resolved at booking. Broken by CHANNEL, and each channel split into its CALL vs WEB mechanism (click ▸). Source: main_source_wise_leads (clinic=call_location) + Practo (external sheet).',
       children:[
