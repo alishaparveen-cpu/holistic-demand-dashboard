@@ -28,9 +28,20 @@ idx = {w:i for i,w in enumerate(WEEKS)}; NW=len(WEEKS)
 BUCKETS = ["gmb_call","gmb_web","paid_call","paid_web","web_organic","walkin","meta","other"]
 
 SQL = f"""
+WITH paid_phones AS (  -- phones that dialed a GOOGLE PAID exotel number (call-asset), by IST week
+  SELECT DISTINCT RIGHT(REGEXP_REPLACE(e."from",'[^0-9]',''),10) AS phone,
+    DATE_TRUNC('week', e.start_time + INTERVAL '5 hours 30 minutes')::date AS wk
+  FROM allo_prod.allo_vendors.exotel_calls e
+  JOIN production.csv_uploads.yb_exotel_no_mapping_110226 m
+    ON RIGHT(REGEXP_REPLACE(m.exotel_no,'[^0-9]',''),10)=RIGHT(REGEXP_REPLACE(e.exotel_number,'[^0-9]',''),10)
+  WHERE m.exotel_source='Google' AND e.start_time >= '{WEEKS[-1]}'
+)
 SELECT l.call_location AS clinic,
   DATE_TRUNC('week', l.created_on_date)::date AS mon,
   CASE
+    -- a PC-Inbound call whose caller phone dialed a Google PAID number that week → Google paid CALL,
+    -- even if main_source_wise_leads tagged it Organic (it can't see the dialed number).
+    WHEN l.organic_l2='PC-Inbound' AND pp.phone IS NOT NULL       THEN 'paid_call'
     WHEN l.source='Google'  AND l.organic_l2='PC-Inbound'      THEN 'paid_call'
     WHEN l.source='Google'                                     THEN 'paid_web'
     WHEN l.source='Organic' AND l.organic_l2='PC-Inbound'      THEN 'gmb_call'
@@ -54,6 +65,9 @@ SELECT l.call_location AS clinic,
 FROM production.public.main_source_wise_leads l
 JOIN allo_prod.allo_health.locations loc
   ON loc.locality=l.call_location AND loc.deleted_at IS NULL AND loc.is_active=1
+LEFT JOIN paid_phones pp
+  ON pp.phone = RIGHT(REGEXP_REPLACE(l.phone_no1,'[^0-9]',''),10)
+  AND pp.wk = DATE_TRUNC('week', l.created_on_date)::date
 WHERE loc.city='Bangalore' AND l.created_on_date >= '{WEEKS[-1]}'
 GROUP BY 1,2,3,4 ORDER BY 1,2;
 """
