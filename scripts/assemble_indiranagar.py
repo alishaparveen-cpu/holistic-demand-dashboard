@@ -54,27 +54,28 @@ def main():
     lead = cf.get("lead", {}); bychan = lead.get("by_chan", {})
     Z = [0]*NW
     # bc: safe read from bychan — pads short arrays (12 wks) to NW with zeros
-    bc = lambda k: (list(bychan.get(k) or []) + Z)[:NW]
+    pz = lambda a: (list(a or []) + Z)[:NW]   # pad any array to NW
+    bc = lambda k: pz(bychan.get(k))
     leads = {
-        "total": lead.get("leads_total", Z),
+        "total": pz(lead.get("leads_total")),
         "by_chan": {
             "gmb":        bc("gmb"),
             "google_web": bc("google_ad"),
             "organic":    bc("organic"),
-            "practo":     [ (practo.get("leads", Z)[i] or 0) + bc("practo_crm")[i] for i in range(NW) ],
-            "practo_sheet": practo.get("leads", Z),
+            "practo":     [ (pz(practo.get("leads"))[i] or 0) + bc("practo_crm")[i] for i in range(NW) ],
+            "practo_sheet": pz(practo.get("leads")),
             "practo_crm": bc("practo_crm"),
             "outbound_wa": bc("outbound_wa"),
             "fb":         bc("fb"),
             "other":      [ bc("others")[i] + bc("justdial")[i] for i in range(NW) ],
         },
-        "gmb_call_volume": lead.get("gmb_organic_calls", Z),     # raw GMB phone-call volume (context)
+        "gmb_call_volume": pz(lead.get("gmb_organic_calls")),     # raw GMB phone-call volume (context)
         # raw = Exotel ground-truth for GMB number (total/unique/answered/missed); matches DND dashboard
         "raw": {k: (list(calls.get("raw", {}).get(k) or []) + Z)[:NW]
                 for k in ("total", "unique", "answered", "missed")},
         # gmb_ai = AI category on answered GMB calls
         "ai": {**(calls.get("gmb_ai") or calls.get("ai") or {"total":Z,"relevant":Z,"strong":Z,"by_cat":{}}),
-               "calls": (calls.get("gmb_ai") or calls.get("ai") or {}).get("total", Z),
+               "calls": pz((calls.get("gmb_ai") or calls.get("ai") or {}).get("total")),
                "available": any((calls.get("gmb_ai") or calls.get("ai") or {}).get("total", []))},
         # paid_ai = paid city-number calls where AI says caller mentioned Indiranagar
         "paid_ai": calls.get("paid_ai") or {"total":Z,"relevant":Z,"strong":Z,"by_cat":{}},
