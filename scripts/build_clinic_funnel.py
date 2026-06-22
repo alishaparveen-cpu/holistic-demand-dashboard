@@ -87,7 +87,7 @@ def main():
         directions = arr(g, "directions"); gmb_calls = arr(g, "calls"); website = arr(g, "website")
         bookings = wc["gross"]; done = wc["calls_done"]; no_show = wc["no_show"]; resched = wc["rescheduled"]
         catmix = {c: wc[c] for c in ["STI","ED+","PE+","ED+PE+","NSSD","oth"]}
-        leads_by = {ch: arr(ld, ch) for ch in ["gmb","google_ad","organic","fb","justdial","others"]}
+        leads_by = {ch: arr(ld, ch) for ch in ["gmb","google_ad","organic","fb","justdial","others","practo_crm","outbound_wa"]}
         leads_total = [sum(leads_by[ch][i] for ch in leads_by) for i in range(NW)]
         for i in range(NW):
             city_book.setdefault(city, Z())

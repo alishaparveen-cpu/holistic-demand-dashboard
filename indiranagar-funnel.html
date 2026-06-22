@@ -142,6 +142,10 @@ function metrics(){
   const paidCallB=Bk('paid_call'),paidWebB=Bk('paid_web');        // Google paid: ad-call vs landing page
   const webOrg=Bk('web_organic'), walkin=Bk('walkin'), meta=Bk('meta'), otherB=Bk('other');
   const webClinic=Bk('web_clinic'), webPage=Bk('web_page'), webUntagged=Bk('web_untagged');  // sub-split of webOrg
+  // Practo CRM: leads entering via retool/Practo app (utm_source=practo) — separate from external sheet
+  const practoCrm=Bk('practo_crm');
+  // Outbound WA: CRM re-engagement messages to existing leads — NOT new inbound demand, excluded from totals
+  const outboundWa=Bk('outbound_wa');
   // category — ONLY where attributable: calls (→ split STI/SH/MH by the call audit, shown in Relevant leads),
   // plus a small web sliver tagged by landing page / campaign. The rest has no category signal.
   const catCall=Bk('cat_call'), catEd=Bk('cat_ed'), catPe=Bk('cat_pe'), catSti=Bk('cat_sti'), catSh=Bk('cat_sh'), catUncat=Bk('cat_uncat');
@@ -152,16 +156,17 @@ function metrics(){
   const ccA=k=>arr(i=>((cc[k]&&cc[k].total&&cc[k].total[i])||0));
   const callGmb=ccA('gmb'), callPaid=ccA('paid'), callOther=ccA('other');
   const callsplit=arr(i=>callGmb[i]+callPaid[i]+callOther[i]);
-  const gmbDirect=arr(i=>gmbCallB[i]+gmbWebB[i]);                 // GMB organic (call + website)
+  const gmbDirect=arr(i=>gmbCallB[i]+gmbWebB[i]);                 // GMB organic (call + website + WhatsApp button)
   const googlePaid=arr(i=>paidCallB[i]+paidWebB[i]);             // Google paid (call + web)
   const gmbGoog=arr(i=>gmbDirect[i]+googlePaid[i]);              // Google + GMB combined (the clicks-driven channels)
-  const allOther=arr(i=>webOrg[i]+walkin[i]+meta[i]+otherB[i]);  // all non-Google/GMB/Practo channels combined
-  const pr=ch.practo;                                            // Practo LEADS (external sheet) — not in main_source_wise_leads
+  const allOther=arr(i=>webOrg[i]+walkin[i]+meta[i]+otherB[i]+practoCrm[i]);  // all non-Google/GMB channels
+  const pr=ch.practo;                                            // Practo LEADS (external sheet + CRM combined)
+  const prSheet=ch.practo_sheet||ch.practo;                     // external sheet only (for kids breakdown)
   const pdoc2=(PD&&PD['Bangalore|Indiranagar'])||{};            // Practo per-doctor {leads,booked}
   const prBooked=arr(i=>Object.values(pdoc2).reduce((s,a)=>s+((a&&Array.isArray(a.booked)&&a.booked[i])||0),0));  // subset who booked a consult
   const gmbCall=gmbCallB, onsiteWeb=webOrg;                      // aliases for downstream refs
   const miscLead=arr(i=>meta[i]+otherB[i]);
-  // clinic leads = every unified bucket + Practo. call-mechanism subset = own-number + paid-tracking calls.
+  // clinic leads = every unified bucket + Practo (sheet + CRM). outboundWa excluded (re-engagement, not new demand).
   const tier1=arr(i=>gmbDirect[i]+googlePaid[i]+webOrg[i]+walkin[i]+meta[i]+otherB[i]+(pr[i]||0));
   const leads=tier1;
   const callLeads=arr(i=>gmbCallB[i]+paidCallB[i]);
@@ -187,6 +192,7 @@ function metrics(){
   return {impr,clicks,callLeads,relevant:callCat,pr,leads,c2l_paid,c2l_gmb,
     gmbDirect,googlePaid,onsiteWeb,walkin,miscLead,
     gmbCallB,gmbWebB,paidCallB,paidWebB,webOrg,webClinic,webPage,webUntagged,meta,otherB,gmbGoog,allOther,
+    practoCrm,outboundWa,prSheet,
     prBooked,prConv:rate(prBooked,pr),
     catCall,catEd,catPe,catSti,catSh,catUncat,tierCaptured,tierResolved,c2l_comb,
     callGmb,callPaid,callOther,callsplit,
@@ -208,7 +214,7 @@ function snapshot(M,i){
    +arrow(PCT(M.ctr[i]),'CTR')
    +cell('Clicks',N(M.clicks[i]),`loc-asset ${N(M.gClk[i])} · GMB ${N(M.mClk[i])}`)
    +arrow(PCT(M.c2l[i]),'click→lead')
-   +cell('Leads (total)',N(M.leads[i]),`GMB <b>${N(M.gmbDirect[i])}</b> · paid ${N(M.googlePaid[i])} · web ${N(M.webOrg[i])} · Practo ${N((M.pr&&M.pr[i])||0)}`)
+   +cell('Leads (total)',N(M.leads[i]),`GMB <b>${N(M.gmbDirect[i])}</b> · paid ${N(M.googlePaid[i])} · web ${N(M.webOrg[i])} · Practo ${N((M.pr&&M.pr[i])||0)} · re-eng ${N(M.outboundWa[i])}✂`)
    +arrow(PCT(M.l2b[i]),'lead→book')
    +cell('Booked',N(M.booked[i]),'screening calls')
    +arrow(PCT(M.b2d[i]),'book→done')
@@ -270,15 +276,19 @@ function buildStages(M){
         {label:'Click → lead · GMB',arr:M.c2l_gmb,fmt:PCT,info:'GMB leads ÷ GMB listing clicks. High-intent — these clickers already chose the clinic.'},
         {label:'Click → lead · Google paid',arr:M.c2l_paid,fmt:PCT,info:'Google-paid leads ÷ Google location-asset clicks. Low is expected — city-wide anonymous clicks vs the booking-resolved Indiranagar slice; many bounce or call instead.'}]},
       {sep:1,label:'— Other channels (no upstream clicks) —',info:'Organic web, walk-in, Meta, Practo, other — these have no Google/GMB click metric, so no click→lead ratio applies.'},
-      {label:'Practo (clinic + doctor)',arr:M.pr,fmt:N,kids:practoKids,info:'Indiranagar’s Practo LEADS — every connection on the clinic + doctor Practo profiles (called OR booked via Practo — both are leads). ▶ HOW IT RESOLVES TO INDIRANAGAR: the Practo connections sheet has a Practice-Locality column = the clinic, and each doctor profile maps to a clinic — so the connection is tagged to Indiranagar AT capture (by the profile itself), independent of any booking. EXTERNAL source (Practo sheet, not main_source_wise_leads), added on top of the unified table. The sheet does NOT record call vs direct-book entry mode — only lead vs converted (below). ⚠ Latest week often 0 (sheet fills with a lag).'},
+      {label:'Practo (clinic + doctor + CRM)',arr:M.pr,fmt:N,kids:[
+        ...practoKids,
+        {label:'· Practo CRM (retool / app — newly traced)',arr:M.practoCrm,fmt:N,info:'Practo leads that entered the CRM as source=Others or source=Organic (no organic_l2) — now correctly identified via utm_source=practo on the lead record. Includes: (a) staff entering walk-in Practo patients via the retool offline dashboard (source=Others), and (b) leads created by the Practo app/Appointments page (source=Organic, organic_l2=NULL). Previously counted in "Other (untagged)" and "Untagged organic". ⚠ NOT in the Practo external sheet — these are CRM-side Practo entries, not Practo portal bookings.'}],
+        info:'Indiranagar’s Practo LEADS — external sheet (clinic + doctor profiles) PLUS CRM-side Practo entries now traced via UTM. ▶ External sheet: every connection on the clinic + doctor Practo profiles (Practo portal). ▶ CRM (practo_crm): leads where utm_source=practo on the lead record — staff retool entries and Practo app leads. Both are real Practo demand; they just enter through different pipes. ⚠ External sheet latest week often 0 (sheet fills with a lag).'},
+      {label:'Outbound WhatsApp re-engagement (excluded from demand)',arr:M.outboundWa,fmt:N,info:'CRM-initiated WhatsApp messages sent to existing/old leads who then re-engage (utm_medium=whatsapp, utm_campaign=outbound). These are NOT new inbound demand — they are follow-up messages to people already in the system. Previously miscounted in "Untagged organic". Shown here as context but EXCLUDED from the leads total above.'},
       {label:'All others · combined',arr:M.allOther,fmt:N,info:'Everything else with no upstream clicks and not Practo — organic web, walk-in, Meta, and misc. Click ▸ to expand the channels inside.',kids:[
         {label:'Other organic web',arr:M.webOrg,fmt:N,info:'Organic website leads (source=Organic) that aren’t a GMB call/listing or walk-in. ▶ HOW IT RESOLVES TO INDIRANAGAR: mixed — see the 3 sub-rows (click ▸): clinic page (known at capture) vs named page / untagged (clinic set at booking).',kids:[
           {label:'· Clinic page (Indiranagar’s page)',arr:M.webClinic,fmt:N,info:'Landed on Indiranagar’s own clinic page on allohealth.com (organic_l2 = "Clinic Page"). ▶ RESOLVES TO INDIRANAGAR: the clinic page is clinic-specific, so the clinic is known AT capture (the URL is this clinic).'},
           {label:'· Named condition/doctor page',arr:M.webPage,fmt:N,info:'A named page (ED / PE / Assessment / Treatment, or a doctor/sexologist page). ▶ RESOLVES TO INDIRANAGAR: these pages are city/topic-level (not a clinic), so the clinic is set at the BOOKING (call_location=Indiranagar).'},
-          {label:'· Untagged organic (page not recorded)',arr:M.webUntagged,fmt:N,info:'organic_l2 = "Unknown"/blank — entry page not recorded. ▶ RESOLVES TO INDIRANAGAR: there is NO clinic signal at capture, so the clinic is known ONLY because they booked at Indiranagar (call_location). SEO / direct / other organic. This is the bulk (~89%).'}]},
+          {label:'· Untagged organic (page not recorded)',arr:M.webUntagged,fmt:N,info:'organic_l2 = "Unknown"/blank — entry page not recorded. Remaining true unknowns after GMB→WhatsApp and Practo CRM leads have been reclassified to their correct channels. These have no UTM at all — likely direct traffic, SEO, or shared links without UTM params. ▶ RESOLVES TO INDIRANAGAR: clinic known only because they booked here (call_location).'}]},
         {label:'Walk-in',arr:M.walkin,fmt:N,info:'Patient walked into the clinic. ▶ RESOLVES TO INDIRANAGAR: they physically walked into the Indiranagar clinic and were registered on-site — clinic is the registration location (organic_l2=Walk In). Known at capture.'},
         {label:'Meta (Facebook / Instagram)',arr:M.meta,fmt:N,info:'Meta leads (source=Fb/Instagram). ▶ RESOLVES TO INDIRANAGAR: city/online campaigns with no clinic at capture, so the clinic is set at the booking (call_location=Indiranagar) — unless the lead carried Indiranagar’s clinic code, in which case it’s known at capture.'},
-        {label:'Other (untagged)',arr:M.otherB,fmt:N,info:'Leads with NO usable source tag — ~95% are source="Others" (the CRM’s opaque catch-all: offline referrals, repeat patients, partner/doctor referrals, front-desk manual entries), plus a tiny bit of Newspaper. We do NOT actually know how they came, so we call it untagged rather than guess. ▶ HOW IT RESOLVES TO INDIRANAGAR (verified): all 68 carry lead_location=BLR_80FT — Indiranagar’s clinic code stamped AT capture (registered at the clinic) — and all 68 booked at Indiranagar. So the CLINIC is 100% certain (it’s a real Indiranagar patient); only the SOURCE is missing. ⚠ NOT RECOVERABLE: 0 of 68 have any UTM/digital footprint (vs Fb 9/11) — no trail exists. Fix = source tagging at lead capture (a process change), not data recovery.'}]},
+        {label:'Other (untagged)',arr:M.otherB,fmt:N,info:'Remaining leads with no usable source tag after Practo CRM leads have been reclassified out — source=“Others”/Newspaper with no traceable UTM (offline referrals, repeat patients, partner/doctor referrals, front-desk manual entries with no digital trail). ▶ HOW IT RESOLVES TO INDIRANAGAR: lead_location=BLR_80FT (Indiranagar clinic code) stamped at capture — clinic is certain, only source is unknown. ⚠ NOT RECOVERABLE: no UTM, no digital footprint. Fix = source tagging at lead capture (a process change).'}]},
       ]},
     {t:'stage',k:'relevant',label:'Relevant calls by category (AI audit · call volume — does NOT reconcile)',color:'#9E8E5B',fmt:N,
       info:'⚠ READ THIS. WHAT IT IS: the AI call-audit listens to each inbound call, judges if it’s a real consultation enquiry ("relevant"), and tags the CATEGORY (STI / SH / MH / Other). This is the ONLY place category exists — the leads table has no condition. WHY IT WON’T RECONCILE with the leads/booked above: it’s a DIFFERENT unit from a DIFFERENT system — raw CALL COUNT, not leads (one person calling twice = 2; spam / wrong-number / repeat calls included), and attributed by what the AI heard (caller intent), not by the booking. So it does NOT tie out to the leads or booked numbers, and it’s not supposed to. Use it only to see WHAT callers ask about and the category mix/trend — never to count leads. Source: data_indiranagar_calls.json (~late-Apr onward).',

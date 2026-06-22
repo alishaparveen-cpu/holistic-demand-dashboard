@@ -52,15 +52,20 @@ def main():
     # ---- LEADS (clinic CRM by channel + AI audit categories) ----
     lead = cf.get("lead", {}); bychan = lead.get("by_chan", {})
     Z = [0]*NW
+    # bc: safe read from bychan — pads short arrays (12 wks) to NW with zeros
+    bc = lambda k: (list(bychan.get(k) or []) + Z)[:NW]
     leads = {
         "total": lead.get("leads_total", Z),
         "by_chan": {
-            "gmb":        bychan.get("gmb", Z),
-            "google_web": bychan.get("google_ad", Z),
-            "organic":    bychan.get("organic", Z),
-            "practo":     practo.get("leads", Z),
-            "fb":         bychan.get("fb", Z),
-            "other":      [ (bychan.get("others",Z)[i] or 0)+(bychan.get("justdial",Z)[i] or 0) for i in range(NW) ],
+            "gmb":        bc("gmb"),
+            "google_web": bc("google_ad"),
+            "organic":    bc("organic"),
+            "practo":     [ (practo.get("leads", Z)[i] or 0) + bc("practo_crm")[i] for i in range(NW) ],
+            "practo_sheet": practo.get("leads", Z),
+            "practo_crm": bc("practo_crm"),
+            "outbound_wa": bc("outbound_wa"),
+            "fb":         bc("fb"),
+            "other":      [ bc("others")[i] + bc("justdial")[i] for i in range(NW) ],
         },
         "gmb_call_volume": lead.get("gmb_organic_calls", Z),     # raw GMB phone-call volume (context)
         "ai": {**(calls.get("total") or {"total":Z,"relevant":Z,"strong":Z,"by_cat":{}}),

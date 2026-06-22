@@ -25,7 +25,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 WEEKS = ["2026-06-08","2026-06-01","2026-05-25","2026-05-18","2026-05-11","2026-05-04",
          "2026-04-27","2026-04-20","2026-04-13","2026-04-06","2026-03-30","2026-03-23"]
 idx = {w:i for i,w in enumerate(WEEKS)}; NW=len(WEEKS)
-BUCKETS = ["gmb_call","gmb_web","paid_call","paid_web","web_organic","walkin","meta","other"]
+BUCKETS = ["gmb_call","gmb_web","paid_call","paid_web","web_organic","walkin","meta","other","practo_crm","outbound_wa"]
 
 SQL = f"""
 WITH paid_phones AS (  -- phones that dialed a GOOGLE PAID exotel number (call-asset), by IST week
@@ -35,20 +35,43 @@ WITH paid_phones AS (  -- phones that dialed a GOOGLE PAID exotel number (call-a
   JOIN production.csv_uploads.yb_exotel_no_mapping_110226 m
     ON RIGHT(REGEXP_REPLACE(m.exotel_no,'[^0-9]',''),10)=RIGHT(REGEXP_REPLACE(e.exotel_number,'[^0-9]',''),10)
   WHERE m.exotel_source='Google' AND e.start_time >= '{WEEKS[-1]}'
+),
+lead_utm AS (
+  -- UTM tags from allo_persons.lead, matched per-phone per-week to fix MSW misclassifications.
+  -- Practo leads enter as source=Others (retool) or source=Organic/organic_l2=NULL (app), so MSW
+  -- can't classify them. GMB WhatsApp (gmb_wa campaign) has no organic_l2 in MSW.
+  SELECT
+    RIGHT(REGEXP_REPLACE(phone_no,'[^0-9]',''),10) AS phone10,
+    DATE_TRUNC('week', created_at + INTERVAL '5 hours 30 minutes')::date AS wk_mon,
+    MAX(utm_source)   AS utm_source,
+    MAX(utm_medium)   AS utm_medium,
+    MAX(utm_campaign) AS utm_campaign
+  FROM allo_persons.lead
+  WHERE created_at >= '{WEEKS[-1]}'
+  GROUP BY 1, 2
 )
 SELECT l.call_location AS clinic,
   DATE_TRUNC('week', l.created_on_date)::date AS mon,
   CASE
     -- a PC-Inbound call whose caller phone dialed a Google PAID number that week → Google paid CALL,
     -- even if main_source_wise_leads tagged it Organic (it can't see the dialed number).
-    WHEN l.organic_l2='PC-Inbound' AND pp.phone IS NOT NULL       THEN 'paid_call'
-    WHEN l.source='Google'  AND l.organic_l2='PC-Inbound'      THEN 'paid_call'
-    WHEN l.source='Google'                                     THEN 'paid_web'
-    WHEN l.source='Organic' AND l.organic_l2='PC-Inbound'      THEN 'gmb_call'
-    WHEN l.source='Organic' AND l.organic_l2='Google Listing'  THEN 'gmb_web'
-    WHEN l.organic_l2='Walk In'                                THEN 'walkin'
-    WHEN l.source='Organic'                                    THEN 'web_organic'
-    WHEN l.source IN ('Fb','Instagram')                        THEN 'meta'
+    WHEN l.organic_l2='PC-Inbound' AND pp.phone IS NOT NULL          THEN 'paid_call'
+    WHEN l.source='Google'  AND l.organic_l2='PC-Inbound'            THEN 'paid_call'
+    WHEN l.source='Google'                                            THEN 'paid_web'
+    WHEN l.source='Organic' AND l.organic_l2='PC-Inbound'            THEN 'gmb_call'
+    WHEN l.source='Organic' AND l.organic_l2='Google Listing'        THEN 'gmb_web'
+    -- GMB → WhatsApp: patient tapped the WhatsApp button on the Google listing (utm_source=gmb,
+    -- utm_medium=whatsapp). MSW sees source=Organic with no organic_l2 — fix to gmb_web.
+    WHEN l.source='Organic' AND lu.utm_source='gmb'
+         AND lu.utm_medium='whatsapp'                                 THEN 'gmb_web'
+    WHEN l.organic_l2='Walk In'                                       THEN 'walkin'
+    -- Practo CRM leads: staff enter via retool (source=Others) or Practo app creates lead
+    -- (source=Organic, organic_l2=NULL) — both have utm_source=practo in allo_persons.lead.
+    WHEN lu.utm_source='practo'                                       THEN 'practo_crm'
+    -- CRM outbound WhatsApp: re-engagement messages to existing leads, NOT new inbound demand.
+    WHEN lu.utm_medium='whatsapp' AND lu.utm_campaign='outbound'      THEN 'outbound_wa'
+    WHEN l.source='Organic'                                           THEN 'web_organic'
+    WHEN l.source IN ('Fb','Instagram')                               THEN 'meta'
     ELSE 'other'
   END AS bucket,
   -- category, ONLY where attributable: a call (→ categorised by the call-audit, data_indiranagar_calls.json),
@@ -80,6 +103,9 @@ JOIN allo_prod.allo_health.locations loc
 LEFT JOIN paid_phones pp
   ON pp.phone = RIGHT(REGEXP_REPLACE(l.phone_no1,'[^0-9]',''),10)
   AND pp.wk = DATE_TRUNC('week', l.created_on_date)::date
+LEFT JOIN lead_utm lu
+  ON lu.phone10 = RIGHT(REGEXP_REPLACE(l.phone_no1,'[^0-9]',''),10)
+  AND lu.wk_mon = DATE_TRUNC('week', l.created_on_date)::date
 WHERE loc.city='Bangalore' AND l.created_on_date >= '{WEEKS[-1]}'
 GROUP BY 1,2,3,4,5,6 ORDER BY 1,2;
 """
@@ -102,7 +128,7 @@ for line in p.stdout.strip().splitlines():
     o[bucket][idx[mon]] += n
     if cat in CATS: o[cat][idx[mon]] += n
     if tier in TIERS: o[tier][idx[mon]] += n
-    if websub in WEBS: o[websub][idx[mon]] += n
+    if bucket == 'web_organic' and websub in WEBS: o[websub][idx[mon]] += n
 
 # totals per clinic + city rollup (city = sum of clinics → reconciles by construction)
 city = {**{b:[0]*NW for b in BUCKETS}, **{k:[0]*NW for k in CATS}, **{k:[0]*NW for k in TIERS}, **{k:[0]*NW for k in WEBS}}
@@ -115,8 +141,10 @@ city["total"] = [sum(city[b][i] for b in BUCKETS) for i in range(NW)]
 out = {"_meta":{"weeks":WEEKS, "source":"production.public.main_source_wise_leads (clinic=call_location) × locations",
                 "buckets":BUCKETS,
                 "note":"clinic=call_location (resolved clinic). city=sum of clinics → reconciles. "
-                       "gmb_call/gmb_web=organic GBP · paid_call/paid_web=Google ads · web_organic=other organic web · "
-                       "walkin · meta=Fb · other=Newspaper/Youtube/Others/Unknown. Practo (external sheet) added in the funnel."},
+                       "gmb_call/gmb_web=organic GBP (incl. GMB→WhatsApp) · paid_call/paid_web=Google ads · "
+                       "web_organic=other organic web · walkin · meta=Fb · other=Newspaper/Youtube/Others/Unknown · "
+                       "practo_crm=Practo leads via retool/app (utm_source=practo) · outbound_wa=CRM WA re-engagement (excluded from demand). "
+                       "Practo external sheet added in the funnel separately."},
        "clinics":clinics, "city":city}
 json.dump(out, open(os.path.join(ROOT,"data_bangalore_attribution.json"),"w"), separators=(",",":"))
 

@@ -25,44 +25,64 @@ idx = {w: i for i, w in enumerate(WEEKS)}
 NW = len(WEEKS)
 
 SQL = """
+WITH lead_utm AS (
+  SELECT
+    RIGHT(REGEXP_REPLACE(phone_no,'[^0-9]',''),10) AS phone10,
+    DATE_TRUNC('week', created_at + INTERVAL '5 hours 30 minutes')::date AS wk_mon,
+    MAX(utm_source)   AS utm_source,
+    MAX(utm_medium)   AS utm_medium,
+    MAX(utm_campaign) AS utm_campaign
+  FROM allo_persons.lead
+  WHERE created_at >= '{start}'
+  GROUP BY 1, 2
+)
 SELECT
-  DATE_TRUNC('week', created_on_date)::date AS mon,
-  -- attribution bucket (matches data_indiranagar_attribution.json) --
+  DATE_TRUNC('week', msw.created_on_date)::date AS mon,
+  -- attribution bucket --
   CASE
-    WHEN organic_l2 = 'Walk In' THEN 'walkin'
-    -- GMB direct = ORGANIC channel only (own GBP). A Fb/Newspaper lead that merely
-    -- came via an inbound call is NOT GMB — it stays with its own channel below.
-    WHEN source = 'Organic' AND lead_location = 'BLR_80FT' AND organic_l2 IN ('PC-Inbound','Google Listing') THEN 'gmb_direct'
-    -- A Fb/Newspaper/YouTube inbound-call or listing lead is its OWN channel, not GMB and not on-site web.
-    WHEN source IN ('Fb','Newspaper','Youtube') AND organic_l2 IN ('PC-Inbound','Google Listing') THEN 'other'
-    -- Google PAID ads = its own line (pulled out of on-site web / online so paid is visible).
-    WHEN source = 'Google' THEN 'google_paid'
-    WHEN lead_location = 'BLR_80FT' OR organic_l2 = 'Clinic Page' THEN 'onsite_web'
-    WHEN lead_location = 'ONLINE' THEN 'online_booking'
-    WHEN lead_location IS NOT NULL AND lead_location NOT IN ('BLR_80FT','ONLINE') THEN 'misattrib'
+    WHEN msw.organic_l2 = 'Walk In' THEN 'walkin'
+    WHEN msw.source = 'Organic' AND msw.lead_location = 'BLR_80FT' AND msw.organic_l2 IN ('PC-Inbound','Google Listing') THEN 'gmb_direct'
+    -- GMB → WhatsApp: patient tapped WhatsApp button on GMB listing (utm=gmb/whatsapp)
+    WHEN msw.source = 'Organic' AND lu.utm_source='gmb' AND lu.utm_medium='whatsapp' THEN 'gmb_direct'
+    WHEN msw.source IN ('Fb','Newspaper','Youtube') AND msw.organic_l2 IN ('PC-Inbound','Google Listing') THEN 'other'
+    WHEN msw.source = 'Google' THEN 'google_paid'
+    -- Practo CRM leads: utm_source=practo in allo_persons.lead (retool entry or Practo app)
+    WHEN lu.utm_source = 'practo' THEN 'practo_crm'
+    -- CRM outbound WhatsApp re-engagement
+    WHEN lu.utm_medium = 'whatsapp' AND lu.utm_campaign = 'outbound' THEN 'outbound_wa'
+    WHEN msw.lead_location = 'BLR_80FT' OR msw.organic_l2 = 'Clinic Page' THEN 'onsite_web'
+    WHEN msw.lead_location = 'ONLINE' THEN 'online_booking'
+    WHEN msw.lead_location IS NOT NULL AND msw.lead_location NOT IN ('BLR_80FT','ONLINE') THEN 'misattrib'
     ELSE 'other'
   END AS bucket,
   -- EXACT entry path (how they actually came) --
   CASE
-    WHEN source = 'Google'    THEN 'Google paid · ' || COALESCE(NULLIF(google_campaign,''),'(unnamed campaign)')
-    WHEN source = 'Fb'        THEN 'Meta · '        || COALESCE(NULLIF(fb_campaign,''),'(unnamed campaign)')
-    WHEN source = 'Newspaper' THEN 'Newspaper'
-    WHEN source = 'Youtube'   THEN 'YouTube'
-    WHEN organic_l2 = 'PC-Inbound'     THEN 'Inbound call (clinic number)'
-    WHEN organic_l2 = 'Google Listing' THEN 'GMB listing → website (clicked profile link)'
-    WHEN organic_l2 = 'Walk In'        THEN 'Walk-in'
-    WHEN organic_l2 LIKE '%Page%'      THEN 'Landing — ' || organic_l2
-    WHEN organic_l2 = 'Doctor'         THEN 'Web — doctor page'
-    WHEN organic_l2 = 'Sexologist'     THEN 'Web — sexologist page'
-    WHEN source = 'Others'             THEN 'Others (opaque CRM tag)'
-    WHEN organic_l2 IN ('Unknown') OR organic_l2 IS NULL THEN 'Unknown / untagged'
-    ELSE COALESCE(organic_l2,'Other')
+    WHEN msw.source = 'Google'    THEN 'Google paid · ' || COALESCE(NULLIF(msw.google_campaign,''),'(unnamed campaign)')
+    WHEN msw.source = 'Fb'        THEN 'Meta · '        || COALESCE(NULLIF(msw.fb_campaign,''),'(unnamed campaign)')
+    WHEN msw.source = 'Newspaper' THEN 'Newspaper'
+    WHEN msw.source = 'Youtube'   THEN 'YouTube'
+    WHEN msw.organic_l2 = 'PC-Inbound'     THEN 'Inbound call (clinic number)'
+    WHEN msw.organic_l2 = 'Google Listing' THEN 'GMB listing → website (clicked profile link)'
+    WHEN lu.utm_source='gmb' AND lu.utm_medium='whatsapp' THEN 'GMB listing → WhatsApp (tapped chat button)'
+    WHEN lu.utm_source = 'practo' AND lu.utm_medium LIKE '%retool%' THEN 'Practo (staff entered via retool)'
+    WHEN lu.utm_source = 'practo' THEN 'Practo (app booking or Appointments page)'
+    WHEN lu.utm_medium = 'whatsapp' AND lu.utm_campaign = 'outbound' THEN 'CRM outbound WhatsApp (re-engagement)'
+    WHEN msw.organic_l2 = 'Walk In'        THEN 'Walk-in'
+    WHEN msw.organic_l2 LIKE '%Page%'      THEN 'Landing — ' || msw.organic_l2
+    WHEN msw.organic_l2 = 'Doctor'         THEN 'Web — doctor page'
+    WHEN msw.organic_l2 = 'Sexologist'     THEN 'Web — sexologist page'
+    WHEN msw.source = 'Others'             THEN 'Others (opaque CRM tag)'
+    WHEN msw.organic_l2 IN ('Unknown') OR msw.organic_l2 IS NULL THEN 'Unknown / untagged'
+    ELSE COALESCE(msw.organic_l2,'Other')
   END AS path,
-  source AS channel,
+  msw.source AS channel,
   COUNT(*) AS n
-FROM production.public.main_source_wise_leads
-WHERE (lead_location = 'BLR_80FT' OR call_location = 'Indiranagar')
-  AND created_on_date >= '{start}'
+FROM production.public.main_source_wise_leads msw
+LEFT JOIN lead_utm lu
+  ON lu.phone10 = RIGHT(REGEXP_REPLACE(msw.phone_no1,'[^0-9]',''),10)
+  AND lu.wk_mon = DATE_TRUNC('week', msw.created_on_date)::date
+WHERE (msw.lead_location = 'BLR_80FT' OR msw.call_location = 'Indiranagar')
+  AND msw.created_on_date >= '{start}'
 GROUP BY 1,2,3,4
 ORDER BY 1 DESC, 5 DESC;
 """.format(start=WEEKS[-1])
@@ -72,7 +92,7 @@ p = subprocess.run([sys.executable, os.path.join(ROOT, "scripts", "redshift_quer
 if p.returncode != 0 or "ERROR" in (p.stderr or ""):
     sys.stderr.write("query failed: " + (p.stderr or "")[:400] + "\n"); sys.exit(1)
 
-BUCKETS = ["gmb_direct", "google_paid", "onsite_web", "walkin", "online_booking", "misattrib", "other"]
+BUCKETS = ["gmb_direct", "google_paid", "onsite_web", "walkin", "online_booking", "practo_crm", "outbound_wa", "misattrib", "other"]
 # path key -> {bucket, channel, weeks[12]}
 paths = {}
 buck_tot = {b: [0]*NW for b in BUCKETS}
