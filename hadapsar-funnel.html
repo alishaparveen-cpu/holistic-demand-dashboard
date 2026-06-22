@@ -110,6 +110,7 @@ function metrics(){
   const R=D.reach,L=D.leads,B=D.bottom,NW=D._meta.weeks.length;
   const arr=f=>Array.from({length:NW},(_,i)=>f(i)||0);
   const g=R.gmb||{};
+  const gp=R.google||{}; const gcats=gp.by_cat||{};
   const rawCalls=L.raw||{};
   const ai=L.ai||{};
   const pAi=L.paid_ai||{};
@@ -127,6 +128,13 @@ function metrics(){
   const mCallsBtn=arr(i=>(g.calls&&g.calls[i])||0);
   const mWeb=arr(i=>(g.website&&g.website[i])||0);
   const mDir=arr(i=>(g.directions&&g.directions[i])||0);
+  const gImpr=arr(i=>(gp.impr&&gp.impr[i])||0);
+  const gClk=arr(i=>(gp.clicks&&gp.clicks[i])||0);
+  const gCtr=mk(i=>gImpr[i]?gClk[i]/gImpr[i]*100:null);
+  const gCatSH=arr(i=>((gcats.SH&&gcats.SH.impr&&gcats.SH.impr[i])||0));
+  const gCatSTI=arr(i=>((gcats.STI&&gcats.STI.impr&&gcats.STI.impr[i])||0));
+  const gCatMH=arr(i=>((gcats.MH&&gcats.MH.impr&&gcats.MH.impr[i])||0));
+  const gCatOther=arr(i=>((gcats.Other&&gcats.Other.impr&&gcats.Other.impr[i])||0));
   const leads=arr(i=>(L.total&&L.total[i])||0);
   const gmbLeads=arr(i=>(ch.gmb&&ch.gmb[i])||0);
   const paidLeads=arr(i=>(ch.google_web&&ch.google_web[i])||0);
@@ -143,25 +151,37 @@ function metrics(){
   const l2b=mk(i=>leads[i]?booked[i]/leads[i]*100:null);
   const b2d=mk(i=>booked[i]?done[i]/booked[i]*100:null);
   const d2p=mk(i=>done[i]?purch[i]/done[i]*100:null);
-  // SH = all of ED+/PE+/ED+PE+ combined; STI; MH (in 'Other' for bottom — no encounter tag); Other = oth
-  const shDone=bcat('SH','done');const stiDone=bcat('STI','done');const othDone=bcat('Other','done');
+  // Bottom funnel: SH/STI from encounter_tags; MH from ICD-11 diagnoses; Other = remainder
+  const shDone=bcat('SH','done');const stiDone=bcat('STI','done');
+  const mhDone=bcat('MH','done');const othDone=bcat('Other','done');
   const shBooked=bcat('SH','booked');const stiBooked=bcat('STI','booked');
   const shPurch=bcat('SH','purchased');const shRev=bcat('SH','rev');
   const stiPurch=bcat('STI','purchased');const stiRev=bcat('STI','rev');
+  const mhPurch=bcat('MH','purchased');const mhRev=bcat('MH','rev');
   return {
     mImpr,mClk,mCtr,mCallsBtn,mWeb,mDir,
+    gImpr,gClk,gCtr,gCatSH,gCatSTI,gCatMH,gCatOther,
     leads,gmbLeads,paidLeads,orgLeads,practoLeads,otherLeads,
     gmbRawTotal,gmbRawUnique,gmbRawAnswered,gmbRawMissed,
     gmbCatSTI,gmbCatSH,gmbCatMH,gmbCatOther,
     paidAiTotal,paidAiSH:pAiC('SH'),paidAiMH:pAiC('MH'),paidAiSTI:pAiC('STI'),paidAiOther:pAiC('Other'),
     booked,done,purch,rev,l2b,b2d,d2p,
-    shDone,stiDone,othDone,shBooked,stiBooked,shPurch,shRev,stiPurch,stiRev,
+    shDone,stiDone,mhDone,othDone,shBooked,stiBooked,shPurch,shRev,stiPurch,stiRev,mhPurch,mhRev,
   };
 }
 
 function buildStages(M){
   const aic=D.leads&&D.leads.ai&&D.leads.ai.by_cat||{};
   return [
+    {t:'stage',k:'gImpr',label:'Google paid · Hadapsar location asset impressions',color:'#2E5BA6',fmt:N,
+      info:'Impressions of the Hadapsar GBP location asset (ChIJxSuRryjDwjsRbkMT2TxHpvc) in Pune city-local Google Ads campaigns (T1_Pune_*). This is how many times Hadapsar appeared as a location extension in paid search ads. Category = campaign type — the MH column reveals how much paid MH ad spend is driving MH-seeker traffic to this clinic.',
+      children:[
+        {label:'SH impressions (paid)',arr:M.gCatSH,fmt:N,info:'Paid impressions from SH-category campaigns (T1_Pune_SH_*).'},
+        {label:'STI impressions (paid)',arr:M.gCatSTI,fmt:N},
+        {label:'MH impressions (paid)',arr:M.gCatMH,fmt:N,info:'Paid impressions from T1_Pune_MH_Exact_Local — the MH ad campaign running alongside the GMB listing change. This is a separate paid lever driving MH traffic to Hadapsar.'},
+        {label:'Other (Brand/misc)',arr:M.gCatOther,fmt:N},
+        {label:'Google paid CTR',arr:M.gCtr,fmt:PCT},
+      ]},
     {t:'stage',k:'mImpr',label:'GMB searches (impressions)',color:'#3E6F8E',fmt:N,
       info:'Number of times the Hadapsar Google Business Profile appeared in search results or Maps. UP after the MH change (week of 25 May) because the clinic now ranks for mental health searches. Higher searches ≠ more SH patients.',
       children:[
@@ -205,20 +225,23 @@ function buildStages(M){
       children:[
         {sep:1,label:'By category (diagnosis)'},
         {label:'Sexual health (SH = ED + PE + NSSD + combined)',arr:M.shDone,fmt:N,info:'ED+, PE+, ED+PE+, NSSD diagnoses collapsed into SH. NSSD (non-specific sexual dysfunction) is correctly categorised here as SH. Declining post-MH-change.'},
+        {label:'Mental health (MH)',arr:M.mhDone,fmt:N,info:'MH consultations — classified via ICD-11 diagnoses (chapters 6A–6E: mood, anxiety, personality, neurodevelopmental, substance use) in allo_observations.diagnoses, for appointments with no STI/SH encounter tag. Matches Ashwin\'s MH dashboard (Jun 15 wk: our 4 = his Pure MH 4). Rising post-MH-change: was 0 before May 25, now 4–6/week.'},
         {label:'STI',arr:M.stiDone,fmt:N},
-        {label:'Other (incl. MH)',arr:M.othDone,fmt:N,info:'Completed consults with no STI or SH diagnosis tag. Includes MH patients. ⚠ No MH encounter tag exists in encounter_tags — MH consultations cannot be separated out here; they appear as untagged (oth). Rising post-MH-change = MH patients consulting but untaggable.'},
+        {label:'Other (unclassified)',arr:M.othDone,fmt:N,info:'Consultations with no STI, SH, or MH diagnosis — truly unclassified. MH patients are now separated above.'},
       ]},
     {t:'edge',k:'b2d',label:'Book → done',formula:'done ÷ booked',fmt:PCT},
     {t:'stage',k:'purch',label:'Purchased',color:'#B8862E',fmt:N,
       children:[
         {label:'SH purchased',arr:M.shPurch,fmt:N},
         {label:'STI purchased',arr:M.stiPurch,fmt:N},
+        {label:'MH purchased',arr:M.mhPurch,fmt:N,info:'MH patients who purchased — expected near-zero as MH patients do not buy SH treatment packages.'},
       ]},
     {t:'edge',k:'d2p',label:'Done → purchased',formula:'purchased ÷ done',fmt:PCT},
     {t:'stage',k:'rev',label:'Revenue',color:'#1F6F5C',fmt:RUP,
       children:[
-        {label:'SH revenue',arr:M.shRev,fmt:RUP,info:'Revenue from SH (ED/PE/NSSD) consultations. MH consults have no encounter tag and land in Other.'},
+        {label:'SH revenue',arr:M.shRev,fmt:RUP,info:'Revenue from SH (ED/PE/NSSD) consultations. Primary revenue driver — declining post-MH-change as SH patients are displaced by non-purchasing MH patients.'},
         {label:'STI revenue',arr:M.stiRev,fmt:RUP},
+        {label:'MH revenue',arr:M.mhRev,fmt:RUP,info:'Revenue from MH-diagnosed consultations. Near-zero — confirms MH patients are not purchasing SH packages.'},
       ]},
   ];
 }
@@ -311,7 +334,7 @@ function render(){
     <b>🔵 MH GMB change · May 25 week.</b>
     After: GMB searches <b>+53%</b> (3,200+ vs 2,100 pre-change) but GMB unique calls <b>−25%</b> (24–27 vs 30–36/week).
     AI call audit: SH calls <b>dropped ~50%</b> (7–11/week, was 15–17); MH calls <b>appeared</b> (5–8/week, was 0).
-    SH done is declining (Jun 15: 7, Jun 8: 13, was 18–21). Total done roughly stable as "Other" done rose (MH patients).
+    SH done is declining (Jun 15: 7, Jun 8: 13, was 18–21). MH done appeared (Jun 15: 4, Jun 8: 6, was 0). Revenue dropped (Jun 15: ₹27k, Jun 8: ₹52k, was ₹50–70k) — MH patients don't buy SH packages.
     <span style="color:#7B5EA7">→ MH change is attracting MH seekers but repelling SH callers. Consider reverting if SH trend continues.</span>
   </div>`;
 
@@ -320,14 +343,14 @@ function render(){
   h+=matrix(M);
 
   h+=`<div class="note"><b>Sources.</b>
+    Google paid reach: Hadapsar location asset (place_id ChIJxSuRryjDwjsRbkMT2TxHpvc) impressions × T1_Pune city-local campaigns — via Google Ads API (Assets→Location). Category = campaign name.
     GMB reach: Google Business Profile insights (searches = impressions; clicks = call button + website + directions).
     Leads: CRM (Pune|Hadapsar) by channel; includes Practo external sheet + CRM entries.
     GMB calls: Exotel call logs for number 2241483789 (clinic-direct, DND-dashboard-confirmed: dashboard total = 2× Exotel total).
     AI category: allo_analytics.call_analyses — audits answered calls, gives STI / SH / MH / Other.
     Paid calls: shared Pune city number 2048556242, filtered to calls where AI says caller mentioned Hadapsar.
-    Booked/Done/Purchased/Revenue: Redshift (Screening Calls, Savali_Allo_Clinic, city=Pune locality=Hadapsar × encounter_tags × paid invoices).
-    <b>MH note:</b> encounter_tags has no MH diagnosis type, so MH consultations land in "Other (incl. MH)" on the done/revenue side.
-    The SH revenue drop is likely real: MH patients who do consult are not purchasing SH packages.
+    Booked/Done/Purchased/Revenue: Redshift (Screening Calls, Savali_Allo_Clinic × encounter_tags (STI/SH) × allo_observations.diagnoses (MH via ICD-11 6A–6E) × paid invoices).
+    <b>MH done</b> is now properly separated via clinical diagnoses (ICD-11 chapters 6A–6E) — matches Ashwin's MH dashboard. Pre-change (before May 25): MH done = 0; post-change: 4–6/week.
   </div>`;
 
   $('app').innerHTML=h;

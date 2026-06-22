@@ -2,7 +2,7 @@
 """Assemble Hadapsar clinic funnel → data_hadapsar.json (for hadapsar-funnel.html).
 
 Combines, for Pune|Hadapsar, weekly (Monday, newest-first, 13 weeks):
-  reach  — GMB (insights) — no separate Google paid geo data for Pune currently
+  reach  — Google paid (location-asset, clinic-level, by category) + GMB (insights) + combined
   leads  — clinic CRM leads by channel + GMB call volume + AI call-audit category split
   bottom — booked / done / purchased / revenue × diagnosis category (exact Redshift)
 Run: python3 scripts/assemble_hadapsar.py
@@ -20,7 +20,10 @@ def L(f):
 
 def ctr(impr, clicks): return [round(clicks[i]/impr[i]*100,1) if impr[i] else None for i in range(NW)]
 
+def add(a, b): return [(a[i] or 0)+(b[i] or 0) for i in range(NW)]
+
 def main():
+    geo    = L("data_hadapsar_google_geo.json")
     gmb    = (L("data_gmb_insights.json") or {}).get(K, {})
     cf     = (L("data_clinic_funnel.json") or {}).get("clinics", {}).get(K, {})
     bot    = L("data_hadapsar_bottom.json")
@@ -29,15 +32,29 @@ def main():
 
     Z = [0]*NW
     def pad(lst): return (list(lst or []) + Z)[:NW]
+
+    # Google paid (location asset)
+    def _fit(a): a=a or []; return [(a[i] if i<len(a) and a[i] is not None else 0) for i in range(NW)]
+    g_impr = _fit(geo.get("total",{}).get("impr")); g_clk = _fit(geo.get("total",{}).get("clicks"))
+    gcats  = geo.get("by_cat") or {}
+
+    # GMB
     gmb_impr = pad(gmb.get("searches"))
     gmb_calls_btn = pad(gmb.get("calls"))
     gmb_web  = pad(gmb.get("website"))
     gmb_dir  = pad(gmb.get("directions"))
     gmb_clk  = [(gmb_calls_btn[i] or 0)+(gmb_web[i] or 0)+(gmb_dir[i] or 0) for i in range(NW)]
 
+    comb_impr = add(g_impr, gmb_impr); comb_clk = add(g_clk, gmb_clk)
+
     reach = {
+        "google": {"impr": g_impr, "clicks": g_clk, "ctr": ctr(g_impr, g_clk),
+                   "by_cat": {ct: {"impr": gcats[ct]["impr"], "clicks": gcats[ct]["clicks"],
+                                   "ctr": gcats[ct]["ctr"]}
+                              for ct in gcats} if gcats else {}},
         "gmb": {"impr": gmb_impr, "clicks": gmb_clk, "ctr": ctr(gmb_impr, gmb_clk),
                 "calls": gmb_calls_btn, "website": gmb_web, "directions": gmb_dir},
+        "combined": {"impr": comb_impr, "clicks": comb_clk, "ctr": ctr(comb_impr, comb_clk)},
     }
 
     lead = cf.get("lead", {}); bychan = lead.get("by_chan", {})
@@ -68,15 +85,16 @@ def main():
 
     out = {"_meta": {"weeks": WEEKS, "clinic": K,
             "notes": {
+                "google_reach": "Google paid impr/clicks for the Hadapsar location asset (clinic-level), by campaign category. Filtered to T1_/T2_ city-local campaigns. MH category = T1_Pune_MH_Exact_Local campaign.",
                 "gmb": "GMB impr=searches, clicks=calls+website+directions. MH GMB change made ~May 25 2026.",
                 "leads": "CRM leads by channel. raw = Exotel ground-truth for GMB number 2241483789 (DND-matching, 2× ratio confirmed). gmb_ai = AI category on GMB calls. paid_ai = Pune city-number calls where AI says caller mentioned Hadapsar.",
-                "bottom": "booked/done/purchased/revenue by diagnosis. STI / SH (all ED·PE) / MH / Other. Hadapsar clinic = Savali_Allo_Clinic."}},
+                "bottom": "booked/done/purchased/revenue by diagnosis. STI / SH (ED·PE·NSSD) / MH (from ICD-11 diagnoses) / Other. Hadapsar clinic = Savali_Allo_Clinic."}},
            "reach": reach, "leads": leads, "bottom": bottom}
 
     json.dump(out, open(os.path.join(ROOT, "data_hadapsar.json"), "w"), separators=(",", ":"))
     t = bottom["total"]
     print("wrote data_hadapsar.json")
-    print(f"  reach latest: GMB {gmb_impr[0]}impr/{gmb_clk[0]}clk · CTR {reach['gmb']['ctr'][0]}%")
+    print(f"  reach latest: Google {g_impr[0]}impr/{g_clk[0]}clk · GMB {gmb_impr[0]}impr/{gmb_clk[0]}clk · combined CTR {reach['combined']['ctr'][0]}")
     print(f"  leads latest: total {leads['total'][0]} (gmb {leads['by_chan']['gmb'][0]} web {leads['by_chan']['google_web'][0]} org {leads['by_chan']['organic'][0]} practo {leads['by_chan']['practo'][0]})")
     if t: print(f"  bottom latest: booked {t.get('booked',[0])[0]} done {t.get('done',[0])[0]} purchased {t.get('purchased',[0])[0]} rev ₹{t.get('rev',[0])[0]:,}")
 
