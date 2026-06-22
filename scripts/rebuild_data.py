@@ -94,7 +94,7 @@ def build_section():
 
 
 def main():
-    today = date.today()  # 2026-05-27
+    today = date.today()  # 2026-06-03
 
     # Build list of the last NUM_WEEKS complete Mon–Sun weeks
     # Most recent complete week ends on the last Sunday before today

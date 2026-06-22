@@ -4,7 +4,7 @@ produced them: same-week (fresh), last-week (1-wk lag), older (2+ wks backlog). 
 arrays newest-first aligned to the diagnostic's 12 weeks. Run: python3 scripts/build_lead_age.py"""
 import os, sys, subprocess, json
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-WEEKS=["2026-06-08","2026-06-01","2026-05-25","2026-05-18","2026-05-11","2026-05-04","2026-04-27","2026-04-20","2026-04-13","2026-04-06","2026-03-30","2026-03-23"]
+WEEKS=["2026-06-15","2026-06-08","2026-06-01","2026-05-25","2026-05-18","2026-05-11","2026-05-04","2026-04-27","2026-04-20","2026-04-13","2026-04-06","2026-03-30"]
 idx = {w:i for i,w in enumerate(WEEKS)}
 sql = open(os.path.join(ROOT,"scripts","fetch_lead_age.sql")).read()
 p = subprocess.run([sys.executable, os.path.join(ROOT,"scripts","redshift_query.py")],

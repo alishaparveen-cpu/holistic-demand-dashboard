@@ -10,7 +10,7 @@ NOTE: Google Ads `metrics.cost_micros` is NET media cost. The marketing (L0) she
 reports GST-INCLUSIVE spend = net × 1.18 (verified: matches the sheet to the rupee
 for every overlapping week). build_efficiency_rs.py applies that ×1.18.
 
-Output: {"_meta":{...}, "weeks":["2026-06-08",...newest-first Mondays...], "net":[...]}
+Output: {"_meta":{...}, "weeks":["2026-06-15",...newest-first Mondays...], "net":[...]}
 Auth: GOOGLE_ADS_CLIENT_ID/SECRET/REFRESH_TOKEN/DEVELOPER_TOKEN in env (e.g. ~/.allo_google_ads.env).
 Run:  set -a; source ~/.allo_google_ads.env; set +a; python3 scripts/pull_ga_total_spend.py
 """
@@ -21,7 +21,7 @@ CUSTOMER_ID = "3190189170"; LOGIN_CUSTOMER_ID = "5098518843"
 API = "https://googleads.googleapis.com/v21"
 OUT = os.path.join(ROOT, "data_ga_total_spend.json")
 # pull a wide window (covers any 12-week efficiency window); builder picks what it needs
-START = "2026-03-01"
+START = "2026-03-08"
 END   = datetime.date.today().isoformat()
 
 def _token():

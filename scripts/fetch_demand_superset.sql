@@ -7,5 +7,5 @@ SELECT city, locality, TO_CHAR(week,'YYYY-MM-DD') AS wk_end, COALESCE(final_sour
   SUM(first_attempt_slots) AS a1, SUM(second_attempt_slots) AS a2,
   SUM(third_attempt_slots) AS a3, SUM(more_than_third_attempt_slots) AS a3plus
 FROM production.public.demand_data_week_superset
-WHERE week >= '2026-03-22' AND week <= '2026-06-14'
+WHERE week >= '2026-03-29' AND week <= '2026-06-21'
 GROUP BY 1,2,3,4 ORDER BY 1,2,3

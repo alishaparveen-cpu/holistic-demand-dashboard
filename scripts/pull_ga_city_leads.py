@@ -29,9 +29,9 @@ Run: AWS_PROFILE=redshift-data python3 scripts/pull_ga_city_leads.py
 import os, sys, json, subprocess
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RQ = os.path.join(ROOT, "scripts", "redshift_query.py")
-WEEKS = ["2026-06-08","2026-06-01","2026-05-25","2026-05-18","2026-05-11","2026-05-04",
-         "2026-04-27","2026-04-20","2026-04-13","2026-04-06","2026-03-30","2026-03-23"]  # Mon, newest-first
-START = "2026-03-23"
+WEEKS = ["2026-06-15","2026-06-08","2026-06-01","2026-05-25","2026-05-18","2026-05-11",
+         "2026-05-04","2026-04-27","2026-04-20","2026-04-13","2026-04-06","2026-03-30"]  # Mon, newest-first
+START = "2026-03-30"
 NORM = {'Bengaluru':'Bangalore','Hubballi':'Hubli','Hubli':'Hubli','Mysore':'Mysuru','Mangalore':'Mangaluru',
         'Vizag':'Visakhapatnam','Thane West':'Thane','Delhi NCR':'Delhi','MUMBAI':'Mumbai'}
 

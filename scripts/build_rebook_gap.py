@@ -6,7 +6,7 @@ Output: { "City|Clinic": { "new": {"d0":[12],"d1_6":[12],"d7_13":[12]}, "return"
 import json, os, subprocess, sys
 from collections import defaultdict
 HERE=os.path.dirname(__file__); RUN=os.path.join(HERE,'redshift_query.py'); ROOT=os.path.join(HERE,'..')
-WEEKS=["2026-06-08","2026-06-01","2026-05-25","2026-05-18","2026-05-11","2026-05-04","2026-04-27","2026-04-20","2026-04-13","2026-04-06","2026-03-30","2026-03-23"]
+WEEKS=["2026-06-15","2026-06-08","2026-06-01","2026-05-25","2026-05-18","2026-05-11","2026-05-04","2026-04-27","2026-04-20","2026-04-13","2026-04-06","2026-03-30"]
 WI={w:i for i,w in enumerate(WEEKS)}
 BUCKETS=["d0","d1_6","d7_13"]; SEGS=["new","return"]
 def num(x):

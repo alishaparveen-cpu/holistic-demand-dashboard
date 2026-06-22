@@ -6,20 +6,20 @@ WITH ld AS (
     TO_CHAR(DATE_TRUNC('week', created_at),'YYYY-MM-DD') AS wk
   FROM allo_persons.lead
   WHERE phone_no IS NOT NULL AND LEN(phone_no) >= 10
-    AND created_at >= '2026-03-16' AND created_at < '2026-06-15'
+    AND created_at >= '2026-03-23' AND created_at < '2026-06-22'
 ),
 calls AS (
   SELECT RIGHT(CASE WHEN direction='inbound' THEN "from" ELSE "to" END,10) AS ph,
     CASE WHEN direction='inbound' THEN 'in' ELSE 'out' END AS dir,
     DATE(start_time) AS cdate, LOWER(status) AS st
-  FROM allo_vendors.exotel_calls WHERE deleted_at IS NULL AND start_time >= '2026-03-16'
+  FROM allo_vendors.exotel_calls WHERE deleted_at IS NULL AND start_time >= '2026-03-23'
 ),
 bk AS (
   SELECT DISTINCT RIGHT(p.phone_no,10) AS ph, DATE(a.created_at) AS bdate
   FROM allo_consultations.appointments a
   JOIN allo_consultations.types t ON a.type_id=t.id AND t.name='Screening Call'
   JOIN allo_persons.patient p ON p.id=a.patient_id
-  WHERE a.deleted_at IS NULL AND a.created_at >= '2026-03-16' AND p.phone_no IS NOT NULL
+  WHERE a.deleted_at IS NULL AND a.created_at >= '2026-03-23' AND p.phone_no IS NOT NULL
 )
 SELECT ld.wk,
   COUNT(DISTINCT ld.ph) AS leads,

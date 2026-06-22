@@ -14,7 +14,7 @@ IMPR = ["BUSINESS_IMPRESSIONS_MOBILE_SEARCH","BUSINESS_IMPRESSIONS_DESKTOP_SEARC
         "BUSINESS_IMPRESSIONS_MOBILE_MAPS","BUSINESS_IMPRESSIONS_DESKTOP_MAPS"]
 INTER = ["CALL_CLICKS","WEBSITE_CLICKS","BUSINESS_DIRECTION_REQUESTS"]
 # 12 Monday-weeks, newest first (must match diagnostic WEEKS)
-WEEKS=["2026-06-08","2026-06-01","2026-05-25","2026-05-18","2026-05-11","2026-05-04","2026-04-27","2026-04-20","2026-04-13","2026-04-06","2026-03-30","2026-03-23"]
+WEEKS=["2026-06-15","2026-06-08","2026-06-01","2026-05-25","2026-05-18","2026-05-11","2026-05-04","2026-04-27","2026-04-20","2026-04-13","2026-04-06","2026-03-30"]
 # derive the GBP pull window from WEEKS so it never drifts out of sync on a window shift
 WK_START = datetime.date.fromisoformat(WEEKS[-1])                                  # oldest Monday
 WK_END   = datetime.date.fromisoformat(WEEKS[0]) + datetime.timedelta(days=6)      # newest week's Sunday (GBP lag means recent days may be empty)

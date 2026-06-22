@@ -41,6 +41,6 @@ SELECT f.city, f.locality,
   SUM(CASE WHEN f.epi_no = 1 AND f.ever_done = 1 THEN 1 ELSE 0 END)   AS done_new
 FROM first_row f
 LEFT JOIN allo_persons.providers pr ON pr.id = f.provider_id
-WHERE f.start_time >= '2026-03-16' AND f.start_time < '2026-06-15'
+WHERE f.start_time >= '2026-03-23' AND f.start_time < '2026-06-22'
   AND LOWER(COALESCE(f.locality,'')) <> 'online' AND f.locality IS NOT NULL
 GROUP BY 1,2,3,4 ORDER BY 1,2,3,4;

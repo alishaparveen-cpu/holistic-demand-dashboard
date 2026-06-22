@@ -15,7 +15,7 @@ Run: AWS_PROFILE=redshift-data python3 scripts/pull_google_paid_breakdown.py
 """
 import os, sys, subprocess, json, re
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-START = "2026-03-23"   # 12 weeks
+START = "2026-03-30"   # 12 weeks
 
 SQL = f"""
 WITH g AS (

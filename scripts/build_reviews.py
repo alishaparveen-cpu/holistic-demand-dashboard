@@ -8,15 +8,15 @@ Per "City|Clinic" (newest-first, 12 weeks):
   rating [12]  avg star rating that week, or None when no reviews
   neg    [12]  reviews with rating <= 3 that week
 
-NOTE: builder lost in a re-clone (only fetch_reviews.sql was committed); rebuilt 2026-06-15.
+NOTE: builder lost in a re-clone (only fetch_reviews.sql was committed); rebuilt 2026-06-22.
 Run:  AWS_PROFILE=redshift-data python3 scripts/build_reviews.py
 """
 import os, sys, subprocess, json
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RQ   = os.path.join(ROOT, "scripts", "redshift_query.py")
-WEEKS = ["2026-06-08","2026-06-01","2026-05-25","2026-05-18","2026-05-11","2026-05-04",
-         "2026-04-27","2026-04-20","2026-04-13","2026-04-06","2026-03-30","2026-03-23"]
+WEEKS = ["2026-06-15","2026-06-08","2026-06-01","2026-05-25","2026-05-18","2026-05-11",
+         "2026-05-04","2026-04-27","2026-04-20","2026-04-13","2026-04-06","2026-03-30"]
 idx = {w: i for i, w in enumerate(WEEKS)}
 NW = len(WEEKS)
 

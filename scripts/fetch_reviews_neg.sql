@@ -10,6 +10,6 @@ SELECT loc.city, loc.locality,
 FROM allo_health.external_reviews er
 JOIN allo_health.locations loc ON loc.id = er.reviewed_for_id AND loc.deleted_at IS NULL
 WHERE er.deleted_at IS NULL AND LOWER(er.platform) IN ('google','gmb')
-  AND er.rating <= 3 AND er.review_date >= '2026-04-13'
+  AND er.rating <= 3 AND er.review_date >= '2026-04-20'
   AND loc.locality IS NOT NULL AND LOWER(loc.locality) <> 'online'
 ORDER BY er.review_date DESC

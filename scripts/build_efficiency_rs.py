@@ -26,7 +26,7 @@ def main():
     # ── leads + booked by channel & week (Monday-start) ──
     rows = rs(f"""SELECT TO_CHAR(DATE(week)::date-6,'YYYY-MM-DD') wk, {CH_CASE} ch,
       COUNT(*) leads, COUNT(call_booking_ts) booked
-      FROM production.public.main_source_wise_leads WHERE week>='2026-03-16' GROUP BY 1,2;""")
+      FROM production.public.main_source_wise_leads WHERE week>='2026-03-23' GROUP BY 1,2;""")
     weeks = sorted({r[0] for r in rows})                       # oldest-first (Mondays)
     _today = datetime.date.today()                              # keep only FULLY-COMPLETE weeks (week-ending Sunday already past)
     weeks = [w for w in weeks if datetime.date.fromisoformat(w)+datetime.timedelta(days=6) < _today]  # dynamic — never goes stale like the old hardcoded cutoff
@@ -87,7 +87,7 @@ def main():
         FROM allo_consultations.appointments a
         JOIN allo_consultations.types typ ON typ.id=a.type_id AND typ.name='Screening Call'
         LEFT JOIN loc_dedup loc ON loc.id=a.location_id
-        WHERE a.start_time>='2026-03-09' AND a.start_time<'2026-06-15'
+        WHERE a.start_time>='2026-03-16' AND a.start_time<'2026-06-22'
           AND a.deleted_at IS NULL AND a.status='COMPLETED'),
       inv AS (
         SELECT e.appointment_id ap_id, i.amount amt

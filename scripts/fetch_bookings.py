@@ -22,7 +22,7 @@ The allo_health.locations JOIN is now a LEFT JOIN using a deduplicated CTE
 (one row per location_id) to prevent the fan-out that was seen when the
 locations table had multiple rows for the same physical location.
 
-─── Verified against L0 sheet (2026-06-01) ──────────────────────────────────
+─── Verified against L0 sheet (2026-06-08) ──────────────────────────────────
 
 After applying these fixes, the expected outputs from rebuild_data.py should
 match the L0 sheet within ±1% for:

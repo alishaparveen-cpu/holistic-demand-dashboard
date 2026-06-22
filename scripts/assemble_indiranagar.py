@@ -34,10 +34,11 @@ def main():
     calls = L("data_indiranagar_calls.json")   # AI call audit: clinic-attributed calls by channel × category
 
     # ---- REACH ----
-    g_impr = geo.get("total",{}).get("impr",[0]*NW); g_clk = geo.get("total",{}).get("clicks",[0]*NW)
-    gmb_impr = gmb.get("searches",[0]*NW)
-    gmb_calls = gmb.get("calls",[0]*NW); gmb_web = gmb.get("website",[0]*NW); gmb_dir = gmb.get("directions",[0]*NW)
-    gmb_clk = [ (gmb_calls[i] or 0)+(gmb_web[i] or 0)+(gmb_dir[i] or 0) for i in range(NW) ]
+    def _fit(a): a=a or []; return [ (a[i] if i<len(a) and a[i] is not None else 0) for i in range(NW) ]
+    g_impr = _fit(geo.get("total",{}).get("impr")); g_clk = _fit(geo.get("total",{}).get("clicks"))
+    gmb_impr = _fit(gmb.get("searches"))
+    gmb_calls = _fit(gmb.get("calls")); gmb_web = _fit(gmb.get("website")); gmb_dir = _fit(gmb.get("directions"))
+    gmb_clk = [ gmb_calls[i]+gmb_web[i]+gmb_dir[i] for i in range(NW) ]
     comb_impr = add(g_impr, gmb_impr); comb_clk = add(g_clk, gmb_clk)
     gcats = (geo.get("by_cat") or {})
     reach = {

@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """Build data_reviews_neg.json (recent NEGATIVE Google reviews per clinic, with text) live from the
 Google Business Profile reviews API — replaces the warehouse external_reviews ETL that stopped on
-2026-05-06. Auth: GBP_CLIENT_ID/SECRET/REFRESH_TOKEN in env (business.manage scope).
+2026-05-13. Auth: GBP_CLIENT_ID/SECRET/REFRESH_TOKEN in env (business.manage scope).
 Negatives = rating <= 3, review_date >= CUTOFF (~last 8 weeks)."""
 import os, sys, json, re, datetime, urllib.parse, urllib.request
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ACCOUNT = "104278284314268556784"            # PERSONAL account holding the clinic locations
-CUTOFF = "2026-04-06"                          # ~last 8 weeks
+CUTOFF = "2026-04-13"                          # ~last 8 weeks
 STAR = {"ONE":1,"TWO":2,"THREE":3,"FOUR":4,"FIVE":5}
 
 def token():
@@ -54,7 +54,7 @@ def main():
     diag = json.load(open(os.path.join(ROOT,"data_diagnostic.json")))
     loc_by = { k.split("|")[1].strip().lower(): k for k in diag if k!="_meta" }
     D = {"_meta":{"source":"Google Business Profile reviews API (live) · rating<=3 · since "+CUTOFF,
-                  "note":"Replaces warehouse external_reviews ETL (stopped 2026-05-06)."}}
+                  "note":"Replaces warehouse external_reviews ETL (stopped 2026-05-13)."}}
     nrev = 0
     for L in list_locations(at):
         m = re.search(r"Allo Health,?\s*([^-–|]+)", L.get("title",""))

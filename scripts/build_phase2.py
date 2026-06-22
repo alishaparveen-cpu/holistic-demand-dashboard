@@ -8,7 +8,7 @@ Run: python3 scripts/build_phase2.py   (AWS SSO; cluster 'warehouse')"""
 import os, sys, subprocess, json
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RUNNER = os.path.join(ROOT,"scripts","redshift_query.py")
-WEEKS=["2026-06-08","2026-06-01","2026-05-25","2026-05-18","2026-05-11","2026-05-04","2026-04-27","2026-04-20","2026-04-13","2026-04-06","2026-03-30","2026-03-23"]
+WEEKS=["2026-06-15","2026-06-08","2026-06-01","2026-05-25","2026-05-18","2026-05-11","2026-05-04","2026-04-27","2026-04-20","2026-04-13","2026-04-06","2026-03-30"]
 WI = {w:i for i,w in enumerate(WEEKS)}
 
 def q(f):
@@ -57,7 +57,7 @@ def build_sarvam():
             cc[ddwi if ddwi in cc else "other"] = cc.get(ddwi if ddwi in cc else "other",0)+n
     out = {"_meta":{"source":"allo_analytics.call_analyses (Sarvam analysis SUPER)",
         "note":"Recent ~2-week network snapshot of analyzed INBOUND calls. Not per-clinic-week; call->appointment link is sparse. did_we_do_it = agent accomplished the booking goal.",
-        "window":"created_at >= 2026-05-25"},
+        "window":"created_at >= 2026-06-01"},
         "network":net, "by_city":bycity}
     json.dump(out, open(os.path.join(ROOT,"data_sarvam.json"),"w"), separators=(",",":"))
     d=net["ddwi"]; tot=net["total"] or 1
@@ -73,7 +73,7 @@ def build_conversion():
         if wk not in WI: continue
         o = D.setdefault(f"{city}|{clinic}", {f:[0]*12 for f in FIELDS})
         o["completed_sc"][WI[wk]] = num(c[3]); o["converted"][WI[wk]] = num(c[4])
-    # right-censoring: weeks whose 30-day window hasn't fully elapsed as of the data date (2026-06-06)
+    # right-censoring: weeks whose 30-day window hasn't fully elapsed as of the data date (2026-06-13)
     # weeks[0..3] (May 25, 18, 11, 04) are within 30 days of 06-06 -> partially censored
     out = {"_meta":{"weeks":WEEKS,
         "source":"allo_consultations.appointments — completed Screening Call -> Follow Up/Therapy within 30 days",
@@ -95,7 +95,7 @@ def build_doctor():
         for j,f in enumerate(FIELDS): o[f][WI[wk]] = num(c[4+j])
     out = {"_meta":{"weeks":WEEKS,
         "source":"allo_consultations.roster_slots + appointments, per provider (allo_persons.providers.name)",
-        "note":"per clinic/doctor weekly: sched/shrunk/avail slots + total/done/missed SC appointments. Roster from 2026-04-13."}}
+        "note":"per clinic/doctor weekly: sched/shrunk/avail slots + total/done/missed SC appointments. Roster from 2026-04-20."}}
     out.update(D)
     json.dump(out, open(os.path.join(ROOT,"data_doctor.json"),"w"), separators=(",",":"))
     nd=sum(len(v) for v in D.values())
@@ -195,7 +195,7 @@ def build_l2c():
     by_city=[{"city":c[0],"leads":num(c[1]),"reached":num(c[2]),"connected":num(c[3]),"booked":num(c[4])}
              for c in q("fetch_l2c_city.sql") if len(c)>=5]
     tat={c[0]:num(c[1]) for c in q("fetch_l2c_tat.sql") if len(c)>=2}
-    out={"_meta":{"weeks":WEEKS,"scope":"network","window4":"2026-04-27..2026-05-25",
+    out={"_meta":{"weeks":WEEKS,"scope":"network","window4":"2026-05-04..2026-06-01",
         "source":"allo_persons.lead + exotel_calls (in & out) + Screening Call appts",
         "note":"reached/connected within 14d (in=lead called us, out=team dialled). booked=phone matched SC within 14d. by_city is a ~9% subset (most leads lack city). by_source over last 4 wks."},
         "net":net, "by_source":by_source, "by_city":by_city, "tat":tat}
@@ -209,7 +209,7 @@ def build_daily():
         if len(c) < 7: continue
         D.setdefault(f"{c[0]}|{c[1]}", {})[c[2]] = [num(c[3]),num(c[4]),num(c[5]),num(c[6])]
     import datetime as _dt
-    out={"_meta":{"as_of":"2026-06-06","fields":["total","new","done","missed"],
+    out={"_meta":{"as_of":"2026-06-13","fields":["total","new","done","missed"],
         "source":"allo_consultations.appointments daily (Screening Call) — WTD vs same-range-last-week"}}
     out.update(D)
     json.dump(out, open(os.path.join(ROOT,"data_daily.json"),"w"), separators=(",",":"))

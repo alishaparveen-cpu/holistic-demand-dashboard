@@ -56,7 +56,7 @@ j AS (
   FROM ranked s
   LEFT JOIN allo_persons.patient p ON s.patient_id=p.id
   LEFT JOIN allo_persons.lead l ON p.lead_id=l.id
-  WHERE s.start_time >= '2026-03-16' AND s.start_time < '2026-06-15'
+  WHERE s.start_time >= '2026-03-23' AND s.start_time < '2026-06-22'
     AND LOWER(COALESCE(s.locality,'')) <> 'online' AND s.locality IS NOT NULL
 )
 SELECT city, clinic, wk, channel, agegrp, seg, outcome, COUNT(*) AS c

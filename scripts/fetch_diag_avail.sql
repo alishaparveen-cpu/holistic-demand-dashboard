@@ -15,7 +15,7 @@ WITH slots AS (
     ON ab.provider_id=rs.provider_id AND ab.is_bookable=false AND ab.deleted_at IS NULL
    AND ab.start_time < rs.end_time AND ab.end_time > rs.start_time
   WHERE rs.type_id='cd02525c-1528-4047-a12c-1ad526c28c9a' AND rs.available_for_booking=1
-    AND rs.start_time >= '2026-03-16' AND rs.start_time < '2026-06-15'
+    AND rs.start_time >= '2026-03-23' AND rs.start_time < '2026-06-22'
     AND LOWER(COALESCE(loc.locality,''))<>'online' AND loc.locality IS NOT NULL
   GROUP BY 1,2,3,4,5,6, rs.start_time
 ),

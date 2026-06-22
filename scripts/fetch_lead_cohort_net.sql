@@ -19,5 +19,5 @@ SELECT
   SUM(CASE WHEN l.organic_l2='PC-Inbound' THEN 1 ELSE 0 END) AS inb_leads,
   SUM(CASE WHEN l.organic_l2='PC-Inbound' AND l.call_booking_ts IS NOT NULL THEN 1 ELSE 0 END) AS inb_booked
 FROM production.public.main_source_wise_leads l
-WHERE l.created_on >= '2026-03-16' AND l.created_on < '2026-06-15'
+WHERE l.created_on >= '2026-03-23' AND l.created_on < '2026-06-22'
 GROUP BY 1,2 ORDER BY 1,2

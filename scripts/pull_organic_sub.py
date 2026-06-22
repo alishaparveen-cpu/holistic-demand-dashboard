@@ -10,8 +10,8 @@ Run: AWS_PROFILE=redshift-data python3 scripts/pull_organic_sub.py
 import os, sys, json, subprocess
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RQ = os.path.join(ROOT, "scripts", "redshift_query.py")
-WEEKS = ["2026-06-08","2026-06-01","2026-05-25","2026-05-18","2026-05-11","2026-05-04",
-         "2026-04-27","2026-04-20","2026-04-13","2026-04-06","2026-03-30","2026-03-23"]  # Mon, newest-first
+WEEKS = ["2026-06-15","2026-06-08","2026-06-01","2026-05-25","2026-05-18","2026-05-11",
+         "2026-05-04","2026-04-27","2026-04-20","2026-04-13","2026-04-06","2026-03-30"]  # Mon, newest-first
 BUCKETS = ["WhatsApp","PC-Inbound","GMB/Listing","High-intent","Other"]
 
 SQL = """
@@ -25,7 +25,7 @@ SELECT TO_CHAR(DATE(leads.created_on_date)::date - (EXTRACT(dow FROM leads.creat
   COUNT(*) AS leads, COUNT(leads.call_booking_ts) AS booked
 FROM production.public.main_source_wise_leads leads
 LEFT JOIN allo_prod.allo_persons.lead ldr ON SUBSTRING(ldr.phone_no,4,10) = leads.phone_no1
-WHERE leads.source='Organic' AND leads.created_on_date >= '2026-03-23'
+WHERE leads.source='Organic' AND leads.created_on_date >= '2026-03-30'
 GROUP BY 1,2 ORDER BY 1,2;
 """
 

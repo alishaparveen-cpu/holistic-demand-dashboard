@@ -10,15 +10,15 @@ Runs the four roster SQL pulls and assembles them into one file, keyed "City|Cli
   shr    {sched,shrunk,avail} [12] each — scheduled vs blocked vs bookable slots (roster_shrinkage.sql)
 _meta.weeks is newest-first; _meta.hod_hours = [9..21].
 
-NOTE: this builder was lost in a re-clone (only the .sql files were committed) and rebuilt 2026-06-15.
+NOTE: this builder was lost in a re-clone (only the .sql files were committed) and rebuilt 2026-06-22.
 Run:  AWS_PROFILE=redshift-data python3 scripts/build_roster.py
 """
 import os, sys, subprocess, json
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RQ   = os.path.join(ROOT, "scripts", "redshift_query.py")
-WEEKS = ["2026-06-08","2026-06-01","2026-05-25","2026-05-18","2026-05-11","2026-05-04",
-         "2026-04-27","2026-04-20","2026-04-13","2026-04-06","2026-03-30","2026-03-23"]
+WEEKS = ["2026-06-15","2026-06-08","2026-06-01","2026-05-25","2026-05-18","2026-05-11",
+         "2026-05-04","2026-04-27","2026-04-20","2026-04-13","2026-04-06","2026-03-30"]
 idx = {w: i for i, w in enumerate(WEEKS)}
 NW = len(WEEKS)
 HOD_HOURS = list(range(9, 22))                    # 9..21 → 13 buckets

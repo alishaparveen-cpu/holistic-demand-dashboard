@@ -8,7 +8,7 @@ WITH sc AS (
   JOIN allo_consultations.types t ON a.type_id=t.id AND t.name='Screening Call'
   JOIN allo_health.locations loc ON a.location_id=loc.id AND loc.deleted_at IS NULL
   WHERE a.deleted_at IS NULL
-    AND a.start_time >= '2026-04-13' AND a.start_time < '2026-06-15'
+    AND a.start_time >= '2026-04-20' AND a.start_time < '2026-06-22'
     AND LOWER(COALESCE(loc.locality,'')) <> 'online' AND loc.locality IS NOT NULL
 )
 SELECT

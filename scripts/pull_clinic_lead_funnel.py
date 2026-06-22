@@ -18,8 +18,8 @@ import os, sys, subprocess, json
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RQ = os.path.join(ROOT, "scripts", "redshift_query.py")
-WEEKS = ["2026-06-08","2026-06-01","2026-05-25","2026-05-18","2026-05-11","2026-05-04",
-         "2026-04-27","2026-04-20","2026-04-13","2026-04-06","2026-03-30","2026-03-23","2026-03-16"]
+WEEKS = ["2026-06-15","2026-06-08","2026-06-01","2026-05-25","2026-05-18","2026-05-11",
+         "2026-05-04","2026-04-27","2026-04-20","2026-04-13","2026-04-06","2026-03-30","2026-03-23"]
 idx = {w: i for i, w in enumerate(WEEKS)}; NW = len(WEEKS)
 CATS = ["STI", "SEXUAL_HEALTH_GENERAL", "MENTAL_HEALTH", "OTHER", "NOT_MENTIONED"]
 RELEVANT_INTENT = ("TALK_TO_DOCTOR", "NEEDS_TESTS", "BOOK_APPOINTMENT", "BOOK_TEST", "BOOK_SLOT")
@@ -36,7 +36,7 @@ FROM allo_analytics.call_analyses ca
 JOIN allo_vendors.exotel_calls ec ON ec.call_id = ca.call_id AND ec.routed_to='lead_to_call'
 WHERE ca.deleted_at IS NULL
   AND ca.analysis.user_intent.locality_mentioned.is_our_locality = true
-  AND (ec.start_time + INTERVAL '5 hours 30 minutes') >= '2026-03-16'
+  AND (ec.start_time + INTERVAL '5 hours 30 minutes') >= '2026-03-23'
 GROUP BY 1,2,3,4,5,6 ORDER BY 1,2,3;"""
 
 # locality (audit) → clinic locality (dashboard key) where the AI name differs from our clinic key
@@ -73,7 +73,7 @@ def main():
                      "fields": "lead_calls=inbound lead calls placed at this clinic by the AI locality; relevant=service-intent; strong=STRONG intent; by_cat=diagnosis category (level-2 layer)"}}
     out.update(D)
     json.dump(out, open(os.path.join(ROOT, "data_clinic_lead_funnel.json"), "w"), separators=(",", ":"))
-    w_full = idx["2026-06-01"]
+    w_full = idx["2026-06-08"]
     tot = sum(o["lead_calls"][w_full] for o in D.values())
     rel = sum(o["relevant"][w_full] for o in D.values())
     print(f"data_clinic_lead_funnel.json · {len(D)} clinics · week 1-7 Jun: {tot} clinic lead-calls · {rel} relevant")

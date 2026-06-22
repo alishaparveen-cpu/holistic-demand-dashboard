@@ -4,7 +4,7 @@ WITH ga_leads AS (
   SELECT DISTINCT RIGHT(phone_no,10) AS ph, DATE(created_at) AS ld_date,
     TO_CHAR(DATE_TRUNC('week', created_at),'YYYY-MM-DD') AS wk
   FROM allo_persons.lead
-  WHERE created_at >= '2026-03-16' AND created_at < '2026-06-15'
+  WHERE created_at >= '2026-03-23' AND created_at < '2026-06-22'
     AND gclid IS NOT NULL AND LEN(gclid)>3 AND phone_no IS NOT NULL AND LEN(phone_no)>=10
 ),
 bk AS (
@@ -12,7 +12,7 @@ bk AS (
   FROM allo_consultations.appointments a
   JOIN allo_consultations.types t ON a.type_id=t.id AND t.name='Screening Call'
   JOIN allo_persons.patient p ON p.id=a.patient_id
-  WHERE a.deleted_at IS NULL AND a.created_at >= '2026-03-16' AND p.phone_no IS NOT NULL
+  WHERE a.deleted_at IS NULL AND a.created_at >= '2026-03-23' AND p.phone_no IS NOT NULL
 )
 SELECT g.wk, COUNT(DISTINCT g.ph) AS leads,
   COUNT(DISTINCT CASE WHEN b.ph IS NOT NULL THEN g.ph END) AS booked
