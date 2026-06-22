@@ -39,7 +39,7 @@ ep AS (
     (f.epi_no = 1) AS is_new, f.ever_done, f.ever_missed, lr.last_st
   FROM first_row f
   JOIN last_row lr ON lr.patient_id=f.patient_id AND lr.epi_no=f.epi_no
-  WHERE f.start_time >= '2026-03-16' AND f.start_time < '2026-06-15'
+  WHERE f.start_time >= '2026-03-23' AND f.start_time < '2026-06-22'
     AND LOWER(COALESCE(f.locality,''))<>'online' AND f.locality IS NOT NULL
 )
 SELECT city, clinic, wk,
