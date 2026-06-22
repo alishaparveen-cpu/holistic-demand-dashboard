@@ -16,7 +16,7 @@ Run:  AWS_PROFILE=redshift-data python3 scripts/pull_indiranagar_bottom.py
 import os, sys, subprocess, json
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RQ = os.path.join(ROOT, "scripts", "redshift_query.py")
-WEEKS = ["2026-06-08","2026-06-01","2026-05-25","2026-05-18","2026-05-11","2026-05-04",
+WEEKS = ["2026-06-15","2026-06-08","2026-06-01","2026-05-25","2026-05-18","2026-05-11","2026-05-04",
          "2026-04-27","2026-04-20","2026-04-13","2026-04-06","2026-03-30","2026-03-23"]
 idx = {w: i for i, w in enumerate(WEEKS)}; NW = len(WEEKS)
 CATS = ["STI", "SH", "Other"]   # simplified: all ED/PE diagnoses roll up to Sexual Health
@@ -49,7 +49,7 @@ SQL = """WITH loc AS (
     JOIN loc l2 ON l2.id=a.location_id
     LEFT JOIN allo_persons.patient p ON p.id=a.patient_id
     LEFT JOIN allo_persons.lead l ON l.id=p.lead_id
-    WHERE a.start_time >= '2026-03-23' AND a.start_time < '2026-06-15' AND a.deleted_at IS NULL),
+    WHERE a.start_time >= '2026-03-23' AND a.start_time < '2026-06-22' AND a.deleted_at IS NULL),
   ap AS (   -- DEDUPE to UNIQUE patient booking per week: reschedules / multiple SCs collapse to 1
     SELECT id, wk, status, from_wk_lead FROM (
       SELECT ap0.*, ROW_NUMBER() OVER (PARTITION BY patient_id, wk
