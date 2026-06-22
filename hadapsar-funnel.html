@@ -21,7 +21,7 @@ h1{font-family:'Fraunces',serif;font-size:30px;font-weight:600;margin:8px 0 2px}
 .wknav button{width:34px;height:34px;border:none;background:transparent;color:var(--muted);font-size:15px;cursor:pointer}
 .wknav button:hover{background:#F0EEE6;color:var(--ink)}.wknav button:disabled{opacity:.3;cursor:default}
 .wknav .lab{padding:0 12px;font-size:13px;font-weight:600;min-width:150px;text-align:center}
-.shead{display:flex;align-items:baseline;gap:10px;margin:26px 0 9px}
+.shead{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin:26px 0 9px}
 .shead h2{font-family:'Fraunces',serif;font-size:19px;font-weight:600;margin:0}
 .shead .sub2{font-size:12px;color:var(--muted)}
 .fmwrap{background:var(--sheet);border:1px solid var(--line);border-radius:var(--r);overflow-x:auto}
@@ -60,6 +60,10 @@ tr.sep-row td{padding:14px 10px 5px;font-weight:700;font-size:11.5px;letter-spac
 .mbox h3{font-family:'Fraunces',serif;margin:0 0 2px;font-size:20px}
 .mclose{float:right;cursor:pointer;color:var(--muted);font-size:20px;border:none;background:none}
 .lgd{font-size:11.5px;color:var(--muted);margin-top:8px}
+.partial-btn{font-size:11px;padding:3px 10px;border:1px solid var(--line);border-radius:6px;background:var(--inset);color:var(--muted);cursor:pointer;margin-left:auto;display:block;white-space:nowrap}
+.partial-btn:hover{background:var(--line)}
+.partialcol{opacity:.65;font-style:italic}
+.ongoingbadge{background:#b8862e22;color:#b8862e;border-radius:3px;padding:1px 4px;font-size:8px;font-style:normal;margin-left:3px}
 </style>
 </head>
 <body>
@@ -74,7 +78,7 @@ tr.sep-row td{padding:14px 10px 5px;font-weight:700;font-size:11.5px;letter-spac
 </div>
 <div class="modal" id="modal"><div class="mbox"><button class="mclose" onclick="closeZ()">✕</button><h3 id="mTitle"></h3><div id="mBody"></div></div></div>
 <script>
-let D=null, wk=0, ZREG=[], expanded={};
+let D=null, wk=0, ZREG=[], expanded={}, showPartial=false;
 const NSHOW=7;   // show 7 weeks to capture before + after MH change
 const MH_WK_IDX=4;  // May 25 = index 4 in WEEKS array (the MH change week)
 const $=id=>document.getElementById(id);
@@ -252,9 +256,10 @@ function heatBg(v,mn,mx){if(v==null||isNaN(v)||!isFinite(mn))return'';const rng=
   if(t<=0.4)return hexA('#B23A2E',0.07+0.18*((0.4-t)/0.4));return'';}
 function rowCells(arr,fmt,cols,wow){let mn=Infinity,mx=-Infinity;
   cols.forEach(ci=>{const v=arr[ci];if(v!=null&&!isNaN(v)){mn=Math.min(mn,v);mx=Math.max(mx,v);}});
+  const wowBase=cols.length>=2?cols[cols.length-2]:null;
   let cells='';cols.forEach((ci,j)=>{const v=arr[ci],last=j===cols.length-1;
     const bg=heatBg(v,mn,mx);const mh=isMHWeek(ci);
-    let w='';if(wow&&last&&v!=null&&!isNaN(v)&&arr[1]!=null&&!isNaN(arr[1])){const d=v-arr[1];if(d){const up=d>0;w=`<div class="wowd" style="color:${up?'var(--good)':'var(--bad)'}">${up?'▲':'▼'} ${fmt(Math.abs(d))}</div>`;}}
+    let w='';if(wow&&last&&v!=null&&!isNaN(v)&&wowBase!=null&&arr[wowBase]!=null&&!isNaN(arr[wowBase])){const d=v-arr[wowBase];if(d){const up=d>0;w=`<div class="wowd" style="color:${up?'var(--good)':'var(--bad)'}">${up?'▲':'▼'} ${fmt(Math.abs(d))}</div>`;}}
     const cls=[last?'lastcol':'',mh?'mhwk':''].filter(Boolean).join(' ');
     const style=bg?`style="background:${bg}"`:'';
     cells+=`<td class="${cls}" ${style}>${v==null||isNaN(v)?'—':fmt(v)}${w}</td>`;});
@@ -262,11 +267,12 @@ function rowCells(arr,fmt,cols,wow){let mn=Infinity,mx=-Infinity;
 function sparkCell(arr,color,label,fmt){const idx=ZREG.length;ZREG.push({label,arr:arr.slice(0,NSHOW),fmt,color});
   return `<td class="sparkcell" onclick="zoomReg(${idx})">${spark(arr.slice(0,NSHOW),color)}</td>`;}
 function matrix(M){
-  ZREG=[]; const W=D._meta.weeks; const cols=[]; for(let j=NSHOW-1;j>=0;j--) cols.push(j);
+  ZREG=[]; const W=D._meta.weeks; const cols=[];
+  for(let j=NSHOW-1;j>=0;j--){if(j===0&&!showPartial)continue;cols.push(j);}
   let h='<div class="fmwrap"><table class="fm"><thead><tr><th>Stage &amp; transition</th>';
   cols.forEach((ci,j)=>{
-    const mh=isMHWeek(ci);
-    h+=`<th class="${j===cols.length-1?'lastcol':''}${mh?' mhwk':''}">${wkShort(W[ci])}${mh?' 🔵':''}</th>`;
+    const mh=isMHWeek(ci),isOngoing=ci===0;
+    h+=`<th class="${j===cols.length-1?'lastcol':''}${mh?' mhwk':''}${isOngoing?' partialcol':''}">${wkShort(W[ci])}${mh?' 🔵':''}${isOngoing?' <span class="ongoingbadge">ongoing</span>':''}</th>`;
   });
   h+='<th>trend</th></tr></thead><tbody>';
   buildStages(M).forEach(r=>{
@@ -340,7 +346,8 @@ function render(){
   </div>`;
 
   // Matrix
-  h+=`<div class="shead"><h2>Funnel, last 7 weeks</h2><span class="sub2">🔵 = May 25 MH-change week · latest on right · green = high, red = low per row · click sparkline to zoom</span></div>`;
+  const partialWk=D._meta.weeks[0];
+  h+=`<div class="shead"><h2>Funnel, last ${showPartial?7:6} weeks</h2><span class="sub2">🔵 = May 25 MH-change week · latest on right · green = high, red = low per row · click sparkline to zoom</span><button class="partial-btn" onclick="showPartial=!showPartial;render()">${showPartial?'▾ Hide':'▸ Show'} ongoing week (${wkShort(partialWk)}, partial)</button></div>`;
   h+=matrix(M);
 
   h+=`<div class="note"><b>Sources.</b>
