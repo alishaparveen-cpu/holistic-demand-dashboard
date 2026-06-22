@@ -68,10 +68,13 @@ def main():
             "other":      [ bc("others")[i] + bc("justdial")[i] for i in range(NW) ],
         },
         "gmb_call_volume": lead.get("gmb_organic_calls", Z),     # raw GMB phone-call volume (context)
-        "ai": {**(calls.get("total") or {"total":Z,"relevant":Z,"strong":Z,"by_cat":{}}),
-               "calls": (calls.get("total") or {}).get("total", Z),
-               "available": any((calls.get("total") or {}).get("total", []))},
-        "call_channels": calls.get("channel", {}),               # #5: paid / gmb / other × category
+        # raw = Exotel ground-truth (total/unique/answered/missed); matches GMB DND dashboard
+        "raw": {k: (list(calls.get("raw", {}).get(k) or []) + Z)[:NW]
+                for k in ("total", "unique", "answered", "missed")},
+        # ai = AI-audited subset with categories
+        "ai": {**(calls.get("ai") or {"total":Z,"relevant":Z,"strong":Z,"by_cat":{}}),
+               "calls": (calls.get("ai") or {}).get("total", Z),
+               "available": any((calls.get("ai") or {}).get("total", []))},
     }
 
     # ---- BOTTOM (exact) ----

@@ -129,9 +129,9 @@ const wkShort=w=>{const d=new Date(w);const M=['Jan','Feb','Mar','Apr','May','Ju
 // ---- derive every funnel metric as a 12-week array (newest-first, matching D._meta.weeks) ----
 function metrics(){
   const R=D.reach, L=D.leads, B=D.bottom, NW=D._meta.weeks.length;
-  const ch=L.by_chan, ai=L.ai, cc=L.call_channels||{};
+  const ch=L.by_chan, ai=L.ai, rawCalls=L.raw||{};
   const arr=(f)=>Array.from({length:NW},(_,i)=>f(i)||0);
-  const ccTot=k=>arr(i=>((cc[k]&&cc[k].total&&cc[k].total[i])||0));
+  const rcArr=k=>arr(i=>(rawCalls[k]&&rawCalls[k][i])||0);
   const impr=R.combined.impr, clicks=R.combined.clicks;
   // ── Unified attribution (data_bangalore_attribution.json) — clinic = call_location; the Indiranagar slice
   //    sums into the Bangalore city total. Each lead is bucketed by CHANNEL × MECHANISM (call vs web).
@@ -152,12 +152,13 @@ function metrics(){
   // attribution timing: clinic known at capture vs only set at the booking
   const tierCaptured=Bk('tier_captured'), tierResolved=Bk('tier_resolved');
   // Inbound CALLS split by the NUMBER dialed (call-audit, data_indiranagar_calls.json) — the only source that
-  // can separate Google-paid calls (call-asset #) from organic GMB calls (clinic's own #). main_source_wise_leads can't.
-  const ccA=k=>arr(i=>((cc[k]&&cc[k].total&&cc[k].total[i])||0));
-  const ccCat=(ch,cat)=>arr(i=>((cc[ch]&&cc[ch].by_cat&&cc[ch].by_cat[cat]&&cc[ch].by_cat[cat][i])||0));
-  const callGmb=ccA('gmb'), callPaid=ccA('paid'), callOther=ccA('other');
-  const gmbCatSTI=ccCat('gmb','STI'),gmbCatSH=ccCat('gmb','SH'),gmbCatMH=ccCat('gmb','MH'),gmbCatOther=ccCat('gmb','Other');
-  const callsplit=arr(i=>callGmb[i]+callPaid[i]+callOther[i]);
+  // Raw GMB call volume from Exotel (all calls incl missed) — matches GMB DND dashboard methodology.
+  // Number 8047160881 is clinic-direct; no AI locality inference needed.
+  const gmbRawTotal=rcArr('total'), gmbRawUnique=rcArr('unique'),
+        gmbRawAnswered=rcArr('answered'), gmbRawMissed=rcArr('missed');
+  // AI categories (audited answered calls only — subset of gmbRawAnswered)
+  const aiCatArr=cat=>arr(i=>((ai.by_cat&&ai.by_cat[cat]&&ai.by_cat[cat][i])||0));
+  const gmbCatSTI=aiCatArr('STI'),gmbCatSH=aiCatArr('SH'),gmbCatMH=aiCatArr('MH'),gmbCatOther=aiCatArr('Other');
   const gmbDirect=arr(i=>gmbCallB[i]+gmbWebB[i]);                 // GMB organic (call + website + WhatsApp button)
   const googlePaid=arr(i=>paidCallB[i]+paidWebB[i]);             // Google paid (call + web)
   const gmbGoog=arr(i=>gmbDirect[i]+googlePaid[i]);              // Google + GMB combined (the clicks-driven channels)
@@ -189,16 +190,17 @@ function metrics(){
   const gClkA=arr(i=>(R.google.clicks&&R.google.clicks[i])||0), mClkA=arr(i=>(R.gmb.clicks&&R.gmb.clicks[i])||0);
   const c2l_paid=rate(googlePaid,gClkA), c2l_gmb=rate(gmbDirect,mClkA);
   const c2l_comb=rate(arr(i=>googlePaid[i]+gmbDirect[i]), arr(i=>gClkA[i]+mClkA[i]));  // Google+GMB combined
-  const aiCat=(ai&&ai.by_cat)||{};
-  const callCat=arr(i=>['STI','SH','MH','Other'].reduce((s,c)=>s+((aiCat[c]&&aiCat[c][i])||0),0));  // call-audit relevant total (its own universe)
+  const aiCatMap=(ai&&ai.by_cat)||{};
+  const callCat=arr(i=>['STI','SH','MH','Other'].reduce((s,c)=>s+((aiCatMap[c]&&aiCatMap[c][i])||0),0));  // AI-audited total (GMB calls only)
   return {impr,clicks,callLeads,relevant:callCat,pr,leads,c2l_paid,c2l_gmb,
     gmbDirect,googlePaid,onsiteWeb,walkin,miscLead,
     gmbCallB,gmbWebB,paidCallB,paidWebB,webOrg,webClinic,webPage,webUntagged,meta,otherB,gmbGoog,allOther,
     practoCrm,outboundWa,prSheet,
     prBooked,prConv:rate(prBooked,pr),
     catCall,catEd,catPe,catSti,catSh,catUncat,tierCaptured,tierResolved,c2l_comb,
-    callGmb,callPaid,callOther,callsplit,gmbCatSTI,gmbCatSH,gmbCatMH,gmbCatOther,
-    gmbCall,tier1,poolWon,poolTot,poolElse,poolNo,
+    gmbCatSTI,gmbCatSH,gmbCatMH,gmbCatOther,
+    gmbRawTotal,gmbRawUnique,gmbRawAnswered,gmbRawMissed,
+    gmbCall:gmbCallB,tier1,poolWon,poolTot,poolElse,poolNo,
     booked,bookedWkLead:bwl,bookedPrior:bprior,done,purch,rev,
     gImpr:R.google.impr,gClk:R.google.clicks,mImpr:R.gmb.impr,mClk:R.gmb.clicks,
     ctr:rate(clicks,impr),c2l:rate(leads,clicks),l2b:rate(booked,leads),
@@ -237,7 +239,7 @@ function buildStages(M){
   const cf=f=>cohort?f+'_wk_lead':f;   // cohort → same-week-lead field variant
   const NWv=D._meta.weeks.length, mk=f=>Array.from({length:NWv},(_,i)=>f(i));
   const GCATS=['STI','SH','MH','Other'], aic=ai.by_cat||{};
-  const cc=D.leads.call_channels||{}, ccA=k=>(cc[k]&&cc[k].total)||[];
+  const rawC=D.leads.raw||{};
   // Practo per-profile breakdown (doctor + clinic profiles, from data_practo_by_doctor.json) — sums to the clinic Practo total
   const pdoc=(PD && PD['Bangalore|Indiranagar'])||{};
   const practoKids=Object.entries(pdoc).filter(([n,a])=>a&&Array.isArray(a.leads)&&a.leads.some(v=>v))
@@ -296,15 +298,16 @@ function buildStages(M){
         {label:'Meta (Facebook / Instagram)',arr:M.meta,fmt:N,info:'Meta leads (source=Fb/Instagram). ▶ RESOLVES TO INDIRANAGAR: city/online campaigns with no clinic at capture, so the clinic is set at the booking (call_location=Indiranagar) — unless the lead carried Indiranagar’s clinic code, in which case it’s known at capture.'},
         {label:'Other (untagged)',arr:M.otherB,fmt:N,info:'Remaining leads with no usable source tag after Practo CRM leads have been reclassified out — source=“Others”/Newspaper with no traceable UTM (offline referrals, repeat patients, partner/doctor referrals, front-desk manual entries with no digital trail). ▶ HOW IT RESOLVES TO INDIRANAGAR: lead_location=BLR_80FT (Indiranagar clinic code) stamped at capture — clinic is certain, only source is unknown. ⚠ NOT RECOVERABLE: no UTM, no digital footprint. Fix = source tagging at lead capture (a process change).'}]},
       ]},
-    {t:'stage',k:'relevant',label:'Relevant calls by category (AI audit · call volume — does NOT reconcile)',color:'#9E8E5B',fmt:N,
-      info:'⚠ READ THIS. WHAT IT IS: the AI call-audit listens to each inbound call, judges if it’s a real consultation enquiry ("relevant"), and tags the CATEGORY (STI / SH / MH / Other). This is the ONLY place category exists — the leads table has no condition. WHY IT WON’T RECONCILE with the leads/booked above: it’s a DIFFERENT unit from a DIFFERENT system — raw CALL COUNT, not leads (one person calling twice = 2; spam / wrong-number / repeat calls included), and attributed by what the AI heard (caller intent), not by the booking. So it does NOT tie out to the leads or booked numbers, and it’s not supposed to. Use it only to see WHAT callers ask about and the category mix/trend — never to count leads. Source: data_indiranagar_calls.json (~late-Apr onward).',
+    {t:’stage’,k:’gmbRawTotal’,label:’GMB inbound calls · 8047160881 (Exotel · all calls incl missed)’,color:’#9E8E5B’,fmt:N,
+      info:’ALL inbound calls to the Indiranagar GMB listing number (8047160881) from Exotel call logs — matches the GMB DND dashboard exactly. Includes answered + missed. The number itself identifies the clinic; no AI locality inference needed. Paid/pool city number stays city-level (not attributed to Indiranagar here), same as the DND dashboard.’,
       children:[
-      {sep:1,label:'By category'},
-      ...[['STI','STI'],['SH','Sexual health'],['MH','Mental health'],['Other','Other']].map(([k,lbl])=>({label:lbl,arr:aic[k]||[],fmt:N})),
-      {label:'Google click → relevant call % (by category)',fmt:PCT,
-        arr:mk(i=>{const cl=(M.gClk[i]||0);const rl=(M.relevant[i]||0);return cl?rl/cl*100:null;}),
-        kids:['STI','SH','MH'].map(c=>({label:c==='SH'?'Sexual health':c==='MH'?'Mental health':c,
-          arr:mk(i=>{const cl=gcat(c,'clicks')[i];const rl=(aic[c]||[])[i]||0;return cl?rl/cl*100:null;}),fmt:PCT}))}]},
+      {label:’Answered’,arr:M.gmbRawAnswered,fmt:N,info:’Calls that connected. The AI call audit runs on this answered subset — so AI category totals are always ≤ answered, never ≥ total.’},
+      {label:’Missed / no-answer’,arr:M.gmbRawMissed,fmt:N,info:’Calls that rang but were not answered. These callers have no category — the AI has no audio to audit.’},
+      {sep:1,label:’Category breakdown (AI audit · answered calls only)’},
+      ...[[‘STI’,’STI’],[‘SH’,’Sexual health’],[‘MH’,’Mental health’],[‘Other’,’Other / uncategorised’]].map(([k,lbl])=>({label:lbl,arr:aic[k]||[],fmt:N,info:’AI-inferred caller intent from audio (answered calls only). Use the mix/trend to see what callers are asking about — does NOT reconcile to total (unanswered calls have no category).’})),
+      {label:’Answered call → category coverage %’,fmt:PCT,
+        arr:mk(i=>{const ans=M.gmbRawAnswered[i]||0;const audited=M.relevant[i]||0;return ans?audited/ans*100:null;}),
+        info:’Share of answered calls that the AI successfully audited and categorised. Gap = calls answered but not ingested by the audit pipeline yet.’}]},
     {t:'stage',k:'booked',label: cohort?'Booked · this week’s leads':'Booked',color:'#7B5EA7',fmt:N,
       info:'Booked Screening Calls — NOT split by category here, on purpose. A booking only gets a diagnosis once the patient is CONSULTED, so a booking that’s still pending / no-show / rescheduled has no category. Splitting Booked by category would just dump all those into "Other" (a misleading artifact). The clean, real category split is on DONE below, where every completed consult has a diagnosis.',children:[
       ...(cohort?[]:[{sep:1,label:'By lead recency'},
