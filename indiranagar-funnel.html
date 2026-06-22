@@ -156,9 +156,13 @@ function metrics(){
   // Number 8047160881 is clinic-direct; no AI locality inference needed.
   const gmbRawTotal=rcArr('total'), gmbRawUnique=rcArr('unique'),
         gmbRawAnswered=rcArr('answered'), gmbRawMissed=rcArr('missed');
-  // AI categories (audited answered calls only — subset of gmbRawAnswered)
+  // AI categories on GMB answered calls (subset of gmbRawAnswered)
   const aiCatArr=cat=>arr(i=>((ai.by_cat&&ai.by_cat[cat]&&ai.by_cat[cat][i])||0));
   const gmbCatSTI=aiCatArr('STI'),gmbCatSH=aiCatArr('SH'),gmbCatMH=aiCatArr('MH'),gmbCatOther=aiCatArr('Other');
+  // Paid city-number calls where AI says caller mentioned Indiranagar
+  const pAi=L.paid_ai||{};
+  const paidAiTotal=arr(i=>(pAi.total&&pAi.total[i])||0);
+  const paidAiCat=cat=>arr(i=>((pAi.by_cat&&pAi.by_cat[cat]&&pAi.by_cat[cat][i])||0));
   const gmbDirect=arr(i=>gmbCallB[i]+gmbWebB[i]);                 // GMB organic (call + website + WhatsApp button)
   const googlePaid=arr(i=>paidCallB[i]+paidWebB[i]);             // Google paid (call + web)
   const gmbGoog=arr(i=>gmbDirect[i]+googlePaid[i]);              // Google + GMB combined (the clicks-driven channels)
@@ -200,6 +204,7 @@ function metrics(){
     catCall,catEd,catPe,catSti,catSh,catUncat,tierCaptured,tierResolved,c2l_comb,
     gmbCatSTI,gmbCatSH,gmbCatMH,gmbCatOther,
     gmbRawTotal,gmbRawUnique,gmbRawAnswered,gmbRawMissed,
+    paidAiTotal,paidAiSTI:paidAiCat('STI'),paidAiSH:paidAiCat('SH'),paidAiMH:paidAiCat('MH'),paidAiOther:paidAiCat('Other'),
     gmbCall:gmbCallB,tier1,poolWon,poolTot,poolElse,poolNo,
     booked,bookedWkLead:bwl,bookedPrior:bprior,done,purch,rev,
     gImpr:R.google.impr,gClk:R.google.clicks,mImpr:R.gmb.impr,mClk:R.gmb.clicks,
@@ -307,7 +312,11 @@ function buildStages(M){
       ...[[‘STI’,’STI’],[‘SH’,’Sexual health’],[‘MH’,’Mental health’],[‘Other’,’Other / uncategorised’]].map(([k,lbl])=>({label:lbl,arr:aic[k]||[],fmt:N,info:’AI-inferred caller intent from audio (answered calls only). Use the mix/trend to see what callers are asking about — does NOT reconcile to total (unanswered calls have no category).’})),
       {label:’Answered call → category coverage %’,fmt:PCT,
         arr:mk(i=>{const ans=M.gmbRawAnswered[i]||0;const audited=M.relevant[i]||0;return ans?audited/ans*100:null;}),
-        info:’Share of answered calls that the AI successfully audited and categorised. Gap = calls answered but not ingested by the audit pipeline yet.’}]},
+        info:’Share of answered calls that the AI successfully audited and categorised. Gap = calls answered but not ingested by the audit pipeline yet.’},
+      {sep:1,label:’Paid city-number calls mentioning Indiranagar (AI attributed · 8045680561)’},
+      {label:’Paid calls → Indiranagar (AI)’,arr:M.paidAiTotal,fmt:N,info:’Calls to the shared Bangalore paid call-asset number (8045680561) where the AI call audit says the caller explicitly mentioned Indiranagar as their desired clinic. These are paid-ad callers who self-selected Indiranagar in the call. NOT in the raw total above (that is GMB-number only, matching the DND dashboard). Tracked separately so you can see paid-channel Indiranagar demand alongside GMB.’},
+      ...[[‘paidAiSTI’,’STI’],[‘paidAiSH’,’Sexual health’],[‘paidAiMH’,’Mental health’],[‘paidAiOther’,’Other’]].map(([k,lbl])=>({label:lbl,arr:M[k],fmt:N,info:’AI-inferred category for paid calls attributed to Indiranagar by caller locality mention.’}))
+      ]},
     {t:'stage',k:'booked',label: cohort?'Booked · this week’s leads':'Booked',color:'#7B5EA7',fmt:N,
       info:'Booked Screening Calls — NOT split by category here, on purpose. A booking only gets a diagnosis once the patient is CONSULTED, so a booking that’s still pending / no-show / rescheduled has no category. Splitting Booked by category would just dump all those into "Other" (a misleading artifact). The clean, real category split is on DONE below, where every completed consult has a diagnosis.',children:[
       ...(cohort?[]:[{sep:1,label:'By lead recency'},

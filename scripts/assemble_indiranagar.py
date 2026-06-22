@@ -68,13 +68,15 @@ def main():
             "other":      [ bc("others")[i] + bc("justdial")[i] for i in range(NW) ],
         },
         "gmb_call_volume": lead.get("gmb_organic_calls", Z),     # raw GMB phone-call volume (context)
-        # raw = Exotel ground-truth (total/unique/answered/missed); matches GMB DND dashboard
+        # raw = Exotel ground-truth for GMB number (total/unique/answered/missed); matches DND dashboard
         "raw": {k: (list(calls.get("raw", {}).get(k) or []) + Z)[:NW]
                 for k in ("total", "unique", "answered", "missed")},
-        # ai = AI-audited subset with categories
-        "ai": {**(calls.get("ai") or {"total":Z,"relevant":Z,"strong":Z,"by_cat":{}}),
-               "calls": (calls.get("ai") or {}).get("total", Z),
-               "available": any((calls.get("ai") or {}).get("total", []))},
+        # gmb_ai = AI category on answered GMB calls
+        "ai": {**(calls.get("gmb_ai") or calls.get("ai") or {"total":Z,"relevant":Z,"strong":Z,"by_cat":{}}),
+               "calls": (calls.get("gmb_ai") or calls.get("ai") or {}).get("total", Z),
+               "available": any((calls.get("gmb_ai") or calls.get("ai") or {}).get("total", []))},
+        # paid_ai = paid city-number calls where AI says caller mentioned Indiranagar
+        "paid_ai": calls.get("paid_ai") or {"total":Z,"relevant":Z,"strong":Z,"by_cat":{}},
     }
 
     # ---- BOTTOM (exact) ----
