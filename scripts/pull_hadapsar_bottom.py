@@ -16,9 +16,9 @@ RQ = os.path.join(ROOT, "scripts", "redshift_query.py")
 WEEKS = ["2026-06-22","2026-06-15","2026-06-08","2026-06-01","2026-05-25","2026-05-18","2026-05-11",
          "2026-05-04","2026-04-27","2026-04-20","2026-04-13","2026-04-06","2026-03-30"]
 idx = {w: i for i, w in enumerate(WEEKS)}; NW = len(WEEKS)
-CATS = ["STI", "SH", "MH", "Other"]
+CATS = ["STI", "SH", "Other"]
 COLLAPSE = {"STI": "STI", "ED+": "SH", "PE+": "SH", "ED+PE+": "SH",
-            "MH": "MH", "NSSD": "Other", "oth": "Other"}
+            "NSSD": "SH", "MH": "Other", "oth": "Other"}
 
 SQL = """WITH loc AS (
     SELECT id FROM allo_health.locations
@@ -42,7 +42,7 @@ SQL = """WITH loc AS (
     FROM allo_consultations.appointments a
     JOIN allo_consultations.types typ ON typ.id=a.type_id AND typ.name='Screening Call'
     JOIN loc l2 ON l2.id=a.location_id
-    WHERE a.created_at >= '2026-03-16' AND a.created_at < '2026-06-22' AND a.deleted_at IS NULL),
+    WHERE a.created_at >= '2026-03-16' AND a.deleted_at IS NULL),
   ap AS (
     SELECT id, wk, status FROM (
       SELECT ap0.*, ROW_NUMBER() OVER (PARTITION BY patient_id, wk
