@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Weekly Demand Review</title>
+<script>if(!sessionStorage.getItem('allo_dash_auth'))location.replace('index.html');</script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Fraunces:opsz,wght@9..144,500;9..144,600&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#F6F4EE;--card:#fff;--ink:#1A2B26;--ink2:#52605A;--muted:#8A8A80;--line:#E5E2D9;--line2:#EEEBE2;
+  --accent:#1F6F5C;--good:#1F6F5C;--goodbg:#EAF3EF;--bad:#B23A2E;--badbg:#FBEEEC;--amber:#B8862E;--vio:#7B5EA7;--blue:#3E6F8E}
+*{box-sizing:border-box}
+body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--ink);margin:0;font-size:13px;line-height:1.45}
+.wrap{max-width:1200px;margin:0 auto;padding:18px 22px 80px}
+a{color:inherit}.back{font-size:12.5px;color:var(--muted);text-decoration:none}.back:hover{color:var(--accent)}
+.top{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap}
+h1{font-family:'Fraunces',serif;font-size:30px;font-weight:600;margin:8px 0 2px}
+.sub{color:var(--muted);font-size:13px;margin-bottom:8px}
+select{font-family:inherit;font-size:13px;padding:7px 11px;border:1px solid var(--line);border-radius:9px;background:#fff;font-weight:600}
+.kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:14px 0}
+.kpi{background:var(--card);border:1px solid var(--line);border-radius:13px;padding:15px 17px}
+.kpi .k{font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted)}
+.kpi .v{font-family:'Fraunces',serif;font-size:33px;font-weight:600;line-height:1;margin:6px 0 7px}
+.badges{display:flex;gap:7px;flex-wrap:wrap}
+.bdg{font-size:11px;font-weight:700;padding:3px 8px;border-radius:20px}
+.up{background:var(--goodbg);color:var(--good)}.dn{background:var(--badbg);color:var(--bad)}.flat{background:#F0EEE6;color:var(--muted)}
+.narr{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--accent);border-radius:12px;padding:15px 18px;margin:6px 0 20px;font-size:13.5px;line-height:1.6}
+.narr h3{font-family:'Fraunces',serif;font-size:16px;margin:0 0 6px}
+.narr b{color:var(--ink)} .narr .g{color:var(--good);font-weight:700}.narr .r{color:var(--bad);font-weight:700}
+.narr p{margin:7px 0}
+.sec{margin:26px 0 0}
+.sec h2{font-family:'Fraunces',serif;font-size:21px;margin:0 0 3px}
+.sec .sh{color:var(--muted);font-size:12px;margin-bottom:11px}
+.grid2{display:grid;grid-template-columns:1.1fr 1fr;gap:13px}
+@media(max-width:820px){.grid2{grid-template-columns:1fr}.kpis{grid-template-columns:1fr}}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:13px 15px}
+.panel .pt{font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);margin-bottom:9px}
+.chartbox{position:relative;height:190px}
+.miniwrap{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:13px;margin-top:13px}
+table{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:13px}
+th{font-size:9.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);font-weight:600;text-align:right;padding:7px 10px;border-bottom:1px solid var(--line);background:#FAF8F2}
+th:first-child{text-align:left}
+td{padding:7px 10px;text-align:right;border-bottom:1px solid var(--line2);font-variant-numeric:tabular-nums}
+td:first-child{text-align:left;font-weight:500}
+.tag{font-size:9px;font-weight:700;padding:1px 5px;border-radius:5px;margin-left:6px;background:#EDEAE0;color:var(--muted)}
+.tag.t1{background:#E7F0EC;color:var(--accent)}
+.dpos{color:var(--good);font-weight:700}.dneg{color:var(--bad);font-weight:700}
+.note{background:#FBF9F3;border:1px dashed var(--line);border-radius:9px;padding:9px 13px;font-size:11.5px;color:var(--muted);margin-top:18px}
+</style></head>
+<body><div class="wrap">
+  <div class="top">
+    <a class="back" href="index.html">← Dashboard</a>
+    <div><label style="font-size:12px;color:var(--muted)">Week&nbsp;</label><select id="wsel"></select></div>
+  </div>
+  <h1>Weekly Demand Review</h1>
+  <div class="sub" id="sub">Leads → bookings → done, week-on-week with 6-week-average context.</div>
+  <div id="app"></div>
+  <div class="note" id="srcnote"></div>
+</div>
+<script>
+let D=null, w=0;
+const $=id=>document.getElementById(id);
+const N=v=>v==null?'—':Math.round(v).toLocaleString('en-IN');
+const wkLabel=ws=>{const d=new Date(ws);const e=new Date(d);e.setDate(d.getDate()+6);const M=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];return d.getDate()+' '+M[d.getMonth()]+'–'+e.getDate()+' '+M[e.getMonth()];};
+const COL={Google:'#2E7D5B',GMB:'#3E6F8E',Organic:'#7B5EA7',Meta:'#B8862E',Practo:'#9E6BAA',JustDial:'#999',Other:'#B0A99A',
+  STI:'#B8862E',SH:'#2E7D5B',Other2:'#B0A99A',T1:'#2E7D5B',T2:'#3E6F8E',Online:'#7B5EA7',Offline:'#2E7D5B'};
+const avg6=arr=>{const s=arr.slice(w+1,w+7).filter(x=>x!=null);return s.length?s.reduce((a,b)=>a+b,0)/s.length:null;};
+const pct=(a,b)=>(a!=null&&b)?((a-b)/b*100):null;
+function badge(p,label){if(p==null)return `<span class="bdg flat">${label} —</span>`;const c=p>=2?'up':p<=-2?'dn':'flat';const ar=p>=2?'▲':p<=-2?'▼':'■';return `<span class="bdg ${c}">${ar} ${p>=0?'+':''}${p.toFixed(0)}% ${label}</span>`;}
+function dcell(p){if(p==null)return '<td>—</td>';const c=p>=5?'dpos':p<=-5?'dneg':'';return `<td class="${c}">${p>=0?'+':''}${p.toFixed(0)}%</td>`;}
+
+let charts=[];
+function destroyCharts(){charts.forEach(c=>{try{c.destroy()}catch(e){}});charts=[];}
+function barTrend(id,arr,color){
+  const labels=D._meta.weeks.slice(0,8).reverse().map(wkLabel);
+  const data=arr.slice(0,8).reverse();
+  charts.push(new Chart($(id),{type:'bar',data:{labels,datasets:[{data,backgroundColor:data.map((_,i)=>i===7-w?color:color+'66')}]},
+    options:{plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>N(c.raw)}}},maintainAspectRatio:false,
+      scales:{x:{ticks:{font:{size:9},maxRotation:0,autoSkip:false},grid:{display:false}},y:{ticks:{font:{size:9}},grid:{color:'#EEEBE2'}}}}}));}
+function barCats(id,labels,vals,colors){
+  charts.push(new Chart($(id),{type:'bar',data:{labels,datasets:[{data:vals,backgroundColor:colors}]},
+    options:{indexAxis:'y',plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>N(c.raw)}}},maintainAspectRatio:false,
+      scales:{x:{ticks:{font:{size:9}},grid:{color:'#EEEBE2'}},y:{ticks:{font:{size:10}},grid:{display:false}}}}));}
+
+function metricSection(key,title,M,hasCat){
+  const t=M.total[w],l=M.total[w+1],a=avg6(M.total);
+  const chans=Object.keys(M.channel).filter(c=>(M.channel[c][w]||0)>0).sort((x,y)=>M.channel[y][w]-M.channel[x][w]);
+  let h=`<div class="sec"><h2>${title}</h2><div class="sh">this week vs last week vs 6-week average</div>
+   <div class="kpis">
+    <div class="kpi"><div class="k">This week</div><div class="v">${N(t)}</div>
+      <div class="badges">${badge(pct(t,l),'WoW')}${badge(pct(t,a),'vs 6wk avg')}</div></div>
+    <div class="kpi"><div class="k">Last week</div><div class="v" style="color:var(--muted)">${N(l)}</div><div class="badges"><span class="bdg flat">${wkLabel(D._meta.weeks[w+1])}</span></div></div>
+    <div class="kpi"><div class="k">6-week avg</div><div class="v" style="color:var(--muted)">${N(a)}</div><div class="badges"><span class="bdg flat">baseline</span></div></div>
+   </div>
+   <div class="grid2">
+    <div class="panel"><div class="pt">8-week trend</div><div class="chartbox"><canvas id="ct_${key}"></canvas></div></div>
+    <div class="panel"><div class="pt">By channel — this week</div><div class="chartbox"><canvas id="cc_${key}"></canvas></div></div>
+   </div>
+   <div class="miniwrap">
+    <div class="panel"><div class="pt">Online vs Offline</div><div class="chartbox" style="height:130px"><canvas id="co_${key}"></canvas></div></div>
+    <div class="panel"><div class="pt">Tier 1 vs Tier 2 (offline)</div><div class="chartbox" style="height:130px"><canvas id="cti_${key}"></canvas></div></div>`;
+  if(hasCat) h+=`<div class="panel"><div class="pt">By category (STI / SH / Other)</div><div class="chartbox" style="height:130px"><canvas id="ccat_${key}"></canvas></div></div>`;
+  h+=`</div>`;
+  const cities=Object.keys(M.city).filter(c=>(M.city[c][w]||0)>0||(avg6(M.city[c])||0)>0).sort((x,y)=>M.city[y][w]-M.city[x][w]);
+  h+=`<table><thead><tr><th>City (offline)</th><th>This wk</th><th>Last wk</th><th>6wk avg</th><th>Δ vs avg</th></tr></thead><tbody>`;
+  cities.forEach(c=>{const cv=M.city[c];const ca=avg6(cv);
+    h+=`<tr><td>${c}${D._meta.t1.includes(c)?'<span class="tag t1">T1</span>':'<span class="tag">T2</span>'}</td><td>${N(cv[w])}</td><td>${N(cv[w+1])}</td><td>${N(ca)}</td>${dcell(pct(cv[w],ca))}</tr>`;});
+  h+=`</tbody></table></div>`;
+  return {h,chans};
+}
+function buildCharts(key,M,hasCat,chans){
+  barTrend('ct_'+key,M.total,COL.Google);
+  barCats('cc_'+key,chans,chans.map(c=>M.channel[c][w]),chans.map(c=>COL[c]||'#B0A99A'));
+  barCats('co_'+key,['Online','Offline'],[M.online[w],M.offline[w]],[COL.Online,COL.Offline]);
+  barCats('cti_'+key,['Tier 1','Tier 2'],[M.tier.T1[w],M.tier.T2[w]],[COL.T1,COL.T2]);
+  if(hasCat) barCats('ccat_'+key,['STI','SH','Other'],[M.cat.STI[w],M.cat.SH[w],M.cat.Other[w]],[COL.STI,COL.SH,COL.Other2]);
+}
+
+function movers(M,minPct){
+  const up={T1:[],T2:[]},dn={T1:[],T2:[]};
+  Object.keys(M.city).forEach(c=>{const a=avg6(M.city[c]);if(!a||a<3)return;const p=pct(M.city[c][w],a);if(p==null)return;
+    const tier=D._meta.t1.includes(c)?'T1':'T2';
+    if(p>=minPct)up[tier].push([c,p]);else if(p<=-minPct)dn[tier].push([c,p]);});
+  for(const k in up){up[k].sort((a,b)=>b[1]-a[1]);dn[k].sort((a,b)=>a[1]-b[1]);}
+  return {up,dn};
+}
+const fmtList=arr=>arr.slice(0,6).map(([c,p])=>`${c} <span class="${p>=0?'g':'r'}">${p>=0?'+':''}${p.toFixed(0)}%</span>`).join(', ')||'—';
+function catNarr(cat){
+  const D2=D.done; const tot=D2.cat[cat]; const p=pct(tot[w],avg6(tot));
+  const t1=D2.tiercat.T1[cat], t2=D2.tiercat.T2[cat];
+  const pt1=pct(t1[w],avg6(t1)), pt2=pct(t2[w],avg6(t2));
+  const cityd=Object.keys(D2.citycat).map(c=>{const arr=D2.citycat[c][cat];const a=avg6(arr);return [c,pct(arr[w],a),a];}).filter(x=>x[2]&&x[2]>=2&&x[1]!=null);
+  return {p,pt1,pt2,ups:cityd.filter(x=>x[1]>=15).sort((a,b)=>b[1]-a[1]).slice(0,5).map(x=>[x[0],x[1]]),
+                    dns:cityd.filter(x=>x[1]<=-15).sort((a,b)=>a[1]-b[1]).slice(0,4).map(x=>[x[0],x[1]])};
+}
+function narrative(){
+  const L=D.leads,B=D.bookings,Dn=D.done;
+  const lp=pct(L.total[w],L.total[w+1]),la=pct(L.total[w],avg6(L.total));
+  const bp=pct(B.total[w],B.total[w+1]),ba=pct(B.total[w],avg6(B.total));
+  const dp=pct(Dn.total[w],Dn.total[w+1]);
+  const isMax=L.total[w]===Math.max(...L.total.slice(0,8));
+  const bk=movers(B,10), sti=catNarr('STI'),sh=catNarr('SH');
+  const t1all=D._meta.t1.map(c=>[c,pct((B.city[c]||[])[w],avg6(B.city[c]||[0]))]).filter(x=>x[1]!=null).sort((a,b)=>b[1]-a[1]);
+  const span=p=>`<span class="${p>=0?'g':'r'}">${p>=0?'+':''}${p?p.toFixed(0):0}%</span>`;
+  let h=`<div class="narr"><h3>📈 ${wkLabel(D._meta.weeks[w])} — at a glance</h3>`;
+  h+=`<p><b>Leads ${N(L.total[w])}</b> (${span(lp)} WoW, ${span(la)} vs 6-wk avg)${L.total[w]>=6000?' — over 6k'+(isMax?', highest in 8 weeks':''):''}. `;
+  h+=`<b>New bookings ${N(B.total[w])}</b> (${span(bp)} WoW, ${span(ba)} vs avg). <b>Consults done ${N(Dn.total[w])}</b> (${span(dp)} WoW).</p>`;
+  h+=`<p><b>City bookings vs 6-wk avg.</b> Tier 1: ${fmtList(t1all)}. Tier 2 — up: ${fmtList(bk.up.T2)}${bk.dn.T2.length?'; down: '+fmtList(bk.dn.T2):''}.</p>`;
+  h+=`<p><b>Consults done by category vs 6-wk avg.</b> <b>STI</b> ${span(sti.p)} overall (T1 ${span(sti.pt1)}, T2 ${span(sti.pt2)})${sti.ups.length?' — growth in '+fmtList(sti.ups):''}${sti.dns.length?'; down in '+fmtList(sti.dns):''}. `;
+  h+=`<b>SH</b> ${span(sh.p)} overall (T1 ${span(sh.pt1)}, T2 ${span(sh.pt2)})${sh.dns.length?' — drops in '+fmtList(sh.dns):''}.</p></div>`;
+  return h;
+}
+function render(){
+  if(!D){$('app').innerHTML='Loading…';return;}
+  destroyCharts();
+  $('sub').textContent='Week of '+wkLabel(D._meta.weeks[w])+' · network · leads → new bookings → consults done.';
+  let h=narrative();
+  const secs=[['leads','Total Leads',D.leads,false],['bookings','New Bookings',D.bookings,true],['done','Consults Done',D.done,true]];
+  const built=[];
+  secs.forEach(([k,t,M,hc])=>{const r=metricSection(k,t,M,hc);h+=r.h;built.push([k,M,hc,r.chans]);});
+  $('app').innerHTML=h;
+  built.forEach(([k,M,hc,chans])=>buildCharts(k,M,hc,chans));
+  $('srcnote').innerHTML='<b>Definitions.</b> Leads = all leads (main_source_wise_leads) by created week. New bookings = first-ever Screening Calls (excl. reschedules &amp; cancellations). Consults done = completed Screening Calls. Channel (book/done) = originating lead source. Category = consultation diagnosis (STI · SH = ED·PE · Other; there is no Mental-Health diagnosis tag, so MH consults sit in Other). City / Tier = physical clinics (offline); online/telehealth shown separately. Most leads arrive online/national before clinic assignment, so leads city/tier covers only clinic-tied leads.';
+}
+fetch('data_weekly_review.json?v='+Date.now()).then(r=>r.json()).then(j=>{
+  D=j;
+  $('wsel').innerHTML=D._meta.weeks.slice(0,7).map((ws,i)=>`<option value="${i}">${wkLabel(ws)}${i===0?' (latest)':''}</option>`).join('');
+  $('wsel').onchange=e=>{w=+e.target.value;render();};
+  render();
+}).catch(()=>{$('app').innerHTML='<div class="note">Could not load data_weekly_review.json — run scripts/build_weekly_review.py</div>';});
+</script>
+</body></html>

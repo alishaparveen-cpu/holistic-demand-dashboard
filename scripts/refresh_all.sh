@@ -67,6 +67,7 @@ step "Category bookings pull (fetch_bookings)" python3 scripts/fetch_bookings.py
 step "Category data build (rebuild_data)"      python3 scripts/rebuild_data.py
 step "Channel cube (build_channel_data)"       python3 scripts/build_channel_data.py
 step "Efficiency RS-native (build_efficiency_rs)" python3 scripts/build_efficiency_rs.py
+step "Weekly review (network leads/book/done)" python3 scripts/build_weekly_review.py
 step "Indiranagar AI call leads (channel×category)" python3 scripts/pull_indiranagar_calls.py
 step "Indiranagar bottom funnel (booked/done/purchased/rev by cat)" python3 scripts/pull_indiranagar_bottom.py
 step "Indiranagar funnel assemble"            python3 scripts/assemble_indiranagar.py   # combines geo+gmb+leads+bottom → data_indiranagar.json
