@@ -182,9 +182,26 @@ def get_calls(cfg):
             for k in ("other_lead","other_unclear","other_nonlead"): d[k][i] = None
     return raw, gmb_ai, paid_ai
 
+# ---------- GMB website leads (clicked the website link on the GBP → clinic page → filled number) ----------
+def get_gmbweb(cfg):
+    sql = """SELECT TO_CHAR(DATE_TRUNC('week', created_on + INTERVAL '5 hours 30 minutes'),'YYYY-MM-DD') wk,
+      COUNT(*) leads, SUM(CASE WHEN call_booking_ts IS NOT NULL THEN 1 ELSE 0 END) booked
+    FROM production.public.main_source_wise_leads
+    WHERE call_location='{loc}' AND source='Organic' AND organic_l2='Google Listing'
+      AND created_on >= '{lo}' AND created_on < '2026-06-22' GROUP BY 1;""".format(loc=cfg["loc"].replace("'","''"), lo=LO)
+    tot = [0]*NW; bk = [0]*NW
+    for line in run_sql(sql):
+        c = line.split("\t")
+        if len(c) < 3 or c[0] not in idx: continue
+        i = idx[c[0]]
+        try: tot[i] = int(float(c[1])); bk[i] = int(float(c[2]))
+        except ValueError: pass
+    return {"total": tot, "booked": bk, "notbooked": [tot[i]-bk[i] for i in range(NW)]}
+
 def assemble(slug, cfg):
     bottom = get_bottom(cfg)
     raw, gmb_ai, paid_ai = get_calls(cfg)
+    gmbweb = get_gmbweb(cfg)
     gmb = (L("data_gmb_insights.json") or {}).get(cfg["key"], {})
     cf  = (L("data_clinic_funnel.json") or {}).get("clinics", {}).get(cfg["key"], {})
     practo = (L("data_practo_leads.json") or {}).get(cfg["key"], {})
@@ -212,6 +229,7 @@ def assemble(slug, cfg):
         "raw": raw,
         "ai": {**gmb_ai, "calls": gmb_ai["total"], "available": any(gmb_ai["total"])},
         "paid_ai": paid_ai,
+        "gmb_web": gmbweb,
     }
     lw = LAUNCH.get(slug)
     out = {"_meta": {"weeks": WEEKS, "clinic": cfg["key"], "display": cfg["disp"], "city": cfg["city"], "locality": cfg["loc"],

@@ -152,6 +152,9 @@ function metrics(){
   const gmbCatSTI=aiC('STI'),gmbCatSH=aiC('SH'),gmbCatMH=aiC('MH'),gmbCatOther=aiC('Other');
   const aiK=k=>mk(i=>{const a=ai[k];return a?a[i]:0;});
   const gmbOthLead=aiK('other_lead'),gmbOthUnclear=aiK('other_unclear'),gmbOthNonlead=aiK('other_nonlead');
+  const gw=L.gmb_web||{};const gwK=k=>mk(i=>{const a=gw[k];return a?a[i]:0;});
+  const gmbWebLeads=gwK('total'),gmbWebBooked=gwK('booked'),gmbWebNotBk=gwK('notbooked');
+  const gmbWebBookPct=mk(i=>(gmbWebLeads[i]?gmbWebBooked[i]/gmbWebLeads[i]*100:null));
   const paidAiTotal=mk(i=>{const t=pAi.total;return t?t[i]:0;});
   const booked=arr(i=>(bot.booked&&bot.booked[i])||0);
   const done=arr(i=>(bot.done&&bot.done[i])||0);
@@ -173,6 +176,7 @@ function metrics(){
     leads,gmbLeads,paidLeads,orgLeads,practoLeads,otherLeads,
     gmbRawTotal,gmbRawUnique,gmbRawAnswered,gmbRawMissed,
     gmbCatSTI,gmbCatSH,gmbCatMH,gmbCatOther,gmbOthLead,gmbOthUnclear,gmbOthNonlead,
+    gmbWebLeads,gmbWebBooked,gmbWebNotBk,gmbWebBookPct,
     paidAiTotal,paidAiSH:pAiC('SH'),paidAiMH:pAiC('MH'),paidAiSTI:pAiC('STI'),paidAiOther:pAiC('Other'),
     booked,done,purch,rev,l2b,b2d,d2p,
     shDone,stiDone,mhDone,othDone,shBooked,stiBooked,shPurch,shRev,stiPurch,stiRev,mhPurch,mhRev,
@@ -226,6 +230,13 @@ function buildStages(M){
           {label:'· could-not-determine (short / unclear — mostly hang-ups)',arr:M.gmbOthUnclear,fmt:N,info:'AI could not read intent — typically very short calls (Indiranagar avg ~26s, many under 20s = misdials / hang-ups / IVR drops). Mostly NOT recoverable leads, but a high count signals call-handling friction (wait time, IVR).'},
           {label:'· genuinely other (existing patient / service / wrong number)',arr:M.gmbOthNonlead,fmt:N,info:'Real conversations that are NOT new-appointment intent — existing patients about their treatment, service/ops queries, wrong numbers. Correctly excluded from leads.'},
         ]},
+      ]},
+    {t:'stage',k:'gmbWebLeads',label:'GMB website leads (filled number on clinic page)',color:'#3E6F8E',fmt:N,
+      info:'The OTHER GMB path: instead of calling, the patient tapped the WEBSITE link on the Google Business Profile → landed on this clinic’s page → filled their phone number = a lead (source tag organic_l2 "Google Listing"). Separate from the inbound-call path above. Split below into who booked vs who gave a number but did not book.',
+      children:[
+        {label:'· Booked (number → booked a Screening Call)',arr:M.gmbWebBooked,fmt:N,info:'Web leads who went on to book a Screening Call (has a booking timestamp).'},
+        {label:'· Gave number, did NOT book',arr:M.gmbWebNotBk,fmt:N,info:'Filled their number on the clinic page but have not booked — the follow-up / recovery pool. Worth a callback.'},
+        {label:'Web lead → book %',arr:M.gmbWebBookPct,fmt:PCT,info:'Share of GMB-website leads that booked.'},
       ]},
     hasPaid?
     {t:'stage',k:'paidAiTotal',label:'Paid inbound calls · 2048556242 (AI attributed → Hadapsar)',color:'#2E5BA6',fmt:N,
