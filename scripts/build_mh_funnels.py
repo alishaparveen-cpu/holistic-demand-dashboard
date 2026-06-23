@@ -22,14 +22,14 @@ idx = {w: i for i, w in enumerate(WEEKS)}; NW = len(WEEKS)
 LO = "2026-03-02"   # SQL lower bound (a bit before the oldest week)
 AUDIT_START = "2026-03-23"   # AI call-audit (call_analyses) reaches coverage here; earlier weeks have ~none
 # MH launch per clinic — Monday of the launch week, + label (doctor + date)
-LAUNCH = {
+LAUNCH = {   # week marker = first full week the change takes effect (Thu-Sun launch → next Monday)
   "bharathi":    ("2026-03-09", "Mar · Dr. Sandhiya"),
   "indiranagar": ("2026-03-30", "1 Apr · Dr. Adithya + Dr. Chetan"),
-  "vaishali":    ("2026-05-18", "22 May · Dr. Ashish"),
-  "hadapsar":    ("2026-05-18", "22 May · Dr. Pragnya"),
-  "hubli":       ("2026-06-01", "5 Jun · Dr. Varsha"),
-  "kharghar":    ("2026-06-08", "12 Jun · Dr. Reeva"),
-  "kharadi":     ("2026-06-15", "20 Jun · Dr. Shaunak"),
+  "vaishali":    ("2026-05-25", "22 May · Dr. Ashish"),
+  "hadapsar":    ("2026-05-25", "22 May · Dr. Pragnya"),
+  "hubli":       ("2026-06-08", "5 Jun · Dr. Varsha"),
+  "kharghar":    ("2026-06-15", "12 Jun · Dr. Reeva"),
+  "kharadi":     ("2026-06-22", "20 Jun · Dr. Shaunak"),
 }
 CATS = ["STI", "SH", "MH", "Other"]
 CATMAP = {"STI":"STI","SEXUAL_HEALTH_GENERAL":"SH","MENTAL_HEALTH":"MH","OTHER":"Other","NOT_MENTIONED":"Other"}
@@ -39,11 +39,11 @@ LEAD_INTENT = ("TALK_TO_DOCTOR","TALK_TO_THERAPIST","NEEDS_TESTS","NEEDS_MEDS","
 
 # slug → config. gmb = clinic-direct GMB listing number(s) (main + dedicated MH line).
 CLINICS = {
-  "bharathi":    {"key":"Coimbatore|Bharathi Nagar","disp":"Bharathi Nagar · Coimbatore","city":"Coimbatore","loc":"Bharathi Nagar","gmb":["4440114608","4440116568"],"paid":None,"geo":"data_mh_bharathi_google_geo.json"},
+  "bharathi":    {"key":"Coimbatore|Bharathi Nagar","disp":"Bharathi Nagar · Coimbatore","city":"Coimbatore","loc":"Bharathi Nagar","gmb":["4440114608","4440116568"],"paid":"4440114631","paid_solo":True,"geo":"data_mh_bharathi_google_geo.json"},
   "indiranagar": {"key":"Bangalore|Indiranagar","disp":"Indiranagar · Bangalore","city":"Bangalore","loc":"Indiranagar","gmb":["8047160881","8047281164"],"paid":"8045680561","geo":"data_indiranagar_google_geo.json"},
-  "vaishali":    {"key":"Jaipur|Vaishali Nagar","disp":"Vaishali Nagar · Jaipur","city":"Jaipur","loc":"Vaishali Nagar","gmb":["1414931073"],"paid":None,"geo":"data_mh_vaishali_google_geo.json"},
+  "vaishali":    {"key":"Jaipur|Vaishali Nagar","disp":"Vaishali Nagar · Jaipur","city":"Jaipur","loc":"Vaishali Nagar","gmb":["1414931073"],"paid":"1414931123","paid_solo":True,"geo":"data_mh_vaishali_google_geo.json"},
   "hadapsar":    {"key":"Pune|Hadapsar","disp":"Hadapsar · Pune","city":"Pune","loc":"Hadapsar","gmb":["2241483789"],"paid":"2048556242","geo":"data_hadapsar_google_geo.json"},
-  "kharghar":    {"key":"Navi Mumbai|Kharghar","disp":"Kharghar · Navi Mumbai","city":"Navi Mumbai","loc":"Kharghar","gmb":["2248932451"],"paid":None,"geo":"data_mh_kharghar_google_geo.json"},
+  "kharghar":    {"key":"Navi Mumbai|Kharghar","disp":"Kharghar · Navi Mumbai","city":"Navi Mumbai","loc":"Kharghar","gmb":["2248932451"],"paid":"2248931386","geo":"data_mh_kharghar_google_geo.json"},
   "hubli":       {"key":"Hubli|Vidya Nagar","disp":"Vidya Nagar · Hubli","city":"Hubli","loc":"Vidya Nagar","gmb":["8047094835"],"paid":None,"geo":"data_mh_hubli_google_geo.json"},
   "kharadi":     {"key":"Pune|Kharadi","disp":"Kharadi · Pune","city":"Pune","loc":"Kharadi","gmb":["2241484446"],"paid":"2048556242","geo":"data_mh_kharadi_google_geo.json"},
 }
@@ -160,9 +160,9 @@ def get_calls(cfg):
           COALESCE(ca.analysis.diagnoses.category::varchar,'NOT_MENTIONED') cat, ca.analysis.user_intent.result::varchar intent, COUNT(*) n
         FROM allo_analytics.call_analyses ca JOIN allo_vendors.exotel_calls ec ON ec.call_id=ca.call_id AND ec.routed_to='lead_to_call'
         WHERE ca.deleted_at IS NULL AND RIGHT(ec.exotel_number,10)='{paid}'
-          AND ca.analysis.user_intent.locality_mentioned.is_our_locality=true
-          AND ca.analysis.user_intent.locality_mentioned.best_match::varchar='{loc}'
-          AND (ec.start_time + INTERVAL '5 hours 30 minutes') >= '2026-03-02' GROUP BY 1,2,3;""".format(paid=cfg["paid"], loc=cfg["loc"].replace("'","''"))
+          {locfilter}
+          AND (ec.start_time + INTERVAL '5 hours 30 minutes') >= '2026-03-02' GROUP BY 1,2,3;""".format(paid=cfg["paid"], loc=cfg["loc"].replace("'","''"),
+          locfilter=("" if cfg.get("paid_solo") else "AND ca.analysis.user_intent.locality_mentioned.is_our_locality=true AND ca.analysis.user_intent.locality_mentioned.best_match::varchar='"+cfg["loc"].replace("'","''")+"'"))
         for line in run_sql(paid_sql):
             c = line.split("\t")
             if len(c) < 4 or c[0] not in idx: continue
