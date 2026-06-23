@@ -144,10 +144,12 @@ function metrics(){
   const gCatOther=arr(i=>((gcats.Other&&gcats.Other.impr&&gcats.Other.impr[i])||0));
   const leads=arr(i=>(L.total&&L.total[i])||0);
   const gmbLeads=arr(i=>(ch.gmb&&ch.gmb[i])||0);
+  const gmbWhatsapp=arr(i=>(ch.gmb_whatsapp&&ch.gmb_whatsapp[i])||0);
   const paidLeads=arr(i=>(ch.google_web&&ch.google_web[i])||0);
   const orgLeads=arr(i=>(ch.organic&&ch.organic[i])||0);
   const practoLeads=arr(i=>(ch.practo&&ch.practo[i])||0);
-  const otherLeads=arr(i=>((ch.other&&ch.other[i])||0)+((ch.fb&&ch.fb[i])||0));
+  const metaLeads=arr(i=>(ch.fb&&ch.fb[i])||0);
+  const otherLeads=arr(i=>(ch.other&&ch.other[i])||0);
   const gmbRawTotal=rc('total'),gmbRawUnique=rc('unique'),gmbRawAnswered=rc('answered'),gmbRawMissed=rc('missed');
   const gmbCatSTI=aiC('STI'),gmbCatSH=aiC('SH'),gmbCatMH=aiC('MH'),gmbCatOther=aiC('Other');
   const aiK=k=>mk(i=>{const a=ai[k];return a?a[i]:0;});
@@ -173,7 +175,7 @@ function metrics(){
   return {
     mImpr,mClk,mCtr,mCallsBtn,mWeb,mDir,
     gImpr,gClk,gCtr,gCatSH,gCatSTI,gCatMH,gCatOther,
-    leads,gmbLeads,paidLeads,orgLeads,practoLeads,otherLeads,
+    leads,gmbLeads,gmbWhatsapp,paidLeads,orgLeads,practoLeads,metaLeads,otherLeads,
     gmbRawTotal,gmbRawUnique,gmbRawAnswered,gmbRawMissed,
     gmbCatSTI,gmbCatSH,gmbCatMH,gmbCatOther,gmbOthLead,gmbOthUnclear,gmbOthNonlead,
     gmbWebLeads,gmbWebBooked,gmbWebNotBk,gmbWebBookPct,
@@ -207,14 +209,17 @@ function buildStages(M){
         {label:'GMB directions clicks',arr:M.mDir,fmt:N},
         {label:'GMB total CTR (clicks ÷ searches)',arr:M.mCtr,fmt:PCT,info:'Combined CTR across all click types. Drop post-MH-change = more impressions (MH searches) but fewer clicks per impression (MH seekers less likely to click through).'},
       ]},
-    {t:'stage',k:'leads',label:'Total leads',color:'#1F6F5C',fmt:N,
-      info:'All leads registered in the CRM for Pune|Hadapsar this week, across channels.',
+    {t:'stage',k:'leads',label:'Total leads (by true source)',color:'#1F6F5C',fmt:N,
+      info:'Leads classified by their REAL source, recovered from the lead record’s UTM (utm_source/medium/gclid/fbclid). The dashboard’s source table strips UTM and dumps GMB-WhatsApp, Practo and Meta into "Organic" — this corrects that, so GMB gets its WhatsApp + website leads and Organic is no longer inflated.',
       children:[
-        {label:'GMB (organic call + website)',arr:M.gmbLeads,fmt:N,info:'Leads attributed to the Hadapsar GMB listing — organic call leads and website click leads. Primary channel for SH demand.'},
-        {label:'Google paid (web)',arr:M.paidLeads,fmt:N},
-        {label:'Organic web',arr:M.orgLeads,fmt:N},
-        {label:'Practo',arr:M.practoLeads,fmt:N},
-        {label:'Other (FB / misc)',arr:M.otherLeads,fmt:N},
+        {label:'GMB (call + website + WhatsApp)',arr:M.gmbLeads,fmt:N,info:'All GMB-origin leads (utm_source=gmb): the listing call, the website-link path, AND the GBP WhatsApp button — previously mis-filed under Organic.',kids:[
+          {label:'· of which GMB → WhatsApp',arr:M.gmbWhatsapp,fmt:N,info:'GMB leads that came via the WhatsApp button on the Google Business Profile (utm_campaign=gmb_wa). NOTE: company-wide gmb_wa carries no clinic tag, so this per-clinic figure is only the subset whose phone later resolved to this clinic — treat as a floor.'},
+        ]},
+        {label:'Google paid',arr:M.paidLeads,fmt:N,info:'utm_source=google / gclid present (paid search).'},
+        {label:'Organic web',arr:M.orgLeads,fmt:N,info:'Genuine organic (utm_source=organic) — no longer inflated by mis-tagged WhatsApp/Practo/Meta.'},
+        {label:'Practo',arr:M.practoLeads,fmt:N,info:'utm_source=practo — recovered from Organic/Others.'},
+        {label:'Meta (FB / IG)',arr:M.metaLeads,fmt:N,info:'utm_source=fb/instagram or fbclid present.'},
+        {label:'Other / untagged',arr:M.otherLeads,fmt:N,info:'Leads with no usable UTM in the lead record — genuinely unattributable digital source (or walk-in/referral).'},
       ]},
     {t:'stage',k:'gmbRawTotal',label:'GMB inbound calls · 2241483789 (Exotel · all calls incl missed)',color:'#9E8E5B',fmt:N,
       info:'ALL inbound calls to the Hadapsar GMB listing number (2241483789) from Exotel call logs. DND dashboard total = 2× Exotel total (confirmed match). Includes answered + missed. The AI category audit below runs only on the answered subset.',

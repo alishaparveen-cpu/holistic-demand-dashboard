@@ -218,10 +218,54 @@ def get_gmbweb(slug, cfg):
         except ValueError: pass
     return {"total": tot, "booked": bk, "notbooked": [tot[i]-bk[i] for i in range(NW)]}
 
+# ---------- leads by TRUE source (UTM-recovered) ----------
+# main_source_wise_leads gives the clinic (call_location) but strips UTM (dumps WhatsApp/Practo/Meta
+# into 'Organic'). Recover the real source by joining each lead's phone to allo_persons.lead's UTM.
+LEADBUCKETS = ("gmb","google_web","organic","practo","fb","other")
+def get_leads_clean(cfg):
+    sql = """WITH lds AS (
+      SELECT m.phone_no1 ph, TO_CHAR(DATE_TRUNC('week', m.created_on + INTERVAL '5 hours 30 minutes'),'YYYY-MM-DD') wk
+      FROM production.public.main_source_wise_leads m
+      WHERE m.call_location='{loc}' AND m.created_on >= '{lo}' AND m.created_on < '2026-06-22'),
+     u AS (
+      SELECT ph, us, um, g, f FROM (
+        SELECT RIGHT(phone_no,10) ph, LOWER(COALESCE(utm_source,'')) us, LOWER(COALESCE(utm_medium,'')) um,
+          CASE WHEN gclid IS NOT NULL AND gclid<>'' THEN 1 ELSE 0 END g,
+          CASE WHEN fbclid IS NOT NULL AND fbclid<>'' THEN 1 ELSE 0 END f,
+          ROW_NUMBER() OVER (PARTITION BY RIGHT(phone_no,10) ORDER BY created_at DESC) rn
+        FROM allo_persons.lead
+        WHERE created_at >= '2026-01-15' AND created_at < '2026-06-22'
+          AND (utm_source IS NOT NULL OR gclid IS NOT NULL OR fbclid IS NOT NULL)) z WHERE rn=1)
+    SELECT lds.wk,
+      CASE
+        WHEN u.us='gmb' THEN 'gmb'
+        WHEN u.f=1 OR u.us IN ('fb','facebook','instagram','ig','meta') THEN 'fb'
+        WHEN u.g=1 OR u.us='google' OR u.um IN ('cpc','ppc') THEN 'google_web'
+        WHEN u.us='practo' THEN 'practo'
+        WHEN u.us='organic' THEN 'organic'
+        ELSE 'other'
+      END bucket,
+      COUNT(*) n,
+      SUM(CASE WHEN u.us='gmb' AND u.um='whatsapp' THEN 1 ELSE 0 END) gmb_wa
+    FROM lds LEFT JOIN u ON u.ph=lds.ph
+    GROUP BY 1,2;""".format(loc=cfg["loc"].replace("'","''"), lo=LO)
+    out = {b: [0]*NW for b in LEADBUCKETS}; gwa = [0]*NW
+    for line in run_sql(sql):
+        c = line.split("\t")
+        if len(c) < 4 or c[0] not in idx: continue
+        wk, b, n_s, gw_s = c[0], c[1], c[2], c[3]
+        if wk not in idx or b not in out: continue
+        i = idx[wk]
+        try: out[b][i] += int(float(n_s)); gwa[i] += int(float(gw_s or 0))
+        except ValueError: pass
+    total = [sum(out[b][i] for b in LEADBUCKETS) for i in range(NW)]
+    return out, gwa, total
+
 def assemble(slug, cfg):
     bottom = get_bottom(cfg)
     raw, gmb_ai, paid_ai = get_calls(cfg)
     gmbweb = get_gmbweb(slug, cfg)
+    lead_chan, gmb_wa, lead_total = get_leads_clean(cfg)
     gmb = (L("data_gmb_insights.json") or {}).get(cfg["key"], {})
     cf  = (L("data_clinic_funnel.json") or {}).get("clinics", {}).get(cfg["key"], {})
     practo = (L("data_practo_leads.json") or {}).get(cfg["key"], {})
@@ -241,11 +285,10 @@ def assemble(slug, cfg):
     lead = cf.get("lead", {}); bychan = lead.get("by_chan", {})
     bc = lambda k: pad(bychan.get(k))
     leads = {
-        "total": pad(lead.get("leads_total")),
-        "by_chan": {"gmb": bc("gmb"), "google_web": bc("google_ad"), "organic": bc("organic"),
-                    "practo": [(pad(practo.get("leads"))[i] or 0)+bc("practo_crm")[i] for i in range(NW)],
-                    "practo_sheet": pad(practo.get("leads")), "practo_crm": bc("practo_crm"),
-                    "fb": bc("fb"), "other": [bc("others")[i]+bc("justdial")[i] for i in range(NW)]},
+        "total": lead_total,   # UTM-recovered: sum of correctly-classified buckets
+        "by_chan": {"gmb": lead_chan["gmb"], "google_web": lead_chan["google_web"], "organic": lead_chan["organic"],
+                    "practo": lead_chan["practo"], "fb": lead_chan["fb"], "other": lead_chan["other"],
+                    "gmb_whatsapp": gmb_wa},
         "raw": raw,
         "ai": {**gmb_ai, "calls": gmb_ai["total"], "available": any(gmb_ai["total"])},
         "paid_ai": paid_ai,
