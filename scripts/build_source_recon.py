@@ -9,7 +9,7 @@ Does NOT touch the MH funnel. Per clinic, weekly:
      same logic as the MH funnel. Other channels appear in (A) only (no clean clinic lead universe).
 Run: AWS_PROFILE=redshift-data python3 scripts/build_source_recon.py
 """
-import os, sys, json
+import os, sys, json, csv, io, datetime, urllib.request
 sys.path.insert(0, os.path.dirname(__file__))
 import build_mh_funnels as B   # reuse WEEKS, idx, NW, LO, run_sql, CLINICS, GMBWEB_CAMP
 
@@ -112,7 +112,43 @@ def call_lead_book(num_list, paid_num, cfg, kind):
         except ValueError: pass
     return {"leads": leads, "booked": booked, "notbooked": [leads[i]-booked[i] for i in range(NW)]}
 
+# ---- Practo lead -> book (connections sheet has Practice Locality + patient phone) ----
+PRACTO_SID = "1pTPQgdSUaomRuj_49dARVJ4Vtiy34uE73X4gqqkwlaE"
+def load_practo_sheet():
+    url = "https://docs.google.com/spreadsheets/d/%s/export?format=csv&sheet=Practo" % PRACTO_SID
+    data = urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent":"Mozilla/5.0"}), timeout=180).read().decode("utf-8","replace")
+    rows = list(csv.reader(io.StringIO(data))); hdr = [h.strip() for h in rows[0]]
+    li = hdr.index("Practice Locality"); ph = hdr.index("Patient_Phone_Number"); dt = hdr.index("Date")
+    by_loc = {}
+    for r in rows[1:]:
+        if len(r) <= max(li, ph, dt): continue
+        loc = r[li].strip()
+        try: d = datetime.datetime.strptime(r[dt].strip(), "%d-%m-%Y").date()
+        except ValueError: continue
+        mon = (d - datetime.timedelta(days=d.weekday())).isoformat()
+        if mon not in idx: continue
+        p = "".join(ch for ch in r[ph] if ch.isdigit())[-10:]
+        if len(p) < 10: continue
+        by_loc.setdefault(loc, set()).add((mon, p))   # dedupe distinct (week, phone)
+    return by_loc
+
+def get_booking_phones(cfg):
+    sql = """SELECT DISTINCT RIGHT(p.phone_no,10) ph FROM allo_consultations.appointments a
+      JOIN allo_health.locations loc ON loc.id=a.location_id AND loc.city='{city}' AND loc.locality='{loc}' AND loc.deleted_at IS NULL
+      JOIN allo_persons.patient p ON p.id=a.patient_id
+      JOIN allo_consultations.types t ON t.id=a.type_id AND t.name='Screening Call'
+      WHERE a.deleted_at IS NULL AND a.created_at>='2026-02-15';""".format(city=cfg["city"].replace("'","''"), loc=cfg["loc"].replace("'","''"))
+    return set(l.split("\t")[0] for l in run_sql(sql) if l.strip())
+
+def practo_leadbook(cfg, practo_by_loc, bkphones):
+    leads = Z(); booked = Z()
+    for (wk, ph) in practo_by_loc.get(cfg["loc"], set()):
+        i = idx[wk]; leads[i] += 1
+        if ph in bkphones: booked[i] += 1
+    return {"leads": leads, "booked": booked, "notbooked": [leads[i]-booked[i] for i in range(NW)]}
+
 def main():
+    practo_by_loc = load_practo_sheet()
     out = {"_meta": {"weeks": WEEKS, "sources": SOURCES,
             "clinics": [k for k in CLINICS], "display": {k: CLINICS[k]["disp"] for k in CLINICS},
             "note": "Bookings deduped per patient/week, source priority-assigned (call match > UTM). Lead->book only for call channels + GMB web (clinic-attributable); other channels are booked-only. Untagged = no Exotel call + no UTM."},
@@ -127,7 +163,8 @@ def main():
         bottom = mh.get("bottom", {}).get("total", {})   # booked/done/purchased/rev — reused from MH data
         out["clinics"][slug] = {"by_source": by_src, "untagged_new": un_new, "untagged_repeat": un_rep,
             "lead_book": {"gmb_call": gmb_lb, "gmb_web": {"leads": web["total"], "booked": web["booked"], "notbooked": web["notbooked"]},
-                          "gpaid_call": paid_lb},
+                          "gpaid_call": paid_lb,
+                          "practo": practo_leadbook(cfg, practo_by_loc, get_booking_phones(cfg))},
             "bottom": {"booked": bottom.get("booked", Z()), "done": bottom.get("done", Z()),
                        "purchased": bottom.get("purchased", Z()), "rev": bottom.get("rev", Z())}}
         tot = sum(sum(by_src[s]) for s in SOURCES)
