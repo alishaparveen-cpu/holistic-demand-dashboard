@@ -330,22 +330,28 @@ function clinicTxt(s){
   if(city&&city!=='Pune')h=h.replace(/\bPune\b/g,city);
   return h;
 }
-function zoomReg(i){const z=ZREG[i];if(!z)return;
+let curZoom=-1;
+function zoomReg(i){const z=ZREG[i];if(!z)return;curZoom=i;
   $('mTitle').textContent=clinicTxt(z.label);
-  const W=700,H=300,pad=38,padT=26;const wks=D._meta.weeks.slice(0,NSHOW).reverse();
-  const v=z.arr.slice().reverse().map(x=>x==null||isNaN(x)?null:x);const n=v.length;
-  const mx=Math.max(1,...v.map(x=>x||0));const x=i=>pad+i*(W-2*pad)/(n-1),y=val=>H-pad-((val||0)/mx)*(H-pad-padT);
+  const W=700,H=300,pad=38,padT=26;
+  // same columns as the table: newest NSHOW weeks, oldest→newest, dropping the ongoing wk0 unless showPartial
+  const cols=[];for(let j=NSHOW-1;j>=0;j--){if(j===0&&!showPartial)continue;cols.push(j);}
+  const wks=cols.map(j=>D._meta.weeks[j]);
+  const v=cols.map(j=>{const x=z.arr[j];return (x==null||isNaN(x))?null:x;});const n=v.length;
+  const mx=Math.max(1,...v.map(x=>x||0));const x=i=>pad+i*(W-2*pad)/((n-1)||1),y=val=>H-pad-((val||0)/mx)*(H-pad-padT);
   let p='',pts='',lbls='',started=false;
-  v.forEach((val,i)=>{if(val==null)return;p+=(started?'L':'M')+x(i).toFixed(1)+','+y(val).toFixed(1)+' ';started=true;
+  v.forEach((val,i)=>{if(val==null){started=false;return;}p+=(started?'L':'M')+x(i).toFixed(1)+','+y(val).toFixed(1)+' ';started=true;
     pts+=`<circle cx="${x(i).toFixed(1)}" cy="${y(val).toFixed(1)}" r="3.2" fill="${z.color}"><title>${wkShort(wks[i])}: ${z.fmt(val)}</title></circle>`;
     lbls+=`<text x="${x(i).toFixed(1)}" y="${(y(val)-9).toFixed(1)}" font-size="12" fill="${z.color}" text-anchor="middle" font-weight="700">${z.fmt(val)}</text>`;});
   let gl='';[0,.5,1].forEach(f=>{const yy=H-pad-(f*(H-pad-padT));gl+=`<line x1="${pad}" y1="${yy}" x2="${W-pad}" y2="${yy}" stroke="#EEEBE2"/><text x="4" y="${yy+3}" font-size="10" fill="#999">${z.fmt(mx*f)}</text>`;});
-  let xl='';v.forEach((_,i)=>{
-    const isMH=(NSHOW-1-i)===MH_WK_IDX;
-    xl+=`<text x="${x(i)}" y="${H-10}" font-size="9" fill="${isMH?'#7B5EA7':'#999'}" text-anchor="middle" font-weight="${isMH?'700':'400'}">${wkShort(wks[i])}${isMH?' 🔵':''}</text>`;
+  let xl='';cols.forEach((j,i)=>{
+    const isMH=j===MH_WK_IDX, isOn=(j===0);
+    xl+=`<text x="${x(i)}" y="${H-10}" font-size="9" fill="${isMH?'#7B5EA7':(isOn?'#B8862E':'#999')}" text-anchor="middle" font-weight="${isMH?'700':'400'}">${wkShort(wks[i])}${isMH?' 🔵':''}${isOn?' •':''}</text>`;
   });
   const ll=(D._meta&&D._meta.mh_launch_label)?('🔵 = MH launch week ('+D._meta.mh_launch_label+')'):'';
-  $('mBody').innerHTML=`<svg width="100%" viewBox="0 0 ${W} ${H}">${gl}<path d="${p}" fill="none" stroke="${z.color}" stroke-width="2"/>${pts}${lbls}${xl}</svg><div class="lgd">Numbers shown per week. ${ll}</div>`;
+  const partialWk=D._meta.weeks[0];
+  const tgl=`<button class="partial-btn" style="margin-top:8px" onclick="showPartial=!showPartial;render();zoomReg(curZoom)">${showPartial?'− Hide':'+ Show'} ongoing week (${wkShort(partialWk)}, partial)</button>`;
+  $('mBody').innerHTML=`<svg width="100%" viewBox="0 0 ${W} ${H}">${gl}<path d="${p}" fill="none" stroke="${z.color}" stroke-width="2"/>${pts}${lbls}${xl}</svg><div class="lgd">Numbers per week. ${ll}</div>${tgl}`;
   $('modal').classList.add('on');
 }
 function closeZ(){$('modal').classList.remove('on');}
