@@ -355,7 +355,14 @@ function render(){
   // Matrix
   const partialWk=D._meta.weeks[0];
   const llab=(D._meta&&D._meta.mh_launch_label)?` 🔵 = MH launch week (${D._meta.mh_launch_label})`:'';
-  h+=`<div class="shead"><h2>Funnel — full weekly history</h2><span class="sub2">${llab} · latest on right · scroll ◀ to view weeks before launch · green = high, red = low per row · click sparkline to zoom</span><button class="partial-btn" onclick="showPartial=!showPartial;render()">${showPartial?'▾ Hide':'▸ Show'} ongoing week (${wkShort(partialWk)}, partial)</button></div>`;
+  const wksN=(D._meta.weeks||[]).length;
+  const shownComplete=Math.max(0,Math.min(NSHOW,wksN)-(showPartial?0:1));
+  h+=`<div class="shead"><h2>Funnel — last ${shownComplete} weeks</h2><span class="sub2">${llab} · latest on right · use ＋ to add older weeks (back to launch), − to trim · click sparkline to zoom</span>`+
+     `<span style="margin-left:auto;display:flex;gap:6px;align-items:center;">`+
+     `<button class="partial-btn" style="margin:0" onclick="adjWeeks(-3)" ${NSHOW<=6?'disabled':''}>− fewer</button>`+
+     `<button class="partial-btn" style="margin:0" onclick="adjWeeks(3)" ${NSHOW>=wksN?'disabled':''}>＋ older weeks</button>`+
+     `<button class="partial-btn" style="margin:0" onclick="showPartial=!showPartial;render()">${showPartial?'▾ Hide':'▸ Show'} ongoing wk</button>`+
+     `</span></div>`;
   if(D._meta&&D._meta.audit_start){const as=new Date(D._meta.audit_start+'T00:00:00');h+=`<div class="note" style="margin-top:0;margin-bottom:10px;">⚠ The <b>AI call-audit</b> (caller category STI/SH/MH/Other on inbound calls) only has coverage from the week of <b>${as.getDate()} ${as.toLocaleString('en',{month:'short'})}</b> — earlier weeks show <b>—</b> on those rows (the audit wasn't running, not zero calls). Raw GMB call volume and the <b>booked → done</b> funnel (incl. MH via diagnosis) are real for every week.</div>`;}
   h+=matrix(M);
 
@@ -400,13 +407,14 @@ render=function(){
   if(city && city!=='Pune') h=h.replace(/\bPune\b/g,city);
   $('app').innerHTML=h;
 };
+function adjWeeks(d){const n=(D&&D._meta&&D._meta.weeks||[]).length;NSHOW=Math.max(6,Math.min(n,NSHOW+d));render();}
 function loadClinic(slug){
   const c=MH_CLINICS.find(x=>x.slug===slug)||MH_CLINICS[0];
   $('csel').value=c.slug; expanded={}; showPartial=false;
   fetch(c.file+'?v='+Date.now()).then(r=>r.json()).then(j=>{
     D=j; wk=0;
     const m=D._meta||{};
-    NSHOW=(m.weeks||[]).length||7;
+    NSHOW=Math.min(7,(m.weeks||[]).length||7);   // default: latest 6 complete weeks (+ hideable partial)
     MH_WK_IDX=m.mh_launch?(m.weeks||[]).indexOf(m.mh_launch):-1;
     const ll=m.mh_launch_label?` <span style="font-family:Inter;font-size:13px;font-weight:600;color:#7B5EA7;background:#F5F0FA;border:1px solid #C8B0E8;border-radius:7px;padding:2px 9px;vertical-align:middle;">🧠 MH launched ${m.mh_launch_label}</span>`:'';
     $('clinicH1').innerHTML=((m.display)||c.disp)+ll;
