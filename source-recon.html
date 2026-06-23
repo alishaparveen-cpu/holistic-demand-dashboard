@@ -31,6 +31,10 @@ tr.sub td{color:var(--ink2);font-size:11.5px}
 tr.untag td{background:#FBEEEC}
 tr.untag td:first-child{color:var(--bad);font-weight:700}
 tr.tot td{background:var(--inset);font-weight:700;border-top:2px solid var(--line)}
+tr.gband td{background:#EAF1ED;font-weight:700;font-size:13px}
+tr.gband td:first-child{border-left:3px solid var(--accent);padding-left:9px}
+tr.grp2 td{font-weight:600}tr.grp2 td:first-child{padding-left:20px;color:var(--ink)}
+tr.sub2 td{color:var(--ink2);font-size:11.5px}tr.sub2 td:first-child{padding-left:36px;color:var(--ink2)}
 td.lastcol{font-weight:700;color:var(--accent)}
 td.pct{font-weight:700}
 .note{background:#FBF9F3;border:1px dashed var(--line);border-radius:9px;padding:10px 13px;font-size:12px;color:var(--ink2);margin-top:12px;line-height:1.6}
@@ -48,16 +52,16 @@ td.pct{font-weight:700}
   <h1 id="h1">Source Reconciliation</h1>
   <div class="sub">Every Screening-Call booking traced to its real source (call-match + recovered UTM), reconciled to the total — so we can see what each channel contributes, the lead→book rate where trackable, and what’s untagged. Weeks: latest 8 complete (Mon-based).</div>
 
-  <div class="shead">① Bookings by source <span class="lblmuted">(deduped per patient/week)</span></div>
+  <div class="shead">① Lead → Booked by channel <span class="lblmuted">(calls: → answered → relevant → booked)</span></div>
+  <div class="fmwrap"><table class="fm" id="tLB"></table></div>
+  <div class="note" id="lbNote">For <b>calls</b>: total inbound → answered / not-answered → <b>relevant</b> (AI says real appointment intent) → of those, <b>booked vs didn’t</b>. For <b>web / Practo</b>: leads → booked / didn’t. Shown only for channels tied to this clinic without needing a booking — GMB call, GMB website, Google paid call, Google paid web (single-clinic cities), Practo. Google-paid-web in multi-clinic cities + Meta + Organic are city-level / un-isolatable, so they appear in ② (booked side) only.</div>
+
+  <div class="shead">② Bookings by source <span class="lblmuted">(deduped per patient/week — reconciles to total)</span></div>
   <div class="fmwrap"><table class="fm" id="tA"></table></div>
 
-  <div class="shead">② Untagged bookings — new vs repeat</div>
+  <div class="shead">③ Untagged bookings — new vs repeat</div>
   <div class="fmwrap"><table class="fm" id="tB"></table></div>
   <div class="note badwarn" id="untagNote"></div>
-
-  <div class="shead">③ Lead → Book % by channel <span class="lblmuted">(only the cleanly clinic-attributable channels)</span></div>
-  <div class="fmwrap"><table class="fm" id="tC"></table></div>
-  <div class="note" id="lbNote">Leads → who booked / who didn’t, for channels we can tie to this clinic without a booking: <b>GMB call</b> (Exotel to the clinic number), <b>GMB website</b> (clinic campaign), <b>Google paid call</b> (city number, clinic-intent), <b>Practo</b> (connections sheet has Practice Locality + phone). Google-web / Meta / Organic appear in ① (booked side) only — their non-bookers can’t be tied to one clinic, so no L→B% for them.</div>
 
   <div class="shead">④ Bookings → Done → Purchased → Revenue</div>
   <div class="fmwrap"><table class="fm" id="tD"></table></div>
@@ -76,6 +80,26 @@ function wlab(w){const d=new Date(w+'T00:00:00'),e=new Date(d);e.setDate(e.getDa
 function head(){const w=D._meta.weeks,c=cols();return '<tr><th>'+arguments[0]+'</th>'+c.map((j,p)=>`<th class="${p===c.length-1?'lastcol':''}">${wlab(w[j])}</th>`).join('')+'</tr>';}
 function row(label,arr,cls,fmt){fmt=fmt||N;const c=cols();let t='';c.forEach((j,p)=>{t+=`<td class="${p===c.length-1?'lastcol':''}">${fmt(arr?arr[j]:null)}</td>`;});return `<tr class="${cls||''}"><td>${label}</td>${t}</tr>`;}
 function addv(a,b){const o=[];for(let i=0;i<a.length;i++)o.push((a[i]||0)+(b[i]||0));return o;}
+function pctOf(num,den){return den.map((v,i)=>v?Math.round((num[i]||0)/v*100):null);}
+function callRows(label,x){
+  if(!x)return row('· '+label+' — n/a',null,'grp2');
+  let h=row('· '+label+' — total calls',x.total,'grp2');
+  h+=row('answered',x.answered,'sub2');
+  h+=row('not answered',x.missed,'sub2');
+  h+=row('relevant (real intent)',x.relevant,'sub2');
+  h+=row('→ booked',x.booked,'sub2');
+  h+=row('→ did NOT book',x.notbooked,'sub2');
+  h+=row('relevant → book %',pctOf(x.booked,x.relevant),'sub2',PCT);
+  return h;
+}
+function webRows(label,x,cityFlag){
+  if(!x)return row('· '+label+(cityFlag?' — city-level (not clinic-isolatable)':' — none'),null,'grp2');
+  let h=row('· '+label+' — leads',x.leads,'grp2');
+  h+=row('booked',x.booked,'sub2');
+  h+=row('did NOT book',x.notbooked,'sub2');
+  h+=row('lead → book %',pctOf(x.booked,x.leads),'sub2',PCT);
+  return h;
+}
 
 function render(){
   const c=D.clinics[CUR];if(!c)return;
@@ -84,7 +108,22 @@ function render(){
   const gmbTot=addv(addv(s.gmb_call,s.gmb_web),s.gmb_wa);
   const googTot=addv(s.gpaid_call,s.gpaid_web);
   const tot=D._meta.sources.reduce((acc,k)=>addv(acc,s[k]),Array(D._meta.weeks.length).fill(0));
-  // ① bookings by source
+  // ① LEAD → BOOK by channel (call funnel + GMB/Google grouped)
+  const lb=c.lead_book;const NWlen=D._meta.weeks.length;const ZA=Array(NWlen).fill(0);
+  const bk=x=>x?x.booked:ZA;
+  const searchBk=addv(addv(bk(lb.gmb_call),bk(lb.gmb_web)),addv(bk(lb.gpaid_call),bk(lb.gpaid_web)));
+  let L=head('Channel · lead → book');
+  L+=row('GMB + Google — booked (search channels)',searchBk,'tot');
+  L+=row('GMB',null,'gband');
+  L+=callRows('inbound calls',lb.gmb_call);
+  L+=webRows('website',lb.gmb_web,false);
+  L+=row('Google',null,'gband');
+  L+=callRows('paid calls',lb.gpaid_call);
+  L+=webRows('paid web',lb.gpaid_web,true);
+  L+=row('Practo',null,'gband');
+  L+=webRows('Practo connections',lb.practo,false);
+  $('tLB').innerHTML=L;
+  // ② bookings by source
   let h=head('Source · bookings');
   h+=row('GMB',gmbTot,'grp');
   h+=row('· inbound call',s.gmb_call,'sub');
@@ -107,18 +146,6 @@ function render(){
   $('tB').innerHTML=b;
   const col=cols();const un=sum(s.untagged,col),nw=sum(c.untagged_new,col),rp=sum(c.untagged_repeat,col),T=sum(tot,col);
   $('untagNote').innerHTML=`<b>${un}</b> of ${T} bookings (${T?Math.round(un/T*100):0}%) are untagged over these 8 weeks — <b>${nw} genuinely new patients</b> with no traceable digital source (the real gap to fix — walk-in/referral/manual, or capture not logging UTM) and <b>${rp} repeat/existing patients</b> re-booking directly (expected, not a leak).`;
-  // ③ lead→book by channel
-  const lb=c.lead_book;
-  let g=head('Channel · lead → book');
-  ['gmb_call','gmb_web','gpaid_call','practo'].forEach(k=>{
-    const x=lb[k];if(!x||!x.leads.some(v=>v))return;
-    const lab={gmb_call:'GMB inbound call',gmb_web:'GMB website',gpaid_call:'Google paid call',practo:'Practo'}[k];
-    g+=row(lab+' — leads',x.leads,'grp');
-    g+=row('· booked',x.booked,'sub');
-    g+=row('· did NOT book',x.notbooked,'sub');
-    g+=row('· lead → book %',x.leads.map((v,i)=>v?Math.round(x.booked[i]/v*100):null),'sub',v=>v==null?'—':v+'%');
-  });
-  $('tC').innerHTML=g;
   // ④ bookings → done → purchased → revenue
   const bt=c.bottom||{};const bd=(bt.booked||[]).map((v,i)=>v?(bt.done[i]/v*100):null);const dp=(bt.done||[]).map((v,i)=>v?(bt.purchased[i]/v*100):null);
   let m=head('Outcome');
