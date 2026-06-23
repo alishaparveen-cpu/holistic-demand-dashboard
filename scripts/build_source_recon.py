@@ -216,6 +216,33 @@ def practo_leadbook(cfg, practo_by_loc, bkphones):
         if ph in bkphones: booked[i] += 1
     return {"leads": leads, "booked": booked, "notbooked": [leads[i]-booked[i] for i in range(NW)]}
 
+# ---- Availability: bookable roster slots + distinct hours, split weekday/weekend ----
+def availability(cfg):
+    sql = """WITH s AS (
+      SELECT TO_CHAR(DATE_TRUNC('week', rs.start_time + INTERVAL '5 hours 30 minutes'),'YYYY-MM-DD') wk,
+        EXTRACT(DOW FROM rs.start_time + INTERVAL '5 hours 30 minutes') dow,
+        DATE_TRUNC('hour', rs.start_time + INTERVAL '5 hours 30 minutes') hr
+      FROM allo_consultations.roster_slots rs
+      JOIN allo_health.locations loc ON loc.id=rs.location_id AND loc.deleted_at IS NULL
+      WHERE rs.type_id='cd02525c-1528-4047-a12c-1ad526c28c9a' AND rs.available_for_booking=1
+        AND rs.start_time >= '{lo}' AND rs.start_time < '2026-06-22'
+        AND loc.city='{city}' AND COALESCE(loc.locality,loc.name,'')='{loc}')
+    SELECT wk, COUNT(*) st, SUM(CASE WHEN dow IN (0,6) THEN 1 ELSE 0 END) sw,
+      COUNT(DISTINCT hr) ht, COUNT(DISTINCT CASE WHEN dow IN (0,6) THEN hr END) hw
+    FROM s GROUP BY 1;""".format(lo=LO, city=cfg["city"].replace("'","''"), loc=cfg["loc"].replace("'","''"))
+    d = {k: Z() for k in ("slots_total","slots_we","hrs_total","hrs_we")}
+    for line in run_sql(sql):
+        c = line.split("\t")
+        if len(c) < 5 or c[0] not in idx: continue
+        i = idx[c[0]]
+        try:
+            d["slots_total"][i]=int(float(c[1])); d["slots_we"][i]=int(float(c[2]))
+            d["hrs_total"][i]=int(float(c[3])); d["hrs_we"][i]=int(float(c[4]))
+        except ValueError: pass
+    d["slots_wd"]=[d["slots_total"][i]-d["slots_we"][i] for i in range(NW)]
+    d["hrs_wd"]=[d["hrs_total"][i]-d["hrs_we"][i] for i in range(NW)]
+    return d
+
 def main():
     practo_by_loc = load_practo_sheet()
     out = {"_meta": {"weeks": WEEKS, "sources": SOURCES,

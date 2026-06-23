@@ -55,6 +55,8 @@ svg.sp{display:block;margin:0 auto}
 .mhd{display:flex;justify-content:space-between;align-items:center;font-family:Fraunces;font-size:17px;font-weight:600;margin-bottom:10px;gap:12px}
 .mhd button{border:none;background:none;font-size:18px;cursor:pointer;color:var(--muted)}
 .lgd{font-size:11px;color:var(--muted);margin-top:6px}
+.chev{display:inline-block;width:11px;color:var(--muted);font-size:9px;vertical-align:middle}
+tr[onclick]:hover td:first-child{color:var(--accent)}
 </style>
 </head>
 <body>
@@ -67,24 +69,29 @@ svg.sp{display:block;margin:0 auto}
   <div class="sub">Every Screening-Call booking traced to its real source (call-match + recovered UTM), reconciled to the total — so we can see what each channel contributes, the lead→book rate where trackable, and what’s direct. Cells are shaded green (high) → red (low) within each row; click any trend sparkline to zoom.</div>
   <div class="wknav">Showing last <b id="wkN">6</b> complete weeks <button id="wkMinus" onclick="adjWeeks(-2)" title="fewer weeks">−</button><button id="wkPlus" onclick="adjWeeks(2)" title="more weeks">＋</button></div>
 
-  <div class="shead">① Leads <span class="lblmuted">(who reached out — GMB + Google + Practo)</span></div>
+  <div class="shead">① Availability <span class="lblmuted">(bookable roster — click a row to split weekday / weekend)</span></div>
+  <div class="fmwrap"><table class="fm" id="tAvail"></table></div>
+  <div class="note">Bookable Screening-Call roster <b>slots</b> and the distinct clinic-<b>hours</b> they cover, per week. Click "total" to expand weekday vs weekend. Weeks before the roster was tracked show —.</div>
+
+  <div class="shead">② Leads <span class="lblmuted">(who reached out — GMB + Google + Practo)</span></div>
   <div class="fmwrap"><table class="fm" id="tLeads"></table></div>
 
-  <div class="shead">② Lead → Booked by channel <span class="lblmuted">(calls: → answered → relevant → booked)</span></div>
+  <div class="shead">③ Lead → Booked by channel <span class="lblmuted">(calls: → answered → relevant → booked)</span></div>
   <div class="fmwrap"><table class="fm" id="tLB"></table></div>
-  <div class="note" id="lbNote">For <b>calls</b>: total inbound → answered / not-answered → <b>relevant</b> (AI says real appointment intent) → of those, <b>booked vs didn’t</b>. For <b>web / Practo</b>: leads → booked / didn’t. Shown only for channels tied to this clinic without needing a booking — GMB call, GMB website, Google paid call, Google paid web (single-clinic cities), Practo. Google-paid-web in multi-clinic cities + Meta + Organic are city-level / un-isolatable, so they appear in ③ (booked side) only.</div>
+  <div class="note" id="lbNote">For <b>calls</b>: total inbound → answered / not-answered → <b>relevant</b> (AI says real appointment intent) → of those, <b>booked vs didn’t</b>. For <b>web / Practo</b>: leads → booked / didn’t. Shown only for channels tied to this clinic without needing a booking — GMB call, GMB website, Google paid call, Google paid web (single-clinic cities), Practo. Google-paid-web in multi-clinic cities + Meta + Organic are city-level / un-isolatable, so they appear in ④ (booked side) only.</div>
 
-  <div class="shead">③ Bookings by source <span class="lblmuted">(deduped per patient/week — reconciles to total)</span></div>
+  <div class="shead">④ Bookings by source <span class="lblmuted">(deduped per patient/week — reconciles to total · click GMB / Google to expand)</span></div>
   <div class="fmwrap"><table class="fm" id="tA"></table></div>
   <div class="note badwarn" id="dwNote"></div>
 
-  <div class="shead">④ Bookings → Done → Purchased → Revenue</div>
+  <div class="shead">⑤ Bookings → Done → Purchased → Revenue</div>
   <div class="fmwrap"><table class="fm" id="tD"></table></div>
-  <div class="note">Booked = unique-patient Screening Calls (matches the ③ total). <b>Done</b> = completed consults; <b>Purchased</b> = completed + paid invoice; <b>Revenue</b> = ₹ collected. B→D% is the real no-show/completion rate.</div>
+  <div class="note">Booked = unique-patient Screening Calls (matches the ④ total). <b>Done</b> = completed consults; <b>Purchased</b> = completed + paid invoice; <b>Revenue</b> = ₹ collected. B→D% is the real no-show/completion rate.</div>
 </div>
 <div class="modal" id="modal"><div class="mbox"><div class="mhd"><span id="mTitle"></span><button onclick="closeZ()">✕</button></div><div id="mBody"></div></div></div>
 <script>
-let D=null,CUR=null;let NSHOW=6;let ZREG=[];
+let D=null,CUR=null;let NSHOW=6;let ZREG=[];let EXP={};
+function toggle(k){EXP[k]=!EXP[k];render();}
 const $=id=>document.getElementById(id);
 const N=v=>v==null||isNaN(v)?'—':Math.round(v).toLocaleString('en-IN');
 const RUP=v=>v==null||isNaN(v)?'—':'₹'+Math.round(v).toLocaleString('en-IN');
@@ -104,12 +111,14 @@ function row(label,arr,cls,fmt,o){fmt=fmt||N;o=o||{};const c=cols();
   let t='';c.forEach((j,p)=>{const v=arr?arr[j]:null;const last=p===c.length-1;
     const bg=(o.noheat||cls==='gband')?'':heatBg(v,mn,mx,o.invert);const st=bg?`style="background:${bg}"`:'';
     t+=`<td class="${last?'lastcol':''}" ${st}>${(v==null||isNaN(v))?'—':fmt(v)}</td>`;});
-  return `<tr class="${cls||''}"><td>${label}</td>${t}${arr?sparkCell(arr,o.color||BLU,label,fmt):'<td></td>'}</tr>`;}
+  const lbl=(o.tkey?`<span class="chev">${EXP[o.tkey]?'▾':'▸'}</span> `:'')+label;
+  const clk=o.tkey?` onclick="toggle('${o.tkey}')" style="cursor:pointer"`:'';
+  return `<tr class="${cls||''}"${clk}><td>${lbl}</td>${t}${arr?sparkCell(arr,o.color||BLU,label,fmt):'<td></td>'}</tr>`;}
 function spark(arr,color){const c=cols();const v=c.map(j=>{const x=arr?arr[j]:null;return x==null||isNaN(x)?0:x;});const n=v.length,mx=Math.max(1,...v);
   const W=120,H=26,pad=2,x=i=>pad+i*(W-2*pad)/((n-1)||1),y=val=>H-pad-(val/mx)*(H-2*pad);
   let p='';v.forEach((val,i)=>{p+=(i?'L':'M')+x(i).toFixed(1)+','+y(val).toFixed(1)+' ';});
   return `<svg class="sp" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}"><path d="${p}" fill="none" stroke="${color}" stroke-width="1.6"/><circle cx="${x(n-1).toFixed(1)}" cy="${y(v[n-1]).toFixed(1)}" r="2.6" fill="${color}"/></svg>`;}
-function sparkCell(arr,color,label,fmt){const idx=ZREG.length;ZREG.push({label,arr,fmt,color});return `<td class="sparkcell" onclick="zoomReg(${idx})">${spark(arr,color)}</td>`;}
+function sparkCell(arr,color,label,fmt){const idx=ZREG.length;ZREG.push({label,arr,fmt,color});return `<td class="sparkcell" onclick="event.stopPropagation();zoomReg(${idx})">${spark(arr,color)}</td>`;}
 let curZoom=-1;
 function zoomReg(i){const z=ZREG[i];if(!z)return;curZoom=i;$('mTitle').textContent=(D._meta.display[CUR]||CUR)+' · '+z.label;
   const W=700,H=300,pad=40,padT=26,c=cols(),wks=c.map(j=>D._meta.weeks[j]);
@@ -160,7 +169,15 @@ function render(){
   const tot=D._meta.sources.reduce((acc,k)=>addv(acc,s[k]),Array(D._meta.weeks.length).fill(0));
   const lb=c.lead_book;const NWlen=D._meta.weeks.length;const ZA=Array(NWlen).fill(0);
   const bk=x=>x?x.booked:ZA, cl=x=>x?x.total:ZA, wl=x=>x?x.leads:ZA, rl=x=>x?x.relevant:ZA;
-  // ① LEADS summary (total → GMB+Google → relevant → Practo)
+  // ① AVAILABILITY (bookable roster slots + distinct hours, collapsible weekday/weekend)
+  const av=c.avail||{};
+  let AV=head('Availability');
+  AV+=row('Available slots — total',av.slots_total,'grp',N,{color:BLU,tkey:'av_slots'});
+  if(EXP['av_slots']){AV+=row('weekday',av.slots_wd,'sub',N,{color:GRN});AV+=row('weekend',av.slots_we,'sub',N,{color:VIO});}
+  AV+=row('Available hours — total',av.hrs_total,'grp',N,{color:BLU,tkey:'av_hours'});
+  if(EXP['av_hours']){AV+=row('weekday',av.hrs_wd,'sub',N,{color:GRN});AV+=row('weekend',av.hrs_we,'sub',N,{color:VIO});}
+  $('tAvail').innerHTML=AV;
+  // ② LEADS summary (total → GMB+Google → relevant → Practo)
   const ggLeads=addv(addv(cl(lb.gmb_call),wl(lb.gmb_web)),addv(cl(lb.gpaid_call),wl(lb.gpaid_web)));
   const ggRel=addv(addv(rl(lb.gmb_call),wl(lb.gmb_web)),addv(rl(lb.gpaid_call),wl(lb.gpaid_web)));
   const prLeads=lb.practo?lb.practo.leads:ZA;
@@ -183,20 +200,17 @@ function render(){
   L+=row('Practo',null,'gband');
   L+=webRows('Practo connections',lb.practo,false);
   $('tLB').innerHTML=L;
-  // ② bookings by source
+  // ④ bookings by source (GMB / Google / Direct collapsible)
   let h=head('Source · bookings');
-  h+=row('GMB',gmbTot,'grp');
-  h+=row('· inbound call',s.gmb_call,'sub');
-  h+=row('· website',addv(s.gmb_web,s.gmb_wa),'sub');
-  h+=row('Google',googTot,'grp');
-  h+=row('· paid call',s.gpaid_call,'sub');
-  h+=row('· paid web',s.gpaid_web,'sub');
+  h+=row('GMB',gmbTot,'grp',N,{tkey:'src_gmb'});
+  if(EXP['src_gmb']){h+=row('inbound call',s.gmb_call,'sub');h+=row('website',addv(s.gmb_web,s.gmb_wa),'sub');}
+  h+=row('Google',googTot,'grp',N,{tkey:'src_goog'});
+  if(EXP['src_goog']){h+=row('paid call',s.gpaid_call,'sub');h+=row('paid web',s.gpaid_web,'sub');}
   h+=row('Practo',s.practo,'grp');
   h+=row('Meta (FB/IG)',s.meta,'grp');
   h+=row('Organic',s.organic,'grp');
-  h+=row('Direct / Walk-in (no call, no UTM)',s.untagged,'untag');
-  h+=row('· new patient',c.untagged_new,'sub');
-  h+=row('· repeat (booked SC again)',c.untagged_repeat,'sub');
+  h+=row('Direct / Walk-in (no call, no UTM)',s.untagged,'untag',N,{tkey:'src_direct',invert:true,color:RED});
+  if(EXP['src_direct']){h+=row('new patient',c.untagged_new,'sub');h+=row('repeat (booked SC again)',c.untagged_repeat,'sub');}
   h+=row('TOTAL bookings',tot,'tot');
   $('tA').innerHTML=h;
   const col=cols();const un=sum(s.untagged,col),nw=sum(c.untagged_new,col),rp=sum(c.untagged_repeat,col),T=sum(tot,col);
