@@ -214,19 +214,34 @@ def get_booking_phones(cfg):
       WHERE a.deleted_at IS NULL AND a.created_at>='2026-02-15';""".format(city=cfg["city"].replace("'","''"), loc=cfg["loc"].replace("'","''"))
     return set(l.split("\t")[0] for l in run_sql(sql) if l.strip())
 
-PRACTO_LOC = {"Vidya Nagar": "Hubli Vidyanagar"}   # cfg loc -> Practo sheet "Practice Locality" when they differ
+# Clinic locality -> extra Practo "Practice Locality" strings that are the SAME clinic
+# (validated 2026-06-24 against allo_health.locations; single-clinic-city orphans route to the lone clinic).
+PRACTO_ALIAS = {
+    "Electronic City": ["Electronics City"], "Sahakara Nagar": ["Sahakaranagar"],
+    "Borivali": ["Borivali East"], "Dadar": ["Dadar West"], "Chinchwad": ["Pimpri-Chinchwad"],
+    "Thoraipakkam": ["Okkiyam Thuraipakkam"], "Gulmohar": ["Gulmohar Colony"],
+    "Suryaraopeta": ["Suryaraopet"], "Vidya Nagar": ["Hubli Vidyanagar"],
+    "Vaishali Nagar": ["Khatipura"], "Ashok Nagar": ["Bariatu"],
+    "Tatya Tope Nagar": ["Mankapur Ring Road"], "Falnir Rd": ["Falnir"], "Thane": ["Thane West"],
+}
 def practo_leadbook(cfg, practo_by_loc, bkphones, practo_by_loc_doc=None):
-    ploc = PRACTO_LOC.get(cfg["loc"], cfg["loc"])
+    locs = [cfg["loc"]] + PRACTO_ALIAS.get(cfg["loc"], [])
+    pairs = set()
+    for pl in locs: pairs |= practo_by_loc.get(pl, set())
     leads = Z(); booked = Z()
-    for (wk, ph) in practo_by_loc.get(ploc, set()):
+    for (wk, ph) in pairs:
         i = idx[wk]; leads[i] += 1
         if ph in bkphones: booked[i] += 1
     out = {"leads": leads, "booked": booked, "notbooked": [leads[i]-booked[i] for i in range(NW)]}
     if practo_by_loc_doc:
+        docagg = {}
+        for pl in locs:
+            for doc, prs in practo_by_loc_doc.get(pl, {}).items():
+                docagg.setdefault(doc, set()).update(prs)
         docs = []
-        for doc, pairs in practo_by_loc_doc.get(ploc, {}).items():
+        for doc, prs in docagg.items():
             dl = Z(); db = Z()
-            for (wk, ph) in pairs:
+            for (wk, ph) in prs:
                 i = idx[wk]; dl[i] += 1
                 if ph in bkphones: db[i] += 1
             docs.append({"name": doc, "leads": dl, "booked": db, "notbooked": [dl[i]-db[i] for i in range(NW)]})
