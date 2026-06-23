@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Source Reconciliation — by clinic</title>
+<script>if(!sessionStorage.getItem('allo_dash_auth'))location.replace('index.html');</script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Fraunces:opsz,wght@9..144,500;9..144,600&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#F6F4EE;--sheet:#fff;--inset:#F4F2EB;--ink:#1A2B26;--ink2:#52605A;--muted:#8A8A80;--faint:#B0A99A;
+  --line:#E5E2D9;--line2:#EEEBE2;--accent:#1F6F5C;--good:#1F6F5C;--bad:#B23A2E;--warn:#B8862E;--vio:#7B5EA7;--r:12px}
+*{box-sizing:border-box}
+body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--ink);margin:0;font-size:13px;line-height:1.45}
+.wrap{max-width:1180px;margin:0 auto;padding:18px 22px 90px}
+.top{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}
+.back{font-size:12.5px;color:var(--muted);text-decoration:none}.back:hover{color:var(--accent)}
+h1{font-family:'Fraunces',serif;font-size:29px;font-weight:600;margin:8px 0 2px}
+.sub{color:var(--muted);font-size:13px;margin-bottom:16px;max-width:860px}
+.csel{padding:7px 12px;border:1px solid var(--line);border-radius:9px;font-size:13px;font-weight:600;background:#fff;cursor:pointer;font-family:Inter;color:var(--ink);min-width:210px}
+.shead{font-family:'Fraunces',serif;font-size:18px;font-weight:600;margin:26px 0 9px}
+.fmwrap{background:var(--sheet);border:1px solid var(--line);border-radius:var(--r);overflow-x:auto}
+table.fm{border-collapse:collapse;width:100%;font-size:12.5px;min-width:760px}
+table.fm th{font-family:'JetBrains Mono';font-size:9px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);font-weight:600;text-align:right;padding:8px 11px;background:var(--inset);border-bottom:1px solid var(--line);white-space:nowrap}
+table.fm th:first-child{text-align:left}
+table.fm th.lastcol{color:var(--accent)}
+table.fm td{padding:6px 11px;text-align:right;border-bottom:1px solid var(--line2);font-family:'JetBrains Mono';font-variant-numeric:tabular-nums;white-space:nowrap}
+table.fm td:first-child{text-align:left;font-family:'Inter'}
+tr.grp td{font-weight:700;font-size:13px}
+tr.grp td:first-child{border-left:3px solid var(--accent);padding-left:9px}
+tr.sub td:first-child{padding-left:24px;color:var(--ink2);font-size:11.5px}
+tr.sub td{color:var(--ink2);font-size:11.5px}
+tr.untag td{background:#FBEEEC}
+tr.untag td:first-child{color:var(--bad);font-weight:700}
+tr.tot td{background:var(--inset);font-weight:700;border-top:2px solid var(--line)}
+td.lastcol{font-weight:700;color:var(--accent)}
+td.pct{font-weight:700}
+.note{background:#FBF9F3;border:1px dashed var(--line);border-radius:9px;padding:10px 13px;font-size:12px;color:var(--ink2);margin-top:12px;line-height:1.6}
+.note b{color:var(--ink)}
+.badwarn{background:#FBEEEC;border-color:#E6C5C0;color:#7a2b22}
+.lblmuted{color:var(--muted);font-size:11px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <a class="back" href="index.html">← Dashboard</a>
+    <select class="csel" id="csel" onchange="sel(this.value)"></select>
+  </div>
+  <h1 id="h1">Source Reconciliation</h1>
+  <div class="sub">Every Screening-Call booking traced to its real source (call-match + recovered UTM), reconciled to the total — so we can see what each channel contributes, the lead→book rate where trackable, and what’s untagged. Weeks: latest 8 complete (Mon-based).</div>
+
+  <div class="shead">① Bookings by source <span class="lblmuted">(deduped per patient/week)</span></div>
+  <div class="fmwrap"><table class="fm" id="tA"></table></div>
+
+  <div class="shead">② Untagged bookings — new vs repeat</div>
+  <div class="fmwrap"><table class="fm" id="tB"></table></div>
+  <div class="note badwarn" id="untagNote"></div>
+
+  <div class="shead">③ Lead → Book % by channel <span class="lblmuted">(only the cleanly clinic-attributable channels)</span></div>
+  <div class="fmwrap"><table class="fm" id="tC"></table></div>
+  <div class="note" id="lbNote">Leads → who booked / who didn’t, for channels we can tie to this clinic without a booking: <b>GMB call</b> (Exotel to the clinic number), <b>GMB website</b> (clinic campaign), <b>Google paid call</b> (city number, clinic-intent). Google-web / Practo / Meta / Organic appear in ① (booked side) but their non-bookers can’t be tied to one clinic, so no L→B% here.</div>
+</div>
+<script>
+let D=null,CUR=null;const NSHOW=8;
+const $=id=>document.getElementById(id);
+const N=v=>v==null||isNaN(v)?'—':Math.round(v).toLocaleString('en-IN');
+const sum=(a,idx)=>idx.reduce((s,i)=>s+(a[i]||0),0);
+function cols(){const w=D._meta.weeks;const c=[];for(let j=NSHOW;j>=1;j--)c.push(j);return c;} // skip wk0 partial, oldest→newest
+function wlab(w){const d=new Date(w+'T00:00:00'),e=new Date(d);e.setDate(e.getDate()+6);const m=x=>x.toLocaleString('en',{month:'short'});
+  return d.getMonth()===e.getMonth()?`${d.getDate()}–${e.getDate()} ${m(e)}`:`${d.getDate()} ${m(d)}–${e.getDate()} ${m(e)}`;}
+function head(){const w=D._meta.weeks,c=cols();return '<tr><th>'+arguments[0]+'</th>'+c.map((j,p)=>`<th class="${p===c.length-1?'lastcol':''}">${wlab(w[j])}</th>`).join('')+'</tr>';}
+function row(label,arr,cls,fmt){fmt=fmt||N;const c=cols();let t='';c.forEach((j,p)=>{t+=`<td class="${p===c.length-1?'lastcol':''}">${fmt(arr?arr[j]:null)}</td>`;});return `<tr class="${cls||''}"><td>${label}</td>${t}</tr>`;}
+function addv(a,b){const o=[];for(let i=0;i<a.length;i++)o.push((a[i]||0)+(b[i]||0));return o;}
+
+function render(){
+  const c=D.clinics[CUR];if(!c)return;
+  $('h1').textContent=(D._meta.display[CUR]||CUR)+' — source reconciliation';
+  const s=c.by_source;
+  const gmbTot=addv(addv(s.gmb_call,s.gmb_web),s.gmb_wa);
+  const googTot=addv(s.gpaid_call,s.gpaid_web);
+  const tot=D._meta.sources.reduce((acc,k)=>addv(acc,s[k]),Array(D._meta.weeks.length).fill(0));
+  // ① bookings by source
+  let h=head('Source · bookings');
+  h+=row('GMB',gmbTot,'grp');
+  h+=row('· inbound call',s.gmb_call,'sub');
+  h+=row('· website',s.gmb_web,'sub');
+  h+=row('· WhatsApp',s.gmb_wa,'sub');
+  h+=row('Google',googTot,'grp');
+  h+=row('· paid call',s.gpaid_call,'sub');
+  h+=row('· paid web',s.gpaid_web,'sub');
+  h+=row('Practo',s.practo,'grp');
+  h+=row('Meta (FB/IG)',s.meta,'grp');
+  h+=row('Organic',s.organic,'grp');
+  h+=row('UNTAGGED (no call, no UTM)',s.untagged,'untag');
+  h+=row('TOTAL bookings',tot,'tot');
+  $('tA').innerHTML=h;
+  // ② untagged new vs repeat
+  let b=head('Untagged');
+  b+=row('Untagged total',s.untagged,'grp');
+  b+=row('· NEW patient (1st screening call)',c.untagged_new,'sub');
+  b+=row('· repeat / existing patient',c.untagged_repeat,'sub');
+  $('tB').innerHTML=b;
+  const col=cols();const un=sum(s.untagged,col),nw=sum(c.untagged_new,col),rp=sum(c.untagged_repeat,col),T=sum(tot,col);
+  $('untagNote').innerHTML=`<b>${un}</b> of ${T} bookings (${T?Math.round(un/T*100):0}%) are untagged over these 8 weeks — <b>${nw} genuinely new patients</b> with no traceable digital source (the real gap to fix — walk-in/referral/manual, or capture not logging UTM) and <b>${rp} repeat/existing patients</b> re-booking directly (expected, not a leak).`;
+  // ③ lead→book by channel
+  const lb=c.lead_book;
+  let g=head('Channel · lead → book');
+  ['gmb_call','gmb_web','gpaid_call'].forEach(k=>{
+    const x=lb[k];if(!x)return;
+    const lab={gmb_call:'GMB inbound call',gmb_web:'GMB website',gpaid_call:'Google paid call'}[k];
+    g+=row(lab+' — leads',x.leads,'grp');
+    g+=row('· booked',x.booked,'sub');
+    g+=row('· did NOT book',x.notbooked,'sub');
+    g+=row('· lead → book %',x.leads.map((v,i)=>v?Math.round(x.booked[i]/v*100):null),'sub',v=>v==null?'—':v+'%');
+  });
+  $('tC').innerHTML=g;
+}
+function sel(k){CUR=k;$('csel').value=k;render();}
+fetch('data_source_recon.json?v='+Date.now()).then(r=>r.json()).then(j=>{
+  D=j;$('csel').innerHTML=D._meta.clinics.map(k=>`<option value="${k}">${D._meta.display[k]}</option>`).join('');
+  CUR=D._meta.clinics[0];$('csel').value=CUR;render();
+}).catch(()=>{$('h1').textContent='Could not load data_source_recon.json';});
+</script>
+</body>
+</html>
