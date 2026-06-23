@@ -37,13 +37,13 @@ RELEVANT = ("TALK_TO_DOCTOR","NEEDS_TESTS","BOOK_APPOINTMENT","BOOK_TEST","BOOK_
 
 # slug → config. gmb = clinic-direct GMB listing number(s) (main + dedicated MH line).
 CLINICS = {
-  "bharathi":    {"key":"Coimbatore|Bharathi Nagar","disp":"Bharathi Nagar · Coimbatore","city":"Coimbatore","loc":"Bharathi Nagar","gmb":["4440114608","4440116568"],"paid":None,"geo":None},
+  "bharathi":    {"key":"Coimbatore|Bharathi Nagar","disp":"Bharathi Nagar · Coimbatore","city":"Coimbatore","loc":"Bharathi Nagar","gmb":["4440114608","4440116568"],"paid":None,"geo":"data_mh_bharathi_google_geo.json"},
   "indiranagar": {"key":"Bangalore|Indiranagar","disp":"Indiranagar · Bangalore","city":"Bangalore","loc":"Indiranagar","gmb":["8047160881","8047281164"],"paid":"8045680561","geo":"data_indiranagar_google_geo.json"},
-  "vaishali":    {"key":"Jaipur|Vaishali Nagar","disp":"Vaishali Nagar · Jaipur","city":"Jaipur","loc":"Vaishali Nagar","gmb":["1414931073"],"paid":None,"geo":None},
+  "vaishali":    {"key":"Jaipur|Vaishali Nagar","disp":"Vaishali Nagar · Jaipur","city":"Jaipur","loc":"Vaishali Nagar","gmb":["1414931073"],"paid":None,"geo":"data_mh_vaishali_google_geo.json"},
   "hadapsar":    {"key":"Pune|Hadapsar","disp":"Hadapsar · Pune","city":"Pune","loc":"Hadapsar","gmb":["2241483789"],"paid":"2048556242","geo":"data_hadapsar_google_geo.json"},
-  "kharghar":    {"key":"Navi Mumbai|Kharghar","disp":"Kharghar · Navi Mumbai","city":"Navi Mumbai","loc":"Kharghar","gmb":["2248932451"],"paid":None,"geo":None},
-  "hubli":       {"key":"Hubli|Vidya Nagar","disp":"Vidya Nagar · Hubli","city":"Hubli","loc":"Vidya Nagar","gmb":["8047094835"],"paid":None,"geo":None},
-  "kharadi":     {"key":"Pune|Kharadi","disp":"Kharadi · Pune","city":"Pune","loc":"Kharadi","gmb":["2241484446"],"paid":"2048556242","geo":None},
+  "kharghar":    {"key":"Navi Mumbai|Kharghar","disp":"Kharghar · Navi Mumbai","city":"Navi Mumbai","loc":"Kharghar","gmb":["2248932451"],"paid":None,"geo":"data_mh_kharghar_google_geo.json"},
+  "hubli":       {"key":"Hubli|Vidya Nagar","disp":"Vidya Nagar · Hubli","city":"Hubli","loc":"Vidya Nagar","gmb":["8047094835"],"paid":None,"geo":"data_mh_hubli_google_geo.json"},
+  "kharadi":     {"key":"Pune|Kharadi","disp":"Kharadi · Pune","city":"Pune","loc":"Kharadi","gmb":["2241484446"],"paid":"2048556242","geo":"data_mh_kharadi_google_geo.json"},
 }
 
 def run_sql(sql):
@@ -211,7 +211,7 @@ def assemble(slug, cfg):
             "gmb_number": cfg["gmb"][0], "mh_number": (cfg["gmb"][1] if len(cfg["gmb"])>1 else None), "paid_number": cfg["paid"],
             "mh_launch": (lw[0] if lw else None), "mh_launch_label": (lw[1] if lw else None),
             "audit_start": AUDIT_START,
-            "has_google_cat": bool(gcats),
+            "has_google_cat": bool(gcats), "google_shared": bool((geo.get("_meta") or {}).get("shared")),
             "note": "MH funnel. bottom: STI/SH via encounter_tags, MH via ICD-11 diagnoses (6A-6E/keywords), no STI/SH tag. calls: AI audit on clinic-direct GMB number(s) incl dedicated MH line; paid_ai on shared city Google call-asset where known."},
         "reach": reach, "leads": leads, "bottom": bottom}
     json.dump(out, open(os.path.join(ROOT, "data_mh_%s.json" % slug), "w"), separators=(",", ":"))
