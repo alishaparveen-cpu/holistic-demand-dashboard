@@ -136,23 +136,30 @@ function closeZ(){$('modal').classList.remove('on');}
 function adjWeeks(d){const n=(D._meta.weeks||[]).length-1;NSHOW=Math.max(4,Math.min(n,NSHOW+d));render();}
 function addv(a,b){const o=[];for(let i=0;i<a.length;i++)o.push((a[i]||0)+(b[i]||0));return o;}
 function pctOf(num,den){return den.map((v,i)=>v?Math.round((num[i]||0)/v*100):null);}
-function callRows(label,x){
+function pctRow(label,num,den,color){return row(label,pctOf(num,den),'sub2',PCT,{color:color||VIO});}
+function callDetail(label,x,tkey){
   if(!x)return row('· '+label+' — n/a',null,'grp2');
-  let h=row('· '+label+' — total calls',x.total,'grp2',N,{color:BLU});
-  h+=row('answered',x.answered,'sub2',N,{color:GRN});
-  h+=row('not answered',x.missed,'sub2',N,{color:RED,invert:true});
-  h+=row('relevant (real intent)',x.relevant,'sub2',N,{color:GRN});
-  h+=row('→ booked',x.booked,'sub2',N,{color:GRN});
-  h+=row('→ did NOT book',x.notbooked,'sub2',N,{color:RED,invert:true});
-  h+=row('relevant → book %',pctOf(x.booked,x.relevant),'sub2',PCT,{color:VIO});
+  let h=row('· '+label+' — leads',x.total,'grp2',N,{color:BLU,tkey:tkey});
+  h+=pctRow('lead → relevant %',x.relevant,x.total,VIO);
+  h+=pctRow('relevant → book %',x.booked,x.relevant,GRN);
+  h+=pctRow('lead → book %',x.booked,x.total,BLU);
+  if(EXP[tkey]){
+    h+=row('answered',x.answered,'sub2',N,{color:GRN});
+    h+=row('not answered',x.missed,'sub2',N,{color:RED,invert:true});
+    h+=row('relevant (real intent)',x.relevant,'sub2',N,{color:GRN});
+    h+=row('booked',x.booked,'sub2',N,{color:GRN});
+    h+=row('did NOT book',x.notbooked,'sub2',N,{color:RED,invert:true});
+  }
   return h;
 }
-function webRows(label,x,cityFlag){
+function webDetail(label,x,tkey,cityFlag){
   if(!x)return row('· '+label+(cityFlag?' — city-level (not clinic-isolatable)':' — none'),null,'grp2');
-  let h=row('· '+label+' — leads',x.leads,'grp2',N,{color:BLU});
-  h+=row('booked',x.booked,'sub2',N,{color:GRN});
-  h+=row('did NOT book',x.notbooked,'sub2',N,{color:RED,invert:true});
-  h+=row('lead → book %',pctOf(x.booked,x.leads),'sub2',PCT,{color:VIO});
+  let h=row('· '+label+' — leads',x.leads,'grp2',N,{color:BLU,tkey:tkey});
+  h+=pctRow('lead → book %',x.booked,x.leads,BLU);
+  if(EXP[tkey]){
+    h+=row('booked',x.booked,'sub2',N,{color:GRN});
+    h+=row('did NOT book',x.notbooked,'sub2',N,{color:RED,invert:true});
+  }
   return h;
 }
 
@@ -176,6 +183,16 @@ function render(){
   if(EXP['av_slots']){AV+=row('weekday',av.slots_wd,'sub',N,{color:GRN});AV+=row('weekend',av.slots_we,'sub',N,{color:VIO});}
   AV+=row('Available hours — total',av.hrs_total,'grp',N,{color:BLU,tkey:'av_hours'});
   if(EXP['av_hours']){AV+=row('weekday',av.hrs_wd,'sub',N,{color:GRN});AV+=row('weekend',av.hrs_we,'sub',N,{color:VIO});}
+  AV+=row('Available days — total',av.days_total,'grp',N,{color:BLU,tkey:'av_days'});
+  if(EXP['av_days']){AV+=row('weekday',av.days_wd,'sub',N,{color:GRN});AV+=row('weekend',av.days_we,'sub',N,{color:VIO});}
+  const docs=av.doctors||[];
+  if(docs.length){
+    AV+=row('By doctor — '+docs.length+(docs.length>1?' doctors':' doctor'),null,'grp',N,{tkey:'av_docs'});
+    if(EXP['av_docs'])docs.forEach((dd,di)=>{const dk='av_doc'+di;
+      AV+=row(dd.name+' — slots',dd.slots,'sub',N,{color:GRN,tkey:dk});
+      if(EXP[dk]){AV+=row('hours',dd.hrs,'sub2',N,{color:BLU});AV+=row('days',dd.days,'sub2',N,{color:VIO});}
+    });
+  }
   $('tAvail').innerHTML=AV;
   // ② LEADS summary (total → GMB+Google → relevant → Practo)
   const ggLeads=addv(addv(cl(lb.gmb_call),wl(lb.gmb_web)),addv(cl(lb.gpaid_call),wl(lb.gpaid_web)));
@@ -185,20 +202,26 @@ function render(){
   LS+=row('GMB + Google + Practo — total leads',addv(ggLeads,prLeads),'tot');
   LS+=row('GMB + Google leads',ggLeads,'grp');
   LS+=row('· of which relevant',ggRel,'sub');
+  LS+=row('· relevant lead %',pctOf(ggRel,ggLeads),'sub',PCT,{color:VIO});
   LS+=row('Practo leads',prLeads,'grp');
   $('tLeads').innerHTML=LS;
-  // ② LEAD → BOOK by channel (call funnel + GMB/Google grouped)
-  const searchBk=addv(addv(bk(lb.gmb_call),bk(lb.gmb_web)),addv(bk(lb.gpaid_call),bk(lb.gpaid_web)));
+  // ③ LEAD → BOOK by channel — %-first, raw counts collapsible
+  const cL=x=>x?x.total:ZA, wL=x=>x?x.leads:ZA, bdf=x=>x?x.booked:ZA;
+  const ggB=addv(addv(bdf(lb.gmb_call),bdf(lb.gmb_web)),addv(bdf(lb.gpaid_call),bdf(lb.gpaid_web)));
+  const ggL=addv(addv(cL(lb.gmb_call),wL(lb.gmb_web)),addv(cL(lb.gpaid_call),wL(lb.gpaid_web)));
+  const prB=lb.practo?lb.practo.booked:ZA, prL=lb.practo?lb.practo.leads:ZA;
   let L=head('Channel · lead → book');
-  L+=row('GMB + Google — booked (search channels)',searchBk,'tot');
+  L+=row('Overall lead → book %',pctOf(addv(ggB,prB),addv(ggL,prL)),'tot',PCT,{color:BLU});
+  L+=row('GMB + Google lead → book %',pctOf(ggB,ggL),'grp',PCT,{color:GRN});
+  L+=row('Practo lead → book %',pctOf(prB,prL),'grp',PCT,{color:VIO});
   L+=row('GMB',null,'gband');
-  L+=callRows('inbound calls',lb.gmb_call);
-  L+=webRows('website',lb.gmb_web,false);
+  L+=callDetail('inbound calls',lb.gmb_call,'lb_gmbc');
+  L+=webDetail('website',lb.gmb_web,'lb_gmbw',false);
   L+=row('Google',null,'gband');
-  L+=callRows('paid calls',lb.gpaid_call);
-  L+=webRows('paid web',lb.gpaid_web,true);
+  L+=callDetail('paid calls',lb.gpaid_call,'lb_gpc');
+  L+=webDetail('paid web',lb.gpaid_web,'lb_gpw',true);
   L+=row('Practo',null,'gband');
-  L+=webRows('Practo connections',lb.practo,false);
+  L+=webDetail('connections',lb.practo,'lb_pr',false);
   $('tLB').innerHTML=L;
   // ④ bookings by source (GMB / Google / Direct collapsible)
   let h=head('Source · bookings');

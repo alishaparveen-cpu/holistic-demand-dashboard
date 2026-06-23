@@ -216,31 +216,50 @@ def practo_leadbook(cfg, practo_by_loc, bkphones):
         if ph in bkphones: booked[i] += 1
     return {"leads": leads, "booked": booked, "notbooked": [leads[i]-booked[i] for i in range(NW)]}
 
-# ---- Availability: bookable roster slots + distinct hours, split weekday/weekend ----
+# ---- Availability: bookable roster slots + distinct hours + days, split weekday/weekend, by doctor ----
 def availability(cfg):
-    sql = """WITH s AS (
-      SELECT TO_CHAR(DATE_TRUNC('week', rs.start_time + INTERVAL '5 hours 30 minutes'),'YYYY-MM-DD') wk,
-        EXTRACT(DOW FROM rs.start_time + INTERVAL '5 hours 30 minutes') dow,
-        DATE_TRUNC('hour', rs.start_time + INTERVAL '5 hours 30 minutes') hr
-      FROM allo_consultations.roster_slots rs
+    FROM = ("""FROM allo_consultations.roster_slots rs
       JOIN allo_health.locations loc ON loc.id=rs.location_id AND loc.deleted_at IS NULL
       WHERE rs.type_id='cd02525c-1528-4047-a12c-1ad526c28c9a' AND rs.available_for_booking=1
         AND rs.start_time >= '{lo}' AND rs.start_time < '2026-06-22'
-        AND loc.city='{city}' AND COALESCE(loc.locality,loc.name,'')='{loc}')
+        AND loc.city='{city}' AND COALESCE(loc.locality,loc.name,'')='{loc}'"""
+      ).format(lo=LO, city=cfg["city"].replace("'","''"), loc=cfg["loc"].replace("'","''"))
+    IST = "rs.start_time + INTERVAL '5 hours 30 minutes'"
+    # clinic totals (slots / hours / days, with weekend split)
+    sql = """WITH s AS (SELECT TO_CHAR(DATE_TRUNC('week', {ist}),'YYYY-MM-DD') wk,
+        EXTRACT(DOW FROM {ist}) dow, DATE_TRUNC('hour', {ist}) hr, DATE({ist}) dt
+      {f})
     SELECT wk, COUNT(*) st, SUM(CASE WHEN dow IN (0,6) THEN 1 ELSE 0 END) sw,
-      COUNT(DISTINCT hr) ht, COUNT(DISTINCT CASE WHEN dow IN (0,6) THEN hr END) hw
-    FROM s GROUP BY 1;""".format(lo=LO, city=cfg["city"].replace("'","''"), loc=cfg["loc"].replace("'","''"))
-    d = {k: Z() for k in ("slots_total","slots_we","hrs_total","hrs_we")}
+      COUNT(DISTINCT hr) ht, COUNT(DISTINCT CASE WHEN dow IN (0,6) THEN hr END) hw,
+      COUNT(DISTINCT dt) dt_t, COUNT(DISTINCT CASE WHEN dow IN (0,6) THEN dt END) dt_w
+    FROM s GROUP BY 1;""".format(ist=IST, f=FROM)
+    d = {k: Z() for k in ("slots_total","slots_we","hrs_total","hrs_we","days_total","days_we")}
     for line in run_sql(sql):
         c = line.split("\t")
-        if len(c) < 5 or c[0] not in idx: continue
+        if len(c) < 7 or c[0] not in idx: continue
         i = idx[c[0]]
         try:
             d["slots_total"][i]=int(float(c[1])); d["slots_we"][i]=int(float(c[2]))
             d["hrs_total"][i]=int(float(c[3])); d["hrs_we"][i]=int(float(c[4]))
+            d["days_total"][i]=int(float(c[5])); d["days_we"][i]=int(float(c[6]))
         except ValueError: pass
-    d["slots_wd"]=[d["slots_total"][i]-d["slots_we"][i] for i in range(NW)]
-    d["hrs_wd"]=[d["hrs_total"][i]-d["hrs_we"][i] for i in range(NW)]
+    for m in ("slots","hrs","days"):
+        d[m+"_wd"]=[d[m+"_total"][i]-d[m+"_we"][i] for i in range(NW)]
+    # per-doctor (weekly slots / hours / days)
+    sqlD = """WITH s AS (SELECT rs.provider_id pid, TO_CHAR(DATE_TRUNC('week', {ist}),'YYYY-MM-DD') wk,
+        DATE_TRUNC('hour', {ist}) hr, DATE({ist}) dt {f})
+    SELECT COALESCE(p.name,'Unknown') doctor, s.wk, COUNT(*) st, COUNT(DISTINCT hr) ht, COUNT(DISTINCT dt) dt_t
+    FROM s LEFT JOIN allo_persons.providers p ON p.id=s.pid GROUP BY 1,2;""".format(ist=IST, f=FROM)
+    docs = {}
+    for line in run_sql(sqlD):
+        c = line.split("\t")
+        if len(c) < 5 or c[1] not in idx: continue
+        nm = c[0].strip() or "Unknown"; i = idx[c[1]]
+        o = docs.setdefault(nm, {"name":nm,"slots":Z(),"hrs":Z(),"days":Z()})
+        try:
+            o["slots"][i]=int(float(c[2])); o["hrs"][i]=int(float(c[3])); o["days"][i]=int(float(c[4]))
+        except ValueError: pass
+    d["doctors"] = sorted(docs.values(), key=lambda o: -sum(o["slots"]))
     return d
 
 def main():
