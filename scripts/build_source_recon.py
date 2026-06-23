@@ -276,6 +276,25 @@ def availability(cfg):
     d["doctors"] = sorted(docs.values(), key=lambda o: -sum(o["slots"]))
     return d
 
+# ---- GMB/Google reviews per week, split positive (>=4*) / negative (<=3*) ----
+def reviews(cfg):
+    sql = """SELECT TO_CHAR(DATE_TRUNC('week', er.review_date + INTERVAL '5 hours 30 minutes'),'YYYY-MM-DD') wk,
+      COUNT(*) n, SUM(CASE WHEN er.rating>=4 THEN 1 ELSE 0 END) pos, SUM(CASE WHEN er.rating<=3 THEN 1 ELSE 0 END) neg
+    FROM allo_health.external_reviews er
+    JOIN allo_health.locations loc ON loc.id=er.reviewed_for_id AND loc.deleted_at IS NULL
+    WHERE er.deleted_at IS NULL AND LOWER(er.platform) IN ('google','gmb')
+      AND er.review_date >= '{lo}' AND er.review_date < '2026-06-22'
+      AND loc.city='{city}' AND loc.locality='{loc}'
+    GROUP BY 1;""".format(lo=LO, city=cfg["city"].replace("'","''"), loc=cfg["loc"].replace("'","''"))
+    d = {"total": Z(), "pos": Z(), "neg": Z()}
+    for line in run_sql(sql):
+        c = line.split("\t")
+        if len(c) < 4 or c[0] not in idx: continue
+        i = idx[c[0]]
+        try: d["total"][i]=int(float(c[1])); d["pos"][i]=int(float(c[2])); d["neg"][i]=int(float(c[3]))
+        except ValueError: pass
+    return d
+
 def main():
     practo_by_loc, practo_by_loc_doc = load_practo_sheet()
     out = {"_meta": {"weeks": WEEKS, "sources": SOURCES,
@@ -297,7 +316,7 @@ def main():
                           "practo": practo_leadbook(cfg, practo_by_loc, bkph, practo_by_loc_doc)},
             "bottom": {"booked": bottom.get("booked", Z()), "done": bottom.get("done", Z()),
                        "purchased": bottom.get("purchased", Z()), "rev": bottom.get("rev", Z())},
-            "reach": mh.get("reach", {})}
+            "reach": mh.get("reach", {}), "reviews": reviews(cfg)}
         tot = sum(sum(by_src[s]) for s in SOURCES)
         print(f"[{slug}] {cfg['disp']}: {tot} bk | untag {sum(by_src['untagged'])} (n{sum(un_new)}/r{sum(un_rep)}) | gmb-call {sum(gmb_lb['total'])}calls→{sum(gmb_lb['relevant'])}rel→{sum(gmb_lb['booked'])}bk")
     json.dump(out, open(os.path.join(ROOT, "data_source_recon.json"), "w"), separators=(",",":"))
