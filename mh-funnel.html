@@ -318,20 +318,34 @@ function spark(arr,color){
   let p='';v.forEach((val,i)=>{p+=(i?'L':'M')+x(i).toFixed(1)+','+y(val).toFixed(1)+' ';});
   return `<svg class="sp" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}"><path d="${p}" fill="none" stroke="${color}" stroke-width="1.6"/><circle cx="${x(n-1).toFixed(1)}" cy="${y(v[n-1]).toFixed(1)}" r="2.6" fill="${color}"/></svg>`;
 }
+// replace the hardcoded-Hadapsar tokens in any label/string with the loaded clinic's values
+function clinicTxt(s){
+  const m=D&&D._meta; if(!m||!s)return s;
+  const loc=m.locality||(m.clinic||'').split('|')[1]||'';
+  const city=m.city||(m.clinic||'').split('|')[0]||'';
+  let h=String(s);
+  if(loc&&loc!=='Hadapsar')h=h.split('Hadapsar').join(loc);
+  if(m.gmb_number)h=h.split('2241483789').join(m.gmb_number);
+  if(m.paid_number)h=h.split('2048556242').join(m.paid_number);
+  if(city&&city!=='Pune')h=h.replace(/\bPune\b/g,city);
+  return h;
+}
 function zoomReg(i){const z=ZREG[i];if(!z)return;
-  $('mTitle').textContent=z.label;
-  const W=700,H=300,pad=38;const wks=D._meta.weeks.slice(0,NSHOW).reverse();
+  $('mTitle').textContent=clinicTxt(z.label);
+  const W=700,H=300,pad=38,padT=26;const wks=D._meta.weeks.slice(0,NSHOW).reverse();
   const v=z.arr.slice().reverse().map(x=>x==null||isNaN(x)?null:x);const n=v.length;
-  const mx=Math.max(1,...v.map(x=>x||0));const x=i=>pad+i*(W-2*pad)/(n-1),y=val=>H-pad-((val||0)/mx)*(H-2*pad-10);
-  let p='',pts='',started=false;
+  const mx=Math.max(1,...v.map(x=>x||0));const x=i=>pad+i*(W-2*pad)/(n-1),y=val=>H-pad-((val||0)/mx)*(H-pad-padT);
+  let p='',pts='',lbls='',started=false;
   v.forEach((val,i)=>{if(val==null)return;p+=(started?'L':'M')+x(i).toFixed(1)+','+y(val).toFixed(1)+' ';started=true;
-    pts+=`<circle cx="${x(i).toFixed(1)}" cy="${y(val).toFixed(1)}" r="3" fill="${z.color}"><title>${wkShort(wks[i])}: ${z.fmt(val)}</title></circle>`;});
-  let gl='';[0,.5,1].forEach(f=>{const yy=H-pad-(f*(H-2*pad-10));gl+=`<line x1="${pad}" y1="${yy}" x2="${W-pad}" y2="${yy}" stroke="#EEEBE2"/><text x="4" y="${yy+3}" font-size="10" fill="#999">${z.fmt(mx*f)}</text>`;});
+    pts+=`<circle cx="${x(i).toFixed(1)}" cy="${y(val).toFixed(1)}" r="3.2" fill="${z.color}"><title>${wkShort(wks[i])}: ${z.fmt(val)}</title></circle>`;
+    lbls+=`<text x="${x(i).toFixed(1)}" y="${(y(val)-9).toFixed(1)}" font-size="12" fill="${z.color}" text-anchor="middle" font-weight="700">${z.fmt(val)}</text>`;});
+  let gl='';[0,.5,1].forEach(f=>{const yy=H-pad-(f*(H-pad-padT));gl+=`<line x1="${pad}" y1="${yy}" x2="${W-pad}" y2="${yy}" stroke="#EEEBE2"/><text x="4" y="${yy+3}" font-size="10" fill="#999">${z.fmt(mx*f)}</text>`;});
   let xl='';v.forEach((_,i)=>{
     const isMH=(NSHOW-1-i)===MH_WK_IDX;
     xl+=`<text x="${x(i)}" y="${H-10}" font-size="9" fill="${isMH?'#7B5EA7':'#999'}" text-anchor="middle" font-weight="${isMH?'700':'400'}">${wkShort(wks[i])}${isMH?' 🔵':''}</text>`;
   });
-  $('mBody').innerHTML=`<svg width="100%" viewBox="0 0 ${W} ${H}">${gl}<path d="${p}" fill="none" stroke="${z.color}" stroke-width="2"/>${pts}${xl}</svg><div class="lgd">Hover a point for week &amp; value. 🔵 = MH GMB change (May 25 week).</div>`;
+  const ll=(D._meta&&D._meta.mh_launch_label)?('🔵 = MH launch week ('+D._meta.mh_launch_label+')'):'';
+  $('mBody').innerHTML=`<svg width="100%" viewBox="0 0 ${W} ${H}">${gl}<path d="${p}" fill="none" stroke="${z.color}" stroke-width="2"/>${pts}${lbls}${xl}</svg><div class="lgd">Numbers shown per week. ${ll}</div>`;
   $('modal').classList.add('on');
 }
 function closeZ(){$('modal').classList.remove('on');}
@@ -403,15 +417,7 @@ $('csel').innerHTML=MH_CLINICS.map(c=>`<option value="${c.slug}">${c.disp}</opti
 const _origRender=render;
 render=function(){
   _origRender();
-  const m=D&&D._meta; if(!m)return;
-  const loc=m.locality||(m.clinic||'').split('|')[1]||'';
-  const city=m.city||(m.clinic||'').split('|')[0]||'';
-  let h=$('app').innerHTML;
-  if(loc && loc!=='Hadapsar') h=h.split('Hadapsar').join(loc);
-  if(m.gmb_number) h=h.split('2241483789').join(m.gmb_number);
-  if(m.paid_number) h=h.split('2048556242').join(m.paid_number);
-  if(city && city!=='Pune') h=h.replace(/\bPune\b/g,city);
-  $('app').innerHTML=h;
+  if(D&&D._meta) $('app').innerHTML=clinicTxt($('app').innerHTML);
 };
 function adjWeeks(d){const n=(D&&D._meta&&D._meta.weeks||[]).length;NSHOW=Math.max(6,Math.min(n,NSHOW+d));render();}
 function loadClinic(slug){
