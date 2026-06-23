@@ -34,6 +34,8 @@ LAUNCH = {
 CATS = ["STI", "SH", "MH", "Other"]
 CATMAP = {"STI":"STI","SEXUAL_HEALTH_GENERAL":"SH","MENTAL_HEALTH":"MH","OTHER":"Other","NOT_MENTIONED":"Other"}
 RELEVANT = ("TALK_TO_DOCTOR","NEEDS_TESTS","BOOK_APPOINTMENT","BOOK_TEST","BOOK_SLOT")
+# Sub-classify the "Other / uncategorised" calls (diagnosis cat OTHER/NOT_MENTIONED) by caller intent:
+LEAD_INTENT = ("TALK_TO_DOCTOR","TALK_TO_THERAPIST","NEEDS_TESTS","NEEDS_MEDS","BOOK_APPOINTMENT","BOOK_SLOT","BOOK_TEST")
 
 # slug → config. gmb = clinic-direct GMB listing number(s) (main + dedicated MH line).
 CLINICS = {
@@ -136,7 +138,8 @@ def get_calls(cfg):
         i = idx[c[0]]
         try: raw["total"][i]=int(float(c[1])); raw["unique"][i]=int(float(c[2])); raw["answered"][i]=int(float(c[3])); raw["missed"][i]=int(float(c[4]))
         except ValueError: pass
-    def blank_ai(): return {"total":[0]*NW,"relevant":[0]*NW,"strong":[0]*NW,"by_cat":{c:[0]*NW for c in CATS}}
+    def blank_ai(): return {"total":[0]*NW,"relevant":[0]*NW,"strong":[0]*NW,"by_cat":{c:[0]*NW for c in CATS},
+                            "other_lead":[0]*NW,"other_unclear":[0]*NW,"other_nonlead":[0]*NW}
     gmb_ai = blank_ai()
     for line in run_sql(ai_sql):
         c = line.split("\t")
@@ -148,6 +151,9 @@ def get_calls(cfg):
         gmb_ai["total"][i]+=n; gmb_ai["by_cat"][cat][i]+=n
         if intent in RELEVANT: gmb_ai["relevant"][i]+=n
         if strength=="STRONG": gmb_ai["strong"][i]+=n
+        if cat=="Other":   # split the uncategorised bucket by caller intent
+            g = "other_lead" if intent in LEAD_INTENT else ("other_unclear" if intent=="COULD_NOT_DETERMINE" else "other_nonlead")
+            gmb_ai[g][i]+=n
     paid_ai = blank_ai()
     if cfg["paid"]:
         paid_sql = """SELECT TO_CHAR(DATE_TRUNC('week', ec.start_time + INTERVAL '5 hours 30 minutes'),'YYYY-MM-DD') wk,
@@ -173,6 +179,7 @@ def get_calls(cfg):
         for i in pre:
             d["total"][i] = None; d["relevant"][i] = None; d["strong"][i] = None
             for c in CATS: d["by_cat"][c][i] = None
+            for k in ("other_lead","other_unclear","other_nonlead"): d[k][i] = None
     return raw, gmb_ai, paid_ai
 
 def assemble(slug, cfg):

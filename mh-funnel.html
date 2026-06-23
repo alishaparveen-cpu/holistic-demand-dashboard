@@ -150,6 +150,8 @@ function metrics(){
   const otherLeads=arr(i=>((ch.other&&ch.other[i])||0)+((ch.fb&&ch.fb[i])||0));
   const gmbRawTotal=rc('total'),gmbRawUnique=rc('unique'),gmbRawAnswered=rc('answered'),gmbRawMissed=rc('missed');
   const gmbCatSTI=aiC('STI'),gmbCatSH=aiC('SH'),gmbCatMH=aiC('MH'),gmbCatOther=aiC('Other');
+  const aiK=k=>mk(i=>{const a=ai[k];return a?a[i]:0;});
+  const gmbOthLead=aiK('other_lead'),gmbOthUnclear=aiK('other_unclear'),gmbOthNonlead=aiK('other_nonlead');
   const paidAiTotal=mk(i=>{const t=pAi.total;return t?t[i]:0;});
   const booked=arr(i=>(bot.booked&&bot.booked[i])||0);
   const done=arr(i=>(bot.done&&bot.done[i])||0);
@@ -170,7 +172,7 @@ function metrics(){
     gImpr,gClk,gCtr,gCatSH,gCatSTI,gCatMH,gCatOther,
     leads,gmbLeads,paidLeads,orgLeads,practoLeads,otherLeads,
     gmbRawTotal,gmbRawUnique,gmbRawAnswered,gmbRawMissed,
-    gmbCatSTI,gmbCatSH,gmbCatMH,gmbCatOther,
+    gmbCatSTI,gmbCatSH,gmbCatMH,gmbCatOther,gmbOthLead,gmbOthUnclear,gmbOthNonlead,
     paidAiTotal,paidAiSH:pAiC('SH'),paidAiMH:pAiC('MH'),paidAiSTI:pAiC('STI'),paidAiOther:pAiC('Other'),
     booked,done,purch,rev,l2b,b2d,d2p,
     shDone,stiDone,mhDone,othDone,shBooked,stiBooked,shPurch,shRev,stiPurch,stiRev,mhPurch,mhRev,
@@ -219,7 +221,11 @@ function buildStages(M){
         {label:'Sexual health (SH)',arr:M.gmbCatSH,fmt:N,info:'AI-inferred: caller asking about ED/PE/SH. Was dominant before MH change. Dropped after.'},
         {label:'Mental health (MH)',arr:M.gmbCatMH,fmt:N,info:'AI-inferred: caller asking about mental health / anxiety / therapy. Near-zero before MH change. Appeared after May 25.'},
         {label:'STI',arr:M.gmbCatSTI,fmt:N},
-        {label:'Other / uncategorised',arr:M.gmbCatOther,fmt:N,info:'AI-inferred: caller did NOT appear to be seeking a new appointment — existing patients calling about their treatment, service/follow-up calls, wrong numbers, or unclear intent. SH/STI/MH above = actively looking for a new appointment.'},
+        {label:'Other / uncategorised',arr:M.gmbCatOther,fmt:N,info:'Answered calls the AI did not tag with a clinical category (STI/SH/MH). Broken down below by what the caller actually wanted — to see whether any are leads we are under-counting.',kids:[
+          {label:'· wants doctor/therapist/tests (LEAD — category just not captured)',arr:M.gmbOthLead,fmt:N,info:'Real appointment-intent calls (TALK_TO_DOCTOR / THERAPIST / NEEDS_TESTS / NEEDS_MEDS / BOOK_*) that simply did not get a clinical category tag. These ARE leads — currently sitting in Other. Avg ~100s talk time. Counting intent (not just category) recovers them.'},
+          {label:'· could-not-determine (short / unclear — mostly hang-ups)',arr:M.gmbOthUnclear,fmt:N,info:'AI could not read intent — typically very short calls (Indiranagar avg ~26s, many under 20s = misdials / hang-ups / IVR drops). Mostly NOT recoverable leads, but a high count signals call-handling friction (wait time, IVR).'},
+          {label:'· genuinely other (existing patient / service / wrong number)',arr:M.gmbOthNonlead,fmt:N,info:'Real conversations that are NOT new-appointment intent — existing patients about their treatment, service/ops queries, wrong numbers. Correctly excluded from leads.'},
+        ]},
       ]},
     hasPaid?
     {t:'stage',k:'paidAiTotal',label:'Paid inbound calls · 2048556242 (AI attributed → Hadapsar)',color:'#2E5BA6',fmt:N,
