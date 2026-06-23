@@ -71,22 +71,18 @@ tr[onclick]:hover td:first-child{color:var(--accent)}
 
   <div class="shead">① Availability <span class="lblmuted">(bookable roster — click a row to split weekday / weekend)</span></div>
   <div class="fmwrap"><table class="fm" id="tAvail"></table></div>
-  <div class="note">Bookable Screening-Call roster <b>slots</b> and the distinct clinic-<b>hours</b> they cover, per week. Click "total" to expand weekday vs weekend. Weeks before the roster was tracked show —.</div>
 
   <div class="shead">② Leads <span class="lblmuted">(who reached out — GMB + Google + Practo)</span></div>
   <div class="fmwrap"><table class="fm" id="tLeads"></table></div>
 
   <div class="shead">③ Lead → Booked by channel <span class="lblmuted">(calls: → answered → relevant → booked)</span></div>
   <div class="fmwrap"><table class="fm" id="tLB"></table></div>
-  <div class="note" id="lbNote">For <b>calls</b>: total inbound → answered / not-answered → <b>relevant</b> (AI says real appointment intent) → of those, <b>booked vs didn’t</b>. For <b>web / Practo</b>: leads → booked / didn’t. Shown only for channels tied to this clinic without needing a booking — GMB call, GMB website, Google paid call, Google paid web (single-clinic cities), Practo. Google-paid-web in multi-clinic cities + Meta + Organic are city-level / un-isolatable, so they appear in ④ (booked side) only.</div>
 
   <div class="shead">④ Bookings by source <span class="lblmuted">(deduped per patient/week — reconciles to total · click GMB / Google to expand)</span></div>
   <div class="fmwrap"><table class="fm" id="tA"></table></div>
-  <div class="note badwarn" id="dwNote"></div>
 
   <div class="shead">⑤ Bookings → Done → Purchased → Revenue</div>
   <div class="fmwrap"><table class="fm" id="tD"></table></div>
-  <div class="note">Booked = unique-patient Screening Calls (matches the ④ total). <b>Done</b> = completed consults; <b>Purchased</b> = completed + paid invoice; <b>Revenue</b> = ₹ collected. B→D% is the real no-show/completion rate.</div>
 </div>
 <div class="modal" id="modal"><div class="mbox"><div class="mhd"><span id="mTitle"></span><button onclick="closeZ()">✕</button></div><div id="mBody"></div></div></div>
 <script>
@@ -154,11 +150,12 @@ function callDetail(label,x,tkey){
   }
   return h;
 }
-function webDetail(label,x,tkey,cityFlag){
+function webDetail(label,x,tkey,cityFlag,showPct){
   if(!x)return row('· '+label+(cityFlag?' — city-level (not clinic-isolatable)':' — none'),null,'grp2');
   let h=row('· '+label+' — leads',x.leads,'grp2',N,{color:BLU,tkey:tkey});
+  if(showPct) h+=pctRow('lead → book %',x.booked,x.leads,BLU);
   if(EXP[tkey]){
-    h+=pctRow('lead → book %',x.booked,x.leads,BLU);
+    if(!showPct) h+=pctRow('lead → book %',x.booked,x.leads,BLU);
     h+=row('booked',x.booked,'sub2',N,{color:GRN});
     h+=row('did NOT book',x.notbooked,'sub2',N,{color:RED,invert:true});
   }
@@ -243,7 +240,7 @@ function render(){
   L+=callDetail('paid calls',lb.gpaid_call,'lb_gpc');
   L+=webDetail('paid web',lb.gpaid_web,'lb_gpw',true);
   L+=row('Practo',null,'gband');
-  L+=webDetail('connections',lb.practo,'lb_pr',false);
+  L+=webDetail('connections',lb.practo,'lb_pr',false,true);
   if(lb.practo&&lb.practo.doctors&&lb.practo.doctors.length){
     L+=row('by doctor — '+lb.practo.doctors.length,null,'grp2',N,{tkey:'lb_prdoc'});
     if(EXP['lb_prdoc'])lb.practo.doctors.forEach((dd,di)=>{const dk='lb_prd'+di;
@@ -266,8 +263,6 @@ function render(){
   h+=row('Direct / Walk-in (no call, no UTM)',s.untagged,'untag',N,{tkey:'src_direct',invert:true,color:RED});
   if(EXP['src_direct']){h+=row('new patient',c.untagged_new,'sub');h+=row('repeat (booked SC again)',c.untagged_repeat,'sub');}
   $('tA').innerHTML=h;
-  const col=cols();const un=sum(s.untagged,col),nw=sum(c.untagged_new,col),rp=sum(c.untagged_repeat,col),T=sum(tot,col);
-  $('dwNote').innerHTML=`<b>Direct / Walk-in</b> = ${un} of ${T} bookings (${T?Math.round(un/T*100):0}%) with no inbound-call match and no UTM — reached the clinic directly. <b>${nw} NEW patients</b> (first-ever Screening Call — untracked acquisition) + <b>${rp} repeat</b> (existing patients re-booking direct).`;
   // ④ bookings → done → purchased → revenue
   const bt=c.bottom||{};const bd=(bt.booked||[]).map((v,i)=>v?(bt.done[i]/v*100):null);const dp=(bt.done||[]).map((v,i)=>v?(bt.purchased[i]/v*100):null);
   let m=head('Outcome');
