@@ -58,11 +58,17 @@ td.pct{font-weight:700}
   <div class="shead">③ Lead → Book % by channel <span class="lblmuted">(only the cleanly clinic-attributable channels)</span></div>
   <div class="fmwrap"><table class="fm" id="tC"></table></div>
   <div class="note" id="lbNote">Leads → who booked / who didn’t, for channels we can tie to this clinic without a booking: <b>GMB call</b> (Exotel to the clinic number), <b>GMB website</b> (clinic campaign), <b>Google paid call</b> (city number, clinic-intent). Google-web / Practo / Meta / Organic appear in ① (booked side) but their non-bookers can’t be tied to one clinic, so no L→B% here.</div>
+
+  <div class="shead">④ Bookings → Done → Purchased → Revenue</div>
+  <div class="fmwrap"><table class="fm" id="tD"></table></div>
+  <div class="note">Booked = unique-patient Screening Calls (matches the ① total). <b>Done</b> = completed consults; <b>Purchased</b> = completed + paid invoice; <b>Revenue</b> = ₹ collected. B→D% is the real no-show/completion rate.</div>
 </div>
 <script>
 let D=null,CUR=null;const NSHOW=8;
 const $=id=>document.getElementById(id);
 const N=v=>v==null||isNaN(v)?'—':Math.round(v).toLocaleString('en-IN');
+const RUP=v=>v==null||isNaN(v)?'—':'₹'+Math.round(v).toLocaleString('en-IN');
+const PCT=v=>v==null||isNaN(v)?'—':v.toFixed(0)+'%';
 const sum=(a,idx)=>idx.reduce((s,i)=>s+(a[i]||0),0);
 function cols(){const w=D._meta.weeks;const c=[];for(let j=NSHOW;j>=1;j--)c.push(j);return c;} // skip wk0 partial, oldest→newest
 function wlab(w){const d=new Date(w+'T00:00:00'),e=new Date(d);e.setDate(e.getDate()+6);const m=x=>x.toLocaleString('en',{month:'short'});
@@ -113,6 +119,16 @@ function render(){
     g+=row('· lead → book %',x.leads.map((v,i)=>v?Math.round(x.booked[i]/v*100):null),'sub',v=>v==null?'—':v+'%');
   });
   $('tC').innerHTML=g;
+  // ④ bookings → done → purchased → revenue
+  const bt=c.bottom||{};const bd=(bt.booked||[]).map((v,i)=>v?(bt.done[i]/v*100):null);const dp=(bt.done||[]).map((v,i)=>v?(bt.purchased[i]/v*100):null);
+  let m=head('Outcome');
+  m+=row('Bookings (Screening Calls)',bt.booked,'grp');
+  m+=row('· Book → Done %',bd,'sub',PCT);
+  m+=row('Done (completed consults)',bt.done,'grp');
+  m+=row('· Done → Purchased %',dp,'sub',PCT);
+  m+=row('Purchased',bt.purchased,'grp');
+  m+=row('Revenue',bt.rev,'grp',RUP);
+  $('tD').innerHTML=m;
 }
 function sel(k){CUR=k;$('csel').value=k;render();}
 fetch('data_source_recon.json?v='+Date.now()).then(r=>r.json()).then(j=>{

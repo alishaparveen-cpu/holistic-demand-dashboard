@@ -124,9 +124,12 @@ def main():
         # GMB web from the MH funnel data (already computed there)
         mh = json.load(open(os.path.join(ROOT, "data_mh_%s.json" % slug)))
         web = mh.get("leads", {}).get("gmb_web", {"total":Z(),"booked":Z(),"notbooked":Z()})
+        bottom = mh.get("bottom", {}).get("total", {})   # booked/done/purchased/rev — reused from MH data
         out["clinics"][slug] = {"by_source": by_src, "untagged_new": un_new, "untagged_repeat": un_rep,
             "lead_book": {"gmb_call": gmb_lb, "gmb_web": {"leads": web["total"], "booked": web["booked"], "notbooked": web["notbooked"]},
-                          "gpaid_call": paid_lb}}
+                          "gpaid_call": paid_lb},
+            "bottom": {"booked": bottom.get("booked", Z()), "done": bottom.get("done", Z()),
+                       "purchased": bottom.get("purchased", Z()), "rev": bottom.get("rev", Z())}}
         tot = sum(sum(by_src[s]) for s in SOURCES)
         print(f"[{slug}] {cfg['disp']}: {tot} bookings/12wk | untagged {sum(by_src['untagged'])} (new {sum(un_new)}/rep {sum(un_rep)}) | gmb_call L->B {sum(gmb_lb['booked'])}/{sum(gmb_lb['leads'])}")
     json.dump(out, open(os.path.join(ROOT, "data_source_recon.json"), "w"), separators=(",",":"))
