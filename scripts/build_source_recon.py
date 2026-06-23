@@ -296,7 +296,8 @@ def main():
                           "gpaid_call": paid_lb, "gpaid_web": gpw_lb,
                           "practo": practo_leadbook(cfg, practo_by_loc, bkph, practo_by_loc_doc)},
             "bottom": {"booked": bottom.get("booked", Z()), "done": bottom.get("done", Z()),
-                       "purchased": bottom.get("purchased", Z()), "rev": bottom.get("rev", Z())}}
+                       "purchased": bottom.get("purchased", Z()), "rev": bottom.get("rev", Z())},
+            "reach": mh.get("reach", {})}
         tot = sum(sum(by_src[s]) for s in SOURCES)
         print(f"[{slug}] {cfg['disp']}: {tot} bk | untag {sum(by_src['untagged'])} (n{sum(un_new)}/r{sum(un_rep)}) | gmb-call {sum(gmb_lb['total'])}calls→{sum(gmb_lb['relevant'])}rel→{sum(gmb_lb['booked'])}bk")
     json.dump(out, open(os.path.join(ROOT, "data_source_recon.json"), "w"), separators=(",",":"))
