@@ -257,21 +257,26 @@ function render(){
   L+=row('Overall lead → book %',pctOf(addv(ggB,prB),addv(ggL,prL)),'tot',PCT,{color:BLU});
   L+=row('GMB + Google lead → book %',pctOf(ggB,ggL),'grp',PCT,{color:GRN});
   L+=row('Practo lead → book %',pctOf(prB,prL),'grp',PCT,{color:VIO});
-  L+=row('GMB',null,'gband');
-  L+=callDetail('inbound calls',lb.gmb_call,'lb_gmbc');
-  L+=webDetail('website',lb.gmb_web,'lb_gmbw',false);
-  L+=row('Google',null,'gband');
-  L+=callDetail('paid calls',lb.gpaid_call,'lb_gpc');
-  L+=webDetail('paid web',lb.gpaid_web,'lb_gpw',true);
-  L+=row('Practo',null,'gband');
-  L+=webDetail('connections',lb.practo,'lb_pr',false);
-  if(lb.practo&&lb.practo.doctors&&lb.practo.doctors.length){
-    L+=row('by doctor — '+lb.practo.doctors.length,null,'grp2',N,{tkey:'lb_prdoc'});
-    if(EXP['lb_prdoc'])lb.practo.doctors.forEach((dd,di)=>{const dk='lb_prd'+di;
-      L+=row(dd.name+' — leads',dd.leads,'sub',N,{color:BLU,tkey:dk});
-      L+=pctRow('lead → book %',dd.booked,dd.leads,BLU);
-      if(EXP[dk]){L+=row('booked',dd.booked,'sub2',N,{color:GRN});L+=row('did NOT book',dd.notbooked,'sub2',N,{color:RED,invert:true});}
-    });
+  // GMB band — show relevant→book%; channels collapse under it
+  const gmbRel=addv((lb.gmb_call?lb.gmb_call.relevant:ZA),(lb.gmb_web?lb.gmb_web.leads:ZA));
+  const gmbRbk=addv((lb.gmb_call?lb.gmb_call.booked:ZA),(lb.gmb_web?lb.gmb_web.booked:ZA));
+  L+=row('GMB · relevant → book %',pctOf(gmbRbk,gmbRel),'gband',PCT,{tkey:'lb_gmb',color:GRN});
+  if(EXP['lb_gmb']){L+=callDetail('inbound calls',lb.gmb_call,'lb_gmbc');L+=webDetail('website',lb.gmb_web,'lb_gmbw',false);}
+  const gpRel=addv((lb.gpaid_call?lb.gpaid_call.relevant:ZA),(lb.gpaid_web?lb.gpaid_web.leads:ZA));
+  const gpRbk=addv((lb.gpaid_call?lb.gpaid_call.booked:ZA),(lb.gpaid_web?lb.gpaid_web.booked:ZA));
+  L+=row('Google · relevant → book %',pctOf(gpRbk,gpRel),'gband',PCT,{tkey:'lb_goog',color:GRN});
+  if(EXP['lb_goog']){L+=callDetail('paid calls',lb.gpaid_call,'lb_gpc');L+=webDetail('paid web',lb.gpaid_web,'lb_gpw',true);}
+  L+=row('Practo · lead → book %',pctOf(prB,prL),'gband',PCT,{tkey:'lb_practo',color:VIO});
+  if(EXP['lb_practo']){
+    L+=webDetail('connections',lb.practo,'lb_pr',false);
+    if(lb.practo&&lb.practo.doctors&&lb.practo.doctors.length){
+      L+=row('by doctor — '+lb.practo.doctors.length,null,'grp2',N,{tkey:'lb_prdoc'});
+      if(EXP['lb_prdoc'])lb.practo.doctors.forEach((dd,di)=>{const dk='lb_prd'+di;
+        L+=row(dd.name+' — leads',dd.leads,'sub',N,{color:BLU,tkey:dk});
+        L+=pctRow('lead → book %',dd.booked,dd.leads,BLU);
+        if(EXP[dk]){L+=row('booked',dd.booked,'sub2',N,{color:GRN});L+=row('did NOT book',dd.notbooked,'sub2',N,{color:RED,invert:true});}
+      });
+    }
   }
   $('tLB').innerHTML=L;
   // ④ bookings by source (GMB / Google / Direct collapsible)
