@@ -20,6 +20,7 @@ WEEKS = ["2026-06-22","2026-06-15","2026-06-08","2026-06-01","2026-05-25","2026-
          "2026-03-16","2026-03-09"]
 idx = {w: i for i, w in enumerate(WEEKS)}; NW = len(WEEKS)
 LO = "2026-03-02"   # SQL lower bound (a bit before the oldest week)
+AUDIT_START = "2026-03-23"   # AI call-audit (call_analyses) reaches coverage here; earlier weeks have ~none
 # MH launch per clinic — Monday of the launch week, + label (doctor + date)
 LAUNCH = {
   "bharathi":    ("2026-03-09", "Mar · Dr. Sandhiya"),
@@ -165,6 +166,13 @@ def get_calls(cfg):
             i = idx[wk]; cat = CATMAP.get(rawcat,"Other")
             paid_ai["total"][i]+=n; paid_ai["by_cat"][cat][i]+=n
             if intent in RELEVANT: paid_ai["relevant"][i]+=n
+    # AI call-audit (call_analyses) only reaches coverage from AUDIT_START; blank earlier
+    # weeks to None so they render "—" (not a misleading 0). raw exotel volume stays real.
+    pre = [i for i, w in enumerate(WEEKS) if w < AUDIT_START]
+    for d in (gmb_ai, paid_ai):
+        for i in pre:
+            d["total"][i] = None; d["relevant"][i] = None; d["strong"][i] = None
+            for c in CATS: d["by_cat"][c][i] = None
     return raw, gmb_ai, paid_ai
 
 def assemble(slug, cfg):
@@ -202,12 +210,13 @@ def assemble(slug, cfg):
     out = {"_meta": {"weeks": WEEKS, "clinic": cfg["key"], "display": cfg["disp"], "city": cfg["city"], "locality": cfg["loc"],
             "gmb_number": cfg["gmb"][0], "mh_number": (cfg["gmb"][1] if len(cfg["gmb"])>1 else None), "paid_number": cfg["paid"],
             "mh_launch": (lw[0] if lw else None), "mh_launch_label": (lw[1] if lw else None),
+            "audit_start": AUDIT_START,
             "has_google_cat": bool(gcats),
             "note": "MH funnel. bottom: STI/SH via encounter_tags, MH via ICD-11 diagnoses (6A-6E/keywords), no STI/SH tag. calls: AI audit on clinic-direct GMB number(s) incl dedicated MH line; paid_ai on shared city Google call-asset where known."},
         "reach": reach, "leads": leads, "bottom": bottom}
     json.dump(out, open(os.path.join(ROOT, "data_mh_%s.json" % slug), "w"), separators=(",", ":"))
     t = bottom["total"]; bc2 = bottom["by_cat"]
-    print(f"[{slug}] {cfg['disp']}: booked {t['booked'][1]} done {t['done'][1]} | done STI {bc2['STI']['done'][1]} SH {bc2['SH']['done'][1]} MH {bc2['MH']['done'][1]} Oth {bc2['Other']['done'][1]} | gmb_ai wk1 total {gmb_ai['total'][1]} MH {gmb_ai['by_cat']['MH'][1]} | paid_ai {sum(paid_ai['total'])}")
+    print(f"[{slug}] {cfg['disp']}: booked {t['booked'][1]} done {t['done'][1]} | done STI {bc2['STI']['done'][1]} SH {bc2['SH']['done'][1]} MH {bc2['MH']['done'][1]} Oth {bc2['Other']['done'][1]} | gmb_ai wk1 total {gmb_ai['total'][1]} MH {gmb_ai['by_cat']['MH'][1]} | paid_ai {sum(x or 0 for x in paid_ai['total'])}")
 
 def main():
     for slug, cfg in CLINICS.items():
