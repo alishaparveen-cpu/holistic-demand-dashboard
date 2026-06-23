@@ -82,8 +82,8 @@ tr.sep-row td{padding:14px 10px 5px;font-weight:700;font-size:11.5px;letter-spac
 <div class="modal" id="modal"><div class="mbox"><button class="mclose" onclick="closeZ()">✕</button><h3 id="mTitle"></h3><div id="mBody"></div></div></div>
 <script>
 let D=null, wk=0, ZREG=[], expanded={}, showPartial=false;
-const NSHOW=7;   // show 7 weeks to capture before + after MH change
-const MH_WK_IDX=4;  // May 25 = index 4 in WEEKS array (the MH change week)
+let NSHOW=7;        // set per clinic = number of weeks in the data (full history)
+let MH_WK_IDX=-1;   // set per clinic = index of the MH-launch week in WEEKS
 const $=id=>document.getElementById(id);
 const hexA=(hex,a)=>{const n=parseInt(hex.slice(1),16);return `rgba(${(n>>16)&255},${(n>>8)&255},${n&255},${a})`;};
 function toggle(k){expanded[k]=expanded[k]===false?true:false;render();}
@@ -354,7 +354,8 @@ function render(){
 
   // Matrix
   const partialWk=D._meta.weeks[0];
-  h+=`<div class="shead"><h2>Funnel, last ${showPartial?7:6} weeks</h2><span class="sub2">🔵 = May 25 MH-change week · latest on right · green = high, red = low per row · click sparkline to zoom</span><button class="partial-btn" onclick="showPartial=!showPartial;render()">${showPartial?'▾ Hide':'▸ Show'} ongoing week (${wkShort(partialWk)}, partial)</button></div>`;
+  const llab=(D._meta&&D._meta.mh_launch_label)?` 🔵 = MH launch week (${D._meta.mh_launch_label})`:'';
+  h+=`<div class="shead"><h2>Funnel — full weekly history</h2><span class="sub2">${llab} · latest on right · scroll ◀ to view weeks before launch · green = high, red = low per row · click sparkline to zoom</span><button class="partial-btn" onclick="showPartial=!showPartial;render()">${showPartial?'▾ Hide':'▸ Show'} ongoing week (${wkShort(partialWk)}, partial)</button></div>`;
   h+=matrix(M);
 
   h+=`<div class="note"><b>Sources.</b>
@@ -378,9 +379,10 @@ const MH_CLINICS=[
   {slug:'bharathi',    file:'data_mh_bharathi.json',    disp:'Bharathi Nagar · Coimbatore'},
   {slug:'indiranagar', file:'data_mh_indiranagar.json', disp:'Indiranagar · Bangalore'},
   {slug:'vaishali',    file:'data_mh_vaishali.json',    disp:'Vaishali Nagar · Jaipur'},
-  {slug:'hadapsar',    file:'data_hadapsar.json',       disp:'Hadapsar · Pune'},
-  {slug:'kharghar',    file:'data_mh_kharghar.json',    disp:'Kharghar · Navi Mumbai'},
+  {slug:'hadapsar',    file:'data_mh_hadapsar.json',    disp:'Hadapsar · Pune'},
   {slug:'hubli',       file:'data_mh_hubli.json',       disp:'Vidya Nagar · Hubli'},
+  {slug:'kharghar',    file:'data_mh_kharghar.json',    disp:'Kharghar · Navi Mumbai'},
+  {slug:'kharadi',     file:'data_mh_kharadi.json',     disp:'Kharadi · Pune'},
 ];
 $('csel').innerHTML=MH_CLINICS.map(c=>`<option value="${c.slug}">${c.disp}</option>`).join('');
 // generalise the Hadapsar-specific literals baked into tooltip/label text to the loaded clinic
@@ -402,7 +404,11 @@ function loadClinic(slug){
   $('csel').value=c.slug; expanded={}; showPartial=false;
   fetch(c.file+'?v='+Date.now()).then(r=>r.json()).then(j=>{
     D=j; wk=0;
-    $('clinicH1').textContent=(D._meta&&D._meta.display)||c.disp;
+    const m=D._meta||{};
+    NSHOW=(m.weeks||[]).length||7;
+    MH_WK_IDX=m.mh_launch?(m.weeks||[]).indexOf(m.mh_launch):-1;
+    const ll=m.mh_launch_label?` <span style="font-family:Inter;font-size:13px;font-weight:600;color:#7B5EA7;background:#F5F0FA;border:1px solid #C8B0E8;border-radius:7px;padding:2px 9px;vertical-align:middle;">🧠 MH launched ${m.mh_launch_label}</span>`:'';
+    $('clinicH1').innerHTML=((m.display)||c.disp)+ll;
     render();
   }).catch(()=>{$('app').innerHTML='<div class="note">Could not load '+c.file+' — run scripts/build_mh_funnels.py.</div>';});
 }

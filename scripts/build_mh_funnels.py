@@ -16,8 +16,20 @@ import os, sys, subprocess, json
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RQ = os.path.join(ROOT, "scripts", "redshift_query.py")
 WEEKS = ["2026-06-22","2026-06-15","2026-06-08","2026-06-01","2026-05-25","2026-05-18","2026-05-11",
-         "2026-05-04","2026-04-27","2026-04-20","2026-04-13","2026-04-06","2026-03-30"]
+         "2026-05-04","2026-04-27","2026-04-20","2026-04-13","2026-04-06","2026-03-30","2026-03-23",
+         "2026-03-16","2026-03-09"]
 idx = {w: i for i, w in enumerate(WEEKS)}; NW = len(WEEKS)
+LO = "2026-03-02"   # SQL lower bound (a bit before the oldest week)
+# MH launch per clinic — Monday of the launch week, + label (doctor + date)
+LAUNCH = {
+  "bharathi":    ("2026-03-09", "Mar · Dr. Sandhiya"),
+  "indiranagar": ("2026-03-30", "1 Apr · Dr. Adithya + Dr. Chetan"),
+  "vaishali":    ("2026-05-18", "22 May · Dr. Ashish"),
+  "hadapsar":    ("2026-05-18", "22 May · Dr. Pragnya"),
+  "hubli":       ("2026-06-01", "5 Jun · Dr. Varsha"),
+  "kharghar":    ("2026-06-08", "12 Jun · Dr. Reeva"),
+  "kharadi":     ("2026-06-15", "20 Jun · Dr. Shaunak"),
+}
 CATS = ["STI", "SH", "MH", "Other"]
 CATMAP = {"STI":"STI","SEXUAL_HEALTH_GENERAL":"SH","MENTAL_HEALTH":"MH","OTHER":"Other","NOT_MENTIONED":"Other"}
 RELEVANT = ("TALK_TO_DOCTOR","NEEDS_TESTS","BOOK_APPOINTMENT","BOOK_TEST","BOOK_SLOT")
@@ -27,8 +39,10 @@ CLINICS = {
   "bharathi":    {"key":"Coimbatore|Bharathi Nagar","disp":"Bharathi Nagar · Coimbatore","city":"Coimbatore","loc":"Bharathi Nagar","gmb":["4440114608","4440116568"],"paid":None,"geo":None},
   "indiranagar": {"key":"Bangalore|Indiranagar","disp":"Indiranagar · Bangalore","city":"Bangalore","loc":"Indiranagar","gmb":["8047160881","8047281164"],"paid":"8045680561","geo":"data_indiranagar_google_geo.json"},
   "vaishali":    {"key":"Jaipur|Vaishali Nagar","disp":"Vaishali Nagar · Jaipur","city":"Jaipur","loc":"Vaishali Nagar","gmb":["1414931073"],"paid":None,"geo":None},
+  "hadapsar":    {"key":"Pune|Hadapsar","disp":"Hadapsar · Pune","city":"Pune","loc":"Hadapsar","gmb":["2241483789"],"paid":"2048556242","geo":"data_hadapsar_google_geo.json"},
   "kharghar":    {"key":"Navi Mumbai|Kharghar","disp":"Kharghar · Navi Mumbai","city":"Navi Mumbai","loc":"Kharghar","gmb":["2248932451"],"paid":None,"geo":None},
   "hubli":       {"key":"Hubli|Vidya Nagar","disp":"Vidya Nagar · Hubli","city":"Hubli","loc":"Vidya Nagar","gmb":["8047094835"],"paid":None,"geo":None},
+  "kharadi":     {"key":"Pune|Kharadi","disp":"Kharadi · Pune","city":"Pune","loc":"Kharadi","gmb":["2241484446"],"paid":"2048556242","geo":None},
 }
 
 def run_sql(sql):
@@ -67,7 +81,7 @@ def bottom_sql(city, loc):
   ap0 AS (
     SELECT a.id, a.patient_id, TO_CHAR(DATE_TRUNC('week', a.created_at + INTERVAL '5 hours 30 minutes'),'YYYY-MM-DD') wk, a.status
     FROM allo_consultations.appointments a JOIN allo_consultations.types typ ON typ.id=a.type_id AND typ.name='Screening Call'
-    JOIN loc ON loc.id=a.location_id WHERE a.created_at >= '2026-03-16' AND a.deleted_at IS NULL),
+    JOIN loc ON loc.id=a.location_id WHERE a.created_at >= '2026-03-02' AND a.deleted_at IS NULL),
   ap AS (SELECT id, wk, status FROM (SELECT ap0.*, ROW_NUMBER() OVER (PARTITION BY patient_id, wk
       ORDER BY (CASE WHEN status='COMPLETED' THEN 0 ELSE 1 END), id) rn FROM ap0) z WHERE rn=1),
   inv AS (SELECT e.appointment_id ap_id, SUM(i.amount) amt FROM allo_encounters.encounters e
@@ -106,14 +120,14 @@ def get_calls(cfg):
       SUM(CASE WHEN ec.status='completed' THEN 1 ELSE 0 END) answered,
       SUM(CASE WHEN ec.status!='completed' THEN 1 ELSE 0 END) missed
     FROM allo_vendors.exotel_calls ec WHERE RIGHT(ec.exotel_number,10) IN ('{nums}')
-      AND ec.routed_to='lead_to_call' AND (ec.start_time + INTERVAL '5 hours 30 minutes') >= '2026-03-16'
+      AND ec.routed_to='lead_to_call' AND (ec.start_time + INTERVAL '5 hours 30 minutes') >= '2026-03-02'
     GROUP BY 1;""".format(nums=nums)
     ai_sql = """SELECT TO_CHAR(DATE_TRUNC('week', ec.start_time + INTERVAL '5 hours 30 minutes'),'YYYY-MM-DD') wk,
       COALESCE(ca.analysis.diagnoses.category::varchar,'NOT_MENTIONED') cat,
       ca.analysis.user_intent.result::varchar intent, ca.analysis.patient_intent_strength.result::varchar strength, COUNT(*) n
     FROM allo_analytics.call_analyses ca JOIN allo_vendors.exotel_calls ec ON ec.call_id=ca.call_id AND ec.routed_to='lead_to_call'
     WHERE ca.deleted_at IS NULL AND RIGHT(ec.exotel_number,10) IN ('{nums}')
-      AND (ec.start_time + INTERVAL '5 hours 30 minutes') >= '2026-03-16' GROUP BY 1,2,3,4;""".format(nums=nums)
+      AND (ec.start_time + INTERVAL '5 hours 30 minutes') >= '2026-03-02' GROUP BY 1,2,3,4;""".format(nums=nums)
     raw = {"total":list(Z),"unique":list(Z),"answered":list(Z),"missed":list(Z)}
     for line in run_sql(raw_sql):
         c = line.split("\t")
@@ -141,7 +155,7 @@ def get_calls(cfg):
         WHERE ca.deleted_at IS NULL AND RIGHT(ec.exotel_number,10)='{paid}'
           AND ca.analysis.user_intent.locality_mentioned.is_our_locality=true
           AND ca.analysis.user_intent.locality_mentioned.best_match::varchar='{loc}'
-          AND (ec.start_time + INTERVAL '5 hours 30 minutes') >= '2026-03-16' GROUP BY 1,2,3;""".format(paid=cfg["paid"], loc=cfg["loc"].replace("'","''"))
+          AND (ec.start_time + INTERVAL '5 hours 30 minutes') >= '2026-03-02' GROUP BY 1,2,3;""".format(paid=cfg["paid"], loc=cfg["loc"].replace("'","''"))
         for line in run_sql(paid_sql):
             c = line.split("\t")
             if len(c) < 4 or c[0] not in idx: continue
@@ -184,8 +198,10 @@ def assemble(slug, cfg):
         "ai": {**gmb_ai, "calls": gmb_ai["total"], "available": any(gmb_ai["total"])},
         "paid_ai": paid_ai,
     }
+    lw = LAUNCH.get(slug)
     out = {"_meta": {"weeks": WEEKS, "clinic": cfg["key"], "display": cfg["disp"], "city": cfg["city"], "locality": cfg["loc"],
             "gmb_number": cfg["gmb"][0], "mh_number": (cfg["gmb"][1] if len(cfg["gmb"])>1 else None), "paid_number": cfg["paid"],
+            "mh_launch": (lw[0] if lw else None), "mh_launch_label": (lw[1] if lw else None),
             "has_google_cat": bool(gcats),
             "note": "MH funnel. bottom: STI/SH via encounter_tags, MH via ICD-11 diagnoses (6A-6E/keywords), no STI/SH tag. calls: AI audit on clinic-direct GMB number(s) incl dedicated MH line; paid_ai on shared city Google call-asset where known."},
         "reach": reach, "leads": leads, "bottom": bottom}
