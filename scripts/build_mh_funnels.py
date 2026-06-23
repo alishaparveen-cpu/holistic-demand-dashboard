@@ -31,6 +31,11 @@ LAUNCH = {   # week marker = first full week the change takes effect (Thu-Sun la
   "kharghar":    ("2026-06-15", "12 Jun · Dr. Reeva"),
   "kharadi":     ("2026-06-22", "20 Jun · Dr. Shaunak"),
 }
+# GMB website-lead campaign per clinic (utm_campaign on allo_persons.lead, utm_source=gmb/medium=listing)
+GMBWEB_CAMP = {
+  "bharathi": "coimbatore-clinic-gmb", "indiranagar": "indiranagar-clinic-gmb", "vaishali": "jaipur-clinic-gmb",
+  "hadapsar": "hadapsar-clinic-gmb", "hubli": "hubli-clinic-gmb", "kharghar": "kharghar-clinic-gmb", "kharadi": "kharadi-clinic-gmb",
+}
 CATS = ["STI", "SH", "MH", "Other"]
 CATMAP = {"STI":"STI","SEXUAL_HEALTH_GENERAL":"SH","MENTAL_HEALTH":"MH","OTHER":"Other","NOT_MENTIONED":"Other"}
 RELEVANT = ("TALK_TO_DOCTOR","NEEDS_TESTS","BOOK_APPOINTMENT","BOOK_TEST","BOOK_SLOT")
@@ -183,12 +188,27 @@ def get_calls(cfg):
     return raw, gmb_ai, paid_ai
 
 # ---------- GMB website leads (clicked the website link on the GBP → clinic page → filled number) ----------
-def get_gmbweb(cfg):
-    sql = """SELECT TO_CHAR(DATE_TRUNC('week', created_on + INTERVAL '5 hours 30 minutes'),'YYYY-MM-DD') wk,
-      COUNT(*) leads, SUM(CASE WHEN call_booking_ts IS NOT NULL THEN 1 ELSE 0 END) booked
-    FROM production.public.main_source_wise_leads
-    WHERE call_location='{loc}' AND source='Organic' AND organic_l2='Google Listing'
-      AND created_on >= '{lo}' AND created_on < '2026-06-22' GROUP BY 1;""".format(loc=cfg["loc"].replace("'","''"), lo=LO)
+# From allo_persons.lead (ALL leads, booked or not) — utm gmb/listing for this clinic's campaign —
+# joined by phone to the clinic's Screening-Call bookings to split booked vs gave-number-didn't-book.
+def get_gmbweb(slug, cfg):
+    camp = GMBWEB_CAMP.get(slug)
+    if not camp: return {"total":[0]*NW,"booked":[0]*NW,"notbooked":[0]*NW}
+    sql = """WITH web AS (
+      SELECT RIGHT(l.phone_no,10) ph,
+        TO_CHAR(DATE_TRUNC('week', l.created_at + INTERVAL '5 hours 30 minutes'),'YYYY-MM-DD') wk
+      FROM allo_persons.lead l
+      WHERE LOWER(l.utm_source)='gmb' AND LOWER(l.utm_medium)='listing' AND LOWER(l.utm_campaign)='{camp}'
+        AND l.created_at >= '{lo}' AND l.created_at < '2026-06-22'),
+     bk AS (
+      SELECT DISTINCT RIGHT(p.phone_no,10) ph
+      FROM allo_consultations.appointments a
+      JOIN allo_health.locations loc ON loc.id=a.location_id AND loc.city='{city}' AND loc.locality='{loc}' AND loc.deleted_at IS NULL
+      JOIN allo_persons.patient p ON p.id=a.patient_id
+      JOIN allo_consultations.types t ON t.id=a.type_id AND t.name='Screening Call'
+      WHERE a.deleted_at IS NULL AND a.created_at >= '2026-02-15')
+    SELECT web.wk, COUNT(*) leads, SUM(CASE WHEN bk.ph IS NOT NULL THEN 1 ELSE 0 END) booked
+    FROM web LEFT JOIN bk ON bk.ph=web.ph GROUP BY 1;""".format(camp=camp, lo=LO,
+        city=cfg["city"].replace("'","''"), loc=cfg["loc"].replace("'","''"))
     tot = [0]*NW; bk = [0]*NW
     for line in run_sql(sql):
         c = line.split("\t")
@@ -201,7 +221,7 @@ def get_gmbweb(cfg):
 def assemble(slug, cfg):
     bottom = get_bottom(cfg)
     raw, gmb_ai, paid_ai = get_calls(cfg)
-    gmbweb = get_gmbweb(cfg)
+    gmbweb = get_gmbweb(slug, cfg)
     gmb = (L("data_gmb_insights.json") or {}).get(cfg["key"], {})
     cf  = (L("data_clinic_funnel.json") or {}).get("clinics", {}).get(cfg["key"], {})
     practo = (L("data_practo_leads.json") or {}).get(cfg["key"], {})
