@@ -59,8 +59,12 @@ svg.sp{display:block;margin:0 auto}
 .qvbtn{margin-left:auto;width:auto!important;height:28px;padding:0 13px;border:1px solid var(--accent)!important;background:var(--accent)!important;color:#fff!important;border-radius:8px;cursor:pointer;font-size:12.5px!important;font-weight:600;font-family:Inter}
 .qvbtn:hover{opacity:.9}
 .qvgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:12px;margin-bottom:8px}
-.qvc{background:var(--sheet);border:1px solid var(--line);border-radius:10px;padding:9px 11px 4px}
+.qvc{background:var(--sheet);border:1px solid var(--line);border-radius:10px;padding:9px 11px 6px;cursor:pointer}
+.qvc:hover{border-color:var(--accent);box-shadow:0 2px 8px rgba(0,0,0,.06)}
 .qvt{font-size:11.5px;font-weight:600;color:var(--ink2);margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.qvf{display:flex;justify-content:space-between;align-items:center;margin-top:1px}
+.qvwk{font-size:8.5px;color:var(--faint);font-family:'JetBrains Mono'}
+.qvd{font-size:10.5px;font-weight:700;font-family:'JetBrains Mono'}
 tr[onclick]:hover td:first-child{color:var(--accent)}
 </style>
 </head>
@@ -126,8 +130,9 @@ function spark(arr,color){const c=cols();const v=c.map(j=>{const x=arr?arr[j]:nu
   let p='';v.forEach((val,i)=>{p+=(i?'L':'M')+x(i).toFixed(1)+','+y(val).toFixed(1)+' ';});
   return `<svg class="sp" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}"><path d="${p}" fill="none" stroke="${color}" stroke-width="1.6"/><circle cx="${x(n-1).toFixed(1)}" cy="${y(v[n-1]).toFixed(1)}" r="2.6" fill="${color}"/></svg>`;}
 function sparkCell(arr,color,label,fmt){const idx=ZREG.length;ZREG.push({label,arr,fmt,color});return `<td class="sparkcell" onclick="event.stopPropagation();zoomReg(${idx})">${spark(arr,color)}</td>`;}
-let curZoom=-1;
-function zoomReg(i){const z=ZREG[i];if(!z)return;curZoom=i;$('mTitle').textContent=(D._meta.display[CUR]||CUR)+' · '+z.label;
+function zoomReg(i){openZoom(ZREG[i]);}
+function zoomQV(i){openZoom(QVZ[i]);}
+function openZoom(z){if(!z)return;$('mTitle').textContent=(D._meta.display[CUR]||CUR)+' · '+z.label;
   const W=700,H=300,pad=40,padT=26,c=cols(),wks=c.map(j=>D._meta.weeks[j]);
   const v=c.map(j=>{const x=z.arr[j];return x==null||isNaN(x)?null:x;}),n=v.length;
   const mx=Math.max(1,...v.map(x=>x||0)),x=i=>pad+i*(W-2*pad)/((n-1)||1),y=val=>H-pad-((val||0)/mx)*(H-pad-padT);
@@ -291,7 +296,7 @@ function render(){
   $('qvWrap').style.display=QV?'':'none';
   if(QV)renderQV();
 }
-function miniChart(s){
+function miniChart(s,zi){
   const c=cols(),wks=c.map(j=>D._meta.weeks[j]);
   const v=c.map(j=>{const x=s.arr[j];return x==null||isNaN(x)?null:x;}),n=v.length;
   const vals=v.filter(x=>x!=null);if(!vals.length)return '';
@@ -303,13 +308,24 @@ function miniChart(s){
   const avgL=`<line x1="${pad}" y1="${y(avg).toFixed(1)}" x2="${W-pad}" y2="${y(avg).toFixed(1)}" stroke="${s.color}" stroke-dasharray="4 3" opacity="0.35"/>`;
   const dot=lastI!=null?`<circle cx="${x(lastI).toFixed(1)}" cy="${y(v[lastI]).toFixed(1)}" r="3" fill="${s.color}"/>`:'';
   const lastV=lastI!=null?s.fmt(v[lastI]):'—';
-  const x0=wks.length?wlab(wks[0]).split(' ')[0]:'',x1=wks.length?wlab(wks[wks.length-1]):'';
-  return `<div class="qvc"><div class="qvt">${s.label}</div><svg viewBox="0 0 ${W} ${H}" width="100%">${avgL}<path d="${p}" fill="none" stroke="${s.color}" stroke-width="2"/>${dot}<text x="${W-pad}" y="13" text-anchor="end" font-size="13" font-weight="700" fill="${s.color}">${lastV}</text><text x="${pad}" y="${H-6}" font-size="8.5" fill="#aaa">${x0}</text><text x="${W-pad}" y="${H-6}" text-anchor="end" font-size="8.5" fill="#aaa">${x1}</text></svg></div>`;
+  const x1=wks.length?wlab(wks[wks.length-1]):'';
+  // this-week vs period average delta
+  const last=lastI!=null?v[lastI]:null;let badge='';
+  if(last!=null&&avg){const d=last-avg,up=d>=0,pc=Math.round(Math.abs(d)/Math.abs(avg)*100);
+    badge=`<div class="qvd" style="color:${up?'var(--good)':'var(--bad)'}">${up?'▲':'▼'} ${pc}% vs avg</div>`;}
+  return `<div class="qvc" onclick="zoomQV(${zi})"><div class="qvt">${s.label}</div><svg viewBox="0 0 ${W} ${H}" width="100%">${avgL}<path d="${p}" fill="none" stroke="${s.color}" stroke-width="2"/>${dot}<text x="${W-pad}" y="13" text-anchor="end" font-size="13" font-weight="700" fill="${s.color}">${lastV}</text></svg><div class="qvf"><span class="qvwk">latest ${x1}</span>${badge}</div></div>`;
 }
+let QVZ=[];
 function renderQV(){
   const order=[],byT={};
   QVC.forEach(sx=>{if(!byT[sx.t]){byT[sx.t]=[];order.push(sx.t);}byT[sx.t].push(sx);});
-  $('qvWrap').innerHTML=order.map(t=>`<div class="shead">${t}</div><div class="qvgrid">${byT[t].map(miniChart).join('')}</div>`).join('');
+  QVZ=[];let html='';
+  order.forEach(t=>{
+    let list=byT[t];
+    if(/Lead → Book/.test(t))list=list.slice(0,3);   // only the 3 summary % charts
+    html+=`<div class="shead">${t}</div><div class="qvgrid">`+list.map(s=>{QVZ.push(s);return miniChart(s,QVZ.length-1);}).join('')+`</div>`;
+  });
+  $('qvWrap').innerHTML=html;
 }
 function sel(k){CUR=k;$('csel').value=k;render();}
 fetch('data_source_recon.json?v='+Date.now()).then(r=>{if(!r.ok)throw new Error('HTTP '+r.status);return r.json();}).then(j=>{
