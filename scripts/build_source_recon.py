@@ -161,8 +161,9 @@ def call_funnel(cfg, kind):
     return d
 
 # ---- Google paid WEB lead->book (single-clinic cities only; multi-clinic city-level not isolatable) ----
+SINGLE_CLINIC_CITIES = ("Hubli",)   # single-clinic cities w/o a separate paid call number → web still isolatable
 def gpaid_web_leadbook(cfg, bkphones):
-    if not cfg.get("paid_solo"):   # multi-clinic city — paid web is city-level, can't isolate
+    if not (cfg.get("paid_solo") or cfg["city"] in SINGLE_CLINIC_CITIES):   # multi-clinic city — paid web is city-level
         return None
     tok = {"Coimbatore":"coimbatore","Jaipur":"jaipur","Hubli":"hubballi"}.get(cfg["city"], cfg["city"].lower())
     sql = """SELECT TO_CHAR(DATE_TRUNC('week', created_at+INTERVAL '5 hours 30 minutes'),'YYYY-MM-DD') wk,
@@ -213,15 +214,17 @@ def get_booking_phones(cfg):
       WHERE a.deleted_at IS NULL AND a.created_at>='2026-02-15';""".format(city=cfg["city"].replace("'","''"), loc=cfg["loc"].replace("'","''"))
     return set(l.split("\t")[0] for l in run_sql(sql) if l.strip())
 
+PRACTO_LOC = {"Vidya Nagar": "Hubli Vidyanagar"}   # cfg loc -> Practo sheet "Practice Locality" when they differ
 def practo_leadbook(cfg, practo_by_loc, bkphones, practo_by_loc_doc=None):
+    ploc = PRACTO_LOC.get(cfg["loc"], cfg["loc"])
     leads = Z(); booked = Z()
-    for (wk, ph) in practo_by_loc.get(cfg["loc"], set()):
+    for (wk, ph) in practo_by_loc.get(ploc, set()):
         i = idx[wk]; leads[i] += 1
         if ph in bkphones: booked[i] += 1
     out = {"leads": leads, "booked": booked, "notbooked": [leads[i]-booked[i] for i in range(NW)]}
     if practo_by_loc_doc:
         docs = []
-        for doc, pairs in practo_by_loc_doc.get(cfg["loc"], {}).items():
+        for doc, pairs in practo_by_loc_doc.get(ploc, {}).items():
             dl = Z(); db = Z()
             for (wk, ph) in pairs:
                 i = idx[wk]; dl[i] += 1
