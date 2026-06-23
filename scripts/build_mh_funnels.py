@@ -26,8 +26,9 @@ RELEVANT = ("TALK_TO_DOCTOR","NEEDS_TESTS","BOOK_APPOINTMENT","BOOK_TEST","BOOK_
 CLINICS = {
   "bharathi":    {"key":"Coimbatore|Bharathi Nagar","disp":"Bharathi Nagar · Coimbatore","city":"Coimbatore","loc":"Bharathi Nagar","gmb":["4440114608","4440116568"],"paid":None,"geo":None},
   "indiranagar": {"key":"Bangalore|Indiranagar","disp":"Indiranagar · Bangalore","city":"Bangalore","loc":"Indiranagar","gmb":["8047160881","8047281164"],"paid":"8045680561","geo":"data_indiranagar_google_geo.json"},
-  "krpuram":     {"key":"Bangalore|KR Puram","disp":"KR Puram · Bangalore","city":"Bangalore","loc":"KR Puram","gmb":["8047280294"],"paid":"8045680561","geo":None},
   "vaishali":    {"key":"Jaipur|Vaishali Nagar","disp":"Vaishali Nagar · Jaipur","city":"Jaipur","loc":"Vaishali Nagar","gmb":["1414931073"],"paid":None,"geo":None},
+  "kharghar":    {"key":"Navi Mumbai|Kharghar","disp":"Kharghar · Navi Mumbai","city":"Navi Mumbai","loc":"Kharghar","gmb":["2248932451"],"paid":None,"geo":None},
+  "hubli":       {"key":"Hubli|Vidya Nagar","disp":"Vidya Nagar · Hubli","city":"Hubli","loc":"Vidya Nagar","gmb":["8047094835"],"paid":None,"geo":None},
 }
 
 def run_sql(sql):
