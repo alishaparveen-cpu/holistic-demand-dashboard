@@ -188,7 +188,8 @@ def load_practo_sheet():
     data = urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent":"Mozilla/5.0"}), timeout=180).read().decode("utf-8","replace")
     rows = list(csv.reader(io.StringIO(data))); hdr = [h.strip() for h in rows[0]]
     li = hdr.index("Practice Locality"); ph = hdr.index("Patient_Phone_Number"); dt = hdr.index("Date")
-    by_loc = {}
+    dc = hdr.index("Doctor Name") if "Doctor Name" in hdr else -1
+    by_loc = {}; by_loc_doc = {}
     for r in rows[1:]:
         if len(r) <= max(li, ph, dt): continue
         loc = r[li].strip()
@@ -199,7 +200,10 @@ def load_practo_sheet():
         p = "".join(ch for ch in r[ph] if ch.isdigit())[-10:]
         if len(p) < 10: continue
         by_loc.setdefault(loc, set()).add((mon, p))   # dedupe distinct (week, phone)
-    return by_loc
+        if dc >= 0 and len(r) > dc:
+            doc = r[dc].strip() or "Unknown"
+            by_loc_doc.setdefault(loc, {}).setdefault(doc, set()).add((mon, p))
+    return by_loc, by_loc_doc
 
 def get_booking_phones(cfg):
     sql = """SELECT DISTINCT RIGHT(p.phone_no,10) ph FROM allo_consultations.appointments a
@@ -209,12 +213,22 @@ def get_booking_phones(cfg):
       WHERE a.deleted_at IS NULL AND a.created_at>='2026-02-15';""".format(city=cfg["city"].replace("'","''"), loc=cfg["loc"].replace("'","''"))
     return set(l.split("\t")[0] for l in run_sql(sql) if l.strip())
 
-def practo_leadbook(cfg, practo_by_loc, bkphones):
+def practo_leadbook(cfg, practo_by_loc, bkphones, practo_by_loc_doc=None):
     leads = Z(); booked = Z()
     for (wk, ph) in practo_by_loc.get(cfg["loc"], set()):
         i = idx[wk]; leads[i] += 1
         if ph in bkphones: booked[i] += 1
-    return {"leads": leads, "booked": booked, "notbooked": [leads[i]-booked[i] for i in range(NW)]}
+    out = {"leads": leads, "booked": booked, "notbooked": [leads[i]-booked[i] for i in range(NW)]}
+    if practo_by_loc_doc:
+        docs = []
+        for doc, pairs in practo_by_loc_doc.get(cfg["loc"], {}).items():
+            dl = Z(); db = Z()
+            for (wk, ph) in pairs:
+                i = idx[wk]; dl[i] += 1
+                if ph in bkphones: db[i] += 1
+            docs.append({"name": doc, "leads": dl, "booked": db, "notbooked": [dl[i]-db[i] for i in range(NW)]})
+        out["doctors"] = sorted(docs, key=lambda o: -sum(o["leads"]))
+    return out
 
 # ---- Availability: bookable roster slots + distinct hours + days, split weekday/weekend, by doctor ----
 def availability(cfg):
@@ -263,7 +277,7 @@ def availability(cfg):
     return d
 
 def main():
-    practo_by_loc = load_practo_sheet()
+    practo_by_loc, practo_by_loc_doc = load_practo_sheet()
     out = {"_meta": {"weeks": WEEKS, "sources": SOURCES,
             "clinics": [k for k in CLINICS], "display": {k: CLINICS[k]["disp"] for k in CLINICS},
             "note": "Bookings deduped per patient/week, source priority-assigned (call match > UTM). Lead->book only for call channels + GMB web (clinic-attributable); other channels are booked-only. Untagged = no Exotel call + no UTM."},
@@ -280,7 +294,7 @@ def main():
         out["clinics"][slug] = {"by_source": by_src, "untagged_new": un_new, "untagged_repeat": un_rep,
             "lead_book": {"gmb_call": gmb_lb, "gmb_web": {"leads": web["total"], "booked": web["booked"], "notbooked": web["notbooked"]},
                           "gpaid_call": paid_lb, "gpaid_web": gpw_lb,
-                          "practo": practo_leadbook(cfg, practo_by_loc, bkph)},
+                          "practo": practo_leadbook(cfg, practo_by_loc, bkph, practo_by_loc_doc)},
             "bottom": {"booked": bottom.get("booked", Z()), "done": bottom.get("done", Z()),
                        "purchased": bottom.get("purchased", Z()), "rev": bottom.get("rev", Z())}}
         tot = sum(sum(by_src[s]) for s in SOURCES)

@@ -130,7 +130,9 @@ function zoomReg(i){const z=ZREG[i];if(!z)return;curZoom=i;$('mTitle').textConte
     lbls+=`<text x="${x(i).toFixed(1)}" y="${(y(val)-9).toFixed(1)}" font-size="12" fill="${z.color}" text-anchor="middle" font-weight="700">${z.fmt(val)}</text>`;});
   let gl='';[0,.5,1].forEach(f=>{const yy=H-pad-(f*(H-pad-padT));gl+=`<line x1="${pad}" y1="${yy}" x2="${W-pad}" y2="${yy}" stroke="#EEEBE2"/><text x="4" y="${yy+3}" font-size="10" fill="#999">${z.fmt(mx*f)}</text>`;});
   let xl='';c.forEach((j,i)=>{xl+=`<text x="${x(i)}" y="${H-9}" font-size="9" fill="#999" text-anchor="middle">${wlab(wks[i])}</text>`;});
-  $('mBody').innerHTML=`<svg width="100%" viewBox="0 0 ${W} ${H}">${gl}<path d="${p}" fill="none" stroke="${z.color}" stroke-width="2"/>${pts}${lbls}${xl}</svg><div class="lgd">Numbers per week · oldest→newest (latest on right)</div>`;
+  const valid=v.filter(x=>x!=null);const avg=valid.length?valid.reduce((a,b)=>a+b,0)/valid.length:null;
+  let avgLine='';if(avg!=null){const ya=y(avg);avgLine=`<line x1="${pad}" y1="${ya.toFixed(1)}" x2="${W-pad}" y2="${ya.toFixed(1)}" stroke="${z.color}" stroke-width="1.3" stroke-dasharray="6 4" opacity="0.5"/><text x="${pad+3}" y="${(ya-4).toFixed(1)}" font-size="10.5" fill="${z.color}" font-weight="700">avg ${z.fmt(avg)}</text>`;}
+  $('mBody').innerHTML=`<svg width="100%" viewBox="0 0 ${W} ${H}">${gl}${avgLine}<path d="${p}" fill="none" stroke="${z.color}" stroke-width="2"/>${pts}${lbls}${xl}</svg><div class="lgd">Numbers per week · oldest→newest (latest on right) · dashed = average</div>`;
   $('modal').classList.add('on');}
 function closeZ(){$('modal').classList.remove('on');}
 function adjWeeks(d){const n=(D._meta.weeks||[]).length-1;NSHOW=Math.max(4,Math.min(n,NSHOW+d));render();}
@@ -179,12 +181,13 @@ function render(){
   // ① AVAILABILITY (bookable roster slots + distinct hours, collapsible weekday/weekend)
   const av=c.avail||{};
   let AV=head('Availability');
+  AV+=row('Available days — total',av.days_total,'grp',N,{color:BLU});
+  AV+=row('weekday',av.days_wd,'sub',N,{color:GRN});
+  AV+=row('weekend',av.days_we,'sub',N,{color:VIO});
   AV+=row('Available slots — total',av.slots_total,'grp',N,{color:BLU,tkey:'av_slots'});
   if(EXP['av_slots']){AV+=row('weekday',av.slots_wd,'sub',N,{color:GRN});AV+=row('weekend',av.slots_we,'sub',N,{color:VIO});}
   AV+=row('Available hours — total',av.hrs_total,'grp',N,{color:BLU,tkey:'av_hours'});
   if(EXP['av_hours']){AV+=row('weekday',av.hrs_wd,'sub',N,{color:GRN});AV+=row('weekend',av.hrs_we,'sub',N,{color:VIO});}
-  AV+=row('Available days — total',av.days_total,'grp',N,{color:BLU,tkey:'av_days'});
-  if(EXP['av_days']){AV+=row('weekday',av.days_wd,'sub',N,{color:GRN});AV+=row('weekend',av.days_we,'sub',N,{color:VIO});}
   const docs=av.doctors||[];
   if(docs.length){
     AV+=row('By doctor — '+docs.length+(docs.length>1?' doctors':' doctor'),null,'grp',N,{tkey:'av_docs'});
@@ -222,6 +225,14 @@ function render(){
   L+=webDetail('paid web',lb.gpaid_web,'lb_gpw',true);
   L+=row('Practo',null,'gband');
   L+=webDetail('connections',lb.practo,'lb_pr',false);
+  if(lb.practo&&lb.practo.doctors&&lb.practo.doctors.length){
+    L+=row('by doctor — '+lb.practo.doctors.length,null,'grp2',N,{tkey:'lb_prdoc'});
+    if(EXP['lb_prdoc'])lb.practo.doctors.forEach((dd,di)=>{const dk='lb_prd'+di;
+      L+=row(dd.name+' — leads',dd.leads,'sub',N,{color:BLU,tkey:dk});
+      L+=pctRow('lead → book %',dd.booked,dd.leads,BLU);
+      if(EXP[dk]){L+=row('booked',dd.booked,'sub2',N,{color:GRN});L+=row('did NOT book',dd.notbooked,'sub2',N,{color:RED,invert:true});}
+    });
+  }
   $('tLB').innerHTML=L;
   // ④ bookings by source (GMB / Google / Direct collapsible)
   let h=head('Source · bookings');
