@@ -41,6 +41,20 @@ td.pct{font-weight:700}
 .note b{color:var(--ink)}
 .badwarn{background:#FBEEEC;border-color:#E6C5C0;color:#7a2b22}
 .lblmuted{color:var(--muted);font-size:11px}
+.wknav{display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--ink2);margin:2px 0 14px}
+.wknav button{width:27px;height:27px;border:1px solid var(--line);background:#fff;border-radius:7px;cursor:pointer;font-size:16px;font-weight:700;color:var(--accent);line-height:1;display:flex;align-items:center;justify-content:center}
+.wknav button:hover:not(:disabled){background:var(--inset)}
+.wknav button:disabled{color:var(--faint);cursor:default}
+table.fm th:last-child{text-align:center;color:var(--muted)}
+td.sparkcell{text-align:center;cursor:pointer;padding:2px 8px!important;width:134px}
+td.sparkcell:hover{background:var(--inset)}
+svg.sp{display:block;margin:0 auto}
+.modal{position:fixed;inset:0;background:rgba(20,25,22,.45);display:none;align-items:center;justify-content:center;z-index:50;padding:20px}
+.modal.on{display:flex}
+.mbox{background:#fff;border-radius:14px;padding:18px 20px;max-width:760px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.25)}
+.mhd{display:flex;justify-content:space-between;align-items:center;font-family:Fraunces;font-size:17px;font-weight:600;margin-bottom:10px;gap:12px}
+.mhd button{border:none;background:none;font-size:18px;cursor:pointer;color:var(--muted)}
+.lgd{font-size:11px;color:var(--muted);margin-top:6px}
 </style>
 </head>
 <body>
@@ -50,7 +64,8 @@ td.pct{font-weight:700}
     <select class="csel" id="csel" onchange="sel(this.value)"></select>
   </div>
   <h1 id="h1">Source Reconciliation</h1>
-  <div class="sub">Every Screening-Call booking traced to its real source (call-match + recovered UTM), reconciled to the total — so we can see what each channel contributes, the lead→book rate where trackable, and what’s untagged. Weeks: latest 8 complete (Mon-based).</div>
+  <div class="sub">Every Screening-Call booking traced to its real source (call-match + recovered UTM), reconciled to the total — so we can see what each channel contributes, the lead→book rate where trackable, and what’s direct. Cells are shaded green (high) → red (low) within each row; click any trend sparkline to zoom.</div>
+  <div class="wknav">Showing last <b id="wkN">6</b> complete weeks <button id="wkMinus" onclick="adjWeeks(-2)" title="fewer weeks">−</button><button id="wkPlus" onclick="adjWeeks(2)" title="more weeks">＋</button></div>
 
   <div class="shead">① Leads <span class="lblmuted">(who reached out — GMB + Google + Practo)</span></div>
   <div class="fmwrap"><table class="fm" id="tLeads"></table></div>
@@ -67,42 +82,77 @@ td.pct{font-weight:700}
   <div class="fmwrap"><table class="fm" id="tD"></table></div>
   <div class="note">Booked = unique-patient Screening Calls (matches the ③ total). <b>Done</b> = completed consults; <b>Purchased</b> = completed + paid invoice; <b>Revenue</b> = ₹ collected. B→D% is the real no-show/completion rate.</div>
 </div>
+<div class="modal" id="modal"><div class="mbox"><div class="mhd"><span id="mTitle"></span><button onclick="closeZ()">✕</button></div><div id="mBody"></div></div></div>
 <script>
-let D=null,CUR=null;const NSHOW=8;
+let D=null,CUR=null;let NSHOW=6;let ZREG=[];
 const $=id=>document.getElementById(id);
 const N=v=>v==null||isNaN(v)?'—':Math.round(v).toLocaleString('en-IN');
 const RUP=v=>v==null||isNaN(v)?'—':'₹'+Math.round(v).toLocaleString('en-IN');
 const PCT=v=>v==null||isNaN(v)?'—':v.toFixed(0)+'%';
 const sum=(a,idx)=>idx.reduce((s,i)=>s+(a[i]||0),0);
-function cols(){const w=D._meta.weeks;const c=[];for(let j=NSHOW;j>=1;j--)c.push(j);return c;} // skip wk0 partial, oldest→newest
+const GRN='#2E7D5B',RED='#B23A2E',BLU='#3E6F8E',VIO='#7B5EA7';
+function cols(){const c=[];for(let j=NSHOW;j>=1;j--)c.push(j);return c;} // skip wk0 partial, oldest→newest
 function wlab(w){const d=new Date(w+'T00:00:00'),e=new Date(d);e.setDate(e.getDate()+6);const m=x=>x.toLocaleString('en',{month:'short'});
   return d.getMonth()===e.getMonth()?`${d.getDate()}–${e.getDate()} ${m(e)}`:`${d.getDate()} ${m(d)}–${e.getDate()} ${m(e)}`;}
-function head(){const w=D._meta.weeks,c=cols();return '<tr><th>'+arguments[0]+'</th>'+c.map((j,p)=>`<th class="${p===c.length-1?'lastcol':''}">${wlab(w[j])}</th>`).join('')+'</tr>';}
-function row(label,arr,cls,fmt){fmt=fmt||N;const c=cols();let t='';c.forEach((j,p)=>{t+=`<td class="${p===c.length-1?'lastcol':''}">${fmt(arr?arr[j]:null)}</td>`;});return `<tr class="${cls||''}"><td>${label}</td>${t}</tr>`;}
+function hexA(hex,a){const n=parseInt(hex.slice(1),16);return `rgba(${n>>16&255},${n>>8&255},${n&255},${a.toFixed(3)})`;}
+function heatBg(v,mn,mx,inv){if(v==null||isNaN(v)||!isFinite(mn)||mn===mx)return'';let t=(v-mn)/((mx-mn)||1);if(inv)t=1-t;
+  if(t>=0.6)return hexA(GRN,0.06+0.20*((t-0.6)/0.4));
+  if(t<=0.4)return hexA(RED,0.06+0.20*((0.4-t)/0.4));return'';}
+function head(lbl){const w=D._meta.weeks,c=cols();return '<tr><th>'+lbl+'</th>'+c.map((j,p)=>`<th class="${p===c.length-1?'lastcol':''}">${wlab(w[j])}</th>`).join('')+'<th>trend</th></tr>';}
+function row(label,arr,cls,fmt,o){fmt=fmt||N;o=o||{};const c=cols();
+  let mn=Infinity,mx=-Infinity;c.forEach(j=>{const v=arr?arr[j]:null;if(v!=null&&!isNaN(v)){mn=Math.min(mn,v);mx=Math.max(mx,v);}});
+  let t='';c.forEach((j,p)=>{const v=arr?arr[j]:null;const last=p===c.length-1;
+    const bg=(o.noheat||cls==='gband')?'':heatBg(v,mn,mx,o.invert);const st=bg?`style="background:${bg}"`:'';
+    t+=`<td class="${last?'lastcol':''}" ${st}>${(v==null||isNaN(v))?'—':fmt(v)}</td>`;});
+  return `<tr class="${cls||''}"><td>${label}</td>${t}${arr?sparkCell(arr,o.color||BLU,label,fmt):'<td></td>'}</tr>`;}
+function spark(arr,color){const c=cols();const v=c.map(j=>{const x=arr?arr[j]:null;return x==null||isNaN(x)?0:x;});const n=v.length,mx=Math.max(1,...v);
+  const W=120,H=26,pad=2,x=i=>pad+i*(W-2*pad)/((n-1)||1),y=val=>H-pad-(val/mx)*(H-2*pad);
+  let p='';v.forEach((val,i)=>{p+=(i?'L':'M')+x(i).toFixed(1)+','+y(val).toFixed(1)+' ';});
+  return `<svg class="sp" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}"><path d="${p}" fill="none" stroke="${color}" stroke-width="1.6"/><circle cx="${x(n-1).toFixed(1)}" cy="${y(v[n-1]).toFixed(1)}" r="2.6" fill="${color}"/></svg>`;}
+function sparkCell(arr,color,label,fmt){const idx=ZREG.length;ZREG.push({label,arr,fmt,color});return `<td class="sparkcell" onclick="zoomReg(${idx})">${spark(arr,color)}</td>`;}
+let curZoom=-1;
+function zoomReg(i){const z=ZREG[i];if(!z)return;curZoom=i;$('mTitle').textContent=(D._meta.display[CUR]||CUR)+' · '+z.label;
+  const W=700,H=300,pad=40,padT=26,c=cols(),wks=c.map(j=>D._meta.weeks[j]);
+  const v=c.map(j=>{const x=z.arr[j];return x==null||isNaN(x)?null:x;}),n=v.length;
+  const mx=Math.max(1,...v.map(x=>x||0)),x=i=>pad+i*(W-2*pad)/((n-1)||1),y=val=>H-pad-((val||0)/mx)*(H-pad-padT);
+  let p='',pts='',lbls='',started=false;
+  v.forEach((val,i)=>{if(val==null){started=false;return;}p+=(started?'L':'M')+x(i).toFixed(1)+','+y(val).toFixed(1)+' ';started=true;
+    pts+=`<circle cx="${x(i).toFixed(1)}" cy="${y(val).toFixed(1)}" r="3.2" fill="${z.color}"><title>${wlab(wks[i])}: ${z.fmt(val)}</title></circle>`;
+    lbls+=`<text x="${x(i).toFixed(1)}" y="${(y(val)-9).toFixed(1)}" font-size="12" fill="${z.color}" text-anchor="middle" font-weight="700">${z.fmt(val)}</text>`;});
+  let gl='';[0,.5,1].forEach(f=>{const yy=H-pad-(f*(H-pad-padT));gl+=`<line x1="${pad}" y1="${yy}" x2="${W-pad}" y2="${yy}" stroke="#EEEBE2"/><text x="4" y="${yy+3}" font-size="10" fill="#999">${z.fmt(mx*f)}</text>`;});
+  let xl='';c.forEach((j,i)=>{xl+=`<text x="${x(i)}" y="${H-9}" font-size="9" fill="#999" text-anchor="middle">${wlab(wks[i])}</text>`;});
+  $('mBody').innerHTML=`<svg width="100%" viewBox="0 0 ${W} ${H}">${gl}<path d="${p}" fill="none" stroke="${z.color}" stroke-width="2"/>${pts}${lbls}${xl}</svg><div class="lgd">Numbers per week · oldest→newest (latest on right)</div>`;
+  $('modal').classList.add('on');}
+function closeZ(){$('modal').classList.remove('on');}
+function adjWeeks(d){const n=(D._meta.weeks||[]).length-1;NSHOW=Math.max(4,Math.min(n,NSHOW+d));render();}
 function addv(a,b){const o=[];for(let i=0;i<a.length;i++)o.push((a[i]||0)+(b[i]||0));return o;}
 function pctOf(num,den){return den.map((v,i)=>v?Math.round((num[i]||0)/v*100):null);}
 function callRows(label,x){
   if(!x)return row('· '+label+' — n/a',null,'grp2');
-  let h=row('· '+label+' — total calls',x.total,'grp2');
-  h+=row('answered',x.answered,'sub2');
-  h+=row('not answered',x.missed,'sub2');
-  h+=row('relevant (real intent)',x.relevant,'sub2');
-  h+=row('→ booked',x.booked,'sub2');
-  h+=row('→ did NOT book',x.notbooked,'sub2');
-  h+=row('relevant → book %',pctOf(x.booked,x.relevant),'sub2',PCT);
+  let h=row('· '+label+' — total calls',x.total,'grp2',N,{color:BLU});
+  h+=row('answered',x.answered,'sub2',N,{color:GRN});
+  h+=row('not answered',x.missed,'sub2',N,{color:RED,invert:true});
+  h+=row('relevant (real intent)',x.relevant,'sub2',N,{color:GRN});
+  h+=row('→ booked',x.booked,'sub2',N,{color:GRN});
+  h+=row('→ did NOT book',x.notbooked,'sub2',N,{color:RED,invert:true});
+  h+=row('relevant → book %',pctOf(x.booked,x.relevant),'sub2',PCT,{color:VIO});
   return h;
 }
 function webRows(label,x,cityFlag){
   if(!x)return row('· '+label+(cityFlag?' — city-level (not clinic-isolatable)':' — none'),null,'grp2');
-  let h=row('· '+label+' — leads',x.leads,'grp2');
-  h+=row('booked',x.booked,'sub2');
-  h+=row('did NOT book',x.notbooked,'sub2');
-  h+=row('lead → book %',pctOf(x.booked,x.leads),'sub2',PCT);
+  let h=row('· '+label+' — leads',x.leads,'grp2',N,{color:BLU});
+  h+=row('booked',x.booked,'sub2',N,{color:GRN});
+  h+=row('did NOT book',x.notbooked,'sub2',N,{color:RED,invert:true});
+  h+=row('lead → book %',pctOf(x.booked,x.leads),'sub2',PCT,{color:VIO});
   return h;
 }
 
 function render(){
   const c=D.clinics[CUR];if(!c)return;
+  ZREG=[];const nMax=(D._meta.weeks||[]).length-1;
+  if($('wkN'))$('wkN').textContent=NSHOW;
+  if($('wkMinus'))$('wkMinus').disabled=NSHOW<=4;
+  if($('wkPlus'))$('wkPlus').disabled=NSHOW>=nMax;
   $('h1').textContent=(D._meta.display[CUR]||CUR)+' — source reconciliation';
   const s=c.by_source;
   const gmbTot=addv(addv(s.gmb_call,s.gmb_web),s.gmb_wa);
@@ -163,10 +213,11 @@ function render(){
   $('tD').innerHTML=m;
 }
 function sel(k){CUR=k;$('csel').value=k;render();}
-fetch('data_source_recon.json?v='+Date.now()).then(r=>r.json()).then(j=>{
+fetch('data_source_recon.json?v='+Date.now()).then(r=>{if(!r.ok)throw new Error('HTTP '+r.status);return r.json();}).then(j=>{
   D=j;$('csel').innerHTML=D._meta.clinics.map(k=>`<option value="${k}">${D._meta.display[k]}</option>`).join('');
-  CUR=D._meta.clinics[0];$('csel').value=CUR;render();
-}).catch(()=>{$('h1').textContent='Could not load data_source_recon.json';});
+  CUR=D._meta.clinics[0];$('csel').value=CUR;
+  try{render();}catch(e){$('h1').textContent='Render error: '+e.message;console.error(e);}
+}).catch(e=>{$('h1').textContent='Could not load data_source_recon.json ('+e.message+')';console.error(e);});
 </script>
 </body>
 </html>
