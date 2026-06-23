@@ -76,7 +76,7 @@ tr[onclick]:hover td:first-child{color:var(--accent)}
   </div>
   <h1 id="h1">Source Reconciliation</h1>
   <div class="sub">Every Screening-Call booking traced to its real source (call-match + recovered UTM), reconciled to the total — so we can see what each channel contributes, the lead→book rate where trackable, and what’s direct. Cells are shaded green (high) → red (low) within each row; click any trend sparkline to zoom.</div>
-  <div class="wknav">Showing last <b id="wkN">6</b> complete weeks <button id="wkMinus" onclick="adjWeeks(-2)" title="fewer weeks">−</button><button id="wkPlus" onclick="adjWeeks(2)" title="more weeks">＋</button><button id="qvBtn" class="qvbtn" onclick="toggleQV()">📈 Quick view</button></div>
+  <div class="wknav">Showing <b id="wkN">6</b> weeks <button id="wkMinus" onclick="adjWeeks(-2)" title="fewer weeks">−</button><button id="wkPlus" onclick="adjWeeks(2)" title="more weeks">＋</button> &nbsp;·&nbsp; latest <b id="wkEndLab">—</b> <button id="wkOlder" onclick="shiftEnd(1)" title="shift older">◀</button><button id="wkNewer" onclick="shiftEnd(-1)" title="shift newer">▶</button><button id="qvBtn" class="qvbtn" onclick="toggleQV()">📈 Quick view</button></div>
 
   <div id="qvWrap" style="display:none"></div>
   <div id="tables">
@@ -98,7 +98,7 @@ tr[onclick]:hover td:first-child{color:var(--accent)}
 </div>
 <div class="modal" id="modal"><div class="mbox"><div class="mhd"><span id="mTitle"></span><button onclick="closeZ()">✕</button></div><div id="mBody"></div></div></div>
 <script>
-let D=null,CUR=null;let NSHOW=6;let ZREG=[];let EXP={};
+let D=null,CUR=null;let NSHOW=6;let WKEND=1;let ZREG=[];let EXP={};
 let QV=false,QVC=[],QVTABLE=null;
 function toggle(k){EXP[k]=!EXP[k];render();}
 function toggleQV(){QV=!QV;render();}
@@ -108,7 +108,7 @@ const RUP=v=>v==null||isNaN(v)?'—':'₹'+Math.round(v).toLocaleString('en-IN')
 const PCT=v=>v==null||isNaN(v)?'—':v.toFixed(0)+'%';
 const sum=(a,idx)=>idx.reduce((s,i)=>s+(a[i]||0),0);
 const GRN='#2E7D5B',RED='#B23A2E',BLU='#3E6F8E',VIO='#7B5EA7';
-function cols(){const c=[];for(let j=NSHOW;j>=1;j--)c.push(j);return c;} // skip wk0 partial, oldest→newest
+function cols(){const c=[];for(let j=WKEND+NSHOW-1;j>=WKEND;j--)c.push(j);return c;} // skip wk0 partial, oldest→newest, WKEND=latest shown
 function wlab(w){const d=new Date(w+'T00:00:00'),e=new Date(d);e.setDate(e.getDate()+6);const m=x=>x.toLocaleString('en',{month:'short'});
   return d.getMonth()===e.getMonth()?`${d.getDate()}–${e.getDate()} ${m(e)}`:`${d.getDate()} ${m(d)}–${e.getDate()} ${m(e)}`;}
 function hexA(hex,a){const n=parseInt(hex.slice(1),16);return `rgba(${n>>16&255},${n>>8&255},${n&255},${a.toFixed(3)})`;}
@@ -147,7 +147,8 @@ function openZoom(z){if(!z)return;$('mTitle').textContent=(D._meta.display[CUR]|
   $('mBody').innerHTML=`<svg width="100%" viewBox="0 0 ${W} ${H}">${gl}${avgLine}<path d="${p}" fill="none" stroke="${z.color}" stroke-width="2"/>${pts}${lbls}${xl}</svg><div class="lgd">Numbers per week · oldest→newest (latest on right) · dashed = average</div>`;
   $('modal').classList.add('on');}
 function closeZ(){$('modal').classList.remove('on');}
-function adjWeeks(d){const n=(D._meta.weeks||[]).length-1;NSHOW=Math.max(4,Math.min(n,NSHOW+d));render();}
+function adjWeeks(d){const n=(D._meta.weeks||[]).length-1;NSHOW=Math.max(4,Math.min(n,NSHOW+d));WKEND=Math.max(1,Math.min((D._meta.weeks.length)-NSHOW,WKEND));render();}
+function shiftEnd(d){const maxEnd=(D._meta.weeks.length)-NSHOW;WKEND=Math.max(1,Math.min(maxEnd,WKEND+d));render();}
 function addv(a,b){const o=[];for(let i=0;i<a.length;i++)o.push((a[i]||0)+(b[i]||0));return o;}
 function pctOf(num,den){return den.map((v,i)=>v?Math.round((num[i]||0)/v*100):null);}
 function pctRow(label,num,den,color){return row(label,pctOf(num,den),'sub2',PCT,{color:color||VIO});}
@@ -181,9 +182,13 @@ function webDetail(label,x,tkey,cityFlag,showPct){
 function render(){
   const c=D.clinics[CUR];if(!c)return;
   ZREG=[];QVC=[];const nMax=(D._meta.weeks||[]).length-1;
+  const maxEnd=(D._meta.weeks.length)-NSHOW;WKEND=Math.max(1,Math.min(maxEnd,WKEND));
   if($('wkN'))$('wkN').textContent=NSHOW;
   if($('wkMinus'))$('wkMinus').disabled=NSHOW<=4;
   if($('wkPlus'))$('wkPlus').disabled=NSHOW>=nMax;
+  if($('wkEndLab'))$('wkEndLab').textContent=wlab(D._meta.weeks[WKEND]);
+  if($('wkNewer'))$('wkNewer').disabled=WKEND<=1;
+  if($('wkOlder'))$('wkOlder').disabled=WKEND>=maxEnd;
   $('h1').textContent=(D._meta.display[CUR]||CUR)+' — source reconciliation';
   const s=c.by_source;
   const gmbTot=addv(addv(s.gmb_call,s.gmb_web),s.gmb_wa);
@@ -221,6 +226,8 @@ function render(){
   LS+=row('GMB + Google + Practo — total leads',addv(ggLeads,prLeads),'tot');
   LS+=row('GMB leads',gmbLeads,'grp',N,{tkey:'lds_gmb',color:GRN});
   if(EXP['lds_gmb']){
+    LS+=row('· call leads',cl(lb.gmb_call),'sub',N,{color:GRN});
+    LS+=row('· website leads',wl(lb.gmb_web),'sub',N,{color:GRN});
     LS+=row('impressions',RG.impr,'sub',N,{color:BLU});
     LS+=row('clicks',RG.clicks,'sub',N,{color:BLU});
     LS+=row('CTR (clicks ÷ impr)',RG.ctr,'sub',CTRF,{color:VIO});
@@ -231,6 +238,8 @@ function render(){
   }
   LS+=row('Google leads',googLeads,'grp',N,{tkey:'lds_goog',color:GRN});
   if(EXP['lds_goog']){
+    LS+=row('· call leads',cl(lb.gpaid_call),'sub',N,{color:GRN});
+    LS+=row('· website leads',wl(lb.gpaid_web),'sub',N,{color:GRN});
     LS+=row('location-asset impressions',RR.impr,'sub',N,{color:BLU});
     LS+=row('clicks',RR.clicks,'sub',N,{color:BLU});
     LS+=row('CTR (clicks ÷ impr)',RR.ctr,'sub',CTRF,{color:VIO});
