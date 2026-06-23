@@ -56,6 +56,11 @@ svg.sp{display:block;margin:0 auto}
 .mhd button{border:none;background:none;font-size:18px;cursor:pointer;color:var(--muted)}
 .lgd{font-size:11px;color:var(--muted);margin-top:6px}
 .chev{display:inline-block;width:11px;color:var(--muted);font-size:9px;vertical-align:middle}
+.qvbtn{margin-left:auto;width:auto!important;height:28px;padding:0 13px;border:1px solid var(--accent)!important;background:var(--accent)!important;color:#fff!important;border-radius:8px;cursor:pointer;font-size:12.5px!important;font-weight:600;font-family:Inter}
+.qvbtn:hover{opacity:.9}
+.qvgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:12px;margin-bottom:8px}
+.qvc{background:var(--sheet);border:1px solid var(--line);border-radius:10px;padding:9px 11px 4px}
+.qvt{font-size:11.5px;font-weight:600;color:var(--ink2);margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 tr[onclick]:hover td:first-child{color:var(--accent)}
 </style>
 </head>
@@ -67,8 +72,10 @@ tr[onclick]:hover td:first-child{color:var(--accent)}
   </div>
   <h1 id="h1">Source Reconciliation</h1>
   <div class="sub">Every Screening-Call booking traced to its real source (call-match + recovered UTM), reconciled to the total — so we can see what each channel contributes, the lead→book rate where trackable, and what’s direct. Cells are shaded green (high) → red (low) within each row; click any trend sparkline to zoom.</div>
-  <div class="wknav">Showing last <b id="wkN">6</b> complete weeks <button id="wkMinus" onclick="adjWeeks(-2)" title="fewer weeks">−</button><button id="wkPlus" onclick="adjWeeks(2)" title="more weeks">＋</button></div>
+  <div class="wknav">Showing last <b id="wkN">6</b> complete weeks <button id="wkMinus" onclick="adjWeeks(-2)" title="fewer weeks">−</button><button id="wkPlus" onclick="adjWeeks(2)" title="more weeks">＋</button><button id="qvBtn" class="qvbtn" onclick="toggleQV()">📈 Quick view</button></div>
 
+  <div id="qvWrap" style="display:none"></div>
+  <div id="tables">
   <div class="shead">① Availability <span class="lblmuted">(bookable roster — click a row to split weekday / weekend)</span></div>
   <div class="fmwrap"><table class="fm" id="tAvail"></table></div>
 
@@ -83,11 +90,14 @@ tr[onclick]:hover td:first-child{color:var(--accent)}
 
   <div class="shead">⑤ Bookings → Done → Purchased → Revenue</div>
   <div class="fmwrap"><table class="fm" id="tD"></table></div>
+  </div>
 </div>
 <div class="modal" id="modal"><div class="mbox"><div class="mhd"><span id="mTitle"></span><button onclick="closeZ()">✕</button></div><div id="mBody"></div></div></div>
 <script>
 let D=null,CUR=null;let NSHOW=6;let ZREG=[];let EXP={};
+let QV=false,QVC=[],QVTABLE=null;
 function toggle(k){EXP[k]=!EXP[k];render();}
+function toggleQV(){QV=!QV;render();}
 const $=id=>document.getElementById(id);
 const N=v=>v==null||isNaN(v)?'—':Math.round(v).toLocaleString('en-IN');
 const RUP=v=>v==null||isNaN(v)?'—':'₹'+Math.round(v).toLocaleString('en-IN');
@@ -103,6 +113,7 @@ function heatBg(v,mn,mx,inv){if(v==null||isNaN(v)||!isFinite(mn)||mn===mx)return
   if(t<=0.4)return hexA(RED,0.06+0.20*((0.4-t)/0.4));return'';}
 function head(lbl){const w=D._meta.weeks,c=cols();return '<tr><th>'+lbl+'</th>'+c.map((j,p)=>`<th class="${p===c.length-1?'lastcol':''}">${wlab(w[j])}</th>`).join('')+'<th>trend</th></tr>';}
 function row(label,arr,cls,fmt,o){fmt=fmt||N;o=o||{};const c=cols();
+  if(QVTABLE&&arr&&cls!=='gband')QVC.push({t:QVTABLE,label:String(label).replace(/^· /,''),arr,color:o.color||BLU,fmt});
   let mn=Infinity,mx=-Infinity;c.forEach(j=>{const v=arr?arr[j]:null;if(v!=null&&!isNaN(v)){mn=Math.min(mn,v);mx=Math.max(mx,v);}});
   let t='';c.forEach((j,p)=>{const v=arr?arr[j]:null;const last=p===c.length-1;
     const bg=(o.noheat||cls==='gband')?'':heatBg(v,mn,mx,o.invert);const st=bg?`style="background:${bg}"`:'';
@@ -139,8 +150,8 @@ function callDetail(label,x,tkey){
   if(!x)return row('· '+label+' — n/a',null,'grp2');
   let h=row('· '+label+' — leads',x.total,'grp2',N,{color:BLU,tkey:tkey});
   h+=pctRow('lead → relevant %',x.relevant,x.total,VIO);
+  h+=pctRow('relevant → book %',x.booked,x.relevant,GRN);
   if(EXP[tkey]){
-    h+=pctRow('relevant → book %',x.booked,x.relevant,GRN);
     h+=pctRow('lead → book %',x.booked,x.total,BLU);
     h+=row('answered',x.answered,'sub2',N,{color:GRN});
     h+=row('not answered',x.missed,'sub2',N,{color:RED,invert:true});
@@ -164,7 +175,7 @@ function webDetail(label,x,tkey,cityFlag,showPct){
 
 function render(){
   const c=D.clinics[CUR];if(!c)return;
-  ZREG=[];const nMax=(D._meta.weeks||[]).length-1;
+  ZREG=[];QVC=[];const nMax=(D._meta.weeks||[]).length-1;
   if($('wkN'))$('wkN').textContent=NSHOW;
   if($('wkMinus'))$('wkMinus').disabled=NSHOW<=4;
   if($('wkPlus'))$('wkPlus').disabled=NSHOW>=nMax;
@@ -177,7 +188,7 @@ function render(){
   const bk=x=>x?x.booked:ZA, cl=x=>x?x.total:ZA, wl=x=>x?x.leads:ZA, rl=x=>x?x.relevant:ZA;
   // ① AVAILABILITY (bookable roster slots + distinct hours, collapsible weekday/weekend)
   const av=c.avail||{};
-  let AV=head('Availability');
+  QVTABLE='① Availability';let AV=head('Availability');
   AV+=row('Available days — total',av.days_total,'grp',N,{color:BLU});
   AV+=row('weekday',av.days_wd,'sub',N,{color:GRN});
   AV+=row('weekend',av.days_we,'sub',N,{color:VIO});
@@ -201,7 +212,7 @@ function render(){
   const gmbLeads=addv(cl(lb.gmb_call),wl(lb.gmb_web)), googLeads=addv(cl(lb.gpaid_call),wl(lb.gpaid_web));
   const RG=(c.reach&&c.reach.gmb)||{}, RR=(c.reach&&c.reach.google)||{}, RV=c.reviews||{};
   const CTRF=v=>v==null||isNaN(v)?'—':v.toFixed(1)+'%';
-  let LS=head('Leads');
+  QVTABLE='② Leads';let LS=head('Leads');
   LS+=row('GMB + Google + Practo — total leads',addv(ggLeads,prLeads),'tot');
   LS+=row('GMB leads',gmbLeads,'grp',N,{tkey:'lds_gmb',color:GRN});
   if(EXP['lds_gmb']){
@@ -229,7 +240,7 @@ function render(){
   const ggB=addv(addv(bdf(lb.gmb_call),bdf(lb.gmb_web)),addv(bdf(lb.gpaid_call),bdf(lb.gpaid_web)));
   const ggL=addv(addv(cL(lb.gmb_call),wL(lb.gmb_web)),addv(cL(lb.gpaid_call),wL(lb.gpaid_web)));
   const prB=lb.practo?lb.practo.booked:ZA, prL=lb.practo?lb.practo.leads:ZA;
-  let L=head('Channel · lead → book');
+  QVTABLE='③ Lead → Book';let L=head('Channel · lead → book');
   L+=row('Overall lead → book %',pctOf(addv(ggB,prB),addv(ggL,prL)),'tot',PCT,{color:BLU});
   L+=row('GMB + Google lead → book %',pctOf(ggB,ggL),'grp',PCT,{color:GRN});
   L+=row('Practo lead → book %',pctOf(prB,prL),'grp',PCT,{color:VIO});
@@ -251,7 +262,7 @@ function render(){
   }
   $('tLB').innerHTML=L;
   // ④ bookings by source (GMB / Google / Direct collapsible)
-  let h=head('Source · bookings');
+  QVTABLE='④ Bookings by source';let h=head('Source · bookings');
   h+=row('TOTAL bookings',tot,'tot');
   h+=row('GMB',gmbTot,'grp',N,{tkey:'src_gmb'});
   if(EXP['src_gmb']){h+=row('inbound call',s.gmb_call,'sub');h+=row('website',addv(s.gmb_web,s.gmb_wa),'sub');}
@@ -265,7 +276,7 @@ function render(){
   $('tA').innerHTML=h;
   // ④ bookings → done → purchased → revenue
   const bt=c.bottom||{};const bd=(bt.booked||[]).map((v,i)=>v?(bt.done[i]/v*100):null);const dp=(bt.done||[]).map((v,i)=>v?(bt.purchased[i]/v*100):null);
-  let m=head('Outcome');
+  QVTABLE='⑤ Bookings → Done → Revenue';let m=head('Outcome');
   m+=row('Bookings (Screening Calls)',bt.booked,'grp');
   m+=row('· Book → Done %',bd,'sub',PCT);
   m+=row('Done (completed consults)',bt.done,'grp');
@@ -273,6 +284,32 @@ function render(){
   m+=row('Purchased',bt.purchased,'grp');
   m+=row('Revenue',bt.rev,'grp',RUP);
   $('tD').innerHTML=m;
+  QVTABLE=null;
+  // Quick view vs table view
+  $('qvBtn').textContent=QV?'▦ Table view':'📈 Quick view';
+  $('tables').style.display=QV?'none':'';
+  $('qvWrap').style.display=QV?'':'none';
+  if(QV)renderQV();
+}
+function miniChart(s){
+  const c=cols(),wks=c.map(j=>D._meta.weeks[j]);
+  const v=c.map(j=>{const x=s.arr[j];return x==null||isNaN(x)?null:x;}),n=v.length;
+  const vals=v.filter(x=>x!=null);if(!vals.length)return '';
+  const mx=Math.max(...vals),mn=Math.min(0,...vals),W=250,H=110,pad=10,padB=20,padT=20;
+  const x=i=>pad+i*(W-2*pad)/((n-1)||1),y=val=>H-padB-((val-mn)/((mx-mn)||1))*(H-padB-padT);
+  let p='',started=false;v.forEach((val,i)=>{if(val==null){started=false;return;}p+=(started?'L':'M')+x(i).toFixed(1)+','+y(val).toFixed(1)+' ';started=true;});
+  const lastI=[...v.keys()].reverse().find(i=>v[i]!=null);
+  const avg=vals.reduce((a,b)=>a+b,0)/vals.length;
+  const avgL=`<line x1="${pad}" y1="${y(avg).toFixed(1)}" x2="${W-pad}" y2="${y(avg).toFixed(1)}" stroke="${s.color}" stroke-dasharray="4 3" opacity="0.35"/>`;
+  const dot=lastI!=null?`<circle cx="${x(lastI).toFixed(1)}" cy="${y(v[lastI]).toFixed(1)}" r="3" fill="${s.color}"/>`:'';
+  const lastV=lastI!=null?s.fmt(v[lastI]):'—';
+  const x0=wks.length?wlab(wks[0]).split(' ')[0]:'',x1=wks.length?wlab(wks[wks.length-1]):'';
+  return `<div class="qvc"><div class="qvt">${s.label}</div><svg viewBox="0 0 ${W} ${H}" width="100%">${avgL}<path d="${p}" fill="none" stroke="${s.color}" stroke-width="2"/>${dot}<text x="${W-pad}" y="13" text-anchor="end" font-size="13" font-weight="700" fill="${s.color}">${lastV}</text><text x="${pad}" y="${H-6}" font-size="8.5" fill="#aaa">${x0}</text><text x="${W-pad}" y="${H-6}" text-anchor="end" font-size="8.5" fill="#aaa">${x1}</text></svg></div>`;
+}
+function renderQV(){
+  const order=[],byT={};
+  QVC.forEach(sx=>{if(!byT[sx.t]){byT[sx.t]=[];order.push(sx.t);}byT[sx.t].push(sx);});
+  $('qvWrap').innerHTML=order.map(t=>`<div class="shead">${t}</div><div class="qvgrid">${byT[t].map(miniChart).join('')}</div>`).join('');
 }
 function sel(k){CUR=k;$('csel').value=k;render();}
 fetch('data_source_recon.json?v='+Date.now()).then(r=>{if(!r.ok)throw new Error('HTTP '+r.status);return r.json();}).then(j=>{
