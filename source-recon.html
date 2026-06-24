@@ -33,6 +33,15 @@ table.fm th:first-child{text-align:left}
 table.fm th.lastcol{color:var(--accent)}
 table.fm td{padding:6px 11px;text-align:right;border-bottom:1px solid var(--line2);font-family:'JetBrains Mono';font-variant-numeric:tabular-nums;white-space:nowrap}
 table.fm td:first-child{text-align:left;font-family:'Inter'}
+table.fm td:first-child,table.fm th:first-child{position:sticky;left:0;z-index:1;min-width:248px;max-width:248px;width:248px;overflow:hidden;text-overflow:ellipsis}
+table.fm th:first-child{z-index:3;background:var(--inset)}
+table.fm td:first-child{background:var(--sheet)}
+tr.tot td:first-child{background:var(--inset)!important}
+tr.gband td:first-child{background:#EAF1ED!important}
+tr.untag td:first-child{background:#FBEEEC!important}
+tr.catrow td:first-child{background:#FBF3E9!important}
+.hidex{cursor:pointer;color:var(--faint);margin-left:5px;font-weight:700;font-size:11px}
+.hidex:hover{color:var(--bad)}
 tr.grp td{font-weight:700;font-size:13px}
 tr.grp td:first-child{border-left:3px solid var(--accent);padding-left:9px}
 tr.sub td:first-child{padding-left:24px;color:var(--ink2);font-size:11.5px}
@@ -133,6 +142,7 @@ const GRN='#2E7D5B',RED='#B23A2E',BLU='#3E6F8E',VIO='#7B5EA7';
 const CATS=['STI','SH','MH','Other'],CATCOL={STI:'#B23A2E',SH:'#3E6F8E',MH:'#7B5EA7',Other:'#8A8A80'};
 function catRows(by,field,tot){if(!by)return '';let h='';const cls=CATMODE?'sub catrow':'sub2';CATS.forEach(ct=>{const a=by[ct]?(field?by[ct][field]:by[ct]):null;if(a&&a.some(v=>v)){h+=row('· '+ct,a,cls,field==='rev'?RUP:N,{color:CATCOL[ct]});if(tot)h+=row('· '+ct+' %',pctOf(a,tot),cls,PCT,{color:CATCOL[ct]});}});return h;}
 let GRAN='week';function setGran(v){GRAN=v;render();}
+let HIDDEN=new Set();function hideCol(j){const b=vbuckets()[j];if(b)HIDDEN.add(b.label);render();}function showAllCols(){HIDDEN.clear();render();}
 function mlab(k){const d=new Date(k+'-01T00:00:00');return d.toLocaleString('en',{month:'short'})+" '"+k.slice(2,4);}
 function blab(idxs){const w=D._meta.weeks,a=w[idxs[idxs.length-1]],b=w[idxs[0]];const da=new Date(a+'T00:00:00'),db=new Date(b+'T00:00:00');db.setDate(db.getDate()+6);const m=x=>x.toLocaleString('en',{month:'short'});return da.getDate()+' '+m(da)+'–'+db.getDate()+' '+m(db);}
 function vbuckets(){const w=(D&&D._meta&&D._meta.weeks)||[];if(GRAN==='month'){const g=[],s={};w.forEach((wk,i)=>{const k=wk.slice(0,7);if(!(k in s)){s[k]=g.length;g.push({key:k,idxs:[]});}g[s[k]].idxs.push(i);});return g.map(x=>({label:mlab(x.key),idxs:x.idxs}));}if(GRAN==='biweek'){const o=[];for(let i=0;i<w.length;i+=2){const idxs=[i];if(i+1<w.length)idxs.push(i+1);o.push({label:blab(idxs),idxs});}return o;}return w.map((wk,i)=>({label:wlab(wk),idxs:[i]}));}
@@ -140,14 +150,14 @@ function NV(){return vbuckets().length;}
 function bval(arr,b,avg){if(!arr||!b)return null;const vs=b.idxs.map(k=>arr[k]).filter(v=>v!=null&&!isNaN(v));if(!vs.length)return null;const s=vs.reduce((a,x)=>a+x,0);return avg?s/vs.length:s;}
 function isPctFmt(f){return f===PCT||(typeof CTRF!=='undefined'&&f===CTRF);}
 function colvals(arr,fmt){const B=vbuckets(),c=cols(),isP=isPctFmt(fmt);return c.map(j=>{if(arr&&arr.length===B.length)return arr[j];return bval(arr,B[j],isP);});}
-function cols(){const nv=NV();if(GRAN!=='week'){const c=[];for(let j=nv-1;j>=0;j--)c.push(j);return c;}const c=[];for(let j=WKEND+NSHOW-1;j>=WKEND;j--)if(j<nv&&j>=0)c.push(j);return c;}
+function cols(){const nv=NV();let c;if(GRAN!=='week'){c=[];for(let j=nv-1;j>=0;j--)c.push(j);}else{c=[];for(let j=WKEND+NSHOW-1;j>=WKEND;j--)if(j<nv&&j>=0)c.push(j);}const B=vbuckets();return c.filter(j=>B[j]&&!HIDDEN.has(B[j].label));}
 function wlab(w){const d=new Date(w+'T00:00:00'),e=new Date(d);e.setDate(e.getDate()+6);const m=x=>x.toLocaleString('en',{month:'short'});
   return d.getMonth()===e.getMonth()?`${d.getDate()}–${e.getDate()} ${m(e)}`:`${d.getDate()} ${m(d)}–${e.getDate()} ${m(e)}`;}
 function hexA(hex,a){const n=parseInt(hex.slice(1),16);return `rgba(${n>>16&255},${n>>8&255},${n&255},${a.toFixed(3)})`;}
 function heatBg(v,mn,mx,inv){if(v==null||isNaN(v)||!isFinite(mn)||mn===mx)return'';let t=(v-mn)/((mx-mn)||1);if(inv)t=1-t;
   if(t>=0.6)return hexA(GRN,0.06+0.20*((t-0.6)/0.4));
   if(t<=0.4)return hexA(RED,0.06+0.20*((0.4-t)/0.4));return'';}
-function head(lbl){const B=vbuckets(),c=cols();return '<tr><th>'+lbl+'</th>'+c.map((j,p)=>`<th class="${p===c.length-1?'lastcol':''}">${B[j]?B[j].label:''}</th>`).join('')+'<th class="avgcol">'+(CMPB==='peak'?'peak':CMPB==='first'?'first':'avg')+'</th><th class="dcol">Δ now</th><th>trend</th>'+'</tr>';}
+function head(lbl){const B=vbuckets(),c=cols();return '<tr><th>'+lbl+(HIDDEN.size?` <span class="hidex" style="color:var(--accent)" title="restore hidden columns" onclick="showAllCols()">⟲${HIDDEN.size}</span>`:'')+'</th>'+c.map((j,p)=>`<th class="${p===c.length-1?'lastcol':''}">${B[j]?B[j].label:''}<span class="hidex" title="hide this column" onclick="hideCol(${j})">×</span></th>`).join('')+'<th class="avgcol">'+(CMPB==='peak'?'peak':CMPB==='first'?'first':'avg')+'</th><th class="dcol">Δ now</th><th>trend</th>'+'</tr>';}
 function row(label,arr,cls,fmt,o){fmt=fmt||N;o=o||{};const cv=colvals(arr,fmt);
   if(QVTABLE&&arr&&cls!=='gband')QVC.push({t:QVTABLE,label:String(label).replace(/^· /,''),arr,color:o.color||BLU,fmt});
   let mn=Infinity,mx=-Infinity;cv.forEach(v=>{if(v!=null&&!isNaN(v)){mn=Math.min(mn,v);mx=Math.max(mx,v);}});
@@ -167,7 +177,7 @@ function row(label,arr,cls,fmt,o){fmt=fmt||N;o=o||{};const cv=colvals(arr,fmt);
   const _bbg={up2:'rgba(31,111,92,.30)',up1:'rgba(31,111,92,.13)',dn1:'rgba(178,58,46,.13)',dn2:'rgba(178,58,46,.30)',flat:''}[_band];
   const _rst=((DBAND!=='all'&&_band!==DBAND&&cls!=='tot'&&cls!=='gband'&&cls!=='hd')?'opacity:.2;':'')+(o.tkey?'cursor:pointer;':'')+((CATMODE&&!(cls||'').includes('catrow'))?'opacity:.4;filter:blur(.8px);':'');
   const _lbg=(CCODE&&_bbg)?` style="background:${_bbg}"`:'';
-  return `<tr class="${cls||''}"${clk} style="${_rst}"><td${_lbg}>${lbl}</td>${t}${_avgC}${_dC}${arr?sparkCell(cv,o.color||BLU,label,fmt):'<td></td>'}</tr>`;}
+  return `<tr class="${cls||''}"${clk} style="${_rst}"><td${_lbg} title="${String(label).replace(/"/g,'&quot;')}">${lbl}</td>${t}${_avgC}${_dC}${arr?sparkCell(cv,o.color||BLU,label,fmt):'<td></td>'}</tr>`;}
 function spark(cv,color){const v=(cv||[]).map(x=>x==null||isNaN(x)?0:x);const n=v.length,mx=Math.max(1,...v);
   const W=120,H=26,pad=2,x=i=>pad+i*(W-2*pad)/((n-1)||1),y=val=>H-pad-(val/mx)*(H-2*pad);
   let p='';v.forEach((val,i)=>{p+=(i?'L':'M')+x(i).toFixed(1)+','+y(val).toFixed(1)+' ';});
