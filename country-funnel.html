@@ -204,7 +204,7 @@ function spark(cv,color){const pts=[];(cv||[]).forEach((x,i)=>{if(x!=null&&!isNa
 function sparkCell(cv,color,label,fmt){const idx=ZREG.length;ZREG.push({label,cv,fmt,color,labels:cols().map(j=>{const B=vbuckets();return B[j]?B[j].label:'';})});return `<td class="sparkcell" onclick="event.stopPropagation();zoomReg(${idx})">${spark(cv,color)}</td>`;}
 function zoomReg(i){openZoom(ZREG[i]);}
 function zoomQV(i){openZoom(QVZ[i]);}
-function openZoom(z){if(!z)return;$('mTitle').textContent=(CUR?((D._meta.display[CUR]||CUR)+' · '):'')+z.label;
+function openZoom(z){if(!z)return;$('mTitle').textContent=(CUR?((D._meta.display[CUR]||CUR)+' · '):'')+z.label+((typeof filterCtx==='function')?filterCtx():'');
   const W=700,H=300,pad=40,padT=26;
   const labels=z.labels||cols().map(j=>{const B=vbuckets();return B[j]?B[j].label:'';});
   const v=(z.cv||colvals(z.arr,z.fmt)).map(x=>x==null||isNaN(x)?null:x),n=v.length;
@@ -218,8 +218,8 @@ function openZoom(z){if(!z)return;$('mTitle').textContent=(CUR?((D._meta.display
   let gl='';[0,.5,1].forEach(f=>{const yy=H-pad-(f*(H-pad-padT));gl+=`<line x1="${pad}" y1="${yy}" x2="${W-pad}" y2="${yy}" stroke="#EEEBE2"/><text x="4" y="${yy+3}" font-size="10" fill="#999">${z.fmt(lo+f*(hi-lo))}</text>`;});
   let xl='';labels.forEach((L,i)=>{xl+=`<text x="${x(i)}" y="${H-9}" font-size="9" fill="#999" text-anchor="middle">${L}</text>`;});
   const valid=v.filter(x=>x!=null);const avg=valid.length?valid.reduce((a,b)=>a+b,0)/valid.length:null;
-  let avgLine='';if(avg!=null){const ya=y(avg);avgLine=`<line x1="${pad}" y1="${ya.toFixed(1)}" x2="${W-pad}" y2="${ya.toFixed(1)}" stroke="${z.color}" stroke-width="1.3" stroke-dasharray="6 4" opacity="0.5"/><text x="${pad+3}" y="${(ya-4).toFixed(1)}" font-size="10.5" fill="${z.color}" font-weight="700">avg ${z.fmt(avg)}</text>`;}
-  $('mBody').innerHTML=`<svg width="100%" viewBox="0 0 ${W} ${H}">${gl}${avgLine}<path d="${p}" fill="none" stroke="${z.color}" stroke-width="2"/>${pts}${lbls}${xl}</svg><div class="lgd">Numbers · oldest→newest · dashed = average</div>`;
+  let avgLine='';if(avg!=null){const ya=y(avg);avgLine=`<line x1="${pad}" y1="${ya.toFixed(1)}" x2="${W-pad}" y2="${ya.toFixed(1)}" stroke="${z.color}" stroke-width="1.3" stroke-dasharray="6 4" opacity="0.5"/>`;}
+  $('mBody').innerHTML=`<svg width="100%" viewBox="0 0 ${W} ${H}">${gl}${avgLine}<path d="${p}" fill="none" stroke="${z.color}" stroke-width="2"/>${pts}${lbls}${xl}</svg><div class="lgd">oldest→newest · dashed line = average${avg!=null?' \u00b7 avg '+z.fmt(avg):''}${(typeof filterCtx==='function'&&filterCtx())?' \u00b7 filtered:'+filterCtx().replace(/^ · /,' '):''}</div>`;
   $('modal').classList.add('on');}
 function closeZ(){$('modal').classList.remove('on');}
 function adjWeeks(d){const n=(D._meta.weeks||[]).length-1;NSHOW=Math.max(4,Math.min(n,NSHOW+d));WKEND=Math.max(1,Math.min((D._meta.weeks.length)-NSHOW,WKEND));render();}
@@ -257,6 +257,7 @@ let TIERS=new Set(), MATS=new Set();
 let SEG='all';
 function setSeg(v){SEG=v;document.querySelectorAll('.sbtn').forEach(b=>b.classList.toggle('on',b.dataset.v===v));render();}
 function matBucket(age){return age<3?'<3mo':(age<6?'3-6mo':(age<12?'6-12mo':'>1yr'));}
+function filterCtx(){let p=[];if(typeof TIERS!=='undefined'&&TIERS.size)p.push([...TIERS].join('/'));if(typeof MATS!=='undefined'&&MATS.size)p.push([...MATS].join(','));if(typeof SEG!=='undefined'&&SEG!=='all')p.push(SEG+' consults');return p.length?' · '+p.join(' · '):'';}
 function passes(slug){const city=(D._meta.display[slug]||'').split(' · ').slice(-1)[0];
   const tier=(D._meta.city_tier||{})[city]||'';
   if(TIERS.size&&!TIERS.has(tier))return false;
