@@ -319,12 +319,20 @@ function render(){
       L+=row('· paid calls',gpCall,'sub2',N,{color:GRN});L+=row('· paid web',cityWeb,'sub2',N,{color:GRN});}
   }
   L+=mrow('Practo leads',F.practoLeads,'grp',N,{color:GRN});
-  const ncRow=(lbl,k,bookedArr,leadsArr)=>{const ld=leadsArr||ncL(k),bk=bookedArr||ncB(k);L+=row(lbl,ld,'grp',N,{color:GRN,tkey:'nc_'+k});
+  const ncRow=(lbl,k)=>{const ld=ncL(k),bk=ncB(k);L+=row(lbl,ld,'grp',N,{color:GRN,tkey:'nc_'+k});
     if(EXP['nc_'+k]){L+=row('· booked (Screening Call)',bk,'sub',N,{color:GRN});L+=row('· lead → book %',pctOf(bk,ld),'sub',PCT,{color:VIO});}};
-  ncRow('WhatsApp leads · national','WhatsApp');
-  ncRow('Meta · FB/IG leads · national','Meta');
-  ncRow('Organic leads · national','Organic');
-  ncRow('Other digital · national','OtherDig',addv(ncB('Other'),ncB('Marketing')),addv(ncL('Other'),ncL('Marketing')));
+  ncRow('Meta · FB/IG · national','Meta');
+  // Organic = organic web/assessment + WhatsApp (organic-sourced) + other/misc untagged
+  const orgL=addv(addv(ncL('Organic'),ncL('WhatsApp')),addv(ncL('Other'),ncL('Marketing')));
+  const orgB=addv(addv(ncB('Organic'),ncB('WhatsApp')),addv(ncB('Other'),ncB('Marketing')));
+  L+=row('Organic · national (incl. WhatsApp)',orgL,'grp',N,{color:GRN,tkey:'nc_org'});
+  if(EXP['nc_org']){
+    L+=row('· WhatsApp',ncL('WhatsApp'),'sub',N,{color:GRN});
+    L+=row('· organic web / assessment',ncL('Organic'),'sub',N,{color:GRN});
+    L+=row('· other / misc (untagged)',addv(ncL('Other'),ncL('Marketing')),'sub',N,{color:GRN});
+    L+=row('· booked (Screening Call)',orgB,'sub',N,{color:GRN});
+    L+=row('· lead → book %',pctOf(orgB,orgL),'sub',PCT,{color:VIO});
+  }
   $('tLeads').innerHTML=L;
   // ② Lead → Book %
   QVTABLE='② Lead → Book %';let LB=head('Conversion');
@@ -339,6 +347,11 @@ function render(){
   const gC=f=>clinics.reduce((a,x)=>{const t=lb(x.data).gmb_call;return addv(a,t?(t[f]||ZA):ZA);},ZA.slice());
   const gW=f=>clinics.reduce((a,x)=>{const t=lb(x.data).gmb_web;return addv(a,t?(t[f]||ZA):ZA);},ZA.slice());
   const gCat=ct=>clinics.reduce((a,x)=>{const t=lb(x.data).gmb_call;const bc=t&&t.by_cat?t.by_cat[ct]:null;return addv(a,bc||ZA);},ZA.slice());
+  const gpCat=ct=>clinics.reduce((acc,x)=>{const t=lb(x.data).gpaid_call;const bc=t&&t.by_cat?t.by_cat[ct]:null;return addv(acc,bc||ZA);},ZA.slice());
+  // —— combined GMB + Google calls audited (category across BOTH channels), then the per-channel split ——
+  const cAud=addv(gC('answered'),gpAns);
+  LB+=row('· calls audited — GMB + Google (combined)',cAud,'grp2',N,{color:BLU,tkey:'gg_aud'});
+  if(EXP['gg_aud']||CATMODE){CATS.forEach(ct=>{const a=addv(gCat(ct),gpCat(ct));if(a.some(v=>v)){const cls=CATMODE?'sub catrow':'sub';LB+=row('· '+ct,a,cls,N,{color:CATCOL[ct]});LB+=row('· '+ct+' % of audited',pctOf(a,cAud),cls,PCT,{color:CATCOL[ct]});}});}
   LB+=row('· GMB lead → book %',pctOf(gmbBkSum,gmbTot),'grp2',PCT,{color:GRN,tkey:'gmb_conv'});
   if(EXP['gmb_conv']||CATMODE){
     const gca=gC('total'),gan=gC('answered');
