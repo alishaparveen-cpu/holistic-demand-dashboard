@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>City Funnel — week-over-week by city</title>
+<script>if(!sessionStorage.getItem('allo_dash_auth'))location.replace('index.html');</script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Fraunces:opsz,wght@9..144,500;9..144,600&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#F6F4EE;--sheet:#fff;--inset:#F4F2EB;--ink:#1A2B26;--ink2:#52605A;--muted:#8A8A80;--faint:#B0A99A;
+  --line:#E5E2D9;--line2:#EEEBE2;--accent:#1F6F5C;--good:#1F6F5C;--bad:#B23A2E;--warn:#B8862E;--vio:#7B5EA7;--r:12px}
+*{box-sizing:border-box}
+body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--ink);margin:0;font-size:13px;line-height:1.45}
+.wrap{max-width:1180px;margin:0 auto;padding:18px 22px 90px}
+.top{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}
+.back{font-size:12.5px;color:var(--muted);text-decoration:none}.back:hover{color:var(--accent)}
+h1{font-family:'Fraunces',serif;font-size:29px;font-weight:600;margin:8px 0 2px}
+.sub{color:var(--muted);font-size:13px;margin-bottom:16px;max-width:860px}
+.csel{padding:7px 12px;border:1px solid var(--line);border-radius:9px;font-size:13px;font-weight:600;background:#fff;cursor:pointer;font-family:Inter;color:var(--ink);min-width:210px}
+.csearch-wrap{position:relative;min-width:260px}
+.csearch{width:100%;padding:8px 12px;border:1px solid var(--line);border-radius:9px;font-size:13px;font-weight:600;background:#fff;font-family:Inter;color:var(--ink)}
+.csearch:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(31,111,92,.12)}
+.clist{position:absolute;top:100%;left:0;right:0;margin-top:5px;background:#fff;border:1px solid var(--line);border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,.14);max-height:340px;overflow-y:auto;z-index:40;display:none}
+.clist.on{display:block}
+.clist-item{padding:7px 12px;font-size:12.5px;cursor:pointer;white-space:nowrap;border-bottom:1px solid var(--line2)}
+.clist-item:last-child{border-bottom:none}
+.clist-item:hover,.clist-item.hl{background:var(--inset);color:var(--accent);font-weight:600}
+.clist-empty{padding:9px 12px;font-size:12px;color:var(--muted)}
+.shead{font-family:'Fraunces',serif;font-size:18px;font-weight:600;margin:26px 0 9px}
+.fmwrap{background:var(--sheet);border:1px solid var(--line);border-radius:var(--r);overflow-x:auto}
+table.fm{border-collapse:collapse;width:100%;font-size:12.5px;min-width:760px}
+table.fm th{font-family:'JetBrains Mono';font-size:9px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);font-weight:600;text-align:right;padding:8px 11px;background:var(--inset);border-bottom:1px solid var(--line);white-space:nowrap}
+table.fm th:first-child{text-align:left}
+table.fm th.lastcol{color:var(--accent)}
+table.fm td{padding:6px 11px;text-align:right;border-bottom:1px solid var(--line2);font-family:'JetBrains Mono';font-variant-numeric:tabular-nums;white-space:nowrap}
+table.fm td:first-child{text-align:left;font-family:'Inter'}
+tr.grp td{font-weight:700;font-size:13px}
+tr.grp td:first-child{border-left:3px solid var(--accent);padding-left:9px}
+tr.sub td:first-child{padding-left:24px;color:var(--ink2);font-size:11.5px}
+tr.sub td{color:var(--ink2);font-size:11.5px}
+tr.untag td{background:#FBEEEC}
+tr.untag td:first-child{color:var(--bad);font-weight:700}
+tr.tot td{background:var(--inset);font-weight:700;border-top:2px solid var(--line)}
+tr.gband td{background:#EAF1ED;font-weight:700;font-size:13px}
+tr.gband td:first-child{border-left:3px solid var(--accent);padding-left:9px}
+tr.grp2 td{font-weight:600}tr.grp2 td:first-child{padding-left:20px;color:var(--ink)}
+tr.sub2 td{color:var(--ink2);font-size:11.5px}tr.sub2 td:first-child{padding-left:36px;color:var(--ink2)}
+td.lastcol{font-weight:700;color:var(--accent)}
+td.pct{font-weight:700}
+.note{background:#FBF9F3;border:1px dashed var(--line);border-radius:9px;padding:10px 13px;font-size:12px;color:var(--ink2);margin-top:12px;line-height:1.6}
+.note b{color:var(--ink)}
+.badwarn{background:#FBEEEC;border-color:#E6C5C0;color:#7a2b22}
+.lblmuted{color:var(--muted);font-size:11px}
+.wknav{display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--ink2);margin:2px 0 14px}
+.wknav button{width:27px;height:27px;border:1px solid var(--line);background:#fff;border-radius:7px;cursor:pointer;font-size:16px;font-weight:700;color:var(--accent);line-height:1;display:flex;align-items:center;justify-content:center}
+.wknav button:hover:not(:disabled){background:var(--inset)}
+.wknav button:disabled{color:var(--faint);cursor:default}
+table.fm th:last-child{text-align:center;color:var(--muted)}
+td.sparkcell{text-align:center;cursor:pointer;padding:2px 8px!important;width:134px}
+td.sparkcell:hover{background:var(--inset)}
+svg.sp{display:block;margin:0 auto}
+.modal{position:fixed;inset:0;background:rgba(20,25,22,.45);display:none;align-items:center;justify-content:center;z-index:50;padding:20px}
+.modal.on{display:flex}
+.mbox{background:#fff;border-radius:14px;padding:18px 20px;max-width:760px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.25)}
+.mhd{display:flex;justify-content:space-between;align-items:center;font-family:Fraunces;font-size:17px;font-weight:600;margin-bottom:10px;gap:12px}
+.mhd button{border:none;background:none;font-size:18px;cursor:pointer;color:var(--muted)}
+.lgd{font-size:11px;color:var(--muted);margin-top:6px}
+.chev{display:inline-block;width:11px;color:var(--muted);font-size:9px;vertical-align:middle}
+.qvbtn{margin-left:auto;width:auto!important;height:28px;padding:0 13px;border:1px solid var(--accent)!important;background:var(--accent)!important;color:#fff!important;border-radius:8px;cursor:pointer;font-size:12.5px!important;font-weight:600;font-family:Inter}
+.qvbtn:hover{opacity:.9}
+.qvgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:12px;margin-bottom:8px}
+.qvc{background:var(--sheet);border:1px solid var(--line);border-radius:10px;padding:9px 11px 6px;cursor:pointer}
+.qvc:hover{border-color:var(--accent);box-shadow:0 2px 8px rgba(0,0,0,.06)}
+.qvt{font-size:11.5px;font-weight:600;color:var(--ink2);margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.qvf{display:flex;justify-content:space-between;align-items:center;margin-top:1px}
+.qvwk{font-size:8.5px;color:var(--faint);font-family:'JetBrains Mono'}
+.qvd{font-size:10.5px;font-weight:700;font-family:'JetBrains Mono'}
+tr[onclick]:hover td:first-child{color:var(--accent)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <a class="back" href="index.html">← Dashboard</a>
+    <div class="csearch-wrap">
+      <input id="csearch" class="csearch" placeholder="Search city…" autocomplete="off" oninput="filterCities()" onfocus="filterCities(true)" onkeydown="if(event.key==='Enter')pickFirst();if(event.key==='Escape'){this.blur();$('clist').classList.remove('on');}">
+      <div id="clist" class="clist"></div>
+    </div>
+  </div>
+  <h1 id="h1">City Funnel</h1>
+  <div class="sub">Week-over-week per city — every row is the sum of the city's clinics; <b>click any row to expand and see each clinic's contribution</b> (so when a metric drops you can tell which clinic drove it). Heatmap green (high) → red (low) within each row; click a sparkline to zoom, or use Quick view.</div>
+  <div class="wknav">Showing <b id="wkN">6</b> weeks <button id="wkMinus" onclick="adjWeeks(-2)" title="fewer weeks">−</button><button id="wkPlus" onclick="adjWeeks(2)" title="more weeks">＋</button> &nbsp;·&nbsp; latest <b id="wkEndLab">—</b> <button id="wkOlder" onclick="shiftEnd(1)" title="shift older">◀</button><button id="wkNewer" onclick="shiftEnd(-1)" title="shift newer">▶</button><button id="qvBtn" class="qvbtn" onclick="toggleQV()">📈 Quick view</button></div>
+
+  <div id="qvWrap" style="display:none"></div>
+  <div id="tables">
+  <div class="shead">① Leads <span class="lblmuted">(GMB + Google + Practo — expand a row to see each clinic)</span></div>
+  <div class="fmwrap"><table class="fm" id="tLeads"></table></div>
+
+  <div class="shead">② Bookings by source <span class="lblmuted">(reconciled to total — expand to see each clinic)</span></div>
+  <div class="fmwrap"><table class="fm" id="tSrc"></table></div>
+
+  <div class="shead">③ Bookings → Done → Purchased → Revenue <span class="lblmuted">(expand to see each clinic)</span></div>
+  <div class="fmwrap"><table class="fm" id="tOut"></table></div>
+
+  <div class="shead">④ Availability <span class="lblmuted">(bookable roster — expand to see each clinic)</span></div>
+  <div class="fmwrap"><table class="fm" id="tAvail"></table></div>
+  </div>
+</div>
+<div class="modal" id="modal"><div class="mbox"><div class="mhd"><span id="mTitle"></span><button onclick="closeZ()">✕</button></div><div id="mBody"></div></div></div>
+<script>
+let D=null,CUR=null;let NSHOW=6;let WKEND=1;let ZREG=[];let EXP={};
+let QV=false,QVC=[],QVTABLE=null;
+function toggle(k){EXP[k]=!EXP[k];render();}
+function toggleQV(){QV=!QV;render();}
+const $=id=>document.getElementById(id);
+const N=v=>v==null||isNaN(v)?'—':Math.round(v).toLocaleString('en-IN');
+const RUP=v=>v==null||isNaN(v)?'—':'₹'+Math.round(v).toLocaleString('en-IN');
+const PCT=v=>v==null||isNaN(v)?'—':v.toFixed(0)+'%';
+const sum=(a,idx)=>idx.reduce((s,i)=>s+(a[i]||0),0);
+const GRN='#2E7D5B',RED='#B23A2E',BLU='#3E6F8E',VIO='#7B5EA7';
+function cols(){const c=[];for(let j=WKEND+NSHOW-1;j>=WKEND;j--)c.push(j);return c;} // skip wk0 partial, oldest→newest, WKEND=latest shown
+function wlab(w){const d=new Date(w+'T00:00:00'),e=new Date(d);e.setDate(e.getDate()+6);const m=x=>x.toLocaleString('en',{month:'short'});
+  return d.getMonth()===e.getMonth()?`${d.getDate()}–${e.getDate()} ${m(e)}`:`${d.getDate()} ${m(d)}–${e.getDate()} ${m(e)}`;}
+function hexA(hex,a){const n=parseInt(hex.slice(1),16);return `rgba(${n>>16&255},${n>>8&255},${n&255},${a.toFixed(3)})`;}
+function heatBg(v,mn,mx,inv){if(v==null||isNaN(v)||!isFinite(mn)||mn===mx)return'';let t=(v-mn)/((mx-mn)||1);if(inv)t=1-t;
+  if(t>=0.6)return hexA(GRN,0.06+0.20*((t-0.6)/0.4));
+  if(t<=0.4)return hexA(RED,0.06+0.20*((0.4-t)/0.4));return'';}
+function head(lbl){const w=D._meta.weeks,c=cols();return '<tr><th>'+lbl+'</th>'+c.map((j,p)=>`<th class="${p===c.length-1?'lastcol':''}">${wlab(w[j])}</th>`).join('')+'<th>trend</th></tr>';}
+function row(label,arr,cls,fmt,o){fmt=fmt||N;o=o||{};const c=cols();
+  if(QVTABLE&&arr&&cls!=='gband')QVC.push({t:QVTABLE,label:String(label).replace(/^· /,''),arr,color:o.color||BLU,fmt});
+  let mn=Infinity,mx=-Infinity;c.forEach(j=>{const v=arr?arr[j]:null;if(v!=null&&!isNaN(v)){mn=Math.min(mn,v);mx=Math.max(mx,v);}});
+  let t='';c.forEach((j,p)=>{const v=arr?arr[j]:null;const last=p===c.length-1;
+    const bg=(o.noheat||cls==='gband')?'':heatBg(v,mn,mx,o.invert);const st=bg?`style="background:${bg}"`:'';
+    t+=`<td class="${last?'lastcol':''}" ${st}>${(v==null||isNaN(v))?'—':fmt(v)}</td>`;});
+  const lbl=(o.tkey?`<span class="chev">${EXP[o.tkey]?'▾':'▸'}</span> `:'')+label;
+  const clk=o.tkey?` onclick="toggle('${o.tkey}')" style="cursor:pointer"`:'';
+  return `<tr class="${cls||''}"${clk}><td>${lbl}</td>${t}${arr?sparkCell(arr,o.color||BLU,label,fmt):'<td></td>'}</tr>`;}
+function spark(arr,color){const c=cols();const v=c.map(j=>{const x=arr?arr[j]:null;return x==null||isNaN(x)?0:x;});const n=v.length,mx=Math.max(1,...v);
+  const W=120,H=26,pad=2,x=i=>pad+i*(W-2*pad)/((n-1)||1),y=val=>H-pad-(val/mx)*(H-2*pad);
+  let p='';v.forEach((val,i)=>{p+=(i?'L':'M')+x(i).toFixed(1)+','+y(val).toFixed(1)+' ';});
+  return `<svg class="sp" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}"><path d="${p}" fill="none" stroke="${color}" stroke-width="1.6"/><circle cx="${x(n-1).toFixed(1)}" cy="${y(v[n-1]).toFixed(1)}" r="2.6" fill="${color}"/></svg>`;}
+function sparkCell(arr,color,label,fmt){const idx=ZREG.length;ZREG.push({label,arr,fmt,color});return `<td class="sparkcell" onclick="event.stopPropagation();zoomReg(${idx})">${spark(arr,color)}</td>`;}
+function zoomReg(i){openZoom(ZREG[i]);}
+function zoomQV(i){openZoom(QVZ[i]);}
+function openZoom(z){if(!z)return;$('mTitle').textContent=(D._meta.display[CUR]||CUR)+' · '+z.label;
+  const W=700,H=300,pad=40,padT=26,c=cols(),wks=c.map(j=>D._meta.weeks[j]);
+  const v=c.map(j=>{const x=z.arr[j];return x==null||isNaN(x)?null:x;}),n=v.length;
+  const mx=Math.max(1,...v.map(x=>x||0)),x=i=>pad+i*(W-2*pad)/((n-1)||1),y=val=>H-pad-((val||0)/mx)*(H-pad-padT);
+  let p='',pts='',lbls='',started=false;
+  v.forEach((val,i)=>{if(val==null){started=false;return;}p+=(started?'L':'M')+x(i).toFixed(1)+','+y(val).toFixed(1)+' ';started=true;
+    pts+=`<circle cx="${x(i).toFixed(1)}" cy="${y(val).toFixed(1)}" r="3.2" fill="${z.color}"><title>${wlab(wks[i])}: ${z.fmt(val)}</title></circle>`;
+    lbls+=`<text x="${x(i).toFixed(1)}" y="${(y(val)-9).toFixed(1)}" font-size="12" fill="${z.color}" text-anchor="middle" font-weight="700">${z.fmt(val)}</text>`;});
+  let gl='';[0,.5,1].forEach(f=>{const yy=H-pad-(f*(H-pad-padT));gl+=`<line x1="${pad}" y1="${yy}" x2="${W-pad}" y2="${yy}" stroke="#EEEBE2"/><text x="4" y="${yy+3}" font-size="10" fill="#999">${z.fmt(mx*f)}</text>`;});
+  let xl='';c.forEach((j,i)=>{xl+=`<text x="${x(i)}" y="${H-9}" font-size="9" fill="#999" text-anchor="middle">${wlab(wks[i])}</text>`;});
+  const valid=v.filter(x=>x!=null);const avg=valid.length?valid.reduce((a,b)=>a+b,0)/valid.length:null;
+  let avgLine='';if(avg!=null){const ya=y(avg);avgLine=`<line x1="${pad}" y1="${ya.toFixed(1)}" x2="${W-pad}" y2="${ya.toFixed(1)}" stroke="${z.color}" stroke-width="1.3" stroke-dasharray="6 4" opacity="0.5"/><text x="${pad+3}" y="${(ya-4).toFixed(1)}" font-size="10.5" fill="${z.color}" font-weight="700">avg ${z.fmt(avg)}</text>`;}
+  $('mBody').innerHTML=`<svg width="100%" viewBox="0 0 ${W} ${H}">${gl}${avgLine}<path d="${p}" fill="none" stroke="${z.color}" stroke-width="2"/>${pts}${lbls}${xl}</svg><div class="lgd">Numbers per week · oldest→newest (latest on right) · dashed = average</div>`;
+  $('modal').classList.add('on');}
+function closeZ(){$('modal').classList.remove('on');}
+function adjWeeks(d){const n=(D._meta.weeks||[]).length-1;NSHOW=Math.max(4,Math.min(n,NSHOW+d));WKEND=Math.max(1,Math.min((D._meta.weeks.length)-NSHOW,WKEND));render();}
+function shiftEnd(d){const maxEnd=(D._meta.weeks.length)-NSHOW;WKEND=Math.max(1,Math.min(maxEnd,WKEND+d));render();}
+function addv(a,b){const o=[];for(let i=0;i<a.length;i++)o.push((a[i]||0)+(b[i]||0));return o;}
+function pctOf(num,den){if(!den||!num)return [];return den.map((v,i)=>v?Math.round((num[i]||0)/v*100):null);}
+function pctRow(label,num,den,color){return row(label,pctOf(num,den),'sub2',PCT,{color:color||VIO});}
+function callDetail(label,x,tkey){
+  if(!x)return row('· '+label+' — n/a',null,'grp2');
+  let h=row('· '+label+' — leads',x.total,'grp2',N,{color:BLU,tkey:tkey});
+  if(EXP[tkey]){
+    h+=pctRow('lead → relevant %',x.relevant,x.total,VIO);
+    h+=pctRow('relevant → book %',x.booked,x.relevant,GRN);
+    h+=pctRow('lead → book %',x.booked,x.total,BLU);
+    h+=row('answered',x.answered,'sub2',N,{color:GRN});
+    h+=row('not answered',x.missed,'sub2',N,{color:RED,invert:true});
+    h+=row('relevant (real intent)',x.relevant,'sub2',N,{color:GRN});
+    h+=row('booked',x.booked,'sub2',N,{color:GRN});
+    h+=row('did NOT book',x.notbooked,'sub2',N,{color:RED,invert:true});
+  }
+  return h;
+}
+function webDetail(label,x,tkey,cityFlag){
+  if(!x)return row('· '+label+(cityFlag?' — city-level (not clinic-isolatable)':' — none'),null,'grp2');
+  let h=row('· '+label+' — leads',x.leads,'grp2',N,{color:BLU,tkey:tkey});
+  if(EXP[tkey]){
+    h+=pctRow('lead → book %',x.booked,x.leads,BLU);
+    h+=row('booked',x.booked,'sub2',N,{color:GRN});
+    h+=row('did NOT book',x.notbooked,'sub2',N,{color:RED,invert:true});
+  }
+  return h;
+}
+
+let CITIES={};
+function buildCities(){CITIES={};D._meta.clinics.forEach(s=>{const city=(D._meta.display[s]||s).split(' · ').slice(-1)[0];(CITIES[city]=CITIES[city]||[]).push(s);});}
+function cityList(){return Object.keys(CITIES).sort();}
+function render(){
+  if(!D||!CUR||!CITIES[CUR])return;
+  ZREG=[];QVC=[];
+  const nMax=(D._meta.weeks||[]).length-1;
+  const maxEnd=(D._meta.weeks.length)-NSHOW;WKEND=Math.max(1,Math.min(maxEnd,WKEND));
+  if($('wkN'))$('wkN').textContent=NSHOW;
+  if($('wkMinus'))$('wkMinus').disabled=NSHOW<=4;
+  if($('wkPlus'))$('wkPlus').disabled=NSHOW>=nMax;
+  if($('wkEndLab'))$('wkEndLab').textContent=wlab(D._meta.weeks[WKEND]);
+  if($('wkNewer'))$('wkNewer').disabled=WKEND<=1;
+  if($('wkOlder'))$('wkOlder').disabled=WKEND>=maxEnd;
+  const slugs=CITIES[CUR];
+  $('h1').textContent=CUR+' — city funnel ('+slugs.length+(slugs.length>1?' clinics)':' clinic)');
+  const ZA=Array(D._meta.weeks.length).fill(0);
+  const clinics=slugs.map(s=>({slug:s,loc:(D._meta.display[s]||s).split(' · ')[0],data:D.clinics[s]})).filter(x=>x.data);
+  const A=(o,k)=>o&&o[k]?o[k]:ZA, lb=c=>c.lead_book, cT=x=>x?x.total:ZA, wL=x=>x?x.leads:ZA;
+  const F={
+    leadsTotal:c=>addv(addv(addv(cT(lb(c).gmb_call),wL(lb(c).gmb_web)),addv(cT(lb(c).gpaid_call),wL(lb(c).gpaid_web))),A(lb(c).practo,'leads')),
+    gmbLeads:c=>addv(cT(lb(c).gmb_call),wL(lb(c).gmb_web)),
+    googLeads:c=>addv(cT(lb(c).gpaid_call),wL(lb(c).gpaid_web)),
+    practoLeads:c=>A(lb(c).practo,'leads'),
+    srcTotal:c=>D._meta.sources.reduce((a,k)=>addv(a,c.by_source[k]||ZA),ZA.slice()),
+    srcGMB:c=>addv(addv(c.by_source.gmb_call,c.by_source.gmb_web),c.by_source.gmb_wa),
+    srcGoog:c=>addv(c.by_source.gpaid_call,c.by_source.gpaid_web),
+    srcPracto:c=>c.by_source.practo, srcMeta:c=>c.by_source.meta, srcOrg:c=>c.by_source.organic, srcDirect:c=>c.by_source.untagged,
+    booked:c=>A(c.bottom,'booked'), done:c=>A(c.bottom,'done'), purchased:c=>A(c.bottom,'purchased'), rev:c=>A(c.bottom,'rev'),
+    slots:c=>A(c.avail,'slots_total'), hrs:c=>A(c.avail,'hrs_total'), days:c=>A(c.avail,'days_total')
+  };
+  function mrow(lbl,fn,cls,fmt,o){o=o||{};
+    const tot=clinics.reduce((a,x)=>addv(a,fn(x.data)||ZA),ZA.slice());
+    const tk='m_'+lbl.replace(/\W+/g,'');
+    let h=row(lbl,tot,cls,fmt,{tkey:(clinics.length>1?tk:null),color:o.color,invert:o.invert});
+    if(clinics.length>1&&EXP[tk]){
+      const per=clinics.map(x=>({loc:x.loc,arr:fn(x.data)||ZA})).sort((a,b)=>(b.arr[WKEND]||0)-(a.arr[WKEND]||0));
+      per.forEach(p=>{if(p.arr.some(v=>v))h+=row('· '+p.loc,p.arr,'sub',fmt,{color:o.color,invert:o.invert});});
+    }
+    return h;
+  }
+  QVTABLE='① Leads';let L=head('Leads');
+  L+=mrow('GMB + Google + Practo — total leads',F.leadsTotal,'tot',N,{color:BLU});
+  L+=mrow('GMB leads',F.gmbLeads,'grp',N,{color:GRN});
+  L+=mrow('Google leads',F.googLeads,'grp',N,{color:GRN});
+  L+=mrow('Practo leads',F.practoLeads,'grp',N,{color:GRN});
+  $('tLeads').innerHTML=L;
+  QVTABLE='② Bookings by source';let S=head('Source · bookings');
+  S+=mrow('TOTAL bookings',F.srcTotal,'tot',N,{color:BLU});
+  S+=mrow('GMB',F.srcGMB,'grp',N,{color:GRN});
+  S+=mrow('Google',F.srcGoog,'grp',N,{color:GRN});
+  S+=mrow('Practo',F.srcPracto,'grp',N,{color:GRN});
+  S+=mrow('Meta (FB/IG)',F.srcMeta,'grp',N,{color:GRN});
+  S+=mrow('Organic',F.srcOrg,'grp',N,{color:GRN});
+  S+=mrow('Direct / Walk-in',F.srcDirect,'untag',N,{color:RED,invert:true});
+  $('tSrc').innerHTML=S;
+  QVTABLE='③ Outcomes';let O=head('Outcome');
+  O+=mrow('Bookings (Screening Calls)',F.booked,'grp',N,{color:GRN});
+  O+=mrow('Done (completed consults)',F.done,'grp',N,{color:GRN});
+  O+=mrow('Purchased',F.purchased,'grp',N,{color:GRN});
+  O+=mrow('Revenue',F.rev,'grp',RUP,{color:GRN});
+  $('tOut').innerHTML=O;
+  QVTABLE='④ Availability';let AV=head('Availability');
+  AV+=mrow('Available slots',F.slots,'grp',N,{color:BLU});
+  AV+=mrow('Available hours',F.hrs,'grp',N,{color:BLU});
+  AV+=mrow('Available days',F.days,'grp',N,{color:BLU});
+  $('tAvail').innerHTML=AV;
+  QVTABLE=null;
+  $('qvBtn').textContent=QV?'▦ Table view':'📈 Quick view';
+  $('tables').style.display=QV?'none':'';
+  $('qvWrap').style.display=QV?'':'none';
+  if(QV)renderQV();
+}
+function miniChart(s,zi){
+  const c=cols(),wks=c.map(j=>D._meta.weeks[j]);
+  const v=c.map(j=>{const x=s.arr[j];return x==null||isNaN(x)?null:x;}),n=v.length;
+  const vals=v.filter(x=>x!=null);if(!vals.length)return '';
+  const mx=Math.max(...vals),mn=Math.min(0,...vals),W=250,H=110,pad=10,padB=20,padT=20;
+  const x=i=>pad+i*(W-2*pad)/((n-1)||1),y=val=>H-padB-((val-mn)/((mx-mn)||1))*(H-padB-padT);
+  let p='',started=false;v.forEach((val,i)=>{if(val==null){started=false;return;}p+=(started?'L':'M')+x(i).toFixed(1)+','+y(val).toFixed(1)+' ';started=true;});
+  const lastI=[...v.keys()].reverse().find(i=>v[i]!=null);
+  const avg=vals.reduce((a,b)=>a+b,0)/vals.length;
+  const avgL=`<line x1="${pad}" y1="${y(avg).toFixed(1)}" x2="${W-pad}" y2="${y(avg).toFixed(1)}" stroke="${s.color}" stroke-dasharray="4 3" opacity="0.35"/>`;
+  const dot=lastI!=null?`<circle cx="${x(lastI).toFixed(1)}" cy="${y(v[lastI]).toFixed(1)}" r="3" fill="${s.color}"/>`:'';
+  const lastV=lastI!=null?s.fmt(v[lastI]):'—';
+  const x1=wks.length?wlab(wks[wks.length-1]):'';
+  // this-week vs period average delta
+  const last=lastI!=null?v[lastI]:null;let badge='';
+  if(last!=null&&avg){const d=last-avg,up=d>=0,pc=Math.round(Math.abs(d)/Math.abs(avg)*100);
+    badge=`<div class="qvd" style="color:${up?'var(--good)':'var(--bad)'}">${up?'▲':'▼'} ${pc}% vs avg</div>`;}
+  return `<div class="qvc" onclick="zoomQV(${zi})"><div class="qvt">${s.label}</div><svg viewBox="0 0 ${W} ${H}" width="100%">${avgL}<path d="${p}" fill="none" stroke="${s.color}" stroke-width="2"/>${dot}<text x="${W-pad}" y="13" text-anchor="end" font-size="13" font-weight="700" fill="${s.color}">${lastV}</text></svg><div class="qvf"><span class="qvwk">latest ${x1}</span>${badge}</div></div>`;
+}
+let QVZ=[];
+function renderQV(){
+  const order=[],byT={};
+  QVC.forEach(sx=>{if(!byT[sx.t]){byT[sx.t]=[];order.push(sx.t);}byT[sx.t].push(sx);});
+  QVZ=[];let html='';
+  order.forEach(t=>{
+    let list=byT[t];
+    if(/Lead → Book/.test(t))list=list.slice(0,3);   // only the 3 summary % charts
+    html+=`<div class="shead">${t}</div><div class="qvgrid">`+list.map(s=>{QVZ.push(s);return miniChart(s,QVZ.length-1);}).join('')+`</div>`;
+  });
+  $('qvWrap').innerHTML=html;
+}
+function sel(c){CUR=c;if($('csearch'))$('csearch').value=c;render();}
+function cityMatches(){const q=($('csearch').value||'').toLowerCase().trim();
+  return cityList().filter(c=>c.toLowerCase().includes(q));}
+function filterCities(showAll){const el=$('clist');if(!D)return;
+  const q=($('csearch').value||'').toLowerCase().trim();
+  const items=(showAll&&!q)?cityList():cityMatches();
+  el.innerHTML=items.length?items.map(c=>`<div class="clist-item" onmousedown="pickCity('${c.replace(/'/g,"\\'")}')">${c} <span style="color:var(--muted)">· ${CITIES[c].length} clinic${CITIES[c].length>1?'s':''}</span></div>`).join('')
+    :'<div class="clist-empty">No city matches “'+($('csearch').value||'')+'”</div>';
+  el.classList.add('on');}
+function pickCity(c){sel(c);$('csearch').value=c;$('clist').classList.remove('on');}
+function pickFirst(){const m=cityMatches();if(m.length)pickCity(m[0]);}
+document.addEventListener('click',e=>{if($('clist')&&!e.target.closest('.csearch-wrap'))$('clist').classList.remove('on');});
+fetch('data_source_recon.json?v='+Date.now()).then(r=>{if(!r.ok)throw new Error('HTTP '+r.status);return r.json();}).then(j=>{
+  D=j;buildCities();CUR=cityList().sort((a,b)=>CITIES[b].length-CITIES[a].length)[0];$('csearch').value=CUR;
+  try{render();}catch(e){$('h1').textContent='Render error: '+e.message;console.error(e);}
+}).catch(e=>{$('h1').textContent='Could not load data_source_recon.json ('+e.message+')';console.error(e);});
+</script>
+</body>
+</html>
