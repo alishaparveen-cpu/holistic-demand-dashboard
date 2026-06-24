@@ -120,6 +120,7 @@ const RUP=v=>v==null||isNaN(v)?'—':'₹'+Math.round(v).toLocaleString('en-IN')
 const PCT=v=>v==null||isNaN(v)?'—':v.toFixed(0)+'%';
 const sum=(a,idx)=>idx.reduce((s,i)=>s+(a[i]||0),0);
 const GRN='#2E7D5B',RED='#B23A2E',BLU='#3E6F8E',VIO='#7B5EA7';
+const CATS=['STI','SH','MH','Other'],CATCOL={STI:'#B23A2E',SH:'#3E6F8E',MH:'#7B5EA7',Other:'#8A8A80'};
 function cols(){const c=[];for(let j=WKEND+NSHOW-1;j>=WKEND;j--)c.push(j);return c;} // skip wk0 partial, oldest→newest, WKEND=latest shown
 function wlab(w){const d=new Date(w+'T00:00:00'),e=new Date(d);e.setDate(e.getDate()+6);const m=x=>x.toLocaleString('en',{month:'short'});
   return d.getMonth()===e.getMonth()?`${d.getDate()}–${e.getDate()} ${m(e)}`:`${d.getDate()} ${m(d)}–${e.getDate()} ${m(e)}`;}
@@ -259,6 +260,7 @@ function render(){
   const csum=k=>clinics.reduce((a,x)=>{const t=x.data.lead_book.gpaid_call;return addv(a,t?(t[k]||ZA):ZA);},ZA.slice());
   const gpCall=cmax('total'), gpAns=cmax('answered'), gpMiss=cmax('missed'), gpRel=csum('relevant'), gpBk=csum('booked');
   const cityWeb=(D._meta.city_google_web&&D._meta.city_google_web[CUR])||ZA;
+  const cityWebBk=(D._meta.city_google_web_booked&&D._meta.city_google_web_booked[CUR])||ZA;
   const googCity=addv(gpCall,cityWeb);
   const totLeadsCity=addv(addv(gmbSum,googCity),practoSum);
   QVTABLE='① Leads';let L=head('Leads');
@@ -269,14 +271,17 @@ function render(){
   L+=mrow('Practo leads',F.practoLeads,'grp',N,{color:GRN});
   $('tLeads').innerHTML=L;
   QVTABLE='② Lead → Book %';let LB=head('Conversion');
-  const allBkSum=clinics.reduce((a,x)=>addv(a,Fn.allBkN(x.data)),ZA.slice());
-  const googBkSum=clinics.reduce((a,x)=>addv(a,Fn.googBkN(x.data)),ZA.slice());
-  LB+=row('Overall lead → book %',pctOf(allBkSum,totLeadsCity),'tot',PCT,{color:BLU});
+  const gmbBkSum=clinics.reduce((a,x)=>addv(a,Fn.gmbBkN(x.data)),ZA.slice());
+  const practoBkSum=clinics.reduce((a,x)=>addv(a,Fn.practoBkN(x.data)),ZA.slice());
+  const googBkCity=addv(gpBk,cityWebBk);                       // call booked + city web booked
+  const allBkCity=addv(addv(gmbBkSum,googBkCity),practoBkSum);
+  LB+=row('Overall lead → book %',pctOf(allBkCity,totLeadsCity),'tot',PCT,{color:BLU});
   LB+=prow('GMB lead → book %',Fn.gmbBkN,F.gmbLeads,{color:GRN});
-  LB+=row('Google lead → book % · city-level',pctOf(googBkSum,googCity),'grp',PCT,{color:GRN,tkey:'g_conv'});
+  LB+=row('Google lead → book % · city-level',pctOf(googBkCity,googCity),'grp',PCT,{color:GRN,tkey:'g_conv'});
   if(EXP['g_conv']){
     LB+=row('· paid calls — total',gpCall,'sub',N,{color:BLU});
     LB+=row('answered',gpAns,'sub2',N,{color:GRN});
+    CATS.forEach(ct=>{const a=clinics.reduce((acc,x)=>{const t=x.data.lead_book.gpaid_call;const bc=t&&t.by_cat?t.by_cat[ct]:null;return addv(acc,bc||ZA);},ZA.slice());if(a.some(v=>v))LB+=row('· '+ct,a,'sub2',N,{color:CATCOL[ct]});});
     LB+=row('not answered',gpMiss,'sub2',N,{color:RED,invert:true});
     LB+=row('answer %',pctOf(gpAns,gpCall),'sub2',PCT,{color:VIO});
     LB+=row('relevant (real intent)',gpRel,'sub2',N,{color:GRN});
@@ -284,6 +289,8 @@ function render(){
     LB+=row('booked',gpBk,'sub2',N,{color:GRN});
     LB+=row('relevant → book %',pctOf(gpBk,gpRel),'sub2',PCT,{color:VIO});
     LB+=row('· paid web — leads',cityWeb,'sub',N,{color:GRN});
+    LB+=row('web → booked',cityWebBk,'sub2',N,{color:GRN});
+    LB+=row('web → book %',pctOf(cityWebBk,cityWeb),'sub2',PCT,{color:VIO});
   }
   LB+=prow('Practo lead → book %',Fn.practoBkN,F.practoLeads,{color:VIO});
   $('tLB').innerHTML=LB;
@@ -296,13 +303,19 @@ function render(){
   S+=mrow('Organic',F.srcOrg,'grp',N,{color:GRN});
   S+=mrow('Direct / Walk-in',F.srcDirect,'untag',N,{color:RED,invert:true});
   $('tSrc').innerHTML=S;
+  // outcome category (city-summed bottom.by_cat) — Done/Purchased/Revenue expand to STI/SH/MH/Other
+  const catO=(cat,field)=>clinics.reduce((a,x)=>{const bc=(x.data.bottom.by_cat||{})[cat];return addv(a,bc?(bc[field]||ZA):ZA);},ZA.slice());
+  function ocatRow(lbl,field,fmt){const tot=clinics.reduce((a,x)=>addv(a,x.data.bottom[field]||ZA),ZA.slice());const tk='oc_'+field;
+    let h=row(lbl,tot,'grp',fmt,{color:GRN,tkey:tk});
+    if(EXP[tk])CATS.forEach(ct=>{const a=catO(ct,field);if(a.some(v=>v))h+=row('· '+ct,a,'sub',fmt,{color:CATCOL[ct]});});
+    return h;}
   QVTABLE='④ Outcomes';let O=head('Outcome');
   O+=mrow('Bookings (Screening Calls)',F.booked,'grp',N,{color:GRN});
   O+=prow('Book → Done %',Fn.doneN,Fn.bookedD,{cls:'sub',color:GRN});
-  O+=mrow('Done (completed consults)',F.done,'grp',N,{color:GRN});
+  O+=ocatRow('Done (completed consults)','done',N);
   O+=prow('Done → Purchased %',Fn.purchN,Fn.doneN,{cls:'sub',color:GRN});
-  O+=mrow('Purchased',F.purchased,'grp',N,{color:GRN});
-  O+=mrow('Revenue',F.rev,'grp',RUP,{color:GRN});
+  O+=ocatRow('Purchased','purchased',N);
+  O+=ocatRow('Revenue','rev',RUP);
   $('tOut').innerHTML=O;
   QVTABLE='⑤ Availability';let AV=head('Availability');
   AV+=mrow('Available slots',F.slots,'grp',N,{color:BLU});

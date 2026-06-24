@@ -41,22 +41,53 @@ TOK2CITY={'ahmedabad':'Ahmedabad','amravati':'Amravati','aurangabad':'Aurangabad
  'nashik':'Nashik','navi':'Navi Mumbai','pune':'Pune','ranchi':'Ranchi','surat':'Surat','thane':'Mumbai',
  'vadodara':'Vadodara','vijayawada':'Vijayawada','vizag':'Visakhapatnam'}
 def city_google_web():
-    sql=("SELECT SPLIT_PART(LOWER(utm_campaign),'_',2) tok, "
-         "TO_CHAR(DATE_TRUNC('week', created_at+INTERVAL '5 hours 30 minutes'),'YYYY-MM-DD') wk, "
-         "COUNT(DISTINCT RIGHT(phone_no,10)) web FROM allo_persons.lead "
-         "WHERE (gclid<>'' OR LOWER(utm_source)='google') "
-         "AND (LOWER(utm_campaign) LIKE 't1_%%' OR LOWER(utm_campaign) LIKE 't2_%%') "
-         "AND created_at>='%s' AND created_at<'2026-06-22' GROUP BY 1,2;"%LO)
-    out={}
+    # web leads + web booked (phone matched to any Screening Call) per city campaign
+    sql=("WITH webl AS (SELECT SPLIT_PART(LOWER(l.utm_campaign),'_',2) tok, "
+         "TO_CHAR(DATE_TRUNC('week', l.created_at+INTERVAL '5 hours 30 minutes'),'YYYY-MM-DD') wk, RIGHT(l.phone_no,10) ph "
+         "FROM allo_persons.lead l WHERE (l.gclid<>'' OR LOWER(l.utm_source)='google') "
+         "AND (LOWER(l.utm_campaign) LIKE 't1_%%' OR LOWER(l.utm_campaign) LIKE 't2_%%') "
+         "AND l.created_at>='%s' AND l.created_at<'2026-06-22' AND LENGTH(RIGHT(l.phone_no,10))=10), "
+         "bk AS (SELECT DISTINCT RIGHT(p.phone_no,10) ph FROM allo_consultations.appointments a "
+         "JOIN allo_persons.patient p ON p.id=a.patient_id JOIN allo_consultations.types t ON t.id=a.type_id AND t.name='Screening Call' "
+         "WHERE a.deleted_at IS NULL AND a.created_at>='2026-02-15') "
+         "SELECT webl.tok, webl.wk, COUNT(DISTINCT webl.ph) leads, "
+         "COUNT(DISTINCT CASE WHEN bk.ph IS NOT NULL THEN webl.ph END) booked "
+         "FROM webl LEFT JOIN bk ON bk.ph=webl.ph GROUP BY 1,2;"%LO)
+    leads={}; booked={}
     for line in run_sql(sql):
         c=line.split('\t')
-        if len(c)<3 or c[1] not in idx: continue
+        if len(c)<4 or c[1] not in idx: continue
         city=TOK2CITY.get(c[0])
         if not city: continue
-        out.setdefault(city,Z())
-        try: out[city][idx[c[1]]]+=int(float(c[2]))
+        leads.setdefault(city,Z()); booked.setdefault(city,Z())
+        try: leads[city][idx[c[1]]]+=int(float(c[2])); booked[city][idx[c[1]]]+=int(float(c[3]))
         except ValueError: pass
-    return out
+    return leads, booked
+
+# answered/audited inbound calls by AI diagnosis category (STI/SH/MH/Other)
+def call_cat(cfg, kind):
+    if kind=='gmb':
+        if not cfg['gmb']: return None
+        where="RIGHT(ec.exotel_number,10) IN ('%s')"%"','".join(cfg['gmb']); locf=""
+    else:
+        if not cfg['paid']: return None
+        where="RIGHT(ec.exotel_number,10)='%s'"%cfg['paid']
+        locf="" if cfg.get('paid_solo') else ("AND ca.analysis.user_intent.locality_mentioned.is_our_locality=true "
+              "AND ca.analysis.user_intent.locality_mentioned.best_match::varchar='%s'"%cfg['loc'].replace("'","''"))
+    sql=("SELECT TO_CHAR(DATE_TRUNC('week', ec.start_time + INTERVAL '5 hours 30 minutes'),'YYYY-MM-DD') wk, "
+         "COALESCE(ca.analysis.diagnoses.category::varchar,'NOT_MENTIONED') cat, COUNT(*) n "
+         "FROM allo_analytics.call_analyses ca "
+         "JOIN allo_vendors.exotel_calls ec ON ec.call_id=ca.call_id AND ec.routed_to='lead_to_call' AND ec.direction='inbound' "
+         "WHERE ca.deleted_at IS NULL AND %s %s AND ec.start_time>='%s' AND ec.start_time<'2026-06-22' GROUP BY 1,2;"
+         %(where,locf,LO))
+    by={c:Z() for c in B.CATS}
+    for line in run_sql(sql):
+        c=line.split('\t')
+        if len(c)<3 or c[0] not in idx: continue
+        cat=B.CATMAP.get(c[1],'Other'); i=idx[c[0]]
+        try: by[cat][i]+=int(float(c[2]))
+        except ValueError: pass
+    return by
 
 def main():
     pbl,pbld=SR.load_practo_sheet()
@@ -87,14 +118,17 @@ def main():
             practo=SR.practo_leadbook(cfg,pbl,bkph,pbld)
             avail=SR.availability(cfg)
             revs=SR.reviews(cfg)
-            bottom=B.get_bottom(cfg).get("total",{})
+            bfull=B.get_bottom(cfg); bottom=bfull.get("total",{})
+            if gmb_lb is not None: gmb_lb["by_cat"]=call_cat(cfg,'gmb')
+            if paid_lb is not None: paid_lb["by_cat"]=call_cat(cfg,'paid')
             out["clinics"][slug]={
                 "by_source":by_src,"untagged_new":un_new,"untagged_repeat":un_rep,
                 "lead_book":{"gmb_call":gmb_lb,
                     "gmb_web":{"leads":web["leads"],"booked":web["booked"],"notbooked":web["notbooked"]},
                     "gpaid_call":paid_lb,"gpaid_web":gpw,"practo":practo},
                 "bottom":{"booked":bottom.get("booked",Z()),"done":bottom.get("done",Z()),
-                          "purchased":bottom.get("purchased",Z()),"rev":bottom.get("rev",Z())},
+                          "purchased":bottom.get("purchased",Z()),"rev":bottom.get("rev",Z()),
+                          "by_cat":bfull.get("by_cat",{})},
                 "reach":{},"reviews":revs,"avail":avail}
             if slug not in out["_meta"]["clinics"]: out["_meta"]["clinics"].append(slug)
             out["_meta"]["display"][slug]=cfg["disp"]
@@ -103,7 +137,9 @@ def main():
                 json.dump(out,open(OUTPATH,"w"),separators=(",",":"))
         except BaseException as e:   # catch SystemExit from run_sql too → skip clinic, keep going
             fail+=1; print("[FAIL] %s: %s"%(cfg.get("disp",slug),type(e).__name__), flush=True)
-    try: out["_meta"]["city_google_web"]=city_google_web()
+    try:
+        cw_l,cw_b=city_google_web()
+        out["_meta"]["city_google_web"]=cw_l; out["_meta"]["city_google_web_booked"]=cw_b
     except BaseException as e: print("[city_google_web FAIL] %s"%type(e).__name__)
     json.dump(out,open(OUTPATH,"w"),separators=(",",":"))
     print("wrote data_source_recon.json — %d built this run, %d failed, %d total clinics"%(ok,fail,len(out["clinics"])))

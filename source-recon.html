@@ -120,6 +120,8 @@ const RUP=v=>v==null||isNaN(v)?'—':'₹'+Math.round(v).toLocaleString('en-IN')
 const PCT=v=>v==null||isNaN(v)?'—':v.toFixed(0)+'%';
 const sum=(a,idx)=>idx.reduce((s,i)=>s+(a[i]||0),0);
 const GRN='#2E7D5B',RED='#B23A2E',BLU='#3E6F8E',VIO='#7B5EA7';
+const CATS=['STI','SH','MH','Other'],CATCOL={STI:'#B23A2E',SH:'#3E6F8E',MH:'#7B5EA7',Other:'#8A8A80'};
+function catRows(by,field){if(!by)return '';let h='';CATS.forEach(ct=>{const a=by[ct]?(field?by[ct][field]:by[ct]):null;if(a&&a.some(v=>v))h+=row('· '+ct,a,'sub2',field==='rev'?RUP:N,{color:CATCOL[ct]});});return h;}
 function cols(){const c=[];for(let j=WKEND+NSHOW-1;j>=WKEND;j--)c.push(j);return c;} // skip wk0 partial, oldest→newest, WKEND=latest shown
 function wlab(w){const d=new Date(w+'T00:00:00'),e=new Date(d);e.setDate(e.getDate()+6);const m=x=>x.toLocaleString('en',{month:'short'});
   return d.getMonth()===e.getMonth()?`${d.getDate()}–${e.getDate()} ${m(e)}`:`${d.getDate()} ${m(d)}–${e.getDate()} ${m(e)}`;}
@@ -172,6 +174,7 @@ function callDetail(label,x,tkey){
     h+=pctRow('relevant → book %',x.booked,x.relevant,GRN);
     h+=pctRow('lead → book %',x.booked,x.total,BLU);
     h+=row('answered',x.answered,'sub2',N,{color:GRN});
+    if(x.by_cat)h+=catRows(x.by_cat,null);
     h+=row('not answered',x.missed,'sub2',N,{color:RED,invert:true});
     h+=row('relevant (real intent)',x.relevant,'sub2',N,{color:GRN});
     h+=row('booked',x.booked,'sub2',N,{color:GRN});
@@ -308,14 +311,17 @@ function render(){
   if(EXP['src_direct']){h+=row('new patient',c.untagged_new,'sub');h+=row('repeat (booked SC again)',c.untagged_repeat,'sub');}
   $('tA').innerHTML=h;
   // ④ bookings → done → purchased → revenue
-  const bt=c.bottom||{};const bd=(bt.booked||[]).map((v,i)=>v?(bt.done[i]/v*100):null);const dp=(bt.done||[]).map((v,i)=>v?(bt.purchased[i]/v*100):null);
+  const bt=c.bottom||{};const bc=bt.by_cat||{};const bd=(bt.booked||[]).map((v,i)=>v?(bt.done[i]/v*100):null);const dp=(bt.done||[]).map((v,i)=>v?(bt.purchased[i]/v*100):null);
   QVTABLE='⑤ Bookings → Done → Revenue';let m=head('Outcome');
   m+=row('Bookings (Screening Calls)',bt.booked,'grp');
   m+=row('· Book → Done %',bd,'sub',PCT);
-  m+=row('Done (completed consults)',bt.done,'grp');
+  m+=row('Done (completed consults)',bt.done,'grp',N,{tkey:'o_done'});
+  if(EXP['o_done'])m+=catRows(bc,'done');
   m+=row('· Done → Purchased %',dp,'sub',PCT);
-  m+=row('Purchased',bt.purchased,'grp');
-  m+=row('Revenue',bt.rev,'grp',RUP);
+  m+=row('Purchased',bt.purchased,'grp',N,{tkey:'o_purch'});
+  if(EXP['o_purch'])m+=catRows(bc,'purchased');
+  m+=row('Revenue',bt.rev,'grp',RUP,{tkey:'o_rev'});
+  if(EXP['o_rev'])m+=catRows(bc,'rev');
   $('tD').innerHTML=m;
   QVTABLE=null;
   // Quick view vs table view
