@@ -19,8 +19,8 @@ CUSTOMER_ID = "3190189170"; LOGIN_CUSTOMER_ID = "5098518843"
 API = "https://googleads.googleapis.com/v21"; TOKEN_URL = "https://oauth2.googleapis.com/token"
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT = os.path.join(ROOT, "data_ga_city_paid.json")
-WEEKS = ["2026-06-15","2026-06-08","2026-06-01","2026-05-25","2026-05-18","2026-05-11","2026-05-04",
-         "2026-04-27","2026-04-20","2026-04-13","2026-04-06","2026-03-30"]   # newest-first
+WEEKS = ["2026-06-22","2026-06-15","2026-06-08","2026-06-01","2026-05-25","2026-05-18","2026-05-11","2026-05-04",
+         "2026-04-27","2026-04-20","2026-04-13","2026-04-06","2026-03-30","2026-03-23","2026-03-16","2026-03-09"]   # newest-first, dashboard grid
 widx = {w: i for i, w in enumerate(WEEKS)}
 NW = len(WEEKS)
 LOC_CLICK_TYPES = {"CALLS", "GET_DIRECTIONS", "LOCATION_EXPANSION", "LOCATION_FORMAT_CALL_TRACKING"}
@@ -56,6 +56,13 @@ def gaql(token, c, query):
         if not page: break
     return out
 
+def cat_of(name):
+    u = "_" + name.upper() + "_"
+    if "_STD_" in u or "_STI_" in u: return "STI"
+    if "_MH_" in u: return "MH"
+    if "_SH_" in u or "_ED_" in u or "_PE_" in u: return "SH"
+    return "Other"
+
 def city_of(name):
     for t in CITY_TOKENS:
         if re.search(rf"(^|_){re.escape(t)}(_|$)", name):
@@ -72,6 +79,8 @@ def main():
     Z = lambda: [0.0]*NW
     cities = defaultdict(lambda: {k: Z() for k in
              ["spend","clicks","loc_clicks","is_w","is_d","impr","conv","budget_w","budget_n"]})
+    CATS = ["STI","SH","MH","Other"]
+    catacc = defaultdict(lambda: {ct: {"impr": Z(), "clicks": Z()} for ct in CATS})  # city → cat → impr/clicks
 
     # 1) weekly campaign metrics → city
     rows = gaql(token, c, f"""
@@ -94,6 +103,7 @@ def main():
         o["conv"][i] += float(m.get("conversions", 0) or 0)
         o["is_w"][i] += isv*imp; o["is_d"][i] += imp
         o["budget_w"][i] += bud; o["budget_n"][i] += 1
+        ca = catacc[city][cat_of(n)]; ca["impr"][i] += imp; ca["clicks"][i] += cl
 
     # 2) location click-types → loc clicks per city/week
     crows = gaql(token, c, f"""
@@ -122,7 +132,9 @@ def main():
         out[city] = {"spend": [round(x) for x in o["spend"]], "clicks": [round(x) for x in o["clicks"]],
                      "loc_clicks": [round(x) for x in o["loc_clicks"]], "loc_pct": loc_pct, "is_pct": is_pct,
                      "budget": budget, "util": util, "conv": [round(x) for x in o["conv"]],
-                     "impr": [round(x) for x in o["impr"]], "cpp": cpp, "eplc": eplc}
+                     "impr": [round(x) for x in o["impr"]], "cpp": cpp, "eplc": eplc,
+                     "by_cat": {ct: {"impr": [round(x) for x in catacc[city][ct]["impr"]],
+                                     "clicks": [round(x) for x in catacc[city][ct]["clicks"]]} for ct in CATS}}
     json.dump(out, open(OUT, "w"), separators=(",", ":"))
     n = len([k for k in out if k != "_meta"])
     print(f"wrote {OUT} · {n} cities")
