@@ -75,6 +75,7 @@ def bottom_sql(city, loc):
     SELECT e.appointment_id ap_id,
       CASE WHEN MAX(CASE WHEN et.tag_type='sti' THEN 1 ELSE 0 END)=1 THEN 'STI'
            WHEN MAX(CASE WHEN et.tag_type IN ('ed_plus_pe_plus','ed_plus','pe_plus','nssd') THEN 1 ELSE 0 END)=1 THEN 'SH'
+           WHEN MAX(CASE WHEN et.tag_type='others' THEN 1 ELSE 0 END)=1 THEN 'OTH_SH'
            ELSE 'oth' END tag_cat
     FROM allo_encounters.encounters e
     LEFT JOIN allo_analytics.encounter_tags et ON et.encounter_id=e.id AND et.tag_category='diagnosis' AND et.deleted_at IS NULL
@@ -96,7 +97,8 @@ def bottom_sql(city, loc):
     JOIN allo_billing.invoices i ON i.encounter_id=e.id AND i.deleted_at IS NULL AND i.status='paid' WHERE e.deleted_at IS NULL GROUP BY 1)
   SELECT ap.wk,
     CASE WHEN COALESCE(et.tag_cat,'oth')='STI' THEN 'STI' WHEN COALESCE(et.tag_cat,'oth')='SH' THEN 'SH'
-         WHEN mh.ap_id IS NOT NULL THEN 'MH' ELSE 'Other' END cat,
+         WHEN mh.ap_id IS NOT NULL THEN 'MH'
+         WHEN COALESCE(et.tag_cat,'oth')='OTH_SH' THEN 'SH' ELSE 'Other' END cat,
     COUNT(*) booked, SUM(CASE WHEN ap.status='COMPLETED' THEN 1 ELSE 0 END) done,
     COUNT(CASE WHEN ap.status='COMPLETED' AND inv.ap_id IS NOT NULL THEN 1 END) purchased,
     SUM(CASE WHEN ap.status='COMPLETED' THEN COALESCE(inv.amt,0) ELSE 0 END) rev_paise

@@ -68,6 +68,7 @@ svg.sp{display:block;margin:0 auto}
 .chev{display:inline-block;width:11px;color:var(--muted);font-size:9px;vertical-align:middle}
 .qvbtn{margin-left:auto;width:auto!important;height:28px;padding:0 13px;border:1px solid var(--accent)!important;background:var(--accent)!important;color:#fff!important;border-radius:8px;cursor:pointer;font-size:12.5px!important;font-weight:600;font-family:Inter}
 .qvbtn:hover{opacity:.9}
+.cmpsel{height:28px;border:1px solid var(--line);border-radius:8px;background:#fff;color:var(--ink2);font-size:12px;font-weight:600;font-family:Inter;padding:0 6px;cursor:pointer;margin-left:6px}
 .catbtn{width:auto!important;height:28px;padding:0 12px;border:1px solid #D97A2B!important;background:#fff!important;color:#C2691F!important;border-radius:8px;cursor:pointer;font-size:12.5px!important;font-weight:600;font-family:Inter;margin-left:6px}
 .catbtn.on{background:#D97A2B!important;color:#fff!important}
 tr.catrow td:first-child{border-left:3px solid #D97A2B!important;padding-left:21px}
@@ -93,7 +94,7 @@ tr[onclick]:hover td:first-child{color:var(--accent)}
   </div>
   <h1 id="h1">Clinic WoW</h1>
   <div class="sub">Week-over-week per clinic — availability, leads, lead→book, bookings by source and outcomes. Cells are shaded green (high) → red (low) within each row; click any trend sparkline to zoom, or use Quick view for the chart grid.</div>
-  <div class="wknav">Showing <b id="wkN">6</b> weeks <button id="wkMinus" onclick="adjWeeks(-2)" title="fewer weeks">−</button><button id="wkPlus" onclick="adjWeeks(2)" title="more weeks">＋</button> &nbsp;·&nbsp; latest <b id="wkEndLab">—</b> <button id="wkOlder" onclick="shiftEnd(1)" title="shift older">◀</button><button id="wkNewer" onclick="shiftEnd(-1)" title="shift newer">▶</button><button id="catBtn" class="catbtn" onclick="toggleCat()">🏷 Category</button><button id="qvBtn" class="qvbtn" onclick="toggleQV()">📈 Quick view</button></div>
+  <div class="wknav">Showing <b id="wkN">6</b> weeks <button id="wkMinus" onclick="adjWeeks(-2)" title="fewer weeks">−</button><button id="wkPlus" onclick="adjWeeks(2)" title="more weeks">＋</button> &nbsp;·&nbsp; latest <b id="wkEndLab">—</b> <button id="wkOlder" onclick="shiftEnd(1)" title="shift older">◀</button><button id="wkNewer" onclick="shiftEnd(-1)" title="shift newer">▶</button><select id="cmpSel" class="cmpsel" onchange="setCmp(this.value)" title="what the Δ column compares against"><option value="avg">Δ vs avg</option><option value="peak">Δ vs peak wk</option><option value="first">Δ vs first wk</option></select><button id="catBtn" class="catbtn" onclick="toggleCat()">🏷 Category</button><button id="qvBtn" class="qvbtn" onclick="toggleQV()">📈 Quick view</button></div>
 
   <div id="qvWrap" style="display:none"></div>
   <div id="tables">
@@ -118,6 +119,7 @@ tr[onclick]:hover td:first-child{color:var(--accent)}
 let D=null,CUR=null;let NSHOW=6;let WKEND=1;let ZREG=[];let EXP={};
 let QV=false,QVC=[],QVTABLE=null;let CATMODE=false;
 function toggleCat(){CATMODE=!CATMODE;if($('catBtn'))$('catBtn').classList.toggle('on',CATMODE);render();}
+let CMPB='avg';function setCmp(v){CMPB=v;render();}
 function toggle(k){EXP[k]=!EXP[k];render();}
 function toggleQV(){QV=!QV;render();}
 const $=id=>document.getElementById(id);
@@ -135,7 +137,7 @@ function hexA(hex,a){const n=parseInt(hex.slice(1),16);return `rgba(${n>>16&255}
 function heatBg(v,mn,mx,inv){if(v==null||isNaN(v)||!isFinite(mn)||mn===mx)return'';let t=(v-mn)/((mx-mn)||1);if(inv)t=1-t;
   if(t>=0.6)return hexA(GRN,0.06+0.20*((t-0.6)/0.4));
   if(t<=0.4)return hexA(RED,0.06+0.20*((0.4-t)/0.4));return'';}
-function head(lbl){const w=D._meta.weeks,c=cols();return '<tr><th>'+lbl+'</th>'+c.map((j,p)=>`<th class="${p===c.length-1?'lastcol':''}">${wlab(w[j])}</th>`).join('')+'<th class="avgcol">avg</th><th class="dcol">Δ now</th><th>trend</th>'+'</tr>';}
+function head(lbl){const w=D._meta.weeks,c=cols();return '<tr><th>'+lbl+'</th>'+c.map((j,p)=>`<th class="${p===c.length-1?'lastcol':''}">${wlab(w[j])}</th>`).join('')+'<th class="avgcol">'+(CMPB==='peak'?'peak':CMPB==='first'?'first':'avg')+'</th><th class="dcol">Δ now</th><th>trend</th>'+'</tr>';}
 function row(label,arr,cls,fmt,o){fmt=fmt||N;o=o||{};const c=cols();
   if(QVTABLE&&arr&&cls!=='gband')QVC.push({t:QVTABLE,label:String(label).replace(/^· /,''),arr,color:o.color||BLU,fmt});
   let mn=Infinity,mx=-Infinity;c.forEach(j=>{const v=arr?arr[j]:null;if(v!=null&&!isNaN(v)){mn=Math.min(mn,v);mx=Math.max(mx,v);}});
@@ -145,11 +147,11 @@ function row(label,arr,cls,fmt,o){fmt=fmt||N;o=o||{};const c=cols();
   const lbl=(o.tkey?`<span class="chev">${EXP[o.tkey]?'▾':'▸'}</span> `:'')+label;
   const clk=o.tkey?` onclick="toggle('${o.tkey}')" style="cursor:pointer"`:'';
   const _vv=c.map(j=>arr?arr[j]:null).filter(v=>v!=null&&!isNaN(v));
-  const _avg=_vv.length?_vv.reduce((a,b)=>a+b,0)/_vv.length:null;
+  const _base=!_vv.length?null:(CMPB==='peak'?Math.max(..._vv):CMPB==='first'?_vv[0]:_vv.reduce((a,b)=>a+b,0)/_vv.length);
   const _lst=arr?arr[c[c.length-1]]:null;
-  const _dp=(_avg&&_lst!=null&&!isNaN(_lst))?Math.round((_lst-_avg)/Math.abs(_avg)*100):null;
+  const _dp=(_base&&_lst!=null&&!isNaN(_lst))?Math.round((_lst-_base)/Math.abs(_base)*100):null;
   const _up=o.invert?(_dp<0):(_dp>0);
-  const _avgC=`<td class="avgc">${_avg!=null?fmt(_avg):'\u2014'}</td>`;
+  const _avgC=`<td class="avgc">${_base!=null?fmt(_base):'\u2014'}</td>`;
   const _dC=`<td class="dc" style="color:${_dp==null?'var(--muted)':(_up?'var(--good)':'var(--bad)')}">${_dp==null?'\u2014':(_dp>=0?'+':'')+_dp+'%'}</td>`;
   return `<tr class="${cls||''}"${clk}><td>${lbl}</td>${t}${_avgC}${_dC}${arr?sparkCell(arr,o.color||BLU,label,fmt):'<td></td>'}</tr>`;}
 function spark(arr,color){const c=cols();const v=c.map(j=>{const x=arr?arr[j]:null;return x==null||isNaN(x)?0:x;});const n=v.length,mx=Math.max(1,...v);
