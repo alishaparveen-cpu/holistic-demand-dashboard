@@ -304,6 +304,7 @@ function render(){
     if(EXP[tk]||CATMODE){const cls=CATMODE?'sub catrow':'sub';CATS.forEach(ct=>{const a=catO(ct,field);if(a.some(v=>v)){h+=row('· '+ct,a,cls,fmt,{color:CATCOL[ct]});h+=row('· '+ct+' % of '+field,pctOf(a,tot),cls,PCT,{color:CATCOL[ct]});}});}return h;}
   // ① Leads
   QVTABLE='① Leads';let L=head('Leads');
+  if(SEG!=='all')L+=row('ⓘ leads are acquisition-side — consult filter applies to bookings & outcomes',null,'sub',N,{noheat:true});
   const NC=D._meta.national_channels||{};
   const ncL=k=>(NC[k]&&NC[k].leads)||ZA, ncB=k=>(NC[k]&&NC[k].booked)||ZA;
   const ncSum=['WhatsApp','Meta','Organic','Marketing','Other'].reduce((a,k)=>addv(a,ncL(k)),ZA.slice());
@@ -403,13 +404,21 @@ function render(){
   $('tLB').innerHTML=LB;
   // ③ Bookings by source
   QVTABLE='③ Bookings by source';let S=head('Source · bookings');
-  S+=mrow('TOTAL bookings',F.srcTotal,'tot',N,{color:BLU});
-  S+=mrow('GMB',F.srcGMB,'grp',N,{color:GRN});
-  S+=mrow('Google',F.srcGoog,'grp',N,{color:GRN});
-  S+=mrow('Practo',F.srcPracto,'grp',N,{color:GRN});
-  S+=mrow('Meta (FB/IG)',F.srcMeta,'grp',N,{color:GRN});
-  S+=mrow('Organic',F.srcOrg,'grp',N,{color:GRN});
-  S+=mrow('Direct / Walk-in',F.srcDirect,'untag',N,{color:RED,invert:true});
+  const onlBkN=(onlBot.total||{}).booked||ZA;
+  const offSrcTot=clinics.reduce((a,x)=>addv(a,F.srcTotal(x.data)||ZA),ZA.slice());
+  if(SEG==='online'){
+    S+=row('TOTAL bookings · online telehealth',onlBkN,'tot',N,{color:BLU});
+    S+=row('— online has no per-channel split —',null,'sub',N);
+  }else{
+    S+=row('TOTAL bookings'+(SEG==='all'?' · offline + online':''),segArr(offSrcTot,onlBkN),'tot',N,{color:BLU});
+    S+=mrow('GMB',F.srcGMB,'grp',N,{color:GRN});
+    S+=mrow('Google',F.srcGoog,'grp',N,{color:GRN});
+    S+=mrow('Practo',F.srcPracto,'grp',N,{color:GRN});
+    S+=mrow('Meta (FB/IG)',F.srcMeta,'grp',N,{color:GRN});
+    S+=mrow('Organic',F.srcOrg,'grp',N,{color:GRN});
+    S+=mrow('Direct / Walk-in',F.srcDirect,'untag',N,{color:RED,invert:true});
+    if(SEG==='all'&&onlBkN.some(v=>v))S+=row('Online (telehealth) · no channel split',onlBkN,'grp',N,{color:GRN});
+  }
   $('tSrc').innerHTML=S;
   // ④ Outcomes
   QVTABLE='④ Outcomes';let O=head('Outcome');
@@ -427,9 +436,10 @@ function render(){
   $('tOut').innerHTML=O;
   // ⑤ Availability
   QVTABLE='⑤ Availability';let AV=head('Availability');
-  AV+=mrow('Available slots',F.slots,'grp',N,{color:BLU});
+  if(SEG==='online'){AV+=row('— telehealth has no physical roster —',null,'sub',N);}
+  else{AV+=mrow('Available slots',F.slots,'grp',N,{color:BLU});
   AV+=mrow('Available hours',F.hrs,'grp',N,{color:BLU});
-  AV+=mrow('Available days',F.days,'grp',N,{color:BLU});
+  AV+=mrow('Available days',F.days,'grp',N,{color:BLU});}
   $('tAvail').innerHTML=AV;
   QVTABLE=null;
   $('qvBtn').textContent=QV?'▦ Table view':'📈 Quick view';
