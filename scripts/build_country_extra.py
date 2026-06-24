@@ -138,6 +138,39 @@ def online_bottom_city():
             tgt["booked"][i] += bk; tgt["done"][i] += dn; tgt["purchased"][i] += pu; tgt["rev"][i] += rev
     return out
 
+# ---- online bookings split by lead channel (phone → patient's latest lead source) ----
+SRC_CHANS = ["Google", "GMB", "Practo", "Meta", "Organic", "Direct"]
+def online_src():
+    sql = """WITH onl AS (SELECT id FROM allo_health.locations WHERE deleted_at IS NULL AND name='Online'),
+  ap0 AS (SELECT a.id, a.patient_id, TO_CHAR(DATE_TRUNC('week', a.created_at + INTERVAL '5 hours 30 minutes'),'YYYY-MM-DD') wk
+    FROM allo_consultations.appointments a JOIN allo_consultations.types typ ON typ.id=a.type_id AND typ.name='Screening Call'
+    JOIN onl ON onl.id=a.location_id WHERE a.created_at>='2026-03-02' AND a.deleted_at IS NULL),
+  ap AS (SELECT id, patient_id, wk FROM (SELECT ap0.*, ROW_NUMBER() OVER (PARTITION BY patient_id, wk ORDER BY id) rn FROM ap0) z WHERE rn=1),
+  lead_ch AS (SELECT RIGHT(phone_no,10) ph,
+      CASE WHEN LOWER(utm_source)='google' THEN 'Google' WHEN LOWER(utm_source)='gmb' THEN 'GMB'
+           WHEN LOWER(utm_source)='practo' THEN 'Practo' WHEN LOWER(utm_source)='fb' THEN 'Meta'
+           WHEN LOWER(utm_source)='organic' OR LOWER(utm_medium) LIKE '%whatsapp%' THEN 'Organic' ELSE 'Other' END ch,
+      ROW_NUMBER() OVER (PARTITION BY RIGHT(phone_no,10) ORDER BY created_at DESC) rn
+    FROM allo_persons.lead WHERE LENGTH(RIGHT(phone_no,10))=10)
+  SELECT COALESCE(lc.ch,'Direct') channel, ap.wk, LOWER(TRIM(p.city)) pcity, COUNT(*) n
+  FROM ap JOIN allo_persons.patient p ON p.id=ap.patient_id
+  LEFT JOIN lead_ch lc ON lc.ph=RIGHT(p.phone_no,10) AND lc.rn=1
+  GROUP BY 1,2,3;"""
+    nat = {c: Z() for c in SRC_CHANS}; cty = {}
+    for line in run_sql(sql):
+        c = line.split("\t")
+        if len(c) < 4 or c[1] not in idx: continue
+        ch = c[0] if c[0] in SRC_CHANS else "Direct"   # 'Other' (unknown source) + no-lead → Direct
+        i = idx[c[1]]
+        try: v = int(float(c[3]))
+        except ValueError: continue
+        nat[ch][i] += v
+        city = NORM.get((c[2] or "").strip())
+        if city:
+            cty.setdefault(city, {k: Z() for k in SRC_CHANS})
+            cty[city][ch][i] += v
+    return {"national": nat, "city": cty}
+
 if __name__ == "__main__":
     d = json.load(open(OUT))
     print("pulling national channels (leads + booked)…", flush=True)
@@ -149,8 +182,13 @@ if __name__ == "__main__":
     print("pulling online bottom by city…", flush=True)
     obc = online_bottom_city()
     print("  online cities:", {k: sum(v["total"]["done"]) for k, v in sorted(obc.items(), key=lambda x: -sum(x[1]["total"]["done"]))[:6]}, flush=True)
+    print("pulling online bookings by source…", flush=True)
+    osrc = online_src()
+    print("  online src (national):", {k: sum(v) for k, v in osrc["national"].items()}, flush=True)
     d["_meta"]["national_channels"] = nc
     d["_meta"]["online_bottom"] = ob
     d["_meta"]["online_bottom_city"] = obc
+    d["_meta"]["online_src"] = osrc["national"]
+    d["_meta"]["online_src_city"] = osrc["city"]
     json.dump(d, open(OUT, "w"), separators=(",", ":"))
     print("saved.")
