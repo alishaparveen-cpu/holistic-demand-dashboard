@@ -317,7 +317,7 @@ function render(){
   if(SEG!=='all')L+=row('ⓘ leads are acquisition-side — consult filter applies to bookings & outcomes',null,'sub',N,{noheat:true});
   const NC=D._meta.national_channels||{};
   const ncL=k=>(NC[k]&&NC[k].leads)||ZA, ncB=k=>(NC[k]&&NC[k].booked)||ZA;
-  const ncSum=['WhatsApp','Meta','Organic','Marketing','Other'].reduce((a,k)=>addv(a,ncL(k)),ZA.slice());
+  const ncSum=['Meta','WhatsApp','Assessment','Landing','OrgCall','Blog','Other','Marketing'].reduce((a,k)=>addv(a,ncL(k)),ZA.slice());
   L+=row('All leads — clinic + national digital',addv(totLeads,ncSum),'tot',N,{color:BLU});
   const gmbTot=clinics.reduce((a,x)=>addv(a,F.gmbLeads(x.data)||ZA),ZA.slice());
   L+=row('Google — GMB + paid (total)',addv(gmbTot,googCountry),'grp',N,{color:GRN,tkey:'gg_leads'});
@@ -342,16 +342,17 @@ function render(){
   const ncRow=(lbl,k)=>{const ld=ncL(k),bk=ncB(k);L+=row(lbl,ld,'grp',N,{color:GRN,tkey:'nc_'+k});
     if(EXP['nc_'+k]){L+=row('· booked (Screening Call)',bk,'sub',N,{color:GRN});L+=row('· lead → book %',pctOf(bk,ld),'sub',PCT,{color:VIO});}};
   ncRow('Meta · FB/IG · national','Meta');
-  // Organic = organic web/assessment + WhatsApp (organic-sourced) + other/misc untagged
-  const orgL=addv(addv(ncL('Organic'),ncL('WhatsApp')),addv(ncL('Other'),ncL('Marketing')));
-  const orgB=addv(addv(ncB('Organic'),ncB('WhatsApp')),addv(ncB('Other'),ncB('Marketing')));
-  L+=row('Organic · national (incl. WhatsApp)',orgL,'grp',N,{color:GRN,tkey:'nc_org'});
+  // Organic = every non-clinic, non-Meta digital bucket — broken down by entry path
+  const ORGB=[['WhatsApp','WhatsApp (chat)'],['Assessment','Assessment funnel'],['Landing','Landing pages (web)'],['OrgCall','Organic calls (numbers)'],['Blog','Blog / Healthfeed'],['Other','Other / misc'],['Marketing','Marketing-tagged']];
+  const orgKeys=ORGB.map(x=>x[0]);
+  const orgL=orgKeys.reduce((a,k)=>addv(a,ncL(k)),ZA.slice());
+  const orgB=orgKeys.reduce((a,k)=>addv(a,ncB(k)),ZA.slice());
+  L+=row('Organic · national',orgL,'grp',N,{color:GRN,tkey:'nc_org'});
   if(EXP['nc_org']){
-    L+=row('· WhatsApp',ncL('WhatsApp'),'sub',N,{color:GRN});
-    L+=row('· organic web / assessment',ncL('Organic'),'sub',N,{color:GRN});
-    L+=row('· other / misc (untagged)',addv(ncL('Other'),ncL('Marketing')),'sub',N,{color:GRN});
-    L+=row('· booked (Screening Call)',orgB,'sub',N,{color:GRN});
-    L+=row('· lead → book %',pctOf(orgB,orgL),'sub',PCT,{color:VIO});
+    ORGB.forEach(([k,lbl])=>{const a=ncL(k);if(a.some(v=>v)){L+=row('· '+lbl,a,'sub',N,{color:GRN,tkey:'nco_'+k});
+      if(EXP['nco_'+k]){L+=row('· · booked',ncB(k),'sub2',N,{color:GRN});L+=row('· · lead → book %',pctOf(ncB(k),a),'sub2',PCT,{color:VIO});}}});
+    L+=row('· booked (Screening Call) — all organic',orgB,'sub',N,{color:GRN});
+    L+=row('· lead → book % — all organic',pctOf(orgB,orgL),'sub',PCT,{color:VIO});
   }
   $('tLeads').innerHTML=L;
   // ② Lead → Book %
@@ -370,8 +371,16 @@ function render(){
   const gpCat=ct=>clinics.reduce((acc,x)=>{const t=lb(x.data).gpaid_call;const bc=t&&t.by_cat?t.by_cat[ct]:null;return addv(acc,bc||ZA);},ZA.slice());
   // —— combined GMB + Google calls audited (category across BOTH channels), then the per-channel split ——
   const cAud=addv(gC('answered'),gpAns);
+  const oSplit=b=>clinics.reduce((acc,x)=>{const g=lb(x.data).gmb_call,p=lb(x.data).gpaid_call;const gv=g&&g.other_split?g.other_split[b]:null;const pv=p&&p.other_split?p.other_split[b]:null;return addv(addv(acc,gv||ZA),pv||ZA);},ZA.slice());
+  const OBK={condition:'other condition',consult:'wants consult',service:'needs meds / tests',unclear:'unclear / general'};
   LB+=row('· calls audited — GMB + Google (combined)',cAud,'grp2',N,{color:BLU,tkey:'gg_aud'});
-  if(EXP['gg_aud']||CATMODE){CATS.forEach(ct=>{const a=addv(gCat(ct),gpCat(ct));if(a.some(v=>v)){const cls=CATMODE?'sub catrow':'sub';LB+=row('· '+ct,a,cls,N,{color:CATCOL[ct]});LB+=row('· '+ct+' % of audited',pctOf(a,cAud),cls,PCT,{color:CATCOL[ct]});}});}
+  if(EXP['gg_aud']||CATMODE){CATS.forEach(ct=>{const a=addv(gCat(ct),gpCat(ct));if(a.some(v=>v)){const cls=CATMODE?'sub catrow':'sub';
+    if(ct==='Other'){
+      LB+=row('· Other',a,cls,N,{color:CATCOL[ct],tkey:'gg_oth'});
+      LB+=row('· Other % of audited',pctOf(a,cAud),cls,PCT,{color:CATCOL[ct]});
+      if(EXP['gg_oth']||CATMODE){['condition','consult','service','unclear'].forEach(b=>{const sa=oSplit(b);if(sa.some(v=>v)){const sc=CATMODE?'sub2 catrow':'sub2';LB+=row('· · '+OBK[b],sa,sc,N,{color:CATCOL.Other});LB+=row('· · '+OBK[b]+' % of Other',pctOf(sa,a),sc,PCT,{color:CATCOL.Other});}});}
+    }else{LB+=row('· '+ct,a,cls,N,{color:CATCOL[ct]});LB+=row('· '+ct+' % of audited',pctOf(a,cAud),cls,PCT,{color:CATCOL[ct]});}
+  }});}
   LB+=row('· GMB lead → book %',pctOf(gmbBkSum,gmbTot),'grp2',PCT,{color:GRN,tkey:'gmb_conv'});
   if(EXP['gmb_conv']||CATMODE){
     const gca=gC('total'),gan=gC('answered');

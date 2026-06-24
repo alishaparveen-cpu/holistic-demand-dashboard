@@ -16,10 +16,14 @@ CATS = ["STI", "SH", "MH", "Other"]
 # ---- national leads + booked by channel (disjoint from clinic-attributed GMB-listing/Google-cpc/Practo) ----
 def national_channels():
     sql = ("WITH leads AS (SELECT "
-           "  CASE WHEN LOWER(utm_medium) LIKE '%%whatsapp%%' THEN 'WhatsApp' "
-           "       WHEN LOWER(utm_source)='fb' THEN 'Meta' WHEN LOWER(utm_source)='organic' THEN 'Organic' "
-           "       WHEN LOWER(utm_source)='marketing' THEN 'Marketing' "
-           "       WHEN LOWER(utm_source) IN ('gmb','google','practo') THEN 'CLINIC' ELSE 'Other' END channel, "
+           "  CASE WHEN LOWER(utm_source)='fb' OR COALESCE(fbclid,'')<>'' THEN 'Meta' "          # incl. click-to-WhatsApp ads
+           "       WHEN LOWER(utm_source) IN ('gmb','google','practo') THEN 'CLINIC' "
+           "       WHEN LOWER(utm_medium) LIKE '%%whatsapp%%' THEN 'WhatsApp' "                  # genuine organic WhatsApp
+           "       WHEN LOWER(utm_medium)='assessment' THEN 'Assessment' "
+           "       WHEN utm_medium ~ '^[+0-9][0-9]{5,}$' THEN 'OrgCall' "
+           "       WHEN LOWER(utm_medium) IN ('healthfeed','blog','article') THEN 'Blog' "
+           "       WHEN LOWER(utm_source)='organic' THEN 'Landing' "
+           "       WHEN LOWER(utm_source)='marketing' THEN 'Marketing' ELSE 'Other' END channel, "
            "  TO_CHAR(DATE_TRUNC('week', created_at+INTERVAL '5 hours 30 minutes'),'YYYY-MM-DD') wk, RIGHT(phone_no,10) ph "
            "  FROM allo_persons.lead WHERE created_at>='%s' AND created_at<'2026-06-22' AND LENGTH(RIGHT(phone_no,10))=10), "
            "bk AS (SELECT DISTINCT RIGHT(p.phone_no,10) ph FROM allo_consultations.appointments a "
@@ -147,8 +151,9 @@ def online_src():
     JOIN onl ON onl.id=a.location_id WHERE a.created_at>='2026-03-02' AND a.deleted_at IS NULL),
   ap AS (SELECT id, patient_id, wk FROM (SELECT ap0.*, ROW_NUMBER() OVER (PARTITION BY patient_id, wk ORDER BY id) rn FROM ap0) z WHERE rn=1),
   lead_ch AS (SELECT RIGHT(phone_no,10) ph,
-      CASE WHEN LOWER(utm_source)='google' THEN 'Google' WHEN LOWER(utm_source)='gmb' THEN 'GMB'
-           WHEN LOWER(utm_source)='practo' THEN 'Practo' WHEN LOWER(utm_source)='fb' THEN 'Meta'
+      CASE WHEN LOWER(utm_source)='fb' OR COALESCE(fbclid,'')<>'' THEN 'Meta'
+           WHEN LOWER(utm_source)='google' THEN 'Google' WHEN LOWER(utm_source)='gmb' THEN 'GMB'
+           WHEN LOWER(utm_source)='practo' THEN 'Practo'
            WHEN LOWER(utm_source)='organic' OR LOWER(utm_medium) LIKE '%whatsapp%' THEN 'Organic' ELSE 'Other' END ch,
       ROW_NUMBER() OVER (PARTITION BY RIGHT(phone_no,10) ORDER BY created_at DESC) rn
     FROM allo_persons.lead WHERE LENGTH(RIGHT(phone_no,10))=10)
