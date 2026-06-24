@@ -15,11 +15,9 @@ Run: AWS_PROFILE=redshift-data python3 scripts/build_mh_funnels.py
 import os, sys, subprocess, json
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RQ = os.path.join(ROOT, "scripts", "redshift_query.py")
-WEEKS = ["2026-06-22","2026-06-15","2026-06-08","2026-06-01","2026-05-25","2026-05-18","2026-05-11",
-         "2026-05-04","2026-04-27","2026-04-20","2026-04-13","2026-04-06","2026-03-30","2026-03-23",
-         "2026-03-16","2026-03-09"]
+WEEKS = ["2026-06-22","2026-06-15","2026-06-08","2026-06-01","2026-05-25","2026-05-18","2026-05-11","2026-05-04","2026-04-27","2026-04-20","2026-04-13","2026-04-06","2026-03-30","2026-03-23","2026-03-16","2026-03-09","2026-03-02","2026-02-23","2026-02-16","2026-02-09","2026-02-02","2026-01-26","2026-01-19","2026-01-12","2026-01-05","2025-12-29","2025-12-22","2025-12-15","2025-12-08","2025-12-01","2025-11-24","2025-11-17","2025-11-10","2025-11-03","2025-10-27","2025-10-20","2025-10-13","2025-10-06","2025-09-29","2025-09-22","2025-09-15","2025-09-08","2025-09-01","2025-08-25","2025-08-18","2025-08-11","2025-08-04","2025-07-28","2025-07-21","2025-07-14","2025-07-07","2025-06-30"]
 idx = {w: i for i, w in enumerate(WEEKS)}; NW = len(WEEKS)
-LO = "2026-03-02"   # SQL lower bound (a bit before the oldest week)
+LO = "2025-06-23"   # SQL lower bound (a bit before the oldest week)
 AUDIT_START = "2026-03-23"   # AI call-audit (call_analyses) reaches coverage here; earlier weeks have ~none
 # MH launch per clinic — Monday of the launch week, + label (doctor + date)
 LAUNCH = {   # week marker = first full week the change takes effect (Thu-Sun launch → next Monday)
@@ -90,7 +88,7 @@ def bottom_sql(city, loc):
   ap0 AS (
     SELECT a.id, a.patient_id, TO_CHAR(DATE_TRUNC('week', a.created_at + INTERVAL '5 hours 30 minutes'),'YYYY-MM-DD') wk, a.status
     FROM allo_consultations.appointments a JOIN allo_consultations.types typ ON typ.id=a.type_id AND typ.name='Screening Call'
-    JOIN loc ON loc.id=a.location_id WHERE a.created_at >= '2026-03-02' AND a.deleted_at IS NULL),
+    JOIN loc ON loc.id=a.location_id WHERE a.created_at >= '2025-06-23' AND a.deleted_at IS NULL),
   ap AS (SELECT id, wk, status FROM (SELECT ap0.*, ROW_NUMBER() OVER (PARTITION BY patient_id, wk
       ORDER BY (CASE WHEN status='COMPLETED' THEN 0 ELSE 1 END), id) rn FROM ap0) z WHERE rn=1),
   inv AS (SELECT e.appointment_id ap_id, SUM(i.amount) amt FROM allo_encounters.encounters e
@@ -130,14 +128,14 @@ def get_calls(cfg):
       SUM(CASE WHEN ec.status='completed' THEN 1 ELSE 0 END) answered,
       SUM(CASE WHEN ec.status!='completed' THEN 1 ELSE 0 END) missed
     FROM allo_vendors.exotel_calls ec WHERE RIGHT(ec.exotel_number,10) IN ('{nums}')
-      AND ec.routed_to='lead_to_call' AND (ec.start_time + INTERVAL '5 hours 30 minutes') >= '2026-03-02'
+      AND ec.routed_to='lead_to_call' AND (ec.start_time + INTERVAL '5 hours 30 minutes') >= '2025-06-23'
     GROUP BY 1;""".format(nums=nums)
     ai_sql = """SELECT TO_CHAR(DATE_TRUNC('week', ec.start_time + INTERVAL '5 hours 30 minutes'),'YYYY-MM-DD') wk,
       COALESCE(ca.analysis.diagnoses.category::varchar,'NOT_MENTIONED') cat,
       ca.analysis.user_intent.result::varchar intent, ca.analysis.patient_intent_strength.result::varchar strength, COUNT(*) n
     FROM allo_analytics.call_analyses ca JOIN allo_vendors.exotel_calls ec ON ec.call_id=ca.call_id AND ec.routed_to='lead_to_call'
     WHERE ca.deleted_at IS NULL AND RIGHT(ec.exotel_number,10) IN ('{nums}')
-      AND (ec.start_time + INTERVAL '5 hours 30 minutes') >= '2026-03-02' GROUP BY 1,2,3,4;""".format(nums=nums)
+      AND (ec.start_time + INTERVAL '5 hours 30 minutes') >= '2025-06-23' GROUP BY 1,2,3,4;""".format(nums=nums)
     raw = {"total":list(Z),"unique":list(Z),"answered":list(Z),"missed":list(Z)}
     for line in run_sql(raw_sql):
         c = line.split("\t")
@@ -168,7 +166,7 @@ def get_calls(cfg):
         FROM allo_analytics.call_analyses ca JOIN allo_vendors.exotel_calls ec ON ec.call_id=ca.call_id AND ec.routed_to='lead_to_call'
         WHERE ca.deleted_at IS NULL AND RIGHT(ec.exotel_number,10)='{paid}'
           {locfilter}
-          AND (ec.start_time + INTERVAL '5 hours 30 minutes') >= '2026-03-02' GROUP BY 1,2,3;""".format(paid=cfg["paid"], loc=cfg["loc"].replace("'","''"),
+          AND (ec.start_time + INTERVAL '5 hours 30 minutes') >= '2025-06-23' GROUP BY 1,2,3;""".format(paid=cfg["paid"], loc=cfg["loc"].replace("'","''"),
           locfilter=("" if cfg.get("paid_solo") else "AND ca.analysis.user_intent.locality_mentioned.is_our_locality=true AND ca.analysis.user_intent.locality_mentioned.best_match::varchar='"+cfg["loc"].replace("'","''")+"'"))
         for line in run_sql(paid_sql):
             c = line.split("\t")
@@ -207,7 +205,7 @@ def get_gmbweb(slug, cfg):
       JOIN allo_health.locations loc ON loc.id=a.location_id AND loc.city='{city}' AND loc.locality='{loc}' AND loc.deleted_at IS NULL
       JOIN allo_persons.patient p ON p.id=a.patient_id
       JOIN allo_consultations.types t ON t.id=a.type_id AND t.name='Screening Call'
-      WHERE a.deleted_at IS NULL AND a.created_at >= '2026-02-15')
+      WHERE a.deleted_at IS NULL AND a.created_at >= '2025-06-23')
     SELECT web.wk, COUNT(*) leads, SUM(CASE WHEN bk.ph IS NOT NULL THEN 1 ELSE 0 END) booked
     FROM web LEFT JOIN bk ON bk.ph=web.ph GROUP BY 1;""".format(camp=camp, lo=LO,
         city=cfg["city"].replace("'","''"), loc=cfg["loc"].replace("'","''"))
@@ -236,7 +234,7 @@ def get_leads_clean(cfg):
           CASE WHEN fbclid IS NOT NULL AND fbclid<>'' THEN 1 ELSE 0 END f,
           ROW_NUMBER() OVER (PARTITION BY RIGHT(phone_no,10) ORDER BY created_at DESC) rn
         FROM allo_persons.lead
-        WHERE created_at >= '2026-01-15' AND created_at < '2026-06-22'
+        WHERE created_at >= '2025-06-23' AND created_at < '2026-06-22'
           AND (utm_source IS NOT NULL OR gclid IS NOT NULL OR fbclid IS NOT NULL)) z WHERE rn=1)
     SELECT lds.wk,
       CASE

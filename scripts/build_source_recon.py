@@ -34,13 +34,13 @@ def bookings_by_source(cfg):
      bk AS (SELECT patient_id, ph, bts, wk FROM bk0 WHERE rn=1),
      fsc AS (SELECT a.patient_id, MIN(a.created_at) f FROM allo_consultations.appointments a
        JOIN allo_consultations.types t ON t.id=a.type_id AND t.name='Screening Call' WHERE a.deleted_at IS NULL GROUP BY 1),
-     gc AS (SELECT DISTINCT RIGHT("from",10) ph FROM allo_vendors.exotel_calls WHERE RIGHT(exotel_number,10) IN ('{gmb}') AND routed_to='lead_to_call' AND direction='inbound' AND start_time>='2026-02-15'),
-     pc AS (SELECT DISTINCT RIGHT("from",10) ph FROM allo_vendors.exotel_calls WHERE RIGHT(exotel_number,10)='{paid}' AND routed_to='lead_to_call' AND direction='inbound' AND start_time>='2026-02-15'),
+     gc AS (SELECT DISTINCT RIGHT("from",10) ph FROM allo_vendors.exotel_calls WHERE RIGHT(exotel_number,10) IN ('{gmb}') AND routed_to='lead_to_call' AND direction='inbound' AND start_time>='2025-06-23'),
+     pc AS (SELECT DISTINCT RIGHT("from",10) ph FROM allo_vendors.exotel_calls WHERE RIGHT(exotel_number,10)='{paid}' AND routed_to='lead_to_call' AND direction='inbound' AND start_time>='2025-06-23'),
      u AS (SELECT ph,us,um,g,f FROM (
         SELECT RIGHT(phone_no,10) ph, LOWER(COALESCE(utm_source,'')) us, LOWER(COALESCE(utm_medium,'')) um,
           CASE WHEN gclid<>'' THEN 1 ELSE 0 END g, CASE WHEN fbclid<>'' THEN 1 ELSE 0 END f,
           ROW_NUMBER() OVER (PARTITION BY RIGHT(phone_no,10) ORDER BY created_at DESC) rn
-        FROM allo_persons.lead WHERE created_at>='2026-01-15' AND (utm_source IS NOT NULL OR gclid<>'' OR fbclid<>'')) z WHERE rn=1)
+        FROM allo_persons.lead WHERE created_at>='2025-06-23' AND (utm_source IS NOT NULL OR gclid<>'' OR fbclid<>'')) z WHERE rn=1)
     SELECT bk.wk,
       CASE
         WHEN gc.ph IS NOT NULL THEN 'gmb_call'
@@ -97,7 +97,7 @@ def call_lead_book(num_list, paid_num, cfg, kind):
        JOIN allo_health.locations loc ON loc.id=a.location_id AND loc.city='{city}' AND loc.locality='{loc}' AND loc.deleted_at IS NULL
        JOIN allo_persons.patient p ON p.id=a.patient_id
        JOIN allo_consultations.types t ON t.id=a.type_id AND t.name='Screening Call'
-       WHERE a.deleted_at IS NULL AND a.created_at>='2026-02-15')
+       WHERE a.deleted_at IS NULL AND a.created_at>='2025-06-23')
     SELECT calls.wk, COUNT(DISTINCT calls.ph) leads,
       COUNT(DISTINCT CASE WHEN bk.ph IS NOT NULL THEN calls.ph END) booked
     FROM calls LEFT JOIN bk ON bk.ph=calls.ph GROUP BY 1;""".format(
@@ -138,7 +138,7 @@ def call_funnel(cfg, kind):
        JOIN allo_health.locations loc ON loc.id=a.location_id AND loc.city='{city}' AND loc.locality='{loc}' AND loc.deleted_at IS NULL
        JOIN allo_persons.patient p ON p.id=a.patient_id
        JOIN allo_consultations.types t ON t.id=a.type_id AND t.name='Screening Call'
-       WHERE a.deleted_at IS NULL AND a.created_at>='2026-02-15')
+       WHERE a.deleted_at IS NULL AND a.created_at>='2025-06-23')
     SELECT calls.wk,
       COUNT(*) total,
       SUM(CASE WHEN calls.status='completed' THEN 1 ELSE 0 END) answered,
@@ -211,7 +211,7 @@ def get_booking_phones(cfg):
       JOIN allo_health.locations loc ON loc.id=a.location_id AND loc.city='{city}' AND loc.locality='{loc}' AND loc.deleted_at IS NULL
       JOIN allo_persons.patient p ON p.id=a.patient_id
       JOIN allo_consultations.types t ON t.id=a.type_id AND t.name='Screening Call'
-      WHERE a.deleted_at IS NULL AND a.created_at>='2026-02-15';""".format(city=cfg["city"].replace("'","''"), loc=cfg["loc"].replace("'","''"))
+      WHERE a.deleted_at IS NULL AND a.created_at>='2025-06-23';""".format(city=cfg["city"].replace("'","''"), loc=cfg["loc"].replace("'","''"))
     return set(l.split("\t")[0] for l in run_sql(sql) if l.strip())
 
 # Clinic locality -> extra Practo "Practice Locality" strings that are the SAME clinic

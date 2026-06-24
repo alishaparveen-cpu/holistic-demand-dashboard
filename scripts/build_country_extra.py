@@ -28,7 +28,7 @@ def national_channels():
            "  FROM allo_persons.lead WHERE created_at>='%s' AND created_at<'2026-06-22' AND LENGTH(RIGHT(phone_no,10))=10), "
            "bk AS (SELECT DISTINCT RIGHT(p.phone_no,10) ph FROM allo_consultations.appointments a "
            "  JOIN allo_persons.patient p ON p.id=a.patient_id JOIN allo_consultations.types t ON t.id=a.type_id AND t.name='Screening Call' "
-           "  WHERE a.deleted_at IS NULL AND a.created_at>='2026-02-15') "
+           "  WHERE a.deleted_at IS NULL AND a.created_at>='2025-06-23') "
            "SELECT leads.channel, leads.wk, COUNT(DISTINCT leads.ph) leads, "
            "  COUNT(DISTINCT CASE WHEN bk.ph IS NOT NULL THEN leads.ph END) booked "
            "FROM leads LEFT JOIN bk ON bk.ph=leads.ph WHERE leads.channel<>'CLINIC' GROUP BY 1,2;" % LO)
@@ -60,7 +60,7 @@ def online_bottom():
       OR d.description ILIKE '%nicotine%' OR d.description ILIKE '%addiction%' OR d.description ILIKE '%adjustment%' OR d.description ILIKE '%ptsd%')),
   ap0 AS (SELECT a.id, a.patient_id, TO_CHAR(DATE_TRUNC('week', a.created_at + INTERVAL '5 hours 30 minutes'),'YYYY-MM-DD') wk, a.status
     FROM allo_consultations.appointments a JOIN allo_consultations.types typ ON typ.id=a.type_id AND typ.name='Screening Call'
-    JOIN loc ON loc.id=a.location_id WHERE a.created_at >= '2026-03-02' AND a.deleted_at IS NULL),
+    JOIN loc ON loc.id=a.location_id WHERE a.created_at >= '2025-06-23' AND a.deleted_at IS NULL),
   ap AS (SELECT id, wk, status FROM (SELECT ap0.*, ROW_NUMBER() OVER (PARTITION BY patient_id, wk
       ORDER BY (CASE WHEN status='COMPLETED' THEN 0 ELSE 1 END), id) rn FROM ap0) z WHERE rn=1),
   inv AS (SELECT e.appointment_id ap_id, SUM(i.amount) amt FROM allo_encounters.encounters e
@@ -112,7 +112,7 @@ def online_bottom_city():
       OR d.description ILIKE '%nicotine%' OR d.description ILIKE '%addiction%' OR d.description ILIKE '%adjustment%' OR d.description ILIKE '%ptsd%')),
   ap0 AS (SELECT a.id, a.patient_id, TO_CHAR(DATE_TRUNC('week', a.created_at + INTERVAL '5 hours 30 minutes'),'YYYY-MM-DD') wk, a.status
     FROM allo_consultations.appointments a JOIN allo_consultations.types typ ON typ.id=a.type_id AND typ.name='Screening Call'
-    JOIN loc ON loc.id=a.location_id WHERE a.created_at >= '2026-03-02' AND a.deleted_at IS NULL),
+    JOIN loc ON loc.id=a.location_id WHERE a.created_at >= '2025-06-23' AND a.deleted_at IS NULL),
   ap AS (SELECT id, patient_id, wk, status FROM (SELECT ap0.*, ROW_NUMBER() OVER (PARTITION BY patient_id, wk
       ORDER BY (CASE WHEN status='COMPLETED' THEN 0 ELSE 1 END), id) rn FROM ap0) z WHERE rn=1),
   inv AS (SELECT e.appointment_id ap_id, SUM(i.amount) amt FROM allo_encounters.encounters e
@@ -148,7 +148,7 @@ def online_src():
     sql = """WITH onl AS (SELECT id FROM allo_health.locations WHERE deleted_at IS NULL AND name='Online'),
   ap0 AS (SELECT a.id, a.patient_id, TO_CHAR(DATE_TRUNC('week', a.created_at + INTERVAL '5 hours 30 minutes'),'YYYY-MM-DD') wk
     FROM allo_consultations.appointments a JOIN allo_consultations.types typ ON typ.id=a.type_id AND typ.name='Screening Call'
-    JOIN onl ON onl.id=a.location_id WHERE a.created_at>='2026-03-02' AND a.deleted_at IS NULL),
+    JOIN onl ON onl.id=a.location_id WHERE a.created_at>='2025-06-23' AND a.deleted_at IS NULL),
   ap AS (SELECT id, patient_id, wk FROM (SELECT ap0.*, ROW_NUMBER() OVER (PARTITION BY patient_id, wk ORDER BY id) rn FROM ap0) z WHERE rn=1),
   lead_ch AS (SELECT RIGHT(phone_no,10) ph,
       CASE WHEN LOWER(utm_source)='fb' OR COALESCE(fbclid,'')<>'' THEN 'Meta'
@@ -182,7 +182,7 @@ def online_rev_type():
     sql = """WITH onl AS (SELECT id FROM allo_health.locations WHERE deleted_at IS NULL AND name='Online'),
   ap0 AS (SELECT a.id, a.patient_id, TO_CHAR(DATE_TRUNC('week', a.created_at + INTERVAL '5 hours 30 minutes'),'YYYY-MM-DD') wk
     FROM allo_consultations.appointments a JOIN allo_consultations.types typ ON typ.id=a.type_id AND typ.name='Screening Call'
-    JOIN onl ON onl.id=a.location_id WHERE a.created_at>='2026-03-02' AND a.deleted_at IS NULL AND a.status='COMPLETED'),
+    JOIN onl ON onl.id=a.location_id WHERE a.created_at>='2025-06-23' AND a.deleted_at IS NULL AND a.status='COMPLETED'),
   ap AS (SELECT id, patient_id, wk FROM (SELECT ap0.*, ROW_NUMBER() OVER (PARTITION BY patient_id, wk ORDER BY id) rn FROM ap0) z WHERE rn=1)
   SELECT LOWER(TRIM(p.city)) pcity, ap.wk, LOWER(ii."type") itype, SUM(ii.payable_amount) amt
   FROM ap JOIN allo_persons.patient p ON p.id=ap.patient_id
@@ -221,7 +221,7 @@ def online_rev_cp():
       OR d.description ILIKE '%nicotine%' OR d.description ILIKE '%addiction%' OR d.description ILIKE '%adjustment%' OR d.description ILIKE '%ptsd%')),
   ap0 AS (SELECT a.id, a.patient_id, TO_CHAR(DATE_TRUNC('week', a.created_at + INTERVAL '5 hours 30 minutes'),'YYYY-MM-DD') wk
     FROM allo_consultations.appointments a JOIN allo_consultations.types typ ON typ.id=a.type_id AND typ.name='Screening Call'
-    JOIN onl ON onl.id=a.location_id WHERE a.created_at>='2026-03-02' AND a.deleted_at IS NULL AND a.status='COMPLETED'),
+    JOIN onl ON onl.id=a.location_id WHERE a.created_at>='2025-06-23' AND a.deleted_at IS NULL AND a.status='COMPLETED'),
   ap AS (SELECT id, patient_id, wk FROM (SELECT ap0.*, ROW_NUMBER() OVER (PARTITION BY patient_id, wk ORDER BY id) rn FROM ap0) z WHERE rn=1)
   SELECT LOWER(TRIM(p.city)) pcity, ap.wk,
     CASE WHEN COALESCE(et.tag_cat,'oth')='STI' THEN 'STI' WHEN COALESCE(et.tag_cat,'oth')='SH' THEN 'SH'

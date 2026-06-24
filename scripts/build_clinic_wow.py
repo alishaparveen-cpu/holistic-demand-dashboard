@@ -49,7 +49,7 @@ def city_google_web():
          "AND l.created_at>='%s' AND l.created_at<'2026-06-22' AND LENGTH(RIGHT(l.phone_no,10))=10), "
          "bk AS (SELECT DISTINCT RIGHT(p.phone_no,10) ph FROM allo_consultations.appointments a "
          "JOIN allo_persons.patient p ON p.id=a.patient_id JOIN allo_consultations.types t ON t.id=a.type_id AND t.name='Screening Call' "
-         "WHERE a.deleted_at IS NULL AND a.created_at>='2026-02-15') "
+         "WHERE a.deleted_at IS NULL AND a.created_at>='2025-06-23') "
          "SELECT webl.tok, webl.wk, COUNT(DISTINCT webl.ph) leads, "
          "COUNT(DISTINCT CASE WHEN bk.ph IS NOT NULL THEN webl.ph END) booked "
          "FROM webl LEFT JOIN bk ON bk.ph=webl.ph GROUP BY 1,2;"%LO)
@@ -92,7 +92,7 @@ def call_cat(cfg, kind):
 def city_tier():
     sql=("SELECT SPLIT_PART(LOWER(utm_campaign),'_',2) tok, SPLIT_PART(LOWER(utm_campaign),'_',1) tier, COUNT(*) n "
          "FROM allo_persons.lead WHERE (LOWER(utm_campaign) LIKE 't1_%%' OR LOWER(utm_campaign) LIKE 't2_%%') "
-         "AND created_at>='2026-03-01' GROUP BY 1,2;")
+         "AND created_at>='2025-06-23' GROUP BY 1,2;")
     best={}
     for line in run_sql(sql):
         c=line.split('\t')
