@@ -859,13 +859,17 @@ function renderMetricDrill(metricKey){
   const storyCard=`<div style="display:flex;gap:12px;align-items:center;background:#f8fafc;border:1px solid var(--line);border-left:3px solid ${M.color};border-radius:10px;padding:10px 14px;margin-bottom:12px;">
     <div style="flex:1;font-size:12.5px;color:#334155;line-height:1.55;">${story}</div>
     <div style="flex:0 0 130px;">${spark(rev(aggArr),M.color,hi,M.rate?(v=>v+'%'):null,aggNorm)}</div></div>`;
-  // ── plain-language pointers: scan EVERY lever across these groups and call out the red ones by name ──
+  // ── plain-language pointers: scan EVERY lever and call out the red ones BY CLINIC. We scan clinics
+  //    (not city aggregates) so conversion/Lead→Book dips don't get diluted away at the city level —
+  //    a city can look fine while one clinic's conversion has collapsed. In network view we append the city. ──
   const PDIMS=[['avail','🩺','Availability'],['leads','🔎','Leads'],['l2b','⛳','Lead→Book'],['b2d','✅','Book→Done'],['new','🆕','New bookings'],['done','📞','Consults done']];
+  const pEnt = rows.map(r=>({name: byCity ? `${r.clinic} · ${r.city}` : r.clinic, rows:[r]}));
   const ptrs=[];
   PDIMS.forEach(([k,ic,lbl])=>{ const Mk=METRICS[k];
-    const hits=groups.map(g=>{ const arr=computeMetricArr(g.rows,k), v=arr[W]||0, n=avg(dimSlice(arr,W));
+    const hits=pEnt.map(g=>{ const arr=computeMetricArr(g.rows,k), v=arr[W]||0, n=avg(dimSlice(arr,W));
         const d=Mk.rate?(v-n):(n?Math.round((v-n)/n*100):0), sev=Mk.rate?(d<=-5?2:d<=-1?1:0):(d<=-15?2:d<=-3?1:0);
-        return {name:g.name,v,n,d,sev,unit:Mk.rate?'pp':'%',rate:Mk.rate}; }).filter(h=>h.sev>=2).sort((a,b)=>a.d-b.d);
+        // require a real base so a clinic with 1→0 doesn't scream −100%
+        return {name:g.name,v,n,d,sev,unit:Mk.rate?'pp':'%',rate:Mk.rate,base:n}; }).filter(h=>h.sev>=2 && (h.rate? h.base>=8 : h.base>=4)).sort((a,b)=>a.d-b.d);
     if(hits.length){ const w=hits.slice(0,3);
       const fmt=h=>`<b>${h.name}</b> <span style="color:#dc2626;font-weight:700;">${h.d>0?'+':''}${Math.round(h.d)}${h.unit}</span>${h.rate?` (${h.v}% vs ${Math.round(h.n)}%)`:''}`;
       ptrs.push(`${ic} <b>${lbl}</b> dropped at ${w.map(fmt).join(', ')}${hits.length>3?` <span style="color:#94a3b8;">+${hits.length-3} more</span>`:''}`); } });
