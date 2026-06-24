@@ -203,6 +203,51 @@ def online_rev_type():
             cty.setdefault(city, {x: Z() for x in RTYPES}); cty[city][t][i] += v
     return nat, cty
 
+def online_rev_cp():
+    """Online revenue by category × product, national + by patient city."""
+    sql = """WITH onl AS (SELECT id FROM allo_health.locations WHERE deleted_at IS NULL AND name='Online'),
+  enc_tag AS (SELECT e.appointment_id ap_id,
+      CASE WHEN MAX(CASE WHEN et.tag_type='sti' THEN 1 ELSE 0 END)=1 THEN 'STI'
+           WHEN MAX(CASE WHEN et.tag_type IN ('ed_plus_pe_plus','ed_plus','pe_plus','nssd') THEN 1 ELSE 0 END)=1 THEN 'SH'
+           WHEN MAX(CASE WHEN et.tag_type='others' THEN 1 ELSE 0 END)=1 THEN 'OTH_SH' ELSE 'oth' END tag_cat
+    FROM allo_encounters.encounters e
+    LEFT JOIN allo_analytics.encounter_tags et ON et.encounter_id=e.id AND et.tag_category='diagnosis' AND et.deleted_at IS NULL
+    WHERE e.deleted_at IS NULL GROUP BY 1),
+  mh_ap AS (SELECT DISTINCT e.appointment_id ap_id FROM allo_encounters.encounters e
+    JOIN allo_observations.diagnoses d ON d.encounter_id=e.id AND d.deleted_at IS NULL
+    WHERE e.deleted_at IS NULL AND (d.description LIKE '%(6A%' OR d.description LIKE '%(6B%' OR d.description LIKE '%(6C%'
+      OR d.description LIKE '%(6D%' OR d.description LIKE '%(6E%' OR d.description ILIKE '%anxiety%' OR d.description ILIKE '%depress%'
+      OR d.description ILIKE '%adhd%' OR d.description ILIKE '%psychosis%' OR d.description ILIKE '%bipolar%' OR d.description ILIKE '%personality%'
+      OR d.description ILIKE '%nicotine%' OR d.description ILIKE '%addiction%' OR d.description ILIKE '%adjustment%' OR d.description ILIKE '%ptsd%')),
+  ap0 AS (SELECT a.id, a.patient_id, TO_CHAR(DATE_TRUNC('week', a.created_at + INTERVAL '5 hours 30 minutes'),'YYYY-MM-DD') wk
+    FROM allo_consultations.appointments a JOIN allo_consultations.types typ ON typ.id=a.type_id AND typ.name='Screening Call'
+    JOIN onl ON onl.id=a.location_id WHERE a.created_at>='2026-03-02' AND a.deleted_at IS NULL AND a.status='COMPLETED'),
+  ap AS (SELECT id, patient_id, wk FROM (SELECT ap0.*, ROW_NUMBER() OVER (PARTITION BY patient_id, wk ORDER BY id) rn FROM ap0) z WHERE rn=1)
+  SELECT LOWER(TRIM(p.city)) pcity, ap.wk,
+    CASE WHEN COALESCE(et.tag_cat,'oth')='STI' THEN 'STI' WHEN COALESCE(et.tag_cat,'oth')='SH' THEN 'SH'
+         WHEN mh.ap_id IS NOT NULL THEN 'MH' WHEN COALESCE(et.tag_cat,'oth')='OTH_SH' THEN 'SH' ELSE 'Other' END cat,
+    LOWER(ii."type") itype, SUM(ii.payable_amount) amt
+  FROM ap JOIN allo_persons.patient p ON p.id=ap.patient_id
+  JOIN allo_encounters.encounters e ON e.appointment_id=ap.id AND e.deleted_at IS NULL
+  LEFT JOIN enc_tag et ON et.ap_id=ap.id LEFT JOIN mh_ap mh ON mh.ap_id=ap.id
+  JOIN allo_billing.invoices i ON i.encounter_id=e.id AND i.status='paid' AND i.deleted_at IS NULL
+  JOIN allo_billing.invoice_items ii ON ii.invoice_id=i.id AND ii.deleted_at IS NULL
+  GROUP BY 1,2,3,4;"""
+    PR = ["drug", "lab", "consultation", "other"]
+    def blank(): return {c: {p: Z() for p in PR} for c in CATS}
+    nat = blank(); cty = {}
+    for line in run_sql(sql):
+        c = line.split("\t")
+        if len(c) < 5 or c[1] not in idx: continue
+        cat = c[2] if c[2] in CATS else "Other"; prod = c[3] if c[3] in PR else "other"; i = idx[c[1]]
+        try: v = round(int(float(c[4])) / 100.0)
+        except ValueError: continue
+        nat[cat][prod][i] += v
+        city = NORM.get((c[0] or "").strip())
+        if city:
+            cty.setdefault(city, blank()); cty[city][cat][prod][i] += v
+    return nat, cty
+
 if __name__ == "__main__":
     d = json.load(open(OUT))
     print("pulling national channels (leads + booked)…", flush=True)
@@ -223,6 +268,11 @@ if __name__ == "__main__":
     ob["rev_type"] = ort_nat
     for city, rt in ort_cty.items():
         if city in obc: obc[city]["rev_type"] = rt
+    print("pulling online revenue by category×product…", flush=True)
+    ocp_nat, ocp_cty = online_rev_cp()
+    ob["rev_cp"] = ocp_nat
+    for city, cp in ocp_cty.items():
+        if city in obc: obc[city]["rev_cp"] = cp
     d["_meta"]["national_channels"] = nc
     d["_meta"]["online_bottom"] = ob
     d["_meta"]["online_bottom_city"] = obc

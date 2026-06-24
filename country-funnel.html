@@ -464,15 +464,17 @@ function render(){
   const offPu=clinics.reduce((a,x)=>addv(a,Fn.purchN(x.data)||ZA),ZA.slice()),onlPu=(onlBot.total||{}).purchased||ZA;
   O+=row('Done → Purchased %',pctOf(segArr(offPu,onlPu),segArr(offDn,onlDn)),'sub',PCT,{color:GRN});
   O+=ocatRow('Purchased','purchased',N);
-  O+=ocatRow('Revenue','rev',RUP);
-  // Revenue by product/service line-item (drug / lab / consultation / other)
-  {const RT=['drug','lab','consultation','other'],RL={drug:'Medicines (pharmacy)',lab:'Lab / tests',consultation:'Consultation',other:'Other'};
-   const offT=t=>clinics.reduce((a,x)=>addv(a,((x.data.bottom.rev_type||{})[t])||ZA),ZA.slice());
-   const onlT=t=>((onlBot.rev_type||{})[t])||ZA;
-   const rtA={};RT.forEach(t=>rtA[t]=segArr(offT(t),onlT(t)));
-   const rtTot=RT.reduce((a,t)=>addv(a,rtA[t]),ZA.slice());
-   if(rtTot.some(v=>v)){O+=row('Revenue · by product',rtTot,'grp',RUP,{color:GRN,tkey:'rev_prod'});
-     if(EXP['rev_prod']||CATMODE){RT.forEach(t=>{if(rtA[t].some(v=>v)){const cls=CATMODE?'sub catrow':'sub';O+=row('· '+RL[t],rtA[t],cls,RUP,{color:GRN});O+=row('· '+RL[t]+' %',pctOf(rtA[t],rtTot),cls,PCT,{color:VIO});}});}}}
+  // Revenue → category → product (line-item based; product nests inside each category)
+  {const RP=['drug','lab','consultation','other'],RPL={drug:'Medicines (pharmacy)',lab:'Lab / tests',consultation:'Consultation',other:'Other'};
+   const cpSeg=(cat,p)=>segArr(clinics.reduce((a,x)=>addv(a,(((x.data.bottom.rev_cp||{})[cat]||{})[p])||ZA),ZA.slice()),(((onlBot.rev_cp||{})[cat]||{})[p])||ZA);
+   const catTot=cat=>RP.reduce((a,p)=>addv(a,cpSeg(cat,p)),ZA.slice());
+   const revTot=CATS.reduce((a,c)=>addv(a,catTot(c)),ZA.slice());
+   const revHead=revTot.some(v=>v)?revTot:segArr(clinics.reduce((a,x)=>addv(a,x.data.bottom.rev||ZA),ZA.slice()),(onlBot.total||{}).rev||ZA);
+   O+=row('Revenue',revHead,'grp',RUP,{color:GRN,tkey:'oc_rev'});
+   if(EXP['oc_rev']||CATMODE){CATS.forEach(cat=>{const ct=catTot(cat);if(!ct.some(v=>v))return;const cls=CATMODE?'sub catrow':'sub';
+     O+=row('· '+cat,ct,cls,RUP,{color:CATCOL[cat],tkey:'rc_'+cat});O+=row('· '+cat+' % of rev',pctOf(ct,revTot),cls,PCT,{color:CATCOL[cat]});
+     if(EXP['rc_'+cat]||CATMODE){RP.forEach(p=>{const a=cpSeg(cat,p);if(a.some(v=>v)){const sc=CATMODE?'sub2 catrow':'sub2';O+=row('· · '+RPL[p],a,sc,RUP,{color:GRN});O+=row('· · '+RPL[p]+' %',pctOf(a,ct),sc,PCT,{color:VIO});}});}
+   });}}
   $('tOut').innerHTML=O;
   // ⑤ Availability
   QVTABLE='⑤ Availability';let AV=head('Availability');

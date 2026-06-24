@@ -374,12 +374,16 @@ function render(){
   m+=row('· Done → Purchased %',dp,'sub',PCT);
   m+=row('Purchased',bt.purchased,'grp',N,{tkey:'o_purch'});
   if(EXP['o_purch']||CATMODE)m+=catRows(bc,'purchased',bt.purchased);
-  m+=row('Revenue',bt.rev,'grp',RUP,{tkey:'o_rev'});
-  if(EXP['o_rev']||CATMODE)m+=catRows(bc,'rev',bt.rev);
-  {const RT=['drug','lab','consultation','other'],RL={drug:'Medicines (pharmacy)',lab:'Lab / tests',consultation:'Consultation',other:'Other'};
-   const rt=bt.rev_type||{};const rtTot=RT.reduce((a,t)=>addv(a,rt[t]||ZA),ZA.slice());
-   if(rtTot.some(v=>v)){m+=row('Revenue · by product',rtTot,'grp',RUP,{color:GRN,tkey:'o_revprod'});
-     if(EXP['o_revprod']||CATMODE)RT.forEach(t=>{const a=rt[t]||ZA;if(a.some(v=>v)){const cls=CATMODE?'sub catrow':'sub2';m+=row('· '+RL[t],a,cls,RUP,{color:GRN});m+=row('· '+RL[t]+' %',pctOf(a,rtTot),cls,PCT,{color:VIO});}});}}
+  // Revenue → category → product (line-item based; product nests inside each category)
+  {const RP=['drug','lab','consultation','other'],RPL={drug:'Medicines (pharmacy)',lab:'Lab / tests',consultation:'Consultation',other:'Other'};
+   const cp=bt.rev_cp||{};const cpV=(cat,p)=>((cp[cat]||{})[p])||ZA;
+   const catTot=cat=>RP.reduce((a,p)=>addv(a,cpV(cat,p)),ZA.slice());
+   const revTot=CATS.reduce((a,c)=>addv(a,catTot(c)),ZA.slice());
+   m+=row('Revenue',revTot.some(v=>v)?revTot:(bt.rev||ZA),'grp',RUP,{tkey:'o_rev'});
+   if(EXP['o_rev']||CATMODE){CATS.forEach(cat=>{const ct=catTot(cat);if(!ct.some(v=>v))return;const cls=CATMODE?'sub catrow':'sub2';
+     m+=row('· '+cat,ct,cls,RUP,{color:CATCOL[cat],tkey:'rc_'+cat});m+=row('· '+cat+' % of rev',pctOf(ct,revTot),cls,PCT,{color:CATCOL[cat]});
+     if(EXP['rc_'+cat]||CATMODE){RP.forEach(p=>{const a=cpV(cat,p);if(a.some(v=>v)){m+=row('· · '+RPL[p],a,cls,RUP,{color:GRN});m+=row('· · '+RPL[p]+' %',pctOf(a,ct),cls,PCT,{color:VIO});}});}
+   });}}
   $('tD').innerHTML=m;
   QVTABLE=null;
   // Quick view vs table view
