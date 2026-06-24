@@ -178,10 +178,14 @@ function row(label,arr,cls,fmt,o){fmt=fmt||N;o=o||{};const cv=colvals(arr,fmt);
   const _rst=((DBAND!=='all'&&_band!==DBAND&&cls!=='tot'&&cls!=='gband'&&cls!=='hd')?'opacity:.2;':'')+(o.tkey?'cursor:pointer;':'')+((CATMODE&&!(cls||'').includes('catrow'))?'opacity:.4;filter:blur(.8px);':'');
   const _lbg=(CCODE&&_bbg)?` style="background:${_bbg}"`:'';
   return `<tr class="${cls||''}"${clk} style="${_rst}"><td${_lbg} title="${String(label).replace(/"/g,'&quot;')}">${lbl}</td>${t}${_avgC}${_dC}${arr?sparkCell(cv,o.color||BLU,label,fmt):'<td></td>'}</tr>`;}
-function spark(cv,color){const v=(cv||[]).map(x=>x==null||isNaN(x)?0:x);const n=v.length,mx=Math.max(1,...v);
-  const W=120,H=26,pad=2,x=i=>pad+i*(W-2*pad)/((n-1)||1),y=val=>H-pad-(val/mx)*(H-2*pad);
-  let p='';v.forEach((val,i)=>{p+=(i?'L':'M')+x(i).toFixed(1)+','+y(val).toFixed(1)+' ';});
-  return `<svg class="sp" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}"><path d="${p}" fill="none" stroke="${color}" stroke-width="1.6"/><circle cx="${x(n-1).toFixed(1)}" cy="${y(v[n-1]).toFixed(1)}" r="2.6" fill="${color}"/></svg>`;}
+function spark(cv,color){const pts=[];(cv||[]).forEach((x,i)=>{if(x!=null&&!isNaN(x))pts.push([i,x]);});
+  const W=124,H=30;if(pts.length<2)return `<svg class="sp" width="${W}" height="${H}"></svg>`;
+  const n=(cv||[]).length,vals=pts.map(p=>p[1]);let mn=Math.min(...vals),mx=Math.max(...vals);const rng=(mx-mn)||1;mn-=rng*0.14;mx+=rng*0.10;
+  const pad=3,X=i=>pad+i*(W-2*pad)/((n-1)||1),Y=v=>H-pad-((v-mn)/((mx-mn)||1))*(H-2*pad);
+  let line='';pts.forEach(([i,v],k)=>{line+=(k?'L':'M')+X(i).toFixed(1)+','+Y(v).toFixed(1)+' ';});
+  const fx=X(pts[0][0]),lx=X(pts[pts.length-1][0]),lv=pts[pts.length-1][1];
+  const area='M'+fx.toFixed(1)+','+H+' '+line.replace(/^M/,'L')+'L'+lx.toFixed(1)+','+H+' Z';
+  return `<svg class="sp" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}"><path d="${area}" fill="${color}" fill-opacity="0.13"/><path d="${line}" fill="none" stroke="${color}" stroke-width="1.8" stroke-linejoin="round"/><circle cx="${lx.toFixed(1)}" cy="${Y(lv).toFixed(1)}" r="2.7" fill="${color}"/></svg>`;}
 function sparkCell(cv,color,label,fmt){const idx=ZREG.length;ZREG.push({label,cv,fmt,color,labels:cols().map(j=>{const B=vbuckets();return B[j]?B[j].label:'';})});return `<td class="sparkcell" onclick="event.stopPropagation();zoomReg(${idx})">${spark(cv,color)}</td>`;}
 function zoomReg(i){openZoom(ZREG[i]);}
 function zoomQV(i){openZoom(QVZ[i]);}
