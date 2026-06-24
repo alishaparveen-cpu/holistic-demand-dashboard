@@ -16,6 +16,15 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--ink);margin
 h1{font-family:'Fraunces',serif;font-size:29px;font-weight:600;margin:8px 0 2px}
 .sub{color:var(--muted);font-size:13px;margin-bottom:16px;max-width:860px}
 .csel{padding:7px 12px;border:1px solid var(--line);border-radius:9px;font-size:13px;font-weight:600;background:#fff;cursor:pointer;font-family:Inter;color:var(--ink);min-width:210px}
+.csearch-wrap{position:relative;min-width:260px}
+.csearch{width:100%;padding:8px 12px;border:1px solid var(--line);border-radius:9px;font-size:13px;font-weight:600;background:#fff;font-family:Inter;color:var(--ink)}
+.csearch:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(31,111,92,.12)}
+.clist{position:absolute;top:100%;left:0;right:0;margin-top:5px;background:#fff;border:1px solid var(--line);border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,.14);max-height:340px;overflow-y:auto;z-index:40;display:none}
+.clist.on{display:block}
+.clist-item{padding:7px 12px;font-size:12.5px;cursor:pointer;white-space:nowrap;border-bottom:1px solid var(--line2)}
+.clist-item:last-child{border-bottom:none}
+.clist-item:hover,.clist-item.hl{background:var(--inset);color:var(--accent);font-weight:600}
+.clist-empty{padding:9px 12px;font-size:12px;color:var(--muted)}
 .shead{font-family:'Fraunces',serif;font-size:18px;font-weight:600;margin:26px 0 9px}
 .fmwrap{background:var(--sheet);border:1px solid var(--line);border-radius:var(--r);overflow-x:auto}
 table.fm{border-collapse:collapse;width:100%;font-size:12.5px;min-width:760px}
@@ -72,7 +81,10 @@ tr[onclick]:hover td:first-child{color:var(--accent)}
 <div class="wrap">
   <div class="top">
     <a class="back" href="index.html">← Dashboard</a>
-    <select class="csel" id="csel" onchange="sel(this.value)"></select>
+    <div class="csearch-wrap">
+      <input id="csearch" class="csearch" placeholder="Search clinic…" autocomplete="off" oninput="filterClinics()" onfocus="filterClinics(true)" onkeydown="if(event.key==='Enter')pickFirst();if(event.key==='Escape'){this.blur();$('clist').classList.remove('on');}">
+      <div id="clist" class="clist"></div>
+    </div>
   </div>
   <h1 id="h1">Clinic WoW</h1>
   <div class="sub">Week-over-week per clinic — availability, leads, lead→book, bookings by source and outcomes. Cells are shaded green (high) → red (low) within each row; click any trend sparkline to zoom, or use Quick view for the chart grid.</div>
@@ -339,10 +351,20 @@ function renderQV(){
   });
   $('qvWrap').innerHTML=html;
 }
-function sel(k){CUR=k;$('csel').value=k;render();}
+function sel(k){CUR=k;if($('csearch'))$('csearch').value=(D._meta.display[k]||k);render();}
+function clinicMatches(){const q=($('csearch').value||'').toLowerCase().trim();
+  return D._meta.clinics.filter(k=>(D._meta.display[k]||k).toLowerCase().includes(q));}
+function filterClinics(showAll){const el=$('clist');if(!D)return;
+  const q=($('csearch').value||'').toLowerCase().trim();
+  const items=(showAll&&!q)?D._meta.clinics:clinicMatches();
+  el.innerHTML=items.length?items.map(k=>`<div class="clist-item" onmousedown="pickClinic('${k}')">${D._meta.display[k]||k}</div>`).join('')
+    :'<div class="clist-empty">No clinic matches “'+($('csearch').value||'')+'”</div>';
+  el.classList.add('on');}
+function pickClinic(k){sel(k);$('csearch').value=D._meta.display[k]||k;$('clist').classList.remove('on');}
+function pickFirst(){const m=clinicMatches();if(m.length)pickClinic(m[0]);}
+document.addEventListener('click',e=>{if($('clist')&&!e.target.closest('.csearch-wrap'))$('clist').classList.remove('on');});
 fetch('data_source_recon.json?v='+Date.now()).then(r=>{if(!r.ok)throw new Error('HTTP '+r.status);return r.json();}).then(j=>{
-  D=j;$('csel').innerHTML=D._meta.clinics.map(k=>`<option value="${k}">${D._meta.display[k]}</option>`).join('');
-  CUR=D._meta.clinics[0];$('csel').value=CUR;
+  D=j;CUR=D._meta.clinics[0];$('csearch').value=D._meta.display[CUR]||CUR;
   try{render();}catch(e){$('h1').textContent='Render error: '+e.message;console.error(e);}
 }).catch(e=>{$('h1').textContent='Could not load data_source_recon.json ('+e.message+')';console.error(e);});
 </script>
