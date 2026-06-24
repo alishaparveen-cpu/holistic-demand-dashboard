@@ -176,6 +176,33 @@ def online_src():
             cty[city][ch][i] += v
     return {"national": nat, "city": cty}
 
+# ---- online revenue by line-item type (national + by patient city) ----
+RTYPES = ["drug", "lab", "consultation", "other"]
+def online_rev_type():
+    sql = """WITH onl AS (SELECT id FROM allo_health.locations WHERE deleted_at IS NULL AND name='Online'),
+  ap0 AS (SELECT a.id, a.patient_id, TO_CHAR(DATE_TRUNC('week', a.created_at + INTERVAL '5 hours 30 minutes'),'YYYY-MM-DD') wk
+    FROM allo_consultations.appointments a JOIN allo_consultations.types typ ON typ.id=a.type_id AND typ.name='Screening Call'
+    JOIN onl ON onl.id=a.location_id WHERE a.created_at>='2026-03-02' AND a.deleted_at IS NULL AND a.status='COMPLETED'),
+  ap AS (SELECT id, patient_id, wk FROM (SELECT ap0.*, ROW_NUMBER() OVER (PARTITION BY patient_id, wk ORDER BY id) rn FROM ap0) z WHERE rn=1)
+  SELECT LOWER(TRIM(p.city)) pcity, ap.wk, LOWER(ii."type") itype, SUM(ii.payable_amount) amt
+  FROM ap JOIN allo_persons.patient p ON p.id=ap.patient_id
+  JOIN allo_encounters.encounters e ON e.appointment_id=ap.id AND e.deleted_at IS NULL
+  JOIN allo_billing.invoices i ON i.encounter_id=e.id AND i.status='paid' AND i.deleted_at IS NULL
+  JOIN allo_billing.invoice_items ii ON ii.invoice_id=i.id AND ii.deleted_at IS NULL
+  GROUP BY 1,2,3;"""
+    nat = {t: Z() for t in RTYPES}; cty = {}
+    for line in run_sql(sql):
+        c = line.split("\t")
+        if len(c) < 4 or c[1] not in idx: continue
+        t = c[2] if c[2] in RTYPES else "other"; i = idx[c[1]]
+        try: v = round(int(float(c[3])) / 100.0)
+        except ValueError: continue
+        nat[t][i] += v
+        city = NORM.get((c[0] or "").strip())
+        if city:
+            cty.setdefault(city, {x: Z() for x in RTYPES}); cty[city][t][i] += v
+    return nat, cty
+
 if __name__ == "__main__":
     d = json.load(open(OUT))
     print("pulling national channels (leads + booked)…", flush=True)
@@ -190,6 +217,12 @@ if __name__ == "__main__":
     print("pulling online bookings by source…", flush=True)
     osrc = online_src()
     print("  online src (national):", {k: sum(v) for k, v in osrc["national"].items()}, flush=True)
+    print("pulling online revenue by type…", flush=True)
+    ort_nat, ort_cty = online_rev_type()
+    print("  online rev_type:", {k: sum(v) for k, v in ort_nat.items()}, flush=True)
+    ob["rev_type"] = ort_nat
+    for city, rt in ort_cty.items():
+        if city in obc: obc[city]["rev_type"] = rt
     d["_meta"]["national_channels"] = nc
     d["_meta"]["online_bottom"] = ob
     d["_meta"]["online_bottom_city"] = obc
