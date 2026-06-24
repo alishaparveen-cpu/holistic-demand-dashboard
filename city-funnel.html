@@ -94,6 +94,7 @@ tr[onclick]:hover td:first-child{color:var(--accent)}
   <div id="tables">
   <div class="shead">① Leads <span class="lblmuted">(GMB + Google + Practo — expand a row to see each clinic)</span></div>
   <div class="fmwrap"><table class="fm" id="tLeads"></table></div>
+  <div class="note" id="leadNote"></div>
 
   <div class="shead">② Lead → Book % <span class="lblmuted">(Σ booked ÷ Σ leads across the city — expand for each clinic's rate)</span></div>
   <div class="fmwrap"><table class="fm" id="tLB"></table></div>
@@ -251,16 +252,26 @@ function render(){
     }
     return h;
   }
+  // Google paid CALL is one city-level line (identical across clinics) → count once (max), not summed; web is summed
+  const gmbSum=clinics.reduce((a,x)=>addv(a,F.gmbLeads(x.data)),ZA.slice());
+  const practoSum=clinics.reduce((a,x)=>addv(a,F.practoLeads(x.data)),ZA.slice());
+  const gpCall=clinics.reduce((m,x)=>{const t=x.data.lead_book.gpaid_call;return t?(t.total||ZA).map((v,i)=>Math.max(m[i]||0,v||0)):m;},ZA.slice());
+  const gpWeb=clinics.reduce((a,x)=>{const w=x.data.lead_book.gpaid_web;return addv(a,w?w.leads:ZA);},ZA.slice());
+  const googCity=addv(gpCall,gpWeb);
+  const totLeadsCity=addv(addv(gmbSum,googCity),practoSum);
   QVTABLE='① Leads';let L=head('Leads');
-  L+=mrow('GMB + Google + Practo — total leads',F.leadsTotal,'tot',N,{color:BLU});
+  L+=row('GMB + Google + Practo — total leads',totLeadsCity,'tot',N,{color:BLU});
   L+=mrow('GMB leads',F.gmbLeads,'grp',N,{color:GRN});
-  L+=mrow('Google leads',F.googLeads,'grp',N,{color:GRN});
+  L+=row('Google leads · city-level',googCity,'grp',N,{color:GRN});
   L+=mrow('Practo leads',F.practoLeads,'grp',N,{color:GRN});
   $('tLeads').innerHTML=L;
+  if($('leadNote'))$('leadNote').innerHTML='<b>Google leads are city-level</b> — the Google paid-call line is a single number shared across the whole city, so it can’t be split per clinic (no breakdown, and it’s counted once — not summed). Google web leads are clinic-level only in single-clinic cities. <b>GMB &amp; Practo are clinic-specific</b> and do break down.';
   QVTABLE='② Lead → Book %';let LB=head('Conversion');
-  LB+=prow('Overall lead → book %',Fn.allBkN,F.leadsTotal,{cls:'tot',color:BLU});
+  const allBkSum=clinics.reduce((a,x)=>addv(a,Fn.allBkN(x.data)),ZA.slice());
+  const googBkSum=clinics.reduce((a,x)=>addv(a,Fn.googBkN(x.data)),ZA.slice());
+  LB+=row('Overall lead → book %',pctOf(allBkSum,totLeadsCity),'tot',PCT,{color:BLU});
   LB+=prow('GMB lead → book %',Fn.gmbBkN,F.gmbLeads,{color:GRN});
-  LB+=prow('Google lead → book %',Fn.googBkN,F.googLeads,{color:GRN});
+  LB+=row('Google lead → book % · city-level',pctOf(googBkSum,googCity),'grp',PCT,{color:GRN});
   LB+=prow('Practo lead → book %',Fn.practoBkN,F.practoLeads,{color:VIO});
   $('tLB').innerHTML=LB;
   QVTABLE='③ Bookings by source';let S=head('Source · bookings');
