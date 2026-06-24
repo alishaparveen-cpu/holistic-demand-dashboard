@@ -101,6 +101,8 @@ tr[onclick]:hover td:first-child{color:var(--accent)}
     <span class="fl" style="margin-left:14px">Maturity</span>
     <button class="fbtn" data-f="mat" data-v="<3mo" onclick="togF(this)">&lt;3mo</button><button class="fbtn" data-f="mat" data-v="3-6mo" onclick="togF(this)">3–6mo</button><button class="fbtn" data-f="mat" data-v="6-12mo" onclick="togF(this)">6–12mo</button><button class="fbtn" data-f="mat" data-v=">1yr" onclick="togF(this)">&gt;1yr</button>
     <button class="fbtn fclr" onclick="clearF()" style="margin-left:10px">✕ clear</button>
+    <span class="fl" style="margin-left:14px">Consult</span>
+    <button class="sbtn fbtn on" data-v="all" onclick="setSeg('all')">All</button><button class="sbtn fbtn" data-v="offline" onclick="setSeg('offline')">Offline</button><button class="sbtn fbtn" data-v="online" onclick="setSeg('online')">Online</button>
     <span id="filtCount" class="fl" style="margin-left:auto"></span>
   </div>
   <div class="wknav">Showing <b id="wkN">6</b> weeks <button id="wkMinus" onclick="adjWeeks(-2)" title="fewer weeks">−</button><button id="wkPlus" onclick="adjWeeks(2)" title="more weeks">＋</button> &nbsp;·&nbsp; latest <b id="wkEndLab">—</b> <button id="wkOlder" onclick="shiftEnd(1)" title="shift older">◀</button><button id="wkNewer" onclick="shiftEnd(-1)" title="shift newer">▶</button><select id="cmpSel" class="cmpsel" onchange="setCmp(this.value)" title="what the Δ column compares against"><option value="avg">Δ vs avg</option><option value="peak">Δ vs peak wk</option><option value="first">Δ vs first wk</option></select><button id="catBtn" class="catbtn" onclick="toggleCat()">🏷 Category</button><button id="qvBtn" class="qvbtn" onclick="toggleQV()">📈 Quick view</button></div>
@@ -216,6 +218,8 @@ function webDetail(label,x,tkey,cityFlag){
 }
 
 let TIERS=new Set(), MATS=new Set();
+let SEG='all';
+function setSeg(v){SEG=v;document.querySelectorAll('.sbtn').forEach(b=>b.classList.toggle('on',b.dataset.v===v));render();}
 function matBucket(age){return age<3?'<3mo':(age<6?'3-6mo':(age<12?'6-12mo':'>1yr'));}
 function passes(slug){const city=(D._meta.display[slug]||'').split(' · ').slice(-1)[0];
   const tier=(D._meta.city_tier||{})[city]||'';
@@ -277,13 +281,17 @@ function render(){
     if(EXP[tk]){const bn={},bd={};clinics.forEach(x=>{bn[x.city]=addv(bn[x.city]||ZA.slice(),numFn(x.data)||ZA);bd[x.city]=addv(bd[x.city]||ZA.slice(),denFn(x.data)||ZA);});
       Object.keys(bd).map(c=>({c,n:bn[c],d:bd[c]})).sort((a,b)=>(b.d[WKEND]||0)-(a.d[WKEND]||0)).forEach(p=>{if(p.d.some(v=>v))h+=row('· '+p.c,pctOf(p.n,p.d),'sub',PCT,{color:o.color||VIO});});}
     return h;}
-  const catO=(cat,field)=>clinics.reduce((a,x)=>{const bc=(x.data.bottom.by_cat||{})[cat];return addv(a,bc?(bc[field]||ZA):ZA);},ZA.slice());
-  function ocatRow(lbl,field,fmt){const tot=clinics.reduce((a,x)=>addv(a,x.data.bottom[field]||ZA),ZA.slice());const tk='oc_'+field;
+  const onlBot=D._meta.online_bottom||{total:{},by_cat:{}};
+  const segArr=(off,onl)=>SEG==='online'?(onl||ZA):SEG==='offline'?off:addv(off,onl||ZA);
+  const catO=(cat,field)=>{const off=clinics.reduce((a,x)=>{const bc=(x.data.bottom.by_cat||{})[cat];return addv(a,bc?(bc[field]||ZA):ZA);},ZA.slice());const onl=((onlBot.by_cat||{})[cat]||{})[field]||ZA;return segArr(off,onl);};
+  function ocatRow(lbl,field,fmt){const off=clinics.reduce((a,x)=>addv(a,x.data.bottom[field]||ZA),ZA.slice());const tot=segArr(off,(onlBot.total||{})[field]||ZA);const tk='oc_'+field;
     let h=row(lbl,tot,'grp',fmt,{color:GRN,tkey:tk});
     if(EXP[tk]||CATMODE){const cls=CATMODE?'sub catrow':'sub';CATS.forEach(ct=>{const a=catO(ct,field);if(a.some(v=>v)){h+=row('· '+ct,a,cls,fmt,{color:CATCOL[ct]});h+=row('· '+ct+' % of '+field,pctOf(a,tot),cls,PCT,{color:CATCOL[ct]});}});}return h;}
   // ① Leads
   QVTABLE='① Leads';let L=head('Leads');
-  L+=row('GMB + Google + Practo — total leads',totLeads,'tot',N,{color:BLU});
+  const NC=D._meta.national_channels||{};
+  const ncSum=['WhatsApp','Meta','Organic','Marketing','Other'].reduce((a,k)=>addv(a,NC[k]||ZA),ZA.slice());
+  L+=row('All leads — clinic + national digital',addv(totLeads,ncSum),'tot',N,{color:BLU});
   const gmbTot=clinics.reduce((a,x)=>addv(a,F.gmbLeads(x.data)||ZA),ZA.slice());
   L+=row('Google — GMB + paid (total)',addv(gmbTot,googCountry),'grp',N,{color:GRN,tkey:'gg_leads'});
   if(EXP['gg_leads']){
@@ -302,6 +310,10 @@ function render(){
       L+=row('· paid calls',gpCall,'sub2',N,{color:GRN});L+=row('· paid web',cityWeb,'sub2',N,{color:GRN});}
   }
   L+=mrow('Practo leads',F.practoLeads,'grp',N,{color:GRN});
+  L+=row('WhatsApp leads · national',NC.WhatsApp||ZA,'grp',N,{color:GRN});
+  L+=row('Meta · FB/IG leads · national',NC.Meta||ZA,'grp',N,{color:GRN});
+  L+=row('Organic leads · national',NC.Organic||ZA,'grp',N,{color:GRN});
+  L+=row('Other digital · national',addv(NC.Other||ZA,NC.Marketing||ZA),'grp',N,{color:GRN});
   $('tLeads').innerHTML=L;
   // ② Lead → Book %
   QVTABLE='② Lead → Book %';let LB=head('Conversion');
@@ -351,8 +363,13 @@ function render(){
   $('tSrc').innerHTML=S;
   // ④ Outcomes
   QVTABLE='④ Outcomes';let O=head('Outcome');
-  O+=mrow('Bookings (Screening Calls)',F.booked,'grp',N,{color:GRN});
-  O+=prow('Book → Done %',Fn.doneN,Fn.bookedD,{cls:'sub',color:GRN});
+  const offBk=clinics.reduce((a,x)=>addv(a,Fn.bookedD(x.data)||ZA),ZA.slice());
+  const offDn=clinics.reduce((a,x)=>addv(a,Fn.doneN(x.data)||ZA),ZA.slice());
+  const onlBk=(onlBot.total||{}).booked||ZA, onlDn=(onlBot.total||{}).done||ZA;
+  if(SEG==='online'){O+=row('Bookings (Screening Calls) · online telehealth',onlBk,'grp',N,{color:GRN});}
+  else{O+=mrow('Bookings (Screening Calls)'+(SEG==='all'?' · offline clinics':''),F.booked,'grp',N,{color:GRN});
+    if(SEG==='all')O+=row('+ online (telehealth)',onlBk,'sub',N,{color:GRN});}
+  O+=row('Book → Done %',pctOf(segArr(offDn,onlDn),segArr(offBk,onlBk)),'sub',PCT,{color:GRN});
   O+=ocatRow('Done (completed consults)','done',N);
   O+=prow('Done → Purchased %',Fn.purchN,Fn.doneN,{cls:'sub',color:GRN});
   O+=ocatRow('Purchased','purchased',N);
