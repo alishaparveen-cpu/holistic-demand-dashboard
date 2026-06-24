@@ -105,7 +105,7 @@ tr[onclick]:hover td:first-child{color:var(--accent)}
     <button class="sbtn fbtn on" data-v="all" onclick="setSeg('all')">All</button><button class="sbtn fbtn" data-v="offline" onclick="setSeg('offline')">Offline</button><button class="sbtn fbtn" data-v="online" onclick="setSeg('online')">Online</button>
     <span id="filtCount" class="fl" style="margin-left:auto"></span>
   </div>
-  <div class="wknav">Showing <b id="wkN">6</b> weeks <button id="wkMinus" onclick="adjWeeks(-2)" title="fewer weeks">−</button><button id="wkPlus" onclick="adjWeeks(2)" title="more weeks">＋</button> &nbsp;·&nbsp; latest <b id="wkEndLab">—</b> <button id="wkOlder" onclick="shiftEnd(1)" title="shift older">◀</button><button id="wkNewer" onclick="shiftEnd(-1)" title="shift newer">▶</button><select id="cmpSel" class="cmpsel" onchange="setCmp(this.value)" title="what the Δ column compares against"><option value="avg">Δ vs avg</option><option value="peak">Δ vs peak wk</option><option value="first">Δ vs first wk</option></select><select id="bandSel" class="cmpsel" onchange="setBand(this.value)" title="show only rows that grew / dropped"><option value="all">all Δ</option><option value="up2">↑ grew &gt;5%</option><option value="up1">↑ grew 0–5%</option><option value="dn1">↓ dropped 0–5%</option><option value="dn2">↓ dropped &gt;5%</option></select><button id="ccBtn" class="catbtn" onclick="toggleCC()" title="colour-code rows by growth / drop">🎨 Colour</button><button id="catBtn" class="catbtn" onclick="toggleCat()">🏷 Category</button><button id="qvBtn" class="qvbtn" onclick="toggleQV()">📈 Quick view</button></div>
+  <div class="wknav">Showing <b id="wkN">6</b> weeks <button id="wkMinus" onclick="adjWeeks(-2)" title="fewer weeks">−</button><button id="wkPlus" onclick="adjWeeks(2)" title="more weeks">＋</button> &nbsp;·&nbsp; latest <b id="wkEndLab">—</b> <button id="wkOlder" onclick="shiftEnd(1)" title="shift older">◀</button><button id="wkNewer" onclick="shiftEnd(-1)" title="shift newer">▶</button><select id="granSel" class="cmpsel" onchange="setGran(this.value)" title="aggregation"><option value="week">weekly</option><option value="biweek">biweekly</option><option value="month">monthly</option></select><select id="cmpSel" class="cmpsel" onchange="setCmp(this.value)" title="what the Δ column compares against"><option value="avg">Δ vs avg</option><option value="peak">Δ vs peak wk</option><option value="first">Δ vs first wk</option></select><select id="bandSel" class="cmpsel" onchange="setBand(this.value)" title="show only rows that grew / dropped"><option value="all">all Δ</option><option value="up2">↑ grew &gt;5%</option><option value="up1">↑ grew 0–5%</option><option value="dn1">↓ dropped 0–5%</option><option value="dn2">↓ dropped &gt;5%</option></select><button id="ccBtn" class="catbtn" onclick="toggleCC()" title="colour-code rows by growth / drop">🎨 Colour</button><button id="catBtn" class="catbtn" onclick="toggleCat()">🏷 Category</button><button id="qvBtn" class="qvbtn" onclick="toggleQV()">📈 Quick view</button></div>
 
   <div id="qvWrap" style="display:none"></div>
   <div id="tables">
@@ -142,25 +142,33 @@ const PCT=v=>v==null||isNaN(v)?'—':v.toFixed(0)+'%';
 const sum=(a,idx)=>idx.reduce((s,i)=>s+(a[i]||0),0);
 const GRN='#2E7D5B',RED='#B23A2E',BLU='#3E6F8E',VIO='#7B5EA7';
 const CATS=['STI','SH','MH','Other'],CATCOL={STI:'#B23A2E',SH:'#3E6F8E',MH:'#7B5EA7',Other:'#8A8A80'};
-function cols(){const c=[];for(let j=WKEND+NSHOW-1;j>=WKEND;j--)c.push(j);return c;} // skip wk0 partial, oldest→newest, WKEND=latest shown
+let GRAN='week';function setGran(v){GRAN=v;render();}
+function mlab(k){const d=new Date(k+'-01T00:00:00');return d.toLocaleString('en',{month:'short'})+" '"+k.slice(2,4);}
+function blab(idxs){const w=D._meta.weeks,a=w[idxs[idxs.length-1]],b=w[idxs[0]];const da=new Date(a+'T00:00:00'),db=new Date(b+'T00:00:00');db.setDate(db.getDate()+6);const m=x=>x.toLocaleString('en',{month:'short'});return da.getDate()+' '+m(da)+'–'+db.getDate()+' '+m(db);}
+function vbuckets(){const w=(D&&D._meta&&D._meta.weeks)||[];if(GRAN==='month'){const g=[],s={};w.forEach((wk,i)=>{const k=wk.slice(0,7);if(!(k in s)){s[k]=g.length;g.push({key:k,idxs:[]});}g[s[k]].idxs.push(i);});return g.map(x=>({label:mlab(x.key),idxs:x.idxs}));}if(GRAN==='biweek'){const o=[];for(let i=0;i<w.length;i+=2){const idxs=[i];if(i+1<w.length)idxs.push(i+1);o.push({label:blab(idxs),idxs});}return o;}return w.map((wk,i)=>({label:wlab(wk),idxs:[i]}));}
+function NV(){return vbuckets().length;}
+function bval(arr,b,avg){if(!arr||!b)return null;const vs=b.idxs.map(k=>arr[k]).filter(v=>v!=null&&!isNaN(v));if(!vs.length)return null;const s=vs.reduce((a,x)=>a+x,0);return avg?s/vs.length:s;}
+function isPctFmt(f){return f===PCT||(typeof CTRF!=='undefined'&&f===CTRF);}
+function colvals(arr,fmt){const B=vbuckets(),c=cols(),isP=isPctFmt(fmt);return c.map(j=>{if(arr&&arr.length===B.length)return arr[j];return bval(arr,B[j],isP);});}
+function cols(){const nv=NV();if(GRAN!=='week'){const c=[];for(let j=nv-1;j>=0;j--)c.push(j);return c;}const c=[];for(let j=WKEND+NSHOW-1;j>=WKEND;j--)if(j<nv&&j>=0)c.push(j);return c;}
 function wlab(w){const d=new Date(w+'T00:00:00'),e=new Date(d);e.setDate(e.getDate()+6);const m=x=>x.toLocaleString('en',{month:'short'});
   return d.getMonth()===e.getMonth()?`${d.getDate()}–${e.getDate()} ${m(e)}`:`${d.getDate()} ${m(d)}–${e.getDate()} ${m(e)}`;}
 function hexA(hex,a){const n=parseInt(hex.slice(1),16);return `rgba(${n>>16&255},${n>>8&255},${n&255},${a.toFixed(3)})`;}
 function heatBg(v,mn,mx,inv){if(v==null||isNaN(v)||!isFinite(mn)||mn===mx)return'';let t=(v-mn)/((mx-mn)||1);if(inv)t=1-t;
   if(t>=0.6)return hexA(GRN,0.06+0.20*((t-0.6)/0.4));
   if(t<=0.4)return hexA(RED,0.06+0.20*((0.4-t)/0.4));return'';}
-function head(lbl){const w=D._meta.weeks,c=cols();return '<tr><th>'+lbl+'</th>'+c.map((j,p)=>`<th class="${p===c.length-1?'lastcol':''}">${wlab(w[j])}</th>`).join('')+'<th class="avgcol">'+(CMPB==='peak'?'peak':CMPB==='first'?'first':'avg')+'</th><th class="dcol">Δ now</th><th>trend</th>'+'</tr>';}
-function row(label,arr,cls,fmt,o){fmt=fmt||N;o=o||{};const c=cols();
+function head(lbl){const B=vbuckets(),c=cols();return '<tr><th>'+lbl+'</th>'+c.map((j,p)=>`<th class="${p===c.length-1?'lastcol':''}">${B[j]?B[j].label:''}</th>`).join('')+'<th class="avgcol">'+(CMPB==='peak'?'peak':CMPB==='first'?'first':'avg')+'</th><th class="dcol">Δ now</th><th>trend</th>'+'</tr>';}
+function row(label,arr,cls,fmt,o){fmt=fmt||N;o=o||{};const cv=colvals(arr,fmt);
   if(QVTABLE&&arr&&cls!=='gband')QVC.push({t:QVTABLE,label:String(label).replace(/^· /,''),arr,color:o.color||BLU,fmt});
-  let mn=Infinity,mx=-Infinity;c.forEach(j=>{const v=arr?arr[j]:null;if(v!=null&&!isNaN(v)){mn=Math.min(mn,v);mx=Math.max(mx,v);}});
-  let t='';c.forEach((j,p)=>{const v=arr?arr[j]:null;const last=p===c.length-1;
+  let mn=Infinity,mx=-Infinity;cv.forEach(v=>{if(v!=null&&!isNaN(v)){mn=Math.min(mn,v);mx=Math.max(mx,v);}});
+  let t='';cv.forEach((v,p)=>{const last=p===cv.length-1;
     const bg=(o.noheat||cls==='gband')?'':heatBg(v,mn,mx,o.invert);const st=bg?`style="background:${bg}"`:'';
     t+=`<td class="${last?'lastcol':''}" ${st}>${(v==null||isNaN(v))?'—':fmt(v)}</td>`;});
   const lbl=(o.tkey?`<span class="chev">${EXP[o.tkey]?'▾':'▸'}</span> `:'')+label;
   const clk=o.tkey?` onclick="toggle('${o.tkey}')"`:'';
-  const _vv=c.map(j=>arr?arr[j]:null).filter(v=>v!=null&&!isNaN(v));
+  const _vv=cv.filter(v=>v!=null&&!isNaN(v));
   const _base=!_vv.length?null:(CMPB==='peak'?Math.max(..._vv):CMPB==='first'?_vv[0]:_vv.reduce((a,b)=>a+b,0)/_vv.length);
-  const _lst=arr?arr[c[c.length-1]]:null;
+  const _lst=cv.length?cv[cv.length-1]:null;
   const _dp=(_base&&_lst!=null&&!isNaN(_lst))?Math.round((_lst-_base)/Math.abs(_base)*100):null;
   const _up=o.invert?(_dp<0):(_dp>0);
   const _avgC=`<td class="avgc">${_base!=null?fmt(_base):'\u2014'}</td>`;
@@ -169,33 +177,34 @@ function row(label,arr,cls,fmt,o){fmt=fmt||N;o=o||{};const c=cols();
   const _bbg={up2:'rgba(31,111,92,.30)',up1:'rgba(31,111,92,.13)',dn1:'rgba(178,58,46,.13)',dn2:'rgba(178,58,46,.30)',flat:''}[_band];
   const _rst=((DBAND!=='all'&&_band!==DBAND&&cls!=='tot'&&cls!=='gband'&&cls!=='hd')?'opacity:.2;':'')+(o.tkey?'cursor:pointer;':'');
   const _lbg=(CCODE&&_bbg)?` style="background:${_bbg}"`:'';
-  return `<tr class="${cls||''}"${clk} style="${_rst}"><td${_lbg}>${lbl}</td>${t}${_avgC}${_dC}${arr?sparkCell(arr,o.color||BLU,label,fmt):'<td></td>'}</tr>`;}
-function spark(arr,color){const c=cols();const v=c.map(j=>{const x=arr?arr[j]:null;return x==null||isNaN(x)?0:x;});const n=v.length,mx=Math.max(1,...v);
+  return `<tr class="${cls||''}"${clk} style="${_rst}"><td${_lbg}>${lbl}</td>${t}${_avgC}${_dC}${arr?sparkCell(cv,o.color||BLU,label,fmt):'<td></td>'}</tr>`;}
+function spark(cv,color){const v=(cv||[]).map(x=>x==null||isNaN(x)?0:x);const n=v.length,mx=Math.max(1,...v);
   const W=120,H=26,pad=2,x=i=>pad+i*(W-2*pad)/((n-1)||1),y=val=>H-pad-(val/mx)*(H-2*pad);
   let p='';v.forEach((val,i)=>{p+=(i?'L':'M')+x(i).toFixed(1)+','+y(val).toFixed(1)+' ';});
   return `<svg class="sp" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}"><path d="${p}" fill="none" stroke="${color}" stroke-width="1.6"/><circle cx="${x(n-1).toFixed(1)}" cy="${y(v[n-1]).toFixed(1)}" r="2.6" fill="${color}"/></svg>`;}
-function sparkCell(arr,color,label,fmt){const idx=ZREG.length;ZREG.push({label,arr,fmt,color});return `<td class="sparkcell" onclick="event.stopPropagation();zoomReg(${idx})">${spark(arr,color)}</td>`;}
+function sparkCell(cv,color,label,fmt){const idx=ZREG.length;ZREG.push({label,cv,fmt,color,labels:cols().map(j=>{const B=vbuckets();return B[j]?B[j].label:'';})});return `<td class="sparkcell" onclick="event.stopPropagation();zoomReg(${idx})">${spark(cv,color)}</td>`;}
 function zoomReg(i){openZoom(ZREG[i]);}
 function zoomQV(i){openZoom(QVZ[i]);}
 function openZoom(z){if(!z)return;$('mTitle').textContent=(D._meta.display[CUR]||CUR)+' · '+z.label;
-  const W=700,H=300,pad=40,padT=26,c=cols(),wks=c.map(j=>D._meta.weeks[j]);
-  const v=c.map(j=>{const x=z.arr[j];return x==null||isNaN(x)?null:x;}),n=v.length;
+  const W=700,H=300,pad=40,padT=26;
+  const labels=z.labels||cols().map(j=>{const B=vbuckets();return B[j]?B[j].label:'';});
+  const v=(z.cv||colvals(z.arr,z.fmt)).map(x=>x==null||isNaN(x)?null:x),n=v.length;
   const mx=Math.max(1,...v.map(x=>x||0)),x=i=>pad+i*(W-2*pad)/((n-1)||1),y=val=>H-pad-((val||0)/mx)*(H-pad-padT);
   let p='',pts='',lbls='',started=false;
   v.forEach((val,i)=>{if(val==null){started=false;return;}p+=(started?'L':'M')+x(i).toFixed(1)+','+y(val).toFixed(1)+' ';started=true;
-    pts+=`<circle cx="${x(i).toFixed(1)}" cy="${y(val).toFixed(1)}" r="3.2" fill="${z.color}"><title>${wlab(wks[i])}: ${z.fmt(val)}</title></circle>`;
+    pts+=`<circle cx="${x(i).toFixed(1)}" cy="${y(val).toFixed(1)}" r="3.2" fill="${z.color}"><title>${labels[i]}: ${z.fmt(val)}</title></circle>`;
     lbls+=`<text x="${x(i).toFixed(1)}" y="${(y(val)-9).toFixed(1)}" font-size="12" fill="${z.color}" text-anchor="middle" font-weight="700">${z.fmt(val)}</text>`;});
   let gl='';[0,.5,1].forEach(f=>{const yy=H-pad-(f*(H-pad-padT));gl+=`<line x1="${pad}" y1="${yy}" x2="${W-pad}" y2="${yy}" stroke="#EEEBE2"/><text x="4" y="${yy+3}" font-size="10" fill="#999">${z.fmt(mx*f)}</text>`;});
-  let xl='';c.forEach((j,i)=>{xl+=`<text x="${x(i)}" y="${H-9}" font-size="9" fill="#999" text-anchor="middle">${wlab(wks[i])}</text>`;});
+  let xl='';labels.forEach((L,i)=>{xl+=`<text x="${x(i)}" y="${H-9}" font-size="9" fill="#999" text-anchor="middle">${L}</text>`;});
   const valid=v.filter(x=>x!=null);const avg=valid.length?valid.reduce((a,b)=>a+b,0)/valid.length:null;
   let avgLine='';if(avg!=null){const ya=y(avg);avgLine=`<line x1="${pad}" y1="${ya.toFixed(1)}" x2="${W-pad}" y2="${ya.toFixed(1)}" stroke="${z.color}" stroke-width="1.3" stroke-dasharray="6 4" opacity="0.5"/><text x="${pad+3}" y="${(ya-4).toFixed(1)}" font-size="10.5" fill="${z.color}" font-weight="700">avg ${z.fmt(avg)}</text>`;}
-  $('mBody').innerHTML=`<svg width="100%" viewBox="0 0 ${W} ${H}">${gl}${avgLine}<path d="${p}" fill="none" stroke="${z.color}" stroke-width="2"/>${pts}${lbls}${xl}</svg><div class="lgd">Numbers per week · oldest→newest (latest on right) · dashed = average</div>`;
+  $('mBody').innerHTML=`<svg width="100%" viewBox="0 0 ${W} ${H}">${gl}${avgLine}<path d="${p}" fill="none" stroke="${z.color}" stroke-width="2"/>${pts}${lbls}${xl}</svg><div class="lgd">Numbers · oldest→newest · dashed = average</div>`;
   $('modal').classList.add('on');}
 function closeZ(){$('modal').classList.remove('on');}
 function adjWeeks(d){const n=(D._meta.weeks||[]).length-1;NSHOW=Math.max(4,Math.min(n,NSHOW+d));WKEND=Math.max(1,Math.min((D._meta.weeks.length)-NSHOW,WKEND));render();}
 function shiftEnd(d){const maxEnd=(D._meta.weeks.length)-NSHOW;WKEND=Math.max(1,Math.min(maxEnd,WKEND+d));render();}
 function addv(a,b){const o=[];for(let i=0;i<a.length;i++)o.push((a[i]||0)+(b[i]||0));return o;}
-function pctOf(num,den){if(!den||!num)return [];return den.map((v,i)=>v?Math.round((num[i]||0)/v*100):null);}
+function pctOf(num,den){if(!den||!num)return [];const B=vbuckets();return B.map(b=>{let sn=0,sd=0;b.idxs.forEach(k=>{sn+=(num[k]||0);sd+=(den[k]||0);});return sd?Math.round(sn/sd*100):null;});}
 function pctRow(label,num,den,color){return row(label,pctOf(num,den),'sub2',PCT,{color:color||VIO});}
 function callDetail(label,x,tkey){
   if(!x)return row('· '+label+' — n/a',null,'grp2');
