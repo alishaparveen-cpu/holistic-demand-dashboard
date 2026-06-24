@@ -95,13 +95,16 @@ tr[onclick]:hover td:first-child{color:var(--accent)}
   <div class="shead">① Leads <span class="lblmuted">(GMB + Google + Practo — expand a row to see each clinic)</span></div>
   <div class="fmwrap"><table class="fm" id="tLeads"></table></div>
 
-  <div class="shead">② Bookings by source <span class="lblmuted">(reconciled to total — expand to see each clinic)</span></div>
+  <div class="shead">② Lead → Book % <span class="lblmuted">(Σ booked ÷ Σ leads across the city — expand for each clinic's rate)</span></div>
+  <div class="fmwrap"><table class="fm" id="tLB"></table></div>
+
+  <div class="shead">③ Bookings by source <span class="lblmuted">(reconciled to total — expand to see each clinic)</span></div>
   <div class="fmwrap"><table class="fm" id="tSrc"></table></div>
 
-  <div class="shead">③ Bookings → Done → Purchased → Revenue <span class="lblmuted">(expand to see each clinic)</span></div>
+  <div class="shead">④ Bookings → Done → Purchased → Revenue <span class="lblmuted">(expand to see each clinic)</span></div>
   <div class="fmwrap"><table class="fm" id="tOut"></table></div>
 
-  <div class="shead">④ Availability <span class="lblmuted">(bookable roster — expand to see each clinic)</span></div>
+  <div class="shead">⑤ Availability <span class="lblmuted">(bookable roster — expand to see each clinic)</span></div>
   <div class="fmwrap"><table class="fm" id="tAvail"></table></div>
   </div>
 </div>
@@ -228,13 +231,39 @@ function render(){
     }
     return h;
   }
+  // percent row: city % = Σ numerator ÷ Σ denominator; per-clinic = each clinic's own rate
+  const bk=x=>x?x.booked:ZA;
+  const Fn={
+    allBkN:c=>addv(addv(addv(bk(lb(c).gmb_call),bk(lb(c).gmb_web)),addv(bk(lb(c).gpaid_call),bk(lb(c).gpaid_web))),A(lb(c).practo,'booked')),
+    gmbBkN:c=>addv(bk(lb(c).gmb_call),bk(lb(c).gmb_web)),
+    googBkN:c=>addv(bk(lb(c).gpaid_call),bk(lb(c).gpaid_web)),
+    practoBkN:c=>A(lb(c).practo,'booked'),
+    doneN:c=>A(c.bottom,'done'), bookedD:c=>A(c.bottom,'booked'), purchN:c=>A(c.bottom,'purchased')
+  };
+  function prow(lbl,numFn,denFn,o){o=o||{};
+    const numT=clinics.reduce((a,x)=>addv(a,numFn(x.data)||ZA),ZA.slice());
+    const denT=clinics.reduce((a,x)=>addv(a,denFn(x.data)||ZA),ZA.slice());
+    const tk='p_'+lbl.replace(/\W+/g,'');
+    let h=row(lbl,pctOf(numT,denT),o.cls||'grp',PCT,{tkey:(clinics.length>1?tk:null),color:o.color||VIO});
+    if(clinics.length>1&&EXP[tk]){
+      const per=clinics.map(x=>({loc:x.loc,num:numFn(x.data)||ZA,den:denFn(x.data)||ZA})).sort((a,b)=>(b.den[WKEND]||0)-(a.den[WKEND]||0));
+      per.forEach(p=>{if(p.den.some(v=>v))h+=row('· '+p.loc,pctOf(p.num,p.den),'sub',PCT,{color:o.color||VIO});});
+    }
+    return h;
+  }
   QVTABLE='① Leads';let L=head('Leads');
   L+=mrow('GMB + Google + Practo — total leads',F.leadsTotal,'tot',N,{color:BLU});
   L+=mrow('GMB leads',F.gmbLeads,'grp',N,{color:GRN});
   L+=mrow('Google leads',F.googLeads,'grp',N,{color:GRN});
   L+=mrow('Practo leads',F.practoLeads,'grp',N,{color:GRN});
   $('tLeads').innerHTML=L;
-  QVTABLE='② Bookings by source';let S=head('Source · bookings');
+  QVTABLE='② Lead → Book %';let LB=head('Conversion');
+  LB+=prow('Overall lead → book %',Fn.allBkN,F.leadsTotal,{cls:'tot',color:BLU});
+  LB+=prow('GMB lead → book %',Fn.gmbBkN,F.gmbLeads,{color:GRN});
+  LB+=prow('Google lead → book %',Fn.googBkN,F.googLeads,{color:GRN});
+  LB+=prow('Practo lead → book %',Fn.practoBkN,F.practoLeads,{color:VIO});
+  $('tLB').innerHTML=LB;
+  QVTABLE='③ Bookings by source';let S=head('Source · bookings');
   S+=mrow('TOTAL bookings',F.srcTotal,'tot',N,{color:BLU});
   S+=mrow('GMB',F.srcGMB,'grp',N,{color:GRN});
   S+=mrow('Google',F.srcGoog,'grp',N,{color:GRN});
@@ -243,13 +272,15 @@ function render(){
   S+=mrow('Organic',F.srcOrg,'grp',N,{color:GRN});
   S+=mrow('Direct / Walk-in',F.srcDirect,'untag',N,{color:RED,invert:true});
   $('tSrc').innerHTML=S;
-  QVTABLE='③ Outcomes';let O=head('Outcome');
+  QVTABLE='④ Outcomes';let O=head('Outcome');
   O+=mrow('Bookings (Screening Calls)',F.booked,'grp',N,{color:GRN});
+  O+=prow('Book → Done %',Fn.doneN,Fn.bookedD,{cls:'sub',color:GRN});
   O+=mrow('Done (completed consults)',F.done,'grp',N,{color:GRN});
+  O+=prow('Done → Purchased %',Fn.purchN,Fn.doneN,{cls:'sub',color:GRN});
   O+=mrow('Purchased',F.purchased,'grp',N,{color:GRN});
   O+=mrow('Revenue',F.rev,'grp',RUP,{color:GRN});
   $('tOut').innerHTML=O;
-  QVTABLE='④ Availability';let AV=head('Availability');
+  QVTABLE='⑤ Availability';let AV=head('Availability');
   AV+=mrow('Available slots',F.slots,'grp',N,{color:BLU});
   AV+=mrow('Available hours',F.hrs,'grp',N,{color:BLU});
   AV+=mrow('Available days',F.days,'grp',N,{color:BLU});
