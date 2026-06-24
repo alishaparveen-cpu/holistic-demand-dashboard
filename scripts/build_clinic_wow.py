@@ -35,6 +35,29 @@ def gmbweb_generic(cfg, bkph):
     return {"leads":leads,"booked":booked,"notbooked":[leads[i]-booked[i] for i in range(NW)]}
 
 OUTPATH=os.path.join(ROOT,"data_source_recon.json")
+TOK2CITY={'ahmedabad':'Ahmedabad','amravati':'Amravati','aurangabad':'Aurangabad','bangalore':'Bangalore',
+ 'bhopal':'Bhopal','chennai':'Chennai','coimbatore':'Coimbatore','gandhinagar':'Gandhinagar','hubballi':'Hubli',
+ 'hyderabad':'Hyderabad','jaipur':'Jaipur','mangalore':'Mangaluru','mumbai':'Mumbai','mysuru':'Mysuru','nagpur':'Nagpur',
+ 'nashik':'Nashik','navi':'Navi Mumbai','pune':'Pune','ranchi':'Ranchi','surat':'Surat','thane':'Mumbai',
+ 'vadodara':'Vadodara','vijayawada':'Vijayawada','vizag':'Visakhapatnam'}
+def city_google_web():
+    sql=("SELECT SPLIT_PART(LOWER(utm_campaign),'_',2) tok, "
+         "TO_CHAR(DATE_TRUNC('week', created_at+INTERVAL '5 hours 30 minutes'),'YYYY-MM-DD') wk, "
+         "COUNT(DISTINCT RIGHT(phone_no,10)) web FROM allo_persons.lead "
+         "WHERE (gclid<>'' OR LOWER(utm_source)='google') "
+         "AND (LOWER(utm_campaign) LIKE 't1_%%' OR LOWER(utm_campaign) LIKE 't2_%%') "
+         "AND created_at>='%s' AND created_at<'2026-06-22' GROUP BY 1,2;"%LO)
+    out={}
+    for line in run_sql(sql):
+        c=line.split('\t')
+        if len(c)<3 or c[1] not in idx: continue
+        city=TOK2CITY.get(c[0])
+        if not city: continue
+        out.setdefault(city,Z())
+        try: out[city][idx[c[1]]]+=int(float(c[2]))
+        except ValueError: pass
+    return out
+
 def main():
     pbl,pbld=SR.load_practo_sheet()
     # resume: keep any already-built clinics (skip them) from a prior partial run
@@ -80,6 +103,8 @@ def main():
                 json.dump(out,open(OUTPATH,"w"),separators=(",",":"))
         except BaseException as e:   # catch SystemExit from run_sql too → skip clinic, keep going
             fail+=1; print("[FAIL] %s: %s"%(cfg.get("disp",slug),type(e).__name__), flush=True)
+    try: out["_meta"]["city_google_web"]=city_google_web()
+    except BaseException as e: print("[city_google_web FAIL] %s"%type(e).__name__)
     json.dump(out,open(OUTPATH,"w"),separators=(",",":"))
     print("wrote data_source_recon.json — %d built this run, %d failed, %d total clinics"%(ok,fail,len(out["clinics"])))
 
