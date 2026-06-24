@@ -94,7 +94,7 @@ tr[onclick]:hover td:first-child{color:var(--accent)}
   </div>
   <h1 id="h1">City Funnel</h1>
   <div class="sub">Week-over-week per city — every row is the sum of the city's clinics; <b>click any row to expand and see each clinic's contribution</b> (so when a metric drops you can tell which clinic drove it). Heatmap green (high) → red (low) within each row; click a sparkline to zoom, or use Quick view.</div>
-  <div class="wknav">Showing <b id="wkN">6</b> weeks <button id="wkMinus" onclick="adjWeeks(-2)" title="fewer weeks">−</button><button id="wkPlus" onclick="adjWeeks(2)" title="more weeks">＋</button> &nbsp;·&nbsp; latest <b id="wkEndLab">—</b> <button id="wkOlder" onclick="shiftEnd(1)" title="shift older">◀</button><button id="wkNewer" onclick="shiftEnd(-1)" title="shift newer">▶</button><select id="cmpSel" class="cmpsel" onchange="setCmp(this.value)" title="what the Δ column compares against"><option value="avg">Δ vs avg</option><option value="peak">Δ vs peak wk</option><option value="first">Δ vs first wk</option></select><select id="bandSel" class="cmpsel" onchange="setBand(this.value)" title="show only rows that grew / dropped"><option value="all">all Δ</option><option value="up2">↑ grew &gt;5%</option><option value="up1">↑ grew 0–5%</option><option value="dn1">↓ dropped 0–5%</option><option value="dn2">↓ dropped &gt;5%</option></select><button id="ccBtn" class="catbtn" onclick="toggleCC()" title="colour-code rows by growth / drop">🎨 Colour</button><button id="catBtn" class="catbtn" onclick="toggleCat()">🏷 Category</button><button id="qvBtn" class="qvbtn" onclick="toggleQV()">📈 Quick view</button></div>
+  <div class="wknav">Showing <b id="wkN">6</b> weeks <button id="wkMinus" onclick="adjWeeks(-2)" title="fewer weeks">−</button><button id="wkPlus" onclick="adjWeeks(2)" title="more weeks">＋</button> &nbsp;·&nbsp; latest <b id="wkEndLab">—</b> <button id="wkOlder" onclick="shiftEnd(1)" title="shift older">◀</button><button id="wkNewer" onclick="shiftEnd(-1)" title="shift newer">▶</button><select id="segSel" class="cmpsel" onchange="setSeg(this.value)" title="consult mode: offline clinics vs online telehealth"><option value="all">consult: all</option><option value="offline">offline only</option><option value="online">online only</option></select><select id="cmpSel" class="cmpsel" onchange="setCmp(this.value)" title="what the Δ column compares against"><option value="avg">Δ vs avg</option><option value="peak">Δ vs peak wk</option><option value="first">Δ vs first wk</option></select><select id="bandSel" class="cmpsel" onchange="setBand(this.value)" title="show only rows that grew / dropped"><option value="all">all Δ</option><option value="up2">↑ grew &gt;5%</option><option value="up1">↑ grew 0–5%</option><option value="dn1">↓ dropped 0–5%</option><option value="dn2">↓ dropped &gt;5%</option></select><button id="ccBtn" class="catbtn" onclick="toggleCC()" title="colour-code rows by growth / drop">🎨 Colour</button><button id="catBtn" class="catbtn" onclick="toggleCat()">🏷 Category</button><button id="qvBtn" class="qvbtn" onclick="toggleQV()">📈 Quick view</button></div>
 
   <div id="qvWrap" style="display:none"></div>
   <div id="tables">
@@ -122,6 +122,7 @@ function toggleCat(){CATMODE=!CATMODE;if($('catBtn'))$('catBtn').classList.toggl
 let CMPB='avg';function setCmp(v){CMPB=v;render();}
 let DBAND='all';function setBand(v){DBAND=v;render();}
 let CCODE=false;function toggleCC(){CCODE=!CCODE;if($('ccBtn'))$('ccBtn').classList.toggle('on',CCODE);render();}
+let SEG='all';function setSeg(v){SEG=v;render();}
 function toggle(k){EXP[k]=!EXP[k];render();}
 function toggleQV(){QV=!QV;render();}
 const $=id=>document.getElementById(id);
@@ -339,15 +340,22 @@ function render(){
   S+=mrow('Organic',F.srcOrg,'grp',N,{color:GRN});
   S+=mrow('Direct / Walk-in',F.srcDirect,'untag',N,{color:RED,invert:true});
   $('tSrc').innerHTML=S;
-  // outcome category (city-summed bottom.by_cat) — Done/Purchased/Revenue expand to STI/SH/MH/Other
-  const catO=(cat,field)=>clinics.reduce((a,x)=>{const bc=(x.data.bottom.by_cat||{})[cat];return addv(a,bc?(bc[field]||ZA):ZA);},ZA.slice());
-  function ocatRow(lbl,field,fmt){const tot=clinics.reduce((a,x)=>addv(a,x.data.bottom[field]||ZA),ZA.slice());const tk='oc_'+field;
+  // outcome category — SEG-aware: offline (city clinics) + online (telehealth, by patient city)
+  const onlC=(D._meta.online_bottom_city||{})[CUR]||{total:{},by_cat:{}};
+  const segA=(off,onl)=>SEG==='online'?(onl||ZA):SEG==='offline'?off:addv(off,onl||ZA);
+  const catO=(cat,field)=>{const off=clinics.reduce((a,x)=>{const bc=(x.data.bottom.by_cat||{})[cat];return addv(a,bc?(bc[field]||ZA):ZA);},ZA.slice());const onl=((onlC.by_cat||{})[cat]||{})[field]||ZA;return segA(off,onl);};
+  function ocatRow(lbl,field,fmt){const off=clinics.reduce((a,x)=>addv(a,x.data.bottom[field]||ZA),ZA.slice());const tot=segA(off,(onlC.total||{})[field]||ZA);const tk='oc_'+field;
     let h=row(lbl,tot,'grp',fmt,{color:GRN,tkey:tk});
     if(EXP[tk]||CATMODE){const cls=CATMODE?'sub catrow':'sub';CATS.forEach(ct=>{const a=catO(ct,field);if(a.some(v=>v)){h+=row('· '+ct,a,cls,fmt,{color:CATCOL[ct]});h+=row('· '+ct+' % of '+field,pctOf(a,tot),cls,PCT,{color:CATCOL[ct]});}});}
     return h;}
   QVTABLE='④ Outcomes';let O=head('Outcome');
-  O+=mrow('Bookings (Screening Calls)',F.booked,'grp',N,{color:GRN});
-  O+=prow('Book → Done %',Fn.doneN,Fn.bookedD,{cls:'sub',color:GRN});
+  const offBkC=clinics.reduce((a,x)=>addv(a,Fn.bookedD(x.data)||ZA),ZA.slice());
+  const offDnC=clinics.reduce((a,x)=>addv(a,Fn.doneN(x.data)||ZA),ZA.slice());
+  const onlBkC=(onlC.total||{}).booked||ZA, onlDnC=(onlC.total||{}).done||ZA;
+  if(SEG==='online'){O+=row('Bookings (Screening Calls) · online telehealth',onlBkC,'grp',N,{color:GRN});}
+  else{O+=mrow('Bookings (Screening Calls)'+(SEG==='all'?' · offline clinics':''),F.booked,'grp',N,{color:GRN});
+    if(SEG==='all')O+=row('+ online (telehealth, this city)',onlBkC,'sub',N,{color:GRN});}
+  O+=row('Book → Done %',pctOf(segA(offDnC,onlDnC),segA(offBkC,onlBkC)),'sub',PCT,{color:GRN});
   O+=ocatRow('Done (completed consults)','done',N);
   O+=prow('Done → Purchased %',Fn.purchN,Fn.doneN,{cls:'sub',color:GRN});
   O+=ocatRow('Purchased','purchased',N);
