@@ -67,6 +67,10 @@ svg.sp{display:block;margin:0 auto}
 .chev{display:inline-block;width:11px;color:var(--muted);font-size:9px;vertical-align:middle}
 .qvbtn{margin-left:auto;width:auto!important;height:28px;padding:0 13px;border:1px solid var(--accent)!important;background:var(--accent)!important;color:#fff!important;border-radius:8px;cursor:pointer;font-size:12.5px!important;font-weight:600;font-family:Inter}
 .qvbtn:hover{opacity:.9}
+.catbtn{width:auto!important;height:28px;padding:0 12px;border:1px solid #D97A2B!important;background:#fff!important;color:#C2691F!important;border-radius:8px;cursor:pointer;font-size:12.5px!important;font-weight:600;font-family:Inter;margin-left:6px}
+.catbtn.on{background:#D97A2B!important;color:#fff!important}
+tr.catrow td:first-child{border-left:3px solid #D97A2B!important;padding-left:21px}
+tr.catrow td{background:rgba(217,122,43,.06)}
 .qvgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:12px;margin-bottom:8px}
 .qvc{background:var(--sheet);border:1px solid var(--line);border-radius:10px;padding:9px 11px 6px;cursor:pointer}
 .qvc:hover{border-color:var(--accent);box-shadow:0 2px 8px rgba(0,0,0,.06)}
@@ -88,7 +92,7 @@ tr[onclick]:hover td:first-child{color:var(--accent)}
   </div>
   <h1 id="h1">Clinic WoW</h1>
   <div class="sub">Week-over-week per clinic — availability, leads, lead→book, bookings by source and outcomes. Cells are shaded green (high) → red (low) within each row; click any trend sparkline to zoom, or use Quick view for the chart grid.</div>
-  <div class="wknav">Showing <b id="wkN">6</b> weeks <button id="wkMinus" onclick="adjWeeks(-2)" title="fewer weeks">−</button><button id="wkPlus" onclick="adjWeeks(2)" title="more weeks">＋</button> &nbsp;·&nbsp; latest <b id="wkEndLab">—</b> <button id="wkOlder" onclick="shiftEnd(1)" title="shift older">◀</button><button id="wkNewer" onclick="shiftEnd(-1)" title="shift newer">▶</button><button id="qvBtn" class="qvbtn" onclick="toggleQV()">📈 Quick view</button></div>
+  <div class="wknav">Showing <b id="wkN">6</b> weeks <button id="wkMinus" onclick="adjWeeks(-2)" title="fewer weeks">−</button><button id="wkPlus" onclick="adjWeeks(2)" title="more weeks">＋</button> &nbsp;·&nbsp; latest <b id="wkEndLab">—</b> <button id="wkOlder" onclick="shiftEnd(1)" title="shift older">◀</button><button id="wkNewer" onclick="shiftEnd(-1)" title="shift newer">▶</button><button id="catBtn" class="catbtn" onclick="toggleCat()">🏷 Category</button><button id="qvBtn" class="qvbtn" onclick="toggleQV()">📈 Quick view</button></div>
 
   <div id="qvWrap" style="display:none"></div>
   <div id="tables">
@@ -111,7 +115,8 @@ tr[onclick]:hover td:first-child{color:var(--accent)}
 <div class="modal" id="modal"><div class="mbox"><div class="mhd"><span id="mTitle"></span><button onclick="closeZ()">✕</button></div><div id="mBody"></div></div></div>
 <script>
 let D=null,CUR=null;let NSHOW=6;let WKEND=1;let ZREG=[];let EXP={};
-let QV=false,QVC=[],QVTABLE=null;
+let QV=false,QVC=[],QVTABLE=null;let CATMODE=false;
+function toggleCat(){CATMODE=!CATMODE;if($('catBtn'))$('catBtn').classList.toggle('on',CATMODE);render();}
 function toggle(k){EXP[k]=!EXP[k];render();}
 function toggleQV(){QV=!QV;render();}
 const $=id=>document.getElementById(id);
@@ -121,7 +126,7 @@ const PCT=v=>v==null||isNaN(v)?'—':v.toFixed(0)+'%';
 const sum=(a,idx)=>idx.reduce((s,i)=>s+(a[i]||0),0);
 const GRN='#2E7D5B',RED='#B23A2E',BLU='#3E6F8E',VIO='#7B5EA7';
 const CATS=['STI','SH','MH','Other'],CATCOL={STI:'#B23A2E',SH:'#3E6F8E',MH:'#7B5EA7',Other:'#8A8A80'};
-function catRows(by,field){if(!by)return '';let h='';CATS.forEach(ct=>{const a=by[ct]?(field?by[ct][field]:by[ct]):null;if(a&&a.some(v=>v))h+=row('· '+ct,a,'sub2',field==='rev'?RUP:N,{color:CATCOL[ct]});});return h;}
+function catRows(by,field,tot){if(!by)return '';let h='';const cls=CATMODE?'sub catrow':'sub2';CATS.forEach(ct=>{const a=by[ct]?(field?by[ct][field]:by[ct]):null;if(a&&a.some(v=>v)){h+=row('· '+ct,a,cls,field==='rev'?RUP:N,{color:CATCOL[ct]});if(tot)h+=row('· '+ct+' %',pctOf(a,tot),cls,PCT,{color:CATCOL[ct]});}});return h;}
 function cols(){const c=[];for(let j=WKEND+NSHOW-1;j>=WKEND;j--)c.push(j);return c;} // skip wk0 partial, oldest→newest, WKEND=latest shown
 function wlab(w){const d=new Date(w+'T00:00:00'),e=new Date(d);e.setDate(e.getDate()+6);const m=x=>x.toLocaleString('en',{month:'short'});
   return d.getMonth()===e.getMonth()?`${d.getDate()}–${e.getDate()} ${m(e)}`:`${d.getDate()} ${m(d)}–${e.getDate()} ${m(e)}`;}
@@ -174,7 +179,7 @@ function callDetail(label,x,tkey){
     h+=pctRow('relevant → book %',x.booked,x.relevant,GRN);
     h+=pctRow('lead → book %',x.booked,x.total,BLU);
     h+=row('answered',x.answered,'sub2',N,{color:GRN});
-    if(x.by_cat)h+=catRows(x.by_cat,null);
+    if(x.by_cat)h+=catRows(x.by_cat,null,x.answered);
     h+=row('not answered',x.missed,'sub2',N,{color:RED,invert:true});
     h+=row('relevant (real intent)',x.relevant,'sub2',N,{color:GRN});
     h+=row('booked',x.booked,'sub2',N,{color:GRN});
@@ -319,12 +324,12 @@ function render(){
   m+=row('Bookings (Screening Calls)',bt.booked,'grp');
   m+=row('· Book → Done %',bd,'sub',PCT);
   m+=row('Done (completed consults)',bt.done,'grp',N,{tkey:'o_done'});
-  if(EXP['o_done'])m+=catRows(bc,'done');
+  if(EXP['o_done']||CATMODE)m+=catRows(bc,'done',bt.done);
   m+=row('· Done → Purchased %',dp,'sub',PCT);
   m+=row('Purchased',bt.purchased,'grp',N,{tkey:'o_purch'});
-  if(EXP['o_purch'])m+=catRows(bc,'purchased');
+  if(EXP['o_purch']||CATMODE)m+=catRows(bc,'purchased',bt.purchased);
   m+=row('Revenue',bt.rev,'grp',RUP,{tkey:'o_rev'});
-  if(EXP['o_rev'])m+=catRows(bc,'rev');
+  if(EXP['o_rev']||CATMODE)m+=catRows(bc,'rev',bt.rev);
   $('tD').innerHTML=m;
   QVTABLE=null;
   // Quick view vs table view

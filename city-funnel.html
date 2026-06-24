@@ -67,6 +67,10 @@ svg.sp{display:block;margin:0 auto}
 .chev{display:inline-block;width:11px;color:var(--muted);font-size:9px;vertical-align:middle}
 .qvbtn{margin-left:auto;width:auto!important;height:28px;padding:0 13px;border:1px solid var(--accent)!important;background:var(--accent)!important;color:#fff!important;border-radius:8px;cursor:pointer;font-size:12.5px!important;font-weight:600;font-family:Inter}
 .qvbtn:hover{opacity:.9}
+.catbtn{width:auto!important;height:28px;padding:0 12px;border:1px solid #D97A2B!important;background:#fff!important;color:#C2691F!important;border-radius:8px;cursor:pointer;font-size:12.5px!important;font-weight:600;font-family:Inter;margin-left:6px}
+.catbtn.on{background:#D97A2B!important;color:#fff!important}
+tr.catrow td:first-child{border-left:3px solid #D97A2B!important;padding-left:21px}
+tr.catrow td{background:rgba(217,122,43,.06)}
 .qvgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:12px;margin-bottom:8px}
 .qvc{background:var(--sheet);border:1px solid var(--line);border-radius:10px;padding:9px 11px 6px;cursor:pointer}
 .qvc:hover{border-color:var(--accent);box-shadow:0 2px 8px rgba(0,0,0,.06)}
@@ -88,7 +92,7 @@ tr[onclick]:hover td:first-child{color:var(--accent)}
   </div>
   <h1 id="h1">City Funnel</h1>
   <div class="sub">Week-over-week per city — every row is the sum of the city's clinics; <b>click any row to expand and see each clinic's contribution</b> (so when a metric drops you can tell which clinic drove it). Heatmap green (high) → red (low) within each row; click a sparkline to zoom, or use Quick view.</div>
-  <div class="wknav">Showing <b id="wkN">6</b> weeks <button id="wkMinus" onclick="adjWeeks(-2)" title="fewer weeks">−</button><button id="wkPlus" onclick="adjWeeks(2)" title="more weeks">＋</button> &nbsp;·&nbsp; latest <b id="wkEndLab">—</b> <button id="wkOlder" onclick="shiftEnd(1)" title="shift older">◀</button><button id="wkNewer" onclick="shiftEnd(-1)" title="shift newer">▶</button><button id="qvBtn" class="qvbtn" onclick="toggleQV()">📈 Quick view</button></div>
+  <div class="wknav">Showing <b id="wkN">6</b> weeks <button id="wkMinus" onclick="adjWeeks(-2)" title="fewer weeks">−</button><button id="wkPlus" onclick="adjWeeks(2)" title="more weeks">＋</button> &nbsp;·&nbsp; latest <b id="wkEndLab">—</b> <button id="wkOlder" onclick="shiftEnd(1)" title="shift older">◀</button><button id="wkNewer" onclick="shiftEnd(-1)" title="shift newer">▶</button><button id="catBtn" class="catbtn" onclick="toggleCat()">🏷 Category</button><button id="qvBtn" class="qvbtn" onclick="toggleQV()">📈 Quick view</button></div>
 
   <div id="qvWrap" style="display:none"></div>
   <div id="tables">
@@ -111,7 +115,8 @@ tr[onclick]:hover td:first-child{color:var(--accent)}
 <div class="modal" id="modal"><div class="mbox"><div class="mhd"><span id="mTitle"></span><button onclick="closeZ()">✕</button></div><div id="mBody"></div></div></div>
 <script>
 let D=null,CUR=null;let NSHOW=6;let WKEND=1;let ZREG=[];let EXP={};
-let QV=false,QVC=[],QVTABLE=null;
+let QV=false,QVC=[],QVTABLE=null;let CATMODE=false;
+function toggleCat(){CATMODE=!CATMODE;if($('catBtn'))$('catBtn').classList.toggle('on',CATMODE);render();}
 function toggle(k){EXP[k]=!EXP[k];render();}
 function toggleQV(){QV=!QV;render();}
 const $=id=>document.getElementById(id);
@@ -307,7 +312,7 @@ function render(){
   const catO=(cat,field)=>clinics.reduce((a,x)=>{const bc=(x.data.bottom.by_cat||{})[cat];return addv(a,bc?(bc[field]||ZA):ZA);},ZA.slice());
   function ocatRow(lbl,field,fmt){const tot=clinics.reduce((a,x)=>addv(a,x.data.bottom[field]||ZA),ZA.slice());const tk='oc_'+field;
     let h=row(lbl,tot,'grp',fmt,{color:GRN,tkey:tk});
-    if(EXP[tk])CATS.forEach(ct=>{const a=catO(ct,field);if(a.some(v=>v))h+=row('· '+ct,a,'sub',fmt,{color:CATCOL[ct]});});
+    if(EXP[tk]||CATMODE){const cls=CATMODE?'sub catrow':'sub';CATS.forEach(ct=>{const a=catO(ct,field);if(a.some(v=>v)){h+=row('· '+ct,a,cls,fmt,{color:CATCOL[ct]});h+=row('· '+ct+' % of '+field,pctOf(a,tot),cls,PCT,{color:CATCOL[ct]});}});}
     return h;}
   QVTABLE='④ Outcomes';let O=head('Outcome');
   O+=mrow('Bookings (Screening Calls)',F.booked,'grp',N,{color:GRN});
