@@ -91,9 +91,10 @@ tr[onclick]:hover td:first-child{color:var(--accent)}
   <div class="sub">Week-over-week across all India — every row is the national total; <b>expand any row to see each city's contribution</b>. Use the Tier &amp; Maturity filters to see where growth is. Heatmap green (high) → red (low); click a sparkline to zoom, or use Quick view.</div>
   <div class="filt">
     <span class="fl">Tier</span>
-    <button class="fbtn fb-tier on" onclick="setTier('All')">All</button><button class="fbtn fb-tier" onclick="setTier('T1')">T1</button><button class="fbtn fb-tier" onclick="setTier('T2')">T2</button>
-    <span class="fl" style="margin-left:16px">Maturity</span>
-    <button class="fbtn fb-mat on" onclick="setMat('All')">All</button><button class="fbtn fb-mat" onclick="setMat('New')">New &lt;6mo</button><button class="fbtn fb-mat" onclick="setMat('Growing')">Growing 6–18mo</button><button class="fbtn fb-mat" onclick="setMat('Mature')">Mature &gt;18mo</button>
+    <button class="fbtn" data-f="tier" data-v="T1" onclick="togF(this)">T1</button><button class="fbtn" data-f="tier" data-v="T2" onclick="togF(this)">T2</button>
+    <span class="fl" style="margin-left:14px">Maturity</span>
+    <button class="fbtn" data-f="mat" data-v="<3mo" onclick="togF(this)">&lt;3mo</button><button class="fbtn" data-f="mat" data-v="3-6mo" onclick="togF(this)">3–6mo</button><button class="fbtn" data-f="mat" data-v="6-12mo" onclick="togF(this)">6–12mo</button><button class="fbtn" data-f="mat" data-v=">1yr" onclick="togF(this)">&gt;1yr</button>
+    <button class="fbtn fclr" onclick="clearF()" style="margin-left:10px">✕ clear</button>
     <span id="filtCount" class="fl" style="margin-left:auto"></span>
   </div>
   <div class="wknav">Showing <b id="wkN">6</b> weeks <button id="wkMinus" onclick="adjWeeks(-2)" title="fewer weeks">−</button><button id="wkPlus" onclick="adjWeeks(2)" title="more weeks">＋</button> &nbsp;·&nbsp; latest <b id="wkEndLab">—</b> <button id="wkOlder" onclick="shiftEnd(1)" title="shift older">◀</button><button id="wkNewer" onclick="shiftEnd(-1)" title="shift newer">▶</button><button id="qvBtn" class="qvbtn" onclick="toggleQV()">📈 Quick view</button></div>
@@ -199,16 +200,16 @@ function webDetail(label,x,tkey,cityFlag){
   return h;
 }
 
-let TIER='All', MAT='All';
+let TIERS=new Set(), MATS=new Set();
+function matBucket(age){return age<3?'<3mo':(age<6?'3-6mo':(age<12?'6-12mo':'>1yr'));}
 function passes(slug){const city=(D._meta.display[slug]||'').split(' · ').slice(-1)[0];
-  const tier=(D._meta.city_tier||{})[city]||'';const mat=(D._meta.clinic_maturity||{})[slug]||'';
-  if(TIER!=='All'&&tier!==TIER)return false;
-  if(MAT!=='All'&&mat.indexOf(MAT)!==0)return false;return true;}
+  const tier=(D._meta.city_tier||{})[city]||'';
+  if(TIERS.size&&!TIERS.has(tier))return false;
+  if(MATS.size){const age=(D._meta.clinic_age||{})[slug];if(age==null||!MATS.has(matBucket(age)))return false;}
+  return true;}
 function filteredClinics(){return (D._meta.clinics||[]).filter(passes);}
-function setTier(t){TIER=t;syncFilt();render();}
-function setMat(m){MAT=m;syncFilt();render();}
-function syncFilt(){document.querySelectorAll('.fb-tier').forEach(b=>b.classList.toggle('on',b.textContent.trim()===TIER));
-  document.querySelectorAll('.fb-mat').forEach(b=>b.classList.toggle('on',b.textContent.trim().indexOf(MAT)===0));}
+function togF(b){const S=b.dataset.f==='tier'?TIERS:MATS,v=b.dataset.v;if(S.has(v))S.delete(v);else S.add(v);b.classList.toggle('on',S.has(v));render();}
+function clearF(){TIERS.clear();MATS.clear();document.querySelectorAll('.fbtn').forEach(b=>b.classList.remove('on'));render();}
 function render(){
   if(!D)return;
   ZREG=[];QVC=[];
@@ -223,7 +224,7 @@ function render(){
   const ZA=Array(D._meta.weeks.length).fill(0);
   const clinics=filteredClinics().map(s=>({slug:s,city:(D._meta.display[s]||s).split(' · ').slice(-1)[0],data:D.clinics[s]})).filter(x=>x.data);
   const cities=[...new Set(clinics.map(x=>x.city))];
-  $('h1').textContent='Country Funnel'+(TIER!=='All'?' · '+TIER:'')+(MAT!=='All'?' · '+MAT:'');
+  $('h1').textContent='Country Funnel'+(TIERS.size?' · '+[...TIERS].join('+'):'')+(MATS.size?' · '+[...MATS].join(','):'');
   if($('filtCount'))$('filtCount').textContent=clinics.length+' clinics · '+cities.length+' cities';
   const A=(o,k)=>o&&o[k]?o[k]:ZA, lb=c=>c.lead_book, cT=x=>x?x.total:ZA, wL=x=>x?x.leads:ZA, bk=x=>x?x.booked:ZA;
   const F={
@@ -264,7 +265,7 @@ function render(){
   const catO=(cat,field)=>clinics.reduce((a,x)=>{const bc=(x.data.bottom.by_cat||{})[cat];return addv(a,bc?(bc[field]||ZA):ZA);},ZA.slice());
   function ocatRow(lbl,field,fmt){const tot=clinics.reduce((a,x)=>addv(a,x.data.bottom[field]||ZA),ZA.slice());const tk='oc_'+field;
     let h=row(lbl,tot,'grp',fmt,{color:GRN,tkey:tk});
-    if(EXP[tk])CATS.forEach(ct=>{const a=catO(ct,field);if(a.some(v=>v))h+=row('· '+ct,a,'sub',fmt,{color:CATCOL[ct]});});return h;}
+    if(EXP[tk])CATS.forEach(ct=>{const a=catO(ct,field);if(a.some(v=>v)){h+=row('· '+ct,a,'sub',fmt,{color:CATCOL[ct]});h+=row('· '+ct+' % of '+field,pctOf(a,tot),'sub2',PCT,{color:CATCOL[ct]});}});return h;}
   // ① Leads
   QVTABLE='① Leads';let L=head('Leads');
   L+=row('GMB + Google + Practo — total leads',totLeads,'tot',N,{color:BLU});
@@ -283,9 +284,17 @@ function render(){
   LB+=prow('GMB lead → book %',Fn.gmbBkN,F.gmbLeads,{color:GRN});
   LB+=row('Google lead → book % · city-level',pctOf(googBk,googCountry),'grp',PCT,{color:GRN,tkey:'g_conv'});
   if(EXP['g_conv']){
+    // per-city Google lead→book %
+    cities.map(city=>{const cc=clinics.filter(x=>x.city===city);
+      const call=cc.reduce((m,x)=>{const t=lb(x.data).gpaid_call;return t?(t.total||ZA).map((v,i)=>Math.max(m[i]||0,v||0)):m;},ZA.slice());
+      const web=(D._meta.city_google_web&&D._meta.city_google_web[city])||ZA;
+      const bkc=cc.reduce((a,x)=>{const t=lb(x.data).gpaid_call;return addv(a,t?(t.booked||ZA):ZA);},ZA.slice());
+      const wbk=(D._meta.city_google_web_booked&&D._meta.city_google_web_booked[city])||ZA;
+      return {city,leads:addv(call,web),bk:addv(bkc,wbk)};
+    }).sort((a,b)=>(b.leads[WKEND]||0)-(a.leads[WKEND]||0)).forEach(p=>{if(p.leads.some(v=>v))LB+=row('· '+p.city,pctOf(p.bk,p.leads),'sub',PCT,{color:GRN});});
     LB+=row('· paid calls — total',gpCall,'sub',N,{color:BLU});
     LB+=row('answered',gpAns,'sub2',N,{color:GRN});
-    CATS.forEach(ct=>{const a=clinics.reduce((acc,x)=>{const t=lb(x.data).gpaid_call;const bc=t&&t.by_cat?t.by_cat[ct]:null;return addv(acc,bc||ZA);},ZA.slice());if(a.some(v=>v))LB+=row('· '+ct,a,'sub2',N,{color:CATCOL[ct]});});
+    CATS.forEach(ct=>{const a=clinics.reduce((acc,x)=>{const t=lb(x.data).gpaid_call;const bc=t&&t.by_cat?t.by_cat[ct]:null;return addv(acc,bc||ZA);},ZA.slice());if(a.some(v=>v)){LB+=row('· '+ct,a,'sub2',N,{color:CATCOL[ct]});LB+=row('· '+ct+' % of answered',pctOf(a,gpAns),'sub2',PCT,{color:CATCOL[ct]});}});
     LB+=row('not answered',gpMiss,'sub2',N,{color:RED,invert:true});
     LB+=row('answer %',pctOf(gpAns,gpCall),'sub2',PCT,{color:VIO});
     LB+=row('relevant (real intent)',gpRel,'sub2',N,{color:GRN});

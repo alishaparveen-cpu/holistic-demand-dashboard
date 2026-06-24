@@ -120,8 +120,7 @@ def clinic_maturity():
         if not slug: continue
         try: fb=datetime.datetime.strptime(c[1],'%Y-%m-%d').date()
         except ValueError: continue
-        age=(asof-fb).days/30.4
-        out[slug]='New (<6mo)' if age<6 else ('Growing (6–18mo)' if age<18 else 'Mature (>18mo)')
+        out[slug]=round((asof-fb).days/30.4,1)   # age in months (frontend buckets it)
     return out
 
 def main():
@@ -176,7 +175,7 @@ def main():
         cw_l,cw_b=city_google_web()
         out["_meta"]["city_google_web"]=cw_l; out["_meta"]["city_google_web_booked"]=cw_b
     except BaseException as e: print("[city_google_web FAIL] %s"%type(e).__name__)
-    try: out["_meta"]["city_tier"]=city_tier(); out["_meta"]["clinic_maturity"]=clinic_maturity()
+    try: out["_meta"]["city_tier"]=city_tier(); out["_meta"]["clinic_age"]=clinic_maturity()
     except BaseException as e: print("[tier/maturity FAIL] %s"%type(e).__name__)
     json.dump(out,open(OUTPATH,"w"),separators=(",",":"))
     print("wrote data_source_recon.json — %d built this run, %d failed, %d total clinics"%(ok,fail,len(out["clinics"])))
