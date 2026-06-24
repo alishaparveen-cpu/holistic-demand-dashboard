@@ -80,7 +80,7 @@ def main():
     cities = defaultdict(lambda: {k: Z() for k in
              ["spend","clicks","loc_clicks","is_w","is_d","impr","conv","budget_w","budget_n"]})
     CATS = ["STI","SH","MH","Other"]
-    catacc = defaultdict(lambda: {ct: {"impr": Z(), "clicks": Z()} for ct in CATS})  # city → cat → impr/clicks
+    catacc = defaultdict(lambda: {ct: {"impr": Z(), "clicks": Z(), "loc_clicks": Z(), "conv": Z()} for ct in CATS})  # city → cat → metrics
 
     # 1) weekly campaign metrics → city
     rows = gaql(token, c, f"""
@@ -103,7 +103,7 @@ def main():
         o["conv"][i] += float(m.get("conversions", 0) or 0)
         o["is_w"][i] += isv*imp; o["is_d"][i] += imp
         o["budget_w"][i] += bud; o["budget_n"][i] += 1
-        ca = catacc[city][cat_of(n)]; ca["impr"][i] += imp; ca["clicks"][i] += cl
+        ca = catacc[city][cat_of(n)]; ca["impr"][i] += imp; ca["clicks"][i] += cl; ca["conv"][i] += float(m.get("conversions", 0) or 0)
 
     # 2) location click-types → loc clicks per city/week
     crows = gaql(token, c, f"""
@@ -117,7 +117,9 @@ def main():
         wk = r["segments"]["week"]
         if wk not in widx: continue
         if r["segments"].get("clickType") in LOC_CLICK_TYPES:
-            cities[city]["loc_clicks"][widx[wk]] += int(r.get("metrics", {}).get("clicks", 0) or 0)
+            lc = int(r.get("metrics", {}).get("clicks", 0) or 0)
+            cities[city]["loc_clicks"][widx[wk]] += lc
+            catacc[city][cat_of(n)]["loc_clicks"][widx[wk]] += lc
 
     out = {"_meta": {"source": "LIVE Google Ads API · city-level paid layer (campaigns→city)",
                      "weeks": WEEKS, "pulled": ymd(today),
@@ -134,7 +136,9 @@ def main():
                      "budget": budget, "util": util, "conv": [round(x) for x in o["conv"]],
                      "impr": [round(x) for x in o["impr"]], "cpp": cpp, "eplc": eplc,
                      "by_cat": {ct: {"impr": [round(x) for x in catacc[city][ct]["impr"]],
-                                     "clicks": [round(x) for x in catacc[city][ct]["clicks"]]} for ct in CATS}}
+                                     "clicks": [round(x) for x in catacc[city][ct]["clicks"]],
+                                     "loc_clicks": [round(x) for x in catacc[city][ct]["loc_clicks"]],
+                                     "conv": [round(x,1) for x in catacc[city][ct]["conv"]]} for ct in CATS}}
     json.dump(out, open(OUT, "w"), separators=(",", ":"))
     n = len([k for k in out if k != "_meta"])
     print(f"wrote {OUT} · {n} cities")
