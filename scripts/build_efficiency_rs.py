@@ -129,13 +129,17 @@ def main():
     L0D = L0['DIRECT']
     _gmap = (lambda g: dict(zip(g['weeks'], g['net'])))(json.load(open(os.path.join(ROOT,'data_ga_total_spend.json'))))
     google   = [round(_gmap[w]*1.18) if w in _gmap else None for w in weeks]      # GST-inclusive, full history
-    meta_sp  = align(L0D.get('meta',{}).get('spend',[]))                          # sheet (SyncWith→Meta)
-    practo_sp= align(L0D.get('practo',{}).get('spend',[]))                        # sheet (manual)
-    # NETWORK spend only where ALL three channels are present — else None ("—") rather than a misleading
-    # Google-only total. The Google CHANNEL card still gets full native history via DIRECT below.
-    spend    = [ (google[i]+meta_sp[i]+practo_sp[i]) if (google[i] is not None and meta_sp[i] is not None and practo_sp[i] is not None) else None for i in range(len(weeks)) ]
+    # Use L0 ALL.spend directly (row 3 of the sheet = total network spend, always correct).
+    # The old approach summed google+meta+practo from per-channel DIRECT rows that drifted as the
+    # sheet evolved; those row indices read CPB/TP# values instead of actual spend.
+    _l0sp = l0('spend')
+    spend = [_l0sp[i] if _l0sp[i] is not None else None for i in range(len(weeks))]
     sti=l0('sti'); vpct=l0('vpct')
-    _vl=l0('vleads'); vleads=[_vl[i] if _vl[i] is not None else leadsT[i] for i in range(len(weeks))]  # element-wise fallback to total leads ([None]*n is truthy, so `or leadsT` never fired)
+    # Auto-heal: if L0 vleads is < 50% of RS leads the sheet is stale for that week — fall back to RS leads
+    _vl=l0('vleads'); vleads=[_vl[i] if (_vl[i] is not None and leadsT[i] and _vl[i]>=leadsT[i]*0.5) else leadsT[i] for i in range(len(weeks))]
+    dnSH=l0('dnSH'); dnSHon=l0('dnSHon'); dnSHoff=l0('dnSHoff')
+    dnSTI=l0('dnSTI'); dnSTIon=l0('dnSTIon'); dnSTIoff=l0('dnSTIoff')
+    stiOn=l0('stiOn'); stiOff=l0('stiOff')
     roas=[round(newRev[i]*1e5/spend[i]*100,1) if spend[i] else None for i in range(len(weeks))]  # row 36 (% form, matches L0)
     aov=[round(tpRev[i]*1e5/tp[i]) if tp[i] else None for i in range(len(weeks))]
     rpc=[round(tpRev[i]*1e5/doneT[i]) if doneT[i] else None for i in range(len(weeks))]     # row 37
@@ -146,6 +150,7 @@ def main():
            'done':doneT,'b2d':rate(doneT,bookingsT),'cpd':[round(spend[i]/doneT[i]) if spend[i] and doneT[i] else None for i in range(len(weeks))],
            'tp':tp,'done2tp':rate(tp,doneT),'newRev':newRev,'tpRev':tpRev,'consultRev':consultRev,'roas':roas,'aov':aov,'rpc':rpc,'sti':sti,
            'bkOn':bkOn,'bkOff':bkOff,'dnOn':dnOn,'dnOff':dnOff,'b2dOn':rate(dnOn,bkOn),'b2dOff':rate(dnOff,bkOff),
+           'dnSH':dnSH,'dnSHon':dnSHon,'dnSHoff':dnSHoff,'dnSTI':dnSTI,'dnSTIon':dnSTIon,'dnSTIoff':dnSTIoff,'stiOn':stiOn,'stiOff':stiOff,
            'tpOn':tpOn,'tpOff':tpOff,'convOn':rate(tpOn,dnOn),'convOff':rate(tpOff,dnOff),
            'tpRevOn':tpRevOn,'tpRevOff':tpRevOff}
     # CONTR (% of network) per channel

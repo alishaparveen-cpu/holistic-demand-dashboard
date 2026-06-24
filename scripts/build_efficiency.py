@@ -37,8 +37,10 @@ def main():
     # ── network OVERALL block (row indices fixed by the L0 label layout) ──
     NET = {  # metric : row index
         'spend':3,'leads':6,'vleads':7,'vpct':8,'cpl':9,'bookings':10,'bkOn':11,'bkOff':12,
-        'b2l':13,'cpb':14,'done':15,'dnOn':16,'dnOff':17,'cpd':19,'sti':26,'b2d':29,'b2dOn':30,
-        'b2dOff':31,'tpRev':32,'consultRev':33,'newRev':34,'roas':35,'rpc':36,'tpOn':37,
+        'b2l':13,'cpb':14,'done':15,'dnOn':16,'dnOff':17,'cpd':19,
+        'dnSH':20,'dnSHon':21,'dnSHoff':22,'dnSTI':23,'dnSTIon':24,'dnSTIoff':25,
+        'sti':26,'stiOn':27,'stiOff':28,'b2d':29,'b2dOn':30,'b2dOff':31,
+        'tpRev':32,'consultRev':33,'newRev':34,'roas':35,'rpc':36,'tpOn':37,
         'aov':39,'convOn':40,'tpOff':42,'convOff':45,
     }
     def build_all(cols):
