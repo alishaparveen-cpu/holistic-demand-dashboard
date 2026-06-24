@@ -45,6 +45,7 @@ tr.gband td:first-child{border-left:3px solid var(--accent);padding-left:9px}
 tr.grp2 td{font-weight:600}tr.grp2 td:first-child{padding-left:20px;color:var(--ink)}
 tr.sub2 td{color:var(--ink2);font-size:11.5px}tr.sub2 td:first-child{padding-left:36px;color:var(--ink2)}
 td.lastcol{font-weight:700;color:var(--accent)}
+table.fm td.avgc{background:var(--inset);font-weight:600;color:var(--ink)}table.fm td.dc{font-weight:700}table.fm th.avgcol{background:var(--inset)}th.dcol{color:var(--ink2)}
 td.pct{font-weight:700}
 .note{background:#FBF9F3;border:1px dashed var(--line);border-radius:9px;padding:10px 13px;font-size:12px;color:var(--ink2);margin-top:12px;line-height:1.6}
 .note b{color:var(--ink)}
@@ -133,7 +134,7 @@ function hexA(hex,a){const n=parseInt(hex.slice(1),16);return `rgba(${n>>16&255}
 function heatBg(v,mn,mx,inv){if(v==null||isNaN(v)||!isFinite(mn)||mn===mx)return'';let t=(v-mn)/((mx-mn)||1);if(inv)t=1-t;
   if(t>=0.6)return hexA(GRN,0.06+0.20*((t-0.6)/0.4));
   if(t<=0.4)return hexA(RED,0.06+0.20*((0.4-t)/0.4));return'';}
-function head(lbl){const w=D._meta.weeks,c=cols();return '<tr><th>'+lbl+'</th>'+c.map((j,p)=>`<th class="${p===c.length-1?'lastcol':''}">${wlab(w[j])}</th>`).join('')+'<th>trend</th></tr>';}
+function head(lbl){const w=D._meta.weeks,c=cols();return '<tr><th>'+lbl+'</th>'+c.map((j,p)=>`<th class="${p===c.length-1?'lastcol':''}">${wlab(w[j])}</th>`).join('')+'<th class="avgcol">avg</th><th class="dcol">Δ now</th><th>trend</th>'+'</tr>';}
 function row(label,arr,cls,fmt,o){fmt=fmt||N;o=o||{};const c=cols();
   if(QVTABLE&&arr&&cls!=='gband')QVC.push({t:QVTABLE,label:String(label).replace(/^· /,''),arr,color:o.color||BLU,fmt});
   let mn=Infinity,mx=-Infinity;c.forEach(j=>{const v=arr?arr[j]:null;if(v!=null&&!isNaN(v)){mn=Math.min(mn,v);mx=Math.max(mx,v);}});
@@ -142,7 +143,14 @@ function row(label,arr,cls,fmt,o){fmt=fmt||N;o=o||{};const c=cols();
     t+=`<td class="${last?'lastcol':''}" ${st}>${(v==null||isNaN(v))?'—':fmt(v)}</td>`;});
   const lbl=(o.tkey?`<span class="chev">${EXP[o.tkey]?'▾':'▸'}</span> `:'')+label;
   const clk=o.tkey?` onclick="toggle('${o.tkey}')" style="cursor:pointer"`:'';
-  return `<tr class="${cls||''}"${clk}><td>${lbl}</td>${t}${arr?sparkCell(arr,o.color||BLU,label,fmt):'<td></td>'}</tr>`;}
+  const _vv=c.map(j=>arr?arr[j]:null).filter(v=>v!=null&&!isNaN(v));
+  const _avg=_vv.length?_vv.reduce((a,b)=>a+b,0)/_vv.length:null;
+  const _lst=arr?arr[c[c.length-1]]:null;
+  const _dp=(_avg&&_lst!=null&&!isNaN(_lst))?Math.round((_lst-_avg)/Math.abs(_avg)*100):null;
+  const _up=o.invert?(_dp<0):(_dp>0);
+  const _avgC=`<td class="avgc">${_avg!=null?fmt(_avg):'\u2014'}</td>`;
+  const _dC=`<td class="dc" style="color:${_dp==null?'var(--muted)':(_up?'var(--good)':'var(--bad)')}">${_dp==null?'\u2014':(_dp>=0?'+':'')+_dp+'%'}</td>`;
+  return `<tr class="${cls||''}"${clk}><td>${lbl}</td>${t}${_avgC}${_dC}${arr?sparkCell(arr,o.color||BLU,label,fmt):'<td></td>'}</tr>`;}
 function spark(arr,color){const c=cols();const v=c.map(j=>{const x=arr?arr[j]:null;return x==null||isNaN(x)?0:x;});const n=v.length,mx=Math.max(1,...v);
   const W=120,H=26,pad=2,x=i=>pad+i*(W-2*pad)/((n-1)||1),y=val=>H-pad-(val/mx)*(H-2*pad);
   let p='';v.forEach((val,i)=>{p+=(i?'L':'M')+x(i).toFixed(1)+','+y(val).toFixed(1)+' ';});
@@ -283,10 +291,10 @@ function render(){
   LB+=row('Overall lead → book %',pctOf(allBkCity,totLeadsCity),'tot',PCT,{color:BLU});
   LB+=prow('GMB lead → book %',Fn.gmbBkN,F.gmbLeads,{color:GRN});
   LB+=row('Google lead → book % · city-level',pctOf(googBkCity,googCity),'grp',PCT,{color:GRN,tkey:'g_conv'});
-  if(EXP['g_conv']){
+  if(EXP['g_conv']||CATMODE){
     LB+=row('· paid calls — total',gpCall,'sub',N,{color:BLU});
-    LB+=row('answered',gpAns,'sub2',N,{color:GRN});
-    CATS.forEach(ct=>{const a=clinics.reduce((acc,x)=>{const t=x.data.lead_book.gpaid_call;const bc=t&&t.by_cat?t.by_cat[ct]:null;return addv(acc,bc||ZA);},ZA.slice());if(a.some(v=>v))LB+=row('· '+ct,a,'sub2',N,{color:CATCOL[ct]});});
+    LB+=row('answered (AI-audited)',gpAns,'sub2',N,{color:GRN});
+    CATS.forEach(ct=>{const a=clinics.reduce((acc,x)=>{const t=x.data.lead_book.gpaid_call;const bc=t&&t.by_cat?t.by_cat[ct]:null;return addv(acc,bc||ZA);},ZA.slice());if(a.some(v=>v)){const cls=CATMODE?'sub2 catrow':'sub2';LB+=row('· '+ct,a,cls,N,{color:CATCOL[ct]});LB+=row('· '+ct+' % of answered',pctOf(a,gpAns),cls,PCT,{color:CATCOL[ct]});}});
     LB+=row('not answered',gpMiss,'sub2',N,{color:RED,invert:true});
     LB+=row('answer %',pctOf(gpAns,gpCall),'sub2',PCT,{color:VIO});
     LB+=row('relevant (real intent)',gpRel,'sub2',N,{color:GRN});
