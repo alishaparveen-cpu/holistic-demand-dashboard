@@ -89,6 +89,41 @@ def call_cat(cfg, kind):
         except ValueError: pass
     return by
 
+def city_tier():
+    sql=("SELECT SPLIT_PART(LOWER(utm_campaign),'_',2) tok, SPLIT_PART(LOWER(utm_campaign),'_',1) tier, COUNT(*) n "
+         "FROM allo_persons.lead WHERE (LOWER(utm_campaign) LIKE 't1_%%' OR LOWER(utm_campaign) LIKE 't2_%%') "
+         "AND created_at>='2026-03-01' GROUP BY 1,2;")
+    best={}
+    for line in run_sql(sql):
+        c=line.split('\t')
+        if len(c)<3: continue
+        try: n=int(float(c[2]))
+        except ValueError: continue
+        if c[0] not in best or n>best[c[0]][1]: best[c[0]]=(c[1],n)
+    out={}
+    for tok,(tier,_) in best.items():
+        city=TOK2CITY.get(tok)
+        if city and city not in out: out[city]=tier.upper()
+    return out
+
+def clinic_maturity():
+    import datetime
+    sql=("SELECT loc.city||'|'||COALESCE(loc.locality,loc.name,'') clinic, TO_CHAR(MIN(a.created_at),'YYYY-MM-DD') fb "
+         "FROM allo_consultations.appointments a JOIN allo_health.locations loc ON loc.id=a.location_id AND loc.deleted_at IS NULL "
+         "JOIN allo_consultations.types t ON t.id=a.type_id AND t.name='Screening Call' WHERE a.deleted_at IS NULL GROUP BY 1;")
+    key2slug={cfg["key"]:slug for slug,cfg in CFG.items()}
+    asof=datetime.date(2026,6,22); out={}
+    for line in run_sql(sql):
+        c=line.split('\t')
+        if len(c)<2: continue
+        slug=key2slug.get(c[0])
+        if not slug: continue
+        try: fb=datetime.datetime.strptime(c[1],'%Y-%m-%d').date()
+        except ValueError: continue
+        age=(asof-fb).days/30.4
+        out[slug]='New (<6mo)' if age<6 else ('Growing (6–18mo)' if age<18 else 'Mature (>18mo)')
+    return out
+
 def main():
     pbl,pbld=SR.load_practo_sheet()
     # resume: keep any already-built clinics (skip them) from a prior partial run
@@ -141,6 +176,8 @@ def main():
         cw_l,cw_b=city_google_web()
         out["_meta"]["city_google_web"]=cw_l; out["_meta"]["city_google_web_booked"]=cw_b
     except BaseException as e: print("[city_google_web FAIL] %s"%type(e).__name__)
+    try: out["_meta"]["city_tier"]=city_tier(); out["_meta"]["clinic_maturity"]=clinic_maturity()
+    except BaseException as e: print("[tier/maturity FAIL] %s"%type(e).__name__)
     json.dump(out,open(OUTPATH,"w"),separators=(",",":"))
     print("wrote data_source_recon.json — %d built this run, %d failed, %d total clinics"%(ok,fail,len(out["clinics"])))
 
