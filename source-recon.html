@@ -142,7 +142,9 @@ const PCT=v=>v==null||isNaN(v)?'—':v.toFixed(0)+'%';
 const sum=(a,idx)=>idx.reduce((s,i)=>s+(a[i]||0),0);
 const GRN='#2E7D5B',RED='#B23A2E',BLU='#3E6F8E',VIO='#7B5EA7';
 const CATS=['STI','SH','MH','Other'],CATCOL={STI:'#B23A2E',SH:'#3E6F8E',MH:'#7B5EA7',Other:'#8A8A80'};
-function catRows(by,field,tot){if(!by)return '';let h='';const cls=CATMODE?'sub catrow':'sub2';CATS.forEach(ct=>{const a=by[ct]?(field?by[ct][field]:by[ct]):null;if(a&&a.some(v=>v)){h+=row('· '+ct,a,cls,field==='rev'?RUP:N,{color:CATCOL[ct]});if(tot)h+=row('· '+ct+' %',pctOf(a,tot),cls,PCT,{color:CATCOL[ct]});}});return h;}
+function catRows(by,field,tot,subby){if(!by)return '';let h='';const cls=CATMODE?'sub catrow':'sub2';CATS.forEach(ct=>{const a=by[ct]?(field?by[ct][field]:by[ct]):null;if(a&&a.some(v=>v)){const tk=subby?('sc_'+field+'_'+ct):null;h+=row('· '+ct,a,cls,field==='rev'?RUP:N,{color:CATCOL[ct],tkey:tk});if(tot)h+=row('· '+ct+' %',pctOf(a,tot),cls,PCT,{color:CATCOL[ct]});
+  if(subby&&(EXP[tk]||CATMODE)){const subs=Object.keys(subby).filter(k=>(subby[k].cat||k.split('::')[0])===ct).map(k=>({label:(k.split('::')[1]||k),arr:(subby[k][field]||ZA)})).filter(s=>s.arr.some(v=>v)).sort((x,y)=>(y.arr[WKEND]||0)-(x.arr[WKEND]||0));
+    subs.forEach(s=>{h+=row('· · '+s.label,s.arr,cls,field==='rev'?RUP:N,{color:CATCOL[ct]});if(tot)h+=row('· · '+s.label+' %',pctOf(s.arr,a),cls,PCT,{color:CATCOL[ct]});});}}});return h;}
 let GRAN='week',GCLUB=1,GAGG='sum';function setUnit(u){GRAN=u;if(u==='month'&&GCLUB>4)GCLUB=1;syncGran();render();}function adjClub(d){GCLUB=Math.max(1,Math.min(GRAN==='month'?6:8,GCLUB+d));syncGran();render();}function setAgg(a){GAGG=a;syncGran();render();}function setGran(v){if(v==='biweek'){GRAN='week';GCLUB=2;}else{GRAN=v;GCLUB=1;}syncGran();render();}function toggleMonth(){setUnit(GRAN==='month'?'week':'month');}function syncGran(){var q=function(i){return document.getElementById(i);};if(q('guW'))q('guW').classList.toggle('on',GRAN==='week');if(q('guM'))q('guM').classList.toggle('on',GRAN==='month');if(q('clubN'))q('clubN').textContent=GCLUB;if(q('clubU'))q('clubU').textContent=(GRAN==='month'?(GCLUB>1?'mos':'mo'):(GCLUB>1?'wks':'wk'));if(q('aggS'))q('aggS').classList.toggle('on',GAGG==='sum');if(q('aggA'))q('aggA').classList.toggle('on',GAGG==='avg');}
 function setRange(v){const mx=(D._meta.weeks||[]).length;NSHOW=Math.min(mx-1,Math.max(4,+v));WKEND=1;render();}
 let HIDDEN=new Set();function hideCol(j){const b=vbuckets()[j];if(b)HIDDEN.add(b.label);render();}function showAllCols(){HIDDEN.clear();render();}
@@ -377,10 +379,10 @@ function render(){
   m+=row('Bookings (Screening Calls)',bt.booked,'grp');
   m+=row('· Book → Done %',bd,'sub',PCT);
   m+=row('Done (completed consults)',bt.done,'grp',N,{tkey:'o_done'});
-  if(EXP['o_done']||CATMODE)m+=catRows(bc,'done',bt.done);
+  if(EXP['o_done']||CATMODE)m+=catRows(bc,'done',bt.done,bt.by_subcat);
   m+=row('· Done → Purchased %',dp,'sub',PCT);
   m+=row('Purchased',bt.purchased,'grp',N,{tkey:'o_purch'});
-  if(EXP['o_purch']||CATMODE)m+=catRows(bc,'purchased',bt.purchased);
+  if(EXP['o_purch']||CATMODE)m+=catRows(bc,'purchased',bt.purchased,bt.by_subcat);
   // Revenue → category → product (line-item based; product nests inside each category)
   {const RP=['drug','lab','consultation','other'],RPL={drug:'Medicines (pharmacy)',lab:'Lab / tests',consultation:'Consultation',other:'Other'};
    const cp=bt.rev_cp||{};const cpV=(cat,p)=>((cp[cat]||{})[p])||ZA;
