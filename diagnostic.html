@@ -365,12 +365,15 @@ function landNorm(arr,W){ return expectedOf(arr, W); }
 // capacity baseline: scale the clinic's capacity-expected bookings (velExp, on all-bookings) to whatever
 // metric the card shows. Leads aren't hour-bound → fall back to the normal norm.
 function landNormVel(r, arr, W){
-  if(baseMode!=='vel' || landView==='leads' || !r) return landNorm(arr, W);
+  if(!baseMode.startsWith('vel') || landView==='leads' || !r) return landNorm(arr, W);
   const mNorm=avg(dimSlice(arr,W)), ratio=r.bk_avg>0 ? mNorm/r.bk_avg : 0;
   return (r.velExp||0)*ratio;
 }
 let wkIdx=0;              // selected week index (0 = latest)
 let baseMode='avg6';      // which baseline "Expected" is measured against (see BASE_OPTS) — default 6-wk (matches the 6-week display window)
+// custom lookback window (weeks) implied by the chosen baseline — used by EVERY metric's baseline
+// (avg & capacity) and by the per-hour weekday/weekend rate calc, so 4w/6w/8w/12w changes the whole RCA.
+function winLen(){ const n={avg4:4,avg6:6,avg8:8,avg12:12,vel4:4,vel:6,vel8:8,vel12:12}[baseMode]; return n||6; }
 // Baseline options for the comparison dropdown. Each defines how "Expected" is
 // computed from the prior weeks (newest-first arrays, W = selected week index)
 // and the window used for the leads/availability dimension baselines.
@@ -382,34 +385,30 @@ const BASE_OPTS=[
   ['peak','Recent peak','vs its highest of the last 2 weeks'],
   ['prev','Last week','vs the immediately preceding week'],
   ['best','Best week','vs its best week on record'],
-  ['vel','Expected · based on availability','vs this clinic’s per-hour weekday/weekend booking rate × this week’s ACTUAL bookable hours — isolates the gap that fewer hours do NOT explain'],
+  ['vel','Expected · capacity (6-wk rates)','per-hour weekday/weekend booking rate over the last 6 weeks × this week’s ACTUAL bookable hours — isolates the gap fewer hours do NOT explain'],
+  ['vel4','Expected · capacity (4-wk rates)','same capacity formula, per-hour weekday/weekend rates from the last 4 weeks'],
+  ['vel8','Expected · capacity (8-wk rates)','same capacity formula, per-hour weekday/weekend rates from the last 8 weeks'],
+  ['vel12','Expected · capacity (12-wk rates)','same capacity formula, per-hour weekday/weekend rates from the last 12 weeks'],
 ];
 function baseLabel(){ const o=BASE_OPTS.find(x=>x[0]===baseMode); return o?o[1]:'baseline'; }
-function baseShort(){ return baseMode==='vel'?'capacity exp':baseMode==='peak'?'recent peak':baseMode==='avg4'?'4-wk avg':baseMode==='avg8'?'8-wk avg':baseMode==='avg12'?'12-wk avg':baseMode==='prev'?'last week':baseMode==='best'?'best week':'6-wk avg'; }
+function baseShort(){ return {vel:'capacity 6wk',vel4:'capacity 4wk',vel8:'capacity 8wk',vel12:'capacity 12wk',peak:'recent peak',avg4:'4-wk avg',avg6:'6-wk avg',avg8:'8-wk avg',avg12:'12-wk avg',prev:'last week',best:'best week'}[baseMode]||'6-wk avg'; }
 // dimension baseline window (leads/availability) — follows the chosen avg window
 // Dimension norm window — varies by the selected comparison so the leads /
 // active-days / weekend deltas (and chips) actually change when you switch it.
 function dimSlice(arr, W){
-  if(baseMode==='avg4') return arr.slice(W+1, W+5);    // 4 wk
-  if(baseMode==='avg6'||baseMode==='vel') return arr.slice(W+1, W+7);    // 6 wk (default; vel uses 6wk for dimension norms + per-hour rates)
-  if(baseMode==='avg8') return arr.slice(W+1, W+9);    // 8 wk
-  if(baseMode==='avg12') return arr.slice(W+1, W+13);  // 12 wk
   if(baseMode==='prev') return arr.slice(W+1, W+2);    // 1 wk
   if(baseMode==='best') return arr.slice(W+1);         // all prior weeks
-  return arr.slice(W+1, W+6);   // peak → recent ~5-wk
+  if(baseMode==='peak') return arr.slice(W+1, W+6);    // recent ~5-wk
+  return arr.slice(W+1, W+1+winLen());   // avg* and capacity (vel*) → their selected window (4/6/8/12)
 }
 // "Expected" value for a booking-style series under the current baseMode
 function expectedOf(arr, W){
-  switch(baseMode){
-    case 'best': return Math.max(0, ...arr.slice(W+1));
-    case 'prev': return arr[W+1]||0;
-    case 'avg4': return avg(arr.slice(W+1, W+5));
-    case 'avg6': return avg(arr.slice(W+1, W+7));   // 6-wk avg (default)
-    case 'avg8': case 'avg': return avg(arr.slice(W+1, W+9));   // true 8-wk avg
-    case 'vel': return avg(arr.slice(W+1, W+7));   // generic fallback (6-wk); bookings get the true capacity override in rcaClinic
-    case 'avg12': return avg(arr.slice(W+1, W+13));
-    case 'peak': default: return Math.max(arr[W+1]||0, arr[W+2]||0);
-  }
+  if(baseMode==='best') return Math.max(0, ...arr.slice(W+1));
+  if(baseMode==='prev') return arr[W+1]||0;
+  if(baseMode==='peak') return Math.max(arr[W+1]||0, arr[W+2]||0);
+  // avg* and capacity (vel*) → average over the selected window (4/6/8/12).
+  // under capacity mode, bookings get the true per-hour override in rcaClinic.
+  return avg(arr.slice(W+1, W+1+winLen()));
 }
 let causeF='all';         // 'all' | 'avail' | 'l2b' | 'leads' | 'mixed'
 let matF='all';           // 'all' | 'New' | 'Maturing' | 'Mature'
@@ -640,7 +639,7 @@ function rcaClinic(city, clinic){
   const _cWd=i=> _hasHrs ? Math.max(0,((_ros.hrs[i]||0)-(_ros.we_hrs[i]||0)))*(1-_shrF(i)) : Math.max(0,(av[i]||0)-(we[i]||0));
   const _cWe=i=> _hasHrs ? (_ros.we_hrs[i]||0)*(1-_shrF(i)) : (we[i]||0);
   let _wdBk=0,_weBk=0,_wdCap=0,_weCap=0;
-  for(let k=1;k<=8;k++){ const i=W+k; if(i>=WEEKS.length) break; const cw=_cWd(i),ce=_cWe(i); if(cw+ce<=0) continue; const b=(bk[i]||0), wb=((bkWe||[])[i]||0); _wdBk+=(b-wb); _weBk+=wb; _wdCap+=cw; _weCap+=ce; }
+  for(let k=1;k<=winLen();k++){ const i=W+k; if(i>=WEEKS.length) break; const cw=_cWd(i),ce=_cWe(i); if(cw+ce<=0) continue; const b=(bk[i]||0), wb=((bkWe||[])[i]||0); _wdBk+=(b-wb); _weBk+=wb; _wdCap+=cw; _weCap+=ce; }
   const _wdRate=_wdCap>0?_wdBk/_wdCap:0, _weRate=_weCap>0?_weBk/_weCap:0;
   const _wdAll=WEEKS.map((_,i)=>_cWd(i)), _weAll=WEEKS.map((_,i)=>_cWe(i));
   const _nrmH=arr=>{ const w=dimSlice(arr,W).filter(x=>x!=null); return w.length? w.reduce((a,b)=>a+b,0)/w.length:0; };
@@ -649,7 +648,7 @@ function rcaClinic(city, clinic){
   const availHr={loss:_wdRate*_wdShort+_weRate*_weShort, wdRate:_wdRate, weRate:_weRate, normWd:_normWd, wdNow:_wdNow, normWe:_normWe, weNow:_weNow, wdShort:_wdShort, weShort:_weShort, U:_hasHrs?'h':'d'};
   // capacity-adjusted expected bookings = per-hour rate × THIS week's actual bookable hours (weekday + weekend)
   const velExp = _wdRate*_wdNow + _weRate*_weNow;
-  const bkBase = baseMode==='vel' ? velExp : expectedOf(bk, W);   // "Expected" under the chosen baseline
+  const bkBase = baseMode.startsWith('vel') ? velExp : expectedOf(bk, W);   // "Expected" under the chosen baseline
   const dBk = bk_w - bkBase;
   const dLeadPct=ld_avg? (ld_w-ld_avg)/ld_avg*100 : 0;
   const dAct=av_w-av_avg, dWe=we_w-we_avg;
@@ -991,7 +990,7 @@ function rcaOnline(){
   }
   if(!Object.keys(ch).length && L0){ chBasis='leads'; const ovl=L0.overallLeads||[]; const goodWk=i=>ovl[i]!=null && ovl[i]>2000;
     for(const k of ['fb','google','gmb','practo']){ const a=L0[k]||[]; const bv=[];
-      for(let i=W+1;i<=W+5;i++){ if(goodWk(i)&&a[i]!=null) bv.push(a[i]); }
+      for(let i=W+1;i<=W+winLen();i++){ if(goodWk(i)&&a[i]!=null) bv.push(a[i]); }
       ch[k]={w:a[W]||0, base: bv.length? bv.reduce((x,y)=>x+y,0)/bv.length : 0 }; } }
   // dominant mover (the channel that fell most)
   let driver=null,worst=0;
