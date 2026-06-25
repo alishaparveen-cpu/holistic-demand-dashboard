@@ -272,12 +272,23 @@ select.mag-sel.vis{display:block}
   <div class="frow1">
     <span class="fb-lbl">Against</span>
     <select class="fsel" id="sel-against" onchange="render()">
-      <option value="4w">4-week avg</option>
-      <option value="6w" selected>6-week avg</option>
-      <option value="8w">8-week avg</option>
-      <option value="peak">Recent peak</option>
-      <option value="best">Best week ever</option>
-      <option value="lastweek">Last week</option>
+      <optgroup label="Trailing average">
+        <option value="4w">4-week avg</option>
+        <option value="6w" selected>6-week avg</option>
+        <option value="8w">8-week avg</option>
+        <option value="12w">12-week avg</option>
+      </optgroup>
+      <optgroup label="Capacity-adjusted (bookings ÷ open-hours × this week's hours)">
+        <option value="cap4">Capacity · 4-wk rate</option>
+        <option value="cap6">Capacity · 6-wk rate</option>
+        <option value="cap8">Capacity · 8-wk rate</option>
+        <option value="cap12">Capacity · 12-wk rate</option>
+      </optgroup>
+      <optgroup label="Other">
+        <option value="peak">Recent peak</option>
+        <option value="best">Best week ever</option>
+        <option value="lastweek">Last week</option>
+      </optgroup>
     </select>
     <div class="fb-sep"></div>
     <span class="fb-lbl">Level</span>
@@ -396,14 +407,43 @@ function getM(e){
 }
 
 function getCurVal(arr){return arr?arr[weekIdx]??null:null;}
-function getBaseline(arr,mode){
+// how many trailing weeks a window mode spans (used by both the avg and capacity baselines)
+function winN(mode){return (mode==='4w'||mode==='cap4')?4:(mode==='8w'||mode==='cap8')?8:(mode==='12w'||mode==='cap12')?12:6;}
+// capacity baseline applies only to absolute booking counts (not ratios/leads/days)
+const CAP_KEYS={book:1,bookall:1,done:1};
+// e/key are optional — needed only for the capacity-adjusted modes, where the baseline =
+//   (trailing bookings ÷ trailing open-hours) × THIS week's open-hours
+// i.e. "given how many hours you were actually open this week, at your recent per-hour rate."
+function getBaseline(arr,mode,e,key){
   if(!arr)return null;
   if(isMonthly){const p=arr[weekIdx-4];if(p!=null&&p>0)return p;const v=arr.slice(0,weekIdx).filter(v=>v!=null&&v>0);return v.length?v[v.length-1]:getCurVal(arr)||1;}
   const prev=arr.slice(0,weekIdx).filter(v=>v!=null&&v>0);if(!prev.length)return getCurVal(arr)||1;
   const avg=a=>a.reduce((s,v)=>s+v,0)/(a.length||1);
-  switch(mode){case'4w':return avg(prev.slice(-4));case'6w':return avg(prev.slice(-6));case'8w':return avg(prev.slice(-8));case'peak':return Math.max(...prev.slice(-8));case'best':return Math.max(...prev);case'lastweek':return prev[prev.length-1];default:return avg(prev.slice(-6));}
+  if(mode&&mode.indexOf('cap')===0){
+    const N=winN(mode);
+    if(e && CAP_KEYS[key]){
+      const hrs=(e.avail&&e.avail.some(x=>x>0))?e.avail:e.adays;   // prefer open-hours, fall back to active-days
+      if(hrs){
+        let sB=0,sH=0,c=0;
+        for(let i=weekIdx-1;i>=0&&c<N;i--){ const b=arr[i],h=hrs[i]; if(b!=null&&h!=null&&h>0){ sB+=b; sH+=h; c++; } }  // include open-but-zero weeks
+        const hNow=hrs[weekIdx];
+        if(sH>0&&hNow!=null&&hNow>0) return sB/sH*hNow;
+      }
+    }
+    return avg(prev.slice(-N));   // ratios/leads/days, or no hours → same-window average
+  }
+  switch(mode){
+    case'4w':return avg(prev.slice(-4));
+    case'6w':return avg(prev.slice(-6));
+    case'8w':return avg(prev.slice(-8));
+    case'12w':return avg(prev.slice(-12));
+    case'peak':return Math.max(...prev.slice(-8));
+    case'best':return Math.max(...prev);
+    case'lastweek':return prev[prev.length-1];
+    default:return avg(prev.slice(-6));
+  }
 }
-function dropPct(arr,mode){const c=getCurVal(arr),b=getBaseline(arr,mode);if(c==null||!b)return 0;return Math.round((c-b)/b*100);}
+function dropPct(arr,mode,e,key){const c=getCurVal(arr),b=getBaseline(arr,mode,e,key);if(c==null||!b)return 0;return Math.round((c-b)/b*100);}
 function cls(p){return p>=-10?'good':p>=-20?'warn':'bad';}
 function velSlowing(arr){if(!arr||isMonthly)return false;const p=arr.slice(0,weekIdx).filter(v=>v!=null&&v>0);if(p.length<4)return false;const n=p.slice(-6).reduce((s,v)=>s+v,0)/(p.slice(-6).length||1);const r=arr.slice(Math.max(0,weekIdx-3),weekIdx).filter(v=>v!=null);return r.length&&r.reduce((s,v)=>s+v,0)/r.length<n*0.75;}
 
@@ -413,7 +453,7 @@ function entityPasses(e, against){
     const arr=m[f.key]; if(!arr) return true;
     const dirs=f.dirs||new Set(['any']);
     if(dirs.has('any')||dirs.size===0) return true;
-    const p=dropPct(arr,against);
+    const p=dropPct(arr,against,e,f.key);
     if(dirs.has('drop')&&p<=-(f.mag||1)) return true;
     if(dirs.has('grow')&&p>=(f.mag||1)) return true;
     if(dirs.has('flat')&&p>-10&&p<10) return true;
@@ -422,14 +462,14 @@ function entityPasses(e, against){
 }
 function worstActiveMetricDrop(e,against){
   const m=getM(e);
-  const drops=mfState.map(f=>{const arr=m[f.key];return arr?dropPct(arr,against):0;});
+  const drops=mfState.map(f=>{const arr=m[f.key];return arr?dropPct(arr,against,e,f.key):0;});
   return drops.length?Math.min(...drops):0;
 }
 // new / sparse entities (a clinic that opened a week or two ago) swing wildly (-100% off one week) and
 // drown out real drops — require ≥4 weeks of booking history before the current week to be assessed.
 function enoughHistory(e){const b=e.book||[];let n=0;for(let i=0;i<weekIdx;i++){if(b[i]>0)n++;}return n>=4;}
 
-const AGAINST_SHORT={'4w':'4w avg','6w':'6w avg','8w':'8w avg','peak':'peak','best':'best ever','lastweek':'last wk'};
+const AGAINST_SHORT={'4w':'4w avg','6w':'6w avg','8w':'8w avg','12w':'12w avg','cap4':'cap 4w','cap6':'cap 6w','cap8':'cap 8w','cap12':'cap 12w','peak':'peak','best':'best ever','lastweek':'last wk'};
 // ── trend sparkline + sustained-vs-blip — answers "did demand drop this week only, or for a while?" ──
 function miniTrend(arr,base,color){
   const W=weekIdx, n=8, s=Math.max(0,W-n+1);
@@ -519,7 +559,7 @@ function barsHTML(e,against,id){
     const def=ALL_MDEFS.find(d=>d.key===f.key);if(!def)return;
     const arr=m[f.key];if(!arr)return;
     const cur=getCurVal(arr);if(cur==null)return;
-    const base=getBaseline(arr,against);if(!base)return;
+    const base=getBaseline(arr,against,e,f.key);if(!base)return;
     const p=Math.round((cur-base)/base*100),c=cls(p);
     const fw=Math.min(100,Math.max(0,Math.round(cur/base*100))),hw=100-fw;
     // days/hours are week-averaged for the baseline (and city totals span clinics), so they're fractional —
@@ -645,7 +685,7 @@ const dCol=v=>v<=-1?'#dc2626':v>=1?'#059669':'#94a3b8';
 function worstChannel(e,against){ if(!e.leadCh) return null; let best=null,worst=0; LEAD_CH.forEach(([k,lbl])=>{ const a=e.leadCh[k]; if(!a)return; const cu=getCurVal(a),ba=getBaseline(a,against); if(cu==null||!ba)return; const loss=cu-ba; if(loss<worst){worst=loss;best={k,lbl,p:Math.round((cu-ba)/ba*100)};} }); return best; }
 // metric-appropriate 'why' line
 function reasonWhy(def,e,against){
-  const mp=key=>{ const a=getM(e)[key]; if(!a)return null; const cu=getCurVal(a),ba=getBaseline(a,against); return (cu==null||!ba)?null:Math.round((cu-ba)/ba*100); };
+  const mp=key=>{ const a=getM(e)[key]; if(!a)return null; const cu=getCurVal(a),ba=getBaseline(a,against,e,key); return (cu==null||!ba)?null:Math.round((cu-ba)/ba*100); };
   const bk=mp('book'), ld=mp('leads'), av=mp('adays'), l2=mp('l2b');
   const bkTxt=bk==null?'':(bk<=-10?` Bookings followed (${bk}%).`:(bk>=0?` Bookings held (${bk>0?'+':''}${bk}%).`:` Bookings ${bk}%.`));
   if(def.grp==='avail') return `<b style="color:#b45309">Supply</b> — capacity down.${bkTxt}`;
@@ -672,7 +712,7 @@ function renderReasonGrid(visible, against, level){
   const getArr = isChan ? (e=>e.leadCh&&e.leadCh[dim.key]) : (e=>getM(e)[def.key]);
   // entities = the SAME filtered set the Tile view shows (respects metric conditions, channel filter, search)
   const ents=visible.map(x=>({e:x.e, name:x.e.name, sub: x.type==='clinic'?x.cityName : x.type==='doctor'?(x.clinicName+' · '+x.cityName):''}));
-  const rows=ents.map(x=>{ const arr=getArr(x.e); if(!arr)return null; const cur=getCurVal(arr),base=getBaseline(arr,against); if(cur==null||!base)return null; return Object.assign(x,{arr,cur,base,p:Math.round((cur-base)/base*100)}); }).filter(Boolean);
+  const rows=ents.map(x=>{ const arr=getArr(x.e); if(!arr)return null; const cur=getCurVal(arr),base=getBaseline(arr,against,x.e,isChan?null:def.key); if(cur==null||!base)return null; return Object.assign(x,{arr,cur,base,p:Math.round((cur-base)/base*100)}); }).filter(Boolean);
   const isRatio = !isChan && def && def.unit==='%';
   // when the user has applied conditions/search/channel filter, show the WHOLE filtered set (ranked by this dimension's drop);
   // with no filter, fall back to "only where this dimension fell" so the default isn't a wall of flat cards.
@@ -681,12 +721,12 @@ function renderReasonGrid(visible, against, level){
   if(!anyFilter) fell=fell.filter(r=>r.p<0 && (isChan? r.base>=2 : true)).slice(0,12);
   else fell=fell.slice(0,36);
   const fmtV=v=>isChan?Math.round(v):fmtVal(def,v);
-  const worstFor=(city)=>{ let best=null,worst=0; (city.clinics||[]).forEach(cl=>{ const a=getArr(cl); if(!a)return; const cu=getCurVal(a),ba=getBaseline(a,against); if(cu==null||ba==null)return; const loss=cu-ba; if(loss<worst){worst=loss;best=cl;} }); return best||(city.clinics&&city.clinics[0]); };
+  const worstFor=(city)=>{ let best=null,worst=0; (city.clinics||[]).forEach(cl=>{ const a=getArr(cl); if(!a)return; const cu=getCurVal(a),ba=getBaseline(a,against,cl,isChan?null:def.key); if(cu==null||ba==null)return; const loss=cu-ba; if(loss<worst){worst=loss;best=cl;} }); return best||(city.clinics&&city.clinics[0]); };
   const card=r=>{
     const arrJson=JSON.stringify(r.arr).replace(/'/g,"&#39;");
     const lt=r.e.leads, bk=r.e.book;
-    const ltP=(()=>{const cu=getCurVal(lt),ba=getBaseline(lt,against);return ba?Math.round((cu-ba)/ba*100):null;})();
-    const bkP=(()=>{const cu=getCurVal(bk),ba=getBaseline(bk,against);return ba?Math.round((cu-ba)/ba*100):null;})();
+    const ltP=(()=>{const cu=getCurVal(lt),ba=getBaseline(lt,against,r.e,'leads');return ba?Math.round((cu-ba)/ba*100):null;})();
+    const bkP=(()=>{const cu=getCurVal(bk),ba=getBaseline(bk,against,r.e,'book');return ba?Math.round((cu-ba)/ba*100):null;})();
     let whyHtml, ctx;
     if(isChan){ const broad=ltP!=null&&ltP<=-10; whyHtml=`${broad?`<b style="color:#dc2626">Broad demand drop</b> — total leads down ${ltP}%, not just ${label}.`:`<b style="color:#b45309">${label}-specific</b> — total leads ${ltP>=0?'held':'down only '+ltP+'%'}; concentrated in ${label}.`} ${bkP==null?'':bkP<=-10?`Bookings followed (${bkP}%).`:(bkP>=0?`Bookings held.`:`Bookings ${bkP}%.`)}`;
       ctx=`All leads <b>${getCurVal(lt)}</b> (${ltP>0?'+':''}${ltP}%) · Bookings <b>${getCurVal(bk)}</b> (${bkP>0?'+':''}${bkP}%)`; }
@@ -780,7 +820,7 @@ function setCauseFilter(k){ causeFilter=k; render(); }
 function setCityFilter(v){ cityFilter=v; render(); }
 // primary cause for a clinic, upstream-first: availability → leads(channel) → lead→book → show-up
 function computeCause(e, against){
-  const mp=k=>{ const a=getM(e)[k]; if(!a)return null; const c=getCurVal(a),b=getBaseline(a,against); return (c==null||!b)?null:Math.round((c-b)/b*100); };
+  const mp=k=>{ const a=getM(e)[k]; if(!a)return null; const c=getCurVal(a),b=getBaseline(a,against,e,k); return (c==null||!b)?null:Math.round((c-b)/b*100); };
   const av=mp('adays'), ld=mp('leads'), cv=mp('l2bc'), sh=mp('b2d');
   if(av!=null && av<=-10) return {cause:'avail', why:`<b>Active days ${av}%</b> — supply gap (fewer days open).`};
   if(ld!=null && ld<=-10){ const wc=worstChannel(e,against); return {cause:'leads', why:`<b>Leads ${ld}%</b>${wc&&wc.p<0?`, mostly <b style="color:#b45309">${wc.lbl}</b> (${wc.p}%)`:''}.`}; }
@@ -793,7 +833,7 @@ function buildCauseControls(){
   const against=document.getElementById('sel-against').value;
   // tally causes across clinics where bookings dropped (respecting the city filter)
   const tally={all:0}; CAUSES.forEach(c=>tally[c.k]=0);
-  CITIES.forEach(c=>{ if(cityFilter!=='all'&&c.name!==cityFilter)return; (c.clinics||[]).forEach(cl=>{ if(!enoughHistory(cl))return; const a=getM(cl).book; if(!a)return; const cu=getCurVal(a),ba=getBaseline(a,against); if(cu==null||!ba)return; if(cu>=ba)return; tally.all++; tally[computeCause(cl,against).cause]++; }); });
+  CITIES.forEach(c=>{ if(cityFilter!=='all'&&c.name!==cityFilter)return; (c.clinics||[]).forEach(cl=>{ if(!enoughHistory(cl))return; const a=getM(cl).book; if(!a)return; const cu=getCurVal(a),ba=getBaseline(a,against,cl,'book'); if(cu==null||!ba)return; if(cu>=ba)return; tally.all++; tally[computeCause(cl,against).cause]++; }); });
   const chip=(k,lbl,col)=>`<span class="cz-chip${causeFilter===k?' on':''}" style="${causeFilter===k?`background:${col||'#1A1A17'};border-color:${col||'#1A1A17'}`:(col?`color:${col};border-color:${col}55`:'')}" onclick="setCauseFilter('${k}')">${lbl} <span class="n">${tally[k]||0}</span></span>`;
   const cityOpts=['<option value="all">All cities</option>'].concat(CITIES.map(c=>c.name).sort().map(n=>`<option value="${n}" ${cityFilter===n?'selected':''}>${n}</option>`)).join('');
   el.innerHTML=`<div class="cz-bar"><span class="cz-lbl">Cause</span>${chip('all','All')}${CAUSES.map(c=>chip(c.k,c.icon+' '+c.label,c.col)).join('')}
@@ -808,7 +848,7 @@ function renderCauseView(){
     (c.clinics||[]).forEach(cl=>{ if(!enoughHistory(cl))return;
       if(searchQ && !(matches(cl.name,[])||matches(c.name,[])))return;
       const a=getM(cl).book; if(!a)return;
-      const cur=getCurVal(a),base=getBaseline(a,against); if(cur==null||!base)return; const p=Math.round((cur-base)/base*100);
+      const cur=getCurVal(a),base=getBaseline(a,against,cl,'book'); if(cur==null||!base)return; const p=Math.round((cur-base)/base*100);
       if(cur>=base)return; const ca=computeCause(cl,against);
       rows.push({cl,city:c.name,cur,base,p,ca}); }); });
   if(causeFilter!=='all') rows=rows.filter(r=>r.ca.cause===causeFilter);
@@ -870,7 +910,7 @@ function render(){
     const m=getM(e),c=cls(item.wd);
     const pills=mfState.map(f=>{
       const arr=m[f.key];if(!arr)return'';
-      const p=dropPct(arr,against),pc=cls(p);
+      const p=dropPct(arr,against,e,f.key),pc=cls(p);
       const def=ALL_MDEFS.find(d=>d.key===f.key);
       return`<span class="pill ${pc}">${def?def.label:f.key} ${p>0?'+':''}${p}%</span>`;
     }).filter(Boolean).join('');
