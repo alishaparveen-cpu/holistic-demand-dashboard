@@ -278,7 +278,7 @@ select.mag-sel.vis{display:block}
         <option value="8w">8-week avg</option>
         <option value="12w">12-week avg</option>
       </optgroup>
-      <optgroup label="Capacity-adjusted (bookings ÷ open-hours × this week's hours)">
+      <optgroup label="Capacity-adjusted (bookings ÷ active-days × this week's days)">
         <option value="cap4">Capacity · 4-wk rate</option>
         <option value="cap6">Capacity · 6-wk rate</option>
         <option value="cap8">Capacity · 8-wk rate</option>
@@ -412,8 +412,8 @@ function winN(mode){return (mode==='4w'||mode==='cap4')?4:(mode==='8w'||mode==='
 // capacity baseline applies only to absolute booking counts (not ratios/leads/days)
 const CAP_KEYS={book:1,bookall:1,done:1};
 // e/key are optional — needed only for the capacity-adjusted modes, where the baseline =
-//   (trailing bookings ÷ trailing open-hours) × THIS week's open-hours
-// i.e. "given how many hours you were actually open this week, at your recent per-hour rate."
+//   (trailing bookings ÷ trailing active-days) × THIS week's active-days
+// i.e. "given how many days you were actually open this week, at your recent per-active-day rate."
 function getBaseline(arr,mode,e,key){
   if(!arr)return null;
   if(isMonthly){const p=arr[weekIdx-4];if(p!=null&&p>0)return p;const v=arr.slice(0,weekIdx).filter(v=>v!=null&&v>0);return v.length?v[v.length-1]:getCurVal(arr)||1;}
@@ -422,15 +422,15 @@ function getBaseline(arr,mode,e,key){
   if(mode&&mode.indexOf('cap')===0){
     const N=winN(mode);
     if(e && CAP_KEYS[key]){
-      const hrs=(e.avail&&e.avail.some(x=>x>0))?e.avail:e.adays;   // prefer open-hours, fall back to active-days
-      if(hrs){
-        let sB=0,sH=0,c=0;
-        for(let i=weekIdx-1;i>=0&&c<N;i--){ const b=arr[i],h=hrs[i]; if(b!=null&&h!=null&&h>0){ sB+=b; sH+=h; c++; } }  // include open-but-zero weeks
-        const hNow=hrs[weekIdx];
-        if(sH>0&&hNow!=null&&hNow>0) return sB/sH*hNow;
+      const cap=(e.adays&&e.adays.some(x=>x>0))?e.adays:e.avail;   // active-days the capacity unit; open-hours only if no active-days
+      if(cap){
+        let sB=0,sD=0,c=0;
+        for(let i=weekIdx-1;i>=0&&c<N;i--){ const b=arr[i],d=cap[i]; if(b!=null&&d!=null&&d>0){ sB+=b; sD+=d; c++; } }  // include open-but-zero weeks
+        const dNow=cap[weekIdx];
+        if(sD>0&&dNow!=null&&dNow>0) return sB/sD*dNow;
       }
     }
-    return avg(prev.slice(-N));   // ratios/leads/days, or no hours → same-window average
+    return avg(prev.slice(-N));   // ratios/leads/hours, or no active-days → same-window average
   }
   switch(mode){
     case'4w':return avg(prev.slice(-4));
