@@ -79,7 +79,7 @@ def main():
     cities = defaultdict(lambda: {k: Z() for k in
              ["spend","clicks","loc_clicks","is_w","is_d","impr","conv","budget_w","budget_n"]})
     CATS = ["STI","SH","MH","Other"]
-    catacc = defaultdict(lambda: {ct: {"impr": Z(), "clicks": Z(), "loc_clicks": Z(), "conv": Z()} for ct in CATS})  # city → cat → metrics
+    catacc = defaultdict(lambda: {ct: {"impr": Z(), "clicks": Z(), "loc_clicks": Z(), "conv": Z(), "spend": Z()} for ct in CATS})  # city → cat → metrics
 
     # 1) weekly campaign metrics → city
     rows = gaql(token, c, f"""
@@ -102,7 +102,7 @@ def main():
         o["conv"][i] += float(m.get("conversions", 0) or 0)
         o["is_w"][i] += isv*imp; o["is_d"][i] += imp
         o["budget_w"][i] += bud; o["budget_n"][i] += 1
-        ca = catacc[city][cat_of(n)]; ca["impr"][i] += imp; ca["clicks"][i] += cl; ca["conv"][i] += float(m.get("conversions", 0) or 0)
+        ca = catacc[city][cat_of(n)]; ca["impr"][i] += imp; ca["clicks"][i] += cl; ca["conv"][i] += float(m.get("conversions", 0) or 0); ca["spend"][i] += cost
 
     # 2) location click-types → loc clicks per city/week
     crows = gaql(token, c, f"""
@@ -137,7 +137,8 @@ def main():
                      "by_cat": {ct: {"impr": [round(x) for x in catacc[city][ct]["impr"]],
                                      "clicks": [round(x) for x in catacc[city][ct]["clicks"]],
                                      "loc_clicks": [round(x) for x in catacc[city][ct]["loc_clicks"]],
-                                     "conv": [round(x,1) for x in catacc[city][ct]["conv"]]} for ct in CATS}}
+                                     "conv": [round(x,1) for x in catacc[city][ct]["conv"]],
+                                     "spend": [round(x) for x in catacc[city][ct]["spend"]]} for ct in CATS}}
     json.dump(out, open(OUT, "w"), separators=(",", ":"))
     n = len([k for k in out if k != "_meta"])
     print(f"wrote {OUT} · {n} cities")

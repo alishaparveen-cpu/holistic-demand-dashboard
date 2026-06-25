@@ -137,6 +137,8 @@ tr[onclick]:hover td:first-child{color:var(--accent)}
   <div class="fmwrap"><table class="fm" id="tAvail"></table></div>
   <div class="shead">⑥ Google Ads funnel <span class="lblmuted">(category → impressions → clicks → location-clicks → conversions · Google's own metrics; "conversions" = Google-tracked (web forms + call-extension calls), narrower than the attributed leads in ①)</span></div>
   <div class="fmwrap"><table class="fm" id="tGads"></table></div>
+  <div class="shead">⑦ Google Ads — Cost &amp; Efficiency <span class="lblmuted">(<b>paid Google only</b> for this city — GMB / Organic / Meta / Practo carry no auction spend. <b>Cost per call</b> = spend ÷ location-clicks; CPL / CPB use ① attributed <b>paid</b> leads / bookings. Lower is better.)</span></div>
+  <div class="fmwrap"><table class="fm" id="tGcost"></table></div>
   </div>
 </div>
 <div class="modal" id="modal"><div class="mbox"><div class="mhd"><span id="mTitle"></span><button onclick="closeZ()">✕</button></div><div id="mBody"></div></div></div>
@@ -454,9 +456,31 @@ function render(){
         G+=row('· · conversions (Google-tracked)',bc.conv,'sub',N,{color:GRN});G+=row('· · click → conv %',pctOf(bc.conv,bc.clicks),'sub',PCT,{color:VIO});}});
   }else{G+=row('— no Google Ads campaign data for this city —',null,'sub',N);}
   $('tGads').innerHTML=G;
+
+  // ⑦ Google Ads — Cost & Efficiency (paid only, this city)
+  QVTABLE='⑦ Google Cost';let GC=head('Google paid · cost');
+  const costR=(num,den)=>{const B=vbuckets();return B.map(b=>{let sn=0,sd=0;b.idxs.forEach(k=>{sn+=(num[k]||0);sd+=(den[k]||0);});return sd?sn/sd:null;});};
+  const z0=a=>(a||ZA).map(v=>v==null?0:v);
+  const gpCatCity=ct=>clinics.reduce((a,x)=>{const t=x.data.lead_book.gpaid_call;const bc=t&&t.by_cat?t.by_cat[ct]:null;return addv(a,bc||ZA);},ZA.slice());
+  if(gr&&gr.spend&&gr.spend.some(v=>v)){
+    const sp=z0(gr.spend);
+    GC+=row('Google Ads — spend',sp,'tot',RUP,{color:BLU});
+    GC+=row('· CPC — ₹ / click',costR(sp,z0(gr.clicks)),'sub',RUP,{color:VIO});
+    GC+=row('· cost per call — ₹ / location-click',costR(sp,z0(gr.loc_clicks)),'sub',RUP,{color:GRN});
+    GC+=row('· CPL — ₹ / paid lead (①)',costR(sp,googCity),'sub',RUP,{color:GRN});
+    GC+=row('· CPB — ₹ / paid booking',costR(sp,gpBk),'sub',RUP,{color:GRN});
+    CATS.forEach(ct=>{const bc=(gr.by_cat||{})[ct];const csp=bc&&bc.spend?z0(bc.spend):null;if(!csp||!csp.some(v=>v))return;
+      GC+=row(ct+' — spend',csp,'gband',RUP,{color:CATCOL[ct],tkey:'gcc_'+ct});
+      if(EXP['gcc_'+ct]||CATMODE){const cls=CATMODE?'sub catrow':'sub';
+        GC+=row('· cost per call',costR(csp,z0(bc.loc_clicks)),cls,RUP,{color:GRN});
+        GC+=row('· CPC',costR(csp,z0(bc.clicks)),cls,RUP,{color:VIO});
+        GC+=row('· CPL · paid lead',costR(csp,gpCatCity(ct)),cls,RUP,{color:GRN});}});
+  }else{GC+=row('— no Google Ads spend for this city —',null,'sub',N);}
+  $('tGcost').innerHTML=GC;
+
   const _dim=SEG!=='all';
-  ['tLeads','tLB','tGads'].forEach(id=>{const w=$(id)&&$(id).closest('.fmwrap');if(w){w.classList.toggle('modedim',_dim);}});
-  document.querySelectorAll('.shead').forEach(h=>{const isAcq=/① Leads|② Lead|⑥ Google/.test(h.textContent);let n=h.querySelector('.modenote');
+  ['tLeads','tLB','tGads','tGcost'].forEach(id=>{const w=$(id)&&$(id).closest('.fmwrap');if(w){w.classList.toggle('modedim',_dim);}});
+  document.querySelectorAll('.shead').forEach(h=>{const isAcq=/① Leads|② Lead|⑥ Google|⑦ Google/.test(h.textContent);let n=h.querySelector('.modenote');
     if(_dim&&isAcq){if(!n){n=document.createElement('span');n.className='modenote';h.appendChild(n);}n.textContent='— acquisition-side · not split by consult (showing all)';}else if(n){n.remove();}});
   QVTABLE=null;
   $('qvBtn').textContent=QV?'▦ Table view':'📈 Quick view';

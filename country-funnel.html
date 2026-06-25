@@ -136,6 +136,8 @@ tr[onclick]:hover td:first-child{color:var(--accent)}
   <div class="fmwrap"><table class="fm" id="tAvail"></table></div>
   <div class="shead">⑥ Google Ads funnel <span class="lblmuted">(city → category → impressions → clicks → location-clicks → conversions · Google's own metrics; "conversions" = Google-tracked (web forms + call-extension calls), narrower than the attributed leads in ①)</span></div>
   <div class="fmwrap"><table class="fm" id="tGads"></table></div>
+  <div class="shead">⑦ Google Ads — Cost &amp; Efficiency <span class="lblmuted">(<b>paid Google only</b> — GMB / Organic / Meta / Practo carry no auction spend, shown as —. <b>Cost per call</b> = spend ÷ location-clicks (the founder's terminal metric); CPL / CPB use ① attributed <b>paid</b> leads / bookings. Lower is better.)</span></div>
+  <div class="fmwrap"><table class="fm" id="tGcost"></table></div>
   </div>
 </div>
 <div class="modal" id="modal"><div class="mbox"><div class="mhd"><span id="mTitle"></span><button onclick="closeZ()">✕</button></div><div id="mBody"></div></div></div>
@@ -498,10 +500,40 @@ function render(){
         G+=row('· · location clicks',bc.loc_clicks,'sub',N,{color:GRN});G+=row('· · loc-click % of clicks',pctOf(bc.loc_clicks,bc.clicks),'sub',PCT,{color:VIO});
         G+=row('· · conversions (Google-tracked)',bc.conv,'sub',N,{color:GRN});G+=row('· · click → conv %',pctOf(bc.conv,bc.clicks),'sub',PCT,{color:VIO});}});}});
   $('tGads').innerHTML=G;
+
+  // ⑦ Google Ads — Cost & Efficiency (paid only) — spend → CPC → cost/call → CPL → CPB; by category + by city
+  QVTABLE='⑦ Google Cost';let GC=head('Google paid · cost');
+  const RC=D._meta.city_google_reach||{};
+  const costR=(num,den)=>{const B=vbuckets();return B.map(b=>{let sn=0,sd=0;b.idxs.forEach(k=>{sn+=(num[k]||0);sd+=(den[k]||0);});return sd?sn/sd:null;});};
+  const gcc=cities.filter(ci=>RC[ci]&&RC[ci].spend&&RC[ci].spend.some(v=>v)).sort((a,b)=>(RC[b].spend[WKEND]||0)-(RC[a].spend[WKEND]||0));
+  const z0=a=>(a||ZA).map(v=>v==null?0:v);
+  const sumF=f=>gcc.reduce((a,ci)=>addv(a,z0(RC[ci][f])),ZA.slice());
+  const catSum=(ct,f)=>gcc.reduce((a,ci)=>{const bc=(RC[ci].by_cat||{})[ct];return addv(a,bc&&bc[f]?z0(bc[f]):ZA);},ZA.slice());
+  const spendT=sumF('spend'),clksT=sumF('clicks'),locT=sumF('loc_clicks');
+  GC+=row('All Google Ads — spend',spendT,'tot',RUP,{color:BLU});
+  GC+=row('· CPC — ₹ / click',costR(spendT,clksT),'sub',RUP,{color:VIO});
+  GC+=row('· cost per call — ₹ / location-click',costR(spendT,locT),'sub',RUP,{color:GRN});
+  GC+=row('· CPL — ₹ / paid lead (①)',costR(spendT,googCountry),'sub',RUP,{color:GRN});
+  GC+=row('· CPB — ₹ / paid booking',costR(spendT,googBk),'sub',RUP,{color:GRN});
+  // by category — cost per call by SH / STI / MH (founder's ask)
+  CATS.forEach(ct=>{const sp=catSum(ct,'spend');if(!sp.some(v=>v))return;
+    GC+=row(ct+' — spend',sp,'grp',RUP,{color:CATCOL[ct],tkey:'gcc_'+ct});
+    if(EXP['gcc_'+ct]||CATMODE){const cls=CATMODE?'sub catrow':'sub';
+      GC+=row('· cost per call',costR(sp,catSum(ct,'loc_clicks')),cls,RUP,{color:GRN});
+      GC+=row('· CPC',costR(sp,catSum(ct,'clicks')),cls,RUP,{color:VIO});
+      GC+=row('· CPL · paid lead',costR(sp,gpCat(ct)),cls,RUP,{color:GRN});}});
+  // by city (expandable)
+  gcc.forEach(ci=>{const sp=z0(RC[ci].spend);
+    GC+=row(ci+' — spend',sp,'gband',RUP,{color:BLU,tkey:'gcs_'+ci});
+    if(EXP['gcs_'+ci]){
+      GC+=row('· CPC',costR(sp,z0(RC[ci].clicks)),'sub',RUP,{color:VIO});
+      GC+=row('· cost per call',costR(sp,z0(RC[ci].loc_clicks)),'sub',RUP,{color:GRN});}});
+  $('tGcost').innerHTML=GC;
+
   // acquisition-side sections (Leads, Lead→Book, Google Ads) aren't split by consult mode → blur + note when a mode is picked
   const _dim=SEG!=='all';
-  ['tLeads','tLB','tGads'].forEach(id=>{const w=$(id)&&$(id).closest('.fmwrap');if(w){w.classList.toggle('modedim',_dim);}});
-  document.querySelectorAll('.shead').forEach(h=>{const isAcq=/① Leads|② Lead|⑥ Google/.test(h.textContent);let n=h.querySelector('.modenote');
+  ['tLeads','tLB','tGads','tGcost'].forEach(id=>{const w=$(id)&&$(id).closest('.fmwrap');if(w){w.classList.toggle('modedim',_dim);}});
+  document.querySelectorAll('.shead').forEach(h=>{const isAcq=/① Leads|② Lead|⑥ Google|⑦ Google/.test(h.textContent);let n=h.querySelector('.modenote');
     if(_dim&&isAcq){if(!n){n=document.createElement('span');n.className='modenote';h.appendChild(n);}n.textContent='— acquisition-side · not split by consult (showing all)';}else if(n){n.remove();}});
   QVTABLE=null;
   $('qvBtn').textContent=QV?'▦ Table view':'📈 Quick view';

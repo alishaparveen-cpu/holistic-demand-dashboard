@@ -29,9 +29,11 @@ for city, c in ga.items():
         ci = align(bc.get("impr", []))
         if not any(v for v in ci): continue
         by_cat[ct] = {"impr": ci, "clicks": align(bc.get("clicks", [])),
-                      "loc_clicks": align(bc.get("loc_clicks", [])), "conv": align(bc.get("conv", []))}
+                      "loc_clicks": align(bc.get("loc_clicks", [])), "conv": align(bc.get("conv", [])),
+                      "spend": align(bc.get("spend", []))}
     reach[city] = {"impr": impr, "clicks": align(c.get("clicks", [])),
-                   "loc_clicks": align(c.get("loc_clicks", [])), "by_cat": by_cat}
+                   "loc_clicks": align(c.get("loc_clicks", [])), "spend": align(c.get("spend", [])),
+                   "by_cat": by_cat}
 d["_meta"]["city_google_reach"] = reach
 json.dump(d, open(os.path.join(ROOT, "data_source_recon.json"), "w"), separators=(",", ":"))
 print("merged GA reach for %d cities" % len(reach))
