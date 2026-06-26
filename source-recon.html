@@ -289,16 +289,17 @@ function render(){
   }
   $('tAvail').innerHTML=AV;
   // ② LEADS summary (total → GMB+Google → relevant → Practo)
-  const ggLeads=addv(addv(cl(lb.gmb_call),wl(lb.gmb_web)),addv(cl(lb.gpaid_call),wl(lb.gpaid_web)));
-  const ggRel=addv(addv(rl(lb.gmb_call),wl(lb.gmb_web)),addv(rl(lb.gpaid_call),wl(lb.gpaid_web)));
-  const prLeads=lb.practo?lb.practo.leads:ZA;
-  const gmbLeads=addv(cl(lb.gmb_call),wl(lb.gmb_web)), googLeads=addv(cl(lb.gpaid_call),wl(lb.gpaid_web));
-  const RG=(c.reach&&c.reach.gmb)||{}, RR=(c.reach&&c.reach.google)||{}, RV=c.reviews||{};
-  const CTRF=v=>v==null||isNaN(v)?'—':v.toFixed(1)+'%';
-  QVTABLE='② Leads';let LS=head('Leads');
   const myCity=(D._meta.display[CUR]||'').split(' · ').slice(-1)[0];
   const cityN=D._meta.clinics.filter(k=>(D._meta.display[k]||'').split(' · ').slice(-1)[0]===myCity).length;
   const multiCity=cityN>1;
+  const gpIntent=multiCity?rl(lb.gpaid_call):cl(lb.gpaid_call);  // clinic-intent paid calls (AI locality), not the shared city total
+  const ggLeads=addv(addv(cl(lb.gmb_call),wl(lb.gmb_web)),addv(gpIntent,wl(lb.gpaid_web)));
+  const ggRel=addv(addv(rl(lb.gmb_call),wl(lb.gmb_web)),addv(rl(lb.gpaid_call),wl(lb.gpaid_web)));
+  const prLeads=lb.practo?lb.practo.leads:ZA;
+  const gmbLeads=addv(cl(lb.gmb_call),wl(lb.gmb_web)), googLeads=addv(gpIntent,wl(lb.gpaid_web));
+  const RG=(c.reach&&c.reach.gmb)||{}, RR=(c.reach&&c.reach.google)||{}, RV=c.reviews||{};
+  const CTRF=v=>v==null||isNaN(v)?'—':v.toFixed(1)+'%';
+  QVTABLE='② Leads';let LS=head('Leads');
   LS+=row('GMB + Google + Practo — total leads',addv(ggLeads,prLeads),'tot');
   LS+=row('Google — GMB + paid (total)',ggLeads,'grp',N,{tkey:'lds_gg',color:GRN});
   if(EXP['lds_gg']){
@@ -316,10 +317,9 @@ function render(){
     LS+=row('+ve (4–5★)',RV.pos,'sub2',N,{color:GRN});
     LS+=row('−ve (≤3★)',RV.neg,'sub2',N,{color:RED,invert:true});
   }
-  LS+=row(multiCity?'· Google paid · city-level':'· Google paid',googLeads,'sub',N,{tkey:'lds_goog',color:GRN});
+  LS+=row(multiCity?'· Google paid · intent for THIS CLINIC':'· Google paid',googLeads,'sub',N,{tkey:'lds_goog',color:GRN});
   if(EXP['lds_goog']){
-    LS+=row(multiCity?'· paid calls · city number (SHARED across city)':'· paid calls',cl(lb.gpaid_call),'sub2',N,{color:GRN});
-    if(multiCity&&lb.gpaid_call)LS+=row('· · this clinic (AI-locality relevant calls)',rl(lb.gpaid_call),'sub2',N,{color:GRN});
+    LS+=row(multiCity?'· paid calls · intent for THIS CLINIC (AI locality)':'· paid calls',gpIntent,'sub2',N,{color:GRN});
     LS+=row(multiCity?'· paid web · city-level (see City Funnel)':'· paid web',wl(lb.gpaid_web),'sub2',N,{color:GRN});
     const _clinicReach=(RR.impr&&RR.impr.some(v=>v)), GR2=_clinicReach?RR:((D._meta.city_google_reach||{})[myCity]||{});
     if(GR2.impr&&GR2.impr.some(v=>v)){const bcr=GR2.by_cat||{}, lvl=_clinicReach?'THIS CLINIC (location-asset)':'city-level';
