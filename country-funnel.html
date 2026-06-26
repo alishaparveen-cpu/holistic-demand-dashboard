@@ -329,9 +329,13 @@ function render(){
   const onlBot=D._meta.online_bottom||{total:{},by_cat:{}};
   const segArr=(off,onl)=>SEG==='online'?(onl||ZA):SEG==='offline'?off:addv(off,onl||ZA);
   const catO=(cat,field)=>{const off=clinics.reduce((a,x)=>{const bc=(x.data.bottom.by_cat||{})[cat];return addv(a,bc?(bc[field]||ZA):ZA);},ZA.slice());const onl=((onlBot.by_cat||{})[cat]||{})[field]||ZA;return segArr(off,onl);};
+  const subO=(sub,field)=>clinics.reduce((a,x)=>{const bs=(x.data.bottom.by_subcat||{})[sub];return addv(a,bs?(bs[field]||ZA):ZA);},ZA.slice());
+  const subsForCat=(cat)=>{const ks={};clinics.forEach(x=>{const bsc=x.data.bottom.by_subcat||{};Object.keys(bsc).forEach(k=>{const c=(bsc[k].cat)||k.split('::')[0];if(c===cat)ks[k]=1;});});return Object.keys(ks);};
   function ocatRow(lbl,field,fmt){const off=clinics.reduce((a,x)=>addv(a,x.data.bottom[field]||ZA),ZA.slice());const tot=segArr(off,(onlBot.total||{})[field]||ZA);const tk='oc_'+field;
     let h=row(lbl,tot,'grp',fmt,{color:GRN,tkey:tk});
-    if(EXP[tk]||CATMODE){const cls=CATMODE?'sub catrow':'sub';CATS.forEach(ct=>{const a=catO(ct,field);if(a.some(v=>v)){h+=row('· '+ct,a,cls,fmt,{color:CATCOL[ct]});h+=row('· '+ct+' % of '+field,pctOf(a,tot),cls,PCT,{color:CATCOL[ct]});}});}return h;}
+    if(EXP[tk]||CATMODE){const cls=CATMODE?'sub catrow':'sub';CATS.forEach(ct=>{const a=catO(ct,field);if(a.some(v=>v)){const stk='sc_'+field+'_'+ct;h+=row('· '+ct,a,cls,fmt,{color:CATCOL[ct],tkey:stk});h+=row('· '+ct+' % of '+field,pctOf(a,tot),cls,PCT,{color:CATCOL[ct]});
+      if(EXP[stk]||CATMODE){const subs=subsForCat(ct).map(k=>({label:(k.split('::')[1]||k),arr:subO(k,field)})).filter(s=>s.arr.some(v=>v)).sort((x,y)=>(y.arr[WKEND]||0)-(x.arr[WKEND]||0));
+        subs.forEach(s=>{h+=row('· · '+s.label,s.arr,cls,fmt,{color:CATCOL[ct]});h+=row('· · '+s.label+' % of '+ct,pctOf(s.arr,a),cls,PCT,{color:CATCOL[ct]});});}}});}return h;}
   // ① Leads
   QVTABLE='① Leads';let L=head('Leads');
   if(SEG!=='all')L+=row('ⓘ leads are acquisition-side — consult filter applies to bookings & outcomes',null,'sub',N,{noheat:true});
