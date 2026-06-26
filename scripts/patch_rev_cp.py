@@ -14,29 +14,33 @@ CATS = ["STI", "SH", "MH", "Other"]; PRODS = ["drug", "lab", "consultation", "ot
 
 def rev_cp_sql(city, loc):
     return """WITH loc AS (SELECT id FROM allo_health.locations WHERE deleted_at IS NULL AND city='{city}' AND locality='{loc}'),
-  enc_tag AS (SELECT e.appointment_id ap_id,
-      CASE WHEN MAX(CASE WHEN et.tag_type='sti' THEN 1 ELSE 0 END)=1 THEN 'STI'
-           WHEN MAX(CASE WHEN et.tag_type IN ('ed_plus_pe_plus','ed_plus','pe_plus','nssd') THEN 1 ELSE 0 END)=1 THEN 'SH'
-           WHEN MAX(CASE WHEN et.tag_type='others' THEN 1 ELSE 0 END)=1 THEN 'OTH_SH' ELSE 'oth' END tag_cat
+  etag AS (SELECT e.appointment_id ap_id,
+      MAX(CASE WHEN et.tag_type='sti' THEN 1 ELSE 0 END) t_sti,
+      MAX(CASE WHEN et.tag_type IN ('ed_plus_pe_plus','ed_plus','pe_plus','nssd') THEN 1 ELSE 0 END) t_sh,
+      MAX(CASE WHEN et.tag_type='others' THEN 1 ELSE 0 END) t_oth
     FROM allo_encounters.encounters e
     LEFT JOIN allo_analytics.encounter_tags et ON et.encounter_id=e.id AND et.tag_category='diagnosis' AND et.deleted_at IS NULL
     WHERE e.deleted_at IS NULL GROUP BY 1),
-  mh_ap AS (SELECT DISTINCT e.appointment_id ap_id FROM allo_encounters.encounters e
-    JOIN allo_observations.diagnoses d ON d.encounter_id=e.id AND d.deleted_at IS NULL
-    WHERE e.deleted_at IS NULL AND (d.description LIKE '%(6A%' OR d.description LIKE '%(6B%' OR d.description LIKE '%(6C%'
-      OR d.description LIKE '%(6D%' OR d.description LIKE '%(6E%' OR d.description ILIKE '%anxiety%' OR d.description ILIKE '%depress%'
-      OR d.description ILIKE '%adhd%' OR d.description ILIKE '%psychosis%' OR d.description ILIKE '%bipolar%' OR d.description ILIKE '%personality%'
-      OR d.description ILIKE '%nicotine%' OR d.description ILIKE '%addiction%' OR d.description ILIKE '%adjustment%' OR d.description ILIKE '%ptsd%')),
+  diag AS (SELECT e.appointment_id ap_id,
+      MAX(CASE WHEN d.description ILIKE '%porn%' OR d.description ILIKE '%masturbat%' OR d.description ILIKE '%sex%addict%'
+               OR d.description ILIKE '%performance anxiety%' OR d.description ILIKE '%sexual%anxiety%' THEN 1 ELSE 0 END) d_sexual,
+      MAX(CASE WHEN d.description LIKE '%(6A%' OR d.description LIKE '%(6B%' OR d.description LIKE '%(6C%' OR d.description LIKE '%(6D%'
+               OR d.description LIKE '%(6E%' OR d.description ILIKE '%anxiety%' OR d.description ILIKE '%depress%' OR d.description ILIKE '%adhd%'
+               OR d.description ILIKE '%psychosis%' OR d.description ILIKE '%bipolar%' OR d.description ILIKE '%personality%' OR d.description ILIKE '%nicotine%'
+               OR d.description ILIKE '%addiction%' OR d.description ILIKE '%adjustment%' OR d.description ILIKE '%ptsd%' THEN 1 ELSE 0 END) d_mh
+    FROM allo_encounters.encounters e JOIN allo_observations.diagnoses d ON d.encounter_id=e.id AND d.deleted_at IS NULL
+    WHERE e.deleted_at IS NULL GROUP BY 1),
   ap0 AS (SELECT a.id, a.patient_id, TO_CHAR(DATE_TRUNC('week', a.created_at + INTERVAL '5 hours 30 minutes'),'YYYY-MM-DD') wk
     FROM allo_consultations.appointments a JOIN allo_consultations.types typ ON typ.id=a.type_id AND typ.name='Screening Call'
     JOIN loc ON loc.id=a.location_id WHERE a.created_at >= '{lo}' AND a.deleted_at IS NULL AND a.status='COMPLETED'),
   ap AS (SELECT id, wk FROM (SELECT ap0.*, ROW_NUMBER() OVER (PARTITION BY patient_id, wk ORDER BY id) rn FROM ap0) z WHERE rn=1)
   SELECT ap.wk,
-    CASE WHEN COALESCE(et.tag_cat,'oth')='STI' THEN 'STI' WHEN COALESCE(et.tag_cat,'oth')='SH' THEN 'SH'
-         WHEN mh.ap_id IS NOT NULL THEN 'MH' WHEN COALESCE(et.tag_cat,'oth')='OTH_SH' THEN 'SH' ELSE 'Other' END cat,
+    CASE WHEN COALESCE(et.t_sti,0)=1 THEN 'STI' WHEN COALESCE(et.t_sh,0)=1 THEN 'SH'
+         WHEN COALESCE(dg.d_sexual,0)=1 THEN 'SH'
+         WHEN COALESCE(dg.d_mh,0)=1 THEN 'MH' WHEN COALESCE(et.t_oth,0)=1 THEN 'SH' ELSE 'Other' END cat,
     LOWER(ii."type") itype, SUM(ii.payable_amount) amt
   FROM ap JOIN allo_encounters.encounters e ON e.appointment_id=ap.id AND e.deleted_at IS NULL
-  LEFT JOIN enc_tag et ON et.ap_id=ap.id LEFT JOIN mh_ap mh ON mh.ap_id=ap.id
+  LEFT JOIN etag et ON et.ap_id=ap.id LEFT JOIN diag dg ON dg.ap_id=ap.id
   JOIN allo_billing.invoices i ON i.encounter_id=e.id AND i.status='paid' AND i.deleted_at IS NULL
   JOIN allo_billing.invoice_items ii ON ii.invoice_id=i.id AND ii.deleted_at IS NULL
   GROUP BY 1,2,3;""".format(city=city.replace("'", "''"), loc=loc.replace("'", "''"), lo=LO)
