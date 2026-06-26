@@ -62,6 +62,12 @@ def cat_of(name):
     if "_SH_" in u or "_ED_" in u or "_PE_" in u: return "SH"
     return "Other"
 
+def seg_of(name):
+    nl = name.lower()
+    if "online" in nl: return "online"   # Brand/CC_Online/ROI_Online/ONL_LT telehealth
+    if "local" in nl or "exact" in nl or "phrase" in nl: return "offline"  # city local-intent
+    return "online"
+
 def city_of(name):
     for t in CITY_TOKENS:
         if re.search(rf"(^|_){re.escape(t)}(_|$)", name):
@@ -80,6 +86,10 @@ def main():
              ["spend","clicks","loc_clicks","is_w","is_d","impr","conv","budget_w","budget_n"]})
     CATS = ["STI","SH","MH","Other"]
     catacc = defaultdict(lambda: {ct: {"impr": Z(), "clicks": Z(), "loc_clicks": Z(), "conv": Z(), "spend": Z()} for ct in CATS})  # city → cat → metrics
+    segacc = defaultdict(lambda: {sg: {"impr": Z(), "clicks": Z(), "loc_clicks": Z(), "spend": Z(),
+             "by_cat": {ct: {"impr": Z(), "clicks": Z(), "loc_clicks": Z(), "spend": Z()} for ct in CATS}} for sg in ("offline","online")})  # city → seg → metrics
+    nat = {"impr": Z(), "clicks": Z(), "loc_clicks": Z(), "spend": Z(), "conv": Z(),
+           "by_cat": {ct: {"impr": Z(), "clicks": Z(), "loc_clicks": Z(), "spend": Z()} for ct in CATS}}  # national ONLINE (no-city campaigns)
 
     # 1) weekly campaign metrics → city
     rows = gaql(token, c, f"""
@@ -91,10 +101,15 @@ def main():
         AND segments.date BETWEEN '{ymd(start)}' AND '{ymd(end)}'""")
     for r in rows:
         n = r["campaign"]["name"]; city = city_of(n)
-        if not city: continue
         wk = r["segments"]["week"]
         if wk not in widx: continue
-        i = widx[wk]; m = r.get("metrics", {}); o = cities[city]
+        i = widx[wk]; m = r.get("metrics", {})
+        if not city:
+            imp0 = int(m.get("impressions", 0) or 0); cl0 = int(m.get("clicks", 0) or 0); cost0 = int(m.get("costMicros", 0) or 0)/1e6
+            nat["impr"][i] += imp0; nat["clicks"][i] += cl0; nat["spend"][i] += cost0; nat["conv"][i] += float(m.get("conversions", 0) or 0)
+            ncc = nat["by_cat"][cat_of(n)]; ncc["impr"][i] += imp0; ncc["clicks"][i] += cl0; ncc["spend"][i] += cost0
+            continue
+        o = cities[city]
         cl = int(m.get("clicks", 0) or 0); cost = int(m.get("costMicros", 0) or 0)/1e6
         imp = int(m.get("impressions", 0) or 0); isv = float(m.get("searchImpressionShare", 0) or 0)
         bud = int(r.get("campaignBudget", {}).get("amountMicros", 0) or 0)/1e6
@@ -103,6 +118,8 @@ def main():
         o["is_w"][i] += isv*imp; o["is_d"][i] += imp
         o["budget_w"][i] += bud; o["budget_n"][i] += 1
         ca = catacc[city][cat_of(n)]; ca["impr"][i] += imp; ca["clicks"][i] += cl; ca["conv"][i] += float(m.get("conversions", 0) or 0); ca["spend"][i] += cost
+        sa = segacc[city][seg_of(n)]; sa["impr"][i] += imp; sa["clicks"][i] += cl; sa["spend"][i] += cost
+        sac = sa["by_cat"][cat_of(n)]; sac["impr"][i] += imp; sac["clicks"][i] += cl; sac["spend"][i] += cost
 
     # 2) location click-types → loc clicks per city/week
     crows = gaql(token, c, f"""
@@ -119,6 +136,8 @@ def main():
             lc = int(r.get("metrics", {}).get("clicks", 0) or 0)
             cities[city]["loc_clicks"][widx[wk]] += lc
             catacc[city][cat_of(n)]["loc_clicks"][widx[wk]] += lc
+            segacc[city][seg_of(n)]["loc_clicks"][widx[wk]] += lc
+            segacc[city][seg_of(n)]["by_cat"][cat_of(n)]["loc_clicks"][widx[wk]] += lc
 
     out = {"_meta": {"source": "LIVE Google Ads API · city-level paid layer (campaigns→city)",
                      "weeks": WEEKS, "pulled": ymd(today),
@@ -138,7 +157,15 @@ def main():
                                      "clicks": [round(x) for x in catacc[city][ct]["clicks"]],
                                      "loc_clicks": [round(x) for x in catacc[city][ct]["loc_clicks"]],
                                      "conv": [round(x,1) for x in catacc[city][ct]["conv"]],
-                                     "spend": [round(x) for x in catacc[city][ct]["spend"]]} for ct in CATS}}
+                                     "spend": [round(x) for x in catacc[city][ct]["spend"]]} for ct in CATS},
+                     "by_seg": {sg: {"impr":[round(x) for x in segacc[city][sg]["impr"]], "clicks":[round(x) for x in segacc[city][sg]["clicks"]],
+                                     "loc_clicks":[round(x) for x in segacc[city][sg]["loc_clicks"]], "spend":[round(x) for x in segacc[city][sg]["spend"]],
+                                     "by_cat":{ct:{"impr":[round(x) for x in segacc[city][sg]["by_cat"][ct]["impr"]], "clicks":[round(x) for x in segacc[city][sg]["by_cat"][ct]["clicks"]],
+                                                   "loc_clicks":[round(x) for x in segacc[city][sg]["by_cat"][ct]["loc_clicks"]], "spend":[round(x) for x in segacc[city][sg]["by_cat"][ct]["spend"]]} for ct in CATS}} for sg in ("offline","online")}}
+    out["_national_online"] = {"impr":[round(x) for x in nat["impr"]], "clicks":[round(x) for x in nat["clicks"]],
+        "loc_clicks":[round(x) for x in nat["loc_clicks"]], "spend":[round(x) for x in nat["spend"]], "conv":[round(x) for x in nat["conv"]],
+        "by_cat":{ct:{"impr":[round(x) for x in nat["by_cat"][ct]["impr"]], "clicks":[round(x) for x in nat["by_cat"][ct]["clicks"]],
+                      "spend":[round(x) for x in nat["by_cat"][ct]["spend"]]} for ct in CATS}}
     json.dump(out, open(OUT, "w"), separators=(",", ":"))
     n = len([k for k in out if k != "_meta"])
     print(f"wrote {OUT} · {n} cities")
