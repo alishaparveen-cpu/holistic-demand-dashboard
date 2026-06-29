@@ -74,11 +74,17 @@ def call_cat(cfg, kind):
         where="RIGHT(ec.exotel_number,10)='%s'"%cfg['paid']
         locf="" if cfg.get('paid_solo') else ("AND ca.analysis.user_intent.locality_mentioned.is_our_locality=true "
               "AND ca.analysis.user_intent.locality_mentioned.best_match::varchar='%s'"%cfg['loc'].replace("'","''"))
-    sql=("SELECT TO_CHAR(DATE_TRUNC('week', ec.start_time + INTERVAL '5 hours 30 minutes'),'YYYY-MM-DD') wk, "
-         "COALESCE(ca.analysis.diagnoses.category::varchar,'NOT_MENTIONED') cat, COUNT(*) n "
+    # UNIQUE patients per category: one row per caller per week (their latest audited call's
+    # category), then count distinct callers — not COUNT(*) of all calls (repeat dials inflate).
+    sql=("SELECT wk, cat, COUNT(*) n FROM ("
+         "SELECT TO_CHAR(DATE_TRUNC('week', ec.start_time + INTERVAL '5 hours 30 minutes'),'YYYY-MM-DD') wk, "
+         "RIGHT(ec.\"from\",10) ph, "
+         "COALESCE(ca.analysis.diagnoses.category::varchar,'NOT_MENTIONED') cat, "
+         "ROW_NUMBER() OVER (PARTITION BY RIGHT(ec.\"from\",10), DATE_TRUNC('week', ec.start_time + INTERVAL '5 hours 30 minutes') ORDER BY ec.start_time DESC) rn "
          "FROM allo_analytics.call_analyses ca "
          "JOIN allo_vendors.exotel_calls ec ON ec.call_id=ca.call_id AND ec.routed_to='lead_to_call' AND ec.direction='inbound' "
-         "WHERE ca.deleted_at IS NULL AND %s %s AND ec.start_time>='%s' AND ec.start_time<'2026-06-29' GROUP BY 1,2;"
+         "WHERE ca.deleted_at IS NULL AND %s %s AND ec.start_time>='%s' AND ec.start_time<'2026-06-29') z "
+         "WHERE rn=1 GROUP BY 1,2;"
          %(where,locf,LO))
     by={c:Z() for c in B.CATS}
     for line in run_sql(sql):

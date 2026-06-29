@@ -111,16 +111,25 @@ tr[onclick]:hover td:first-child{color:var(--accent)}
   <div class="shead">① Availability <span class="lblmuted">(bookable roster — click a row to split weekday / weekend)</span></div>
   <div class="fmwrap"><table class="fm" id="tAvail"></table></div>
 
-  <div class="shead">② Leads <span class="lblmuted">(who reached out — GMB + Google + Practo)</span></div>
+  <div class="shead">② Reach <span class="lblmuted">(impressions · clicks · reviews — context, not direct demand)</span></div>
+  <div class="fmwrap"><table class="fm" id="tReach"></table></div>
+
+  <div class="shead">③ Leads — unique relevant patients <span class="lblmuted">(deduped per patient/week · Google+GMB with AI-audit, Practo, organic)</span></div>
+  <div class="fmwrap"><table class="fm" id="tPL"></table></div>
+
+  <div class="shead">④ Leads → Booked + attribution <span class="lblmuted">(of these leads who booked; total bookings traced-to-lead vs the gap)</span></div>
+  <div class="fmwrap"><table class="fm" id="tPB"></table></div>
+
+  <div class="shead">⑤ Leads — channel detail <span class="lblmuted">(legacy view: who reached out — GMB + Google + Practo, raw)</span></div>
   <div class="fmwrap"><table class="fm" id="tLeads"></table></div>
 
-  <div class="shead">③ Lead → Booked by channel <span class="lblmuted">(calls: → answered → relevant → booked)</span></div>
+  <div class="shead">⑥ Lead → Booked by channel <span class="lblmuted">(legacy detail · calls: → answered → relevant → booked)</span></div>
   <div class="fmwrap"><table class="fm" id="tLB"></table></div>
 
-  <div class="shead">④ Bookings by source <span class="lblmuted">(deduped per patient/week — reconciles to total · click GMB / Google to expand)</span></div>
+  <div class="shead">⑦ Bookings by source <span class="lblmuted">(deduped per patient/week — reconciles to total · click GMB / Google to expand)</span></div>
   <div class="fmwrap"><table class="fm" id="tA"></table></div>
 
-  <div class="shead">⑤ Bookings → Done → Purchased → Revenue</div>
+  <div class="shead">⑧ Bookings → Done → Purchased → Revenue</div>
   <div class="fmwrap"><table class="fm" id="tD"></table></div>
   </div>
 </div>
@@ -301,6 +310,42 @@ function render(){
   const gmbLeads=addv(cl(lb.gmb_call),wl(lb.gmb_web)), googLeads=addv(gpIntent,wl(lb.gpaid_web));
   const RG=(c.reach&&c.reach.gmb)||{}, RR=(c.reach&&c.reach.google)||{}, RV=c.reviews||{};
   const CTRF=v=>v==null||isNaN(v)?'—':v.toFixed(1)+'%';
+  // === patient-level funnel (②Reach ③Leads ④Leads→Booked+attribution) ===
+  const P=lb.patient;
+  if(P){
+    const _cr=(RR.impr&&RR.impr.some(v=>v)), GR=_cr?RR:((D._meta.city_google_reach||{})[myCity]||{});
+    let RC=head('Reach');
+    if(GR.impr&&GR.impr.some(v=>v)){RC+=row('Google paid impressions',GR.impr,'grp',N,{color:BLU});RC+=row('· clicks',GR.clicks,'sub',N,{color:BLU});RC+=row('· CTR',pctOf(GR.clicks,GR.impr),'sub',CTRF,{color:VIO});}
+    if(RG.impr&&RG.impr.some(v=>v)){RC+=row('GMB impressions (searches)',RG.impr,'grp',N,{color:BLU});RC+=row('· GMB interactions',RG.interactions,'sub',N,{color:BLU,tkey:'gmb_int'});
+      if(EXP['gmb_int']){RC+=row('· · calls',RG.calls,'sub2',N,{color:GRN});RC+=row('· · website clicks',RG.website,'sub2',N,{color:GRN});RC+=row('· · direction requests',RG.directions,'sub2',N,{color:GRN});}}
+    if(RV.total&&RV.total.some(v=>v)){RC+=row('Google reviews',RV.total,'grp',N,{color:GRN});RC+=row('· +ve (4–5★)',RV.pos,'sub',N,{color:GRN});RC+=row('· −ve (≤3★)',RV.neg,'sub',N,{color:RED,invert:true});}
+    $('tReach').innerHTML=RC;
+    const bs=P.by_src, gg=addv(addv(bs.gmb_call,bs.gpaid_call),bs.gmb_web);
+    let PL=head('Unique relevant patients');
+    PL+=row('Total unique relevant leads',P.leads,'tot');
+    PL+=row('Google + GMB',gg,'grp',N,{color:GRN,tkey:'pl_gg'});
+    if(EXP['pl_gg']){
+      PL+=row('· GMB calls',bs.gmb_call,'sub',N,{color:GRN});
+      PL+=row('· Google paid calls',bs.gpaid_call,'sub',N,{color:GRN});
+      PL+=row('· GMB web',bs.gmb_web,'sub',N,{color:GRN});
+      const bc=(lb.gmb_call&&lb.gmb_call.by_cat)||{};
+      ['SH','STI','MH'].forEach(ct=>{if(bc[ct]&&bc[ct].some&&bc[ct].some(v=>v))PL+=row('· · '+ct+' (AI audit)',bc[ct],'sub2',N,{color:CATCOL[ct]});});
+    }
+    PL+=row('Practo',bs.practo,'grp',N,{color:GRN});
+    PL+=row('Organic / direct',bs.organic,'grp',N,{color:GRN});
+    $('tPL').innerHTML=PL;
+    let PB=head('Leads → Booked + attribution');
+    PB+=row('Lead → book % (of unique relevant leads)',pctOf(addv(P.booked_same,P.booked_later),P.leads),'tot',PCT,{color:BLU});
+    PB+=row('Leads booked — same week',P.booked_same,'grp',N,{color:GRN});
+    PB+=row('Leads booked — later (carryover)',P.booked_later,'sub',N,{color:GRN});
+    PB+=row('Leads not booked',P.not_booked,'sub',N,{color:RED,invert:true});
+    PB+=row('Total bookings (screening calls)',P.bk_total,'tot');
+    PB+=row('· from this-week lead',P.bk_thisweek_lead,'grp',N,{color:GRN});
+    PB+=row('· from prior-week lead (carry-in)',P.bk_prior_lead,'sub',N,{color:GRN});
+    PB+=row('· gap — contacted, AI not flagged relevant',P.bk_gap_aimiss,'sub',N,{color:'#C2691F'});
+    PB+=row('· gap — untracked (WhatsApp / direct / walk-in)',P.bk_gap_untracked,'sub',N,{color:RED,invert:true});
+    $('tPB').innerHTML=PB;
+  } else { if($('tReach'))$('tReach').innerHTML=''; if($('tPL'))$('tPL').innerHTML=''; if($('tPB'))$('tPB').innerHTML='<tr><td style="padding:10px;color:var(--muted)">patient-level data not built for this clinic yet</td></tr>'; }
   QVTABLE='② Leads';let LS=head('Leads');
   LS+=row('GMB + Google + Practo + Organic — total leads',addv(addv(ggLeads,prLeads),lb.organic_call?lb.organic_call.total:ZA),'tot');
   LS+=row('Google — GMB + paid (total)',ggLeads,'grp',N,{tkey:'lds_gg',color:GRN});
