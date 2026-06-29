@@ -9,7 +9,7 @@ WITH leads AS (
   FROM production.public.main_source_wise_leads l
   JOIN allo_prod.allo_health.locations loc
     ON loc.locality = l.call_location AND loc.deleted_at IS NULL AND loc.is_active = 1
-  WHERE l.created_on >= '2026-03-23' AND l.created_on < '2026-06-22'
+  WHERE l.created_on >= '2026-03-23' AND l.created_on < '2026-06-29'
     AND l.call_booking_ts IS NOT NULL
     AND l.call_location IS NOT NULL AND LOWER(l.call_location) <> 'online'
 )

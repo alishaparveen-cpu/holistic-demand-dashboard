@@ -9,7 +9,7 @@ WITH ns AS (
   JOIN allo_health.locations loc ON a.location_id=loc.id AND loc.deleted_at IS NULL
   JOIN allo_persons.patient p ON p.id = a.patient_id
   WHERE a.deleted_at IS NULL AND LOWER(a.status)='missed'
-    AND a.start_time >= '2026-03-23' AND a.start_time < '2026-06-22'
+    AND a.start_time >= '2026-03-23' AND a.start_time < '2026-06-29'
     AND p.phone_no IS NOT NULL AND LEN(p.phone_no) >= 10
     AND LOWER(COALESCE(loc.locality,'')) <> 'online' AND loc.locality IS NOT NULL
 ),

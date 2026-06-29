@@ -17,6 +17,6 @@ SELECT s.city, s.locality AS clinic,
   SUM(CASE WHEN s.st IN ('completed','reconsulted') THEN 1 ELSE 0 END) AS done,
   SUM(CASE WHEN s.st='missed' THEN 1 ELSE 0 END) AS missed
 FROM sc_all s JOIN firsts f ON s.patient_id=f.patient_id
-WHERE s.start_time >= '2026-05-25' AND s.start_time < '2026-06-22'
+WHERE s.start_time >= '2026-05-25' AND s.start_time < '2026-06-29'
   AND LOWER(COALESCE(s.locality,'')) <> 'online' AND s.locality IS NOT NULL
 GROUP BY 1,2,3 ORDER BY 1,2,3;

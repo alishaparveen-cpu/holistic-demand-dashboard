@@ -8,6 +8,6 @@ SELECT loc.city||'|'||loc.locality AS k,
 FROM allo_consultations.appointments a
 JOIN allo_consultations.types t ON a.type_id=t.id AND t.name='Screening Call'
 JOIN allo_health.locations loc ON a.location_id=loc.id AND loc.deleted_at IS NULL
-WHERE a.deleted_at IS NULL AND a.start_time >= '2026-03-23' AND a.start_time < '2026-06-22'
+WHERE a.deleted_at IS NULL AND a.start_time >= '2026-03-23' AND a.start_time < '2026-06-29'
   AND LOWER(COALESCE(loc.locality,''))<>'online' AND loc.locality IS NOT NULL
 GROUP BY 1,2,3,4 ORDER BY 1,2,3,4;

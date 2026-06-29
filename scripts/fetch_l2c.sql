@@ -6,7 +6,7 @@ WITH ld AS (
     TO_CHAR(DATE_TRUNC('week', created_at),'YYYY-MM-DD') AS wk
   FROM allo_persons.lead
   WHERE phone_no IS NOT NULL AND LEN(phone_no) >= 10
-    AND created_at >= '2026-03-23' AND created_at < '2026-06-22'
+    AND created_at >= '2026-03-23' AND created_at < '2026-06-29'
 ),
 calls AS (
   SELECT RIGHT(CASE WHEN direction='inbound' THEN "from" ELSE "to" END,10) AS ph,

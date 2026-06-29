@@ -47,5 +47,5 @@ LEFT JOIN lead_utm lu
   ON lu.phone10 = RIGHT(REGEXP_REPLACE(l.phone_no1,'[^0-9]',''),10)
   AND lu.wk_mon = DATE_TRUNC('week', l.created_on_date)::date
 WHERE l.call_location IS NOT NULL AND LOWER(l.call_location) <> 'online'
-  AND l.week >= '2026-03-16' AND l.week < '2026-06-22'
+  AND l.week >= '2026-03-16' AND l.week < '2026-06-29'
 GROUP BY 1,2,3 ORDER BY 1,2,3 DESC

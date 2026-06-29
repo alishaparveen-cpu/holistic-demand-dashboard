@@ -12,7 +12,7 @@ WITH ros AS (
     ON ab.provider_id = rs.provider_id AND ab.is_bookable = false AND ab.deleted_at IS NULL
    AND ab.start_time < rs.end_time AND ab.end_time > rs.start_time
   WHERE rs.type_id = 'cd02525c-1528-4047-a12c-1ad526c28c9a'
-    AND rs.start_time >= '2026-04-27' AND rs.start_time < '2026-06-22'
+    AND rs.start_time >= '2026-04-27' AND rs.start_time < '2026-06-29'
     AND LOWER(COALESCE(loc.locality,loc.name,'')) NOT IN ('','online')
   GROUP BY 1,2,3,4, rs.start_time
 ),
@@ -31,7 +31,7 @@ app AS (
   FROM allo_consultations.appointments a
   JOIN allo_consultations.types t ON a.type_id=t.id AND t.name='Screening Call'
   JOIN allo_health.locations loc ON a.location_id=loc.id AND loc.deleted_at IS NULL
-  WHERE a.deleted_at IS NULL AND a.start_time>='2026-04-27' AND a.start_time<'2026-06-22'
+  WHERE a.deleted_at IS NULL AND a.start_time>='2026-04-27' AND a.start_time<'2026-06-29'
     AND LOWER(COALESCE(loc.locality,'')) NOT IN ('','online') AND loc.locality IS NOT NULL
   GROUP BY 1,2,3,4
 )

@@ -8,7 +8,7 @@ WITH ld AS (
          WHEN LOWER(COALESCE(origin,'')) LIKE '%whatsapp%' THEN 'WhatsApp'
          WHEN LOWER(COALESCE(utm_source,'')) LIKE '%organic%' OR utm_source IS NULL THEN 'Organic/Direct'
          ELSE 'Other' END AS src
-  FROM allo_persons.lead WHERE created_at >= '2026-05-18' AND created_at < '2026-06-22' AND phone_no IS NOT NULL AND LEN(phone_no)>=10
+  FROM allo_persons.lead WHERE created_at >= '2026-05-18' AND created_at < '2026-06-29' AND phone_no IS NOT NULL AND LEN(phone_no)>=10
 ),
 bk AS (
   SELECT RIGHT(p.phone_no,10) AS ph, DATE(a.created_at) AS bdate, LOWER(a.status) AS st, LOWER(COALESCE(a.previous_status,'')) AS prev

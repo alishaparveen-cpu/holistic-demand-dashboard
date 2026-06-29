@@ -8,7 +8,7 @@ WITH ld AS (
          WHEN utm_source='organic' THEN 'Organic'
          ELSE 'Other' END AS src
   FROM allo_persons.lead
-  WHERE phone_no IS NOT NULL AND LEN(phone_no)>=10 AND created_at>='2026-05-11' AND created_at< '2026-06-22'),
+  WHERE phone_no IS NOT NULL AND LEN(phone_no)>=10 AND created_at>='2026-05-11' AND created_at< '2026-06-29'),
 calls AS (SELECT RIGHT(CASE WHEN direction='inbound' THEN "from" ELSE "to" END,10) AS ph, DATE(start_time) cdate, LOWER(status) st
   FROM allo_vendors.exotel_calls WHERE deleted_at IS NULL AND start_time>='2026-05-11'),
 bk AS (SELECT DISTINCT RIGHT(p.phone_no,10) AS ph, DATE(a.created_at) bdate FROM allo_consultations.appointments a

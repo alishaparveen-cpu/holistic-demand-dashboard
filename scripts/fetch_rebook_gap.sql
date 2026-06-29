@@ -42,6 +42,6 @@ SELECT s.epi_city AS city, s.epi_clinic AS clinic,
   COUNT(*) AS c
 FROM ranked s
 WHERE s.rn_asc > 1                       -- reschedule events = non-first SCs within an episode
-  AND s.epi_first_start >= '2026-03-23' AND s.epi_first_start < '2026-06-22'
+  AND s.epi_first_start >= '2026-03-23' AND s.epi_first_start < '2026-06-29'
   AND LOWER(COALESCE(s.epi_clinic,'')) <> 'online' AND s.epi_clinic IS NOT NULL
 GROUP BY 1,2,3,4,5 ORDER BY 1,2,3,4,5;

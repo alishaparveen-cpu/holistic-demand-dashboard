@@ -9,7 +9,7 @@ WITH ld AS (
          WHEN LOWER(COALESCE(utm_source,'')) LIKE '%organic%' OR utm_source IS NULL THEN 'Organic/Direct'
          ELSE 'Other' END AS src
   FROM allo_persons.lead
-  WHERE created_at >= '2026-05-18' AND created_at < '2026-06-22'
+  WHERE created_at >= '2026-05-18' AND created_at < '2026-06-29'
     AND phone_no IS NOT NULL AND LEN(phone_no) >= 10
 ),
 bk AS (
