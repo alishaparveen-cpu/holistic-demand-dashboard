@@ -27,7 +27,7 @@ def organic_sql(cfg):
       FROM allo_vendors.exotel_calls ec
       WHERE ec.direction='inbound' AND ec.routed_to='lead_to_call'
         AND RIGHT(ec.exotel_number,10) NOT IN ('{known}')
-        AND (ec.start_time+INTERVAL '5 hours 30 minutes')>='{lo}' AND (ec.start_time+INTERVAL '5 hours 30 minutes')<'2026-06-22'),
+        AND (ec.start_time+INTERVAL '5 hours 30 minutes')>='{lo}' AND (ec.start_time+INTERVAL '5 hours 30 minutes')<'2026-06-29'),
      aud AS (SELECT ca.call_id,
         MAX(CASE WHEN ca.analysis.user_intent.result::varchar IN ({rel}) THEN 1 ELSE 0 END) rel,
         MAX(CASE WHEN ca.analysis.user_intent.locality_mentioned.is_our_locality=true

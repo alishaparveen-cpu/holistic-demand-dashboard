@@ -25,7 +25,7 @@ def national_channels():
            "       WHEN LOWER(utm_source)='organic' THEN 'Landing' "
            "       WHEN LOWER(utm_source)='marketing' THEN 'Marketing' ELSE 'Other' END channel, "
            "  TO_CHAR(DATE_TRUNC('week', created_at+INTERVAL '5 hours 30 minutes'),'YYYY-MM-DD') wk, RIGHT(phone_no,10) ph "
-           "  FROM allo_persons.lead WHERE created_at>='%s' AND created_at<'2026-06-22' AND LENGTH(RIGHT(phone_no,10))=10), "
+           "  FROM allo_persons.lead WHERE created_at>='%s' AND created_at<'2026-06-29' AND LENGTH(RIGHT(phone_no,10))=10), "
            "bk AS (SELECT DISTINCT RIGHT(p.phone_no,10) ph FROM allo_consultations.appointments a "
            "  JOIN allo_persons.patient p ON p.id=a.patient_id JOIN allo_consultations.types t ON t.id=a.type_id AND t.name='Screening Call' "
            "  WHERE a.deleted_at IS NULL AND a.created_at>='2025-06-23') "

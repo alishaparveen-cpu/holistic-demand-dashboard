@@ -9,7 +9,7 @@ Run: python3 scripts/build_lead_maturation.py   (needs AWS SSO)"""
 import os, sys, subprocess, json
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-WEEKS=["2026-06-15","2026-06-08","2026-06-01","2026-05-25","2026-05-18","2026-05-11","2026-05-04","2026-04-27","2026-04-20","2026-04-13","2026-04-06","2026-03-30"]
+WEEKS=["2026-06-22","2026-06-15","2026-06-08","2026-06-01","2026-05-25","2026-05-18","2026-05-11","2026-05-04","2026-04-27","2026-04-20","2026-04-13","2026-04-06","2026-03-30"]
 WSET = set(WEEKS)
 SETTLED_CUTOFF = "2026-05-11"   # cohort had >=4 full weeks to convert before the 2026-06-08 cutoff
 LEAD_SOURCES = ["gmb","google_ad","organic","fb","justdial","others"]   # data_leads non-Practo sources
@@ -19,7 +19,7 @@ def main():
     leadsOf = {}
     for k, v in dl.items():
         if k == "_meta": continue
-        leadsOf[k] = {w: sum(int((v.get(s) or [0]*12)[i] or 0) for s in LEAD_SOURCES) for i, w in enumerate(WEEKS)}
+        leadsOf[k] = {w: sum(int((v.get(s) or [0]*len(WEEKS))[i] or 0) for s in LEAD_SOURCES) for i, w in enumerate(WEEKS)}
     sql = open(os.path.join(ROOT,"scripts","fetch_lead_maturation.sql")).read()
     p = subprocess.run([sys.executable, os.path.join(ROOT,"scripts","redshift_query.py")],
                        input=sql, capture_output=True, text=True)

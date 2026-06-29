@@ -18,7 +18,7 @@ Keyed "City|Clinic". Run: AWS_PROFILE=redshift-data python3 scripts/build_lead_c
 import os, sys, subprocess, json
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-WEEKS = ["2026-06-15","2026-06-08","2026-06-01","2026-05-25","2026-05-18","2026-05-11","2026-05-04",
+WEEKS = ["2026-06-22","2026-06-15","2026-06-08","2026-06-01","2026-05-25","2026-05-18","2026-05-11","2026-05-04",
          "2026-04-27","2026-04-20","2026-04-13","2026-04-06","2026-03-30"]
 idx = {w: i for i, w in enumerate(WEEKS)}
 CHANS = ["gmb", "google_ad", "organic", "fb", "justdial", "others"]

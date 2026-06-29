@@ -8,7 +8,7 @@ Run: python3 scripts/build_phase2.py   (AWS SSO; cluster 'warehouse')"""
 import os, sys, subprocess, json
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RUNNER = os.path.join(ROOT,"scripts","redshift_query.py")
-WEEKS=["2026-06-15","2026-06-08","2026-06-01","2026-05-25","2026-05-18","2026-05-11","2026-05-04","2026-04-27","2026-04-20","2026-04-13","2026-04-06","2026-03-30"]
+WEEKS=["2026-06-22","2026-06-15","2026-06-08","2026-06-01","2026-05-25","2026-05-18","2026-05-11","2026-05-04","2026-04-27","2026-04-20","2026-04-13","2026-04-06","2026-03-30"]
 WI = {w:i for i,w in enumerate(WEEKS)}
 
 def q(f):
@@ -27,7 +27,7 @@ def build_reminders():
         if len(c) < 11: continue
         city,clinic,wk = c[0],c[1],c[2]
         if wk not in WI: continue
-        o = D.setdefault(f"{city}|{clinic}", {f:[0]*12 for f in FIELDS})
+        o = D.setdefault(f"{city}|{clinic}", {f:[0]*len(WEEKS) for f in FIELDS})
         for j,f in enumerate(FIELDS): o[f][WI[wk]] = num(c[3+j])
     out = {"_meta":{"weeks":WEEKS,
         "source":"allo_vendors.whatsapp (reference_entity=appointment, template ILIKE %reminder%) joined to Screening-Call appointments",
@@ -71,7 +71,7 @@ def build_conversion():
         if len(c) < 5: continue
         city,clinic,wk = c[0],c[1],c[2]
         if wk not in WI: continue
-        o = D.setdefault(f"{city}|{clinic}", {f:[0]*12 for f in FIELDS})
+        o = D.setdefault(f"{city}|{clinic}", {f:[0]*len(WEEKS) for f in FIELDS})
         o["completed_sc"][WI[wk]] = num(c[3]); o["converted"][WI[wk]] = num(c[4])
     # right-censoring: weeks whose 30-day window hasn't fully elapsed as of the data date (2026-06-13)
     # weeks[0..3] (May 25, 18, 11, 04) are within 30 days of 06-06 -> partially censored
@@ -91,7 +91,7 @@ def build_doctor():
         if len(c) < 10: continue
         city,clinic,doctor,wk = c[0],c[1],c[2],c[3]
         if wk not in WI: continue
-        o = D.setdefault(f"{city}|{clinic}", {}).setdefault(doctor, {f:[0]*12 for f in FIELDS})
+        o = D.setdefault(f"{city}|{clinic}", {}).setdefault(doctor, {f:[0]*len(WEEKS) for f in FIELDS})
         for j,f in enumerate(FIELDS): o[f][WI[wk]] = num(c[4+j])
     out = {"_meta":{"weeks":WEEKS,
         "source":"allo_consultations.roster_slots + appointments, per provider (allo_persons.providers.name)",
@@ -112,7 +112,7 @@ def build_status_who():
         if len(c) < 12: continue
         city,clinic,wk,who = c[0],c[1],c[2],c[3]
         if wk not in WI: continue
-        o = D.setdefault(f"{city}|{clinic}", {seg:{f:[0]*12 for f in SUB} for seg in ("new","rebook","return")})
+        o = D.setdefault(f"{city}|{clinic}", {seg:{f:[0]*len(WEEKS) for f in SUB} for seg in ("new","rebook","return")})
         seg = o.get(who)
         if seg is None: continue
         for j,f in enumerate(SUB): seg[f][WI[wk]] = num(c[4+j])
@@ -134,7 +134,7 @@ def build_retention():
         if len(c) < 9: continue
         city,clinic,wk = c[0],c[1],c[2]
         if wk not in WI: continue
-        o = D.setdefault(f"{city}|{clinic}", {f:[0]*12 for f in FIELDS})
+        o = D.setdefault(f"{city}|{clinic}", {f:[0]*len(WEEKS) for f in FIELDS})
         for j,f in enumerate(FIELDS): o[f][WI[wk]] = num(c[3+j])
     out = {"_meta":{"weeks":WEEKS,
         "source":"allo_consultations.appointments — completed SC cohort → completed Follow Up/Therapy within 60 days",
@@ -153,7 +153,7 @@ def build_callback():
         if len(c) < 5: continue
         city,clinic,wk = c[0],c[1],c[2]
         if wk not in WI: continue
-        o = D.setdefault(f"{city}|{clinic}", {f:[0]*12 for f in FIELDS})
+        o = D.setdefault(f"{city}|{clinic}", {f:[0]*len(WEEKS) for f in FIELDS})
         o["noshows"][WI[wk]] = num(c[3]); o["called_back"][WI[wk]] = num(c[4])
     out = {"_meta":{"weeks":WEEKS,
         "source":"allo_consultations.appointments (missed) + allo_persons.patient.phone_no joined to allo_vendors.exotel_calls (outbound, within 7d after)",
@@ -174,7 +174,7 @@ def build_leadage_channel():
         key=f"{city}|{clinic}"
         o=D.setdefault(key,{})
         for cc in (ch,'all'):
-            seg=o.setdefault(cc,{a:[0]*12 for a in AGES})
+            seg=o.setdefault(cc,{a:[0]*len(WEEKS) for a in AGES})
             seg[bk][WI[wk]]+=n
     out={"_meta":{"weeks":WEEKS,"source":"main_source_wise_leads — lead-age buckets split by channel","note":"Practo excluded (external feed). 'all' = sum of channels."}}
     out.update(D)
@@ -185,7 +185,7 @@ def build_leadage_channel():
 def build_l2c():
     # data_l2c.json: NETWORK weekly funnel (in/out split) + by-source + by-city + TAT
     NF=["leads","out_reached","out_conn","in_reached","in_conn","any_reached","any_conn","booked"]
-    net={f:[0]*12 for f in NF}
+    net={f:[0]*len(WEEKS) for f in NF}
     for c in q("fetch_l2c.sql"):
         if len(c) < 9: continue
         if c[0] not in WI: continue

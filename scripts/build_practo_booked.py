@@ -10,7 +10,7 @@ Run: python3 scripts/build_practo_booked.py   (needs AWS SSO)"""
 import os, sys, io, csv, json, subprocess, urllib.request
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-WEEKS=["2026-06-15","2026-06-08","2026-06-01","2026-05-25","2026-05-18","2026-05-11","2026-05-04","2026-04-27","2026-04-20","2026-04-13","2026-04-06","2026-03-30"]
+WEEKS=["2026-06-22","2026-06-15","2026-06-08","2026-06-01","2026-05-25","2026-05-18","2026-05-11","2026-05-04","2026-04-27","2026-04-20","2026-04-13","2026-04-06","2026-03-30"]
 idx = {w:i for i,w in enumerate(WEEKS)}
 PRACTO_SHEET_ID  = "1pTPQgdSUaomRuj_49dARVJ4Vtiy34uE73X4gqqkwlaE"   # same sheet build_clinic_data uses
 PRACTO_SHEET_TAB = "Practo"
@@ -58,7 +58,7 @@ def main():
         total += 1
         if norm_phone(phone) in phones:
             matched += 1
-            D.setdefault(f"{city}|{clinic}", [0]*12)[idx[wk]] += 1
+            D.setdefault(f"{city}|{clinic}", [0]*len(WEEKS))[idx[wk]] += 1
     out = {"_meta":{"source":"allo_consultations.appointments (Screening Call) × Practo-sheet phone match",
                     "weeks":WEEKS, "note":"TRUE Practo bookings incl. phone follow-up; a booking is Practo if the patient phone is in the Practo lead sheet."}}
     out.update(D)

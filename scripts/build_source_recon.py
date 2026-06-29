@@ -30,7 +30,7 @@ def bookings_by_source(cfg):
       JOIN allo_health.locations loc ON loc.id=a.location_id AND loc.city='{city}' AND loc.locality='{loc}' AND loc.deleted_at IS NULL
       JOIN allo_persons.patient p ON p.id=a.patient_id
       JOIN allo_consultations.types t ON t.id=a.type_id AND t.name='Screening Call'
-      WHERE a.deleted_at IS NULL AND a.created_at >= '{lo}' AND a.created_at < '2026-06-22'),
+      WHERE a.deleted_at IS NULL AND a.created_at >= '{lo}' AND a.created_at < '2026-06-29'),
      bk AS (SELECT patient_id, ph, bts, wk FROM bk0 WHERE rn=1),
      fsc AS (SELECT a.patient_id, MIN(a.created_at) f FROM allo_consultations.appointments a
        JOIN allo_consultations.types t ON t.id=a.type_id AND t.name='Screening Call' WHERE a.deleted_at IS NULL GROUP BY 1),
@@ -91,7 +91,7 @@ def call_lead_book(num_list, paid_num, cfg, kind):
         TO_CHAR(DATE_TRUNC('week', ec.start_time+INTERVAL '5 hours 30 minutes'),'YYYY-MM-DD') wk
       FROM {src}
       WHERE {where} AND {extra} {locf}
-        AND (ec.start_time+INTERVAL '5 hours 30 minutes') >= '{lo}' AND (ec.start_time+INTERVAL '5 hours 30 minutes') < '2026-06-22'
+        AND (ec.start_time+INTERVAL '5 hours 30 minutes') >= '{lo}' AND (ec.start_time+INTERVAL '5 hours 30 minutes') < '2026-06-29'
       GROUP BY 1,3),
      bk AS (SELECT DISTINCT RIGHT(p.phone_no,10) ph FROM allo_consultations.appointments a
        JOIN allo_health.locations loc ON loc.id=a.location_id AND loc.city='{city}' AND loc.locality='{loc}' AND loc.deleted_at IS NULL
@@ -130,7 +130,7 @@ def call_funnel(cfg, kind):
         TO_CHAR(DATE_TRUNC('week', ec.start_time+INTERVAL '5 hours 30 minutes'),'YYYY-MM-DD') wk
       FROM allo_vendors.exotel_calls ec
       WHERE {where} AND ec.routed_to='lead_to_call' AND ec.direction='inbound'
-        AND (ec.start_time+INTERVAL '5 hours 30 minutes')>='{lo}' AND (ec.start_time+INTERVAL '5 hours 30 minutes')<'2026-06-22'),
+        AND (ec.start_time+INTERVAL '5 hours 30 minutes')>='{lo}' AND (ec.start_time+INTERVAL '5 hours 30 minutes')<'2026-06-29'),
      aud AS (SELECT ca.call_id,
         MAX(CASE WHEN ca.analysis.user_intent.result::varchar IN ({rel}) THEN 1 ELSE 0 END) rel, {locsel}
        FROM allo_analytics.call_analyses ca WHERE ca.deleted_at IS NULL GROUP BY 1),
@@ -171,7 +171,7 @@ def gpaid_web_leadbook(cfg, bkphones):
     FROM allo_persons.lead
     WHERE (gclid<>'' OR LOWER(utm_source)='google')
       AND (LOWER(utm_campaign) LIKE 't1_{tok}%' OR LOWER(utm_campaign) LIKE 't2_{tok}%')
-      AND created_at>='{lo}' AND created_at<'2026-06-22';""".format(tok=tok, lo=LO)
+      AND created_at>='{lo}' AND created_at<'2026-06-29';""".format(tok=tok, lo=LO)
     leads = Z(); booked = Z(); seen = set()
     for line in run_sql(sql):
         c = line.split("\t")
@@ -253,7 +253,7 @@ def availability(cfg):
     FROM = ("""FROM allo_consultations.roster_slots rs
       JOIN allo_health.locations loc ON loc.id=rs.location_id AND loc.deleted_at IS NULL
       WHERE rs.type_id='cd02525c-1528-4047-a12c-1ad526c28c9a' AND rs.available_for_booking=1
-        AND rs.start_time >= '{lo}' AND rs.start_time < '2026-06-22'
+        AND rs.start_time >= '{lo}' AND rs.start_time < '2026-06-29'
         AND loc.city='{city}' AND COALESCE(loc.locality,loc.name,'')='{loc}'"""
       ).format(lo=LO, city=cfg["city"].replace("'","''"), loc=cfg["loc"].replace("'","''"))
     IST = "rs.start_time + INTERVAL '5 hours 30 minutes'"
@@ -301,7 +301,7 @@ def reviews(cfg):
     FROM allo_health.external_reviews er
     JOIN allo_health.locations loc ON loc.id=er.reviewed_for_id AND loc.deleted_at IS NULL
     WHERE er.deleted_at IS NULL AND LOWER(er.platform) IN ('google','gmb')
-      AND er.review_date >= '{lo}' AND er.review_date < '2026-06-22'
+      AND er.review_date >= '{lo}' AND er.review_date < '2026-06-29'
       AND loc.city='{city}' AND loc.locality='{loc}'
     GROUP BY 1;""".format(lo=LO, city=cfg["city"].replace("'","''"), loc=cfg["loc"].replace("'","''"))
     d = {"total": Z(), "pos": Z(), "neg": Z()}

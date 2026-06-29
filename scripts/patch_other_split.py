@@ -34,7 +34,7 @@ def other_split(cfg, kind):
            "  ELSE 'unclear' END bucket, COUNT(*) n "
            "FROM allo_analytics.call_analyses ca "
            "JOIN allo_vendors.exotel_calls ec ON ec.call_id=ca.call_id AND ec.routed_to='lead_to_call' AND ec.direction='inbound' "
-           "WHERE ca.deleted_at IS NULL AND %s %s AND ec.start_time>='%s' AND ec.start_time<'2026-06-22' "
+           "WHERE ca.deleted_at IS NULL AND %s %s AND ec.start_time>='%s' AND ec.start_time<'2026-06-29' "
            "AND COALESCE(ca.analysis.diagnoses.category::varchar,'NOT_MENTIONED') IN ('OTHER','NOT_MENTIONED') "
            "GROUP BY 1,2;" % (where, locf, LO))
     by = {b: Z() for b in BUCKETS}

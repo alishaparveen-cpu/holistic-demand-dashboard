@@ -12,7 +12,7 @@ import os, sys, csv, io, json, re, datetime, urllib.request, urllib.parse
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SHEET_ID = "1bZWGVKu6b4EFPDt3aKHn21gYjdhN1aT1-LT60BFe8g0"
 SHEET_TAB = "RD_Practo_Leads"
-WEEKS=["2026-06-15","2026-06-08","2026-06-01","2026-05-25","2026-05-18","2026-05-11","2026-05-04","2026-04-27","2026-04-20","2026-04-13","2026-04-06","2026-03-30"]
+WEEKS=["2026-06-22","2026-06-15","2026-06-08","2026-06-01","2026-05-25","2026-05-18","2026-05-11","2026-05-04","2026-04-27","2026-04-20","2026-04-13","2026-04-06","2026-03-30"]
 idx = {w:i for i,w in enumerate(WEEKS)}
 
 def main():
@@ -34,13 +34,13 @@ def main():
         i = idx[mon]
         bts = (c[4] or "").strip(); m = re.search(r"(\d{4})", bts)
         is_booked = bool(bts and "1899" not in bts and m and int(m.group(1)) >= 2000)
-        o = D.setdefault(f"{city}|{clinic}", {"leads":[0]*12, "booked":[0]*12})
+        o = D.setdefault(f"{city}|{clinic}", {"leads":[0]*len(WEEKS), "booked":[0]*len(WEEKS)})
         o["leads"][i] += 1
         if is_booked: o["booked"][i] += 1
         # per-doctor breakdown (Doctor Name = col 3)
         doc = (c[3] or "").strip() or "(unassigned)"
         dk = f"{city}|{clinic}"
-        dd = BYDOC.setdefault(dk, {}).setdefault(doc, {"leads":[0]*12, "booked":[0]*12})
+        dd = BYDOC.setdefault(dk, {}).setdefault(doc, {"leads":[0]*len(WEEKS), "booked":[0]*len(WEEKS)})
         dd["leads"][i] += 1
         if is_booked: dd["booked"][i] += 1
     out = {"_meta":{"source":"RD_Practo_Leads sheet (static build — replaces fragile live fetch)",

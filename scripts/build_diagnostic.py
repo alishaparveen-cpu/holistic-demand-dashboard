@@ -9,7 +9,7 @@ import os, sys, json, subprocess, datetime
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RUNNER = os.path.join(ROOT, "scripts", "redshift_query.py")
-WK = ['2026-06-15','2026-06-08','2026-06-01','2026-05-25','2026-05-18','2026-05-11','2026-05-04','2026-04-27','2026-04-20','2026-04-13','2026-04-06','2026-03-30']
+WK = ['2026-06-22','2026-06-15','2026-06-08','2026-06-01','2026-05-25','2026-05-18','2026-05-11','2026-05-04','2026-04-27','2026-04-20','2026-04-13','2026-04-06','2026-03-30']
 WI = {w: i for i, w in enumerate(WK)}
 
 def q(sql_file):
@@ -22,7 +22,7 @@ def q(sql_file):
 def main():
     D = {}
     def ensure(k):
-        return D.setdefault(k, {f: [0]*12 for f in
+        return D.setdefault(k, {f: [0]*len(WK) for f in
             ['allBk','bkWe','bkNew','bkRepeat','bkDone','bkResched','bkMissed','bkCancelled',
              'bkDoneNew','bkDoneRepeat','avail','weekend','docDays','gmbLeads']})
     # bookings + disposition

@@ -8,7 +8,7 @@ Arrays newest-first aligned to the diagnostic's 12 Monday-weeks. Run: python3 sc
 import os, sys, subprocess, json
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RUNNER = os.path.join(ROOT,"scripts","redshift_query.py")
-WEEKS=["2026-06-15","2026-06-08","2026-06-01","2026-05-25","2026-05-18","2026-05-11","2026-05-04","2026-04-27","2026-04-20","2026-04-13","2026-04-06","2026-03-30"]
+WEEKS=["2026-06-22","2026-06-15","2026-06-08","2026-06-01","2026-05-25","2026-05-18","2026-05-11","2026-05-04","2026-04-27","2026-04-20","2026-04-13","2026-04-06","2026-03-30"]
 WI = {w:i for i,w in enumerate(WEEKS)}
 DOW = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat']
 
@@ -30,7 +30,7 @@ def main():
         if len(c) < 16: continue
         city,clinic,wk = c[0],c[1],c[2]
         if wk not in WI: continue
-        o = clin(f"{city}|{clinic}").setdefault("disp", {f:[0]*12 for f in DFIELDS})
+        o = clin(f"{city}|{clinic}").setdefault("disp", {f:[0]*len(WEEKS) for f in DFIELDS})
         for j,f in enumerate(DFIELDS): o[f][WI[wk]] = num(c[3+j])
     # ── fine lead age ──
     AGES = ["b0_same","b1_lastwk","b2_2to4wk","b3_1to3mo","b4_3moplus"]
@@ -38,7 +38,7 @@ def main():
         if len(c) < 5: continue
         city,clinic,wk,bucket,n = c[0],c[1],c[2],c[3],num(c[4])
         if wk not in WI or bucket not in AGES: continue
-        o = clin(f"{city}|{clinic}").setdefault("leadage", {a:[0]*12 for a in AGES})
+        o = clin(f"{city}|{clinic}").setdefault("leadage", {a:[0]*len(WEEKS) for a in AGES})
         o[bucket][WI[wk]] += n
     # ── bookings by channel ──
     for c in q("fetch_scorecard_channel.sql"):
@@ -46,7 +46,7 @@ def main():
         city,clinic,wk,src,n = c[0],c[1],c[2],c[3],num(c[4])
         if wk not in WI: continue
         o = clin(f"{city}|{clinic}").setdefault("channel", {})
-        o.setdefault(src, [0]*12)[WI[wk]] += n
+        o.setdefault(src, [0]*len(WEEKS))[WI[wk]] += n
     # ── day of week ──
     for c in q("fetch_scorecard_dow.sql"):
         if len(c) < 6: continue

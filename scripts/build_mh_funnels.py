@@ -198,7 +198,7 @@ def get_gmbweb(slug, cfg):
         TO_CHAR(DATE_TRUNC('week', l.created_at + INTERVAL '5 hours 30 minutes'),'YYYY-MM-DD') wk
       FROM allo_persons.lead l
       WHERE LOWER(l.utm_source)='gmb' AND LOWER(l.utm_medium)='listing' AND LOWER(l.utm_campaign)='{camp}'
-        AND l.created_at >= '{lo}' AND l.created_at < '2026-06-22'),
+        AND l.created_at >= '{lo}' AND l.created_at < '2026-06-29'),
      bk AS (
       SELECT DISTINCT RIGHT(p.phone_no,10) ph
       FROM allo_consultations.appointments a
@@ -226,7 +226,7 @@ def get_leads_clean(cfg):
     sql = """WITH lds AS (
       SELECT m.phone_no1 ph, TO_CHAR(DATE_TRUNC('week', m.created_on + INTERVAL '5 hours 30 minutes'),'YYYY-MM-DD') wk
       FROM production.public.main_source_wise_leads m
-      WHERE m.call_location='{loc}' AND m.created_on >= '{lo}' AND m.created_on < '2026-06-22'),
+      WHERE m.call_location='{loc}' AND m.created_on >= '{lo}' AND m.created_on < '2026-06-29'),
      u AS (
       SELECT ph, us, um, g, f FROM (
         SELECT RIGHT(phone_no,10) ph, LOWER(COALESCE(utm_source,'')) us, LOWER(COALESCE(utm_medium,'')) um,
@@ -234,7 +234,7 @@ def get_leads_clean(cfg):
           CASE WHEN fbclid IS NOT NULL AND fbclid<>'' THEN 1 ELSE 0 END f,
           ROW_NUMBER() OVER (PARTITION BY RIGHT(phone_no,10) ORDER BY created_at DESC) rn
         FROM allo_persons.lead
-        WHERE created_at >= '2025-06-23' AND created_at < '2026-06-22'
+        WHERE created_at >= '2025-06-23' AND created_at < '2026-06-29'
           AND (utm_source IS NOT NULL OR gclid IS NOT NULL OR fbclid IS NOT NULL)) z WHERE rn=1)
     SELECT lds.wk,
       CASE

@@ -11,7 +11,7 @@ Run: AWS_PROFILE=redshift-data python3 scripts/pull_bangalore_calls.py
 import os, sys, subprocess, json
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RQ = os.path.join(ROOT, "scripts", "redshift_query.py")
-WEEKS = ["2026-06-15","2026-06-08","2026-06-01","2026-05-25","2026-05-18","2026-05-11",
+WEEKS = ["2026-06-22","2026-06-15","2026-06-08","2026-06-01","2026-05-25","2026-05-18","2026-05-11",
          "2026-05-04","2026-04-27","2026-04-20","2026-04-13","2026-04-06","2026-03-30"]
 idx = {w: i for i, w in enumerate(WEEKS)}; NW = len(WEEKS)
 PAID_NUM = "8045680561"    # Bangalore territory (Google call-asset) number — shared, city-wide

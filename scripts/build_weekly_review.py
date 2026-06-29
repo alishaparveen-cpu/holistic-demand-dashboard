@@ -18,7 +18,7 @@ import os, sys, subprocess, json, datetime
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RQ = os.path.join(ROOT, "scripts", "redshift_query.py")
 # 8 Mondays, newest-first (index0 = current week, may be partial)
-WEEKS = ["2026-06-15","2026-06-08","2026-06-01","2026-05-25","2026-05-18","2026-05-11","2026-05-04","2026-04-27"]
+WEEKS = ["2026-06-22","2026-06-15","2026-06-08","2026-06-01","2026-05-25","2026-05-18","2026-05-11","2026-05-04","2026-04-27"]
 idx = {w:i for i,w in enumerate(WEEKS)}; NW=len(WEEKS); START="2026-04-27"
 T1 = {"Bangalore","Mumbai","Pune","Hyderabad","Chennai"}
 CITYNORM = {"Bengaluru":"Bangalore","Hubballi":"Hubli","Mysore":"Mysuru","Mangalore":"Mangaluru","Vizag":"Visakhapatnam"}
