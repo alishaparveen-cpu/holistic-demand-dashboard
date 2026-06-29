@@ -144,7 +144,7 @@ tr[onclick]:hover td:first-child{color:var(--accent)}
 <div class="modal" id="modal"><div class="mbox"><div class="mhd"><span id="mTitle"></span><button id="pctTgl" class="pcttgl" onclick="togPct()" title="click to show % change between each point">＋&nbsp;% change</button><button id="brkTgl" class="pcttgl" style="display:none;margin-left:8px" onclick="togBrk()" title="click to overlay the sub-category lines">✕&nbsp;clear lines</button><button onclick="closeZ()">✕</button></div><div id="pickBar" class="pickbar"></div><div id="mBody"></div></div></div>
 <div id="cmpBar" class="cmpbar"></div>
 <script>
-let D=null,CUR=null;let NSHOW=6;let WKEND=1;let ZREG=[];let EXP={};
+let D=null,CUR=null;let NSHOW=6;let WKEND=1;let W0=1;let ZREG=[];let EXP={};
 let QV=false,QVC=[],QVTABLE=null;let CATMODE=false;
 function toggleCat(){CATMODE=!CATMODE;if($('catBtn'))$('catBtn').classList.toggle('on',CATMODE);render();}
 let CMPB='avg';function setCmp(v){CMPB=v;render();}
@@ -160,7 +160,7 @@ const sum=(a,idx)=>idx.reduce((s,i)=>s+(a[i]||0),0);
 const GRN='#2E7D5B',RED='#B23A2E',BLU='#3E6F8E',VIO='#7B5EA7';
 const CATS=['STI','SH','MH','Other'],CATCOL={STI:'#B23A2E',SH:'#3E6F8E',MH:'#7B5EA7',Other:'#8A8A80'};const SUBPAL=['#3E6F8E','#B23A2E','#7B5EA7','#1F6F5C','#C2691F','#9C8410','#5B8C5A','#A8527D','#4E7C8A','#8A6D3B','#6B7A8F','#B07A2E'];function subLbl(l){return l==='Other sexual'?'Other sexual (dysfunction NOS · nightfall · misc)':l==='No disorder (screened)'?'No disorder (no sexual disorder found)':l;}
 let GRAN='week',GCLUB=1,GAGG='sum';function setUnit(u){GRAN=u;if(u==='month'&&GCLUB>4)GCLUB=1;syncGran();render();}function adjClub(d){GCLUB=Math.max(1,Math.min(GRAN==='month'?6:8,GCLUB+d));syncGran();render();}function setAgg(a){GAGG=a;syncGran();render();}function setGran(v){if(v==='biweek'){GRAN='week';GCLUB=2;}else{GRAN=v;GCLUB=1;}syncGran();render();}function toggleMonth(){setUnit(GRAN==='month'?'week':'month');}function syncGran(){var q=function(i){return document.getElementById(i);};if(q('guW'))q('guW').classList.toggle('on',GRAN==='week');if(q('guM'))q('guM').classList.toggle('on',GRAN==='month');if(q('clubN'))q('clubN').textContent=GCLUB;if(q('clubU'))q('clubU').textContent=(GRAN==='month'?(GCLUB>1?'mos':'mo'):(GCLUB>1?'wks':'wk'));if(q('aggS'))q('aggS').classList.toggle('on',GAGG==='sum');if(q('aggA'))q('aggA').classList.toggle('on',GAGG==='avg');}
-function setRange(v){const mx=(D._meta.weeks||[]).length;NSHOW=Math.min(mx-1,Math.max(4,+v));WKEND=1;render();}
+function setRange(v){const mx=(D._meta.weeks||[]).length;NSHOW=Math.min(mx-1,Math.max(4,+v));WKEND=W0;render();}
 let HIDDEN=new Set();function hideCol(j){const b=vbuckets()[j];if(b)HIDDEN.add(b.label);render();}function showAllCols(){HIDDEN.clear();render();}
 function mlab(k){const d=new Date(k+'-01T00:00:00');return d.toLocaleString('en',{month:'short'})+" '"+k.slice(2,4);}
 function blab(idxs){const w=D._meta.weeks,a=w[idxs[idxs.length-1]],b=w[idxs[0]];const da=new Date(a+'T00:00:00'),db=new Date(b+'T00:00:00');db.setDate(db.getDate()+6);const m=x=>x.toLocaleString('en',{month:'short'});return da.getDate()+' '+m(da)+'–'+db.getDate()+' '+m(db);}
@@ -232,8 +232,8 @@ function openZoom(z){if(!z)return;if(z!==CURZ){PICKA=null;PICKB=null;SELSUB=new 
   $('mBody').innerHTML=`<svg width="100%" viewBox="0 0 ${W} ${Hv}">${gl}${avgLine}${connector}${serLines}${serLabels}<g opacity="${_BRK?0.16:1}">${p}${pts}${lbls}</g>${dlt}${xl}</svg><div class="lgd">oldest→newest · dashed line = average${avg!=null?' \u00b7 avg '+z.fmt(avg):''}${(typeof filterCtx==='function'&&filterCtx())?' \u00b7 filtered:'+filterCtx().replace(/^ · /,' '):''}${(z.series&&z.series.length)?'<br><span style="color:var(--muted)">click to plot:</span> '+z.series.map(function(se,k){var on=SELSUB.has(se.label);return '<span class="legchip'+(on?' on':'')+'" style="'+(on?'border-color:'+se.color+';color:'+se.color:'')+'" onclick="toggleSubI('+k+')"><span style="color:'+se.color+'">\u25cf</span> '+se.label+'</span>';}).join(''):''}</div>`;
   ;(function(){var pb=document.getElementById("pickBar");if(!pb)return;if(PICKA!=null&&PICKB!=null&&v[PICKA]!=null&&v[PICKB]!=null){var a=v[PICKA],b=v[PICKB],pc=a?Math.round((b-a)/Math.abs(a)*100):0;var col=pc>0?"#1F6F5C":pc<0?"#B23A2E":"#52605A";pb.innerHTML="<b style='color:#1F6F5C'>"+labels[PICKA]+"</b> "+z.fmt(a)+" \u2192 <b style='color:#C2691F'>"+labels[PICKB]+"</b> "+z.fmt(b)+" &nbsp;<span style='color:"+col+";font-weight:700;font-size:14px'>"+(pc>0?"+":"")+pc+"%</span> <span class='pclear' onclick='clearPick()'>\u2715 clear</span>";}else if(PICKA!=null){pb.innerHTML="Selected <b style='color:#1F6F5C'>"+labels[PICKA]+"</b> "+z.fmt(v[PICKA])+" \u2014 click another point to compare <span class='pclear' onclick='clearPick()'>\u2715</span>";}else{pb.innerHTML="<span style='color:var(--muted)'>\u279c Click any two points to compare \u2014 % change from any peak/dip</span>";}})();$('modal').classList.add('on');}
 function closeZ(){$('modal').classList.remove('on');PICKA=null;PICKB=null;}
-function adjWeeks(d){const n=(D._meta.weeks||[]).length-1;NSHOW=Math.max(4,Math.min(n,NSHOW+d));WKEND=Math.max(1,Math.min((D._meta.weeks.length)-NSHOW,WKEND));render();}
-function shiftEnd(d){const maxEnd=(D._meta.weeks.length)-NSHOW;WKEND=Math.max(1,Math.min(maxEnd,WKEND+d));render();}
+function adjWeeks(d){const n=(D._meta.weeks||[]).length-1;NSHOW=Math.max(4,Math.min(n,NSHOW+d));WKEND=Math.max(W0,Math.min((D._meta.weeks.length)-NSHOW,WKEND));render();}
+function shiftEnd(d){const maxEnd=(D._meta.weeks.length)-NSHOW;WKEND=Math.max(W0,Math.min(maxEnd,WKEND+d));render();}
 function addv(a,b){const o=[];for(let i=0;i<a.length;i++)o.push((a[i]||0)+(b[i]||0));return o;}
 function pctOf(num,den){if(!den||!num)return [];const B=vbuckets();return B.map(b=>{let sn=0,sd=0;b.idxs.forEach(k=>{sn+=(num[k]||0);sd+=(den[k]||0);});return sd?Math.round(sn/sd*100):null;});}
 function pctRow(label,num,den,color){return row(label,pctOf(num,den),'sub2',PCT,{color:color||VIO});}
@@ -280,7 +280,7 @@ function render(){
   if(!D)return;
   ZREG=[];QVC=[];
   const nMax=(D._meta.weeks||[]).length-1;
-  const maxEnd=(D._meta.weeks.length)-NSHOW;WKEND=Math.max(1,Math.min(maxEnd,WKEND));
+  const maxEnd=(D._meta.weeks.length)-NSHOW;WKEND=Math.max(W0,Math.min(maxEnd,WKEND));
   if($('wkN'))$('wkN').textContent=NSHOW;
   if($('wkMinus'))$('wkMinus').disabled=NSHOW<=4;
   if($('wkPlus'))$('wkPlus').disabled=NSHOW>=nMax;
@@ -596,6 +596,7 @@ function renderQV(){
 }
 fetch('data_source_recon.json?v='+Date.now()).then(r=>{if(!r.ok)throw new Error('HTTP '+r.status);return r.json();}).then(j=>{
   D=j;
+  W0=(function(){var w=(D._meta&&D._meta.weeks)||[];if(!w.length)return 1;var e=new Date(w[0]+'T00:00:00');e.setDate(e.getDate()+6);var t=new Date();t.setHours(0,0,0,0);return e>t?1:0;})();WKEND=W0;
   D._meta.clinics=D._meta.clinics.filter(k=>{const c=D.clinics[k];return c&&(((c.bottom||{}).booked||[]).some(v=>v)||((c.avail||{}).slots_total||[]).some(v=>v));});
   try{render();}catch(e){$('h1').textContent='Render error: '+e.message;console.error(e);}
 }).catch(e=>{$('h1').textContent='Could not load data_source_recon.json ('+e.message+')';console.error(e);});
