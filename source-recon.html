@@ -103,7 +103,7 @@ tr[onclick]:hover td:first-child{color:var(--accent)}
   </div>
   <h1 id="h1">Clinic WoW</h1>
   <div class="sub">Week-over-week per clinic — availability, leads, lead→book, bookings by source and outcomes. Cells are shaded green (high) → red (low) within each row; click any trend sparkline to zoom, or use Quick view for the chart grid.</div>
-  <div class="wknav">Showing <b id="wkN">6</b> weeks <button id="wkMinus" onclick="adjWeeks(-2)" title="fewer weeks">−</button><button id="wkPlus" onclick="adjWeeks(2)" title="more weeks">＋</button> &nbsp;·&nbsp; latest <b id="wkEndLab">—</b> <button id="wkOlder" onclick="shiftEnd(1)" title="shift older">◀</button><button id="wkNewer" onclick="shiftEnd(-1)" title="shift newer">▶</button><select id="rngSel" class="cmpsel" onchange="setRange(this.value)" title="how many weeks to show"><option value="6">6 weeks</option><option value="13">13 weeks</option><option value="26">26 weeks</option><option value="51">52 weeks</option></select></div>
+  <div class="wknav">Showing <b id="wkN">6</b> weeks <button id="wkMinus" onclick="adjWeeks(-2)" title="fewer weeks">−</button><button id="wkPlus" onclick="adjWeeks(2)" title="more weeks">＋</button> &nbsp;·&nbsp; latest <b id="wkEndLab">—</b> <button id="wkOlder" onclick="shiftEnd(1)" title="shift older">◀</button><button id="wkNewer" onclick="shiftEnd(-1)" title="shift newer">▶</button><select id="rngSel" class="cmpsel" onchange="setRange(this.value)" title="how many weeks to show"><option value="6">6 weeks</option><option value="13">13 weeks</option><option value="26">26 weeks</option><option value="51">52 weeks</option></select><button id="addWk" onclick="togPartial()" title="Show the current in-progress week (partial — fewer days than a full week, not directly comparable)" style="display:none;width:auto;padding:0 9px;font-size:12px;">+ this week</button></div>
   <div class="wknav viewrow"><span class="fl">View</span><span class="granctl"><button id="guW" class="gbtn on" onclick="setUnit('week')">Weekly</button><button id="guM" class="gbtn" onclick="setUnit('month')">Monthly</button><span class="clubbox">club <button class="gstep" onclick="adjClub(-1)" title="fewer">−</button><b id="clubN">1</b>&nbsp;<span id="clubU">wk</span><button class="gstep" onclick="adjClub(1)" title="more — e.g. 3 = quarter or 3-week block">＋</button></span><button id="aggS" class="gbtn on" onclick="setAgg('sum')" title="total over the period">Σ&nbsp;Sum</button><button id="aggA" class="gbtn" onclick="setAgg('avg')" title="average per week / month">x̄&nbsp;Avg</button></span><select id="cmpSel" class="cmpsel" onchange="setCmp(this.value)" title="what the Δ column compares against"><option value="avg">Δ vs avg</option><option value="peak">Δ vs peak wk</option><option value="first">Δ vs first wk</option></select><select id="bandSel" class="cmpsel" onchange="setBand(this.value)" title="show only rows that grew / dropped"><option value="all">all Δ</option><option value="up2">↑ grew &gt;5%</option><option value="up1">↑ grew 0–5%</option><option value="dn1">↓ dropped 0–5%</option><option value="dn2">↓ dropped &gt;5%</option></select><button id="ccBtn" class="catbtn" onclick="toggleCC()" title="colour-code rows by growth / drop">🎨 Colour</button><button id="catBtn" class="catbtn" onclick="toggleCat()">🏷 Category</button><button id="cmpBtn" class="catbtn" onclick="toggleCmp()" title="click any two cells to compare % change">📐 Compare</button><button id="qvBtn" class="qvbtn" onclick="toggleQV()">📈 Quick view</button></div>
 
   <div id="qvWrap" style="display:none"></div>
@@ -127,7 +127,7 @@ tr[onclick]:hover td:first-child{color:var(--accent)}
 <div class="modal" id="modal"><div class="mbox"><div class="mhd"><span id="mTitle"></span><button id="pctTgl" class="pcttgl" onclick="togPct()" title="click to show % change between each point">＋&nbsp;% change</button><button id="brkTgl" class="pcttgl" style="display:none;margin-left:8px" onclick="togBrk()" title="click to overlay the sub-category lines">✕&nbsp;clear lines</button><button onclick="closeZ()">✕</button></div><div id="pickBar" class="pickbar"></div><div id="mBody"></div></div></div>
 <div id="cmpBar" class="cmpbar"></div>
 <script>
-let D=null,CUR=null;let NSHOW=6;let WKEND=1;let W0=1;let ZREG=[];let EXP={};
+let D=null,CUR=null;let NSHOW=6;let WKEND=1;let W0=1;let SHOWPARTIAL=false;let ZREG=[];let EXP={};
 let QV=false,QVC=[],QVTABLE=null;let CATMODE=false;
 function toggleCat(){CATMODE=!CATMODE;if($('catBtn'))$('catBtn').classList.toggle('on',CATMODE);render();}
 let CMPB='avg';function setCmp(v){CMPB=v;render();}
@@ -148,7 +148,9 @@ function catRows(by,field,tot,subby){if(!by)return '';let h='';const cls=CATMODE
   h+=row('· '+ct,a,cls,field==='rev'?RUP:N,{color:CATCOL[ct],tkey:tk,series:subs});if(tot)h+=row('· '+ct+' %',pctOf(a,tot),cls,PCT,{color:CATCOL[ct]});
   if(tk&&(EXP[tk]||CATMODE)){subs.forEach(s=>{h+=row('· · '+s.label,s.arr,cls,field==='rev'?RUP:N,{color:CATCOL[ct]});if(tot)h+=row('· · '+s.label+' %',pctOf(s.arr,a),cls,PCT,{color:CATCOL[ct]});});}}});return h;}
 let GRAN='week',GCLUB=1,GAGG='sum';function setUnit(u){GRAN=u;if(u==='month'&&GCLUB>4)GCLUB=1;syncGran();render();}function adjClub(d){GCLUB=Math.max(1,Math.min(GRAN==='month'?6:8,GCLUB+d));syncGran();render();}function setAgg(a){GAGG=a;syncGran();render();}function setGran(v){if(v==='biweek'){GRAN='week';GCLUB=2;}else{GRAN=v;GCLUB=1;}syncGran();render();}function toggleMonth(){setUnit(GRAN==='month'?'week':'month');}function syncGran(){var q=function(i){return document.getElementById(i);};if(q('guW'))q('guW').classList.toggle('on',GRAN==='week');if(q('guM'))q('guM').classList.toggle('on',GRAN==='month');if(q('clubN'))q('clubN').textContent=GCLUB;if(q('clubU'))q('clubU').textContent=(GRAN==='month'?(GCLUB>1?'mos':'mo'):(GCLUB>1?'wks':'wk'));if(q('aggS'))q('aggS').classList.toggle('on',GAGG==='sum');if(q('aggA'))q('aggA').classList.toggle('on',GAGG==='avg');}
-function setRange(v){const mx=(D._meta.weeks||[]).length;NSHOW=Math.min(mx-1,Math.max(4,+v));WKEND=W0;render();}
+function efloor(){return SHOWPARTIAL?0:W0;}
+function togPartial(){SHOWPARTIAL=!SHOWPARTIAL;WKEND=efloor();render();}
+function setRange(v){const mx=(D._meta.weeks||[]).length;NSHOW=Math.min(mx-1,Math.max(4,+v));WKEND=efloor();render();}
 let HIDDEN=new Set();function hideCol(j){const b=vbuckets()[j];if(b)HIDDEN.add(b.label);render();}function showAllCols(){HIDDEN.clear();render();}
 function mlab(k){const d=new Date(k+'-01T00:00:00');return d.toLocaleString('en',{month:'short'})+" '"+k.slice(2,4);}
 function blab(idxs){const w=D._meta.weeks,a=w[idxs[idxs.length-1]],b=w[idxs[0]];const da=new Date(a+'T00:00:00'),db=new Date(b+'T00:00:00');db.setDate(db.getDate()+6);const m=x=>x.toLocaleString('en',{month:'short'});return da.getDate()+' '+m(da)+'–'+db.getDate()+' '+m(db);}
@@ -220,8 +222,8 @@ function openZoom(z){if(!z)return;if(z!==CURZ){PICKA=null;PICKB=null;SELSUB=new 
   $('mBody').innerHTML=`<svg width="100%" viewBox="0 0 ${W} ${Hv}">${gl}${avgLine}${connector}${serLines}${serLabels}<g opacity="${_BRK?0.16:1}">${p}${pts}${lbls}</g>${dlt}${xl}</svg><div class="lgd">oldest→newest · dashed line = average${avg!=null?' \u00b7 avg '+z.fmt(avg):''}${(typeof filterCtx==='function'&&filterCtx())?' \u00b7 filtered:'+filterCtx().replace(/^ · /,' '):''}${(z.series&&z.series.length)?'<br><span style="color:var(--muted)">click to plot:</span> '+z.series.map(function(se,k){var on=SELSUB.has(se.label);return '<span class="legchip'+(on?' on':'')+'" style="'+(on?'border-color:'+se.color+';color:'+se.color:'')+'" onclick="toggleSubI('+k+')"><span style="color:'+se.color+'">\u25cf</span> '+se.label+'</span>';}).join(''):''}</div>`;
   ;(function(){var pb=document.getElementById("pickBar");if(!pb)return;if(PICKA!=null&&PICKB!=null&&v[PICKA]!=null&&v[PICKB]!=null){var a=v[PICKA],b=v[PICKB],pc=a?Math.round((b-a)/Math.abs(a)*100):0;var col=pc>0?"#1F6F5C":pc<0?"#B23A2E":"#52605A";pb.innerHTML="<b style='color:#1F6F5C'>"+labels[PICKA]+"</b> "+z.fmt(a)+" \u2192 <b style='color:#C2691F'>"+labels[PICKB]+"</b> "+z.fmt(b)+" &nbsp;<span style='color:"+col+";font-weight:700;font-size:14px'>"+(pc>0?"+":"")+pc+"%</span> <span class='pclear' onclick='clearPick()'>\u2715 clear</span>";}else if(PICKA!=null){pb.innerHTML="Selected <b style='color:#1F6F5C'>"+labels[PICKA]+"</b> "+z.fmt(v[PICKA])+" \u2014 click another point to compare <span class='pclear' onclick='clearPick()'>\u2715</span>";}else{pb.innerHTML="<span style='color:var(--muted)'>\u279c Click any two points to compare \u2014 % change from any peak/dip</span>";}})();$('modal').classList.add('on');}
 function closeZ(){$('modal').classList.remove('on');PICKA=null;PICKB=null;}
-function adjWeeks(d){const n=(D._meta.weeks||[]).length-1;NSHOW=Math.max(4,Math.min(n,NSHOW+d));WKEND=Math.max(W0,Math.min((D._meta.weeks.length)-NSHOW,WKEND));render();}
-function shiftEnd(d){const maxEnd=(D._meta.weeks.length)-NSHOW;WKEND=Math.max(W0,Math.min(maxEnd,WKEND+d));render();}
+function adjWeeks(d){const n=(D._meta.weeks||[]).length-1;NSHOW=Math.max(4,Math.min(n,NSHOW+d));WKEND=Math.max(efloor(),Math.min((D._meta.weeks.length)-NSHOW,WKEND));render();}
+function shiftEnd(d){const maxEnd=(D._meta.weeks.length)-NSHOW;WKEND=Math.max(efloor(),Math.min(maxEnd,WKEND+d));render();}
 function addv(a,b){const o=[];for(let i=0;i<a.length;i++)o.push((a[i]||0)+(b[i]||0));return o;}
 function pctOf(num,den){if(!den||!num)return [];const B=vbuckets();return B.map(b=>{let sn=0,sd=0;b.idxs.forEach(k=>{sn+=(num[k]||0);sd+=(den[k]||0);});return sd?Math.round(sn/sd*100):null;});}
 function pctRow(label,num,den,color){return row(label,pctOf(num,den),'sub2',PCT,{color:color||VIO});}
@@ -255,12 +257,12 @@ function webDetail(label,x,tkey,cityFlag){
 function render(){
   const c=D.clinics[CUR];if(!c)return;
   ZREG=[];QVC=[];const nMax=(D._meta.weeks||[]).length-1;
-  const maxEnd=(D._meta.weeks.length)-NSHOW;WKEND=Math.max(W0,Math.min(maxEnd,WKEND));
+  const maxEnd=(D._meta.weeks.length)-NSHOW;WKEND=Math.max(efloor(),Math.min(maxEnd,WKEND));
   if($('wkN'))$('wkN').textContent=NSHOW;
   if($('wkMinus'))$('wkMinus').disabled=NSHOW<=4;
   if($('wkPlus'))$('wkPlus').disabled=NSHOW>=nMax;
   if($('wkEndLab'))$('wkEndLab').textContent=wlab(D._meta.weeks[WKEND]);
-  if($('wkNewer'))$('wkNewer').disabled=WKEND<=1;
+  if($('wkNewer'))$('wkNewer').disabled=WKEND<=efloor();var _ab=$('addWk');if(_ab){_ab.style.display=(W0===1)?'inline-flex':'none';_ab.textContent=SHOWPARTIAL?'− this week':'+ this week';_ab.style.borderColor=SHOWPARTIAL?'var(--accent)':'';}
   if($('wkOlder'))$('wkOlder').disabled=WKEND>=maxEnd;
   $('h1').textContent=(D._meta.display[CUR]||CUR)+' — week-over-week';
   const s=c.by_source;
@@ -459,7 +461,7 @@ function pickFirst(){const m=clinicMatches();if(m.length)pickClinic(m[0]);}
 document.addEventListener('click',e=>{if($('clist')&&!e.target.closest('.csearch-wrap'))$('clist').classList.remove('on');});
 fetch('data_source_recon.json?v='+Date.now()).then(r=>{if(!r.ok)throw new Error('HTTP '+r.status);return r.json();}).then(j=>{
   D=j;
-  W0=(function(){var w=(D._meta&&D._meta.weeks)||[];if(!w.length)return 1;var e=new Date(w[0]+'T00:00:00');e.setDate(e.getDate()+6);var t=new Date();t.setHours(0,0,0,0);return e>t?1:0;})();WKEND=W0;
+  W0=(function(){var w=(D._meta&&D._meta.weeks)||[];if(!w.length)return 1;var e=new Date(w[0]+'T00:00:00');e.setDate(e.getDate()+6);var t=new Date();t.setHours(0,0,0,0);return e>t?1:0;})();WKEND=efloor();
   D._meta.clinics=D._meta.clinics.filter(k=>{const c=D.clinics[k];return c&&(((c.bottom||{}).booked||[]).some(v=>v)||((c.avail||{}).slots_total||[]).some(v=>v));});
   CUR=D._meta.clinics[0];$('csearch').value=D._meta.display[CUR]||CUR;
   try{render();}catch(e){$('h1').textContent='Render error: '+e.message;console.error(e);}
