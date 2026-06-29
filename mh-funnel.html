@@ -81,7 +81,7 @@ tr.sep-row td{padding:14px 10px 5px;font-weight:700;font-size:11.5px;letter-spac
 </div>
 <div class="modal" id="modal"><div class="mbox"><button class="mclose" onclick="closeZ()">✕</button><h3 id="mTitle"></h3><div id="mBody"></div></div></div>
 <script>
-let D=null, wk=0, ZREG=[], expanded={}, showPartial=false;
+let D=null, wk=0, ZREG=[], expanded={}, showPartial=false, ongoing0=false;
 let NSHOW=7;        // set per clinic = number of weeks in the data (full history)
 let MH_WK_IDX=-1;   // set per clinic = index of the MH-launch week in WEEKS
 const $=id=>document.getElementById(id);
@@ -221,8 +221,8 @@ function buildStages(M){
         {label:'Meta (FB / IG)',arr:M.metaLeads,fmt:N,info:'utm_source=fb/instagram or fbclid present.'},
         {label:'Other / untagged',arr:M.otherLeads,fmt:N,info:'Leads with no usable UTM in the lead record — genuinely unattributable digital source (or walk-in/referral).'},
       ]},
-    {t:'stage',k:'gmbRawTotal',label:'GMB inbound calls · 2241483789 (Exotel · all calls incl missed)',color:'#9E8E5B',fmt:N,
-      info:'ALL inbound calls to the Hadapsar GMB listing number (2241483789) from Exotel call logs. DND dashboard total = 2× Exotel total (confirmed match). Includes answered + missed. The AI category audit below runs only on the answered subset.',
+    {t:'stage',k:'gmbRawTotal',label:'GMB inbound new-lead calls · 2241483789 (Exotel · incl missed)',color:'#9E8E5B',fmt:N,
+      info:'NEW-LEAD inbound calls to this clinic\'s GMB listing number (2241483789) — Exotel routed_to=lead_to_call (the new-inquiry flow), answered + missed. EXCLUDES existing-patient / callback calls (routed_to=b2p_and_cd_merge), which can be a large share on some weeks — so this is lower than the raw Exotel total and can legitimately be 0 in a week where every call was an existing-patient callback. The AI category audit below runs only on the answered subset.',
       children:[
         {label:'Answered',arr:M.gmbRawAnswered,fmt:N},
         {label:'Missed / no-answer',arr:M.gmbRawMissed,fmt:N},
@@ -297,10 +297,10 @@ function sparkCell(arr,color,label,fmt){const idx=ZREG.length;ZREG.push({label,a
   return `<td class="sparkcell" onclick="zoomReg(${idx})">${spark(arr.slice(0,NSHOW),color)}</td>`;}
 function matrix(M){
   ZREG=[]; const W=D._meta.weeks; const cols=[];
-  for(let j=NSHOW-1;j>=0;j--){if(j===0&&!showPartial)continue;cols.push(j);}
+  for(let j=NSHOW-1;j>=0;j--){if(j===0&&ongoing0&&!showPartial)continue;cols.push(j);}
   let h='<div class="fmwrap"><table class="fm"><thead><tr><th>Stage &amp; transition</th>';
   cols.forEach((ci,j)=>{
-    const mh=isMHWeek(ci),isOngoing=ci===0;
+    const mh=isMHWeek(ci),isOngoing=(ci===0&&ongoing0);
     h+=`<th class="${j===cols.length-1?'lastcol':''}${mh?' mhwk':''}${isOngoing?' partialcol':''}">${wkShort(W[ci])}${mh?' 🔵':''}${isOngoing?' <span class="ongoingbadge">ongoing</span>':''}</th>`;
   });
   h+='<th>trend</th></tr></thead><tbody>';
@@ -351,7 +351,7 @@ function zoomReg(i){const z=ZREG[i];if(!z)return;curZoom=i;
   $('mTitle').textContent=clinicTxt(z.label);
   const W=700,H=300,pad=38,padT=26;
   // same columns as the table: newest NSHOW weeks, oldest→newest, dropping the ongoing wk0 unless showPartial
-  const cols=[];for(let j=NSHOW-1;j>=0;j--){if(j===0&&!showPartial)continue;cols.push(j);}
+  const cols=[];for(let j=NSHOW-1;j>=0;j--){if(j===0&&ongoing0&&!showPartial)continue;cols.push(j);}
   const wks=cols.map(j=>D._meta.weeks[j]);
   const v=cols.map(j=>{const x=z.arr[j];return (x==null||isNaN(x))?null:x;});const n=v.length;
   const mx=Math.max(1,...v.map(x=>x||0));const x=i=>pad+i*(W-2*pad)/((n-1)||1),y=val=>H-pad-((val||0)/mx)*(H-pad-padT);
@@ -361,12 +361,12 @@ function zoomReg(i){const z=ZREG[i];if(!z)return;curZoom=i;
     lbls+=`<text x="${x(i).toFixed(1)}" y="${(y(val)-9).toFixed(1)}" font-size="12" fill="${z.color}" text-anchor="middle" font-weight="700">${z.fmt(val)}</text>`;});
   let gl='';[0,.5,1].forEach(f=>{const yy=H-pad-(f*(H-pad-padT));gl+=`<line x1="${pad}" y1="${yy}" x2="${W-pad}" y2="${yy}" stroke="#EEEBE2"/><text x="4" y="${yy+3}" font-size="10" fill="#999">${z.fmt(mx*f)}</text>`;});
   let xl='';cols.forEach((j,i)=>{
-    const isMH=j===MH_WK_IDX, isOn=(j===0);
+    const isMH=j===MH_WK_IDX, isOn=(j===0&&ongoing0);
     xl+=`<text x="${x(i)}" y="${H-10}" font-size="9" fill="${isMH?'#7B5EA7':(isOn?'#B8862E':'#999')}" text-anchor="middle" font-weight="${isMH?'700':'400'}">${wkShort(wks[i])}${isMH?' 🔵':''}${isOn?' •':''}</text>`;
   });
   const ll=(D._meta&&D._meta.mh_launch_label)?('🔵 = MH launch week ('+D._meta.mh_launch_label+')'):'';
   const partialWk=D._meta.weeks[0];
-  const tgl=`<button class="partial-btn" style="margin-top:8px" onclick="showPartial=!showPartial;render();zoomReg(curZoom)">${showPartial?'− Hide':'+ Show'} ongoing week (${wkShort(partialWk)}, partial)</button>`;
+  const tgl=ongoing0?`<button class="partial-btn" style="margin-top:8px" onclick="showPartial=!showPartial;render();zoomReg(curZoom)">${showPartial?'− Hide':'+ Show'} ongoing week (${wkShort(partialWk)}, partial)</button>`:'';
   $('mBody').innerHTML=`<svg width="100%" viewBox="0 0 ${W} ${H}">${gl}<path d="${p}" fill="none" stroke="${z.color}" stroke-width="2"/>${pts}${lbls}${xl}</svg><div class="lgd">Numbers per week. ${ll}</div>${tgl}`;
   $('modal').classList.add('on');
 }
@@ -398,12 +398,12 @@ function render(){
   const partialWk=D._meta.weeks[0];
   const llab=(D._meta&&D._meta.mh_launch_label)?` 🔵 = MH launch week (${D._meta.mh_launch_label})`:'';
   const wksN=(D._meta.weeks||[]).length;
-  const shownComplete=Math.max(0,Math.min(NSHOW,wksN)-(showPartial?0:1));
+  const shownComplete=Math.max(0,Math.min(NSHOW,wksN)-((ongoing0&&!showPartial)?1:0));
   h+=`<div class="shead"><h2>Funnel — last ${shownComplete} weeks</h2><span class="sub2">${llab} · latest on right · use ＋ to add older weeks (back to launch), − to trim · click sparkline to zoom</span>`+
      `<span style="margin-left:auto;display:flex;gap:6px;align-items:center;">`+
      `<button class="partial-btn" style="margin:0" onclick="adjWeeks(-3)" ${NSHOW<=6?'disabled':''}>− fewer</button>`+
      `<button class="partial-btn" style="margin:0" onclick="adjWeeks(3)" ${NSHOW>=wksN?'disabled':''}>＋ older weeks</button>`+
-     `<button class="partial-btn" style="margin:0" onclick="showPartial=!showPartial;render()">${showPartial?'▾ Hide':'▸ Show'} ongoing wk</button>`+
+     (ongoing0?`<button class="partial-btn" style="margin:0" onclick="showPartial=!showPartial;render()">${showPartial?'▾ Hide':'▸ Show'} ongoing wk</button>`:'')+
      `</span></div>`;
   if(D._meta&&D._meta.audit_start){const as=new Date(D._meta.audit_start+'T00:00:00');h+=`<div class="note" style="margin-top:0;margin-bottom:10px;">⚠ The <b>AI call-audit</b> (caller category STI/SH/MH/Other on inbound calls) only has coverage from the week of <b>${as.getDate()} ${as.toLocaleString('en',{month:'short'})}</b> — earlier weeks show <b>—</b> on those rows (the audit wasn't running, not zero calls). Raw GMB call volume and the <b>booked → done</b> funnel (incl. MH via diagnosis) are real for every week.</div>`;}
   h+=matrix(M);
@@ -447,6 +447,7 @@ function loadClinic(slug){
   $('csel').value=c.slug; expanded={}; showPartial=false;
   fetch(c.file+'?v='+Date.now()).then(r=>r.json()).then(j=>{
     D=j; wk=0;
+    ongoing0=(function(){var w=(D._meta||{}).weeks;if(!w||!w.length)return false;var e=new Date(w[0]+'T00:00:00');e.setDate(e.getDate()+6);var t=new Date();t.setHours(0,0,0,0);return e>t;})();
     const m=D._meta||{};
     NSHOW=Math.min(7,(m.weeks||[]).length||7);   // default: latest 6 complete weeks (+ hideable partial)
     MH_WK_IDX=m.mh_launch?(m.weeks||[]).indexOf(m.mh_launch):-1;

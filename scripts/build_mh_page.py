@@ -58,7 +58,7 @@ SQL = """WITH loc AS (
     FROM allo_consultations.appointments a
     JOIN allo_consultations.types typ ON typ.id=a.type_id AND typ.name='Screening Call'
     JOIN loc ON loc.id=a.location_id
-    WHERE a.created_at >= '2026-03-30' AND a.created_at < '2026-06-22' AND a.deleted_at IS NULL),
+    WHERE a.created_at >= '2026-03-30' AND a.created_at < '2026-06-29' AND a.deleted_at IS NULL),
   ap AS (
     SELECT id, clinic, wk, status FROM (
       SELECT ap0.*, ROW_NUMBER() OVER (PARTITION BY patient_id, clinic, wk
