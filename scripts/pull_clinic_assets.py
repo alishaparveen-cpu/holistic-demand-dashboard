@@ -35,7 +35,11 @@ def main():
         if not slug: continue
         wk = seg.get("week")
         if wk not in widx: continue
-        i = widx[wk]; nm = r["campaign"]["name"]; ct = G.cat_of(nm); sg = G.seg_of(nm)
+        i = widx[wk]; nm = r["campaign"]["name"]
+        # own-city campaigns only (match the MH funnel): exclude neighbouring-city spillover
+        # (e.g. T1_Mumbai serving a Navi Mumbai listing) and brand/national/online (city_of=None).
+        if G.city_of(nm) != cfg[slug]["city"]: continue
+        ct = G.cat_of(nm); sg = G.seg_of(nm)
         m = r.get("metrics", {}); clk = int(m.get("clicks",0) or 0); imp = int(m.get("impressions",0) or 0)
         on_asset = ait.get("interactionOnThisAsset", False)
         a = acc.setdefault(slug, blank())
