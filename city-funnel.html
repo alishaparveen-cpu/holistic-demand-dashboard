@@ -152,7 +152,7 @@ let D=null,CUR=null;let NSHOW=6;let WKEND=1;let W0=1;let SHOWPARTIAL=false;let Z
 let DBRK='cat',DCRS='none';   // ④ Done breakdown: primary dimension × optional cross (dropdown-driven)
 function setDBRK(v){DBRK=v;if(DBRK===DCRS)DCRS='none';render();}
 function setDCRS(v){DCRS=v;render();}
-let BBRK='src';function setBBRK(v){BBRK=v;render();}   // ③ Bookings breakdown: Channel | Clinic (each expands to done/not-done)
+let BBRK='src',BCRS='status';function setBBRK(v){BBRK=v;render();}function setBCRS(v){BCRS=v;render();}   // ③ Bookings: Break by Channel|Clinic × cross (Done-status | other dim | none)
 let QV=false,QVC=[],QVTABLE=null;let CATMODE=false;
 function toggleCat(){CATMODE=!CATMODE;if($('catBtn'))$('catBtn').classList.toggle('on',CATMODE);render();}
 let CMPB='avg';function setCmp(v){CMPB=v;render();}
@@ -422,13 +422,21 @@ function render(){
   QVTABLE='③ Bookings → Done / Not-done';let S=head('Bookings');
   const sumF=fn=>clinics.reduce((a,x)=>addv(a,fn(x.data)||ZA),ZA.slice());
   const notD=(b,d)=>b.map((v,i)=>Math.max(0,(v||0)-((d&&d[i])||0)));
+  const CH3=[['GMB',['gmb_call','gmb_web','gmb_wa']],['Google',['gpaid_call','gpaid_web']],['Practo',['practo']],['Meta (FB/IG)',['meta']],['Organic',['organic']],['Direct / Walk-in',['untagged']]];
+  const dN3=x=>x.loc||((D._meta.display||{})[x.slug]||x.slug);
   const offSrcTot=sumF(F.srcTotal), offDoneTot=sumF(F.srcTotalDone);
   const _b3=$('bookCtlBar');
-  if(_b3){const sel3=(fn,cur,list)=>'<select onchange="'+fn+'(this.value)" style="font-size:11.5px;border:1px solid var(--line);border-radius:6px;padding:3px 8px;margin-left:6px;background:#fff;font-family:Inter;font-weight:600;color:var(--accent);cursor:pointer">'+list.map(o=>'<option value="'+o[0]+'"'+(cur===o[0]?' selected':'')+'>'+o[1]+'</option>').join('')+'</select>';
-    _b3.innerHTML='<span style="font-size:10px;font-weight:700;letter-spacing:.05em;color:var(--muted)">BREAK BOOKINGS BY</span>'+sel3('setBBRK',BBRK,[['src','Channel'],['clinic','Clinic']])+'<span style="font-size:11px;color:var(--muted);margin-left:8px">— expand a row for ✓ done / ✗ not-done</span>';}
-  const mkRow=(nm,bk,dn)=>{if(!bk.some(v=>v))return;const tk='b3_'+String(nm).replace(/[^a-z0-9]+/gi,'');
-    S+=row('· '+nm,bk,'sub',N,{color:GRN,tkey:tk});
-    if(EXP[tk]){S+=row('· · ✓ done',dn,'sub2',N,{color:GRN});S+=row('· · ✗ not done',notD(bk,dn),'sub2',N,{color:'#B23A2E',invert:true});S+=row('· · done %',pctOf(dn,bk),'sub2',PCT,{color:GRN});}};
+  if(SEG!=='online'&&_b3){const sel3=(fn,cur,list)=>'<select onchange="'+fn+'(this.value)" style="font-size:11.5px;border:1px solid var(--line);border-radius:6px;padding:3px 8px;margin-left:6px;background:#fff;font-family:Inter;font-weight:600;color:var(--accent);cursor:pointer">'+list.map(o=>'<option value="'+o[0]+'"'+(cur===o[0]?' selected':'')+'>'+o[1]+'</option>').join('')+'</select>';
+    const crossL=BBRK==='src'?[['status','✓/✗ Done vs Not-done'],['clinic','× Clinic'],['none','— none —']]:[['status','✓/✗ Done vs Not-done'],['src','× Channel'],['none','— none —']];
+    _b3.innerHTML='<span style="font-size:10px;font-weight:700;letter-spacing:.05em;color:var(--muted)">BREAK BOOKINGS BY</span>'+sel3('setBBRK',BBRK,[['src','Channel'],['clinic','Clinic']])+sel3('setBCRS',BCRS,crossL);}
+  const crossRows=(m)=>{
+    if(BCRS==='status')return [{nm:'✓ done',arr:m.dn,c:GRN},{nm:'✗ not done',arr:notD(m.bk,m.dn),c:'#B23A2E',inv:true},{nm:'done %',arr:pctOf(m.dn,m.bk),c:GRN,pct:true}];
+    if(BBRK==='src')return clinics.map(x=>({nm:dN3(x),arr:m.keys.reduce((b,k)=>addv(b,x.data.by_source[k]||ZA),ZA.slice())}));
+    return CH3.map(([nm,keys])=>({nm,arr:keys.reduce((b,k)=>addv(b,m.x.data.by_source[k]||ZA),ZA.slice())}));
+  };
+  const mkRow=(m)=>{if(!m.bk.some(v=>v))return;const tk='b3_'+String(m.nm).replace(/[^a-z0-9]+/gi,'');const hasX=BCRS!=='none';
+    S+=row('· '+m.nm,m.bk,'sub',N,{color:GRN,tkey:hasX?tk:null});
+    if(hasX&&EXP[tk])crossRows(m).forEach(r=>{if(r.pct||r.arr.some(v=>v))S+=row('· · '+r.nm,r.arr,'sub2',r.pct?PCT:N,{color:r.c||GRN,invert:r.inv});});};
   if(SEG==='online'){
     if(_b3)_b3.innerHTML='';
     const OS=(D._meta.online_src_city||{})[CUR]||{};const osCh=['Meta','Google','Organic','GMB','Practo','Direct'];
@@ -439,11 +447,8 @@ function render(){
     S+=row('· ✓ done',offDoneTot,'sub',N,{color:GRN});
     S+=row('· ✗ not done',notD(offSrcTot,offDoneTot),'sub',N,{color:'#B23A2E',invert:true});
     S+=row('· done %',pctOf(offDoneTot,offSrcTot),'sub',PCT,{color:GRN});
-    if(BBRK==='clinic'){
-      clinics.map(x=>{const bk=(D._meta.sources||[]).reduce((a,k)=>addv(a,x.data.by_source[k]||ZA),ZA.slice());const dn=Object.keys(x.data.done_by_source||{}).reduce((a,k)=>addv(a,x.data.done_by_source[k]||ZA),ZA.slice());return {nm:x.loc||((D._meta.display||{})[x.slug]||x.slug),bk,dn};}).forEach(m=>mkRow(m.nm,m.bk,m.dn));
-    }else{
-      [['GMB','srcGMB','srcGMBdone'],['Google','srcGoog','srcGoogDone'],['Practo','srcPracto','srcPractoDone'],['Meta (FB/IG)','srcMeta','srcMetaDone'],['Organic','srcOrg','srcOrgDone'],['Direct / Walk-in','srcDirect','srcDirectDone']].forEach(([nm,bk,dn])=>mkRow(nm,sumF(F[bk]),sumF(F[dn])));
-    }
+    if(BBRK==='clinic')clinics.map(x=>({nm:dN3(x),x:x,bk:(D._meta.sources||[]).reduce((a,k)=>addv(a,x.data.by_source[k]||ZA),ZA.slice()),dn:Object.keys(x.data.done_by_source||{}).reduce((a,k)=>addv(a,x.data.done_by_source[k]||ZA),ZA.slice())})).forEach(mkRow);
+    else CH3.forEach(([nm,keys])=>mkRow({nm,keys,bk:sumF(d=>keys.reduce((b,k)=>addv(b,d.by_source[k]||ZA),ZA.slice())),dn:sumF(d=>keys.reduce((b,k)=>addv(b,(d.done_by_source||{})[k]||ZA),ZA.slice()))}));
   }
   $('tSrc').innerHTML=S;
   // outcome category — SEG-aware: offline (city clinics) + online (telehealth, by patient city)
