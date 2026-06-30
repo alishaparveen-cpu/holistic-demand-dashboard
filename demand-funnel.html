@@ -66,12 +66,15 @@ function citySeries(cd,fac,clinics){
 function delta(arr){const e=avg(arr.slice(0,3)),r=avg(arr.slice(-3));return e?Math.round((r-e)/e*100):0;}
 function buildCity(city){
   const cd=DB.cities[city];const clinics=Object.keys(cd).sort();
+  const bc={'<3mo':0,'3-6mo':0,'6-12mo':0,'>1yr':0};
+  clinics.forEach(c=>{const mo=clinicMonths(c);if(mo!=null)bc[ageBucket(mo)]++;});
+  const matOpts=MATOPTS.map(o=>o[0]==='all'?`<option value="all">All maturity</option>`:`<option value="${o[0]}"${(bc[o[0]]||0)===0?' disabled':''}>${o[1]} (${bc[o[0]]||0})</option>`).join('');
   const card=document.createElement('div');card.className='card';
   card.innerHTML=`<div class="city">${city} <span style="font-weight:400;color:var(--mut);font-size:13px">· ${clinics.length} clinics</span></div>
     <div class="cards"></div>
     <div class="ctrlrow">
       <div class="fld"><label>Factor</label><select class="fac">${FAC.map(f=>`<option value="${f[0]}">${f[1]}</option>`).join('')}</select></div>
-      <div class="fld"><label>Maturity</label><select class="mat">${MATOPTS.map(o=>`<option value="${o[0]}">${o[1]}</option>`).join('')}</select></div>
+      <div class="fld"><label>Maturity</label><select class="mat">${matOpts}</select></div>
       <div class="fld"><label>Scope</label><select class="sc"><option value="__city">City total</option>${clinics.map(c=>`<option value="${c}">${c}</option>`).join('')}</select></div>
     </div>
     <div class="chartbox"><canvas role="img" aria-label="${city} demand factor trend"></canvas></div>
@@ -96,6 +99,10 @@ function buildCity(city){
   function markCards(){card.querySelectorAll('.mc').forEach(e=>e.classList.toggle('sel',e.dataset.f===facSel.value));}
   function draw(){
     const fac=facSel.value,scope=scSel.value,id=city,cl=curClinics();
+    const cv=card.querySelector('canvas');
+    if(cl.length===0){ if(charts[id])charts[id].destroy(); cv.style.display='none';
+      card.querySelector('.foot').innerHTML=`<b>No clinics in ${matSel.value} for ${city}.</b> Maturity mix: <3mo (${bc['<3mo']}) · 3–6mo (${bc['3-6mo']}) · 6–12mo (${bc['6-12mo']}) · >1yr (${bc['>1yr']}). Age = months since first SC.`; return; }
+    cv.style.display='';
     const data=scope==='__city'?citySeries(cd,fac,cl):(fac==='rating'?cd[scope].rating:(cd[scope][fac]||M.map(()=>0)));
     const isRate=fac==='rating';
     if(charts[id])charts[id].destroy();
