@@ -100,13 +100,32 @@ function docStat(done,days){
 const MKEY={done:'doctors',sh:'sh',sti:'sti',bookings:'bookings',days:'days',practo:'practo'};
 const MLAB={done:'completed SC',sh:'SH done',sti:'STI done',bookings:'new bookings',days:'active-days',practo:'Practo leads'};
 function sumOver(cl,clKey){const docs=Object.keys(cl.doctors);return M.map((_,i)=>docs.reduce((s,d)=>s+(((cl[clKey]||{})[d]||[])[i]||0),0));}
+function clMetrics(cl){
+  const total=cl.total,totDays=sumOver(cl,'days');
+  const oE=avg(total.slice(0,3)),oR=avg(total.slice(-3)),dE=avg(totDays.slice(0,3)),dR=avg(totDays.slice(-3));
+  const pE=dE?oE/dE:0,pR=dR?oR/dR:0;
+  const oP=oE?Math.round((oR-oE)/oE*100):0,dP=dE?Math.round((dR-dE)/dE*100):0,pP=pE?Math.round((pR-pE)/pE*100):0;
+  let hc='h-ok',tag='Output steady',v='';
+  if(oP<=-12){const cdr=Math.max(0,-dP),pdr=Math.max(0,-pP);
+    if(pdr>cdr+8){hc='h-prod';tag='Productivity-driven drop';v=`Mostly <b>fewer consults per day</b> (productivity ${pP}%)${dP>=5?` — doctor-days rose +${dP}%, so it's throughput, not capacity`:''}.`;}
+    else if(cdr>pdr+8){hc='h-cap';tag='Capacity-driven drop';v=`Mostly <b>fewer doctor-days</b> (capacity ${dP}%)${pP>=-5?` — per-day throughput held`:''}.`;}
+    else{hc='h-both';tag='Capacity + productivity';v=`Both fell — capacity ${dP}%, productivity ${pP}%.`;}}
+  else if(oP>=12){tag='Output up';v=`Capacity ${dP>=0?'+':''}${dP}%, productivity ${pP>=0?'+':''}${pP}%.`;}
+  else v=`Capacity ${dP>=0?'+':''}${dP}%, productivity ${pP>=0?'+':''}${pP}%.`;
+  return {oE,oR,oP,dE,dR,dP,pE,pR,pP,hc,tag,v};
+}
 
 function buildCity(city){
   const cd=DB.cities[city];
   const clinics=Object.keys(cd).sort((a,b)=>sum(cd[b].total)-sum(cd[a].total));
   const card=document.createElement('div'); card.className='card';
   card.innerHTML=`<div class="city">${city} <span style="font-weight:400;color:var(--mut);font-size:13px">· ${clinics.length} clinics</span></div>
-    <div class="ctrlrow"><div class="fld"><label>Clinic</label><select class="cl">${clinics.map(c=>`<option value="${c}">${c}</option>`).join('')}</select></div></div>
+    <div class="ctrlrow">
+      <div class="fld"><label>Filter clinics</label><select class="flt">
+        <option value="all">All</option><option value="drop">Output dropped (≥12%)</option>
+        <option value="cap">Capacity-driven drop</option><option value="prod">Productivity-driven drop</option>
+        <option value="up">Output up</option></select></div>
+      <div class="fld"><label>Clinic</label><select class="cl"></select></div></div>
     <div class="step"><span class="n">1</span> Clinic verdict & trend</div>
     <div class="headline"></div>
     <div class="why"></div>
@@ -131,24 +150,23 @@ function buildCity(city){
       <option value="practo">Practo leads</option></select></div></div>
     <div class="chartbox"><canvas class="cc3" role="img" aria-label="${city} selected doctor metrics"></canvas></div>
     <div class="foot"></div>`;
-  const clSel=card.querySelector('.cl'),cmSel=card.querySelector('.cm'),hmmSel=card.querySelector('.hmm'),cmpSel=card.querySelector('.cmp');
+  const clSel=card.querySelector('.cl'),cmSel=card.querySelector('.cm'),hmmSel=card.querySelector('.hmm'),cmpSel=card.querySelector('.cmp'),fltSel=card.querySelector('.flt');
   let sel=null;
+  function populateClinics(){
+    const flt=fltSel.value;
+    let list=clinics.map(c=>({c,m:clMetrics(cd[c])}));
+    if(flt==='drop') list=list.filter(x=>x.m.oP<=-12);
+    else if(flt==='cap') list=list.filter(x=>x.m.hc==='h-cap');
+    else if(flt==='prod') list=list.filter(x=>x.m.hc==='h-prod');
+    else if(flt==='up') list=list.filter(x=>x.m.oP>=12);
+    if(flt!=='all') list.sort((a,b)=>a.m.oP-b.m.oP);
+    clSel.innerHTML=list.map(x=>`<option value="${x.c}">${x.c} (${x.m.oP>=0?'+':''}${x.m.oP}%)</option>`).join('')||'<option value="">— none match —</option>';
+  }
   function verdict(){
-    const cl=cd[clSel.value],days=cl.days||{},docs=Object.keys(cl.doctors);
-    const total=cl.total,totDays=sumOver(cl,'days');
-    const oE=avg(total.slice(0,3)),oR=avg(total.slice(-3)),dE=avg(totDays.slice(0,3)),dR=avg(totDays.slice(-3));
-    const pE=dE?oE/dE:0,pR=dR?oR/dR:0;
-    const oP=oE?Math.round((oR-oE)/oE*100):0,dP=dE?Math.round((dR-dE)/dE*100):0,pP=pE?Math.round((pR-pE)/pE*100):0;
-    let hc='h-ok',tag='Output steady',v='';
-    if(oP<=-12){const cdr=Math.max(0,-dP),pdr=Math.max(0,-pP);
-      if(pdr>cdr+8){hc='h-prod';tag='Productivity-driven drop';v=`Mostly <b>fewer consults per day</b> (productivity ${pP}%)${dP>=5?` — doctor-days rose +${dP}%, so it's throughput, not capacity`:''}.`;}
-      else if(cdr>pdr+8){hc='h-cap';tag='Capacity-driven drop';v=`Mostly <b>fewer doctor-days</b> (capacity ${dP}%)${pP>=-5?` — per-day throughput held`:''}.`;}
-      else{hc='h-both';tag='Capacity + productivity';v=`Both fell — capacity ${dP}%, productivity ${pP}%.`;}}
-    else if(oP>=12){tag='Output up';v=`Capacity ${dP>=0?'+':''}${dP}%, productivity ${pP>=0?'+':''}${pP}%.`;}
-    else v=`Capacity ${dP>=0?'+':''}${dP}%, productivity ${pP>=0?'+':''}${pP}%.`;
-    const hl=card.querySelector('.headline');hl.className='headline '+hc;
-    hl.innerHTML=`<span class="tag">${tag}</span> &nbsp;<b>${clSel.value}</b> output <b>${Math.round(oE)}→${Math.round(oR)}/mo</b> (${oP>=0?'+':''}${oP}%). Active-days ${Math.round(dE)}→${Math.round(dR)} (${dP>=0?'+':''}${dP}%) · productivity ${r1(pE)}→${r1(pR)} SC/day (${pP>=0?'+':''}${pP}%). ${v}`;
-    card.querySelector('.why').innerHTML=genWhy(cl,oP,dP,pP,hc);
+    const cl=cd[clSel.value],x=clMetrics(cl);
+    const hl=card.querySelector('.headline');hl.className='headline '+x.hc;
+    hl.innerHTML=`<span class="tag">${x.tag}</span> &nbsp;<b>${clSel.value}</b> output (done) <b>${Math.round(x.oE)}→${Math.round(x.oR)}/mo</b> (${x.oP>=0?'+':''}${x.oP}%). Active-days ${Math.round(x.dE)}→${Math.round(x.dR)} (${x.dP>=0?'+':''}${x.dP}%) · productivity ${r1(x.pE)}→${r1(x.pR)} SC/day (${x.pP>=0?'+':''}${x.pP}%). ${x.v}`;
+    card.querySelector('.why').innerHTML=genWhy(cl,x.oP,x.dP,x.pP,x.hc);
   }
   function clinicChart(){
     const cl=cd[clSel.value],m=cmSel.value,cv=card.querySelector('.cc1'),id=city+'_c';
@@ -193,10 +211,11 @@ function buildCity(city){
     drawDoc(card,city,cd[clSel.value],sel,cmpSel.value);
     card.querySelector('.foot').innerHTML=`Heatmap: darker = more "${MLAB[hmmSel.value]}" that month; blank = none/inactive. Status: <span class="st st-left">left</span> peaked ≥8/mo & now ~0 · <span class="st st-new">new</span> joined recently. Months Jan '25 → ${fmtM(M[M.length-1])}. Practo = Book+Call matched to the doctor by name.`;
   }
-  function render(){verdict();clinicChart();heatmap();}
+  function render(){if(!clSel.value)return;verdict();clinicChart();heatmap();}
+  fltSel.onchange=()=>{populateClinics();sel=null;render();};
   clSel.onchange=()=>{sel=null;render();};
   cmSel.onchange=clinicChart; hmmSel.onchange=heatmap; cmpSel.onchange=selDoc;
-  setTimeout(render,0);
+  populateClinics(); setTimeout(render,0);
   return card;
 }
 
