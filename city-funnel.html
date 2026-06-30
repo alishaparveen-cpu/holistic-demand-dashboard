@@ -147,6 +147,9 @@ tr[onclick]:hover td:first-child{color:var(--accent)}
 <div id="cmpBar" class="cmpbar"></div>
 <script>
 let D=null,CUR=null;let NSHOW=6;let WKEND=1;let W0=1;let SHOWPARTIAL=false;let ZREG=[];let EXP={};
+let DBRK='cat',DCRS='none';   // ④ Done breakdown: primary dimension × optional cross (dropdown-driven)
+function setDBRK(v){DBRK=v;if(DBRK===DCRS)DCRS='none';render();}
+function setDCRS(v){DCRS=v;render();}
 let QV=false,QVC=[],QVTABLE=null;let CATMODE=false;
 function toggleCat(){CATMODE=!CATMODE;if($('catBtn'))$('catBtn').classList.toggle('on',CATMODE);render();}
 let CMPB='avg';function setCmp(v){CMPB=v;render();}
@@ -455,17 +458,28 @@ function render(){
   else{O+=mrow('Bookings (Screening Calls)'+(SEG==='all'?' · offline clinics':''),F.booked,'grp',N,{color:GRN});
     if(SEG==='all')O+=row('+ online (telehealth, this city)',onlBkC,'sub',N,{color:GRN});}
   O+=row('Book → Done %',pctOf(segA(offDnC,onlDnC),segA(offBkC,onlBkC)),'sub',PCT,{color:GRN});
-  O+=ocatRow('Done (completed consults)','done',N);
-  if(SEG!=='online'){   // Done by source — completed SCs credited to the booking's source (offline clinics)
-    const dnSrcTot=clinics.reduce((a,x)=>addv(a,F.srcTotalDone(x.data)||ZA),ZA.slice());
-    if(dnSrcTot.some(v=>v)){
-      O+=row('Done by source',dnSrcTot,'sub',N,{color:GRN,tkey:'done_by_src'});
-      if(EXP['done_by_src'])[['GMB','srcGMBdone'],['Google','srcGoogDone'],['Practo','srcPractoDone'],['Meta (FB/IG)','srcMetaDone'],['Organic','srcOrgDone'],['Direct / Walk-in','srcDirectDone']].forEach(([nm,fk])=>{
-        const t=clinics.reduce((a,x)=>addv(a,F[fk](x.data)||ZA),ZA.slice());
-        if(t.some(v=>v))O+=row('· '+nm,t,'sub2',N,{color:GRN});
-      });
-    }
-  }
+  // ---- ④ Done: dropdown-driven breakdown (Break by × cross) — one clean slice at a time ----
+  {const SRCG=[['GMB',['gmb_call','gmb_web','gmb_wa']],['Google',['gpaid_call','gpaid_web']],['Practo',['practo']],['Meta (FB/IG)',['meta']],['Organic',['organic']],['Direct / Walk-in',['untagged']]];
+   const dNm=x=>x.loc||((D._meta.display||{})[x.slug]||x.slug);
+   const dCatSrc=(ct,keys)=>clinics.reduce((acc,x)=>{const cs=((x.data.done_cat_source||{})[ct])||{};return addv(acc,keys.reduce((b,k)=>addv(b,cs[k]||ZA),ZA.slice()));},ZA.slice());
+   const dSrc=keys=>clinics.reduce((acc,x)=>addv(acc,keys.reduce((b,k)=>addv(b,((x.data.done_by_source||{})[k])||ZA),ZA.slice())),ZA.slice());
+   const dCatCl=(ct,x)=>(((x.data.bottom.by_cat||{})[ct]||{}).done)||ZA;
+   const dSrcCl=(keys,x)=>keys.reduce((b,k)=>addv(b,((x.data.done_by_source||{})[k])||ZA),ZA.slice());
+   const dtot=segA(offDnC,onlDnC);
+   O+=row('Done (completed consults)',dtot,'grp',N,{color:GRN});
+   if(SEG!=='online'){
+     const sel=(fn,cur,list)=>'<select onchange="'+fn+'(this.value)" style="font-size:11.5px;border:1px solid var(--line);border-radius:6px;padding:2px 7px;margin-left:6px;background:#fff;font-family:Inter;font-weight:600;color:var(--accent);cursor:pointer">'+list.map(o=>'<option value="'+o[0]+'"'+(cur===o[0]?' selected':'')+'>'+o[1]+'</option>').join('')+'</select>';
+     const crossL=DBRK==='cat'?[['none','— no cross —'],['src','× Source'],['clinic','× Clinic']]:DBRK==='src'?[['none','— no cross —'],['cat','× Category'],['clinic','× Clinic']]:[['none','— no cross —'],['cat','× Category'],['src','× Source']];
+     O+='<tr><td colspan="40" style="padding:7px 11px;background:var(--inset);border-bottom:1px solid var(--line2);text-align:left"><span style="font-size:10px;font-weight:700;letter-spacing:.05em;color:var(--muted)">BREAK DONE BY</span>'+sel('setDBRK',DBRK,[['cat','Category'],['src','Source'],['clinic','Clinic']])+sel('setDCRS',DCRS,crossL)+'</td></tr>';
+     const emit=(members,crossFn)=>{members.forEach(m=>{if(!m.arr.some(v=>v))return;const c=m.color||GRN;
+       const tk='dbrk_'+String(m.nm).replace(/[^a-z0-9]+/gi,'');
+       O+=row('· '+m.nm,m.arr,'sub',N,{color:c,tkey:(DCRS==='none'?null:tk)});
+       if(DCRS!=='none'&&EXP[tk])crossFn(m).forEach(s=>{if(s.arr.some(v=>v))O+=row('· · '+s.nm,s.arr,'sub2',N,{color:s.color||c});});
+     });};
+     if(DBRK==='cat')emit(CATS.map(ct=>({nm:ct,arr:catO(ct,'done'),color:CATCOL[ct]})),m=>DCRS==='src'?SRCG.map(g=>({nm:g[0],arr:dCatSrc(m.nm,g[1])})):clinics.map(x=>({nm:dNm(x),arr:dCatCl(m.nm,x)})));
+     else if(DBRK==='src')emit(SRCG.map(g=>({nm:g[0],arr:dSrc(g[1]),keys:g[1]})),m=>DCRS==='cat'?CATS.map(ct=>({nm:ct,arr:dCatSrc(ct,m.keys),color:CATCOL[ct]})):clinics.map(x=>({nm:dNm(x),arr:dSrcCl(m.keys,x)})));
+     else emit(clinics.map(x=>({nm:dNm(x),arr:x.data.bottom.done||ZA,x:x})),m=>DCRS==='cat'?CATS.map(ct=>({nm:ct,arr:dCatCl(ct,m.x),color:CATCOL[ct]})):SRCG.map(g=>({nm:g[0],arr:dSrcCl(g[1],m.x)})));
+   }}
   const offPuC=clinics.reduce((a,x)=>addv(a,Fn.purchN(x.data)||ZA),ZA.slice()),onlPuC=(onlC.total||{}).purchased||ZA;
   O+=row('Done → Purchased %',pctOf(segA(offPuC,onlPuC),segA(offDnC,onlDnC)),'sub',PCT,{color:GRN});
   O+=ocatRow('Purchased','purchased',N);
