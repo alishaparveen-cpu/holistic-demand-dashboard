@@ -47,10 +47,19 @@ const avg=a=>{const b=a.filter(x=>x!=null);return b.length?b.reduce((x,y)=>x+y,0
 const r1=x=>Math.round(x*10)/10;
 let DB,M,isDark=matchMedia('(prefers-color-scheme: dark)').matches;
 const charts={};
-async function boot(){if(window.ChartDataLabels)Chart.register(ChartDataLabels);DB=await (await fetch('data_demand.json')).json();M=DB._meta.months;
+let CLINIC_AGE={};        // locality -> first-SC date (open proxy); months computed live, stays fresh
+const NOW_MS=Date.now();
+function clinicMonths(c){const d=CLINIC_AGE[c];if(!d)return null;const t=Date.parse(d);return isNaN(t)?null:(NOW_MS-t)/(1000*60*60*24*30.44);}
+function ageBucket(mo){return mo<3?'<3mo':mo<6?'3-6mo':mo<12?'6-12mo':'>1yr';}
+function clinicsIn(cd,matF){const all=Object.keys(cd);return (matF&&matF!=='all')?all.filter(c=>{const mo=clinicMonths(c);return mo!=null&&ageBucket(mo)===matF;}):all;}
+const MATOPTS=[['all','All maturity'],['<3mo','<3 mo'],['3-6mo','3–6 mo'],['6-12mo','6–12 mo'],['>1yr','>1 yr']];
+async function boot(){if(window.ChartDataLabels)Chart.register(ChartDataLabels);
+  const [dbR,ageR]=await Promise.all([fetch('data_demand.json'),fetch('data_clinic_age.json').catch(()=>null)]);
+  DB=await dbR.json();M=DB._meta.months;
+  if(ageR&&ageR.ok){try{CLINIC_AGE=(await ageR.json()).open||{};}catch(_){}}
   const host=document.getElementById('cities');DB._meta.t1.forEach(c=>{if(DB.cities[c])host.appendChild(buildCity(c));});}
-function citySeries(cd,fac){
-  const clinics=Object.keys(cd);
+function citySeries(cd,fac,clinics){
+  clinics=clinics||Object.keys(cd);
   if(fac==='rating'){return M.map((_,i)=>{let num=0,den=0;clinics.forEach(c=>{const r=cd[c].rating[i],n=cd[c].reviews[i];if(r!=null&&n){num+=r*n;den+=n;}});return den?r1(num/den):null;});}
   return M.map((_,i)=>clinics.reduce((s,c)=>s+((cd[c][fac]||[])[i]||0),0));
 }
@@ -62,15 +71,18 @@ function buildCity(city){
     <div class="cards"></div>
     <div class="ctrlrow">
       <div class="fld"><label>Factor</label><select class="fac">${FAC.map(f=>`<option value="${f[0]}">${f[1]}</option>`).join('')}</select></div>
+      <div class="fld"><label>Maturity</label><select class="mat">${MATOPTS.map(o=>`<option value="${o[0]}">${o[1]}</option>`).join('')}</select></div>
       <div class="fld"><label>Scope</label><select class="sc"><option value="__city">City total</option>${clinics.map(c=>`<option value="${c}">${c}</option>`).join('')}</select></div>
     </div>
     <div class="chartbox"><canvas role="img" aria-label="${city} demand factor trend"></canvas></div>
     <div class="foot"></div>`;
-  const facSel=card.querySelector('.fac'),scSel=card.querySelector('.sc');
+  const facSel=card.querySelector('.fac'),scSel=card.querySelector('.sc'),matSel=card.querySelector('.mat');
+  function curClinics(){return clinicsIn(cd,matSel.value);}
+  function rebuildScope(){const cl=curClinics(),cur=scSel.value;scSel.innerHTML=`<option value="__city">City total</option>`+cl.slice().sort().map(c=>`<option value="${c}">${c}</option>`).join('');scSel.value=(cur!=='__city'&&cl.includes(cur))?cur:'__city';}
   function cards(){
-    const host=card.querySelector('.cards');host.innerHTML='';
+    const host=card.querySelector('.cards');host.innerHTML='';const cl=curClinics();
     FAC.filter(f=>f[0]!=='l_organic'&&f[0]!=='l_google'&&f[0]!=='l_fb').forEach(f=>{
-      const s=citySeries(cd,f[0]);const recent=f[0]==='rating'?avg(s.slice(-3)):s.slice(-3).reduce((x,y)=>x+(y||0),0)/3;
+      const s=citySeries(cd,f[0],cl);const recent=f[0]==='rating'?avg(s.slice(-3)):s.slice(-3).reduce((x,y)=>x+(y||0),0)/3;
       const d=f[0]==='rating'?Math.round((avg(s.slice(-3))-avg(s.slice(0,3)))*100)/100:delta(s);
       const cls=f[0]==='rating'?(d<=-0.05?'down':d>=0.05?'up':'flat'):(d<=-12?'down':d>=12?'up':'flat');
       const dtxt=f[0]==='rating'?`${d>=0?'+':''}${d}`:`${d>=0?'+':''}${d}%`;
@@ -83,8 +95,8 @@ function buildCity(city){
   }
   function markCards(){card.querySelectorAll('.mc').forEach(e=>e.classList.toggle('sel',e.dataset.f===facSel.value));}
   function draw(){
-    const fac=facSel.value,scope=scSel.value,id=city;
-    const data=scope==='__city'?citySeries(cd,fac):(fac==='rating'?cd[scope].rating:(cd[scope][fac]||M.map(()=>0)));
+    const fac=facSel.value,scope=scSel.value,id=city,cl=curClinics();
+    const data=scope==='__city'?citySeries(cd,fac,cl):(fac==='rating'?cd[scope].rating:(cd[scope][fac]||M.map(()=>0)));
     const isRate=fac==='rating';
     if(charts[id])charts[id].destroy();
     const grid=isDark?'rgba(255,255,255,.1)':'rgba(0,0,0,.07)',tick=isDark?'#b4b2a9':'#5f5e5a',col=FCOL[fac];
@@ -94,11 +106,13 @@ function buildCity(city){
         plugins:{legend:{display:true,position:'top',labels:{boxWidth:11,font:{size:11},color:tick}},
           datalabels:{anchor:isRate?'center':'end',align:'top',offset:isRate?6:2,color:isDark?'#e6e4dc':'#1a1a17',font:{size:9,weight:'500'},formatter:fmtN,display:'auto',clip:false}},
         scales:{x:{grid:{color:grid},ticks:{color:tick,maxRotation:45,autoSkip:true,maxTicksLimit:12}},y:{grid:{color:grid},ticks:{color:tick},title:{display:true,text:FLAB[fac],color:tick},beginAtZero:!isRate,grace:'12%'}}}});
-    const d=delta(scope==='__city'?citySeries(cd,fac):(cd[scope][fac]||[]));
+    const d=delta(scope==='__city'?citySeries(cd,fac,cl):(cd[scope][fac]||[]));
     const gmbMiss=(fac==='gmb_views'||fac==='gmb_actions')&&scope!=='__city'&&!(cd[scope][fac]||[]).some(x=>x>0);
-    card.querySelector('.foot').innerHTML=`${gmbMiss?'<b style="color:#c0392b">No GMB match for this clinic</b> (listing name didn’t resolve in GBP) — leads/reviews still valid. ':''}Δ first-3mo vs last-3mo: <b>${d>=0?'+':''}${d}%</b>. Leads = call-location (GMB folded in Organic; Practo not here). GMB views/actions from GBP (~Jan'25→). Reviews = GMB review velocity.`;
+    const matNote=matSel.value!=='all'?`<b>Maturity: ${matSel.value}</b> — ${cl.length} clinic${cl.length===1?'':'s'} (age = months since first SC). `:'';
+    card.querySelector('.foot').innerHTML=`${matNote}${gmbMiss?'<b style="color:#c0392b">No GMB match for this clinic</b> (listing name didn’t resolve in GBP) — leads/reviews still valid. ':''}Δ first-3mo vs last-3mo: <b>${d>=0?'+':''}${d}%</b>. Leads = call-location (GMB folded in Organic; Practo not here). GMB views/actions from GBP (~Jan'25→). Reviews = GMB review velocity.`;
   }
   facSel.onchange=()=>{draw();markCards();};scSel.onchange=draw;
+  matSel.onchange=()=>{rebuildScope();cards();draw();};
   cards();setTimeout(draw,0);
   return card;
 }
