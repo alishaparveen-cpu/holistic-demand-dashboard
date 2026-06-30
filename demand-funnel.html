@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Demand RCA · top of funnel</title>
+<style>
+  :root{--ink:#1a1a17;--mut:#5f5e5a;--line:#e6e4dc;--bg:#faf9f5;--card:#fff;--acc:#0f6e56}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;color:var(--ink);background:var(--bg)}
+  header{padding:20px 24px;border-bottom:1px solid var(--line);background:var(--card)}
+  header h1{margin:0;font-size:20px;font-weight:600}
+  header p{margin:4px 0 0;color:var(--mut);font-size:13px}
+  .wrap{max-width:1060px;margin:0 auto;padding:18px 16px 60px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px 18px;margin-bottom:18px}
+  .city{font-size:16px;font-weight:600;margin:0 0 10px}
+  .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:6px 0 14px}
+  .mc{background:var(--bg);border-radius:8px;padding:10px 12px;cursor:pointer;border:1px solid transparent}
+  .mc.sel{border-color:var(--acc)}
+  .mc .l{font-size:11px;color:var(--mut);text-transform:uppercase;letter-spacing:.03em}
+  .mc .v{font-size:19px;font-weight:600;margin-top:2px}
+  .mc .d{font-size:12px;font-weight:600;margin-top:1px}
+  .up{color:#0f6e56}.down{color:#c0392b}.flat{color:var(--mut)}
+  .ctrlrow{display:flex;gap:14px;align-items:flex-end;margin:4px 0 2px;flex-wrap:wrap}
+  .fld{display:flex;flex-direction:column;gap:3px}.fld label{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--mut)}
+  select{padding:7px 9px;font-size:13px;border:1px solid var(--line);border-radius:7px;background:#fff;min-width:170px;cursor:pointer}
+  .chartbox{position:relative;height:250px;width:100%;margin-top:10px}
+  .foot{color:var(--mut);font-size:12px;margin-top:8px;line-height:1.5}
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>Demand RCA — top of funnel</h1>
+    <p>Isolate demand-side drops: leads (by channel), GMB views & actions (impressions), review velocity & rating — city level, then drill to clinic. Click a factor card or use the dropdowns.</p>
+  </header>
+  <div class="wrap" id="cities"></div>
+</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script>
+const FAC=[['leads','Leads (total)','#0f6e56'],['l_organic','Leads · Organic/GMB','#185fa5'],['l_google','Leads · Google','#ba7517'],['l_fb','Leads · Meta','#993556'],['gmb_views','GMB views','#534ab7'],['gmb_actions','GMB actions','#d85a30'],['reviews','Review velocity','#1d9e75'],['rating','Avg rating','#888780']];
+const FLAB=Object.fromEntries(FAC.map(f=>[f[0],f[1]])), FCOL=Object.fromEntries(FAC.map(f=>[f[0],f[2]]));
+const fmtM=m=>{const [y,mo]=m.split('-');return ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][+mo-1]+" '"+y.slice(2);};
+const avg=a=>{const b=a.filter(x=>x!=null);return b.length?b.reduce((x,y)=>x+y,0)/b.length:0;};
+const r1=x=>Math.round(x*10)/10;
+let DB,M,isDark=matchMedia('(prefers-color-scheme: dark)').matches;
+const charts={};
+async function boot(){DB=await (await fetch('data_demand.json')).json();M=DB._meta.months;
+  const host=document.getElementById('cities');DB._meta.t1.forEach(c=>{if(DB.cities[c])host.appendChild(buildCity(c));});}
+function citySeries(cd,fac){
+  const clinics=Object.keys(cd);
+  if(fac==='rating'){return M.map((_,i)=>{let num=0,den=0;clinics.forEach(c=>{const r=cd[c].rating[i],n=cd[c].reviews[i];if(r!=null&&n){num+=r*n;den+=n;}});return den?r1(num/den):null;});}
+  return M.map((_,i)=>clinics.reduce((s,c)=>s+((cd[c][fac]||[])[i]||0),0));
+}
+function delta(arr){const e=avg(arr.slice(0,3)),r=avg(arr.slice(-3));return e?Math.round((r-e)/e*100):0;}
+function buildCity(city){
+  const cd=DB.cities[city];const clinics=Object.keys(cd).sort();
+  const card=document.createElement('div');card.className='card';
+  card.innerHTML=`<div class="city">${city} <span style="font-weight:400;color:var(--mut);font-size:13px">· ${clinics.length} clinics</span></div>
+    <div class="cards"></div>
+    <div class="ctrlrow">
+      <div class="fld"><label>Factor</label><select class="fac">${FAC.map(f=>`<option value="${f[0]}">${f[1]}</option>`).join('')}</select></div>
+      <div class="fld"><label>Scope</label><select class="sc"><option value="__city">City total</option>${clinics.map(c=>`<option value="${c}">${c}</option>`).join('')}</select></div>
+    </div>
+    <div class="chartbox"><canvas role="img" aria-label="${city} demand factor trend"></canvas></div>
+    <div class="foot"></div>`;
+  const facSel=card.querySelector('.fac'),scSel=card.querySelector('.sc');
+  function cards(){
+    const host=card.querySelector('.cards');host.innerHTML='';
+    FAC.filter(f=>f[0]!=='l_organic'&&f[0]!=='l_google'&&f[0]!=='l_fb').forEach(f=>{
+      const s=citySeries(cd,f[0]);const recent=f[0]==='rating'?avg(s.slice(-3)):s.slice(-3).reduce((x,y)=>x+(y||0),0)/3;
+      const d=f[0]==='rating'?Math.round((avg(s.slice(-3))-avg(s.slice(0,3)))*100)/100:delta(s);
+      const cls=f[0]==='rating'?(d<=-0.05?'down':d>=0.05?'up':'flat'):(d<=-12?'down':d>=12?'up':'flat');
+      const dtxt=f[0]==='rating'?`${d>=0?'+':''}${d}`:`${d>=0?'+':''}${d}%`;
+      const el=document.createElement('div');el.className='mc';el.dataset.f=f[0];
+      el.innerHTML=`<div class="l">${f[1]}</div><div class="v">${f[0]==='rating'?r1(recent):Math.round(recent)}${f[0]==='rating'?'★':'/mo'}</div><div class="d ${cls}">${dtxt}</div>`;
+      el.onclick=()=>{facSel.value=f[0];draw();markCards();};
+      host.appendChild(el);
+    });
+    markCards();
+  }
+  function markCards(){card.querySelectorAll('.mc').forEach(e=>e.classList.toggle('sel',e.dataset.f===facSel.value));}
+  function draw(){
+    const fac=facSel.value,scope=scSel.value,id=city;
+    const data=scope==='__city'?citySeries(cd,fac):(fac==='rating'?cd[scope].rating:(cd[scope][fac]||M.map(()=>0)));
+    const isRate=fac==='rating';
+    if(charts[id])charts[id].destroy();
+    const grid=isDark?'rgba(255,255,255,.1)':'rgba(0,0,0,.07)',tick=isDark?'#b4b2a9':'#5f5e5a',col=FCOL[fac];
+    charts[id]=new Chart(card.querySelector('canvas'),{type:isRate?'line':'bar',
+      data:{labels:M.map(fmtM),datasets:[{label:FLAB[fac]+(scope==='__city'?' · city':' · '+scope),data:data,backgroundColor:isRate?'transparent':col,borderColor:col,borderWidth:isRate?2.4:0,pointRadius:isRate?2:0,tension:.25}]},
+      options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
+        plugins:{legend:{display:true,position:'top',labels:{boxWidth:11,font:{size:11},color:tick}}},
+        scales:{x:{grid:{color:grid},ticks:{color:tick,maxRotation:45,autoSkip:true,maxTicksLimit:12}},y:{grid:{color:grid},ticks:{color:tick},title:{display:true,text:FLAB[fac],color:tick},beginAtZero:!isRate}}}});
+    const d=delta(scope==='__city'?citySeries(cd,fac):(cd[scope][fac]||[]));
+    const gmbMiss=(fac==='gmb_views'||fac==='gmb_actions')&&scope!=='__city'&&!(cd[scope][fac]||[]).some(x=>x>0);
+    card.querySelector('.foot').innerHTML=`${gmbMiss?'<b style="color:#c0392b">No GMB match for this clinic</b> (listing name didn’t resolve in GBP) — leads/reviews still valid. ':''}Δ first-3mo vs last-3mo: <b>${d>=0?'+':''}${d}%</b>. Leads = call-location (GMB folded in Organic; Practo not here). GMB views/actions from GBP (~Jan'25→). Reviews = GMB review velocity.`;
+  }
+  facSel.onchange=()=>{draw();markCards();};scSel.onchange=draw;
+  cards();setTimeout(draw,0);
+  return card;
+}
+window.addEventListener('DOMContentLoaded',boot);
+</script>
+</body>
+</html>
