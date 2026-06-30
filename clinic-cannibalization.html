@@ -21,6 +21,10 @@
   .dist{font-size:13px;color:var(--mut);padding:7px 11px;background:var(--bg);border-radius:7px;border:1px solid var(--line)}
   .dist b{color:var(--ink)}
   .chartbox{position:relative;height:280px;width:100%}
+  .zoomctrls{display:flex;gap:8px;margin-top:8px;flex-wrap:wrap}
+  .zoomctrls button{font-size:12px;padding:5px 11px;border:1px solid var(--line);border-radius:7px;background:#fff;cursor:pointer;color:var(--ink)}
+  .zoomctrls button:hover:not(:disabled){background:var(--bg)}
+  .zoomctrls button:disabled{opacity:.4;cursor:default}
   .insight{margin-top:12px;padding:12px 14px;border-radius:8px;font-size:13px;line-height:1.6;border-left:3px solid var(--mut);background:var(--bg)}
   .insight.v-yes{border-color:#d85a30;background:#faece7}
   .insight.v-no{border-color:#0f6e56;background:#e1f5ee}
@@ -101,6 +105,7 @@ function buildCity(city){
       <div class="fld"><label>View</label><select class="vw"><option value="focus">Zoom to opening</option><option value="full">Full history</option></select></div>
     </div>
     <div class="chartbox"><canvas role="img" aria-label="Week over week ${city} old vs new clinic around opening"></canvas></div>
+    <div class="zoomctrls"><button class="addOld">← + older weeks</button><button class="addNew">+ newer weeks →</button><button class="rstZoom">reset zoom</button></div>
     <div class="insight"></div>`;
   const oldSel=card.querySelector('.old'), newSel=card.querySelector('.new'), metSel=card.querySelector('.met'), vwSel=card.querySelector('.vw');
   oldSel.innerHTML=mature.map(k=>`<option value="${k}">${k}</option>`).join('');
@@ -110,26 +115,34 @@ function buildCity(city){
     const sorted=news.map(n=>({n,d:km(o,cd[n])})).sort((a,b)=>(a.d==null?1e9:a.d)-(b.d==null?1e9:b.d));
     newSel.innerHTML=sorted.map(x=>`<option value="${x.n}">${x.n} · ${x.d==null?'? ':x.d+' km'} · opened ${cd[x.n].open?cd[x.n].open.slice(0,7):'?'}</option>`).join('')||'<option>— no new clinics —</option>';
   }
+  let eb=0, ea=0;
   function draw(){
     const o=cd[oldSel.value], nk=newSel.value, n=cd[nk]; if(!n)return;
     const d=km(o,n), mk=metSel.value, lbl=METRICS.find(m=>m[0]===mk)[1], oi=openIdx(n);
     card.querySelector('.dist').innerHTML=`Distance<br><b>${d==null?'n/a':d+' km'}</b>`;
-    drawChart(card,city,oldSel.value,nk,o[mk],n[mk],oi,lbl,vwSel.value==='focus');
+    const focus=vwSel.value==='focus';
+    card.querySelector('.zoomctrls').style.display=focus?'flex':'none';
+    const win=drawChart(card,city,oldSel.value,nk,o[mk],n[mk],oi,lbl,focus,eb,ea);
+    card.querySelector('.addOld').disabled=!focus||!win||win.s<=0;
+    card.querySelector('.addNew').disabled=!focus||!win||win.e>=WEEKS.length-1;
     const v=verdict(o,n,mk,d,oi);
-    card.querySelector('.insight').outerHTML=`<div class="insight v-${v.s}"><span class="tag">${v.tag}</span> &nbsp;<b>${oldSel.value}</b> ${v.line}<div class="foot">Zoom = ${BEFORE} wks before → ${AFTER} after opening. Verdict from old-clinic change (${AFTER_EVAL} wks after vs ${BEFORE} before) + distance + new-clinic ramp. ${mk==='leads'?'Leads = all sources by call-location.':mk==='bookings'?'Bookings = new SC.':'Done = completed SC by diagnosis (tags ~Sep 2025+).'}</div></div>`;
+    card.querySelector('.insight').outerHTML=`<div class="insight v-${v.s}"><span class="tag">${v.tag}</span> &nbsp;<b>${oldSel.value}</b> ${v.line}<div class="foot">Zoom = ${BEFORE} wks before → ${AFTER} after opening (use + buttons to widen). Verdict from old-clinic change (${AFTER_EVAL} wks after vs ${BEFORE} before) + distance + new-clinic ramp. ${mk==='leads'?'Leads = all sources by call-location.':mk==='bookings'?'Bookings = new SC.':'Done = completed SC by diagnosis (tags ~Sep 2025+).'}</div></div>`;
   }
+  card.querySelector('.addOld').onclick=()=>{eb+=6;draw();};
+  card.querySelector('.addNew').onclick=()=>{ea+=6;draw();};
+  card.querySelector('.rstZoom').onclick=()=>{eb=0;ea=0;draw();};
   refreshNew();
-  oldSel.onchange=()=>{refreshNew();draw();};
-  newSel.onchange=draw; metSel.onchange=draw; vwSel.onchange=draw;
+  oldSel.onchange=()=>{eb=0;ea=0;refreshNew();draw();};
+  newSel.onchange=()=>{eb=0;ea=0;draw();}; metSel.onchange=draw; vwSel.onchange=()=>{eb=0;ea=0;draw();};
   setTimeout(draw,0);
   return card;
 }
 
-function drawChart(card,city,oldK,newK,oldS,newS,oi,lbl,focus){
+function drawChart(card,city,oldK,newK,oldS,newS,oi,lbl,focus,eb,ea){
   const cv=card.querySelector('canvas'), id=city;
   if(charts[id]) charts[id].destroy();
   let s=0,e=WEEKS.length-1;
-  if(focus&&oi>=0){ s=Math.max(0,oi-BEFORE); e=Math.min(WEEKS.length-1,oi+AFTER); }
+  if(focus&&oi>=0){ s=Math.max(0,oi-BEFORE-(eb||0)); e=Math.min(WEEKS.length-1,oi+AFTER+(ea||0)); }
   const idx=[]; for(let i=s;i<=e;i++) idx.push(i);
   const grid=isDark?'rgba(255,255,255,.1)':'rgba(0,0,0,.07)', tick=isDark?'#b4b2a9':'#5f5e5a';
   const ann={};
@@ -147,6 +160,7 @@ function drawChart(card,city,oldK,newK,oldS,newS,oi,lbl,focus){
       plugins:{legend:{display:true,position:'top',labels:{boxWidth:12,font:{size:12},color:tick}},annotation:{annotations:ann}},
       scales:{x:{grid:{color:grid},ticks:{color:tick,maxRotation:45,autoSkip:true,maxTicksLimit:focus?10:12}},
         y:{grid:{color:grid},ticks:{color:tick},title:{display:true,text:lbl+' / week',color:tick},beginAtZero:true}}}});
+  return {s,e};
 }
 
 function buildSummary(){
