@@ -118,7 +118,7 @@ function render(){
   CALLNUM={'GMB call':(c.numbers['GMB call']||'').split(',')[0],'Google call':c.numbers['Google call'],'Organic call':(c.numbers['Organic call']||'').split(',')[0]};
   const W=D.week_labels,L=c.leads,B=c.bookings,F=B.flow; UNDET=L.undet_booked||{};
   document.getElementById('nums').innerHTML='GMB #'+esc(c.numbers['GMB call'])+' · Google #'+esc(c.numbers['Google call'])+' · Organic #'+esc(c.numbers['Organic call'])+(c.google_shared?' <span class="tag">google # shared→locality-split</span>':'');
-  document.getElementById('note').innerHTML='Unique-patient new-acquisition funnel. Only <code>lead_to_call</code> calls attribute (b2p excluded). Web/ad channels converted-only (dated at lead creation). Returning shown at booking level (④). <b>Category filter applies to call leads</b> (SH/STI/MH/Other, AI call audit).';
+  document.getElementById('note').innerHTML='Unique-patient new-acquisition funnel. Only <code>lead_to_call</code> calls attribute (b2p excluded). Web/ad channels converted-only (dated at lead creation). Returning shown at booking level (④). <b>Category filter applies to call leads</b> (SH/STI/MH/Other, AI call audit = <b>intent at call, not diagnosis</b> — see ⑤ Done by diagnosis for the clinical category).';
   let html='';
   const mode = view==='all'?'all':(view.startsWith('web')?'web':'call');     // all | call | web
   const cat = view.startsWith('call:')?view.split(':')[1]:'all';             // all | SH | STI | MH | Other
@@ -202,12 +202,23 @@ function render(){
   html+=sec('③ Direct · walk-in','no attributable lead',F.other,'s-mut');
   html+='<tr class="tot"><td class="lab">New-acquisition bookings</td>'+cells(F.thisweek.total.map((v,i)=>v+F.prior.total[i]+F.other.total[i]))+'</tr>';
   if(F.returning&&sum(F.returning.total)>0){html+='<tr><td class="lab sub2" style="font-size:11px;padding-top:10px">RETURNING (booking-level)</td>'+cells(W.map(()=>''))+'</tr>'+sec('④ Returning patients','repeat SC',F.returning,'s-ret');}
-  html+='<tr class="tot"><td class="lab">Total bookings</td>'+cells(B.total)+'</tr>';
+  html+='<tr class="tot"><td class="lab">Total bookings <span class="sub2" style="font-weight:400">new+returning · 1st-in-window per patient</span></td>'+cells(B.total)+'</tr>';
   html+='<tr class="tot"><td class="lab good">Done</td>'+pgc(B.done,B.total)+'</tr>';
+  if(B.all_booked){html+='<tr><td class="lab sub2" style="font-size:11px;padding-top:10px">ALL SC BOOKED (ops view · incl. repeat bookers)</td>'+cells(W.map(()=>''))+'</tr>';
+    html+='<tr class="tot"><td class="lab">All SC booked this week <span class="sub2" style="font-weight:400">= "All Booked During the Week" (distinct patient × week)</span></td>'+cells(B.all_booked)+'</tr>';
+    html+='<tr class="tot"><td class="lab good">All done</td>'+pgc(B.all_booked_done,B.all_booked)+'</tr>';}
   html+='</tbody></table>';
   const tb=sum(B.total),tnew=sum(F.thisweek.total)+sum(F.prior.total)+sum(F.other.total),tr=sum(F.returning?F.returning.total:[]),td=sum(B.done);
   html+='<div class="callout">10-wk: <b class="good">'+tnew+' new</b> + <b style="color:var(--practo)">'+tr+' returning</b> = <b>'+tb+'</b> bookings · <b class="good">'+td+'</b> done ('+pct(td,tb)+'%).</div>';
   html+='</div>';
+  if(B.done_by_diag){
+    html+='<div class="box"><div class="boxhd"><span class="step">⑤</span><h2>Done by diagnosis</h2><span class="meta">doctor\'s latest merged-rx diagnosis (clinical) · NOT call intent</span></div>';
+    html+='<table class="f">'+thead(W)+'<tbody>';
+    ['STI','SH','MH','Other'].forEach(ct=>{if(B.done_by_diag[ct]&&sum(B.done_by_diag[ct])>0)html+='<tr class="src"><td class="lab"><b>'+ct+'</b></td>'+cells(B.done_by_diag[ct])+'</tr>';});
+    html+='<tr class="tot"><td class="lab good">Total done</td>'+cells(B.all_booked_done||B.done)+'</tr></tbody></table>';
+    html+='<div class="callout"><b>Diagnosis-based.</b> STI is confirmed at the test / report-reading visit and applied to the patient retroactively — so use this for clinical STI/SH/MH. The category filter on the leads above is <b>call intent</b> (a demand signal at call time), not a diagnosis. Note: MH rarely appears in merged-rx diagnoses, so MH here under-counts.</div>';
+    html+='</div>';
+  }
   document.getElementById('root').innerHTML=html;
 }
 </script>

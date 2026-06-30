@@ -17,6 +17,16 @@ REL_ORDER=['BOOK_APPOINTMENT','BOOK_SLOT','BOOK_TEST','NEEDS_TESTS','NEEDS_MEDS'
 REL_SET=set(REL_ORDER)   # default-selected intents (the AI-audit relevance gate; strength<>NOT_A_PATIENT also required)
 CATMAP={'SEXUAL_HEALTH_GENERAL':'SH','STI':'STI','MENTAL_HEALTH':'MH','OTHER':'Other','NOT_MENTIONED':'Other'}
 CATS=['SH','STI','MH','Other']
+# DONE-level category = doctor's ACTUAL latest merged-rx diagnosis (not call intent). Precedence STI>SH>MH.
+_DX_STI=['genito urinary','genitourinary','post-exposure','post exposure','prophylaxis','syphilis','herpes','gonorr','chlamydia','genital wart','urethritis','trichomon','hpv',' sti',' std']
+_DX_SH=['erectile','premature ejacul','low sexual desire','delayed ejacul','sexual dysfunction','compulsive masturbat','porn addict','vaginismus','dyspareunia','anorgasmia','phimosis','nightfall','hypersensitivity','sexual arousal','retrograde ejacul','glans','penile']
+_DX_MH=['depress','anxiety','stress','ocd','bipolar','panic','insomnia','adhd',' mood','psychiat','mental health']
+def diag_category(descr):
+    d=' '+((descr or '').lower())+' '
+    if any(k in d for k in _DX_STI): return 'STI'
+    if any(k in d for k in _DX_SH): return 'SH'
+    if any(k in d for k in _DX_MH): return 'MH'
+    return 'Other'   # incl. 'No Symptomatic Sexual Disorder' (screened, no disorder)
 # 14 IST-Monday weeks back to the AI call-audit coverage start (~23 Mar); UI defaults to the recent 10, "all" shows these.
 WEEKS=['2026-03-23','2026-03-30','2026-04-06','2026-04-13','2026-04-20','2026-04-27','2026-05-04','2026-05-11','2026-05-18','2026-05-25','2026-06-01','2026-06-08','2026-06-15','2026-06-22']
 idx={w:i for i,w in enumerate(WEEKS)}; NW=len(WEEKS); LO=WEEKS[0]; HI='2026-06-29'
@@ -170,6 +180,28 @@ def clinic_funnel(cfg):
         JOIN allo_persons.patient p ON p.id=a.patient_id WHERE a.deleted_at IS NULL GROUP BY 1)
       SELECT winsc.ph FROM winsc JOIN fe ON fe.ph=winsc.ph WHERE fe.fe<winsc.scwin"""):
         if r and r[0]: returning.add(r[0])
+    # ALL SC booked per (patient×week) — NOT collapsed to first week — to reproduce "All Booked During the Week"
+    allbk={}
+    for r in q(f"""SELECT RIGHT(p.phone_no,10) ph, {WK%'a.created_at'} w,
+      MAX(CASE WHEN a.status='COMPLETED' THEN 1 ELSE 0 END) done
+      FROM allo_consultations.appointments a JOIN allo_consultations.types t ON t.id=a.type_id AND t.name='Screening Call'
+      JOIN allo_health.locations loc ON loc.id=a.location_id AND loc.locality='{loc}' AND loc.deleted_at IS NULL
+      JOIN allo_persons.patient p ON p.id=a.patient_id WHERE a.deleted_at IS NULL AND (a.created_at+INTERVAL '5 hours 30 minutes')>='{LO}' GROUP BY 1,2"""):
+        if len(r)>=3 and r[1] in idx: allbk[(r[0],r[1])]=int(r[2])
+    # DONE-level category from doctor's LATEST merged-rx diagnosis (clinical truth, not call intent)
+    diagcat={}; allphs=list({ph for (ph,w) in allbk})
+    for ci in range(0,len(allphs),400):
+        inlist="','".join(allphs[ci:ci+400])
+        if not inlist: continue
+        for r in q(f"""SELECT ph, descr FROM (
+          SELECT RIGHT(p.phone_no,10) ph, LISTAGG(DISTINCT diag.description,' | ') descr,
+            RANK() OVER (PARTITION BY p.id ORDER BY enc.created_at DESC) rnk
+          FROM allo_encounters.encounters enc
+          JOIN allo_persons.patient p ON p.id=enc.patient_id AND p.deleted_at IS NULL
+          LEFT JOIN allo_observations.diagnoses diag ON diag.encounter_id=enc.id AND diag.deleted_at IS NULL
+          WHERE enc.deleted_at IS NULL AND LOWER(enc.type) LIKE '%merged-rx%' AND RIGHT(p.phone_no,10) IN ('{inlist}')
+          GROUP BY p.id, RIGHT(p.phone_no,10), enc.id, enc.created_at) z WHERE rnk=1 AND descr IS NOT NULL"""):
+            if len(r)>=2 and r[0] and r[0] not in diagcat: diagcat[r[0]]=diag_category(r[1])
     lead={}
     for r in q(f"""SELECT ph,origin,src,med,fb,cwk,su FROM (
       SELECT RIGHT(phone_no,10) ph, origin, LOWER(utm_source) src, LOWER(utm_medium) med,
@@ -300,6 +332,13 @@ def clinic_funnel(cfg):
                 bucket='thisweek' if (cwk in idx and idx[cwk]==i) else 'prior'
         FLOW[bucket].setdefault(src,Z())[i]+=1; ft[bucket][i]+=1
     bookings['flow']={k:{'total':ft[k],'by_source':FLOW[k]} for k in FLOW}
+    # ALL SC booked per week (incl. repeat bookers) + DONE-by-diagnosis (doctor's clinical category)
+    ab_total=Z(); ab_done=Z(); done_by_diag={c:Z() for c in CATS}; booked_by_diag={c:Z() for c in CATS}
+    for (ph,w),dn in allbk.items():
+        i=idx[w]; ab_total[i]+=1; dc=diagcat.get(ph,'Other'); booked_by_diag[dc][i]+=1
+        if dn: ab_done[i]+=1; done_by_diag[dc][i]+=1
+    bookings['all_booked']=ab_total; bookings['all_booked_done']=ab_done
+    bookings['done_by_diag']=done_by_diag; bookings['booked_by_diag']=booked_by_diag
     nums={'GMB call':','.join(cfg['gmb']) or '—','Google call':cfg['google'] or '—','Organic call':','.join(cfg['organic']) or '—'}
     return {'disp':cfg['disp'],'city':cfg['city'],'loc':cfg['loc'],'numbers':nums,
             'google_shared':(not cfg['google_solo']) if cfg['google'] else None,'leads':leads,'bookings':bookings}
