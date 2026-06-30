@@ -411,7 +411,11 @@ function expectedOf(arr, W){
   return avg(arr.slice(W+1, W+1+winLen()));
 }
 let causeF='all';         // 'all' | 'avail' | 'l2b' | 'leads' | 'mixed'
-let matF='all';           // 'all' | 'New' | 'Maturing' | 'Mature'
+let matF='all';           // 'all' | '<3mo' | '3-6mo' | '6-12mo' | '>1yr'  (real age from first SC)
+let CLINIC_AGE={};        // locality -> first-SC date (open proxy); months computed live so it stays fresh
+const NOW_MS=Date.now();
+function clinicMonths(clinic){ const d=CLINIC_AGE[clinic]; if(!d) return null; const t=Date.parse(d); return isNaN(t)?null:(NOW_MS-t)/(1000*60*60*24*30.44); }
+function ageBucket(mo){ return mo<3?'<3mo':mo<6?'3-6mo':mo<12?'6-12mo':'>1yr'; }
 let tierF='all';          // 'all' | 'T1' | 'T2'
 // searchable multiselect scope filter — tokens "c|<City>" (whole city) or "k|<City>|<Clinic>"
 let geoSel=new Set(), geoQ='', geoOpen=false;
@@ -693,7 +697,8 @@ function rcaClinic(city, clinic){
     if(ranked[1][1] >= 0.30*L && ranked[1][1] >= 3) mixWith=ranked[1][0];
   }
   const active = bk.filter(x=>x>0).length;
-  const mat = active<=3?'New':active<=5?'Maturing':'Mature';
+  const _mo = clinicMonths(clinic);   // real months since first SC (open); fallback to in-window proxy if clinic unmatched
+  const mat = _mo!=null ? ageBucket(_mo) : (active<=3?'<3mo':active<=5?'3-6mo':'6-12mo');
   // auto note — explains the split when it's a mix
   let note='';
   if(material){
@@ -959,7 +964,7 @@ function rcaOffline(){
   const series=netSeries(), W=wkIdx;
   const netW=series[W], netPeak=Math.max(...series.slice(W+1,W+3)), netAvg=avg(series.slice(W+1,W+6));
   const netBase = expectedOf(series, W);
-  const mat={New:{g:0,l:0},Maturing:{g:0,l:0},Mature:{g:0,l:0}};
+  const mat={'<3mo':{g:0,l:0},'3-6mo':{g:0,l:0},'6-12mo':{g:0,l:0},'>1yr':{g:0,l:0}};
   for(const r of rows){ const b=mat[r.mat]; if(r.dBk>0)b.g+=r.dBk; else b.l+=r.dBk; }
   const watch=rows.filter(r=>r.dLeadPct<=-25 && r.dBk>-3).sort((a,b)=>a.dLeadPct-b.dLeadPct);
   return {rows,...A,netW,netPeak,netAvg,netBase,mat,watch,series};
@@ -1063,7 +1068,7 @@ function ctrlBar(R){
     ${viewMode==='daily'?'':rangeSel}
     ${viewMode==='daily'?'':baseSel}
     ${viewMode==='daily'?'':seg('Tier',[['All','all'],['T1','T1'],['T2','T2']],tierF,'setTierF')}
-    ${viewMode==='daily'?'':seg('Maturity',[['All','all'],['Mature','Mature'],['Maturing','Maturing'],['New','New']],matF,'setMatF')}
+    ${viewMode==='daily'?'':seg('Maturity',[['All','all'],['<3mo','<3mo'],['3-6mo','3-6mo'],['6-12mo','6-12mo'],['>1yr','>1yr']],matF,'setMatF')}
     <button onclick="resetDiagFilters()" title="Reset all filters" style="font-size:11.5px;font-weight:600;color:#4f46e5;background:#eef2ff;border:1px solid #c7d2fe;border-radius:8px;padding:4px 11px;cursor:pointer;white-space:nowrap;margin-left:auto;">↺ Reset filters</button>
   </div>`;
 }
@@ -1089,7 +1094,7 @@ function scopeRCA(R){   // apply City + Tier + Maturity filters and recompute th
   const rows=R.rows.filter(passF);
   const A=aggCauses(rows);
   const netW=rows.reduce((s,r)=>s+r.bk_w,0), netPeak=rows.reduce((s,r)=>s+r.bk_peak,0), netAvg=rows.reduce((s,r)=>s+r.bk_avg,0);
-  const mat={New:{g:0,l:0},Maturing:{g:0,l:0},Mature:{g:0,l:0}};
+  const mat={'<3mo':{g:0,l:0},'3-6mo':{g:0,l:0},'6-12mo':{g:0,l:0},'>1yr':{g:0,l:0}};
   for(const r of rows){ const b=mat[r.mat]; if(r.dBk>0)b.g+=r.dBk; else b.l+=r.dBk; }
   const watch=rows.filter(r=>r.dLeadPct<=-25 && r.dBk>-3).sort((a,b)=>a.dLeadPct-b.dLeadPct);
   return {rows,...A,netW,netPeak,netAvg,netBase:rows.reduce((s,r)=>s+r.bkBase,0),mat,watch,filtered:true};
@@ -1421,7 +1426,7 @@ function renderOffline(){
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px;">
       <div><div style="font-size:11px;font-weight:700;color:#475569;margin-bottom:6px;">Gains vs losses by maturity (vs peak)</div>
         <table class="rca"><thead><tr><th>Bucket</th><th class="r">Gains</th><th class="r">Losses</th><th class="r">Net</th></tr></thead>
-        <tbody>${['New','Maturing','Mature'].map(matRow).join('')}</tbody></table></div>
+        <tbody>${['<3mo','3-6mo','6-12mo','>1yr'].map(matRow).join('')}</tbody></table></div>
       <div><div style="font-size:11px;font-weight:700;color:#475569;margin-bottom:6px;">⚠ Leading-indicator watch — leads thinning, bookings still holding</div>
         <table class="rca"><thead><tr><th>Clinic</th><th class="r">Leads</th><th class="r">Bookings</th></tr></thead>
         <tbody>${watchRows||'<tr><td colspan="3" style="color:#94a3b8;text-align:center;padding:12px;">none flagged</td></tr>'}</tbody></table></div>
@@ -3008,9 +3013,10 @@ function renderOnline(){
 async function init(){
   try{
     const safe=u=>fetch(u,{cache:'no-store'}).catch(()=>({ok:false}));
-    const [jr,sr,lr,pr,rr,ld,rv,mk,bt,dg,ga,nr,gi,la,df,pbk,pl,lm,pd,lc,ah,dd,clf,nb]=await Promise.all([ fetch('data.json',{cache:'no-store'}), safe(SHEET_URL), safe(L0_URL), safe(PRACTO_URL), safe('data_roster.json'), safe('data_leads.json'), safe('data_reviews.json'), safe('data_marketing.json'), safe('data_booktype.json'), safe('data_diagnostic.json'), safe('data_ga_city.json'), safe('data_reviews_neg.json'), safe('data_gmb_insights.json'), safe('data_lead_age.json'), safe('data_demand_funnel.json'), safe('data_practo_booked.json'), safe('data_practo_leads.json'), safe('data_lead_maturation.json'), safe('data_practo_by_doctor.json'), safe('data_lead_conv.json'), safe('data_avail_hod.json'), safe('data_daily.json'), safe('data_clinic_lead_funnel.json'), safe('data_newbk_rca.json') ]);
+    const [jr,sr,lr,pr,rr,ld,rv,mk,bt,dg,ga,nr,gi,la,df,pbk,pl,lm,pd,lc,ah,dd,clf,nb,ca]=await Promise.all([ fetch('data.json',{cache:'no-store'}), safe(SHEET_URL), safe(L0_URL), safe(PRACTO_URL), safe('data_roster.json'), safe('data_leads.json'), safe('data_reviews.json'), safe('data_marketing.json'), safe('data_booktype.json'), safe('data_diagnostic.json'), safe('data_ga_city.json'), safe('data_reviews_neg.json'), safe('data_gmb_insights.json'), safe('data_lead_age.json'), safe('data_demand_funnel.json'), safe('data_practo_booked.json'), safe('data_practo_leads.json'), safe('data_lead_maturation.json'), safe('data_practo_by_doctor.json'), safe('data_lead_conv.json'), safe('data_avail_hod.json'), safe('data_daily.json'), safe('data_clinic_lead_funnel.json'), safe('data_newbk_rca.json'), safe('data_clinic_age.json') ]);
     if(!jr.ok) throw new Error('data.json not found');
     JDATA=await jr.json();
+    if(ca&&ca.ok){ try{ CLINIC_AGE=(await ca.json()).open||{}; }catch(_){ console.warn('clinic age parse failed'); } }
     // SDATA now comes from Redshift (data_diagnostic.json); the Google Sheet is a fallback only.
     let diagOk=false;
     if(dg.ok){ try{ const _dj=await dg.json(); dataPulled=(_dj._meta&&_dj._meta.pulled)||''; SDATA=buildSDataFromDiag(_dj); diagOk=Object.keys(SDATA).length>0; }catch(e){ console.warn('data_diagnostic.json parse failed',e); } }
