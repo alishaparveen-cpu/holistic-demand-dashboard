@@ -301,6 +301,10 @@ function render(){
     srcGMB:c=>addv(addv(c.by_source.gmb_call,c.by_source.gmb_web),c.by_source.gmb_wa),
     srcGoog:c=>addv(c.by_source.gpaid_call,c.by_source.gpaid_web),
     srcPracto:c=>c.by_source.practo, srcMeta:c=>c.by_source.meta, srcOrg:c=>c.by_source.organic, srcDirect:c=>c.by_source.untagged,
+    srcTotalDone:c=>D._meta.sources.reduce((a,k)=>addv(a,(c.done_by_source||{})[k]||ZA),ZA.slice()),
+    srcGMBdone:c=>addv(addv((c.done_by_source||{}).gmb_call||ZA,(c.done_by_source||{}).gmb_web||ZA),(c.done_by_source||{}).gmb_wa||ZA),
+    srcGoogDone:c=>addv((c.done_by_source||{}).gpaid_call||ZA,(c.done_by_source||{}).gpaid_web||ZA),
+    srcPractoDone:c=>(c.done_by_source||{}).practo||ZA, srcMetaDone:c=>(c.done_by_source||{}).meta||ZA, srcOrgDone:c=>(c.done_by_source||{}).organic||ZA, srcDirectDone:c=>(c.done_by_source||{}).untagged||ZA,
     srcTotal:c=>D._meta.sources.reduce((a,k)=>addv(a,c.by_source[k]||ZA),ZA.slice()),
     booked:c=>A(c.bottom,'booked'), done:c=>A(c.bottom,'done'), purchased:c=>A(c.bottom,'purchased'), rev:c=>A(c.bottom,'rev'),
     slots:c=>A(c.avail,'slots_total'), hrs:c=>A(c.avail,'hrs_total'), days:c=>A(c.avail,'days_total')
@@ -482,6 +486,16 @@ function render(){
     if(SEG==='all')O+=row('+ online (telehealth)',onlBk,'sub',N,{color:GRN});}
   O+=row('Book → Done %',pctOf(segArr(offDn,onlDn),segArr(offBk,onlBk)),'sub',PCT,{color:GRN});
   O+=ocatRow('Done (completed consults)','done',N);
+  if(SEG!=='online'){   // Done by source — completed SCs credited to the booking's source (offline clinics)
+    const dnSrcTot=clinics.reduce((a,x)=>addv(a,F.srcTotalDone(x.data)||ZA),ZA.slice());
+    if(dnSrcTot.some(v=>v)){
+      O+=row('Done by source',dnSrcTot,'sub',N,{color:GRN,tkey:'done_by_src'});
+      if(EXP['done_by_src'])[['GMB','srcGMBdone'],['Google','srcGoogDone'],['Practo','srcPractoDone'],['Meta (FB/IG)','srcMetaDone'],['Organic','srcOrgDone'],['Direct / Walk-in','srcDirectDone']].forEach(([nm,fk])=>{
+        const t=clinics.reduce((a,x)=>addv(a,F[fk](x.data)||ZA),ZA.slice());
+        if(t.some(v=>v))O+=row('· '+nm,t,'sub2',N,{color:GRN});
+      });
+    }
+  }
   const offPu=clinics.reduce((a,x)=>addv(a,Fn.purchN(x.data)||ZA),ZA.slice()),onlPu=(onlBot.total||{}).purchased||ZA;
   O+=row('Done → Purchased %',pctOf(segArr(offPu,onlPu),segArr(offDn,onlDn)),'sub',PCT,{color:GRN});
   O+=ocatRow('Purchased','purchased',N);

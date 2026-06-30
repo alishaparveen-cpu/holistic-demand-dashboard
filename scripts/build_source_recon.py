@@ -24,14 +24,14 @@ def bookings_by_source(cfg):
     gmb_in = "','".join(cfg["gmb"]); paid = cfg["paid"] or "0000000000"
     sql = """WITH bk0 AS (
       SELECT a.patient_id, RIGHT(p.phone_no,10) ph, a.created_at bts,
-        TO_CHAR(DATE_TRUNC('week', a.created_at+INTERVAL '5 hours 30 minutes'),'YYYY-MM-DD') wk,
+        TO_CHAR(DATE_TRUNC('week', a.created_at+INTERVAL '5 hours 30 minutes'),'YYYY-MM-DD') wk, a.status,
         ROW_NUMBER() OVER (PARTITION BY a.patient_id, TO_CHAR(DATE_TRUNC('week',a.created_at+INTERVAL '5 hours 30 minutes'),'YYYY-MM-DD') ORDER BY a.created_at) rn
       FROM allo_consultations.appointments a
       JOIN allo_health.locations loc ON loc.id=a.location_id AND loc.city='{city}' AND loc.locality='{loc}' AND loc.deleted_at IS NULL
       JOIN allo_persons.patient p ON p.id=a.patient_id
       JOIN allo_consultations.types t ON t.id=a.type_id AND t.name='Screening Call'
       WHERE a.deleted_at IS NULL AND a.created_at >= '{lo}' AND a.created_at < '2026-06-29'),
-     bk AS (SELECT patient_id, ph, bts, wk FROM bk0 WHERE rn=1),
+     bk AS (SELECT patient_id, ph, bts, wk, status FROM bk0 WHERE rn=1),
      fsc AS (SELECT a.patient_id, MIN(a.created_at) f FROM allo_consultations.appointments a
        JOIN allo_consultations.types t ON t.id=a.type_id AND t.name='Screening Call' WHERE a.deleted_at IS NULL GROUP BY 1),
      gc AS (SELECT DISTINCT RIGHT("from",10) ph FROM allo_vendors.exotel_calls WHERE RIGHT(exotel_number,10) IN ('{gmb}') AND routed_to='lead_to_call' AND direction='inbound' AND start_time>='2025-06-23'),
@@ -53,24 +53,26 @@ def bookings_by_source(cfg):
         WHEN u.us='organic' THEN 'organic'
         ELSE 'untagged' END src,
       CASE WHEN bk.bts<=fsc.f THEN 'new' ELSE 'repeat' END isnew,
-      COUNT(*) n
+      COUNT(*) n, SUM(CASE WHEN bk.status='COMPLETED' THEN 1 ELSE 0 END) dn
     FROM bk LEFT JOIN gc ON gc.ph=bk.ph LEFT JOIN pc ON pc.ph=bk.ph LEFT JOIN u ON u.ph=bk.ph LEFT JOIN fsc ON fsc.patient_id=bk.patient_id
     GROUP BY 1,2,3;""".format(city=cfg["city"].replace("'","''"), loc=cfg["loc"].replace("'","''"),
         lo=LO, gmb=gmb_in, paid=paid)
     by_src = {s: Z() for s in SOURCES}
+    done_src = {s: Z() for s in SOURCES}     # of the bookings attributed to each source, how many SCs COMPLETED (done)
     untag_new = Z(); untag_rep = Z()
     for line in run_sql(sql):
         c = line.split("\t")
-        if len(c) < 4 or c[0] not in idx: continue
-        wk, src, isnew, n_s = c
+        if len(c) < 5 or c[0] not in idx: continue
+        wk, src, isnew, n_s, dn_s = c[0], c[1], c[2], c[3], c[4]
         if wk not in idx or src not in by_src: continue
         i = idx[wk]
-        try: n = int(float(n_s))
+        try: n = int(float(n_s)); dn = int(float(dn_s))
         except ValueError: continue
         by_src[src][i] += n
+        done_src[src][i] += dn
         if src == 'untagged':
             (untag_new if isnew == 'new' else untag_rep)[i] += n
-    return by_src, untag_new, untag_rep
+    return by_src, untag_new, untag_rep, done_src
 
 # ---- C: lead -> booked for the call channels (web reuses MH funnel data) ----
 def call_lead_book(num_list, paid_num, cfg, kind):
@@ -320,7 +322,7 @@ def main():
             "note": "Bookings deduped per patient/week, source priority-assigned (call match > UTM). Lead->book only for call channels + GMB web (clinic-attributable); other channels are booked-only. Untagged = no Exotel call + no UTM."},
         "clinics": {}}
     for slug, cfg in CLINICS.items():
-        by_src, un_new, un_rep = bookings_by_source(cfg)
+        by_src, un_new, un_rep, done_src = bookings_by_source(cfg)
         bkph = get_booking_phones(cfg)
         gmb_lb = call_funnel(cfg, 'gmb')
         paid_lb = call_funnel(cfg, 'paid') if cfg["paid"] else None
@@ -328,7 +330,7 @@ def main():
         mh = json.load(open(os.path.join(ROOT, "data_mh_%s.json" % slug)))
         web = mh.get("leads", {}).get("gmb_web", {"total":Z(),"booked":Z(),"notbooked":Z()})
         bottom = mh.get("bottom", {}).get("total", {})   # booked/done/purchased/rev — reused from MH data
-        out["clinics"][slug] = {"by_source": by_src, "untagged_new": un_new, "untagged_repeat": un_rep,
+        out["clinics"][slug] = {"by_source": by_src, "done_by_source": done_src, "untagged_new": un_new, "untagged_repeat": un_rep,
             "lead_book": {"gmb_call": gmb_lb, "gmb_web": {"leads": web["total"], "booked": web["booked"], "notbooked": web["notbooked"]},
                           "gpaid_call": paid_lb, "gpaid_web": gpw_lb,
                           "practo": practo_leadbook(cfg, practo_by_loc, bkph, practo_by_loc_doc)},
