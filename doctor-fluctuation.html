@@ -121,9 +121,14 @@ function buildCity(city){
       <option value="bookings">New bookings</option><option value="practo">Practo leads</option><option value="days">Active-days</option></select></div></div>
     <div class="hm"></div>
     <div class="step"><span class="n">3</span> Isolate doctor — <span class="seldoc" style="color:var(--cap)"></span></div>
-    <div class="ctrlrow"><div class="fld"><label>Compare</label><select class="cmp">
-      <option value="capprod">Capacity × productivity</option><option value="bookdone">Bookings vs done</option>
-      <option value="cat">Done by category (SH / STI)</option><option value="practo">Practo leads vs done</option></select></div></div>
+    <div class="ctrlrow"><div class="fld"><label>Metric (one at a time)</label><select class="cmp">
+      <option value="days">Active days (capacity)</option>
+      <option value="prod">Productivity (SC / active-day)</option>
+      <option value="done">Total done</option>
+      <option value="sh">SH done</option>
+      <option value="sti">STI done</option>
+      <option value="bookings">New bookings</option>
+      <option value="practo">Practo leads</option></select></div></div>
     <div class="chartbox"><canvas class="cc3" role="img" aria-label="${city} selected doctor metrics"></canvas></div>
     <div class="foot"></div>`;
   const clSel=card.querySelector('.cl'),cmSel=card.querySelector('.cm'),hmmSel=card.querySelector('.hmm'),cmpSel=card.querySelector('.cmp');
@@ -198,23 +203,25 @@ function buildCity(city){
 function drawDoc(card,city,cl,doc,mode){
   const cv=card.querySelector('.cc3'), id=city+'_d';
   const g=k=>(cl[k]||{})[doc]||M.map(()=>0);
-  const done=cl.doctors[doc]||M.map(()=>0), days=g('days'), bookings=g('bookings'), shA=g('sh'), stiA=g('sti'), practo=g('practo');
-  const prod=M.map((_,i)=>days[i]?r1(done[i]/days[i]):null);
+  const done=cl.doctors[doc]||M.map(()=>0), days=g('days');
+  const SER={
+    days:{data:days,label:'active days (capacity)',color:'#185fa5'},
+    prod:{data:M.map((_,i)=>days[i]?r1(done[i]/days[i]):null),label:'SC per active-day (productivity)',color:'#d85a30'},
+    done:{data:done,label:'total done',color:'#0f6e56'},
+    sh:{data:g('sh'),label:'SH done',color:'#d85a30'},
+    sti:{data:g('sti'),label:'STI done',color:'#534ab7'},
+    bookings:{data:g('bookings'),label:'new bookings',color:'#185fa5'},
+    practo:{data:g('practo'),label:'Practo leads',color:'#993556'}
+  };
+  const s=SER[mode]||SER.done, isRate=mode==='prod';
   if(charts[id]) charts[id].destroy();
   const grid=isDark?'rgba(255,255,255,.1)':'rgba(0,0,0,.07)', tick=isDark?'#b4b2a9':'#5f5e5a';
-  let datasets, yTitle='per month', useY1=false;
-  if(mode==='capprod'){useY1=true;yTitle='active days / mo';
-    datasets=[{type:'bar',label:'active days (capacity)',data:days,backgroundColor:'#185fa5',yAxisID:'y',borderWidth:0,order:2},
-      {type:'line',label:'SC per active-day (productivity)',data:prod,borderColor:'#d85a30',yAxisID:'y1',borderWidth:2.4,pointRadius:2,tension:.25,order:1}];}
-  else if(mode==='bookdone') datasets=[{type:'line',label:'new bookings',data:bookings,borderColor:'#185fa5',borderWidth:2.4,pointRadius:2,tension:.25},{type:'line',label:'done (completed SC)',data:done,borderColor:'#0f6e56',borderWidth:2.4,pointRadius:2,tension:.25}];
-  else if(mode==='cat') datasets=[{type:'line',label:'SH done',data:shA,borderColor:'#d85a30',borderWidth:2.4,pointRadius:2,tension:.25},{type:'line',label:'STI done',data:stiA,borderColor:'#534ab7',borderWidth:2.4,pointRadius:2,tension:.25},{type:'line',label:'total done',data:done,borderColor:'#888780',borderWidth:1.6,pointRadius:0,borderDash:[4,3],tension:.25}];
-  else datasets=[{type:'line',label:'Practo leads (Book+Call)',data:practo,borderColor:'#993556',borderWidth:2.4,pointRadius:2,tension:.25},{type:'line',label:'done (completed SC)',data:done,borderColor:'#0f6e56',borderWidth:2.4,pointRadius:2,tension:.25}];
-  const scales={x:{grid:{color:grid},ticks:{color:tick,maxRotation:45,autoSkip:true,maxTicksLimit:12}},
-    y:{position:'left',grid:{color:grid},ticks:{color:tick},title:{display:true,text:yTitle,color:useY1?'#185fa5':tick},beginAtZero:true}};
-  if(useY1) scales.y1={position:'right',grid:{display:false},ticks:{color:tick},title:{display:true,text:'SC / active-day',color:'#d85a30'},beginAtZero:true};
-  charts[id]=new Chart(cv,{data:{labels:M.map(fmtM),datasets},
+  charts[id]=new Chart(cv,{type:isRate?'line':'bar',
+    data:{labels:M.map(fmtM),datasets:[{label:s.label,data:s.data,backgroundColor:isRate?'transparent':s.color,borderColor:s.color,borderWidth:isRate?2.4:0,pointRadius:isRate?2:0,tension:.25}]},
     options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
-      plugins:{legend:{display:true,position:'top',labels:{boxWidth:11,font:{size:11},color:tick}}},scales}});
+      plugins:{legend:{display:true,position:'top',labels:{boxWidth:11,font:{size:11},color:tick}}},
+      scales:{x:{grid:{color:grid},ticks:{color:tick,maxRotation:45,autoSkip:true,maxTicksLimit:12}},
+        y:{grid:{color:grid},ticks:{color:tick},title:{display:true,text:s.label+' / month',color:tick},beginAtZero:true}}}});
 }
 
 window.addEventListener('DOMContentLoaded', boot);
