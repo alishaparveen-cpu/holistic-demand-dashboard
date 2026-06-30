@@ -12,18 +12,19 @@
   header h1{margin:0;font-size:20px;font-weight:600}
   header p{margin:4px 0 0;color:var(--mut);font-size:13px}
   .wrap{max-width:1000px;margin:0 auto;padding:18px 16px 60px}
-  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px 18px;margin-bottom:18px}
-  .ctrlrow{display:flex;gap:14px;align-items:flex-end;margin:4px 0 4px;flex-wrap:wrap}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px 18px}
+  .ctrlrow{display:flex;gap:14px;align-items:flex-end;margin:4px 0 10px;flex-wrap:wrap}
   .fld{display:flex;flex-direction:column;gap:3px}.fld label{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--mut)}
-  select{padding:7px 9px;font-size:13px;border:1px solid var(--line);border-radius:7px;background:#fff;min-width:160px;cursor:pointer}
-  .chartbox{position:relative;height:300px;width:100%;margin-top:10px}
-  .legend{display:flex;flex-wrap:wrap;gap:14px;margin-top:10px;font-size:12px;color:var(--mut)}
-  .legend span{display:flex;align-items:center;gap:5px}
-  .legend i{width:11px;height:11px;border-radius:2px;display:inline-block}
-  .ins{margin-top:12px;font-size:13px;line-height:1.7}
-  .ins .row{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
-  .pill{font-size:11px;font-weight:600;padding:2px 8px;border-radius:20px}
-  .up{background:#e1f5ee;color:#0f6e56}.down{background:#faece7;color:#993c1d}.flat{background:#f1efe8;color:#5f5e5a}
+  select{padding:7px 9px;font-size:13px;border:1px solid var(--line);border-radius:7px;background:#fff;min-width:150px;cursor:pointer}
+  .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(125px,1fr));gap:10px;margin:4px 0 14px}
+  .mc{background:var(--bg);border-radius:8px;padding:10px 12px;cursor:pointer;border:1px solid transparent;border-left:3px solid #888}
+  .mc.sel{border-color:var(--ink)}
+  .mc .l{font-size:11px;color:var(--mut);display:flex;align-items:center;gap:5px}
+  .mc .l i{width:9px;height:9px;border-radius:2px;display:inline-block}
+  .mc .v{font-size:18px;font-weight:600;margin-top:3px}
+  .mc .d{font-size:12px;font-weight:600;margin-top:1px}
+  .up{color:#0f6e56}.down{color:#c0392b}.flat{color:var(--mut)}
+  .chartbox{position:relative;height:300px;width:100%;margin-top:6px}
   .foot{color:var(--mut);font-size:12px;margin-top:10px;line-height:1.5}
 </style>
 </head>
@@ -31,17 +32,18 @@
 <div id="app">
   <header>
     <h1>Online demand RCA — source-wise</h1>
-    <p>Online / national pool only (no physical clinic). Leads → bookings → done by source over the last 18 months. Pick a metric; view all sources stacked or isolate one.</p>
+    <p>Online / national pool only (no physical clinic). Leads → bookings → done over 18 months. Break done by source or category; click a card to isolate.</p>
   </header>
   <div class="wrap"><div class="card" id="main"></div></div>
 </div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-datalabels/2.2.0/chartjs-plugin-datalabels.min.js"></script>
 <script>
-const COL={Organic:'#0f6e56',Meta:'#993556',FB:'#993556',Google:'#ba7517',Other:'#888780',JustDial:'#534ab7',GMB:'#185fa5',Practo:'#1d9e75',WhatsApp:'#5dcaa5'};
+const COL={Organic:'#0f6e56',Meta:'#993556',FB:'#993556',Google:'#ba7517',Other:'#888780',JustDial:'#534ab7',GMB:'#185fa5',Practo:'#1d9e75',WhatsApp:'#5dcaa5',SH:'#d85a30',STI:'#534ab7'};
 const fmtM=m=>{const [y,mo]=m.split('-');return ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][+mo-1]+" '"+y.slice(2);};
 const fmtN=v=>{if(v==null)return '';const a=Math.abs(v);if(a>=1000)return (v/1000).toFixed(a>=10000?0:1)+'k';return ''+Math.round(v);};
 const avg=a=>a.length?a.reduce((x,y)=>x+y,0)/a.length:0;
+const sum=a=>a.reduce((x,y)=>x+y,0);
 let DB,M,isDark=matchMedia('(prefers-color-scheme: dark)').matches,chart;
 const METLAB={leads:'Leads',bookings:'New bookings',done:'Done (completed SC)'};
 async function boot(){
@@ -50,44 +52,50 @@ async function boot(){
   const c=document.getElementById('main');
   c.innerHTML=`<div class="ctrlrow">
     <div class="fld"><label>Metric</label><select id="met"><option value="leads">Leads</option><option value="bookings">New bookings</option><option value="done">Done (completed SC)</option></select></div>
-    <div class="fld"><label>Source</label><select id="src"></select></div>
-    <div class="fld"><label>View</label><select id="mode"><option value="abs">Absolute</option><option value="pct">% mix (share)</option></select></div>
+    <div class="fld"><label>Break by</label><select id="brk"><option value="src">Source</option><option value="cat">Category (SH/STI)</option></select></div>
+    <div class="fld"><label>Isolate</label><select id="grp"></select></div>
+    <div class="fld"><label>View</label><select id="mode"><option value="abs">Absolute</option><option value="pct">% mix</option></select></div>
   </div>
-  <div class="chartbox"><canvas role="img" aria-label="Online demand by source over time"></canvas></div>
-  <div class="legend" id="lg"></div>
-  <div class="ins" id="ins"></div>
-  <div class="foot">Online = null-city / national pool (no clinic). Leads by source from main_source_wise_leads (blank/Online call-location). Bookings/Done source via lead utm + Practo phone-match. Δ = last 3 mo vs first 3 mo.</div>`;
-  const met=c.querySelector('#met'),src=c.querySelector('#src'),mode=c.querySelector('#mode');
-  function srcs(){return Object.keys(DB[met.value]).sort((a,b)=>sum(DB[met.value][b])-sum(DB[met.value][a]));}
-  function fillSrc(){src.innerHTML='<option value="__all">All sources (stacked)</option>'+srcs().map(s=>`<option value="${s}">${s}</option>`).join('');}
+  <div class="cards" id="cards"></div>
+  <div class="chartbox"><canvas role="img" aria-label="Online demand over time"></canvas></div>
+  <div class="foot" id="foot"></div>`;
+  const met=c.querySelector('#met'),brk=c.querySelector('#brk'),grp=c.querySelector('#grp'),mode=c.querySelector('#mode');
+  function groupsObj(){ if(brk.value==='cat'){const k=met.value+'_cat'; if(DB[k]) return DB[k];} return DB[met.value]; }
+  function keys(){const g=groupsObj();return Object.keys(g).sort((a,b)=>sum(g[b])-sum(g[a]));}
+  function fillGrp(){grp.innerHTML='<option value="__all">All (stacked)</option>'+keys().map(k=>`<option value="${k}">${k}</option>`).join('');}
+  function cards(){
+    const g=groupsObj(),K=keys(),host=c.querySelector('#cards');
+    host.innerHTML=K.map(k=>{const a=g[k],e=avg(a.slice(0,3)),r=avg(a.slice(-3)),d=e?Math.round((r-e)/e*100):0;
+      const cls=d<=-12?'down':d>=12?'up':'flat';const col=COL[k]||'#888';
+      return `<div class="mc${grp.value===k?' sel':''}" data-k="${k}" style="border-left-color:${col}">
+        <div class="l"><i style="background:${col}"></i>${k}</div><div class="v">${fmtN(r)}<span style="font-size:11px;color:var(--mut)">/mo</span></div><div class="d ${cls}">${d>=0?'+':''}${d}%</div></div>`;}).join('');
+    host.querySelectorAll('.mc').forEach(el=>el.onclick=()=>{grp.value=el.dataset.k;draw();});
+  }
   function draw(){
-    const m=met.value,scope=src.value,pct=mode.value==='pct'&&scope==='__all';
-    const S=srcs();
+    const g=groupsObj(),K=keys(),scope=grp.value,pct=mode.value==='pct'&&scope==='__all';
     let datasets;
     if(scope==='__all'){
-      datasets=S.map(s=>({label:s,data:DB[m][s].map((v,i)=>pct?0:v),backgroundColor:COL[s]||'#888',stack:'s',borderWidth:0,_raw:DB[m][s]}));
-      if(pct){datasets.forEach(ds=>{ds.data=ds._raw.map((v,i)=>{const t=S.reduce((a,s2)=>a+DB[m][s2][i],0);return t?Math.round(v/t*100):0;});});}
-    } else {
-      datasets=[{label:scope,data:DB[m][scope],backgroundColor:COL[scope]||'#888',borderWidth:0}];
-    }
+      const totals=M.map((_,i)=>K.reduce((s,k)=>s+g[k][i],0));
+      datasets=K.map((k,ki)=>({label:k,data:g[k].map((v,i)=>pct?(totals[i]?Math.round(v/totals[i]*100):0):v),backgroundColor:COL[k]||'#888',stack:'s',borderWidth:0,_top:ki===K.length-1,_tot:totals}));
+    } else datasets=[{label:scope,data:g[scope]||M.map(()=>0),backgroundColor:COL[scope]||'#888',borderWidth:0,_single:true}];
     if(chart)chart.destroy();
-    const grid=isDark?'rgba(255,255,255,.1)':'rgba(0,0,0,.07)',tick=isDark?'#b4b2a9':'#5f5e5a';
-    const single=scope!=='__all';
+    const grid=isDark?'rgba(255,255,255,.1)':'rgba(0,0,0,.07)',tick=isDark?'#b4b2a9':'#5f5e5a',single=scope!=='__all';
     chart=new Chart(c.querySelector('canvas'),{type:'bar',data:{labels:M.map(fmtM),datasets},
       options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
         plugins:{legend:{display:false},
-          datalabels:single?{anchor:'end',align:'top',color:isDark?'#e6e4dc':'#1a1a17',font:{size:9,weight:'500'},formatter:fmtN,display:'auto',clip:false}:{display:false},
+          datalabels:{color:isDark?'#e6e4dc':'#1a1a17',font:{size:9,weight:'500'},clip:false,
+            display:ctx=> single || (!pct && ctx.dataset._top) ? 'auto' : false,
+            anchor:'end',align:'top',
+            formatter:(v,ctx)=> single ? fmtN(v) : (ctx.dataset._top ? fmtN(ctx.dataset._tot[ctx.dataIndex]) : '')},
           tooltip:{callbacks:{label:cx=>`${cx.dataset.label}: ${pct?cx.raw+'%':Math.round(cx.raw).toLocaleString()}`}}},
-        scales:{x:{stacked:scope==='__all',grid:{color:grid},ticks:{color:tick,maxRotation:45,autoSkip:true,maxTicksLimit:12}},
-          y:{stacked:scope==='__all',grid:{color:grid},ticks:{color:tick,callback:v=>pct?v+'%':fmtN(v)},title:{display:true,text:pct?'% of '+METLAB[m]:METLAB[m]+' / month',color:tick},beginAtZero:true,max:pct?100:undefined,grace:single?'12%':undefined}}}});
-    // legend
-    c.querySelector('#lg').innerHTML=(scope==='__all'?S:[scope]).map(s=>`<span><i style="background:${COL[s]||'#888'}"></i>${s}</span>`).join('');
-    // insight: each source Δ
-    c.querySelector('#ins').innerHTML='<div class="row"><b>By source (Δ last 3mo vs first 3mo):</b></div><div class="row">'+S.map(s=>{const a=DB[m][s];const e=avg(a.slice(0,3)),r=avg(a.slice(-3));const d=e?Math.round((r-e)/e*100):0;const cls=d<=-12?'down':d>=12?'up':'flat';return `<span class="pill ${cls}">${s} ${Math.round(r)}/mo ${d>=0?'+':''}${d}%</span>`;}).join(' ')+'</div>';
+        scales:{x:{stacked:!single,grid:{color:grid},ticks:{color:tick,maxRotation:45,autoSkip:true,maxTicksLimit:12}},
+          y:{stacked:!single,grid:{color:grid},ticks:{color:tick,callback:v=>pct?v+'%':fmtN(v)},title:{display:true,text:pct?'% of '+METLAB[met.value]:METLAB[met.value]+' / month',color:tick},beginAtZero:true,max:pct?100:undefined,grace:'14%'}}}});
+    cards();
+    const catNote=brk.value==='cat'&&!DB[met.value+'_cat']?` <b style="color:#c0392b">Category only available for Done</b> — showing source. `:'';
+    c.querySelector('#foot').innerHTML=`${catNote}Online = null-city/national pool. Numbers on cards = last-3-mo avg/mo + Δ vs first 3 mo. ${brk.value==='cat'?'Category = diagnosis (SH=ED/PE, STI=GUI/PEP/etc, Other=rest), description-based.':'Leads source from main_source_wise_leads; bookings/done source via lead utm + Practo phone-match.'}`;
   }
-  function sum(a){return a.reduce((x,y)=>x+y,0);}
-  met.onchange=()=>{fillSrc();draw();};src.onchange=draw;mode.onchange=draw;
-  fillSrc();draw();
+  met.onchange=()=>{fillGrp();draw();};brk.onchange=()=>{fillGrp();draw();};grp.onchange=draw;mode.onchange=draw;
+  fillGrp();draw();
 }
 window.addEventListener('DOMContentLoaded',boot);
 </script>
