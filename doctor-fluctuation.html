@@ -102,7 +102,7 @@ function docStat(done,days){
 }
 
 const MKEY={done:'doctors',sh:'sh',sti:'sti',bookings:'bookings',days:'days',hours:'hours',practo:'practo'};
-const MLAB={done:'completed SC',sh:'SH done',sti:'STI done',bookings:'new bookings',days:'active-days',hours:'active hours',practo:'Practo leads'};
+const MLAB={done:'completed SC',sh:'SH done',sti:'STI done',bookings:'new bookings',days:'active-days',hours:'active hours',practo:'Practo leads',prodbk:'bookings / active-day',prod:'SC / active-day'};
 function sumOver(cl,clKey){const docs=Object.keys(cl.doctors);return M.map((_,i)=>docs.reduce((s,d)=>s+(((cl[clKey]||{})[d]||[])[i]||0),0));}
 function clMetrics(cl){
   const total=cl.total,totHrs=sumOver(cl,'hours');
@@ -141,12 +141,13 @@ function buildCity(city){
     <div class="step"><span class="n">2</span> Doctor movement — by doctor × month (click a doctor)</div>
     <div class="ctrlrow"><div class="fld"><label>Heatmap shows</label><select class="hmm">
       <option value="done">Completed SC (done)</option><option value="sh">SH done</option><option value="sti">STI done</option>
-      <option value="bookings">New bookings</option><option value="practo">Practo leads</option><option value="days">Active-days</option><option value="hours">Active-hours</option></select></div></div>
+      <option value="bookings">New bookings</option><option value="prodbk">Bookings / active-day</option><option value="prod">SC / active-day</option><option value="practo">Practo leads</option><option value="days">Active-days</option><option value="hours">Active-hours</option></select></div></div>
     <div class="hm"></div>
     <div class="step"><span class="n">3</span> Isolate doctor — <span class="seldoc" style="color:var(--cap)"></span></div>
     <div class="ctrlrow"><div class="fld"><label>Metric (one at a time)</label><select class="cmp">
       <option value="days">Active days (capacity)</option>
       <option value="hours">Active hours (capacity)</option>
+      <option value="prodbk">Productivity (bookings / active-day)</option>
       <option value="prod">Productivity (SC / active-day)</option>
       <option value="prodhr">Productivity (SC / hour)</option>
       <option value="done">Total done</option>
@@ -188,9 +189,11 @@ function buildCity(city){
         scales:{x:{grid:{color:grid},ticks:{color:tick,maxRotation:45,autoSkip:true,maxTicksLimit:12}},y:{grid:{color:grid},ticks:{color:tick},title:{display:true,text:(m==='leads'?'leads':MLAB[m]||'done')+' / month',color:tick},beginAtZero:true,grace:'12%'}}}});
   }
   function heatmap(){
-    const cl=cd[clSel.value],days=cl.days||{},m=hmmSel.value,key=MKEY[m];
+    const cl=cd[clSel.value],days=cl.days||{},m=hmmSel.value;
+    const RATE={prodbk:'bookings',prod:'doctors'};   // rate modes -> numerator key (divided by active-days)
+    const rate=m in RATE, key=rate?RATE[m]:MKEY[m];
     const docs=Object.keys(cl.doctors).sort((a,b)=>sum(cl.doctors[b])-sum(cl.doctors[a]));
-    const arrOf=d=>(cl[key]||{})[d]||M.map(()=>0);
+    const arrOf=d=>{const num=(cl[key]||{})[d]||M.map(()=>0); if(!rate)return num; const dd=days[d]||[]; return num.map((x,i)=>dd[i]?x/dd[i]:0);};
     const mx=Math.max(1,...docs.flatMap(d=>arrOf(d)));
     const cols=`170px repeat(${M.length},1fr)`;
     let h=`<div class="hmgrid" style="grid-template-columns:${cols}"><div class="hmh" style="text-align:left">doctor</div>${M.map(mm=>`<div class="hmh">${MI(mm)}</div>`).join('')}`;
@@ -202,7 +205,9 @@ function buildCity(city){
         const a=v>0?0.14+0.82*v/mx:0;
         const bg=v>0?`rgba(15,110,86,${a.toFixed(2)})`:(isDark?'rgba(255,255,255,.04)':'#f4f2ec');
         const tc=a>0.55?'#fff':(v>0?'#0f6e56':'transparent');
-        h+=`<div class="cell" data-doc="${d.replace(/"/g,'&quot;')}" style="background:${bg};color:${tc}" title="${d} · ${fmtM(M[i])}: ${v} ${MLAB[m]} · ${done} done · ${dy} days · ${pr}/day">${v?Math.round(v):''}</div>`;
+        const disp=rate?(v?v.toFixed(1):''):(v?Math.round(v):'');
+        const vtt=rate?r1(v):v;
+        h+=`<div class="cell" data-doc="${d.replace(/"/g,'&quot;')}" style="background:${bg};color:${tc}" title="${d} · ${fmtM(M[i])}: ${vtt} ${MLAB[m]} · ${done} done · ${dy} days · ${pr}/day">${disp}</div>`;
       });
     });
     h+=`</div>`;
@@ -233,6 +238,7 @@ function drawDoc(card,city,cl,doc,mode){
   const SER={
     days:{data:days,label:'active days (capacity)',color:'#185fa5'},
     hours:{data:hours,label:'active hours (capacity)',color:'#185fa5'},
+    prodbk:{data:M.map((_,i)=>days[i]?r1(g('bookings')[i]/days[i]):null),label:'bookings per active-day (productivity)',color:'#d85a30'},
     prod:{data:M.map((_,i)=>days[i]?r1(done[i]/days[i]):null),label:'SC per active-day (productivity)',color:'#d85a30'},
     prodhr:{data:M.map((_,i)=>hours[i]?r1(done[i]/hours[i]):null),label:'SC per active-hour (productivity)',color:'#d85a30'},
     done:{data:done,label:'total done',color:'#0f6e56'},
@@ -241,7 +247,7 @@ function drawDoc(card,city,cl,doc,mode){
     bookings:{data:g('bookings'),label:'new bookings',color:'#185fa5'},
     practo:{data:g('practo'),label:'Practo leads',color:'#993556'}
   };
-  const s=SER[mode]||SER.done, isRate=mode==='prod'||mode==='prodhr';
+  const s=SER[mode]||SER.done, isRate=mode==='prod'||mode==='prodhr'||mode==='prodbk';
   if(charts[id]) charts[id].destroy();
   const grid=isDark?'rgba(255,255,255,.1)':'rgba(0,0,0,.07)', tick=isDark?'#b4b2a9':'#5f5e5a';
   charts[id]=new Chart(cv,{type:isRate?'line':'bar',

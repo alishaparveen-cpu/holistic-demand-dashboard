@@ -45,7 +45,7 @@
 <div id="app">
   <header>
     <h1>Clinic cannibalization — Tier 1</h1>
-    <p>For each new clinic the chart zooms to 6 weeks before → after its opening, so the before/after shift is visible. City summaries at the bottom flag where cannibalization actually happened.</p>
+    <p>One section per city. Each opens with that city's cannibalization scan (which new clinics ate into a nearby old one), then a chart zoomed to 6 weeks before → after each opening so the shift is visible.</p>
   </header>
   <div class="wrap" id="cities"></div>
 </div>
@@ -71,7 +71,6 @@ async function boot(){
   WEEKS=DB._meta.weeks;
   Chart.register(window['chartjs-plugin-annotation']);
   const host=document.getElementById('cities');
-  host.appendChild(buildSummary());
   DB._meta.t1.forEach(city=>{ if(DB.cities[city]) host.appendChild(buildCity(city)); });
 }
 
@@ -104,6 +103,7 @@ function buildCity(city){
       <div class="fld"><label>Metric</label><select class="met">${METRICS.map(m=>`<option value="${m[0]}">${m[1]}</option>`).join('')}</select></div>
       <div class="fld"><label>View</label><select class="vw"><option value="focus">Zoom to opening</option><option value="full">Full history</option></select></div>
     </div>
+    ${citySummary(city)}
     <div class="chartbox"><canvas role="img" aria-label="Week over week ${city} old vs new clinic around opening"></canvas></div>
     <div class="zoomctrls"><button class="addOld">← + older weeks</button><button class="addNew">+ newer weeks →</button><button class="rstZoom">reset zoom</button></div>
     <div class="insight"></div>`;
@@ -163,27 +163,22 @@ function drawChart(card,city,oldK,newK,oldS,newS,oi,lbl,focus,eb,ea){
   return {s,e};
 }
 
-function buildSummary(){
-  const wrap=document.createElement('div'); wrap.className='sumcard';
-  let html=`<h2>City summary — where cannibalization happened</h2><div class="foot" style="margin-top:0">Each new clinic vs its nearest old clinic, on <b>new bookings</b> (full history). Auto-scan.</div>`;
-  DB._meta.t1.forEach(city=>{
-    const cd=DB.cities[city]; if(!cd) return;
-    const mature=Object.keys(cd).filter(k=>cd[k].mature), news=Object.keys(cd).filter(k=>!cd[k].mature);
-    let rows='', yes=0, assessed=0;
-    news.map(nk=>{
-      const n=cd[nk]; let best=null;
-      mature.forEach(ok=>{const d=km(cd[ok],n); if(d!=null&&(!best||d<best.d)) best={ok,d};});
-      if(!best) return null; return {nk,n,best};
-    }).filter(Boolean).sort((a,b)=>a.best.d-b.best.d).forEach(({nk,n,best})=>{
-      const v=verdict(cd[best.ok],n,'bookings',best.d,openIdx(n));
-      const pc=v.s==='yes'?'p-yes':v.s==='no'?'p-no':'p-soon';
-      if(v.s==='yes')yes++; if(v.s==='yes'||v.s==='no')assessed++;
-      rows+=`<div class="sumrow"><b>${nk}</b> <span style="color:var(--mut)">(${best.d} km from ${best.ok}, opened ${n.open?n.open.slice(0,7):'?'})</span> — <span class="pill ${pc}">${v.tag}</span> ${best.ok} ${v.line.replace(/<[^>]+>/g,'')}</div>`;
-    });
-    const head = yes>0?`<span class="pill p-yes">${yes} cannibalized</span>`:(assessed>0?`<span class="pill p-no">none detected</span>`:`<span class="pill p-soon">too recent / no baseline</span>`);
-    html+=`<div class="sumcity"><div class="nm">${city} ${head}</div>${rows||'<div class="sumrow" style="color:var(--mut)">no new clinics.</div>'}</div>`;
+function citySummary(city){
+  const cd=DB.cities[city]; if(!cd) return '';
+  const mature=Object.keys(cd).filter(k=>cd[k].mature), news=Object.keys(cd).filter(k=>!cd[k].mature);
+  let rows='', yes=0, assessed=0;
+  news.map(nk=>{
+    const n=cd[nk]; let best=null;
+    mature.forEach(ok=>{const d=km(cd[ok],n); if(d!=null&&(!best||d<best.d)) best={ok,d};});
+    if(!best) return null; return {nk,n,best};
+  }).filter(Boolean).sort((a,b)=>a.best.d-b.best.d).forEach(({nk,n,best})=>{
+    const v=verdict(cd[best.ok],n,'bookings',best.d,openIdx(n));
+    const pc=v.s==='yes'?'p-yes':v.s==='no'?'p-no':'p-soon';
+    if(v.s==='yes')yes++; if(v.s==='yes'||v.s==='no')assessed++;
+    rows+=`<div class="sumrow"><b>${nk}</b> <span style="color:var(--mut)">(${best.d} km from ${best.ok}, opened ${n.open?n.open.slice(0,7):'?'})</span> — <span class="pill ${pc}">${v.tag}</span> ${best.ok} ${v.line.replace(/<[^>]+>/g,'')}</div>`;
   });
-  wrap.innerHTML=html; return wrap;
+  const head = yes>0?`<span class="pill p-yes">${yes} cannibalized</span>`:(assessed>0?`<span class="pill p-no">none detected</span>`:`<span class="pill p-soon">too recent / no baseline</span>`);
+  return `<div class="sumcard" style="margin:0 0 14px"><div class="nm" style="font-weight:600;font-size:13px;margin-bottom:6px">Cannibalization scan ${head}</div>${rows||'<div class="sumrow" style="color:var(--mut)">no new clinics to assess.</div>'}<div class="foot" style="margin-top:6px">Each new clinic vs its nearest old clinic, on <b>new bookings</b> (full history). Auto-scan.</div></div>`;
 }
 window.addEventListener('DOMContentLoaded', boot);
 </script>
