@@ -11,34 +11,35 @@
   header{padding:20px 24px;border-bottom:1px solid var(--line);background:var(--card)}
   header h1{margin:0;font-size:20px;font-weight:600}
   header p{margin:4px 0 0;color:var(--mut);font-size:13px}
-  .wrap{max-width:1080px;margin:0 auto;padding:18px 16px 60px}
+  .wrap{max-width:1060px;margin:0 auto;padding:18px 16px 60px}
   .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px 18px;margin-bottom:18px}
   .city{font-size:16px;font-weight:600;margin:0 0 10px;display:flex;align-items:center;gap:8px}
-  .ctrls{display:flex;flex-wrap:wrap;gap:14px;align-items:flex-end;margin-bottom:8px}
-  .fld{display:flex;flex-direction:column;gap:3px}
-  .fld label{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--mut)}
+  .step{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--mut);font-weight:600;margin:16px 0 7px;display:flex;align-items:center;gap:6px}
+  .step .n{background:var(--ink);color:#fff;width:17px;height:17px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:10px}
   select{padding:7px 9px;font-size:13px;border:1px solid var(--line);border-radius:7px;background:#fff;min-width:200px;cursor:pointer}
-  .headline{font-size:13px;line-height:1.7;padding:11px 13px;border-radius:8px;background:var(--bg);border-left:3px solid var(--mut);margin:8px 0 12px}
+  .headline{font-size:13px;line-height:1.7;padding:11px 13px;border-radius:8px;background:var(--bg);border-left:3px solid var(--mut)}
   .headline.h-cap{border-color:var(--cap)} .headline.h-prod{border-color:var(--prod)} .headline.h-both{border-color:#993556} .headline.h-ok{border-color:#0f6e56}
   .headline b{color:var(--ink)} .headline .tag{font-weight:600;text-transform:uppercase;font-size:11px;letter-spacing:.04em}
-  table.dt{width:100%;border-collapse:collapse;font-size:13px}
-  table.dt th{text-align:right;font-size:11px;text-transform:uppercase;letter-spacing:.03em;color:var(--mut);font-weight:500;padding:6px 8px;border-bottom:1px solid var(--line)}
-  table.dt th:first-child,table.dt td:first-child{text-align:left}
-  table.dt td{padding:7px 8px;border-bottom:1px solid var(--line);cursor:pointer}
-  table.dt tr:hover td{background:var(--bg)}
-  table.dt tr.sel td{background:#eef2ff}
-  .st{font-size:11px;font-weight:600;padding:2px 7px;border-radius:20px}
+  .hm{font-size:11px;overflow-x:auto}
+  .hmgrid{display:grid;gap:2px;min-width:640px}
+  .hmh{color:var(--mut);font-size:10px;text-align:center;padding-bottom:2px}
+  .hmdoc{font-size:12px;display:flex;align-items:center;gap:6px;padding-right:8px;white-space:nowrap;cursor:pointer}
+  .hmdoc:hover{color:var(--cap)}
+  .hmrow-sel .hmdoc{font-weight:600;color:var(--cap)}
+  .cell{height:26px;border-radius:3px;display:flex;align-items:center;justify-content:center;font-size:10px;font-variant-numeric:tabular-nums;cursor:pointer}
+  .st{font-size:10px;font-weight:600;padding:1px 6px;border-radius:20px}
   .st-act{background:#e1f5ee;color:#0f6e56}.st-left{background:#faece7;color:#993c1d}.st-new{background:#faeeda;color:#854f0b}
-  .num{font-variant-numeric:tabular-nums}
-  .chartbox{position:relative;height:230px;width:100%;margin-top:14px}
+  .ctrlrow{display:flex;gap:14px;align-items:flex-end;margin:6px 0 2px;flex-wrap:wrap}
+  .fld{display:flex;flex-direction:column;gap:3px}.fld label{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--mut)}
+  .chartbox{position:relative;height:230px;width:100%;margin-top:10px}
   .foot{color:var(--mut);font-size:12px;margin-top:8px;line-height:1.5}
 </style>
 </head>
 <body>
 <div id="app">
   <header>
-    <h1>Doctor fluctuation — capacity vs productivity</h1>
-    <p>Each doctor's output = active-days (capacity) × consults per day (productivity). Isolate any doctor to see whether their change is days worked or throughput per day.</p>
+    <h1>Doctor fluctuation — RCA drill</h1>
+    <p>Top-down: clinic verdict → all doctors' movement (heatmap) → isolate one doctor's capacity, productivity & Practo.</p>
   </header>
   <div class="wrap" id="cities"></div>
 </div>
@@ -46,6 +47,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
 <script>
 const fmtM=m=>{const [y,mo]=m.split('-');return ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][+mo-1]+" '"+y.slice(2);};
+const MI=m=>['J','F','M','A','M','J','J','A','S','O','N','D'][+m.split('-')[1]-1];
 const avg=a=>a.length?a.reduce((x,y)=>x+y,0)/a.length:0;
 const r1=x=>Math.round(x*10)/10;
 let DB, M, isDark=matchMedia('(prefers-color-scheme: dark)').matches;
@@ -56,16 +58,14 @@ async function boot(){
   DB._meta.t1.forEach(city=>{ if(DB.cities[city]) host.appendChild(buildCity(city)); });
 }
 const sum=a=>a.reduce((x,y)=>x+y,0);
-
 function docStat(done,days){
-  const n=M.length, peak=Math.max(...done);
-  const lastA=done.reduce((a,v,i)=>v>0?i:a,-1), firstA=done.findIndex(v=>v>0);
-  const rD=avg(done.slice(-3)), rDay=avg(days.slice(-3));
-  const prod= rDay? rD/rDay : 0;
+  const n=M.length,peak=Math.max(...done);
+  const lastA=done.reduce((a,v,i)=>v>0?i:a,-1),firstA=done.findIndex(v=>v>0);
+  const rD=avg(done.slice(-3)),rDay=avg(days.slice(-3)),prod=rDay?rD/rDay:0;
   let st='act',lab='Active';
-  if(rD<2 && peak>=8 && lastA>=0 && lastA<n-2){st='left';lab='Left '+fmtM(M[lastA]);}
-  else if(firstA>=n-6 && rD>=4){st='new';lab='New '+fmtM(M[firstA]);}
-  return {peak,rD,rDay,prod,st,lab,lastA,firstA};
+  if(rD<2&&peak>=8&&lastA>=0&&lastA<n-2){st='left';lab='Left '+fmtM(M[lastA]);}
+  else if(firstA>=n-6&&rD>=4){st='new';lab='New '+fmtM(M[firstA]);}
+  return{peak,rD,rDay,prod,st,lab};
 }
 
 function buildCity(city){
@@ -73,60 +73,71 @@ function buildCity(city){
   const clinics=Object.keys(cd).sort((a,b)=>sum(cd[b].total)-sum(cd[a].total));
   const card=document.createElement('div'); card.className='card';
   card.innerHTML=`<div class="city">${city} <span style="font-weight:400;color:var(--mut);font-size:13px">· ${clinics.length} clinics</span></div>
-    <div class="ctrls"><div class="fld"><label>Clinic</label><select class="cl">${clinics.map(c=>`<option value="${c}">${c}</option>`).join('')}</select></div>
-      <div class="fld"><label>Compare (selected doctor)</label><select class="cmp">
-        <option value="capprod">Capacity × productivity</option>
-        <option value="bookdone">Bookings vs done</option>
-        <option value="cat">Done by category (SH / STI)</option>
-        <option value="practo">Practo leads vs done</option>
-      </select></div></div>
+    <div class="ctrlrow"><div class="fld"><label>Clinic</label><select class="cl">${clinics.map(c=>`<option value="${c}">${c}</option>`).join('')}</select></div></div>
+    <div class="step"><span class="n">1</span> Clinic verdict — capacity vs productivity</div>
     <div class="headline"></div>
-    <div class="dtwrap"></div>
-    <div class="chartbox"><canvas role="img" aria-label="${city} selected doctor capacity vs productivity"></canvas></div>
+    <div class="step"><span class="n">2</span> Doctor movement — output by doctor × month (click a doctor)</div>
+    <div class="hm"></div>
+    <div class="step"><span class="n">3</span> Isolate doctor — <span class="seldoc" style="color:var(--cap)"></span></div>
+    <div class="ctrlrow"><div class="fld"><label>Compare</label><select class="cmp">
+      <option value="capprod">Capacity × productivity</option>
+      <option value="bookdone">Bookings vs done</option>
+      <option value="cat">Done by category (SH / STI)</option>
+      <option value="practo">Practo leads vs done</option></select></div></div>
+    <div class="chartbox"><canvas role="img" aria-label="${city} selected doctor metrics"></canvas></div>
     <div class="foot"></div>`;
   const clSel=card.querySelector('.cl'), cmpSel=card.querySelector('.cmp');
   let sel=null;
   function render(){
-    const cl=cd[clSel.value]; const days=cl.days||{};
+    const cl=cd[clSel.value], days=cl.days||{};
     const docs=Object.keys(cl.doctors).sort((a,b)=>sum(cl.doctors[b])-sum(cl.doctors[a]));
-    // clinic capacity vs productivity headline
+    // step 1 verdict
     const total=cl.total, totDays=M.map((_,i)=>docs.reduce((s,d)=>s+((days[d]||[])[i]||0),0));
-    const oE=avg(total.slice(0,3)),oR=avg(total.slice(-3)), dE=avg(totDays.slice(0,3)),dR=avg(totDays.slice(-3));
+    const oE=avg(total.slice(0,3)),oR=avg(total.slice(-3)),dE=avg(totDays.slice(0,3)),dR=avg(totDays.slice(-3));
     const pE=dE?oE/dE:0,pR=dR?oR/dR:0;
-    const oP=oE?Math.round((oR-oE)/oE*100):0, dP=dE?Math.round((dR-dE)/dE*100):0, pP=pE?Math.round((pR-pE)/pE*100):0;
-    let hc='h-ok',tag='Output steady',verdict='';
-    if(oP<=-12){ const capDrop=Math.max(0,-dP),prodDrop=Math.max(0,-pP);
-      if(prodDrop>capDrop+8){hc='h-prod';tag='Productivity-driven drop';verdict=`Mostly <b>fewer consults per day</b> (productivity ${pP}%)${dP>=5?` — doctor-days actually rose +${dP}%, so it's throughput, not capacity`:''}.`;}
-      else if(capDrop>prodDrop+8){hc='h-cap';tag='Capacity-driven drop';verdict=`Mostly <b>fewer doctor-days</b> (capacity ${dP}%)${pP>=-5?` — per-day throughput held`:''}.`;}
-      else {hc='h-both';tag='Capacity + productivity';verdict=`Both fell — capacity ${dP}%, productivity ${pP}%.`;}
-    } else if(oP>=12){hc='h-ok';tag='Output up';verdict=`Capacity ${dP>=0?'+':''}${dP}%, productivity ${pP>=0?'+':''}${pP}%.`;}
-    else verdict=`Capacity ${dP>=0?'+':''}${dP}%, productivity ${pP>=0?'+':''}${pP}%.`;
-    card.querySelector('.headline').className='headline '+hc;
-    card.querySelector('.headline').innerHTML=`<span class="tag">${tag}</span> &nbsp;<b>${clSel.value}</b> output <b>${Math.round(oE)}→${Math.round(oR)}/mo</b> (${oP>=0?'+':''}${oP}%). Active-days ${Math.round(dE)}→${Math.round(dR)} (${dP>=0?'+':''}${dP}%) · productivity ${r1(pE)}→${r1(pR)} SC/day (${pP>=0?'+':''}${pP}%). ${verdict}`;
-    // doctor table
-    let rows=docs.map(d=>{const s=docStat(cl.doctors[d],days[d]||M.map(()=>0)); return {d,s};});
-    let html=`<table class="dt"><thead><tr><th>Doctor</th><th>Status</th><th>SC/mo</th><th>Days/mo</th><th>SC/day</th><th>trend</th></tr></thead><tbody>`;
-    rows.forEach(({d,s})=>{
-      html+=`<tr data-doc="${d.replace(/"/g,'&quot;')}" class="${d===sel?'sel':''}">
-        <td>${d}</td><td><span class="st st-${s.st}">${s.lab}</span></td>
-        <td class="num" style="text-align:right">${Math.round(s.rD)}</td>
-        <td class="num" style="text-align:right">${r1(s.rDay)}</td>
-        <td class="num" style="text-align:right">${r1(s.prod)}</td>
-        <td style="text-align:right">${spark(cl.doctors[d])}</td></tr>`;
+    const oP=oE?Math.round((oR-oE)/oE*100):0,dP=dE?Math.round((dR-dE)/dE*100):0,pP=pE?Math.round((pR-pE)/pE*100):0;
+    let hc='h-ok',tag='Output steady',v='';
+    if(oP<=-12){const cdr=Math.max(0,-dP),pdr=Math.max(0,-pP);
+      if(pdr>cdr+8){hc='h-prod';tag='Productivity-driven drop';v=`Mostly <b>fewer consults per day</b> (productivity ${pP}%)${dP>=5?` — doctor-days rose +${dP}%, so it's throughput, not capacity`:''}.`;}
+      else if(cdr>pdr+8){hc='h-cap';tag='Capacity-driven drop';v=`Mostly <b>fewer doctor-days</b> (capacity ${dP}%)${pP>=-5?` — per-day throughput held`:''}.`;}
+      else{hc='h-both';tag='Capacity + productivity';v=`Both fell — capacity ${dP}%, productivity ${pP}%.`;}}
+    else if(oP>=12){tag='Output up';v=`Capacity ${dP>=0?'+':''}${dP}%, productivity ${pP>=0?'+':''}${pP}%.`;}
+    else v=`Capacity ${dP>=0?'+':''}${dP}%, productivity ${pP>=0?'+':''}${pP}%.`;
+    const hl=card.querySelector('.headline'); hl.className='headline '+hc;
+    hl.innerHTML=`<span class="tag">${tag}</span> &nbsp;<b>${clSel.value}</b> output <b>${Math.round(oE)}→${Math.round(oR)}/mo</b> (${oP>=0?'+':''}${oP}%). Active-days ${Math.round(dE)}→${Math.round(dR)} (${dP>=0?'+':''}${dP}%) · productivity ${r1(pE)}→${r1(pR)} SC/day (${pP>=0?'+':''}${pP}%). ${v}`;
+    // step 2 heatmap
+    const mx=Math.max(1,...docs.flatMap(d=>cl.doctors[d]));
+    const cols=`170px repeat(${M.length},1fr)`;
+    let h=`<div class="hmgrid" style="grid-template-columns:${cols}"><div class="hmh" style="text-align:left">doctor</div>${M.map(m=>`<div class="hmh">${MI(m)}</div>`).join('')}`;
+    docs.forEach(d=>{
+      const s=docStat(cl.doctors[d],days[d]||M.map(()=>0));
+      h+=`<div class="hmdoc" data-doc="${d.replace(/"/g,'&quot;')}">${d.length>17?d.slice(0,16)+'…':d} <span class="st st-${s.st}">${s.st==='act'?'·':s.st==='left'?'left':'new'}</span></div>`;
+      cl.doctors[d].forEach((v,i)=>{
+        const dy=(days[d]||[])[i]||0, pr=dy?r1(v/dy):0;
+        const a=v>0?0.14+0.82*v/mx:0;
+        const bg=v>0?`rgba(15,110,86,${a.toFixed(2)})`:(isDark?'rgba(255,255,255,.04)':'#f4f2ec');
+        const tc=a>0.55?'#fff':(v>0?'#0f6e56':'transparent');
+        h+=`<div class="cell" data-doc="${d.replace(/"/g,'&quot;')}" style="background:${bg};color:${tc}" title="${d} · ${fmtM(M[i])}: ${v} done · ${dy} days · ${pr}/day">${v||''}</div>`;
+      });
     });
-    html+=`</tbody></table>`;
-    card.querySelector('.dtwrap').innerHTML=html;
+    h+=`</div>`;
+    card.querySelector('.hm').innerHTML=h;
     if(!sel||!docs.includes(sel)) sel=docs[0];
-    card.querySelectorAll('.dt tbody tr').forEach(tr=>{tr.onclick=()=>{sel=tr.dataset.doc;render();}; tr.classList.toggle('sel',tr.dataset.doc===sel);});
-    drawDoc(card,city,cl,sel,cmpSel.value);
-    card.querySelector('.foot').innerHTML=`Capacity = active-days/mo (realized SC roster). Productivity = SC per active-day (demand at slots + show-up + pace, not clinical skill). Practo = Book+Call from the Practo export matched to the doctor by name (unmatched → Others). "Left" = peaked ≥8/mo, now ~0.`;
+    card.querySelectorAll('[data-doc]').forEach(el=>el.onclick=()=>{sel=el.dataset.doc;hl2();});
+    hl2();
+    function hl2(){
+      card.querySelectorAll('.hmdoc').forEach(el=>el.parentElement&&el.classList.toggle('hmrow-sel',false));
+      card.querySelectorAll('.hmdoc').forEach(el=>{ if(el.dataset.doc===sel) el.style.fontWeight='600',el.style.color='var(--cap)'; else el.style.fontWeight='',el.style.color=''; });
+      card.querySelector('.seldoc').textContent=sel;
+      drawDoc(card,city,cl,sel,cmpSel.value);
+    }
+    card.querySelector('.foot').innerHTML=`Heatmap: darker = more completed SC that month; blank = inactive. Status: <span class="st st-left">left</span> peaked ≥8/mo & now ~0 · <span class="st st-new">new</span> joined recently. Months Jan '25 (left) → ${fmtM(M[M.length-1])} (right). Practo = Book+Call from the Practo export matched to the doctor by name.`;
   }
   clSel.onchange=()=>{sel=null;render();};
-  cmpSel.onchange=()=>{ drawDoc(card,city,cd[clSel.value],sel,cmpSel.value); };
+  cmpSel.onchange=()=>drawDoc(card,city,cd[clSel.value],sel,cmpSel.value);
   setTimeout(render,0);
   return card;
 }
-function spark(a){const w=70,h=18,mx=Math.max(...a,1);const pts=a.map((v,i)=>`${(i/(a.length-1)*w).toFixed(1)},${(h-v/mx*h).toFixed(1)}`).join(' ');return `<svg width="${w}" height="${h}" style="vertical-align:middle"><polyline points="${pts}" fill="none" stroke="#888780" stroke-width="1.3"/></svg>`;}
 
 function drawDoc(card,city,cl,doc,mode){
   const cv=card.querySelector('canvas'), id=city;
@@ -136,28 +147,18 @@ function drawDoc(card,city,cl,doc,mode){
   if(charts[id]) charts[id].destroy();
   const grid=isDark?'rgba(255,255,255,.1)':'rgba(0,0,0,.07)', tick=isDark?'#b4b2a9':'#5f5e5a';
   let datasets, yTitle='per month', useY1=false;
-  if(mode==='capprod'){ useY1=true; yTitle='active days / mo';
+  if(mode==='capprod'){useY1=true;yTitle='active days / mo';
     datasets=[{type:'bar',label:'active days (capacity)',data:days,backgroundColor:'#185fa5',yAxisID:'y',borderWidth:0,order:2},
-      {type:'line',label:'SC per active-day (productivity)',data:prod,borderColor:'#d85a30',yAxisID:'y1',borderWidth:2.4,pointRadius:2,tension:.25,order:1}];
-  } else if(mode==='bookdone'){
-    datasets=[{type:'line',label:'new bookings',data:bookings,borderColor:'#185fa5',borderWidth:2.4,pointRadius:2,tension:.25},
-      {type:'line',label:'done (completed SC)',data:done,borderColor:'#0f6e56',borderWidth:2.4,pointRadius:2,tension:.25}];
-  } else if(mode==='cat'){
-    datasets=[{type:'line',label:'SH done',data:shA,borderColor:'#d85a30',borderWidth:2.4,pointRadius:2,tension:.25},
-      {type:'line',label:'STI done',data:stiA,borderColor:'#534ab7',borderWidth:2.4,pointRadius:2,tension:.25},
-      {type:'line',label:'total done',data:done,borderColor:'#888780',borderWidth:1.6,pointRadius:0,borderDash:[4,3],tension:.25}];
-  } else {
-    datasets=[{type:'line',label:'Practo leads (Book+Call)',data:practo,borderColor:'#993556',borderWidth:2.4,pointRadius:2,tension:.25},
-      {type:'line',label:'done (completed SC)',data:done,borderColor:'#0f6e56',borderWidth:2.4,pointRadius:2,tension:.25}];
-  }
+      {type:'line',label:'SC per active-day (productivity)',data:prod,borderColor:'#d85a30',yAxisID:'y1',borderWidth:2.4,pointRadius:2,tension:.25,order:1}];}
+  else if(mode==='bookdone') datasets=[{type:'line',label:'new bookings',data:bookings,borderColor:'#185fa5',borderWidth:2.4,pointRadius:2,tension:.25},{type:'line',label:'done (completed SC)',data:done,borderColor:'#0f6e56',borderWidth:2.4,pointRadius:2,tension:.25}];
+  else if(mode==='cat') datasets=[{type:'line',label:'SH done',data:shA,borderColor:'#d85a30',borderWidth:2.4,pointRadius:2,tension:.25},{type:'line',label:'STI done',data:stiA,borderColor:'#534ab7',borderWidth:2.4,pointRadius:2,tension:.25},{type:'line',label:'total done',data:done,borderColor:'#888780',borderWidth:1.6,pointRadius:0,borderDash:[4,3],tension:.25}];
+  else datasets=[{type:'line',label:'Practo leads (Book+Call)',data:practo,borderColor:'#993556',borderWidth:2.4,pointRadius:2,tension:.25},{type:'line',label:'done (completed SC)',data:done,borderColor:'#0f6e56',borderWidth:2.4,pointRadius:2,tension:.25}];
   const scales={x:{grid:{color:grid},ticks:{color:tick,maxRotation:45,autoSkip:true,maxTicksLimit:12}},
     y:{position:'left',grid:{color:grid},ticks:{color:tick},title:{display:true,text:yTitle,color:useY1?'#185fa5':tick},beginAtZero:true}};
   if(useY1) scales.y1={position:'right',grid:{display:false},ticks:{color:tick},title:{display:true,text:'SC / active-day',color:'#d85a30'},beginAtZero:true};
   charts[id]=new Chart(cv,{data:{labels:M.map(fmtM),datasets},
     options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
-      plugins:{legend:{display:true,position:'top',labels:{boxWidth:11,font:{size:11},color:tick}},
-        title:{display:true,text:doc,color:isDark?'#fff':'#1a1a17',font:{size:13,weight:'500'},align:'start'}},
-      scales}});
+      plugins:{legend:{display:true,position:'top',labels:{boxWidth:11,font:{size:11},color:tick}}},scales}});
 }
 window.addEventListener('DOMContentLoaded', boot);
 </script>
