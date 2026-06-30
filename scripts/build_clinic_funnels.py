@@ -201,14 +201,14 @@ def clinic_funnel(cfg):
     covered=set(touches)
     for (ph,w),(c,rel,nc) in pcw.items():
         if (not rel) and (ph in bk) and (ph not in covered):
-            touches[ph].append((idx[w],w,c+' call',3))
+            touches[ph].append((idx[w],w,'Undetermined · booked',3))   # own bucket -> shown separately below the AI-audit channels
     lead_inst={}
     for ph,ts in touches.items():
         b=bk.get(ph)
         cand=[t for t in ts if (not b) or t[0]<=idx[b[0]]]   # for bookers, only touches at/before the booking (a call logged AFTER booking didn't convert them)
         if not cand: continue
         cand.sort(key=lambda x:(x[0],x[3])); lead_inst[ph]=(cand[0][1],cand[0][2])
-    LEAD_SRC=['GMB call','Google call','Organic call','GMB web','Organic web','Practo']
+    LEAD_SRC=['GMB call','Google call','Organic call','GMB web','Organic web','Practo','Undetermined · booked']
     leads={'by_source':{s:Z() for s in LEAD_SRC},'total':Z(),'booked_same':Z(),'booked_later':Z(),'not_booked':Z(),
            'callcat':{c:{} for c in CATS}}
     nobook_wk={}
