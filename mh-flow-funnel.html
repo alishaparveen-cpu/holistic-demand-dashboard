@@ -74,8 +74,9 @@ function pct(a,b){return b?Math.round(100*a/b):0;}
 function esc(s){return (s==null?'':String(s)).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));}
 function sum(a){return (a||[]).reduce((x,y)=>x+(y||0),0);}
 let CLUBGG=true;   // club GMB+Google together by default (expand the breakdown to separate)
+let UNDET={};      // per-source count of booked callers the AI audit couldn't categorise (folded into their source)
 function getGroups(){
-  const tail=[{ch:'Organic',m:['Organic call','Organic web · clinic','Organic web · blog','Organic web · sexologist','Organic web · STI-test','Organic web · doctors','Organic web · home','Organic web · other','WhatsApp']},{ch:'Practo',m:['Practo']},{ch:'Meta',m:['Meta']},{ch:'Direct',m:['Direct / no-utm']},{ch:'Walk-in',m:['Walk-in (no lead)']},{ch:'Undetermined · booked',m:['Undetermined · booked']}];
+  const tail=[{ch:'Organic',m:['Organic call','Organic web · clinic','Organic web · blog','Organic web · sexologist','Organic web · STI-test','Organic web · doctors','Organic web · home','Organic web · other','WhatsApp']},{ch:'Practo',m:['Practo']},{ch:'Meta',m:['Meta']},{ch:'Direct',m:['Direct / no-utm']},{ch:'Walk-in',m:['Walk-in (no lead)']}];
   if(CLUBGG) return [{ch:'GMB + Google',m:['GMB call','GMB web','Google call','Google web']}].concat(tail);
   return [{ch:'GMB',m:['GMB call','GMB web']},{ch:'Google',m:['Google call','Google web']}].concat(tail);
 }
@@ -88,9 +89,9 @@ function sl(a){return (a||[]).slice(WSTART);}
 function cells(arr,cls){arr=sl(arr);let h='';const L=arr.length;arr.forEach((v,i)=>{const last=i===L-1?' last':'';h+='<td class="'+(cls||'')+last+'">'+(v?v:'<span class="zero">·</span>')+'</td>';});return h;}
 function groupRows(by){let h='';getGroups().forEach(g=>{const mem=g.m.filter(m=>by[m]&&sum(by[m])>0);if(!mem.length)return;
   const par=by[mem[0]].map((_,i)=>sum(mem.map(m=>by[m][i])));const multi=mem.length>1;
-  const undet=g.ch.indexOf('ndetermined')>=0;
-  const tagh=undet?' <span class="tag" title="AI audit could not determine call intent, but the caller booked — counted as a lead (proven demand)">AI-audit · couldn’t determine, booked</span>':'';
-  h+='<tr class="src"><td class="lab"><span class="dot" style="background:'+(undet?'var(--warn)':colorOf(g.ch))+'"></span><b>'+esc(g.ch)+'</b>'+tagh+(multi?' <span class="sub2" style="font-weight:400">('+mem.length+')</span>':'')+'</td>'+cells(par)+'</tr>';
+  const ud=g.m.reduce((s,m)=>s+sum(UNDET[m]||[]),0);
+  const tagh=ud>0?' <span class="tag" style="background:var(--warn,#f0ad4e)22;color:#a8780b" title="Of these, '+ud+' were booked callers the AI audit couldn’t categorise — credited to this source by their tracking number, counted once (not double-counted).">incl '+ud+' booked · intent undetermined</span>':'';
+  h+='<tr class="src"><td class="lab"><span class="dot" style="background:'+colorOf(g.ch)+'"></span><b>'+esc(g.ch)+'</b>'+tagh+(multi?' <span class="sub2" style="font-weight:400">('+mem.length+')</span>':'')+'</td>'+cells(par)+'</tr>';
   if(multi)mem.forEach(m=>{let lb='↳ '+esc(m);if(CALLNUM[m])lb+=' <span class="num">#'+esc(CALLNUM[m])+'</span>';if(isConvOnly(m))lb+=' <span class="tag">conv-only</span>';
     h+='<tr class="det" style="display:none"><td class="lab" style="padding-left:30px">'+lb+'</td>'+cells(by[m],'sub2')+'</tr>';});});return h;}
 function toggleDet(btn){const box=btn.closest('.box');const r=box.querySelectorAll('tr.det');if(!r.length)return;const o=r[0].style.display!=='none';r.forEach(x=>x.style.display=o?'none':'');btn.textContent=o?btn.dataset.show:btn.dataset.hide;}
@@ -115,7 +116,7 @@ function render(){
   const CALLSRC=['GMB call','Google call','Organic call'];
   const WEBSRC2=['Practo','Meta','Google web','GMB web','Organic web · clinic','Organic web · blog','Organic web · sexologist','Organic web · STI-test','Organic web · doctors','Organic web · home','Organic web · other','WhatsApp','Direct / no-utm','Walk-in (no lead)'];
   CALLNUM={'GMB call':(c.numbers['GMB call']||'').split(',')[0],'Google call':c.numbers['Google call'],'Organic call':(c.numbers['Organic call']||'').split(',')[0]};
-  const W=D.week_labels,L=c.leads,B=c.bookings,F=B.flow;
+  const W=D.week_labels,L=c.leads,B=c.bookings,F=B.flow; UNDET=L.undet_booked||{};
   document.getElementById('nums').innerHTML='GMB #'+esc(c.numbers['GMB call'])+' · Google #'+esc(c.numbers['Google call'])+' · Organic #'+esc(c.numbers['Organic call'])+(c.google_shared?' <span class="tag">google # shared→locality-split</span>':'');
   document.getElementById('note').innerHTML='Unique-patient new-acquisition funnel. Only <code>lead_to_call</code> calls attribute (b2p excluded). Web/ad channels converted-only (dated at lead creation). Returning shown at booking level (④). <b>Category filter applies to call leads</b> (SH/STI/MH/Other, AI call audit).';
   let html='';
