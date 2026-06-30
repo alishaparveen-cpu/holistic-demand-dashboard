@@ -68,31 +68,39 @@ function docStat(done,days){
   return{peak,rD,rDay,prod,st,lab};
 }
 
+const MKEY={done:'doctors',sh:'sh',sti:'sti',bookings:'bookings',days:'days',practo:'practo'};
+const MLAB={done:'completed SC',sh:'SH done',sti:'STI done',bookings:'new bookings',days:'active-days',practo:'Practo leads'};
+function sumOver(cl,clKey){const docs=Object.keys(cl.doctors);return M.map((_,i)=>docs.reduce((s,d)=>s+(((cl[clKey]||{})[d]||[])[i]||0),0));}
+
 function buildCity(city){
   const cd=DB.cities[city];
   const clinics=Object.keys(cd).sort((a,b)=>sum(cd[b].total)-sum(cd[a].total));
   const card=document.createElement('div'); card.className='card';
   card.innerHTML=`<div class="city">${city} <span style="font-weight:400;color:var(--mut);font-size:13px">· ${clinics.length} clinics</span></div>
     <div class="ctrlrow"><div class="fld"><label>Clinic</label><select class="cl">${clinics.map(c=>`<option value="${c}">${c}</option>`).join('')}</select></div></div>
-    <div class="step"><span class="n">1</span> Clinic verdict — capacity vs productivity</div>
+    <div class="step"><span class="n">1</span> Clinic verdict & trend</div>
     <div class="headline"></div>
-    <div class="step"><span class="n">2</span> Doctor movement — output by doctor × month (click a doctor)</div>
+    <div class="ctrlrow"><div class="fld"><label>Clinic metric</label><select class="cm">
+      <option value="done">Total done</option><option value="cat">Done by category (SH / STI)</option>
+      <option value="bookings">New bookings</option><option value="leads">Leads</option>
+      <option value="days">Active-days (capacity)</option><option value="practo">Practo leads</option></select></div></div>
+    <div class="chartbox"><canvas class="cc1" role="img" aria-label="${city} clinic trend"></canvas></div>
+    <div class="step"><span class="n">2</span> Doctor movement — by doctor × month (click a doctor)</div>
+    <div class="ctrlrow"><div class="fld"><label>Heatmap shows</label><select class="hmm">
+      <option value="done">Completed SC (done)</option><option value="sh">SH done</option><option value="sti">STI done</option>
+      <option value="bookings">New bookings</option><option value="practo">Practo leads</option><option value="days">Active-days</option></select></div></div>
     <div class="hm"></div>
     <div class="step"><span class="n">3</span> Isolate doctor — <span class="seldoc" style="color:var(--cap)"></span></div>
     <div class="ctrlrow"><div class="fld"><label>Compare</label><select class="cmp">
-      <option value="capprod">Capacity × productivity</option>
-      <option value="bookdone">Bookings vs done</option>
-      <option value="cat">Done by category (SH / STI)</option>
-      <option value="practo">Practo leads vs done</option></select></div></div>
-    <div class="chartbox"><canvas role="img" aria-label="${city} selected doctor metrics"></canvas></div>
+      <option value="capprod">Capacity × productivity</option><option value="bookdone">Bookings vs done</option>
+      <option value="cat">Done by category (SH / STI)</option><option value="practo">Practo leads vs done</option></select></div></div>
+    <div class="chartbox"><canvas class="cc3" role="img" aria-label="${city} selected doctor metrics"></canvas></div>
     <div class="foot"></div>`;
-  const clSel=card.querySelector('.cl'), cmpSel=card.querySelector('.cmp');
+  const clSel=card.querySelector('.cl'),cmSel=card.querySelector('.cm'),hmmSel=card.querySelector('.hmm'),cmpSel=card.querySelector('.cmp');
   let sel=null;
-  function render(){
-    const cl=cd[clSel.value], days=cl.days||{};
-    const docs=Object.keys(cl.doctors).sort((a,b)=>sum(cl.doctors[b])-sum(cl.doctors[a]));
-    // step 1 verdict
-    const total=cl.total, totDays=M.map((_,i)=>docs.reduce((s,d)=>s+((days[d]||[])[i]||0),0));
+  function verdict(){
+    const cl=cd[clSel.value],days=cl.days||{},docs=Object.keys(cl.doctors);
+    const total=cl.total,totDays=sumOver(cl,'days');
     const oE=avg(total.slice(0,3)),oR=avg(total.slice(-3)),dE=avg(totDays.slice(0,3)),dR=avg(totDays.slice(-3));
     const pE=dE?oE/dE:0,pR=dR?oR/dR:0;
     const oP=oE?Math.round((oR-oE)/oE*100):0,dP=dE?Math.round((dR-dE)/dE*100):0,pP=pE?Math.round((pR-pE)/pE*100):0;
@@ -103,44 +111,61 @@ function buildCity(city){
       else{hc='h-both';tag='Capacity + productivity';v=`Both fell — capacity ${dP}%, productivity ${pP}%.`;}}
     else if(oP>=12){tag='Output up';v=`Capacity ${dP>=0?'+':''}${dP}%, productivity ${pP>=0?'+':''}${pP}%.`;}
     else v=`Capacity ${dP>=0?'+':''}${dP}%, productivity ${pP>=0?'+':''}${pP}%.`;
-    const hl=card.querySelector('.headline'); hl.className='headline '+hc;
+    const hl=card.querySelector('.headline');hl.className='headline '+hc;
     hl.innerHTML=`<span class="tag">${tag}</span> &nbsp;<b>${clSel.value}</b> output <b>${Math.round(oE)}→${Math.round(oR)}/mo</b> (${oP>=0?'+':''}${oP}%). Active-days ${Math.round(dE)}→${Math.round(dR)} (${dP>=0?'+':''}${dP}%) · productivity ${r1(pE)}→${r1(pR)} SC/day (${pP>=0?'+':''}${pP}%). ${v}`;
-    // step 2 heatmap
-    const mx=Math.max(1,...docs.flatMap(d=>cl.doctors[d]));
+  }
+  function clinicChart(){
+    const cl=cd[clSel.value],m=cmSel.value,cv=card.querySelector('.cc1'),id=city+'_c';
+    if(charts[id])charts[id].destroy();
+    const grid=isDark?'rgba(255,255,255,.1)':'rgba(0,0,0,.07)',tick=isDark?'#b4b2a9':'#5f5e5a';
+    let ds;
+    if(m==='cat') ds=[{label:'SH done',data:sumOver(cl,'sh'),borderColor:'#d85a30',borderWidth:2.4,pointRadius:1,tension:.25},{label:'STI done',data:sumOver(cl,'sti'),borderColor:'#534ab7',borderWidth:2.4,pointRadius:1,tension:.25},{label:'total done',data:cl.total,borderColor:'#888780',borderWidth:1.6,pointRadius:0,borderDash:[4,3],tension:.25}];
+    else if(m==='leads') ds=[{label:'leads',data:cl.leads||M.map(()=>0),borderColor:'#0f6e56',borderWidth:2.4,pointRadius:1,tension:.25}];
+    else ds=[{label:MLAB[m],data:sumOver(cl,MKEY[m]),borderColor:'#185fa5',borderWidth:2.4,pointRadius:1,tension:.25}];
+    charts[id]=new Chart(cv,{type:'line',data:{labels:M.map(fmtM),datasets:ds},
+      options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
+        plugins:{legend:{display:m==='cat',position:'top',labels:{boxWidth:11,font:{size:11},color:tick}}},
+        scales:{x:{grid:{color:grid},ticks:{color:tick,maxRotation:45,autoSkip:true,maxTicksLimit:12}},y:{grid:{color:grid},ticks:{color:tick},title:{display:true,text:(m==='leads'?'leads':MLAB[m]||'done')+' / month',color:tick},beginAtZero:true}}}});
+  }
+  function heatmap(){
+    const cl=cd[clSel.value],days=cl.days||{},m=hmmSel.value,key=MKEY[m];
+    const docs=Object.keys(cl.doctors).sort((a,b)=>sum(cl.doctors[b])-sum(cl.doctors[a]));
+    const arrOf=d=>(cl[key]||{})[d]||M.map(()=>0);
+    const mx=Math.max(1,...docs.flatMap(d=>arrOf(d)));
     const cols=`170px repeat(${M.length},1fr)`;
-    let h=`<div class="hmgrid" style="grid-template-columns:${cols}"><div class="hmh" style="text-align:left">doctor</div>${M.map(m=>`<div class="hmh">${MI(m)}</div>`).join('')}`;
+    let h=`<div class="hmgrid" style="grid-template-columns:${cols}"><div class="hmh" style="text-align:left">doctor</div>${M.map(mm=>`<div class="hmh">${MI(mm)}</div>`).join('')}`;
     docs.forEach(d=>{
       const s=docStat(cl.doctors[d],days[d]||M.map(()=>0));
-      h+=`<div class="hmdoc" data-doc="${d.replace(/"/g,'&quot;')}">${d.length>17?d.slice(0,16)+'…':d} <span class="st st-${s.st}">${s.st==='act'?'·':s.st==='left'?'left':'new'}</span></div>`;
-      cl.doctors[d].forEach((v,i)=>{
-        const dy=(days[d]||[])[i]||0, pr=dy?r1(v/dy):0;
+      h+=`<div class="hmdoc" data-doc="${d.replace(/"/g,'&quot;')}">${d.length>17?d.slice(0,16)+'…':d} <span class="st st-${s.st}">${s.st==='act'?'·':s.st}</span></div>`;
+      arrOf(d).forEach((v,i)=>{
+        const dy=(days[d]||[])[i]||0,done=(cl.doctors[d]||[])[i]||0,pr=dy?r1(done/dy):0;
         const a=v>0?0.14+0.82*v/mx:0;
         const bg=v>0?`rgba(15,110,86,${a.toFixed(2)})`:(isDark?'rgba(255,255,255,.04)':'#f4f2ec');
         const tc=a>0.55?'#fff':(v>0?'#0f6e56':'transparent');
-        h+=`<div class="cell" data-doc="${d.replace(/"/g,'&quot;')}" style="background:${bg};color:${tc}" title="${d} · ${fmtM(M[i])}: ${v} done · ${dy} days · ${pr}/day">${v||''}</div>`;
+        h+=`<div class="cell" data-doc="${d.replace(/"/g,'&quot;')}" style="background:${bg};color:${tc}" title="${d} · ${fmtM(M[i])}: ${v} ${MLAB[m]} · ${done} done · ${dy} days · ${pr}/day">${v||''}</div>`;
       });
     });
     h+=`</div>`;
     card.querySelector('.hm').innerHTML=h;
     if(!sel||!docs.includes(sel)) sel=docs[0];
-    card.querySelectorAll('[data-doc]').forEach(el=>el.onclick=()=>{sel=el.dataset.doc;hl2();});
-    hl2();
-    function hl2(){
-      card.querySelectorAll('.hmdoc').forEach(el=>el.parentElement&&el.classList.toggle('hmrow-sel',false));
-      card.querySelectorAll('.hmdoc').forEach(el=>{ if(el.dataset.doc===sel) el.style.fontWeight='600',el.style.color='var(--cap)'; else el.style.fontWeight='',el.style.color=''; });
-      card.querySelector('.seldoc').textContent=sel;
-      drawDoc(card,city,cl,sel,cmpSel.value);
-    }
-    card.querySelector('.foot').innerHTML=`Heatmap: darker = more completed SC that month; blank = inactive. Status: <span class="st st-left">left</span> peaked ≥8/mo & now ~0 · <span class="st st-new">new</span> joined recently. Months Jan '25 (left) → ${fmtM(M[M.length-1])} (right). Practo = Book+Call from the Practo export matched to the doctor by name.`;
+    card.querySelectorAll('[data-doc]').forEach(el=>el.onclick=()=>{sel=el.dataset.doc;selDoc();});
+    selDoc();
   }
+  function selDoc(){
+    card.querySelectorAll('.hmdoc').forEach(el=>{const on=el.dataset.doc===sel;el.style.fontWeight=on?'600':'';el.style.color=on?'var(--cap)':'';});
+    card.querySelector('.seldoc').textContent=sel;
+    drawDoc(card,city,cd[clSel.value],sel,cmpSel.value);
+    card.querySelector('.foot').innerHTML=`Heatmap: darker = more "${MLAB[hmmSel.value]}" that month; blank = none/inactive. Status: <span class="st st-left">left</span> peaked ≥8/mo & now ~0 · <span class="st st-new">new</span> joined recently. Months Jan '25 → ${fmtM(M[M.length-1])}. Practo = Book+Call matched to the doctor by name.`;
+  }
+  function render(){verdict();clinicChart();heatmap();}
   clSel.onchange=()=>{sel=null;render();};
-  cmpSel.onchange=()=>drawDoc(card,city,cd[clSel.value],sel,cmpSel.value);
+  cmSel.onchange=clinicChart; hmmSel.onchange=heatmap; cmpSel.onchange=selDoc;
   setTimeout(render,0);
   return card;
 }
 
 function drawDoc(card,city,cl,doc,mode){
-  const cv=card.querySelector('canvas'), id=city;
+  const cv=card.querySelector('.cc3'), id=city+'_d';
   const g=k=>(cl[k]||{})[doc]||M.map(()=>0);
   const done=cl.doctors[doc]||M.map(()=>0), days=g('days'), bookings=g('bookings'), shA=g('sh'), stiA=g('sti'), practo=g('practo');
   const prod=M.map((_,i)=>days[i]?r1(done[i]/days[i]):null);
@@ -160,6 +185,7 @@ function drawDoc(card,city,cl,doc,mode){
     options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
       plugins:{legend:{display:true,position:'top',labels:{boxWidth:11,font:{size:11},color:tick}}},scales}});
 }
+
 window.addEventListener('DOMContentLoaded', boot);
 </script>
 </body>
