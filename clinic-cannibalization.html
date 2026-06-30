@@ -5,38 +5,43 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Clinic Cannibalization · RCA</title>
 <style>
-  :root{--ink:#1a1a17;--mut:#5f5e5a;--line:#e6e4dc;--bg:#faf9f5;--card:#fff;--accent:#0f6e56;--old:#185fa5;--new:#d85a30}
+  :root{--ink:#1a1a17;--mut:#5f5e5a;--line:#e6e4dc;--bg:#faf9f5;--card:#fff;--old:#185fa5;--new:#d85a30}
   *{box-sizing:border-box}
   body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;color:var(--ink);background:var(--bg)}
-  #gate{max-width:340px;margin:18vh auto;text-align:center}
-  #gate input{width:100%;padding:10px;font-size:15px;border:1px solid var(--line);border-radius:8px;margin-top:10px}
-  #gate button{margin-top:10px;padding:9px 18px;border:1px solid var(--accent);background:var(--accent);color:#fff;border-radius:8px;cursor:pointer}
   header{padding:20px 24px;border-bottom:1px solid var(--line);background:var(--card)}
   header h1{margin:0;font-size:20px;font-weight:600}
   header p{margin:4px 0 0;color:var(--mut);font-size:13px}
   .wrap{max-width:1080px;margin:0 auto;padding:18px 16px 60px}
   .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px 18px;margin-bottom:18px}
   .city{font-size:16px;font-weight:600;margin:0 0 12px;display:flex;align-items:center;gap:8px}
-  .ctrls{display:flex;flex-wrap:wrap;gap:14px;align-items:flex-end;margin-bottom:12px}
+  .ctrls{display:flex;flex-wrap:wrap;gap:14px;align-items:flex-end;margin-bottom:10px}
   .fld{display:flex;flex-direction:column;gap:3px}
   .fld label{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--mut)}
-  select{padding:7px 9px;font-size:13px;border:1px solid var(--line);border-radius:7px;background:#fff;min-width:150px;cursor:pointer}
+  select{padding:7px 9px;font-size:13px;border:1px solid var(--line);border-radius:7px;background:#fff;min-width:140px;cursor:pointer}
   .dist{font-size:13px;color:var(--mut);padding:7px 11px;background:var(--bg);border-radius:7px;border:1px solid var(--line)}
   .dist b{color:var(--ink)}
-  .chartbox{position:relative;height:260px;width:100%}
+  .chartbox{position:relative;height:280px;width:100%}
   .insight{margin-top:12px;padding:12px 14px;border-radius:8px;font-size:13px;line-height:1.6;border-left:3px solid var(--mut);background:var(--bg)}
   .insight.v-yes{border-color:#d85a30;background:#faece7}
   .insight.v-no{border-color:#0f6e56;background:#e1f5ee}
   .insight.v-soon{border-color:#ba7517;background:#faeeda}
   .insight .tag{font-weight:600;text-transform:uppercase;font-size:11px;letter-spacing:.04em}
   .foot{color:var(--mut);font-size:12px;margin-top:6px}
+  .sumcard{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px 20px;margin-bottom:18px}
+  .sumcard h2{margin:0 0 4px;font-size:18px;font-weight:600}
+  .sumcity{margin:14px 0 0}
+  .sumcity .nm{font-weight:600;font-size:14px;margin-bottom:4px;display:flex;gap:8px;align-items:center}
+  .pill{font-size:11px;font-weight:600;padding:2px 8px;border-radius:20px}
+  .p-yes{background:#faece7;color:#993c1d}.p-no{background:#e1f5ee;color:#0f6e56}.p-soon{background:#faeeda;color:#854f0b}
+  .sumrow{font-size:13px;color:var(--mut);line-height:1.7;padding-left:2px}
+  .sumrow b{color:var(--ink)}
 </style>
 </head>
 <body>
 <div id="app">
   <header>
     <h1>Clinic cannibalization — Tier 1</h1>
-    <p>Pick an old clinic → its new clinics sorted by distance → overlay week-over-week curves and read the auto-verdict.</p>
+    <p>For each new clinic the chart zooms to 6 weeks before → after its opening, so the before/after shift is visible. City summaries at the bottom flag where cannibalization actually happened.</p>
   </header>
   <div class="wrap" id="cities"></div>
 </div>
@@ -44,32 +49,47 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-annotation/3.0.1/chartjs-plugin-annotation.min.js"></script>
 <script>
-window.addEventListener('DOMContentLoaded', boot);
-
 const METRICS=[['sh','SH done'],['sti','STI done'],['done','Total done'],['bookings','New bookings'],['leads','Leads']];
-const fmtW=w=>{const d=new Date(w);return d.getDate()+' '+['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][d.getMonth()];};
+const fmtW=w=>{const d=new Date(w);return d.getDate()+' '+['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][d.getMonth()]+" '"+(''+d.getFullYear()).slice(2);};
 const avg=a=>a.length?a.reduce((x,y)=>x+y,0)/a.length:0;
-function km(a,b){if(a.lat==null||b.lat==null)return null;const R=6371,r=Math.PI/180;
+function km(a,b){if(!a||!b||a.lat==null||b.lat==null)return null;const R=6371,r=Math.PI/180;
   const dla=(b.lat-a.lat)*r,dlo=(b.lon-a.lon)*r;
   const h=Math.sin(dla/2)**2+Math.cos(a.lat*r)*Math.cos(b.lat*r)*Math.sin(dlo/2)**2;
   return Math.round(2*R*Math.asin(Math.sqrt(h))*10)/10;}
 let DB, WEEKS, isDark=matchMedia('(prefers-color-scheme: dark)').matches;
 const charts={};
+const BEFORE=6, AFTER=16, AFTER_EVAL=8;
+function openIdx(cln){ if(!cln.open) return -1; const od=cln.open.slice(0,10); let i=-1; for(let k=0;k<WEEKS.length;k++){ if(WEEKS[k]<=od) i=k; else break; } return i; }
+function sum(a){return a.reduce((x,y)=>x+y,0);}
 
 async function boot(){
   DB=await (await fetch('data_cannibalization.json')).json();
   WEEKS=DB._meta.weeks;
   Chart.register(window['chartjs-plugin-annotation']);
   const host=document.getElementById('cities');
+  host.appendChild(buildSummary());
   DB._meta.t1.forEach(city=>{ if(DB.cities[city]) host.appendChild(buildCity(city)); });
 }
 
-function openIdx(cln){ if(!cln.open) return -1; const om=cln.open.slice(0,7);
-  let i=WEEKS.findIndex(w=>w.slice(0,7)>=om); return i; }
+function verdict(o,n,mk,d,oi){
+  if(oi<0) return {s:'soon',tag:'Unknown',line:`no opening date.`};
+  if(WEEKS.length-1-oi<6) return {s:'soon',tag:'Too recent',line:`opened ~${Math.max(0,WEEKS.length-1-oi)} wks ago — need ≥6 wks of post-data to judge.`};
+  const ob=avg(o[mk].slice(Math.max(0,oi-BEFORE),oi).filter(v=>v>0));
+  const oa=avg(o[mk].slice(oi+1,oi+1+AFTER_EVAL));
+  const na=avg(n[mk].slice(oi+1,oi+1+AFTER_EVAL));
+  if(ob<1) return {s:'soon',tag:"Can't assess",line:`no pre-opening baseline${(mk==='sh'||mk==='sti'||mk==='done')?' (diagnosis tags start ~Sep 2025 — use Leads/Bookings)':''}.`,noBase:true};
+  const oc=Math.round((oa-ob)/ob*100), lost=Math.round(ob-oa), gain=Math.round(na);
+  const near=d!=null&&d<8, mid=d!=null&&d<=15, fell=oc<=-10;
+  if(fell&&na>0&&near) return {s:'yes',tag:'Likely cannibalization',oc,line:`fell <b>${oc}%</b> (${Math.round(ob)}→${Math.round(oa)}/wk) after a clinic opened <b>${d} km</b> away that ramped to ~${gain}/wk.`};
+  if(fell&&na>0&&mid) return {s:'yes',tag:'Possible cannibalization',oc,line:`fell <b>${oc}%</b> after an opening <b>${d} km</b> away (mid-range, ~${gain}/wk) — plausible, partly other causes.`};
+  if(fell&&d!=null&&d>15) return {s:'no',tag:'Drop, not distance',oc,line:`fell <b>${oc}%</b> but the new clinic is far (<b>${d} km</b>) — look elsewhere (doctor/channel).`};
+  if(fell) return {s:'soon',tag:'Drop, unclear',oc,line:`fell <b>${oc}%</b> but distance/ramp pattern is weak.`};
+  return {s:'no',tag:'No cannibalization',oc,line:`held (${oc>=0?'+':''}${oc}%, ${Math.round(ob)}→${Math.round(oa)}/wk)${d!=null?` after an opening ${d} km away`:''}.`};
+}
 
 function buildCity(city){
   const cd=DB.cities[city];
-  const mature=Object.keys(cd).filter(k=>cd[k].mature).sort((a,b)=>(sum(cd[b].done)-sum(cd[a].done)));
+  const mature=Object.keys(cd).filter(k=>cd[k].mature).sort((a,b)=>sum(cd[b].done)-sum(cd[a].done));
   const news=Object.keys(cd).filter(k=>!cd[k].mature);
   const card=document.createElement('div'); card.className='card';
   card.innerHTML=`<div class="city">${city} <span style="font-weight:400;color:var(--mut);font-size:13px">· ${mature.length} old · ${news.length} new clinics</span></div>
@@ -78,12 +98,13 @@ function buildCity(city){
       <div class="fld"><label>New clinic (nearest first)</label><select class="new"></select></div>
       <div class="dist"></div>
       <div class="fld"><label>Metric</label><select class="met">${METRICS.map(m=>`<option value="${m[0]}">${m[1]}</option>`).join('')}</select></div>
+      <div class="fld"><label>View</label><select class="vw"><option value="focus">Zoom to opening</option><option value="full">Full history</option></select></div>
     </div>
-    <div class="chartbox"><canvas role="img" aria-label="Week over week ${city} old vs new clinic"></canvas></div>
+    <div class="chartbox"><canvas role="img" aria-label="Week over week ${city} old vs new clinic around opening"></canvas></div>
     <div class="insight"></div>`;
-  const oldSel=card.querySelector('.old'), newSel=card.querySelector('.new'), metSel=card.querySelector('.met');
+  const oldSel=card.querySelector('.old'), newSel=card.querySelector('.new'), metSel=card.querySelector('.met'), vwSel=card.querySelector('.vw');
   oldSel.innerHTML=mature.map(k=>`<option value="${k}">${k}</option>`).join('');
-  metSel.value='sh';
+  metSel.value='bookings';
   function refreshNew(){
     const o=cd[oldSel.value];
     const sorted=news.map(n=>({n,d:km(o,cd[n])})).sort((a,b)=>(a.d==null?1e9:a.d)-(b.d==null?1e9:b.d));
@@ -91,67 +112,66 @@ function buildCity(city){
   }
   function draw(){
     const o=cd[oldSel.value], nk=newSel.value, n=cd[nk]; if(!n)return;
-    const d=km(o,n);
+    const d=km(o,n), mk=metSel.value, lbl=METRICS.find(m=>m[0]===mk)[1], oi=openIdx(n);
     card.querySelector('.dist').innerHTML=`Distance<br><b>${d==null?'n/a':d+' km'}</b>`;
-    const mk=metSel.value, lbl=METRICS.find(m=>m[0]===mk)[1];
-    const oi=openIdx(n);
-    drawChart(card, city, oldSel.value, nk, o[mk], n[mk], oi, lbl);
-    card.querySelector('.insight').outerHTML=genInsight(city,oldSel.value,nk,o,n,mk,lbl,d,oi);
+    drawChart(card,city,oldSel.value,nk,o[mk],n[mk],oi,lbl,vwSel.value==='focus');
+    const v=verdict(o,n,mk,d,oi);
+    card.querySelector('.insight').outerHTML=`<div class="insight v-${v.s}"><span class="tag">${v.tag}</span> &nbsp;<b>${oldSel.value}</b> ${v.line}<div class="foot">Zoom = ${BEFORE} wks before → ${AFTER} after opening. Verdict from old-clinic change (${AFTER_EVAL} wks after vs ${BEFORE} before) + distance + new-clinic ramp. ${mk==='leads'?'Leads = all sources by call-location.':mk==='bookings'?'Bookings = new SC.':'Done = completed SC by diagnosis (tags ~Sep 2025+).'}</div></div>`;
   }
   refreshNew();
   oldSel.onchange=()=>{refreshNew();draw();};
-  newSel.onchange=draw; metSel.onchange=draw;
+  newSel.onchange=draw; metSel.onchange=draw; vwSel.onchange=draw;
   setTimeout(draw,0);
   return card;
 }
-function sum(a){return a.reduce((x,y)=>x+y,0);}
 
-function drawChart(card, city, oldK, newK, oldS, newS, oi, lbl){
-  const cv=card.querySelector('canvas'); const id=city;
+function drawChart(card,city,oldK,newK,oldS,newS,oi,lbl,focus){
+  const cv=card.querySelector('canvas'), id=city;
   if(charts[id]) charts[id].destroy();
+  let s=0,e=WEEKS.length-1;
+  if(focus&&oi>=0){ s=Math.max(0,oi-BEFORE); e=Math.min(WEEKS.length-1,oi+AFTER); }
+  const idx=[]; for(let i=s;i<=e;i++) idx.push(i);
   const grid=isDark?'rgba(255,255,255,.1)':'rgba(0,0,0,.07)', tick=isDark?'#b4b2a9':'#5f5e5a';
   const ann={};
-  if(oi>=0) ann.open={type:'line',xMin:oi,xMax:oi,borderColor:'#534ab7',borderWidth:2,
-    label:{display:true,content:newK+' opens',position:'start',backgroundColor:'#534ab7',color:'#fff',font:{size:10},padding:3}};
+  if(oi>=s&&oi<=e){ const mk=oi-s;
+    ann.after={type:'box',xMin:mk,xMax:idx.length-1,backgroundColor:'rgba(216,90,48,.06)',borderWidth:0};
+    ann.open={type:'line',xMin:mk,xMax:mk,borderColor:'#534ab7',borderWidth:2,
+      label:{display:true,content:newK+' opens',position:'start',backgroundColor:'#534ab7',color:'#fff',font:{size:10},padding:3}};
+  }
+  const pr=focus?2:0;
   charts[id]=new Chart(cv,{type:'line',
-    data:{labels:WEEKS.map(fmtW),datasets:[
-      {label:oldK+' (old)',data:oldS.map(v=>v),borderColor:'#185fa5',backgroundColor:'#185fa5',borderWidth:2.4,pointRadius:0,tension:.3},
-      {label:newK+' (new)',data:newS.map(v=>v),borderColor:'#d85a30',backgroundColor:'#d85a30',borderWidth:2.4,pointRadius:0,tension:.3,borderDash:[5,3]}]},
+    data:{labels:idx.map(i=>fmtW(WEEKS[i])),datasets:[
+      {label:oldK+' (old)',data:idx.map(i=>oldS[i]),borderColor:'#185fa5',backgroundColor:'#185fa5',borderWidth:2.4,pointRadius:pr,tension:.3},
+      {label:newK+' (new)',data:idx.map(i=>newS[i]),borderColor:'#d85a30',backgroundColor:'#d85a30',borderWidth:2.4,pointRadius:pr,tension:.3,borderDash:[5,3]}]},
     options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
-      plugins:{legend:{display:true,position:'top',labels:{boxWidth:12,font:{size:12},color:tick}},
-        annotation:{annotations:ann}},
-      scales:{x:{grid:{color:grid},ticks:{color:tick,maxRotation:45,autoSkip:true,maxTicksLimit:12}},
+      plugins:{legend:{display:true,position:'top',labels:{boxWidth:12,font:{size:12},color:tick}},annotation:{annotations:ann}},
+      scales:{x:{grid:{color:grid},ticks:{color:tick,maxRotation:45,autoSkip:true,maxTicksLimit:focus?10:12}},
         y:{grid:{color:grid},ticks:{color:tick},title:{display:true,text:lbl+' / week',color:tick},beginAtZero:true}}}});
 }
 
-function genInsight(city,oldK,newK,o,n,mk,lbl,d,oi){
-  let cls='v-no',tag='No cannibalization',body='';
-  if(oi<0){ cls='v-soon';tag='Unknown';body=`No opening date for ${newK}.`; }
-  else if(WEEKS.length-oi<5){ cls='v-soon';tag='Too recent';
-    body=`${newK} opened only ${WEEKS.length-oi} weeks ago (${n.open}) — not enough post-opening data to judge. Re-check in a few weeks.`; }
-  else {
-    const ob=avg(o[mk].slice(Math.max(0,oi-6),oi).filter(v=>v>0));
-    const oa=avg(o[mk].slice(oi+1,oi+9));
-    const na=avg(n[mk].slice(oi+1,oi+9));
-    if(ob<1){ const tagged=(mk==='sh'||mk==='sti'||mk==='done');
-      return `<div class="insight v-soon"><span class="tag">Can’t assess</span> &nbsp;No reliable pre-opening ${lbl.toLowerCase()} for <b>${oldK}</b> before <b>${newK}</b> opened (${n.open}). ${tagged?'Diagnosis-tagged “done” only begins ~Sep 2025 — for earlier openings switch the metric to <b>Leads</b> or <b>Bookings</b> (full history).':'Too little history before the opening to compare.'}<div class="foot">A verdict needs a pre-opening baseline to compare against.</div></div>`; }
-    const oc= ob? Math.round((oa-ob)/ob*100):0;
-    const lost=Math.round(ob-oa), gain=Math.round(na);
-    const near=d!=null&&d<8, mid=d!=null&&d<=15;
-    const oldFell= oc<=-10;
-    if(oldFell && na>0 && near){ cls='v-yes';tag='Likely cannibalization';
-      body=`After <b>${newK}</b> opened ${d} km away, <b>${oldK}</b>'s ${lbl.toLowerCase()} fell <b>${oc}%</b> (${Math.round(ob)}→${Math.round(oa)}/wk, −${lost}/wk) while ${newK} ramped to ~${gain}/wk. Close distance + mirror-image shift = demand redistributing to the new clinic.`; }
-    else if(oldFell && na>0 && mid){ cls='v-yes';tag='Possible cannibalization';
-      body=`<b>${oldK}</b> fell <b>${oc}%</b> (−${lost}/wk) after <b>${newK}</b> opened ${d} km away (mid-range); ${newK} now ~${gain}/wk. Plausible but distance is moderate — could be partly other causes.`; }
-    else if(oldFell && d!=null && d>15){ cls='v-no';tag='Drop, but not distance';
-      body=`<b>${oldK}</b> did fall <b>${oc}%</b>, but <b>${newK}</b> is far (${d} km) — too far to explain it. Look elsewhere (doctor exit, channel, demand).`; }
-    else if(oldFell){ cls='v-soon';tag='Drop, cause unclear';
-      body=`<b>${oldK}</b> fell <b>${oc}%</b> after ${newK} opened, but the distance/ramp pattern is weak. Not a clean cannibalization signal.`; }
-    else { cls='v-no';tag='No cannibalization';
-      body=`<b>${oldK}</b> held (${oc>=0?'+':''}${oc}%, ${Math.round(ob)}→${Math.round(oa)}/wk) after <b>${newK}</b> opened ${d==null?'':d+' km away'}. New clinic added on top, didn't pull from this one.`; }
-  }
-  return `<div class="insight ${cls}"><span class="tag">${tag}</span> &nbsp;${body}<div class="foot">Auto-verdict from distance + old-clinic change (8 wks after vs 6 wks before opening) + new-clinic ramp. ${mk==='leads'?'Leads = all sources by call-location.':mk==='bookings'?'Bookings = new SC.':'Done = completed SC by diagnosis.'}</div></div>`;
+function buildSummary(){
+  const wrap=document.createElement('div'); wrap.className='sumcard';
+  let html=`<h2>City summary — where cannibalization happened</h2><div class="foot" style="margin-top:0">Each new clinic vs its nearest old clinic, on <b>new bookings</b> (full history). Auto-scan.</div>`;
+  DB._meta.t1.forEach(city=>{
+    const cd=DB.cities[city]; if(!cd) return;
+    const mature=Object.keys(cd).filter(k=>cd[k].mature), news=Object.keys(cd).filter(k=>!cd[k].mature);
+    let rows='', yes=0, assessed=0;
+    news.map(nk=>{
+      const n=cd[nk]; let best=null;
+      mature.forEach(ok=>{const d=km(cd[ok],n); if(d!=null&&(!best||d<best.d)) best={ok,d};});
+      if(!best) return null; return {nk,n,best};
+    }).filter(Boolean).sort((a,b)=>a.best.d-b.best.d).forEach(({nk,n,best})=>{
+      const v=verdict(cd[best.ok],n,'bookings',best.d,openIdx(n));
+      const pc=v.s==='yes'?'p-yes':v.s==='no'?'p-no':'p-soon';
+      if(v.s==='yes')yes++; if(v.s==='yes'||v.s==='no')assessed++;
+      rows+=`<div class="sumrow"><b>${nk}</b> <span style="color:var(--mut)">(${best.d} km from ${best.ok}, opened ${n.open?n.open.slice(0,7):'?'})</span> — <span class="pill ${pc}">${v.tag}</span> ${best.ok} ${v.line.replace(/<[^>]+>/g,'')}</div>`;
+    });
+    const head = yes>0?`<span class="pill p-yes">${yes} cannibalized</span>`:(assessed>0?`<span class="pill p-no">none detected</span>`:`<span class="pill p-soon">too recent / no baseline</span>`);
+    html+=`<div class="sumcity"><div class="nm">${city} ${head}</div>${rows||'<div class="sumrow" style="color:var(--mut)">no new clinics.</div>'}</div>`;
+  });
+  wrap.innerHTML=html; return wrap;
 }
+window.addEventListener('DOMContentLoaded', boot);
 </script>
 </body>
 </html>
