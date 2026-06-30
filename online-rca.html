@@ -25,6 +25,8 @@
   .mc .d{font-size:12px;font-weight:600;margin-top:1px}
   .up{color:#0f6e56}.down{color:#c0392b}.flat{color:var(--mut)}
   .chartbox{position:relative;height:300px;width:100%;margin-top:6px}
+  .ins{margin-top:14px;padding:11px 13px;border-radius:8px;background:var(--bg);border-left:3px solid #0f6e56;font-size:13px;line-height:1.7}
+  .ins b{color:var(--ink)} .ins .tag{font-weight:600;text-transform:uppercase;font-size:11px;letter-spacing:.04em}
   .foot{color:var(--mut);font-size:12px;margin-top:10px;line-height:1.5}
 </style>
 </head>
@@ -58,6 +60,7 @@ async function boot(){
   </div>
   <div class="cards" id="cards"></div>
   <div class="chartbox"><canvas role="img" aria-label="Online demand over time"></canvas></div>
+  <div class="ins" id="ins"></div>
   <div class="foot" id="foot"></div>`;
   const met=c.querySelector('#met'),brk=c.querySelector('#brk'),grp=c.querySelector('#grp'),mode=c.querySelector('#mode');
   function groupsObj(){ if(brk.value==='cat'){const k=met.value+'_cat'; if(DB[k]) return DB[k];} return DB[met.value]; }
@@ -70,6 +73,26 @@ async function boot(){
       return `<div class="mc${grp.value===k?' sel':''}" data-k="${k}" style="border-left-color:${col}">
         <div class="l"><i style="background:${col}"></i>${k}</div><div class="v">${fmtN(r)}<span style="font-size:11px;color:var(--mut)">/mo</span></div><div class="d ${cls}">${d>=0?'+':''}${d}%</div></div>`;}).join('');
     host.querySelectorAll('.mc').forEach(el=>el.onclick=()=>{grp.value=el.dataset.k;draw();});
+  }
+  function genInsight(g,K,isCat){
+    const tot=M.map((_,i)=>K.reduce((s,k)=>s+g[k][i],0));
+    const oE=avg(tot.slice(0,3)),oR=avg(tot.slice(-3)),oP=oE?Math.round((oR-oE)/oE*100):0;
+    const peak=Math.max(...tot),pk=tot.indexOf(peak),offPk=peak?Math.round((oR-peak)/peak*100):0;
+    const st=K.map(k=>{const a=g[k],e=avg(a.slice(0,3)),r=avg(a.slice(-3));return {k,e,r,d:e?Math.round((r-e)/e*100):0};}).filter(x=>x.r>=1);
+    if(!st.length) return '';
+    const byR=st.slice().sort((a,b)=>b.r-a.r),byD=st.filter(x=>x.e>=3).slice().sort((a,b)=>b.d-a.d);
+    const dom=byR[0],grower=byD[0],decl=byD.length?byD[byD.length-1]:null,domShare=oR?Math.round(dom.r/oR*100):0;
+    const dead=st.filter(x=>x.d<=-80).map(x=>x.k);
+    const lbl=METLAB[met.value].toLowerCase();
+    const dir=oP>=12?'up':oP<=-12?'down':'flat';
+    let s=`<span class="tag" style="color:${dir==='down'?'#c0392b':dir==='up'?'#0f6e56':'#5f5e5a'}">Online ${lbl} ${dir==='up'?'growing':dir==='down'?'falling':'flat'}</span> &nbsp;`;
+    s+=`total <b>${fmtN(oE)}→${fmtN(oR)}/mo</b> (${oP>=0?'+':''}${oP}% vs a year ago)`;
+    s+= pk<M.length-3 ? `, peaked <b>${fmtN(peak)}</b> in ${fmtM(M[pk])} — now ${offPk>=0?'+':''}${offPk}% off peak. ` : `. `;
+    s+=`<b>${dom.k}</b> is the biggest ${isCat?'category':'channel'} (${domShare}% of recent ${lbl}). `;
+    if(grower&&grower.d>=15&&grower.k!==dom.k) s+=`Fastest-growing: <b>${grower.k}</b> (+${grower.d}%). `;
+    if(decl&&decl.d<=-12) s+=`Falling: <b>${decl.k}</b> (${decl.d}%). `;
+    if(dead.length) s+=`Effectively gone: ${dead.join(', ')}. `;
+    return s;
   }
   function draw(){
     const g=groupsObj(),K=keys(),scope=grp.value,pct=mode.value==='pct'&&scope==='__all';
@@ -91,6 +114,7 @@ async function boot(){
         scales:{x:{stacked:!single,grid:{color:grid},ticks:{color:tick,maxRotation:45,autoSkip:true,maxTicksLimit:12}},
           y:{stacked:!single,grid:{color:grid},ticks:{color:tick,callback:v=>pct?v+'%':fmtN(v)},title:{display:true,text:pct?'% of '+METLAB[met.value]:METLAB[met.value]+' / month',color:tick},beginAtZero:true,max:pct?100:undefined,grace:'14%'}}}});
     cards();
+    c.querySelector('#ins').innerHTML=genInsight(g,K,brk.value==='cat'&&!!DB[met.value+'_cat']);
     const catNote=brk.value==='cat'&&!DB[met.value+'_cat']?` <b style="color:#c0392b">Category only available for Done</b> — showing source. `:'';
     c.querySelector('#foot').innerHTML=`${catNote}Online = null-city/national pool. Numbers on cards = last-3-mo avg/mo + Δ vs first 3 mo. ${brk.value==='cat'?'Category = diagnosis (SH=ED/PE, STI=GUI/PEP/etc, Other=rest), description-based.':'Leads source from main_source_wise_leads; bookings/done source via lead utm + Practo phone-match.'}`;
   }
