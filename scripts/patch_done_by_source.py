@@ -100,7 +100,7 @@ def norm_city(c):
     c = (c or "").strip().lower(); return CITY_ALIAS.get(c, c)
 
 clinics = data["clinics"]
-booked, done, cat_src = {}, {}, {}
+booked, done, cat_src, cat_src_bk = {}, {}, {}, {}
 for row in run_sql(SQL):
     if len(row) < 7: continue
     ct, lc, wk, cat, src, n_s, dn_s = row[:7]
@@ -110,22 +110,25 @@ for row in run_sql(SQL):
     try: n = int(float(n_s)); dn = int(float(dn_s))
     except ValueError: continue
     booked.setdefault(slug, {s: Z() for s in SOURCES}); done.setdefault(slug, {s: Z() for s in SOURCES})
-    cat_src.setdefault(slug, {})
+    cat_src.setdefault(slug, {}); cat_src_bk.setdefault(slug, {})
     booked[slug][src][i] += n; done[slug][src][i] += dn
     if dn:
         cat_src[slug].setdefault(cat, {}).setdefault(src, Z())[i] += dn
+    if n:
+        cat_src_bk[slug].setdefault(cat, {}).setdefault(src, Z())[i] += n
 
 matched = 0; unmatched = []; maxdelta = 0
 for slug, c in clinics.items():
     if slug in done:
         rb = sum(sum(booked[slug][s]) for s in SOURCES); lb = sum(sum(c["by_source"].get(s, Z())) for s in SOURCES)
         c["by_source"] = booked[slug]; c["done_by_source"] = done[slug]
-        # sparse done_cat_source: only non-zero (cat -> src -> weekly)
-        c["done_cat_source"] = {cat: {s: arr for s, arr in srcs.items() if any(arr)} for cat, srcs in cat_src.get(slug, {}).items()}
-        c["done_cat_source"] = {cat: srcs for cat, srcs in c["done_cat_source"].items() if srcs}
+        # sparse cat -> src -> weekly (drop all-zero series)
+        def sparse(d): return {cat: {s: arr for s, arr in srcs.items() if any(arr)} for cat, srcs in d.items() if any(any(a) for a in srcs.values())}
+        c["done_cat_source"] = sparse(cat_src.get(slug, {}))
+        c["booked_cat_source"] = sparse(cat_src_bk.get(slug, {}))
         matched += 1; maxdelta = max(maxdelta, abs(rb - lb))
     else:
-        c["done_by_source"] = {s: Z() for s in SOURCES}; c["done_cat_source"] = {}
+        c["done_by_source"] = {s: Z() for s in SOURCES}; c["done_cat_source"] = {}; c["booked_cat_source"] = {}
         unmatched.append(slug)
 
 json.dump(data, open(os.path.join(ROOT, "data_source_recon.json"), "w"), separators=(",", ":"))
