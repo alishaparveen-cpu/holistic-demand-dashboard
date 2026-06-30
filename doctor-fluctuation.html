@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Doctor Fluctuation · RCA</title>
+<style>
+  :root{--ink:#1a1a17;--mut:#5f5e5a;--line:#e6e4dc;--bg:#faf9f5;--card:#fff}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;color:var(--ink);background:var(--bg)}
+  header{padding:20px 24px;border-bottom:1px solid var(--line);background:var(--card)}
+  header h1{margin:0;font-size:20px;font-weight:600}
+  header p{margin:4px 0 0;color:var(--mut);font-size:13px}
+  .wrap{max-width:1080px;margin:0 auto;padding:18px 16px 60px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px 18px;margin-bottom:18px}
+  .city{font-size:16px;font-weight:600;margin:0 0 12px;display:flex;align-items:center;gap:8px}
+  .ctrls{display:flex;flex-wrap:wrap;gap:14px;align-items:flex-end;margin-bottom:10px}
+  .fld{display:flex;flex-direction:column;gap:3px}
+  .fld label{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--mut)}
+  select{padding:7px 9px;font-size:13px;border:1px solid var(--line);border-radius:7px;background:#fff;min-width:180px;cursor:pointer}
+  .chartbox{position:relative;height:300px;width:100%}
+  .insight{margin-top:12px;padding:12px 14px;border-radius:8px;font-size:13px;line-height:1.7;border-left:3px solid var(--mut);background:var(--bg)}
+  .insight.v-down{border-color:#d85a30;background:#faece7}
+  .insight.v-up{border-color:#0f6e56;background:#e1f5ee}
+  .insight.v-flat{border-color:#888780}
+  .insight .tag{font-weight:600;text-transform:uppercase;font-size:11px;letter-spacing:.04em}
+  .insight b{color:var(--ink)}
+  .foot{color:var(--mut);font-size:12px;margin-top:6px}
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>Doctor fluctuation — Tier 1</h1>
+    <p>Each band is a doctor's monthly completed screening calls; the line is the active-doctor count. See who left / joined and what it did to the clinic's output.</p>
+  </header>
+  <div class="wrap" id="cities"></div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script>
+const PALE=['#185fa5','#d85a30','#0f6e56','#534ab7','#ba7517','#993556','#1d9e75','#378add','#d4537e','#639922','#e24b4a','#5dcaa5','#7f77dd','#888780'];
+const fmtM=m=>{const [y,mo]=m.split('-');return ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][+mo-1]+" '"+y.slice(2);};
+const avg=a=>a.length?a.reduce((x,y)=>x+y,0)/a.length:0;
+let DB, MONTHS, isDark=matchMedia('(prefers-color-scheme: dark)').matches;
+const charts={};
+
+async function boot(){
+  DB=await (await fetch('data_doctor_flux.json')).json();
+  MONTHS=DB._meta.months;
+  const host=document.getElementById('cities');
+  DB._meta.t1.forEach(city=>{ if(DB.cities[city]) host.appendChild(buildCity(city)); });
+}
+
+function buildCity(city){
+  const cd=DB.cities[city];
+  const clinics=Object.keys(cd).sort((a,b)=>sum(cd[b].total)-sum(cd[a].total));
+  const card=document.createElement('div'); card.className='card';
+  card.innerHTML=`<div class="city">${city} <span style="font-weight:400;color:var(--mut);font-size:13px">· ${clinics.length} clinics</span></div>
+    <div class="ctrls"><div class="fld"><label>Clinic</label><select class="cl">${clinics.map(c=>`<option value="${c}">${c}</option>`).join('')}</select></div></div>
+    <div class="chartbox"><canvas role="img" aria-label="${city} per-doctor monthly screening calls with active doctor count"></canvas></div>
+    <div class="insight"></div>`;
+  const clSel=card.querySelector('.cl');
+  function draw(){ const cl=cd[clSel.value]; drawChart(card,city,cl); card.querySelector('.insight').outerHTML=genInsight(clSel.value,cl); }
+  clSel.onchange=draw; setTimeout(draw,0);
+  return card;
+}
+function sum(a){return a.reduce((x,y)=>x+y,0);}
+
+function drawChart(card,city,cl){
+  const cv=card.querySelector('canvas'), id=city;
+  if(charts[id]) charts[id].destroy();
+  const grid=isDark?'rgba(255,255,255,.1)':'rgba(0,0,0,.07)', tick=isDark?'#b4b2a9':'#5f5e5a';
+  const docs=Object.keys(cl.doctors).sort((a,b)=>sum(cl.doctors[b])-sum(cl.doctors[a]));
+  const ds=docs.map((d,i)=>({label:d, data:cl.doctors[d], backgroundColor:PALE[i%PALE.length], stack:'docs', borderWidth:0}));
+  const active=MONTHS.map((_,i)=>docs.filter(d=>cl.doctors[d][i]>0).length);
+  ds.push({type:'line', label:'active doctors', data:active, yAxisID:'y1', borderColor:isDark?'#fff':'#1a1a17', borderWidth:2, borderDash:[4,3], pointRadius:2, backgroundColor:'transparent', tension:.2});
+  charts[id]=new Chart(cv,{type:'bar',
+    data:{labels:MONTHS.map(fmtM), datasets:ds},
+    options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
+      plugins:{legend:{display:true,position:'top',labels:{boxWidth:11,font:{size:11},color:tick}}},
+      scales:{x:{stacked:true,grid:{color:grid},ticks:{color:tick,maxRotation:45,autoSkip:true,maxTicksLimit:12}},
+        y:{stacked:true,grid:{color:grid},ticks:{color:tick},title:{display:true,text:'completed SC / month',color:tick},beginAtZero:true},
+        y1:{position:'right',grid:{display:false},ticks:{color:tick,stepSize:1,precision:0},title:{display:true,text:'active doctors',color:tick},beginAtZero:true}}}});
+}
+
+function genInsight(clinic,cl){
+  const docs=cl.doctors, total=cl.total, n=MONTHS.length;
+  const early=avg(total.slice(0,3)), recent=avg(total.slice(-3));
+  const pct= early? Math.round((recent-early)/early*100):0;
+  const actAt=i=>Object.keys(docs).filter(d=>docs[d][i]>0).length;
+  const aE=Math.round(avg([0,1,2].map(actAt))), aR=Math.round(avg([n-3,n-2,n-1].map(actAt)));
+  const left=[], joined=[];
+  Object.keys(docs).forEach(d=>{
+    const a=docs[d]; const peak=Math.max(...a); const last3=avg(a.slice(-3)); const first3=avg(a.slice(0,3));
+    const lastActive=a.reduce((acc,v,i)=>v>0?i:acc,-1);
+    const firstActive=a.findIndex(v=>v>0);
+    if(peak>=8 && last3<2 && lastActive>=0) left.push({d,peak,when:MONTHS[lastActive]});
+    if(first3<1 && last3>=6 && firstActive>=3) joined.push({d,now:Math.round(last3),when:MONTHS[firstActive]});
+  });
+  left.sort((a,b)=>b.peak-a.peak); joined.sort((a,b)=>b.now-a.now);
+  const cls= pct<=-12?'v-down':pct>=12?'v-up':'v-flat';
+  const tag= pct<=-12?'Output down':pct>=12?'Output up':'Output steady';
+  let parts=[`<b>${clinic}</b> completed SC: <b>${Math.round(early)}→${Math.round(recent)}/mo</b> (${pct>=0?'+':''}${pct}%). Active doctors <b>${aE}→${aR}</b>.`];
+  if(left.length) parts.push(`Left: ${left.slice(0,3).map(x=>`<b>${x.d}</b> (peak ${x.peak}/mo, last active ${fmtM(x.when)})`).join(', ')}.`);
+  if(joined.length) parts.push(`Joined: ${joined.slice(0,3).map(x=>`<b>${x.d}</b> (from ${fmtM(x.when)}, now ~${x.now}/mo)`).join(', ')}.`);
+  let effect='';
+  if(left.length && pct<=-12 && joined.length<left.length) effect=` <b>Effect:</b> losing ${left[0].d} wasn't fully backfilled — output dropped with the doctor.`;
+  else if(left.length && pct>-12 && joined.length) effect=` <b>Effect:</b> departures were backfilled — output held despite churn.`;
+  else if(!left.length && pct>=12) effect=` <b>Effect:</b> output grew, mostly added capacity.`;
+  else if(!left.length && !joined.length) effect=` <b>Effect:</b> stable roster.`;
+  return `<div class="insight ${cls}"><span class="tag">${tag}</span> &nbsp;${parts.join(' ')}${effect}<div class="foot">Auto-read from per-doctor monthly completed SC (first 3 mo vs last 3 mo). "Left" = a doctor who peaked ≥8/mo and is now ~0; "joined" = new doctor now ≥6/mo.</div></div>`;
+}
+window.addEventListener('DOMContentLoaded', boot);
+</script>
+</body>
+</html>
