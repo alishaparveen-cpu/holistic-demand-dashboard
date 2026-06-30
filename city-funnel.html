@@ -148,7 +148,7 @@ tr[onclick]:hover td:first-child{color:var(--accent)}
 <script>
 let D=null,CUR=null;let NSHOW=6;let WKEND=1;let W0=1;let SHOWPARTIAL=false;let ZREG=[];let EXP={};
 let DBRK='cat',DCRS='none';   // ④ Done breakdown: primary dimension × optional cross (dropdown-driven)
-function setDBRK(v){DBRK=v;if(DBRK===DCRS||v==='subcat')DCRS='none';render();}
+function setDBRK(v){DBRK=v;if(DBRK===DCRS)DCRS='none';render();}
 function setDCRS(v){DCRS=v;render();}
 let QV=false,QVC=[],QVTABLE=null;let CATMODE=false;
 function toggleCat(){CATMODE=!CATMODE;if($('catBtn'))$('catBtn').classList.toggle('on',CATMODE);render();}
@@ -469,16 +469,14 @@ function render(){
    O+=row('Done (completed consults)',dtot,'grp',N,{color:GRN});
    if(SEG!=='online'){
      const sel=(fn,cur,list)=>'<select onchange="'+fn+'(this.value)" style="font-size:11.5px;border:1px solid var(--line);border-radius:6px;padding:2px 7px;margin-left:6px;background:#fff;font-family:Inter;font-weight:600;color:var(--accent);cursor:pointer">'+list.map(o=>'<option value="'+o[0]+'"'+(cur===o[0]?' selected':'')+'>'+o[1]+'</option>').join('')+'</select>';
-     const crossL=DBRK==='subcat'?[['none','— no cross —']]:DBRK==='cat'?[['none','— no cross —'],['src','× Source'],['clinic','× Clinic']]:DBRK==='src'?[['none','— no cross —'],['cat','× Category'],['clinic','× Clinic']]:[['none','— no cross —'],['cat','× Category'],['src','× Source']];
-     O+='<tr><td colspan="40" style="padding:7px 11px;background:var(--inset);border-bottom:1px solid var(--line2);text-align:left"><span style="font-size:10px;font-weight:700;letter-spacing:.05em;color:var(--muted)">BREAK DONE BY</span>'+sel('setDBRK',DBRK,[['cat','Category'],['subcat','Sub-category'],['src','Source'],['clinic','Clinic']])+sel('setDCRS',DCRS,crossL)+'</td></tr>';
+     const crossL=DBRK==='cat'?[['none','— no cross —'],['subcat','× Sub-category'],['src','× Source'],['clinic','× Clinic']]:DBRK==='src'?[['none','— no cross —'],['cat','× Category'],['clinic','× Clinic']]:[['none','— no cross —'],['cat','× Category'],['src','× Source']];
+     O+='<tr><td colspan="40" style="padding:7px 11px;background:var(--inset);border-bottom:1px solid var(--line2);text-align:left"><span style="font-size:10px;font-weight:700;letter-spacing:.05em;color:var(--muted)">BREAK DONE BY</span>'+sel('setDBRK',DBRK,[['cat','Category'],['src','Source'],['clinic','Clinic']])+sel('setDCRS',DCRS,crossL)+'</td></tr>';
      const emit=(members,crossFn)=>{members.forEach(m=>{if(!m.arr.some(v=>v))return;const c=m.color||GRN;
        const tk='dbrk_'+String(m.nm).replace(/[^a-z0-9]+/gi,'');
        O+=row('· '+m.nm,m.arr,'sub',N,{color:c,tkey:(DCRS==='none'?null:tk)});
        if(DCRS!=='none'&&EXP[tk])crossFn(m).forEach(s=>{if(s.arr.some(v=>v))O+=row('· · '+s.nm,s.arr,'sub2',N,{color:s.color||c});});
      });};
-     if(DBRK==='subcat'){const SUBK={};clinics.forEach(x=>Object.keys(x.data.bottom.by_subcat||{}).forEach(k=>SUBK[k]=1));
-       emit(Object.keys(SUBK).map(k=>({nm:subLbl(k.split('::')[1]||k),arr:subO(k,'done'),color:CATCOL[k.split('::')[0]]||GRN})),m=>[]);}
-     else if(DBRK==='cat')emit(CATS.map(ct=>({nm:ct,arr:catO(ct,'done'),color:CATCOL[ct]})),m=>DCRS==='src'?SRCG.map(g=>({nm:g[0],arr:dCatSrc(m.nm,g[1])})):clinics.map(x=>({nm:dNm(x),arr:dCatCl(m.nm,x)})));
+     if(DBRK==='cat')emit(CATS.map(ct=>({nm:ct,arr:catO(ct,'done'),color:CATCOL[ct]})),m=>DCRS==='subcat'?subsForCat(m.nm).map(k=>({nm:subLbl(k.split('::')[1]||k),arr:subO(k,'done')})):DCRS==='src'?SRCG.map(g=>({nm:g[0],arr:dCatSrc(m.nm,g[1])})):clinics.map(x=>({nm:dNm(x),arr:dCatCl(m.nm,x)})));
      else if(DBRK==='src')emit(SRCG.map(g=>({nm:g[0],arr:dSrc(g[1]),keys:g[1]})),m=>DCRS==='cat'?CATS.map(ct=>({nm:ct,arr:dCatSrc(ct,m.keys),color:CATCOL[ct]})):clinics.map(x=>({nm:dNm(x),arr:dSrcCl(m.keys,x)})));
      else emit(clinics.map(x=>({nm:dNm(x),arr:x.data.bottom.done||ZA,x:x})),m=>DCRS==='cat'?CATS.map(ct=>({nm:ct,arr:dCatCl(ct,m.x),color:CATCOL[ct]})):SRCG.map(g=>({nm:g[0],arr:dSrcCl(g[1],m.x)})));
    }}
