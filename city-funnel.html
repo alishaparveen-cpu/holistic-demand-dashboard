@@ -133,6 +133,7 @@ tr[onclick]:hover td:first-child{color:var(--accent)}
   <div class="fmwrap"><table class="fm" id="tSrc"></table></div>
 
   <div class="shead">④ Bookings → Done → Purchased → Revenue <span class="lblmuted">(expand to see each clinic)</span></div>
+  <div id="doneCtlBar" style="font-size:12px;color:var(--ink2);margin:0 2px 8px;min-height:26px;display:flex;align-items:center;gap:2px;flex-wrap:wrap"></div>
   <div class="fmwrap"><table class="fm" id="tOut"></table></div>
 
   <div class="shead">⑤ Availability <span class="lblmuted">(bookable roster — expand to see each clinic)</span></div>
@@ -467,10 +468,11 @@ function render(){
    const dSrcCl=(keys,x)=>keys.reduce((b,k)=>addv(b,((x.data.done_by_source||{})[k])||ZA),ZA.slice());
    const dtot=segA(offDnC,onlDnC);
    O+=row('Done (completed consults)',dtot,'grp',N,{color:GRN});
+   const _cb=$('doneCtlBar');
    if(SEG!=='online'){
-     const sel=(fn,cur,list)=>'<select onchange="'+fn+'(this.value)" style="font-size:11.5px;border:1px solid var(--line);border-radius:6px;padding:2px 7px;margin-left:6px;background:#fff;font-family:Inter;font-weight:600;color:var(--accent);cursor:pointer">'+list.map(o=>'<option value="'+o[0]+'"'+(cur===o[0]?' selected':'')+'>'+o[1]+'</option>').join('')+'</select>';
+     const sel=(fn,cur,list)=>'<select onchange="'+fn+'(this.value)" style="font-size:11.5px;border:1px solid var(--line);border-radius:6px;padding:3px 8px;margin-left:6px;background:#fff;font-family:Inter;font-weight:600;color:var(--accent);cursor:pointer">'+list.map(o=>'<option value="'+o[0]+'"'+(cur===o[0]?' selected':'')+'>'+o[1]+'</option>').join('')+'</select>';
      const crossL=DBRK==='cat'?[['none','— no cross —'],['subcat','× Sub-category'],['src','× Source'],['clinic','× Clinic']]:DBRK==='src'?[['none','— no cross —'],['cat','× Category'],['clinic','× Clinic']]:[['none','— no cross —'],['cat','× Category'],['src','× Source']];
-     O+='<tr><td colspan="40" style="padding:7px 11px;background:var(--inset);border-bottom:1px solid var(--line2);text-align:left"><span style="font-size:10px;font-weight:700;letter-spacing:.05em;color:var(--muted)">BREAK DONE BY</span>'+sel('setDBRK',DBRK,[['cat','Category'],['src','Source'],['clinic','Clinic']])+sel('setDCRS',DCRS,crossL)+'</td></tr>';
+     if(_cb)_cb.innerHTML='<span style="font-size:10px;font-weight:700;letter-spacing:.05em;color:var(--muted)">BREAK DONE BY</span>'+sel('setDBRK',DBRK,[['cat','Category'],['src','Source'],['clinic','Clinic']])+sel('setDCRS',DCRS,crossL);
      const emit=(members,crossFn)=>{members.forEach(m=>{if(!m.arr.some(v=>v))return;const c=m.color||GRN;
        const tk='dbrk_'+String(m.nm).replace(/[^a-z0-9]+/gi,'');
        O+=row('· '+m.nm,m.arr,'sub',N,{color:c,tkey:(DCRS==='none'?null:tk)});
@@ -479,7 +481,7 @@ function render(){
      if(DBRK==='cat')emit(CATS.map(ct=>({nm:ct,arr:catO(ct,'done'),color:CATCOL[ct]})),m=>DCRS==='subcat'?subsForCat(m.nm).map(k=>({nm:subLbl(k.split('::')[1]||k),arr:subO(k,'done')})):DCRS==='src'?SRCG.map(g=>({nm:g[0],arr:dCatSrc(m.nm,g[1])})):clinics.map(x=>({nm:dNm(x),arr:dCatCl(m.nm,x)})));
      else if(DBRK==='src')emit(SRCG.map(g=>({nm:g[0],arr:dSrc(g[1]),keys:g[1]})),m=>DCRS==='cat'?CATS.map(ct=>({nm:ct,arr:dCatSrc(ct,m.keys),color:CATCOL[ct]})):clinics.map(x=>({nm:dNm(x),arr:dSrcCl(m.keys,x)})));
      else emit(clinics.map(x=>({nm:dNm(x),arr:x.data.bottom.done||ZA,x:x})),m=>DCRS==='cat'?CATS.map(ct=>({nm:ct,arr:dCatCl(ct,m.x),color:CATCOL[ct]})):SRCG.map(g=>({nm:g[0],arr:dSrcCl(g[1],m.x)})));
-   }}
+   } else if(_cb)_cb.innerHTML='';}
   const offPuC=clinics.reduce((a,x)=>addv(a,Fn.purchN(x.data)||ZA),ZA.slice()),onlPuC=(onlC.total||{}).purchased||ZA;
   O+=row('Done → Purchased %',pctOf(segA(offPuC,onlPuC),segA(offDnC,onlDnC)),'sub',PCT,{color:GRN});
   O+=ocatRow('Purchased','purchased',N);
