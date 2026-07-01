@@ -594,9 +594,13 @@ function render(){
   }else{
     const cohSum=fld=>clinics.reduce((a,x)=>{const bc=x.data.book_cohort||{};return addv(a,COH.reduce((b,c)=>addv(b,(bc[c[0]]||{})[fld]||ZA),ZA.slice()));},ZA.slice());
     const dWk=cohSum('done_wk'),dEver=cohSum('done_ever');
-    S+=row('TOTAL bookings · offline clinics',offSrcTot,'tot',N,{color:BLU});
-    S+=row('· book → done % (weekly — these bookings done same week)',pctOf(dWk,offSrcTot),'sub',PCT,{color:GRN});
-    S+=row('· book → done % (eventually — if these bookings ever complete)',pctOf(dEver,offSrcTot),'sub',PCT,{color:'#7c5cbf'});
+    const grand=SEG==='all'?addv(offSrcTot,onlBkN):offSrcTot;
+    S+=row(SEG==='all'?'TOTAL bookings · offline + online':'TOTAL bookings · offline clinics',grand,'tot',N,{color:BLU});
+    if(SEG==='all'){S+=row('· offline clinics',offSrcTot,'sub',N,{color:GRN});
+      S+=row('· online telehealth',onlBkN,'sub',N,{color:'#2b5cad'});
+      const OS=D._meta.online_src||{};['Meta','Google','Organic','GMB','Practo','Direct'].forEach(ch=>{const a=OS[ch];if(a&&a.some(v=>v))S+=row('· · '+(ch==='Meta'?'Meta (FB/IG)':ch)+' (online)',a,'sub2',N,{color:'#2b5cad'});});}
+    S+=row('· book → done % (weekly'+(SEG==='all'?', offline only':'')+' — these bookings done same week)',pctOf(dWk,offSrcTot),'sub',PCT,{color:GRN});
+    S+=row('· book → done % (eventually'+(SEG==='all'?', offline only':'')+' — if these bookings ever complete)',pctOf(dEver,offSrcTot),'sub',PCT,{color:'#7c5cbf'});
     if(BBRK==='cohort')COH.forEach(([k,nm,c])=>mkRow({nm,col:c,bk:sumF3(d=>((d.book_cohort||{})[k]||{}).booked||ZA),dn:sumF3(d=>((d.book_cohort||{})[k]||{}).done_wk||ZA)}));
     else if(BBRK==='clinic')clinics.map(x=>({nm:dN3(x),x:x,bk:(D._meta.sources||[]).reduce((a,k)=>addv(a,x.data.by_source[k]||ZA),ZA.slice()),dn:Object.keys(x.data.done_by_source||{}).reduce((a,k)=>addv(a,x.data.done_by_source[k]||ZA),ZA.slice())})).forEach(mkRow);
     else CH3.forEach(([nm,keys])=>mkRow({nm,keys,bk:sumF3(d=>keys.reduce((b,k)=>addv(b,d.by_source[k]||ZA),ZA.slice())),dn:sumF3(d=>keys.reduce((b,k)=>addv(b,(d.done_by_source||{})[k]||ZA),ZA.slice()))}));
