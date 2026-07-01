@@ -247,7 +247,7 @@ let COMBMODE=false,COMBSEL=[];
 function toggleComb(){COMBMODE=!COMBMODE;if(!COMBMODE)clearComb();var b=document.getElementById('combBtn');if(b)b.classList.toggle('on',COMBMODE);document.body.classList.toggle('combmode',COMBMODE);renderComb();}
 function clearComb(){COMBSEL.forEach(function(tr){if(tr.classList)tr.classList.remove('combsel');});COMBSEL=[];document.querySelectorAll('tr.combtmp').forEach(function(t){t.remove();});}
 function combNum(td){if(!td)return null;if(td.querySelector&&td.querySelector('svg'))return null;var t=td.textContent.trim();if(!t||t.indexOf('%')>=0)return null;var n=parseFloat(t.replace(/[^0-9.\-]/g,''));return isNaN(n)?null:n;}
-function combTotalRow(tb){for(var i=0;i<tb.rows.length;i++){if(/(^|\s)tot(\s|$)/.test(tb.rows[i].className))return tb.rows[i];}return null;}
+function combTotalRow(tb){for(var i=0;i<tb.rows.length;i++){if(/(^|\s)(tot|grp)(\s|$)/.test(tb.rows[i].className))return tb.rows[i];}return null;}
 function renderComb(){
   document.querySelectorAll('tr.combtmp').forEach(function(t){t.remove();});
   COMBSEL=COMBSEL.filter(function(tr){return tr&&tr.parentNode;});
@@ -585,11 +585,12 @@ function render(){
     if(SEG==='all'){S+=row('· offline clinics',offSrcTot,'sub',N,{color:GRN});
       S+=row('· online telehealth',onlBkN,'sub',N,{color:'#2b5cad'});
       const OS=D._meta.online_src||{};['Meta','Google','Organic','GMB','Practo','Direct'].forEach(ch=>{const a=OS[ch];if(a&&a.some(v=>v))S+=row('· · '+(ch==='Meta'?'Meta (FB/IG)':ch)+' (online)',a,'sub2',N,{color:'#2b5cad'});});}
-    S+=row('· book → done % (weekly'+(SEG==='all'?', offline only':'')+' — these bookings done same week)',pctOf(dWk,offSrcTot),'sub',PCT,{color:GRN});
-    S+=row('· book → done % (eventually'+(SEG==='all'?', offline only':'')+' — if these bookings ever complete)',pctOf(dEver,offSrcTot),'sub',PCT,{color:'#7c5cbf'});
     if(BBRK==='cohort')COH.forEach(([k,nm,c])=>mkRow({nm,col:c,bk:sumF3(d=>((d.book_cohort||{})[k]||{}).booked||ZA),dn:sumF3(d=>((d.book_cohort||{})[k]||{}).done_wk||ZA)}));
     else if(BBRK==='clinic')clinics.map(x=>({nm:dN3(x),x:x,bk:(D._meta.sources||[]).reduce((a,k)=>addv(a,x.data.by_source[k]||ZA),ZA.slice()),dn:Object.keys(x.data.done_by_source||{}).reduce((a,k)=>addv(a,x.data.done_by_source[k]||ZA),ZA.slice())})).forEach(mkRow);
     else CH3.forEach(([nm,keys])=>mkRow({nm,keys,bk:sumF3(d=>keys.reduce((b,k)=>addv(b,d.by_source[k]||ZA),ZA.slice())),dn:sumF3(d=>keys.reduce((b,k)=>addv(b,(d.done_by_source||{})[k]||ZA),ZA.slice()))}));
+    // book → done % — moved to the bottom of the bookings table
+    S+=row('· book → done % (weekly'+(SEG==='all'?', offline only':'')+' — these bookings done same week)',pctOf(dWk,offSrcTot),'sub',PCT,{color:GRN});
+    S+=row('· book → done % (eventually'+(SEG==='all'?', offline only':'')+' — if these bookings ever complete)',pctOf(dEver,offSrcTot),'sub',PCT,{color:'#7c5cbf'});
   }
   $('tSrc').innerHTML=S;
   // ④ Outcomes
@@ -687,6 +688,12 @@ function render(){
    const clCat=(x,ct)=>RP.reduce((a,p)=>addv(a,((x.data.bottom.rev_cp||{})[ct]||{})[p]||ZA),ZA.slice());
    const cityRev=(ci,fn)=>clinics.filter(x=>x.city===ci).reduce((a,x)=>addv(a,fn(x)),ZA.slice());
    let R='';R+=row('Revenue (eventually collected)',revTot,'grp',RUP,{color:GRN});
+   // RPC = purchase revenue (meds + labs, excl. consultation) ÷ done ; AOV = revenue ÷ purchased patients
+   {const ratioArr=(a,b)=>a.map((v,i)=>b[i]?Math.round(v/b[i]):null);
+    const purchRev=RP.filter(p=>p!=='consultation').reduce((a,p)=>addv(a,prodTot(p)),ZA.slice());
+    const doneR=segArr(offDn,onlDn), purR=segArr(offPu,onlPu);
+    R+=row('· RPC — revenue per call (meds + labs ÷ done)',ratioArr(purchRev,doneR),'sub',RUP,{color:VIO});
+    R+=row('· AOV — avg order value (revenue ÷ purchased patients)',ratioArr(revTot,purR),'sub',RUP,{color:VIO});}
    const _rb=$('revCtlBar');
    if(SEG!=='online'){
      const sel=(fn,cur,list)=>'<select onchange="'+fn+'(this.value)" style="font-size:11.5px;border:1px solid var(--line);border-radius:6px;padding:3px 8px;margin-left:6px;background:#fff;font-family:Inter;font-weight:600;color:var(--accent);cursor:pointer">'+list.map(o=>'<option value="'+o[0]+'"'+(cur===o[0]?' selected':'')+'>'+o[1]+'</option>').join('')+'</select>';
