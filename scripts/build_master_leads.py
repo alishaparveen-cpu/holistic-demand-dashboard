@@ -15,21 +15,27 @@ sys.path.insert(0, os.path.dirname(__file__))
 import patch_subcat as PS
 ROOT = PS.ROOT; OUT = os.path.join(ROOT, "data_source_recon.json")
 idx = PS.idx; Z = PS.Z; LO = PS.LO; run_sql = PS.run_sql
-SRCS = ["Google", "Meta", "Organic", "Practo", "GMB", "Other"]
+# channel taxonomy aligned with bookings (source + organic_l2), so leads split into GMB / Google / Meta / Call-in / etc.
+SRCS = ["GMB", "Google Ads", "Meta", "Call-in (PCC)", "WhatsApp", "Walk-in", "Website", "Practo", "JustDial", "Organic (untagged)", "Other"]
 
 SQL = """WITH ld AS (
-  SELECT phone_no1 ph, source, created_on_date::date d,
+  SELECT phone_no1 ph, source, organic_l2, created_on_date::date d,
     ROW_NUMBER() OVER (PARTITION BY phone_no1 ORDER BY created_on_date) rn
   FROM production.public.main_source_wise_leads WHERE created_on_date >= '2023-01-01'),
- fl AS (SELECT ph, source, DATE_TRUNC('week', d + INTERVAL '5 hours 30 minutes')::date fwk FROM ld WHERE rn=1),
+ fl AS (SELECT ph, source, organic_l2, DATE_TRUNC('week', d + INTERVAL '5 hours 30 minutes')::date fwk FROM ld WHERE rn=1),
  fb AS (SELECT phone_no1 ph, MIN(call_booking_ts) fbt FROM production.public.main_source_wise_leads
         WHERE call_booking_ts IS NOT NULL GROUP BY 1)
 SELECT TO_CHAR(fl.fwk,'YYYY-MM-DD') wk,
-  CASE WHEN fl.source='Google' THEN 'Google'
+  CASE WHEN fl.source='Google' THEN 'Google Ads'
        WHEN fl.source IN ('Fb','Facebook','Instagram','Ig','Meta') THEN 'Meta'
-       WHEN fl.source='Organic' THEN 'Organic'
+       WHEN fl.source='Organic' AND fl.organic_l2='Google Listing' THEN 'GMB'
+       WHEN fl.source='Organic' AND fl.organic_l2='PC-Inbound' THEN 'Call-in (PCC)'
+       WHEN fl.source='Organic' AND fl.organic_l2='WA-Inbound' THEN 'WhatsApp'
+       WHEN fl.source='Organic' AND fl.organic_l2='Walk In' THEN 'Walk-in'
+       WHEN fl.source='Organic' AND fl.organic_l2 IN ('Clinic Page','Doctor','Doctor Pages','Sexologist','Treatment Page','Login Page','Healthfeed','Webbot','Homepage','Blog','STD Testing','Assessment Page') THEN 'Website'
+       WHEN fl.source='Organic' THEN 'Organic (untagged)'
+       WHEN fl.source='Justdial' THEN 'JustDial'
        WHEN fl.source ILIKE 'Practo%' THEN 'Practo'
-       WHEN fl.source ILIKE 'GMB%' OR fl.source='Google Listing' THEN 'GMB'
        ELSE 'Other' END src,
   COUNT(*) new_leads,
   SUM(CASE WHEN fb.fbt IS NOT NULL AND DATE_TRUNC('week',fb.fbt+INTERVAL '5 hours 30 minutes')::date=fl.fwk THEN 1 ELSE 0 END) booked_same,
