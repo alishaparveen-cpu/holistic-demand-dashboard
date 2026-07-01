@@ -202,6 +202,22 @@ def clinic_funnel(cfg):
           WHERE enc.deleted_at IS NULL AND LOWER(enc.type) LIKE '%merged-rx%' AND RIGHT(p.phone_no,10) IN ('{inlist}')
           GROUP BY p.id, RIGHT(p.phone_no,10), enc.id, enc.created_at) z WHERE rnk=1 AND descr IS NOT NULL"""):
             if len(r)>=2 and r[0] and r[0] not in diagcat: diagcat[r[0]]=diag_category(r[1])
+    # full SC history at THIS clinic (no window floor) -> first-ever SC week + first COMPLETED SC week
+    # → classify each booking as NEW (first-ever) / RE-BOOK (prior SC, none completed) / RELAPSE (prior SC completed)
+    fscw={}; fdonew={}
+    for ci in range(0,len(allphs),400):
+        inlist="','".join(allphs[ci:ci+400])
+        if not inlist: continue
+        for r in q(f"""SELECT RIGHT(p.phone_no,10) ph,
+            DATE_TRUNC('week', MIN(DATEADD(minute,330,a.created_at)))::varchar fscw,
+            DATE_TRUNC('week', MIN(CASE WHEN a.status IN ('COMPLETED','RECONSULTED') THEN DATEADD(minute,330,a.created_at) END))::varchar fdonew
+          FROM allo_consultations.appointments a
+          JOIN allo_consultations.types t ON t.id=a.type_id AND t.name='Screening Call'
+          JOIN allo_health.locations loc ON loc.id=a.location_id AND loc.locality='{loc}' AND loc.deleted_at IS NULL
+          JOIN allo_persons.patient p ON p.id=a.patient_id
+          WHERE a.deleted_at IS NULL AND RIGHT(p.phone_no,10) IN ('{inlist}') GROUP BY 1"""):
+            if r and r[0]:
+                fscw[r[0]]=(r[1] or '')[:10]; fdonew[r[0]]=((r[2] or '')[:10] or None)
     lead={}
     for r in q(f"""SELECT ph,origin,src,med,fb,cwk,su FROM (
       SELECT RIGHT(phone_no,10) ph, origin, LOWER(utm_source) src, LOWER(utm_medium) med,
@@ -339,6 +355,28 @@ def clinic_funnel(cfg):
         if dn: ab_done[i]+=1; done_by_diag[dc][i]+=1
     bookings['all_booked']=ab_total; bookings['all_booked_done']=ab_done
     bookings['done_by_diag']=done_by_diag; bookings['booked_by_diag']=booked_by_diag
+    # ---- CLEAN PARTITION of All-SC-booked (each booking → exactly ONE bucket; no double-count) ----
+    # NEW (first-ever SC at clinic): split by lead → this-week / older / not-attributable.  REPEAT: rebook(prior never done) / relapse(prior done).
+    TAXK=['new_tw','new_old','new_na','rebook','relapse']
+    TAX={k:{} for k in TAXK}; taxt={k:Z() for k in TAXK}
+    for (ph,w),dn in allbk.items():
+        i=idx[w]; f=fscw.get(ph); dc=fdonew.get(ph)
+        if f==w:                                   # first-ever SC at this clinic = NEVER booked before
+            li=lead_inst.get(ph)
+            if li and idx.get(li[0])==i: b='new_tw'; src=li[1]
+            elif li and idx.get(li[0],99)<i: b='new_old'; src=li[1]
+            else:
+                src=other_source(ph)
+                if src in ('Walk-in (no lead)','Direct / no-utm'): b='new_na'          # truly no usable source
+                elif src=='Practo': b='new_old'                                        # converted-only → carry-in
+                else:                                                                  # web/meta: date at lead creation
+                    cwk=lead[ph][4] if ph in lead else None
+                    b='new_tw' if (cwk in idx and idx.get(cwk)==i) else 'new_old'
+        else:                                      # had an SC before (repeat)
+            b='relapse' if (dc and dc<w) else 'rebook'
+            li=lead_inst.get(ph); src=li[1] if li else other_source(ph)
+        TAX[b].setdefault(src,Z())[i]+=1; taxt[b][i]+=1
+    bookings['tax']={k:{'total':taxt[k],'by_source':TAX[k]} for k in TAXK}
     nums={'GMB call':','.join(cfg['gmb']) or '—','Google call':cfg['google'] or '—','Organic call':','.join(cfg['organic']) or '—'}
     return {'disp':cfg['disp'],'city':cfg['city'],'loc':cfg['loc'],'numbers':nums,
             'google_shared':(not cfg['google_solo']) if cfg['google'] else None,'leads':leads,'bookings':bookings}

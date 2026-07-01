@@ -196,24 +196,35 @@ function render(){
     html+='<div class="callout"><b>Web / marketplace leads</b> (Practo, Meta, Google-web, GMB-web, Organic-web, WhatsApp, Direct). These are <b>converted-only</b> for ad channels (only knowable once they book), dated at lead-creation. No AI call-category here.</div>';
   }
   html+='</div>';
-  html+='<div class="box"><div class="boxhd"><span class="step">④</span><h2>Bookings — flow from leads</h2><span class="meta">all categories · this-week → carry-in → direct/walk-in → returning</span></div>';
+  html+='<div class="box"><div class="boxhd"><span class="step">④</span><h2>Bookings — clean breakdown</h2><span class="meta">all SC booked this week · every booking counted once</span></div>';
   html+='<button class="tgl" data-show="▸ Show call / web breakdown" data-hide="▾ Hide breakdown" onclick="toggleDet(this)">▸ Show call / web breakdown</button>';
   html+='<table class="f">'+thead(W)+'<tbody>';
   function sec(t,sub,bk,cls){return '<tr class="section '+cls+'"><td class="lab">'+t+(sub?' <span class="sub2" style="font-weight:400">'+sub+'</span>':'')+'</td>'+cells(bk.total,'sec')+'</tr>'+groupRows(bk.by_source);}
-  html+='<tr><td class="lab sub2" style="font-size:11px">NEW ACQUISITIONS</td>'+cells(W.map(()=>''))+'</tr>';
-  html+=sec('① From this week\'s leads','',F.thisweek,'s-good');
-  html+=sec('② From earlier weeks','carry-in',F.prior,'s-warn');
-  html+=sec('③ Direct · walk-in','no attributable lead',F.other,'s-mut');
-  html+='<tr class="tot"><td class="lab">New-acquisition bookings</td>'+cells(F.thisweek.total.map((v,i)=>v+F.prior.total[i]+F.other.total[i]))+'</tr>';
-  if(F.returning&&sum(F.returning.total)>0){html+='<tr><td class="lab sub2" style="font-size:11px;padding-top:10px">RETURNING (booking-level)</td>'+cells(W.map(()=>''))+'</tr>'+sec('④ Returning patients','repeat SC',F.returning,'s-ret');}
-  html+='<tr class="tot"><td class="lab">Total bookings <span class="sub2" style="font-weight:400">new+returning · 1st-in-window per patient</span></td>'+cells(B.total)+'</tr>';
-  html+='<tr class="tot"><td class="lab good">Done</td>'+pgc(B.done,B.total)+'</tr>';
-  if(B.all_booked){html+='<tr><td class="lab sub2" style="font-size:11px;padding-top:10px">ALL SC BOOKED (ops view · incl. repeat bookers)</td>'+cells(W.map(()=>''))+'</tr>';
-    html+='<tr class="tot"><td class="lab">All SC booked this week <span class="sub2" style="font-weight:400">= "All Booked During the Week" (distinct patient × week)</span></td>'+cells(B.all_booked)+'</tr>';
-    html+='<tr class="tot"><td class="lab good">All done</td>'+pgc(B.all_booked_done,B.all_booked)+'</tr>';}
-  html+='</tbody></table>';
-  const tb=sum(B.total),tnew=sum(F.thisweek.total)+sum(F.prior.total)+sum(F.other.total),tr=sum(F.returning?F.returning.total:[]),td=sum(B.done);
-  html+='<div class="callout">10-wk: <b class="good">'+tnew+' new</b> + <b style="color:var(--practo)">'+tr+' returning</b> = <b>'+tb+'</b> bookings · <b class="good">'+td+'</b> done ('+pct(td,tb)+'%).</div>';
+  const T=B.tax;
+  if(T){
+    html+='<tr><td class="lab sub2" style="font-size:11px">NEVER BOOKED BEFORE · new acquisition</td>'+cells(W.map(()=>''))+'</tr>';
+    html+=sec('① From this week\'s leads','',T.new_tw,'s-good');
+    html+=sec('② From older leads','carry-in',T.new_old,'s-warn');
+    html+=sec('③ Lead source not attributable','direct / walk-in only',T.new_na,'s-mut');
+    html+='<tr class="tot"><td class="lab">New — never booked before</td>'+cells(T.new_tw.total.map((v,i)=>v+T.new_old.total[i]+T.new_na.total[i]))+'</tr>';
+    html+='<tr><td class="lab sub2" style="font-size:11px;padding-top:10px">BOOKED BEFORE · repeat (no double-count — repeats live here only)</td>'+cells(W.map(()=>''))+'</tr>';
+    html+=sec('④ Re-book','prior SC never completed · rework',T.rebook,'s-warn');
+    html+=sec('⑤ Relapse','booked & completed before · SC again',T.relapse,'s-ret');
+    html+='<tr class="tot"><td class="lab">All SC booked this week <span class="sub2" style="font-weight:400">distinct patient × week</span></td>'+cells(B.all_booked)+'</tr>';
+    html+='<tr class="tot"><td class="lab good">Done</td>'+pgc(B.all_booked_done,B.all_booked)+'</tr>';
+    html+='</tbody></table>';
+    const nnew=sum(T.new_tw.total)+sum(T.new_old.total)+sum(T.new_na.total),nrb=sum(T.rebook.total),nrl=sum(T.relapse.total),nab=sum(B.all_booked),nd=sum(B.all_booked_done);
+    html+='<div class="callout"><b class="good">'+nnew+' new</b> + <b style="color:var(--warn)">'+nrb+' re-book</b> (prior SC not completed) + <b style="color:var(--practo)">'+nrl+' relapse</b> (completed before) = <b>'+nab+'</b> SC booked · <b class="good">'+nd+'</b> done ('+pct(nd,nab)+'%). Each booking counted once; "not attributable" is a sub-split of NEW only — no overlap with repeat.</div>';
+  } else {
+    html+='<tr><td class="lab sub2" style="font-size:11px">NEW ACQUISITIONS</td>'+cells(W.map(()=>''))+'</tr>';
+    html+=sec('① From this week\'s leads','',F.thisweek,'s-good');
+    html+=sec('② From earlier weeks','carry-in',F.prior,'s-warn');
+    html+=sec('③ Direct · walk-in','no attributable lead',F.other,'s-mut');
+    if(F.returning&&sum(F.returning.total)>0){html+=sec('④ Returning patients','repeat SC',F.returning,'s-ret');}
+    html+='<tr class="tot"><td class="lab">Total bookings</td>'+cells(B.total)+'</tr>';
+    html+='<tr class="tot"><td class="lab good">Done</td>'+pgc(B.done,B.total)+'</tr>';
+    html+='</tbody></table>';
+  }
   html+='</div>';
   if(B.done_by_diag){
     html+='<div class="box"><div class="boxhd"><span class="step">⑤</span><h2>Done by diagnosis</h2><span class="meta">doctor\'s latest merged-rx diagnosis (clinical) · NOT call intent</span></div>';
