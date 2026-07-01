@@ -83,7 +83,7 @@ def main():
 
     D, BYDOC = {}, {}
     seen = set()  # (week, phone) — count each lead phone once per week (distinct leads)
-    netL = [0] * 12; netB = [0] * 12
+    netL = [0] * len(WEEKS); netB = [0] * len(WEEKS)
     for r in rows[1:]:
         if len(r) < 10: continue
         wk = monday(r[1])
@@ -92,16 +92,19 @@ def main():
         if not ph: continue
         clinic, city, doc = (r[4] or "").strip(), (r[5] or "").strip(), (r[6] or "").strip() or "(unassigned)"
         if not clinic: continue
+        try: _amt = float(((r[17] if len(r) > 17 else "0") or "0").replace(",", "").replace("₹", "").strip() or 0)   # col R = Platform Development Fee Amount
+        except ValueError: _amt = 0
+        if _amt <= 0: continue   # Practo lead counts only when the platform-fee amount > 0 (billable lead)
         i = idx[wk]
         key = (wk, ph)
         if key in seen:  # same phone, same week → one lead
             continue
         seen.add(key)
         did_book = ph in booked
-        o = D.setdefault(f"{city}|{clinic}", {"leads": [0]*12, "booked": [0]*12})
+        o = D.setdefault(f"{city}|{clinic}", {"leads": [0]*len(WEEKS), "booked": [0]*len(WEEKS)})
         o["leads"][i] += 1
         if did_book: o["booked"][i] += 1
-        dd = BYDOC.setdefault(f"{city}|{clinic}", {}).setdefault(doc, {"leads": [0]*12, "booked": [0]*12})
+        dd = BYDOC.setdefault(f"{city}|{clinic}", {}).setdefault(doc, {"leads": [0]*len(WEEKS), "booked": [0]*len(WEEKS)})
         dd["leads"][i] += 1
         if did_book: dd["booked"][i] += 1
         netL[i] += 1; netB[i] += (1 if did_book else 0)
@@ -114,7 +117,7 @@ def main():
     docOut = {"_meta": meta}; docOut.update(BYDOC)
     json.dump(docOut, open(os.path.join(ROOT, "data_practo_conv_by_doctor.json"), "w"), separators=(",", ":"))
 
-    conv = [round(netB[i]/netL[i]*100) if netL[i] else 0 for i in range(12)]
+    conv = [round(netB[i]/netL[i]*100) if netL[i] else 0 for i in range(len(netL))]
     print(f"data_practo_conv.json · {len(D)} clinics · {len(BYDOC)} clinic-doctor groups")
     print("network cohort leads/wk :", netL)
     print("network cohort booked/wk:", netB)
