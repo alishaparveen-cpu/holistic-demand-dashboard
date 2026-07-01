@@ -15,11 +15,13 @@ Ameerpet spot-check so the reconciliation is visible. Run: AWS_PROFILE=redshift-
 import os, sys, json
 sys.path.insert(0, os.path.dirname(__file__))
 import patch_subcat as PS
+import patch_demand_first as PD          # SRC_CASE / GMB_IN / GOOG_IN / SOURCES — same lead-source attribution as done_by_source
 ROOT = PS.ROOT; OUT = os.path.join(ROOT, "data_source_recon.json")
 idx = PS.idx; Z = PS.Z; LO = PS.LO; run_sql = PS.run_sql
-COHORTS = ["new_fresh", "new_old", "rebook", "relapse"]
+COHORTS = ["new_fresh", "new_old", "rebook", "relapse"]; SOURCES = PD.SOURCES
 
-# same cohort logic as patch_book_cohort, but the OUTPUT week (wk) = SERVICE week (start_time)
+# same cohort logic as patch_book_cohort, but OUTPUT week = SERVICE week (start_time), and each
+# deduped booking is also attributed to a lead source (SRC_CASE) so booked_by_source Σ = bottom.booked.
 SQL = """WITH sc AS (
   SELECT a.id, a.patient_id, RIGHT(p.phone_no,10) ph, loc.city ct, loc.locality lc, a.created_at, a.status,
     TO_CHAR(DATE_TRUNC('week', a.start_time + INTERVAL '5 hours 30 minutes'),'YYYY-MM-DD') wk
@@ -41,18 +43,29 @@ SQL = """WITH sc AS (
      ORDER BY (CASE WHEN status='COMPLETED' THEN 0 ELSE 1 END), id) rn FROM seqd),
  ld AS (
   SELECT phone_no1 ph, MIN(DATE_TRUNC('week', created_on_date + INTERVAL '5 hours 30 minutes')) lwk
-  FROM production.public.main_source_wise_leads WHERE created_on_date >= '2023-01-01' GROUP BY 1)
+  FROM production.public.main_source_wise_leads WHERE created_on_date >= '2023-01-01' GROUP BY 1),
+ gc AS (SELECT DISTINCT RIGHT("from",10) ph FROM allo_vendors.exotel_calls
+        WHERE RIGHT(exotel_number,10) IN ('{gmb}') AND routed_to='lead_to_call' AND direction='inbound' AND start_time>='2025-06-23'),
+ pc AS (SELECT DISTINCT RIGHT("from",10) ph FROM allo_vendors.exotel_calls
+        WHERE RIGHT(exotel_number,10) IN ('{goog}') AND routed_to='lead_to_call' AND direction='inbound' AND start_time>='2025-06-23'),
+ u AS (SELECT ph,us,um,g,f FROM (
+    SELECT RIGHT(phone_no,10) ph, LOWER(COALESCE(utm_source,'')) us, LOWER(COALESCE(utm_medium,'')) um,
+      CASE WHEN gclid<>'' THEN 1 ELSE 0 END g, CASE WHEN fbclid<>'' THEN 1 ELSE 0 END f,
+      ROW_NUMBER() OVER (PARTITION BY RIGHT(phone_no,10) ORDER BY created_at DESC) rn
+    FROM allo_persons.lead WHERE created_at>='2025-06-23' AND (utm_source IS NOT NULL OR gclid<>'' OR fbclid<>'')) z WHERE rn=1)
 SELECT dd.ct, dd.lc, dd.wk,
   CASE WHEN dd.seq=1 AND (ld.lwk IS NULL OR ld.lwk >= DATE_TRUNC('week', dd.created_at + INTERVAL '5 hours 30 minutes')) THEN 'new_fresh'
        WHEN dd.seq=1 THEN 'new_old'
        WHEN dd.prior_comp IS NOT NULL THEN 'relapse'
        ELSE 'rebook' END cohort,
+  {srccase} src,
   COUNT(*) booked,
   SUM(CASE WHEN dd.ever_done_here=1 THEN 1 ELSE 0 END) done_ever,
   SUM(CASE WHEN dd.status='COMPLETED' THEN 1 ELSE 0 END) done_wk
 FROM dd LEFT JOIN ld ON ld.ph=dd.ph
+  LEFT JOIN gc ON gc.ph=dd.ph LEFT JOIN pc ON pc.ph=dd.ph LEFT JOIN u ON u.ph=dd.ph
 WHERE dd.rn=1 AND dd.wk >= '{lo}'
-GROUP BY 1,2,3,4;""".format(lo=LO)
+GROUP BY 1,2,3,4,5;""".format(lo=LO, srccase=PD.SRC_CASE, gmb=PD.GMB_IN, goog=PD.GOOG_IN)
 
 def slugify(loc, city):
     s = lambda x: "".join(ch if ch.isalnum() else "_" for ch in (x or "").strip().lower())
@@ -62,17 +75,21 @@ def norm_city(c): c = (c or "").strip().lower(); return CITY_ALIAS.get(c, c)
 
 if __name__ == "__main__":
     d = json.load(open(OUT)); clinics = d["clinics"]
-    agg = {}   # slug -> cohort -> {booked,done_wk}
+    agg = {}     # slug -> cohort -> {booked,done_ever,done_wk}
+    bysrc = {}   # slug -> src -> [weeks]  (booked, service-week)
     for row in run_sql(SQL):
         r = row.split("\t") if isinstance(row, str) else row
-        if len(r) < 7: continue
-        ct, lc, wk, coh, bk, de, dw = r[:7]
+        if len(r) < 8: continue
+        ct, lc, wk, coh, src, bk, de, dw = r[:8]
         if wk not in idx or coh not in COHORTS: continue
+        if src not in SOURCES: src = "untagged"
         slug = slugify(lc, norm_city(ct)); i = idx[wk]
         try: bk = int(float(bk)); de = int(float(de)); dw = int(float(dw))
         except ValueError: continue
         a = agg.setdefault(slug, {c: {"booked": Z(), "done_ever": Z(), "done_wk": Z()} for c in COHORTS})
         a[coh]["booked"][i] += bk; a[coh]["done_wk"][i] += dw; a[coh]["done_ever"][i] += de
+        bs = bysrc.setdefault(slug, {s: Z() for s in SOURCES})
+        bs[src][i] += bk
 
     matched = 0
     for slug, c in clinics.items():
@@ -80,6 +97,7 @@ if __name__ == "__main__":
         coh = agg[slug]
         c.setdefault("bottom", {})["booked"] = [sum(coh[k]["booked"][i] for k in COHORTS) for i in range(len(Z()))]
         c["book_cohort"] = coh
+        c["booked_by_source"] = {s: bysrc[slug][s] for s in SOURCES if any(bysrc[slug][s])}
         c["bottom"]["booked_service_week"] = True
         matched += 1
     json.dump(d, open(OUT, "w"), separators=(",", ":"))
