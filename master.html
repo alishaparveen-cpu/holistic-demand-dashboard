@@ -144,15 +144,23 @@ tr[onclick]:hover td:first-child{color:var(--accent)}
   <div id="bookCtlBar" style="font-size:12px;color:var(--ink2);margin:0 2px 8px;min-height:26px;display:flex;align-items:center;gap:2px;flex-wrap:wrap"></div>
   <div class="fmwrap"><table class="fm" id="tSrc"></table></div>
 
-  <div class="shead">④ Done → Purchased → Revenue <span class="lblmuted">(by <b>completion week</b> — consults that actually happened that week, incl. ones booked earlier · bookings live in ③)</span></div>
+  <div class="shead">④ Done <span class="lblmuted">(completed consults, by <b>completion week</b> — the week the consult actually happened, incl. ones booked earlier · break by category / source / clinic)</span></div>
   <div id="doneCtlBar" style="font-size:12px;color:var(--ink2);margin:0 2px 8px;min-height:26px;display:flex;align-items:center;gap:2px;flex-wrap:wrap"></div>
   <div class="fmwrap"><table class="fm" id="tOut"></table></div>
 
-  <div class="shead">⑤ Availability <span class="lblmuted">(bookable roster — expand to see each clinic)</span></div>
+  <div class="shead">⑤ Purchased <span class="lblmuted">(of the done cohort, how many <b>eventually paid</b> — credited to the done week · break by category / clinic / city)</span></div>
+  <div id="purCtlBar" style="font-size:12px;color:var(--ink2);margin:0 2px 8px;min-height:26px;display:flex;align-items:center;gap:2px;flex-wrap:wrap"></div>
+  <div class="fmwrap"><table class="fm" id="tPur"></table></div>
+
+  <div class="shead">⑥ Revenue <span class="lblmuted">(what the done cohort <b>eventually</b> billed & collected — consult + meds + labs, paid whenever, credited to the done week · recent weeks are a floor)</span></div>
+  <div id="revCtlBar" style="font-size:12px;color:var(--ink2);margin:0 2px 8px;min-height:26px;display:flex;align-items:center;gap:2px;flex-wrap:wrap"></div>
+  <div class="fmwrap"><table class="fm" id="tRev"></table></div>
+
+  <div class="shead">⑦ Availability <span class="lblmuted">(bookable roster — expand to see each clinic)</span></div>
   <div class="fmwrap"><table class="fm" id="tAvail"></table></div>
-  <div class="shead">⑥ Google Ads funnel <span class="lblmuted">(city → category → impressions → clicks → location-clicks → conversions · Google's own metrics; "conversions" = Google-tracked (web forms + call-extension calls), narrower than the attributed leads in ①)</span></div>
+  <div class="shead">⑧ Google Ads funnel <span class="lblmuted">(city → category → impressions → clicks → location-clicks → conversions · Google's own metrics; "conversions" = Google-tracked (web forms + call-extension calls), narrower than the attributed leads in ①)</span></div>
   <div class="fmwrap"><table class="fm" id="tGads"></table></div>
-  <div class="shead">⑦ Google Ads — Cost &amp; Efficiency <span class="lblmuted">(<b>paid Google only</b> — GMB / Organic / Meta / Practo carry no auction spend, shown as —. <b>Cost per call</b> = spend ÷ location-clicks (the founder's terminal metric); CPL / CPB use ① attributed <b>paid</b> leads / bookings. Lower is better.)</span></div>
+  <div class="shead">⑨ Google Ads — Cost &amp; Efficiency <span class="lblmuted">(<b>paid Google only</b> — GMB / Organic / Meta / Practo carry no auction spend, shown as —. <b>Cost per call</b> = spend ÷ location-clicks (the founder's terminal metric); CPL / CPB use ① attributed <b>paid</b> leads / bookings. Lower is better.)</span></div>
   <div class="fmwrap"><table class="fm" id="tGcost"></table></div>
   </div>
 </div>
@@ -164,6 +172,8 @@ let D=null,CUR=null;let NSHOW=26;let WKEND=1;let W0=1;let SHOWPARTIAL=false;let 
 let DBRK='cat',DCRS='none';   // ④ Done breakdown: primary dimension × optional cross (dropdown-driven)
 function setDBRK(v){DBRK=v;if(DBRK===DCRS)DCRS='none';render();}
 function setDCRS(v){DCRS=v;render();}
+let PBRK='cat',PCRS='none';function setPBRK(v){PBRK=v;if(PBRK===PCRS)PCRS='none';render();}function setPCRS(v){PCRS=v;render();}   // ⑤ Purchased
+let RBRK='product',RCRS='none';function setRBRK(v){RBRK=v;if(RBRK===RCRS)RCRS='none';render();}function setRCRS(v){RCRS=v;render();}   // ⑥ Revenue
 let BBRK='cohort',BCRS='none';function setBBRK(v){BBRK=v;render();}function setBCRS(v){BCRS=v;render();}   // ③ Bookings: Break by Channel|Clinic|Cohort × cross (other dim | none)
 let QV=false,QVC=[],QVTABLE=null;let CATMODE=false;
 function toggleCat(){CATMODE=!CATMODE;if($('catBtn'))$('catBtn').classList.toggle('on',CATMODE);render();}
@@ -636,25 +646,53 @@ function render(){
      else emit(clinics.map(x=>({nm:dNm(x),arr:x.data.bottom.done||ZA,x:x})),m=>DCRS==='cat'?CATS.map(ct=>({nm:ct,arr:dCatCl(ct,m.x),color:CATCOL[ct]})):SRCG.map(g=>({nm:g[0],arr:dSrcCl(g[1],m.x)})));
    } else if(_cb)_cb.innerHTML='';}
   const offPu=clinics.reduce((a,x)=>addv(a,Fn.purchN(x.data)||ZA),ZA.slice()),onlPu=(onlBot.total||{}).purchased||ZA;
-  O+=row('Done → Purchased %',pctOf(segArr(offPu,onlPu),segArr(offDn,onlDn)),'sub',PCT,{color:GRN});
-  O+=ocatRow('Purchased','purchased',N);
-  // Revenue → category → product (line-item based; product nests inside each category)
+  $('tOut').innerHTML=O;
+  // ⑤ Purchased — own break-by (Category / Clinic / City) × cross
+  {const dNm=x=>(D._meta.display||{})[x.slug]||x.slug;const cities=[...new Set(clinics.map(x=>x.city))].sort();
+   const pCatCl=(ct,x)=>(((x.data.bottom.by_cat||{})[ct]||{}).purchased)||ZA;
+   const cityCatPur=(ci,ct)=>clinics.filter(x=>x.city===ci).reduce((a,x)=>addv(a,pCatCl(ct,x)),ZA.slice());
+   let P='';const putot=segArr(offPu,onlPu);
+   P+=row('Purchased (eventually paid)',putot,'grp',N,{color:GRN});
+   P+=row('· done → purchased %',pctOf(putot,segArr(offDn,onlDn)),'sub',PCT,{color:VIO});
+   const _pb=$('purCtlBar');
+   if(SEG!=='online'){
+     const sel=(fn,cur,list)=>'<select onchange="'+fn+'(this.value)" style="font-size:11.5px;border:1px solid var(--line);border-radius:6px;padding:3px 8px;margin-left:6px;background:#fff;font-family:Inter;font-weight:600;color:var(--accent);cursor:pointer">'+list.map(o=>'<option value="'+o[0]+'"'+(cur===o[0]?' selected':'')+'>'+o[1]+'</option>').join('')+'</select>';
+     const crossL=PBRK==='cat'?[['none','— no cross —'],['clinic','× Clinic'],['city','× City']]:PBRK==='clinic'?[['none','— no cross —'],['cat','× Category']]:[['none','— no cross —'],['cat','× Category'],['clinic','× Clinic']];
+     if(_pb)_pb.innerHTML='<span style="font-size:10px;font-weight:700;letter-spacing:.05em;color:var(--muted)">BREAK PURCHASED BY</span>'+sel('setPBRK',PBRK,[['cat','Category'],['clinic','Clinic'],['city','City']])+sel('setPCRS',PCRS,crossL);
+     const emit=(members,crossFn)=>{members.forEach(m=>{if(!m.arr.some(v=>v))return;const c=m.color||GRN;const tk='pbrk_'+String(m.nm).replace(/[^a-z0-9]+/gi,'');
+       P+=row('· '+m.nm,m.arr,'sub',N,{color:c,tkey:(PCRS==='none'?null:tk)});
+       if(PCRS!=='none'&&EXP[tk])crossFn(m).forEach(s=>{if(s.arr.some(v=>v))P+=row('· · '+s.nm,s.arr,'sub2',N,{color:s.color||c});});});};
+     if(PBRK==='cat')emit(CATS.map(ct=>({nm:ct,arr:catO(ct,'purchased'),color:CATCOL[ct]})),m=>PCRS==='city'?cities.map(ci=>({nm:ci,arr:cityCatPur(ci,m.nm)})):clinics.map(x=>({nm:dNm(x),arr:pCatCl(m.nm,x)})));
+     else if(PBRK==='clinic')emit(clinics.map(x=>({nm:dNm(x),arr:x.data.bottom.purchased||ZA,x:x})),m=>CATS.map(ct=>({nm:ct,arr:pCatCl(ct,m.x),color:CATCOL[ct]})));
+     else emit(cities.map(ci=>({nm:ci,arr:clinics.filter(x=>x.city===ci).reduce((a,x)=>addv(a,x.data.bottom.purchased||ZA),ZA.slice())})),m=>PCRS==='clinic'?clinics.filter(x=>x.city===m.nm).map(x=>({nm:dNm(x),arr:x.data.bottom.purchased||ZA})):CATS.map(ct=>({nm:ct,arr:cityCatPur(m.nm,ct),color:CATCOL[ct]})));
+   } else if(_pb)_pb.innerHTML='';
+   $('tPur').innerHTML=P;}
+  // ⑥ Revenue — own break-by (Product / Category / Clinic / City) × cross
   {const RP=['drug','lab','consultation','other'],RPL={drug:'Medicines (pharmacy)',lab:'Lab / tests',consultation:'Consultation / therapy',other:'Other'};
+   const dNm=x=>(D._meta.display||{})[x.slug]||x.slug;const cities=[...new Set(clinics.map(x=>x.city))].sort();
    const cpSeg=(cat,p)=>segArr(clinics.reduce((a,x)=>addv(a,(((x.data.bottom.rev_cp||{})[cat]||{})[p])||ZA),ZA.slice()),(((onlBot.rev_cp||{})[cat]||{})[p])||ZA);
    const catTot=cat=>RP.reduce((a,p)=>addv(a,cpSeg(cat,p)),ZA.slice());
-   const prodTot=p=>CATS.reduce((a,c)=>addv(a,cpSeg(c,p)),ZA.slice());   // one product summed across all categories
+   const prodTot=p=>CATS.reduce((a,c)=>addv(a,cpSeg(c,p)),ZA.slice());
    const revTot=CATS.reduce((a,c)=>addv(a,catTot(c)),ZA.slice());
-   const revHead=revTot.some(v=>v)?revTot:segArr(clinics.reduce((a,x)=>addv(a,x.data.bottom.rev||ZA),ZA.slice()),(onlBot.total||{}).rev||ZA);
-   O+=row('Revenue',revHead,'grp',RUP,{color:GRN,tkey:'oc_rev'});
-   // ── direct product split (Medicines / Lab tests / Consultation-therapy) — the headline revenue mix ──
-   O+=row('· by product ▾',revHead,'sub',RUP,{color:GRN,tkey:'oc_revprod'});
-   if(EXP['oc_revprod']||CATMODE){const prodOrder=RP.map(p=>[p,prodTot(p)]).filter(x=>x[1].some(v=>v)).sort((a,b)=>(b[1][WKEND]||0)-(a[1][WKEND]||0));
-     prodOrder.forEach(([p,a])=>{const sc=CATMODE?'sub2 catrow':'sub2';O+=row('· · '+RPL[p],a,sc,RUP,{color:GRN});O+=row('· · '+RPL[p]+' % of rev',pctOf(a,revTot),sc,PCT,{color:VIO});});}
-   if(EXP['oc_rev']||CATMODE){CATS.forEach(cat=>{const ct=catTot(cat);if(!ct.some(v=>v))return;const cls=CATMODE?'sub catrow':'sub';
-     O+=row('· '+cat,ct,cls,RUP,{color:CATCOL[cat],tkey:'rc_'+cat});O+=row('· '+cat+' % of rev',pctOf(ct,revTot),cls,PCT,{color:CATCOL[cat]});
-     if(EXP['rc_'+cat]||CATMODE){RP.forEach(p=>{const a=cpSeg(cat,p);if(a.some(v=>v)){const sc=CATMODE?'sub2 catrow':'sub2';O+=row('· · '+RPL[p],a,sc,RUP,{color:GRN});O+=row('· · '+RPL[p]+' %',pctOf(a,ct),sc,PCT,{color:VIO});}});}
-   });}}
-  $('tOut').innerHTML=O;
+   const clRev=x=>x.data.bottom.rev||ZA;
+   const clProd=(x,p)=>CATS.reduce((a,ct)=>addv(a,((x.data.bottom.rev_cp||{})[ct]||{})[p]||ZA),ZA.slice());
+   const clCat=(x,ct)=>RP.reduce((a,p)=>addv(a,((x.data.bottom.rev_cp||{})[ct]||{})[p]||ZA),ZA.slice());
+   const cityRev=(ci,fn)=>clinics.filter(x=>x.city===ci).reduce((a,x)=>addv(a,fn(x)),ZA.slice());
+   let R='';R+=row('Revenue (eventually collected)',revTot,'grp',RUP,{color:GRN});
+   const _rb=$('revCtlBar');
+   if(SEG!=='online'){
+     const sel=(fn,cur,list)=>'<select onchange="'+fn+'(this.value)" style="font-size:11.5px;border:1px solid var(--line);border-radius:6px;padding:3px 8px;margin-left:6px;background:#fff;font-family:Inter;font-weight:600;color:var(--accent);cursor:pointer">'+list.map(o=>'<option value="'+o[0]+'"'+(cur===o[0]?' selected':'')+'>'+o[1]+'</option>').join('')+'</select>';
+     const crossL=RBRK==='product'?[['none','— no cross —'],['cat','× Category'],['clinic','× Clinic'],['city','× City']]:RBRK==='cat'?[['none','— no cross —'],['product','× Product'],['subcat','× Sub-category'],['clinic','× Clinic']]:RBRK==='clinic'?[['none','— no cross —'],['product','× Product'],['cat','× Category']]:[['none','— no cross —'],['product','× Product'],['cat','× Category'],['clinic','× Clinic']];
+     if(_rb)_rb.innerHTML='<span style="font-size:10px;font-weight:700;letter-spacing:.05em;color:var(--muted)">BREAK REVENUE BY</span>'+sel('setRBRK',RBRK,[['product','Product'],['cat','Category'],['clinic','Clinic'],['city','City']])+sel('setRCRS',RCRS,crossL);
+     const emit=(members,crossFn)=>{members.forEach(m=>{if(!m.arr.some(v=>v))return;const c=m.color||GRN;const tk='rbrk_'+String(m.nm).replace(/[^a-z0-9]+/gi,'');
+       R+=row('· '+m.nm,m.arr,'sub',RUP,{color:c,tkey:(RCRS==='none'?null:tk)});
+       if(RCRS!=='none'&&EXP[tk])crossFn(m).forEach(s=>{if(s.arr.some(v=>v))R+=row('· · '+s.nm,s.arr,'sub2',RUP,{color:s.color||c});});});};
+     if(RBRK==='product')emit(RP.map(p=>({nm:RPL[p],arr:prodTot(p),key:p})),m=>RCRS==='cat'?CATS.map(ct=>({nm:ct,arr:cpSeg(ct,m.key),color:CATCOL[ct]})):RCRS==='city'?cities.map(ci=>({nm:ci,arr:cityRev(ci,x=>clProd(x,m.key))})):clinics.map(x=>({nm:dNm(x),arr:clProd(x,m.key)})));
+     else if(RBRK==='cat')emit(CATS.map(ct=>({nm:ct,arr:catTot(ct),color:CATCOL[ct],key:ct})),m=>RCRS==='product'?RP.map(p=>({nm:RPL[p],arr:cpSeg(m.key,p)})):RCRS==='subcat'?subsForCat(m.key).map(k=>({nm:subLbl(k.split('::')[1]||k),arr:subO(k,'rev')})):clinics.map(x=>({nm:dNm(x),arr:clCat(x,m.key)})));
+     else if(RBRK==='clinic')emit(clinics.map(x=>({nm:dNm(x),arr:clRev(x),x:x})),m=>RCRS==='product'?RP.map(p=>({nm:RPL[p],arr:clProd(m.x,p)})):CATS.map(ct=>({nm:ct,arr:clCat(m.x,ct),color:CATCOL[ct]})));
+     else emit(cities.map(ci=>({nm:ci,arr:cityRev(ci,clRev)})),m=>RCRS==='product'?RP.map(p=>({nm:RPL[p],arr:cityRev(m.nm,x=>clProd(x,p))})):RCRS==='clinic'?clinics.filter(x=>x.city===m.nm).map(x=>({nm:dNm(x),arr:clRev(x)})):CATS.map(ct=>({nm:ct,arr:cityRev(m.nm,x=>clCat(x,ct)),color:CATCOL[ct]})));
+   } else if(_rb)_rb.innerHTML='';
+   $('tRev').innerHTML=R;}
   // ⑤ Availability
   QVTABLE='⑤ Availability';let AV=head('Availability');
   if(SEG==='online'){AV+=row('— telehealth has no physical roster —',null,'sub',N);}
