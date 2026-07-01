@@ -80,6 +80,7 @@
   <div class="sub">Top-down clinic funnel — <b>Availability → Demand → Conversion → Velocity</b>. We flag the <b>earliest stage that breaks</b>; stages below a break read as likely <i>consequences</i>. <b>Overview</b> scans every clinic to answer "who's broken & where"; pick a clinic to drill in.</div>
   <div class="ctrls">
     <button class="fbtn on" id="mOv" onclick="setMode('ov')">◎ Overview · all clinics</button>
+    <span class="lab" style="margin-left:6px">City</span><select id="city"><option value="__all">All cities</option></select>
     <span class="lab" style="margin-left:6px">Clinic</span><select id="clinic"></select>
     <span class="lab" style="margin-left:10px">Current</span><select id="curn"><option value="1">latest week</option><option value="3">last 3 weeks</option><option value="4">last 4 weeks</option></select>
     <span class="lab" style="margin-left:6px">vs baseline</span><select id="basen"><option value="4">prior 4 weeks</option><option value="6">prior 6 weeks</option><option value="8">prior 8 weeks</option></select>
@@ -88,21 +89,22 @@
   <div id="root"></div>
 </div>
 <script>
-let D=null, CURN=1, BASEN=4, MODE='ov', C=null, OPEN={}, QF=null;
+let D=null, CURN=1, BASEN=4, MODE='ov', C=null, OPEN={}, QF=null, CITYF='__all';
 const $=id=>document.getElementById(id);
 const mean=a=>{const b=a.filter(x=>x!=null);return b.length?b.reduce((x,y)=>x+y,0)/b.length:null;};
 const sum=a=>a.reduce((x,y)=>x+(y||0),0);
 function fmt(v,d){return v==null?'—':(d?(Math.round(v*10)/10):Math.round(v)).toLocaleString('en-IN');}
 function cap(s){return s.charAt(0).toUpperCase()+s.slice(1);}
 const STAGES=[
-  {key:'availability',num:1,name:'Availability',short:'Avail',sub:'active days · roster hours',diag:'Clinic closed / fewer days',fix:'Ops · roster',
+  {key:'availability',num:1,name:'Availability',short:'Avail',grp:'input',sub:'active days · roster hours',diag:'Clinic closed / fewer days',fix:'Ops · roster',
    metrics:c=>[{nm:'active days',arr:c.availability.active_days,fmtd:0},{nm:'roster hours',arr:c.availability.hours,fmtd:1}],headline:0},
-  {key:'demand',num:2,name:'Demand',short:'Demand',sub:'new bookings (by channel)',diag:'Channel break — GMB / Ads / Practo',fix:'Marketing',
+  {key:'demand',num:2,name:'Demand',short:'Demand',grp:'input',sub:'new bookings (by channel)',diag:'Channel break — GMB / Ads / Practo',fix:'Marketing',
    metrics:c=>[{nm:'new bookings',arr:c.demand.bookings,fmtd:0}],headline:0,byChannel:c=>c.demand.by_channel},
-  {key:'conversion',num:3,name:'Conversion',short:'Conv',sub:'book → done %',diag:'Conversion drop — front-desk / follow-up',fix:'Clinic / PCC',
+  {key:'conversion',num:3,name:'Conversion',short:'Conv',grp:'input',sub:'book → done %',diag:'Conversion drop — front-desk / follow-up',fix:'Clinic / PCC',
    metrics:c=>[{nm:'book→done %',arr:c.conversion.book_done_pct,pct:1}],headline:0},
-  {key:'velocity',num:4,name:'Velocity',short:'Velocity',sub:'bookings / active day',diag:'Capacity limit — scheduling / staffing',fix:'Ops · staffing',
-   metrics:c=>[{nm:'bookings / active day',arr:c.velocity.per_active_day,fmtd:1},{nm:'bookings',arr:c.velocity.bookings,fmtd:0}],headline:0},
+  {key:'output',num:4,name:'Output',short:'Output',grp:'output',sub:'done · bookings · per active day (wkday/wkend weighted)',diag:'Low output — capacity / conversion',fix:'Ops · staffing',
+   metrics:c=>[{nm:'done',arr:c.output.done,fmtd:0},{nm:'bookings',arr:c.output.bookings,fmtd:0},{nm:'bookings / active weekday',arr:c.output.per_weekday,fmtd:1},{nm:'bookings / active weekend',arr:c.output.per_weekend,fmtd:1}],headline:0,
+   doneCat:c=>c.output.done_by_cat},
 ];
 function evalMetric(arr){const NW=arr.length;const cur=mean(arr.slice(NW-CURN));const base=mean(arr.slice(Math.max(0,NW-CURN-BASEN),NW-CURN));
   const d=(cur!=null&&base)?((cur-base)/base):null;const st=d==null?'green':d<=-0.15?'red':d<=-0.07?'amber':'green';return {cur,base,d,st};}
@@ -111,6 +113,7 @@ function evalStage(st,c){const ms=st.metrics(c).map(m=>({...m,ev:evalMetric(m.ar
   const hm=st.headline==='worst'?ms.slice().sort((a,b)=>(a.ev.d??0)-(b.ev.d??0))[0]:ms[st.headline];return {ms,status,hm};}
 function summary(c){const s={};STAGES.forEach(st=>{const e=evalStage(st,c);s[st.key]={st:e.status,d:e.hm.ev.d,cur:e.hm.ev.cur,base:e.hm.ev.base,hm:e.hm,pct:e.hm.pct};});
   s.firstBreak=STAGES.findIndex(st=>s[st.key].st==='red');
+  s.velRate=evalMetric(c.output.per_active_day);   // bookings/active-day for the 'velocity dropping' question
   const bc=c.demand.by_channel;let wc=null,wd=0;for(const ch in bc){const e=evalMetric(bc[ch]);if(e.d!=null&&e.d<wd&&sum(bc[ch].slice(-CURN-BASEN))>=3){wd=e.d;wc=ch;}}
   s.worstChan=wc?{ch:wc,d:wd}:null;return s;}
 function spark(arr,col){const v=arr.map(x=>x==null?0:x);const n=v.length;const mx=Math.max(...v,1),mn=Math.min(...v,0),w=90,h=24,p=3;
@@ -123,13 +126,13 @@ function curLabel(){const wl=D.week_labels,NW=wl.length;const c=CURN===1?wl[NW-1
 // ---------- OVERVIEW (portfolio scan) ----------
 const QUESTIONS=[
   {key:'ad_ok_dem',cls:'red',label:'Availability OK, but <b>demand dropped</b>',test:s=>s.availability.st==='green'&&(s.demand.st==='red'||s.demand.st==='amber')},
-  {key:'vel',cls:'warn',label:'<b>Velocity dropping</b> (bookings/day) suddenly',test:s=>s.velocity.st==='red'||s.velocity.st==='amber'},
+  {key:'vel',cls:'warn',label:'<b>Bookings / active-day dropping</b> suddenly',test:s=>s.velRate.st==='red'||s.velRate.st==='amber'},
   {key:'dem',cls:'red',label:'<b>Demand dropped</b> — & from which channel',test:s=>s.demand.st==='red'||s.demand.st==='amber'},
   {key:'any',cls:'acc',label:'Any clinic with a <b>funnel break</b> (red)',test:s=>s.firstBreak>=0},
 ];
 function renderOverview(){
   const lbl=curLabel();$('cmpnote').innerHTML='Comparing <b>'+lbl.c+'</b> vs baseline <b>'+lbl.b+'</b> · red ≤ −15%, amber ≤ −7% (relative).';
-  const rows=Object.keys(D.clinics).map(slug=>({slug,c:D.clinics[slug],s:summary(D.clinics[slug])}));
+  const rows=Object.keys(D.clinics).filter(slug=>CITYF==='__all'||D.clinics[slug].city===CITYF).map(slug=>({slug,c:D.clinics[slug],s:summary(D.clinics[slug])}));
   // question chips (counts)
   let h='<div class="qgrid">';
   QUESTIONS.forEach(qq=>{const n=rows.filter(r=>qq.test(r.s)).length;h+='<div class="qc '+qq.cls+(QF===qq.key?' on':'')+'" onclick="setQF(\''+qq.key+'\')"><div class="qn">'+n+'</div><div class="ql">'+qq.label+'</div></div>';});
@@ -169,6 +172,8 @@ function renderClinic(){
     vd='<b>'+s.diag+'.</b> '+cap(hm.nm)+' '+fmt(hm.ev.base,hm.fmtd||(hm.pct?1:0))+(hm.pct?'%':'')+' → '+fmt(hm.ev.cur,hm.fmtd||(hm.pct?1:0))+(hm.pct?'%':'')+' ('+Math.round(hm.ev.d*100)+'%). '+(firstRed<STAGES.length-1?'Fix this first ('+s.fix+') — stages below may be a consequence.':'Last stage — likely a real '+s.name.toLowerCase()+' constraint.');}
   let h='<div class="verdict'+(vok?' ok':'')+'"><div class="vh">'+vh+'</div><div class="vd">'+vd+'</div></div>';
   STAGES.forEach((s,i)=>{const e=evs[i],hm=e.hm;const isCause=(i===firstRed),isConseq=(firstRed>=0&&i>firstRed&&e.status!=='green');
+    if(i===0)h+='<div class="lab" style="margin:2px 0 6px">Inputs</div>';
+    if(s.grp==='output')h+='<div class="lab" style="margin:12px 0 6px">Output</div>';
     const tag=isCause?'<span class="cause">ROOT CAUSE</span>':(isConseq?'<span class="conseq">likely consequence</span>':'');const dimc=(firstRed>=0&&i>firstRed)?' dim':'';
     h+='<div class="stagerow"><div class="stage '+e.status+dimc+'" onclick="tog(\''+s.key+'\')"><div class="snum">'+s.num+'</div>'
       +'<div class="sbody"><div class="sname">'+s.name+tag+'</div><div class="ssub">'+s.sub+'</div></div>'
@@ -184,17 +189,22 @@ function drill(s,e){const wl=D.week_labels,NW=D.weeks.length,show=Math.min(NW,10
   e.ms.forEach(m=>h+=row(m.nm,m.arr,m.pct,m.fmtd,COL[m.ev.st]));
   if(s.byChannel){const bc=s.byChannel(C);Object.keys(bc).sort((a,b)=>sum(bc[b])-sum(bc[a])).forEach(ch=>{if(sum(bc[ch]))h+=row('· '+ch,bc[ch],0,0);});}
   if(s.key==='conversion'){h+=row('booked (denom)',C.conversion.booked,0,0);h+=row('done',C.conversion.done,0,0);}
+  if(s.doneCat){const dc=s.doneCat(C);['SH','STI','MH','Other'].forEach(ct=>{if(dc[ct]&&sum(dc[ct]))h+=row('· done · '+ct,dc[ct],0,0,'var(--ink2)');});}
   h+='</tbody></table></div>';return h;}
 function tog(k){OPEN[k]=!OPEN[k];const el=$('dr_'+k);if(el)el.classList.toggle('open',OPEN[k]);}
 
 function setMode(m){MODE=m;syncMode();render();}
 function syncMode(){$('mOv').classList.toggle('on',MODE==='ov');$('clinic').style.opacity=MODE==='cl'?'1':'.55';}
 function render(){MODE==='ov'?renderOverview():renderClinic();}
+function clinicOpts(){const ks=Object.keys(D.clinics).filter(s=>CITYF==='__all'||D.clinics[s].city===CITYF).sort((a,b)=>D.clinics[a].disp.localeCompare(D.clinics[b].disp));
+  $('clinic').innerHTML=ks.map(s=>'<option value="'+s+'">'+D.clinics[s].disp+'</option>').join('');return ks;}
 async function boot(){
   try{D=await fetch('data_weekly_diag.json').then(r=>r.json());}
   catch(e){$('root').innerHTML='<div class="err">Failed to load data_weekly_diag.json</div>';return;}
-  const ks=Object.keys(D.clinics).sort((a,b)=>D.clinics[a].disp.localeCompare(D.clinics[b].disp));
-  $('clinic').innerHTML=ks.map(s=>'<option value="'+s+'">'+D.clinics[s].disp+'</option>').join('');
+  const cities=[...new Set(Object.values(D.clinics).map(c=>c.city))].sort();
+  $('city').innerHTML='<option value="__all">All cities</option>'+cities.map(c=>'<option value="'+c+'">'+c+'</option>').join('');
+  $('city').onchange=()=>{CITYF=$('city').value;const ks=clinicOpts();if(MODE==='cl'){C=D.clinics[ks[0]];OPEN={};}render();};
+  const ks=clinicOpts();
   $('clinic').onchange=()=>{C=D.clinics[$('clinic').value];MODE='cl';OPEN={};syncMode();render();};
   $('curn').onchange=()=>{CURN=+$('curn').value;render();};
   $('basen').onchange=()=>{BASEN=+$('basen').value;render();};
