@@ -637,16 +637,21 @@ function render(){
        if(dim==='subcat'&&f.cat)return subsForCat(f.cat).map(k=>({nm:subLbl(k.split('::')[1]||k),color:CATCOL[f.cat],cl,f:Object.assign({},f,{subcat:k})}));
        return [];};
      const chain=[DBRK,DCRS,DCR3].filter((d,i,a)=>d&&d!=='none'&&a.indexOf(d)===i);
-     const renderLvl=(cl,f,dims,depth,pk)=>{if(!dims.length)return '';const dim=dims[0],rest=dims.slice(1);let h='';
-       membersOf(dim,cl,f).forEach(m=>{const arr=dseries(m.cl,m.f);if(!arr.some(v=>v))return;const tk=pk+'_'+String(m.nm).replace(/[^a-z0-9]+/gi,'');const kid=rest.length>0;
-         h+=row('· '.repeat(depth)+m.nm,arr,depth===1?'sub':'sub2',N,{color:m.color||GRN,tkey:kid?tk:null});
-         if(kid&&EXP[tk])h+=renderLvl(m.cl,m.f,rest,depth+1,tk);});
+     const _vi=(function(){const B=vbuckets(),c=cols(),s=new Set();c.forEach(j=>{if(B[j])B[j].idxs.forEach(ix=>s.add(ix));});return [...s];})();
+     const nzVis=a=>{if(!a)return false;for(let k=0;k<_vi.length;k++)if(a[_vi[k]])return true;return false;};   // nonzero within the visible weeks (hides all-zero rows like empty "Other")
+     const renderLvl=(cl,f,dims,depth,pk,parentArr)=>{if(!dims.length)return '';const dim=dims[0],rest=dims.slice(1);let h='';
+       const mem=membersOf(dim,cl,f).map(m=>({m,arr:dseries(m.cl,m.f)})).filter(x=>nzVis(x.arr));
+       const base=parentArr||mem.reduce((a,x)=>addv(a,x.arr),ZA.slice());
+       mem.forEach(function(o){const m=o.m,arr=o.arr;const tk=pk+'_'+String(m.nm).replace(/[^a-z0-9]+/gi,'');const kid=rest.length>0;const cls=depth===1?'sub':'sub2';
+         h+=row('· '.repeat(depth)+m.nm,arr,cls,N,{color:m.color||GRN,tkey:kid?tk:null});
+         h+=row('· '.repeat(depth)+m.nm+' % of '+(depth===1?'done':'parent'),pctOf(arr,base),cls+' pct',PCT,{color:m.color||GRN});
+         if(kid&&EXP[tk])h+=renderLvl(m.cl,m.f,rest,depth+1,tk,arr);});
        return h;};
      const DLB={cat:'Category',src:'Source',city:'City',clinic:'Clinic',subcat:'Sub-category'};
      const opt=(excl,none,sub)=>{let ds=['cat','src','city','clinic'].filter(d=>excl.indexOf(d)<0);if(sub&&excl.indexOf('subcat')<0)ds.push('subcat');const b=ds.map(d=>[d,(none?'× ':'')+DLB[d]]);return none?[['none','— none —']].concat(b):b;};
      const sel=(fn,cur,list)=>'<select onchange="'+fn+'(this.value)" style="font-size:11.5px;border:1px solid var(--line);border-radius:6px;padding:3px 8px;margin-left:6px;background:#fff;font-family:Inter;font-weight:600;color:var(--accent);cursor:pointer">'+list.map(o=>'<option value="'+o[0]+'"'+(cur===o[0]?' selected':'')+'>'+o[1]+'</option>').join('')+'</select>';
      if(_cb)_cb.innerHTML='<span style="font-size:10px;font-weight:700;letter-spacing:.05em;color:var(--muted)">BREAK DONE BY</span>'+sel('setDBRK',DBRK,opt([],false,false))+sel('setDCRS',DCRS,opt([DBRK],true,DBRK==='cat'))+(DCRS!=='none'?sel('setDCR3',DCR3,opt([DBRK,DCRS],true,DBRK==='cat'||DCRS==='cat')):'');
-     O+=renderLvl(clinics,{},chain,1,'ddrill');
+     O+=renderLvl(clinics,{},chain,1,'ddrill',dtot);
    } else if(_cb)_cb.innerHTML='';}
   const offPu=clinics.reduce((a,x)=>addv(a,Fn.purchN(x.data)||ZA),ZA.slice()),onlPu=(onlBot.total||{}).purchased||ZA;
   $('tOut').innerHTML=O;
