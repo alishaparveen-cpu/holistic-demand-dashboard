@@ -105,7 +105,14 @@ tr[onclick]:hover td:first-child{color:var(--accent)}
 .msi{display:flex;align-items:center;gap:6px;padding:3px 6px;border-radius:6px;font-size:12px;cursor:pointer;font-family:Inter}
 .msi:hover{background:var(--inset)}.msi .c{margin-left:auto;color:var(--muted);font-size:10.5px}
 .msact{display:flex;gap:10px;padding:2px 6px 6px;border-bottom:1px solid var(--line);margin-bottom:4px}
-.msact a{font-size:11px;color:var(--accent);cursor:pointer;font-weight:600}</style>
+.msact a{font-size:11px;color:var(--accent);cursor:pointer;font-weight:600}
+.mainnav{display:flex;gap:2px;margin:8px 0 16px;border-bottom:2px solid var(--line)}
+.mtab{background:none;border:none;border-bottom:2px solid transparent;margin-bottom:-2px;padding:9px 18px;font-family:Inter;font-size:14px;font-weight:600;color:var(--muted);cursor:pointer;transition:color .12s}
+.mtab:hover{color:var(--ink2)}
+.mtab.on{color:var(--accent);border-bottom-color:var(--accent)}
+.subnav{display:flex;gap:6px;margin:0 0 14px}
+.stab{background:var(--inset);border:1px solid var(--line);border-radius:8px;padding:6px 15px;font-family:Inter;font-size:13px;font-weight:600;color:var(--accent);cursor:pointer}
+.stab.on{background:var(--accent);color:#fff;border-color:var(--accent)}</style>
 </head>
 <body>
 <div class="wrap">
@@ -114,6 +121,7 @@ tr[onclick]:hover td:first-child{color:var(--accent)}
   </div>
   <h1 id="h1">Master Demand Sheet</h1>
   <div class="sub">The full country funnel with dynamic filters — pick <b>Tier / City / Clinic / Maturity</b> (maturity auto-selects the matching clinics) and everything rebases. Every row is the selected-scope total; <b>expand any row to see each clinic's contribution</b>. Heatmap green (high) → red (low); click a sparkline to zoom, or use Quick view.</div>
+  <div class="mainnav" id="mainNav"><button class="mtab on" data-mv="funnel" onclick="switchMain('funnel')">Country funnel</button><button class="mtab" data-mv="channel" onclick="switchMain('channel')">Channel view</button></div>
   <div class="filt">
     <button class="fbtn" id="ovBtn" onclick="setOverview()">◎ Overview · All India</button>
     <span class="fl" style="margin-left:8px">Tier</span>
@@ -134,6 +142,7 @@ tr[onclick]:hover td:first-child{color:var(--accent)}
   <div id="matNames" style="font-size:12px;color:var(--ink2);margin:0 0 10px;line-height:1.6;display:none"></div>
   <div id="qvWrap" style="display:none"></div>
   <div id="tables">
+  <div id="viewFunnel">
   <div class="shead">① Leads <span class="lblmuted">(fresh <b>new</b> leads each week — a phone's first-ever lead — by source, with how many booked same-week / later / never · <b>national</b>, no clinic split)</span></div>
   <div class="fmwrap"><table class="fm" id="tLeads"></table></div>
 
@@ -158,12 +167,16 @@ tr[onclick]:hover td:first-child{color:var(--accent)}
 
   <div class="shead">⑦ Availability <span class="lblmuted">(bookable roster — expand to see each clinic)</span></div>
   <div class="fmwrap"><table class="fm" id="tAvail"></table></div>
+  </div><!-- /viewFunnel -->
+  <div id="viewChannel" style="display:none">
+  <div class="subnav"><button class="stab on">🔵 Google Ads</button></div>
   <div class="shead">⑧ Google Ads funnel <span class="lblmuted">(impressions → clicks → location-clicks → conversions · Google's own metrics, <b>city-level</b> — follows the City/Tier filter but not clinic/maturity. Break by City or Category to see where STI/SH/MH moved.)</span></div>
   <div id="gadsCtlBar" style="font-size:12px;color:var(--ink2);margin:0 2px 8px;min-height:26px;display:flex;align-items:center;gap:2px;flex-wrap:wrap"></div>
   <div class="fmwrap"><table class="fm" id="tGads"></table></div>
   <div class="shead">⑨ Google Ads — Cost &amp; Efficiency <span class="lblmuted">(<b>paid Google only</b> — spend = <b>22 tracked cities + national ONLINE</b>. Any brand / experimental campaigns not mapped to a tracked city are excluded, so this can read a little below the raw Google account total. <b>Cost per call</b> = city spend ÷ location-clicks. Lower is better.)</span></div>
   <div id="gcostCtlBar" style="font-size:12px;color:var(--ink2);margin:0 2px 8px;min-height:26px;display:flex;align-items:center;gap:2px;flex-wrap:wrap"></div>
   <div class="fmwrap"><table class="fm" id="tGcost"></table></div>
+  </div><!-- /viewChannel -->
   </div>
 </div>
 <div class="modal" id="modal"><div class="mbox"><div class="mhd"><span id="mTitle"></span><button id="pctTgl" class="pcttgl" onclick="togPct()" title="click to show % change between each point">＋&nbsp;% change</button><button id="brkTgl" class="pcttgl" style="display:none;margin-left:8px" onclick="togBrk()" title="click to overlay the sub-category lines">✕&nbsp;clear lines</button><button onclick="closeZ()">✕</button></div><div id="pickBar" class="pickbar"></div><div id="mBody"></div></div></div>
@@ -250,6 +263,9 @@ function sparkCell(cv,color,label,fmt,series){const idx=ZREG.length;const ser=(s
 function zoomReg(i){openZoom(ZREG[i]);}
 function zoomQV(i){openZoom(QVZ[i]);}
 let SHOWPCT=false;try{SHOWPCT=localStorage.getItem('zoomPct')==='1';}catch(e){}let CURZ=null;let SELSUB=new Set();function togBrk(){SELSUB=new Set();if(CURZ)openZoom(CURZ);}function toggleSubI(k){if(!CURZ||!CURZ.series||!CURZ.series[k])return;var l=CURZ.series[k].label;if(SELSUB.has(l))SELSUB.delete(l);else SELSUB.add(l);openZoom(CURZ);}let PICKA=null,PICKB=null;function pickPt(i){if(PICKA===null)PICKA=i;else if(PICKB===null){if(i===PICKA)PICKA=null;else PICKB=i;}else{PICKA=i;PICKB=null;}if(CURZ)openZoom(CURZ);}function clearPick(){PICKA=null;PICKB=null;if(CURZ)openZoom(CURZ);}let CMPMODE=false,CMPSEL=[];function toggleCmp(){CMPMODE=!CMPMODE;CMPSEL.forEach(function(x){x.td.classList.remove("cmpcell");});CMPSEL=[];var b=document.getElementById("cmpBtn");if(b)b.classList.toggle("on",CMPMODE);document.body.classList.toggle("cmpmode",CMPMODE);renderCmpBar();}function clearCmp(){CMPSEL.forEach(function(x){x.td.classList.remove("cmpcell");});CMPSEL=[];renderCmpBar();}function renderCmpBar(){var bar=document.getElementById("cmpBar");if(!bar)return;if(!CMPMODE){bar.style.display="none";return;}bar.style.display="flex";if(CMPSEL.length===2){var a=CMPSEL[0],b=CMPSEL[1];var pc=a.num?Math.round((b.num-a.num)/Math.abs(a.num)*100):0;var col=pc>0?"#1F6F5C":pc<0?"#B23A2E":"#52605A";bar.innerHTML=(a.row?"<b>"+a.row+"</b> &nbsp;":"")+"<span style='color:#1F6F5C'>"+a.col+"</span> "+a.txt+" \u2192 <span style='color:#C2691F'>"+b.col+"</span> "+b.txt+" &nbsp;<b style='color:"+col+";font-size:15px'>"+(pc>0?"+":"")+pc+"%</b> <span class='pclear' onclick='clearCmp()'>\u2715 clear</span>";}else if(CMPSEL.length===1){bar.innerHTML="Selected <b>"+CMPSEL[0].txt+"</b> \u2014 click another cell <span class='pclear' onclick='clearCmp()'>\u2715</span>";}else{bar.innerHTML="<span style='color:var(--muted)'>\u{1F4D0} Compare mode \u2014 click any two number cells for their % change</span> <span class='pclear' onclick='toggleCmp()'>done</span>";}}document.addEventListener("click",function(e){if(!CMPMODE)return;var td=e.target.closest&&e.target.closest("td");if(!td||!td.closest("table.fm"))return;if(td.cellIndex===0)return;var num=parseFloat(td.textContent.replace(/[^0-9.\-]/g,""));if(isNaN(num))return;e.preventDefault();e.stopPropagation();var hr=td.closest("table").querySelector("tr").cells[td.cellIndex];var col=hr?hr.textContent.replace(/\s*\u00d7\s*$/,"").trim():"";var row=td.parentNode.cells[0]?td.parentNode.cells[0].textContent.replace(/[\u25b8\u27f2\d]+$/,"").trim():"";var ix=-1;for(var k=0;k<CMPSEL.length;k++){if(CMPSEL[k].td===td)ix=k;}if(ix>=0){td.classList.remove("cmpcell");CMPSEL.splice(ix,1);renderCmpBar();return;}if(CMPSEL.length>=2){CMPSEL.forEach(function(x){x.td.classList.remove("cmpcell");});CMPSEL=[];}td.classList.add("cmpcell");CMPSEL.push({td:td,num:num,txt:td.textContent.trim(),col:col,row:row});renderCmpBar();},true);function togPct(){SHOWPCT=!SHOWPCT;try{localStorage.setItem('zoomPct',SHOWPCT?'1':'0');}catch(e){}if(CURZ)openZoom(CURZ);}
+/* main view tabs — Country funnel (①–⑦) vs Channel view · Google (⑧–⑨) */
+let MAINVIEW='funnel';
+function switchMain(v){MAINVIEW=v;document.querySelectorAll('.mtab').forEach(function(b){b.classList.toggle('on',b.getAttribute('data-mv')===v);});var f=document.getElementById('viewFunnel'),c=document.getElementById('viewChannel');if(f)f.style.display=(v==='funnel')?'':'none';if(c)c.style.display=(v==='channel')?'':'none';window.scrollTo(0,0);}
 /* ⊕ Combine mode — multiselect rows in any table → temporary Σ row + % of total */
 let COMBMODE=false,COMBSEL=[];
 function toggleComb(){COMBMODE=!COMBMODE;if(!COMBMODE)clearComb();var b=document.getElementById('combBtn');if(b)b.classList.toggle('on',COMBMODE);document.body.classList.toggle('combmode',COMBMODE);renderComb();}
