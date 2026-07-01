@@ -16,7 +16,7 @@ import patch_subcat as PS
 ROOT = PS.ROOT; OUT = os.path.join(ROOT, "data_source_recon.json")
 idx = PS.idx; Z = PS.Z; LO = PS.LO; run_sql = PS.run_sql
 # channel taxonomy aligned with bookings (source + organic_l2), so leads split into GMB / Google / Meta / Call-in / etc.
-SRCS = ["GMB", "Google Ads", "Meta", "Call-in (PCC)", "WhatsApp", "Walk-in", "Website", "Practo", "JustDial", "Organic (untagged)", "Other"]
+SRCS = ["GMB", "Google Ads", "Meta", "WhatsApp", "Walk-in", "Website", "Practo", "JustDial", "Organic (untagged)", "Other"]
 
 SQL = """WITH ld AS (
   SELECT phone_no1 ph, source, organic_l2, created_on_date::date d,
@@ -28,8 +28,7 @@ SQL = """WITH ld AS (
 SELECT TO_CHAR(fl.fwk,'YYYY-MM-DD') wk,
   CASE WHEN fl.source='Google' THEN 'Google Ads'
        WHEN fl.source IN ('Fb','Facebook','Instagram','Ig','Meta') THEN 'Meta'
-       WHEN fl.source='Organic' AND fl.organic_l2='Google Listing' THEN 'GMB'
-       WHEN fl.source='Organic' AND fl.organic_l2='PC-Inbound' THEN 'Call-in (PCC)'
+       WHEN fl.source='Organic' AND fl.organic_l2 IN ('Google Listing','PC-Inbound') THEN 'GMB'
        WHEN fl.source='Organic' AND fl.organic_l2='WA-Inbound' THEN 'WhatsApp'
        WHEN fl.source='Organic' AND fl.organic_l2='Walk In' THEN 'Walk-in'
        WHEN fl.source='Organic' AND fl.organic_l2 IN ('Clinic Page','Doctor','Doctor Pages','Sexologist','Treatment Page','Login Page','Healthfeed','Webbot','Homepage','Blog','STD Testing','Assessment Page') THEN 'Website'
