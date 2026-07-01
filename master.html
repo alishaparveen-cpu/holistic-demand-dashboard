@@ -169,9 +169,10 @@ tr[onclick]:hover td:first-child{color:var(--accent)}
 <div id="combBar" class="cmpbar"></div>
 <script>
 let D=null,CUR=null;let NSHOW=26;let WKEND=1;let W0=1;let SHOWPARTIAL=false;let ZREG=[];let EXP={};
-let DBRK='cat',DCRS='none';   // ④ Done breakdown: primary dimension × optional cross (dropdown-driven)
-function setDBRK(v){DBRK=v;if(DBRK===DCRS)DCRS='none';render();}
-function setDCRS(v){DCRS=v;render();}
+let DBRK='cat',DCRS='none',DCR3='none';   // ④ Done breakdown: up to 3 nested dimensions
+function setDBRK(v){DBRK=v;if(DCRS===v)DCRS='none';if(DCR3===v||DCR3===DCRS)DCR3='none';render();}
+function setDCRS(v){DCRS=v;if(v==='none'||DCR3===v)DCR3='none';render();}
+function setDCR3(v){DCR3=v;render();}
 let PBRK='cat',PCRS='none';function setPBRK(v){PBRK=v;if(PBRK===PCRS)PCRS='none';render();}function setPCRS(v){PCRS=v;render();}   // ⑤ Purchased
 let RBRK='product',RCRS='none';function setRBRK(v){RBRK=v;if(RBRK===RCRS)RCRS='none';render();}function setRCRS(v){RCRS=v;render();}   // ⑥ Revenue
 let BBRK='cohort',BCRS='none';function setBBRK(v){BBRK=v;render();}function setBCRS(v){BCRS=v;render();}   // ③ Bookings: Break by Channel|Clinic|Cohort × cross (other dim | none)
@@ -637,17 +638,30 @@ function render(){
    O+=row('Done (completed consults)',dtot,'grp',N,{color:GRN});
    const _cb=$('doneCtlBar');
    if(SEG!=='online'){
+     const dseries=(cl,f)=>{
+       if(f.subcat)return cl.reduce((a,x)=>addv(a,((x.data.bottom.by_subcat||{})[f.subcat]||{}).done||ZA),ZA.slice());
+       if(f.cat&&f.srcKeys)return cl.reduce((a,x)=>{const cs=((x.data.done_cat_source||{})[f.cat])||{};return addv(a,f.srcKeys.reduce((b,k)=>addv(b,cs[k]||ZA),ZA.slice()));},ZA.slice());
+       if(f.cat)return cl.reduce((a,x)=>addv(a,((x.data.bottom.by_cat||{})[f.cat]||{}).done||ZA),ZA.slice());
+       if(f.srcKeys)return cl.reduce((a,x)=>addv(a,f.srcKeys.reduce((b,k)=>addv(b,((x.data.done_by_source||{})[k])||ZA),ZA.slice())),ZA.slice());
+       return cl.reduce((a,x)=>addv(a,x.data.bottom.done||ZA),ZA.slice());};
+     const membersOf=(dim,cl,f)=>{
+       if(dim==='cat')return CATS.map(ct=>({nm:ct,color:CATCOL[ct],cl,f:Object.assign({},f,{cat:ct})}));
+       if(dim==='src')return SRCG.map(g=>({nm:g[0],cl,f:Object.assign({},f,{srcKeys:g[1]})}));
+       if(dim==='city')return [...new Set(cl.map(x=>x.city))].sort().map(ci=>({nm:ci,cl:cl.filter(x=>x.city===ci),f}));
+       if(dim==='clinic')return cl.map(x=>({nm:dNm(x),cl:[x],f}));
+       if(dim==='subcat'&&f.cat)return subsForCat(f.cat).map(k=>({nm:subLbl(k.split('::')[1]||k),color:CATCOL[f.cat],cl,f:Object.assign({},f,{subcat:k})}));
+       return [];};
+     const chain=[DBRK,DCRS,DCR3].filter((d,i,a)=>d&&d!=='none'&&a.indexOf(d)===i);
+     const renderLvl=(cl,f,dims,depth,pk)=>{if(!dims.length)return '';const dim=dims[0],rest=dims.slice(1);let h='';
+       membersOf(dim,cl,f).forEach(m=>{const arr=dseries(m.cl,m.f);if(!arr.some(v=>v))return;const tk=pk+'_'+String(m.nm).replace(/[^a-z0-9]+/gi,'');const kid=rest.length>0;
+         h+=row('· '.repeat(depth)+m.nm,arr,depth===1?'sub':'sub2',N,{color:m.color||GRN,tkey:kid?tk:null});
+         if(kid&&EXP[tk])h+=renderLvl(m.cl,m.f,rest,depth+1,tk);});
+       return h;};
+     const DLB={cat:'Category',src:'Source',city:'City',clinic:'Clinic',subcat:'Sub-category'};
+     const opt=(excl,none,sub)=>{let ds=['cat','src','city','clinic'].filter(d=>excl.indexOf(d)<0);if(sub&&excl.indexOf('subcat')<0)ds.push('subcat');const b=ds.map(d=>[d,(none?'× ':'')+DLB[d]]);return none?[['none','— none —']].concat(b):b;};
      const sel=(fn,cur,list)=>'<select onchange="'+fn+'(this.value)" style="font-size:11.5px;border:1px solid var(--line);border-radius:6px;padding:3px 8px;margin-left:6px;background:#fff;font-family:Inter;font-weight:600;color:var(--accent);cursor:pointer">'+list.map(o=>'<option value="'+o[0]+'"'+(cur===o[0]?' selected':'')+'>'+o[1]+'</option>').join('')+'</select>';
-     const crossL=DBRK==='cat'?[['none','— no cross —'],['subcat','× Sub-category'],['src','× Source'],['clinic','× Clinic']]:DBRK==='src'?[['none','— no cross —'],['cat','× Category'],['clinic','× Clinic']]:[['none','— no cross —'],['cat','× Category'],['src','× Source']];
-     if(_cb)_cb.innerHTML='<span style="font-size:10px;font-weight:700;letter-spacing:.05em;color:var(--muted)">BREAK DONE BY</span>'+sel('setDBRK',DBRK,[['cat','Category'],['src','Source'],['clinic','Clinic']])+sel('setDCRS',DCRS,crossL);
-     const emit=(members,crossFn)=>{members.forEach(m=>{if(!m.arr.some(v=>v))return;const c=m.color||GRN;
-       const tk='dbrk_'+String(m.nm).replace(/[^a-z0-9]+/gi,'');
-       O+=row('· '+m.nm,m.arr,'sub',N,{color:c,tkey:(DCRS==='none'?null:tk)});
-       if(DCRS!=='none'&&EXP[tk])crossFn(m).forEach(s=>{if(s.arr.some(v=>v))O+=row('· · '+s.nm,s.arr,'sub2',N,{color:s.color||c});});
-     });};
-     if(DBRK==='cat')emit(CATS.map(ct=>({nm:ct,arr:catO(ct,'done'),color:CATCOL[ct]})),m=>DCRS==='subcat'?subsForCat(m.nm).map(k=>({nm:subLbl(k.split('::')[1]||k),arr:subO(k,'done')})):DCRS==='src'?SRCG.map(g=>({nm:g[0],arr:dCatSrc(m.nm,g[1])})):clinics.map(x=>({nm:dNm(x),arr:dCatCl(m.nm,x)})));
-     else if(DBRK==='src')emit(SRCG.map(g=>({nm:g[0],arr:dSrc(g[1]),keys:g[1]})),m=>DCRS==='cat'?CATS.map(ct=>({nm:ct,arr:dCatSrc(ct,m.keys),color:CATCOL[ct]})):clinics.map(x=>({nm:dNm(x),arr:dSrcCl(m.keys,x)})));
-     else emit(clinics.map(x=>({nm:dNm(x),arr:x.data.bottom.done||ZA,x:x})),m=>DCRS==='cat'?CATS.map(ct=>({nm:ct,arr:dCatCl(ct,m.x),color:CATCOL[ct]})):SRCG.map(g=>({nm:g[0],arr:dSrcCl(g[1],m.x)})));
+     if(_cb)_cb.innerHTML='<span style="font-size:10px;font-weight:700;letter-spacing:.05em;color:var(--muted)">BREAK DONE BY</span>'+sel('setDBRK',DBRK,opt([],false,false))+sel('setDCRS',DCRS,opt([DBRK],true,DBRK==='cat'))+(DCRS!=='none'?sel('setDCR3',DCR3,opt([DBRK,DCRS],true,DBRK==='cat'||DCRS==='cat')):'');
+     O+=renderLvl(clinics,{},chain,1,'ddrill');
    } else if(_cb)_cb.innerHTML='';}
   const offPu=clinics.reduce((a,x)=>addv(a,Fn.purchN(x.data)||ZA),ZA.slice()),onlPu=(onlBot.total||{}).purchased||ZA;
   $('tOut').innerHTML=O;
