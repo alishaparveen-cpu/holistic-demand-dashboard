@@ -176,7 +176,7 @@ tr[onclick]:hover td:first-child{color:var(--accent)}
   <div id="revCtlBar" style="font-size:12px;color:var(--ink2);margin:0 2px 8px;min-height:26px;display:flex;align-items:center;gap:2px;flex-wrap:wrap"></div>
   <div class="fmwrap"><table class="fm" id="tRev"></table></div>
 
-  <div class="shead">⑦ Availability <span class="lblmuted">(bookable roster — expand to see each clinic)</span></div>
+  <div class="shead">⑦ Availability <span class="lblmuted">(roster capacity — <b>active days</b> (weekday/weekend) → opened → <b>net hrs after shrinkage</b> → <b>SC net available hrs</b> · realized roster (is_realized=1), matches the ops roster funnel. Booking velocity ties a booking drop back to capacity.)</span></div>
   <div class="fmwrap"><table class="fm" id="tAvail"></table></div>
   </div><!-- /viewFunnel -->
   <div id="viewChannel" style="display:none">
@@ -773,12 +773,32 @@ function render(){
      else emit(cities.map(ci=>({nm:ci,arr:cityRev(ci,clRev)})),m=>RCRS==='product'?RP.map(p=>({nm:RPL[p],arr:cityRev(m.nm,x=>clProd(x,p))})):RCRS==='clinic'?clinics.filter(x=>x.city===m.nm).map(x=>({nm:dNm(x),arr:clRev(x)})):CATS.map(ct=>({nm:ct,arr:cityRev(m.nm,x=>clCat(x,ct)),color:CATCOL[ct]})));
    } else if(_rb)_rb.innerHTML='';
    $('tRev').innerHTML=R;}
-  // ⑤ Availability
-  QVTABLE='⑤ Availability';let AV=head('Availability');
+  // ⑦ Availability — roster: active days (wd/we) → opened→shrinkage→net-after → SC net available → velocity
+  QVTABLE='⑦ Availability';let AV=head('Availability · roster');
   if(SEG==='online'){AV+=row('— telehealth has no physical roster —',null,'sub',N);}
-  else{AV+=mrow('Available slots',F.slots,'grp',N,{color:BLU});
-  AV+=mrow('Available hours',F.hrs,'grp',N,{color:BLU});
-  AV+=mrow('Available days',F.days,'grp',N,{color:BLU});}
+  else{
+    const AR=f=>clinics.reduce((a,x)=>{const ar=(x.data.avail_roster||{})[f];return ar?addv(a,ar):a;},ZA.slice());
+    const opened=AR('opened'),shrink=AR('shrink'),after=AR('after_shrink'),scNet=AR('sc_net'),fuNet=AR('fu_net'),dead=AR('dead'),awd=AR('active_wkday'),awe=AR('active_wkend');
+    const N1=v=>v==null||isNaN(v)?'—':(Math.round(v*10)/10).toLocaleString('en-IN');
+    const velo=(a,b)=>a.map((v,i)=>b[i]?v/b[i]:null);
+    const bk=clinics.reduce((a,x)=>addv(a,Fn.bookedD(x.data)||ZA),ZA.slice());
+    const dn=clinics.reduce((a,x)=>addv(a,Fn.doneN(x.data)||ZA),ZA.slice());
+    // 1) Active days — weekday / weekend
+    AV+=row('Active days (clinic open >1h)',addv(awd,awe),'grp',N,{color:GRN});
+    AV+=row('· weekday',awd,'sub',N,{color:GRN});
+    AV+=row('· weekend',awe,'sub',N,{color:GRN});
+    // 2) Opened → shrinkage → net available after shrinkage
+    AV+=row('Opened hours',opened,'grp',N1,{color:BLU,tkey:'av_open'});
+    if(EXP['av_open']){AV+=row('· shrinkage hrs',shrink,'sub',N1,{color:'#B23A2E'});AV+=row('· shrinkage %',pctOf(shrink,opened),'sub',PCT,{color:VIO});}
+    AV+=row('Net available hrs · after shrinkage',after,'grp',N1,{color:BLU});
+    // 3) Screening-call net available hours
+    AV+=row('Screening-call net available hrs',scNet,'grp',N1,{color:GRN,tkey:'av_sc'});
+    if(EXP['av_sc']){AV+=row('· follow-up net available hrs',fuNet,'sub',N1,{color:GRN});AV+=row('· dead time (after-shrink − net avail)',dead,'sub',N1,{color:'#b0752a'});}
+    // 4) Velocity — bookings/done per available SC hour (is a booking drop tied to availability?)
+    AV+=row('Booking velocity · bookings ÷ SC net hr',velo(bk,scNet),'grp',N1,{color:VIO,tkey:'av_vel'});
+    if(EXP['av_vel'])AV+=row('· Done velocity · done ÷ SC net hr',velo(dn,scNet),'sub',N1,{color:VIO});
+    AV+=row('ⓘ roster covers the last ~3 months; older weeks read 0',null,'sub',N,{noheat:true});
+  }
   $('tAvail').innerHTML=AV;
   // ⑥ Google Ads funnel — city → category → impr → clicks → loc-clicks → leads
   QVTABLE='⑧ Google Ads funnel';let G=head('Google Ads · campaign funnel');

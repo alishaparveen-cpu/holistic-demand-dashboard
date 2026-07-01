@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Weekly Diagnostic · earliest broken stage</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Fraunces:opsz,wght@9..144,500;9..144,600&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{--bg:#F6F4EE;--sheet:#fff;--inset:#F4F2EB;--ink:#1A2B26;--ink2:#52605A;--muted:#8A8A80;--faint:#B0A99A;
+    --line:#E5E2D9;--line2:#EEEBE2;--accent:#1F6F5C;--good:#1F6F5C;--bad:#B23A2E;--warn:#B8862E;--r:12px;
+    --gbg:#EAF1ED;--rbg:#FBEEEC;--abg:#FBF3E9;}
+  *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--ink);font:13px/1.45 'Inter',-apple-system,sans-serif}
+  .wrap{max-width:1080px;margin:0 auto;padding:20px 20px 90px}
+  a.back{font-size:12.5px;color:var(--muted);text-decoration:none}a.back:hover{color:var(--accent)}
+  h1{font-family:'Fraunces',serif;font-size:28px;font-weight:600;margin:8px 0 2px}
+  .sub{color:var(--muted);font-size:13px;margin-bottom:16px;max-width:820px}
+  .ctrls{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:16px}
+  .lab{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
+  select{background:#fff;color:var(--ink);border:1px solid var(--line);border-radius:9px;padding:7px 11px;font-size:13px;font-weight:600;font-family:Inter;cursor:pointer}
+  .verdict{background:var(--sheet);border:1px solid var(--line);border-left:4px solid var(--bad);border-radius:var(--r);padding:14px 18px;margin-bottom:18px}
+  .verdict.ok{border-left-color:var(--good)}
+  .verdict .vh{font-family:'Fraunces',serif;font-size:17px;font-weight:600;margin-bottom:3px}
+  .verdict .vd{color:var(--ink2);font-size:13px;line-height:1.55}
+  .funnel{display:flex;flex-direction:column;align-items:stretch;gap:0}
+  .stagerow{display:flex;align-items:stretch;gap:14px}
+  .stage{flex:1;background:var(--sheet);border:1px solid var(--line);border-left:4px solid var(--line);border-radius:var(--r);padding:13px 16px;cursor:pointer;transition:box-shadow .15s;display:flex;align-items:center;gap:14px}
+  .stage:hover{box-shadow:0 4px 16px rgba(0,0,0,.07)}
+  .stage.red{border-left-color:var(--bad);background:linear-gradient(90deg,var(--rbg),var(--sheet) 60%)}
+  .stage.amber{border-left-color:var(--warn);background:linear-gradient(90deg,var(--abg),var(--sheet) 60%)}
+  .stage.green{border-left-color:var(--good)}
+  .stage.dim{opacity:.5}
+  .snum{width:30px;height:30px;flex:none;border-radius:9px;background:var(--inset);color:var(--accent);font-family:'JetBrains Mono';font-weight:700;font-size:14px;display:flex;align-items:center;justify-content:center}
+  .stage.red .snum{background:var(--bad);color:#fff}.stage.amber .snum{background:var(--warn);color:#fff}.stage.green .snum{background:var(--good);color:#fff}
+  .sbody{flex:1;min-width:0}
+  .sname{font-weight:700;font-size:14px}.sname .cause{font-size:9.5px;font-weight:800;letter-spacing:.04em;color:#fff;background:var(--bad);border-radius:20px;padding:2px 8px;margin-left:8px;vertical-align:middle}
+  .sname .conseq{font-size:9.5px;font-weight:700;color:var(--muted);border:1px solid var(--line);border-radius:20px;padding:1px 7px;margin-left:8px;vertical-align:middle}
+  .ssub{color:var(--muted);font-size:11.5px;margin-top:1px}
+  .sval{text-align:right;font-family:'JetBrains Mono';flex:none;min-width:118px}
+  .sval .v{font-size:20px;font-weight:700}.sval .d{font-size:12px;font-weight:700;margin-top:1px}
+  .up{color:var(--good)}.down{color:var(--bad)}.flat{color:var(--muted)}
+  svg.sp{display:block}
+  .chip{flex:none;width:172px;border-radius:10px;padding:9px 12px;font-size:11.5px;line-height:1.4;border:1px solid var(--line);background:var(--sheet);color:var(--muted)}
+  .chip.red{border-color:#E6C5C0;background:var(--rbg);color:#7a2b22}.chip.amber{border-color:#E8D6B0;background:var(--abg);color:#7a5a12}
+  .chip b{display:block;font-size:12.5px;color:inherit;margin-bottom:1px}
+  .conn{height:16px;width:2px;background:var(--line);margin:0 auto}
+  .drill{background:var(--inset);border:1px solid var(--line);border-radius:10px;margin:3px 0 4px;padding:12px 16px;display:none}
+  .drill.open{display:block}
+  table.d{border-collapse:collapse;width:100%;font-size:12px}
+  table.d td,table.d th{padding:5px 9px;text-align:right;font-family:'JetBrains Mono';font-variant-numeric:tabular-nums;white-space:nowrap}
+  table.d td:first-child,table.d th:first-child{text-align:left;font-family:Inter;font-weight:600}
+  table.d thead th{font-family:'JetBrains Mono';font-size:9px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:600;border-bottom:1px solid var(--line)}
+  table.d td.last{color:var(--accent);font-weight:700}
+  .dhead{font-family:Fraunces;font-size:14px;font-weight:600;margin-bottom:7px}
+  .zero{color:var(--faint)}
+  .err{color:var(--bad);padding:30px;text-align:center}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <a class="back" href="index.html">← Dashboard</a>
+  <h1>Weekly Diagnostic</h1>
+  <div class="sub">Top-down clinic funnel — <b>Availability → Demand → Conversion → Velocity</b>. We flag the <b>earliest stage that breaks</b> (red); everything below a break is a likely <i>consequence</i>, not a separate problem. Click any stage to drill in. Compares the current window against a trailing baseline.</div>
+  <div class="ctrls">
+    <span class="lab">Clinic</span><select id="clinic"></select>
+    <span class="lab" style="margin-left:6px">Current</span><select id="curn"><option value="1">latest week</option><option value="3">last 3 weeks</option><option value="4">last 4 weeks</option></select>
+    <span class="lab" style="margin-left:6px">vs baseline</span><select id="basen"><option value="4">prior 4 weeks</option><option value="6">prior 6 weeks</option><option value="8">prior 8 weeks</option></select>
+  </div>
+  <div id="root"></div>
+</div>
+<script>
+let D=null, CURN=1, BASEN=4, C=null, OPEN={};
+const $=id=>document.getElementById(id);
+const mean=a=>{const b=a.filter(x=>x!=null);return b.length?b.reduce((x,y)=>x+y,0)/b.length:null;};
+const sum=a=>a.reduce((x,y)=>x+(y||0),0);
+function fmt(v,d){return v==null?'—':(d?(Math.round(v*10)/10):Math.round(v)).toLocaleString('en-IN');}
+// stage config: headline metric(s), diagnosis label, fix owner
+const STAGES=[
+  {key:'availability',num:1,name:'Availability',sub:'active days · roster hours',diag:'Clinic closed / fewer days',fix:'Ops · roster',
+   metrics:c=>[{nm:'active days',arr:c.availability.active_days,fmtd:0},{nm:'roster hours',arr:c.availability.hours,fmtd:1}],headline:0},
+  {key:'demand',num:2,name:'Demand',sub:'leads (by channel)',diag:'Channel break — GMB / Ads / Practo',fix:'Marketing',
+   metrics:c=>[{nm:'leads',arr:c.demand.leads,fmtd:0}],headline:0,byChannel:c=>c.demand.by_channel},
+  {key:'conversion',num:3,name:'Conversion',sub:'lead → book · book → done',diag:'Conversion drop — front-desk / follow-up',fix:'Clinic / PCC',
+   metrics:c=>[{nm:'lead→book %',arr:c.conversion.lead_book_pct,pct:1},{nm:'book→done %',arr:c.conversion.book_done_pct,pct:1}],headline:'worst'},
+  {key:'velocity',num:4,name:'Velocity',sub:'bookings / active day',diag:'Capacity limit — scheduling / staffing',fix:'Ops · staffing',
+   metrics:c=>[{nm:'bookings / active day',arr:c.velocity.per_active_day,fmtd:1},{nm:'bookings',arr:c.velocity.bookings,fmtd:0}],headline:0},
+];
+function evalMetric(arr){const NW=arr.length;const cur=mean(arr.slice(NW-CURN));const base=mean(arr.slice(Math.max(0,NW-CURN-BASEN),NW-CURN));
+  const d=(cur!=null&&base)?((cur-base)/base):null;const st=d==null?'green':d<=-0.15?'red':d<=-0.07?'amber':'green';return {cur,base,d,st};}
+function evalStage(st){const ms=st.metrics(C).map(m=>({...m,ev:evalMetric(m.arr)}));
+  let status='green';if(st.headline==='worst'){status=ms.some(m=>m.ev.st==='red')?'red':ms.some(m=>m.ev.st==='amber')?'amber':'green';}
+  else status=ms[st.headline].ev.st;
+  const hm=st.headline==='worst'?ms.slice().sort((a,b)=>(a.ev.d??0)-(b.ev.d??0))[0]:ms[st.headline];
+  return {ms,status,hm};}
+function spark(arr,col){const v=arr.map(x=>x==null?0:x);const n=v.length;const mx=Math.max(...v,1),mn=Math.min(...v,0),w=96,h=26,p=3;
+  const x=i=>p+i*(w-2*p)/(n-1),y=val=>h-p-((val-mn)/((mx-mn)||1))*(h-2*p);
+  const pts=v.map((val,i)=>x(i).toFixed(1)+','+y(val).toFixed(1)).join(' ');
+  return '<svg class="sp" width="'+w+'" height="'+h+'"><polyline fill="none" stroke="'+col+'" stroke-width="1.5" points="'+pts+'"/><circle cx="'+x(n-1).toFixed(1)+'" cy="'+y(v[n-1]).toFixed(1)+'" r="2.3" fill="'+col+'"/></svg>';}
+const COL={red:'var(--bad)',amber:'var(--warn)',green:'var(--good)'};
+function dpct(d){if(d==null)return '<span class="flat">—</span>';const p=Math.round(d*100);const cls=p>0?'up':p<0?'down':'flat';return '<span class="'+cls+'">'+(p>0?'+':'')+p+'%</span>';}
+
+function render(){
+  if(!C){$('root').innerHTML='';return;}
+  const NW=D.weeks.length, wl=D.week_labels;
+  const evs=STAGES.map(evalStage);
+  const firstRed=evs.findIndex(e=>e.status==='red');
+  // verdict
+  let vh,vd,vok=false;
+  if(firstRed<0){vok=true;vh='All stages healthy';vd='No stage dropped beyond threshold in the current window. Funnel is stable vs the trailing baseline.';}
+  else{const s=STAGES[firstRed],e=evs[firstRed],hm=e.hm;
+    vh='Earliest break: '+s.num+' · '+s.name;
+    vd='<b>'+s.diag+'.</b> '+cap(hm.nm)+' '+fmt(hm.ev.base,hm.fmtd||hm.pct?1:0)+(hm.pct?'%':'')+' → '+fmt(hm.ev.cur,hm.fmtd||hm.pct?1:0)+(hm.pct?'%':'')+' ('+Math.round(hm.ev.d*100)+'%). '
+      +(firstRed<STAGES.length-1?'Stages below may be a <i>consequence</i> — fix this first ('+s.fix+') before reading downstream reds.':'This is the last stage — likely a real '+s.name.toLowerCase()+' constraint.');}
+  let h='<div class="verdict'+(vok?' ok':'')+'"><div class="vh">'+vh+'</div><div class="vd">'+vd+'</div></div>';
+  h+='<div class="funnel">';
+  STAGES.forEach((s,i)=>{const e=evs[i],hm=e.hm;const isCause=(i===firstRed);const isConseq=(firstRed>=0&&i>firstRed&&e.status!=='green');
+    const tag=isCause?'<span class="cause">ROOT CAUSE</span>':(isConseq?'<span class="conseq">likely consequence</span>':'');
+    const dimc=(firstRed>=0&&i>firstRed)?' dim':'';
+    h+='<div class="stagerow"><div class="stage '+e.status+dimc+'" onclick="tog(\''+s.key+'\')">'
+      +'<div class="snum">'+s.num+'</div>'
+      +'<div class="sbody"><div class="sname">'+s.name+tag+'</div><div class="ssub">'+s.sub+'</div></div>'
+      +'<div class="sval"><div class="v">'+fmt(hm.ev.cur,hm.fmtd||(hm.pct?1:0))+(hm.pct?'%':'')+'</div><div class="d">'+dpct(hm.ev.d)+'</div></div>'
+      +spark(hm.arr,COL[e.status])
+      +'</div>'
+      +'<div class="chip '+(e.status==='green'?'':e.status)+'"><b>'+s.diag.split(' — ')[0]+'</b>'+(s.diag.includes(' — ')?s.diag.split(' — ')[1]:'')+' · <span style="color:var(--muted)">fix: '+s.fix+'</span></div>'
+      +'</div>';
+    h+=drill(s,e);
+    if(i<STAGES.length-1)h+='<div class="conn"></div>';
+  });
+  h+='</div>';
+  $('root').innerHTML=h;
+}
+function drill(s,e){
+  const wl=D.week_labels,NW=D.weeks.length,show=Math.min(NW,8);
+  let h='<div class="drill'+(OPEN[s.key]?' open':'')+'" id="dr_'+s.key+'">';
+  h+='<div class="dhead">'+s.num+' · '+s.name+' — recent '+show+' weeks</div>';
+  h+='<table class="d"><thead><tr><th></th>'+wl.slice(NW-show).map((l,i)=>'<th class="'+(i===show-1?'last':'')+'">'+l+'</th>').join('')+'<th>trend</th></tr></thead><tbody>';
+  const rowFor=(nm,arr,pct,fmtd,col)=>{const a=arr.slice(NW-show);return '<tr><td>'+nm+'</td>'+a.map((v,i)=>'<td class="'+(i===a.length-1?'last':'')+'">'+(v==null?'<span class="zero">·</span>':fmt(v,fmtd||(pct?1:0))+(pct?'%':''))+'</td>').join('')+'<td>'+spark(arr,col||'var(--ink2)')+'</td></tr>';};
+  e.ms.forEach(m=>{h+=rowFor(m.nm,m.arr,m.pct,m.fmtd,COL[m.ev.st]);});
+  if(s.byChannel){const bc=s.byChannel(C);Object.keys(bc).forEach(ch=>{if(sum(bc[ch]))h+=rowFor('· '+ch,bc[ch],0,0);});}
+  if(s.key==='conversion'){h+=rowFor('booked (denom)',C.conversion.booked,0,0);h+=rowFor('done',C.conversion.done,0,0);}
+  h+='</tbody></table></div>';
+  return h;
+}
+function tog(k){OPEN[k]=!OPEN[k];const el=$('dr_'+k);if(el)el.classList.toggle('open',OPEN[k]);}
+function cap(s){return s.charAt(0).toUpperCase()+s.slice(1);}
+async function boot(){
+  try{D=await fetch('data_weekly_diag.json').then(r=>r.json());}
+  catch(e){$('root').innerHTML='<div class="err">Failed to load data_weekly_diag.json</div>';return;}
+  const ks=Object.keys(D.clinics);
+  $('clinic').innerHTML=ks.map(s=>'<option value="'+s+'">'+D.clinics[s].disp+'</option>').join('');
+  $('clinic').onchange=()=>{C=D.clinics[$('clinic').value];OPEN={};render();};
+  $('curn').onchange=()=>{CURN=+$('curn').value;render();};
+  $('basen').onchange=()=>{BASEN=+$('basen').value;render();};
+  C=D.clinics[ks[0]];render();
+}
+window.addEventListener('DOMContentLoaded',boot);
+</script>
+</body>
+</html>
