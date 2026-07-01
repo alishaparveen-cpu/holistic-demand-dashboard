@@ -133,25 +133,27 @@ function setCrs(st,v){CRS[st]=v;render();}
 function stageBrk(st,cl,meas,allowCat,fmt){
   fmt=fmt||fmtN;
   const brk=BRK[st]||(allowCat?'cat':'chan'), crs=CRS[st]||'none';
-  const dims=allowCat?[['chan','Channel'],['cat','Category'],['clinic','Clinic']]:[['chan','Channel'],['clinic','Clinic']];
+  const dims=allowCat?[['chan','Channel'],['cat','Category'],['city','City'],['clinic','Clinic']]:[['chan','Channel'],['city','City'],['clinic','Clinic']];
   const crossOf=(b)=>{const o=[['none','— none —']];dims.forEach(d=>{if(d[0]!==b)o.push([d[0],'× '+d[1]]);});if(!allowCat&&b!=='status')o.push(['status','✓/✗ Done vs Not']);if(meas==='booked')o.push(['status','✓/✗ Done vs Not']);return o.filter((v,i,a)=>a.findIndex(x=>x[0]===v[0])===i);};
   const sel=(fn,cur,list)=>'<select onchange="'+fn+'(\''+st+'\',this.value)">'+list.map(o=>'<option value="'+o[0]+'"'+(cur===o[0]?' selected':'')+'>'+o[1]+'</option>').join('')+'</select>';
   let h='<tr><td colspan="60" style="background:var(--card2);padding:5px 10px;text-align:left"><span class="lab">break by</span> '+sel('setBrk',brk,dims)+' '+sel('setCrs',crs,crossOf(brk))+'</td></tr>';
   // members of the primary dim
-  const members=brk==='chan'?CHAN_ORDER.map(ch=>({nm:ch,ch})):brk==='cat'?CATS.map(ct=>({nm:ct,ct,col:CATCOL[ct]})):cl.map(c=>({nm:c.disp,cl:c}));
-  const memArr=(m)=>{
-    if(m.ch!=null)return agg(cl,c=>(c.chan[m.ch]||{})[meas]);
-    if(m.ct!=null)return agg(cl,c=>{let a=ZA();for(const ch in c.chan_cat)a=add(a,((c.chan_cat[ch][m.ct])||{})[meas]);return a;});
-    return (m.cl.tot[meas])||ZA();  // clinic
-  };
-  const crossRows=(m)=>{
-    if(crs==='status'){const bk=(m.ch!=null?agg(cl,c=>(c.chan[m.ch]||{}).booked):m.cl?m.cl.tot.booked:memArr(m));const dn=(m.ch!=null?agg(cl,c=>(c.chan[m.ch]||{}).done_ever):m.cl?m.cl.tot.done_ever:ZA());
-      return [{nm:'✓ done',arr:dn,col:'var(--good)'},{nm:'✗ not done',arr:bk.map((v,i)=>Math.max(0,v-(dn[i]||0))),col:'var(--bad)'}];}
-    if(crs==='chan')return CHAN_ORDER.map(ch=>({nm:ch,arr:m.ct!=null?agg(cl,c=>((c.chan_cat[ch]||{})[m.ct]||{})[meas]):m.cl?((m.cl.chan[ch]||{})[meas]):ZA()}));
-    if(crs==='cat')return CATS.map(ct=>({nm:ct,col:CATCOL[ct],arr:m.ch!=null?agg(cl,c=>((c.chan_cat[m.ch]||{})[ct]||{})[meas]):m.cl?agg([m.cl],c=>{let a=ZA();for(const ch in c.chan_cat)a=add(a,((c.chan_cat[ch][ct])||{})[meas]);return a;}):ZA()}));
-    if(crs==='clinic')return cl.map(c=>({nm:c.disp,arr:m.ch!=null?((c.chan[m.ch]||{})[meas]):m.ct!=null?(()=>{let a=ZA();for(const ch in c.chan_cat)a=add(a,((c.chan_cat[ch][m.ct])||{})[meas]);return a;})():ZA()}));
-    return [];
-  };
+  const cities=[...new Set(cl.map(c=>c.city))].sort();
+  const members=brk==='chan'?CHAN_ORDER.map(ch=>({nm:ch,ch})):brk==='cat'?CATS.map(ct=>({nm:ct,ct,col:CATCOL[ct]})):brk==='city'?cities.map(ci=>({nm:ci,city:ci})):cl.map(c=>({nm:c.disp,cl:c}));
+  const memCl=m=>m.cl?[m.cl]:m.city!=null?cl.filter(c=>c.city===m.city):cl;   // clinics in this member's scope
+  const mval=(clset,ch,ct,ms)=>{ms=ms||meas;   // measure over a clinic-set, optionally filtered to channel and/or category
+    if(ch&&ct)return agg(clset,c=>((c.chan_cat[ch]||{})[ct]||{})[ms]);
+    if(ch)return agg(clset,c=>(c.chan[ch]||{})[ms]);
+    if(ct)return agg(clset,c=>{let a=ZA();for(const k in c.chan_cat)a=add(a,((c.chan_cat[k][ct])||{})[ms]);return a;});
+    return agg(clset,c=>c.tot[ms]);};
+  const memArr=m=>mval(memCl(m),m.ch,m.ct);
+  const crossRows=m=>{const mc=memCl(m);
+    if(crs==='status'){const bk=mval(mc,m.ch,m.ct,'booked'),dn=mval(mc,m.ch,m.ct,'done_ever');return [{nm:'✓ done',arr:dn,col:'var(--good)'},{nm:'✗ not done',arr:bk.map((v,i)=>Math.max(0,v-(dn[i]||0))),col:'var(--bad)'}];}
+    if(crs==='chan')return CHAN_ORDER.map(ch=>({nm:ch,arr:mval(mc,ch,m.ct)}));
+    if(crs==='cat')return CATS.map(ct=>({nm:ct,col:CATCOL[ct],arr:mval(mc,m.ch,ct)}));
+    if(crs==='city')return cities.map(ci=>({nm:ci,arr:mval(cl.filter(c=>c.city===ci),m.ch,m.ct)}));
+    if(crs==='clinic')return mc.map(c=>({nm:c.disp,arr:mval([c],m.ch,m.ct)}));
+    return [];};
   members.forEach(m=>{const arr=memArr(m);if(!arr.some(v=>v))return;const tk='b_'+st+'_'+String(m.nm).replace(/[^a-z0-9]+/gi,'');const hasX=crs!=='none';
     h+=rowr('· '+m.nm,arr,'sub',fmt,hasX?tk:null,m.col);
     if(hasX&&EXP[tk])crossRows(m).forEach(r=>{if(r.arr.some(v=>v))h+='<tr class="sub2"><td style="padding-left:26px'+(r.col?';color:'+r.col:'')+'">· · '+r.nm+'</td>'+cellsInline(r.arr,fmt)+'</tr>';});
