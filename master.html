@@ -639,12 +639,17 @@ function render(){
   O+=row('Done → Purchased %',pctOf(segArr(offPu,onlPu),segArr(offDn,onlDn)),'sub',PCT,{color:GRN});
   O+=ocatRow('Purchased','purchased',N);
   // Revenue → category → product (line-item based; product nests inside each category)
-  {const RP=['drug','lab','consultation','other'],RPL={drug:'Medicines (pharmacy)',lab:'Lab / tests',consultation:'Consultation',other:'Other'};
+  {const RP=['drug','lab','consultation','other'],RPL={drug:'Medicines (pharmacy)',lab:'Lab / tests',consultation:'Consultation / therapy',other:'Other'};
    const cpSeg=(cat,p)=>segArr(clinics.reduce((a,x)=>addv(a,(((x.data.bottom.rev_cp||{})[cat]||{})[p])||ZA),ZA.slice()),(((onlBot.rev_cp||{})[cat]||{})[p])||ZA);
    const catTot=cat=>RP.reduce((a,p)=>addv(a,cpSeg(cat,p)),ZA.slice());
+   const prodTot=p=>CATS.reduce((a,c)=>addv(a,cpSeg(c,p)),ZA.slice());   // one product summed across all categories
    const revTot=CATS.reduce((a,c)=>addv(a,catTot(c)),ZA.slice());
    const revHead=revTot.some(v=>v)?revTot:segArr(clinics.reduce((a,x)=>addv(a,x.data.bottom.rev||ZA),ZA.slice()),(onlBot.total||{}).rev||ZA);
    O+=row('Revenue',revHead,'grp',RUP,{color:GRN,tkey:'oc_rev'});
+   // ── direct product split (Medicines / Lab tests / Consultation-therapy) — the headline revenue mix ──
+   O+=row('· by product ▾',revHead,'sub',RUP,{color:GRN,tkey:'oc_revprod'});
+   if(EXP['oc_revprod']||CATMODE){const prodOrder=RP.map(p=>[p,prodTot(p)]).filter(x=>x[1].some(v=>v)).sort((a,b)=>(b[1][WKEND]||0)-(a[1][WKEND]||0));
+     prodOrder.forEach(([p,a])=>{const sc=CATMODE?'sub2 catrow':'sub2';O+=row('· · '+RPL[p],a,sc,RUP,{color:GRN});O+=row('· · '+RPL[p]+' % of rev',pctOf(a,revTot),sc,PCT,{color:VIO});});}
    if(EXP['oc_rev']||CATMODE){CATS.forEach(cat=>{const ct=catTot(cat);if(!ct.some(v=>v))return;const cls=CATMODE?'sub catrow':'sub';
      O+=row('· '+cat,ct,cls,RUP,{color:CATCOL[cat],tkey:'rc_'+cat});O+=row('· '+cat+' % of rev',pctOf(ct,revTot),cls,PCT,{color:CATCOL[cat]});
      if(EXP['rc_'+cat]||CATMODE){RP.forEach(p=>{const a=cpSeg(cat,p);if(a.some(v=>v)){const sc=CATMODE?'sub2 catrow':'sub2';O+=row('· · '+RPL[p],a,sc,RUP,{color:GRN});O+=row('· · '+RPL[p]+' %',pctOf(a,ct),sc,PCT,{color:VIO});}});}
