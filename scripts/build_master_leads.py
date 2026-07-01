@@ -54,6 +54,23 @@ if __name__ == "__main__":
             by_src[src]["new_leads"][i] += int(float(nl)); by_src[src]["booked_same"][i] += int(float(bs))
             by_src[src]["booked_later"][i] += int(float(bl)); by_src[src]["never_booked"][i] += int(float(nb))
         except (ValueError, TypeError): continue
+    # fold in Practo — not in main_source_wise_leads; comes from the Practo marketplace sheet
+    # (per-clinic, clinic-attributed, recent ~12 weeks only). new_leads=leads, booked_same≈booked.
+    try:
+        pc = json.load(open(os.path.join(ROOT, "data_practo_conv.json")))
+        pw = pc["_meta"]["weeks"]
+        for k, v in pc.items():
+            if k == "_meta": continue
+            for wi, wk in enumerate(pw):
+                if wk not in idx: continue
+                i = idx[wk]
+                ld = (v.get("leads") or [0] * len(pw))[wi] if wi < len(v.get("leads", [])) else 0
+                bk = (v.get("booked") or [0] * len(pw))[wi] if wi < len(v.get("booked", [])) else 0
+                by_src["Practo"]["new_leads"][i] += ld
+                by_src["Practo"]["booked_same"][i] += bk
+                by_src["Practo"]["never_booked"][i] += max(0, ld - bk)
+    except Exception as e:
+        print("practo fold skipped:", e)
     total = {f: [sum(by_src[s][f][i] for s in SRCS) for i in range(len(Z()))] for f in FIELDS}
     d["_meta"]["master_leads"] = {"sources": SRCS, "by_source": by_src, "total": total,
         "note": "new lead = phone's first-ever lead, by first week; booked_same ties to new-this-week bookings; no geo split (unbooked leads have no clinic)"}
