@@ -107,23 +107,34 @@ def websrc_of(o,s,m,fb,su=''):
         return 'Organic web · other'
     return 'Direct / no-utm'
 
-def clinic_funnel(cfg):
+def clinic_funnel(cfg, booked_at=None):
+    booked_at=booked_at or {}
     loc=cfg['loc'].replace("'","''")
+    bt={'in':0,'out':0}   # shared-number BACKTRACK moves: leads corrected IN (booked here) / moved OUT (booked elsewhere)
     pcw={}; catwk={}; callraw={}   # callraw[(channel,ph,w)] = primary AI intent (per-channel, no cross-channel dedup)
     def pull(nums, channel, locf):
         if not nums: return
         inlist="','".join(nums)
-        lf=("AND ca.analysis.user_intent.locality_mentioned.is_our_locality=true "
-            "AND ca.analysis.user_intent.locality_mentioned.best_match::varchar='%s' "%loc) if locf else ""
+        # shared number (locf): pull WITHOUT the AI locality filter, then BACKTRACK per caller by where they booked
+        bmsel=(", MAX(ca.analysis.user_intent.locality_mentioned.best_match::varchar) bm") if locf else ""
         for r in q(f"""SELECT RIGHT(ec."from",10) ph, {WK%'ec.start_time'} w, COUNT(*) nc,
           SUM(CASE WHEN ca.analysis.user_intent.result::varchar IN ({REL}) AND COALESCE(ca.analysis.patient_intent_strength.result::varchar,'')<>'NOT_A_PATIENT' THEN 1 ELSE 0 END) nrel,
           LISTAGG(DISTINCT CASE WHEN ca.analysis.user_intent.result::varchar IN ({REL}) THEN ca.analysis.diagnoses.category::varchar END,',') cats,
-          LISTAGG(DISTINCT CASE WHEN COALESCE(ca.analysis.patient_intent_strength.result::varchar,'')<>'NOT_A_PATIENT' THEN ca.analysis.user_intent.result::varchar END,',') intents
+          LISTAGG(DISTINCT CASE WHEN COALESCE(ca.analysis.patient_intent_strength.result::varchar,'')<>'NOT_A_PATIENT' THEN ca.analysis.user_intent.result::varchar END,',') intents{bmsel}
           FROM allo_vendors.exotel_calls ec LEFT JOIN allo_analytics.call_analyses ca ON ca.call_id=ec.call_id AND ca.deleted_at IS NULL
           WHERE ec.direction='inbound' AND ec.routed_to='lead_to_call' AND RIGHT(ec.exotel_number,10) IN ('{inlist}')
-            {lf} AND (ec.start_time+INTERVAL '5 hours 30 minutes')>='{LO}' AND (ec.start_time+INTERVAL '5 hours 30 minutes')<'{HI}' GROUP BY 1,2"""):
+            AND (ec.start_time+INTERVAL '5 hours 30 minutes')>='{LO}' AND (ec.start_time+INTERVAL '5 hours 30 minutes')<'{HI}' GROUP BY 1,2"""):
             if len(r)<4 or r[1] not in idx: continue
             ph,w,nc,nrel=r[0],r[1],int(r[2]),int(r[3]); cats=(r[4] if len(r)>4 else '') or ''
+            if locf:                                    # BACKTRACK: shared number → credit the clinic they BOOKED at
+                bm=(r[6] if len(r)>6 else None); bset=booked_at.get(ph)
+                if bset and loc in bset:
+                    if bm!=loc: bt['in']+=1             # booking gives us a lead AI-locality would have missed
+                elif bset:                              # booked at another MH clinic → belongs there, not here
+                    if bm==loc: bt['out']+=1           # AI-locality credited us, but they booked elsewhere
+                    continue
+                else:                                   # never booked → no booking to backtrack, trust AI locality
+                    if bm!=loc: continue
             k=(ph,w); prev=pcw.get(k)
             if not prev or nc>prev[2]: pcw[k]=(channel,(nrel>0) or (prev[1] if prev else False),nc)
             elif nrel>0 and not prev[1]: pcw[k]=(prev[0],True,prev[2])
@@ -377,6 +388,8 @@ def clinic_funnel(cfg):
             li=lead_inst.get(ph); src=li[1] if li else other_source(ph)
         TAX[b].setdefault(src,Z())[i]+=1; taxt[b][i]+=1
     bookings['tax']={k:{'total':taxt[k],'by_source':TAX[k]} for k in TAXK}
+    leads['backtrack']={'shared_num':(cfg['google'] if (cfg['google'] and not cfg['google_solo']) else None),
+                        'corrected_in':bt['in'],'moved_out':bt['out']}
     nums={'GMB call':','.join(cfg['gmb']) or '—','Google call':cfg['google'] or '—','Organic call':','.join(cfg['organic']) or '—'}
     return {'disp':cfg['disp'],'city':cfg['city'],'loc':cfg['loc'],'numbers':nums,
             'google_shared':(not cfg['google_solo']) if cfg['google'] else None,'leads':leads,'bookings':bookings}
@@ -390,12 +403,22 @@ def main():
     if only and os.path.exists(p):
         try: base=json.load(open(p)); base.update({k:out[k] for k in out if k!='clinics'}); base.setdefault('clinics',{})
         except Exception: base=out
+    # GLOBAL: which MH clinic(s) each patient booked an SC at (window) — enables shared-number backtracking
+    locs=[cfg_of(s)['loc'] for s in RAW]; inloc="','".join(l.replace("'","''") for l in locs); booked_at={}
+    for r in q(f"""SELECT DISTINCT RIGHT(p.phone_no,10) ph, loc.locality
+      FROM allo_consultations.appointments a
+      JOIN allo_consultations.types t ON t.id=a.type_id AND t.name='Screening Call'
+      JOIN allo_health.locations loc ON loc.id=a.location_id AND loc.locality IN ('{inloc}') AND loc.deleted_at IS NULL
+      JOIN allo_persons.patient p ON p.id=a.patient_id
+      WHERE a.deleted_at IS NULL AND (a.created_at+INTERVAL '5 hours 30 minutes')>='{LO}'"""):
+        if len(r)>=2 and r[0]: booked_at.setdefault(r[0],set()).add(r[1])
+    print('booked_at map: %d patients'%len(booked_at))
     for slug in RAW:
         if only and slug!=only: continue
         cfg=cfg_of(slug)
         print('building %-12s gmb=%s google=%s(solo=%s) org=%s'%(slug,cfg['gmb'],cfg['google'],cfg['google_solo'],cfg['organic']))
         try:
-            f=clinic_funnel(cfg)
+            f=clinic_funnel(cfg, booked_at)
             if f:
                 base['clinics'][slug]=f
                 print('   ok leads=%d bookings=%d'%(sum(f['leads']['total']),sum(f['bookings']['total'])))
