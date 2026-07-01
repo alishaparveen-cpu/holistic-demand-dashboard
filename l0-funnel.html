@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>Offline Lead First Lens</title>
+<title>Purely New Patient Lead First View</title>
 <style>
   :root{--bg:#f8fafc;--card:#fff;--card2:#f1f5f9;--line:#e2e8f0;--ink:#0f172a;--mut:#64748b;--accent:#4338ca;
     --good:#1f6f5c;--bad:#b23a2e;--sti:#dc2626;--sh:#3e6f8e;--mh:#7c5cbf;--oth:#8a8a80;--sheet:#fbfbfa;--hl:#eef2ff;}
@@ -40,12 +40,14 @@
   .msi{display:flex;align-items:center;gap:7px;padding:4px 9px;font-size:12px;cursor:pointer;white-space:nowrap;border-radius:5px}
   .msi:hover{background:var(--card2)} .msi input{cursor:pointer} .msi .c{color:var(--mut);font-size:10.5px;margin-left:auto;padding-left:12px;font-variant-numeric:tabular-nums}
   .msgrp{font-size:9.5px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--mut);padding:6px 9px 2px}
+  td.sparkcell{text-align:center;padding:2px 6px!important;width:130px} svg.sp{display:block;margin:0 auto}
+  #clubN{min-width:16px;display:inline-block;text-align:center;font-weight:700;color:var(--accent)}
 </style>
 </head>
 <body>
 <div class="wrap">
   <a class="back" href="index.html">← Dashboard</a>
-  <h1>Offline Lead First Lens <span style="font-weight:500;color:var(--mut);font-size:14px">· L0 · new SC · book → done</span></h1>
+  <h1>Purely New Patient Lead First View <span style="font-weight:500;color:var(--mut);font-size:14px">· offline · new SC (phone_rank=1) · booking-week cohort</span></h1>
   <div class="sub">New screening calls (<b>phone_rank=1</b>, offline) by booking week, from <b>bookings_data_raw</b>. <b>Done = patient ever completed</b> (credits reschedules/rebookings — true conversion); the <i>first-attempt</i> book2done% is shown under it. <b>Purchased</b> = a real paid invoice; <b>Revenue</b> = money collected (incl. meds/labs). Category (STI / SH / <b>MH</b> / Other, with sub-types) is diagnosis-based — Done/Purchased/Revenue only, never Bookings. MH is <i>clinical</i> only (ICD-11; porn-addiction & performance-anxiety stay in SH). Break Category × Sub-category to drill in.</div>
   <div class="ctrls">
     <button class="fbtn" id="ovBtn" onclick="setOverview()">◎ Overview · All India</button>
@@ -57,14 +59,16 @@
     <div class="ms"><button class="fbtn" id="clinBtn" onclick="openMs(event,'Clin')">All clinics ▾</button><div class="mspanel" id="panelClin"></div></div>
     <span class="lab" style="margin-left:4px">Maturity</span>
     <button class="fbtn" data-v="<3mo" onclick="togMat(this)">&lt;3mo</button><button class="fbtn" data-v="3-6mo" onclick="togMat(this)">3–6mo</button><button class="fbtn" data-v="6-12mo" onclick="togMat(this)">6–12mo</button><button class="fbtn" data-v=">1yr" onclick="togMat(this)">&gt;1yr</button>
-    <span class="lab" style="margin-left:4px">Weeks</span><select id="weeks" onchange="setWk(this.value)"><option value="12">12</option><option value="26">26</option><option value="52">52</option></select>
+    <span class="lab" style="margin-left:4px">Weeks</span><select id="weeks" onchange="setWk(this.value)"><option value="4">4</option><option value="6">6</option><option value="12">12</option><option value="26">26</option><option value="52">52</option></select>
+    <span class="lab" style="margin-left:4px">Club</span><button class="fbtn" onclick="adjClub(-1)">−</button><b id="clubN">1</b><button class="fbtn" onclick="adjClub(1)">+</button>
+    <span class="lab" style="margin-left:4px">Δ vs</span><select id="cmp" onchange="setCmp(this.value)"><option value="avg">avg</option><option value="first">first</option><option value="peak">peak</option></select>
     <span id="cnt" class="lab" style="margin-left:auto;text-transform:none;font-weight:600"></span>
   </div>
   <div id="names" class="names"></div>
   <div class="fmwrap"><table class="fm" id="tbl"></table></div>
 </div>
 <script>
-let D=null, AGE={}, MATS=new Set(), CITY=new Set(), CLIN=new Set(), TIER=new Set(), NW=12, EXP={}, SUBS={};
+let D=null, AGE={}, MATS=new Set(), CITY=new Set(), CLIN=new Set(), TIER=new Set(), NW=4, CLUB=1, CMP='avg', EXP={}, SUBS={};
 const T1CITIES=new Set(['Bangalore','Mumbai','Pune','Hyderabad','Chennai']);
 function tierOf(city){return T1CITIES.has(city)?'T1':'T2';}
 const CATCOL={STI:'var(--sti)',SH:'var(--sh)',MH:'var(--mh)',Other:'var(--oth)'};
@@ -145,17 +149,27 @@ function renderClinicOptions(){
 }
 function allCity(on){const cities=[...new Set(Object.keys(D.clinics).filter(s=>!TIER.size||TIER.has(tierOf(D.clinics[s].city))).map(s=>D.clinics[s].city))];CITY=on?new Set(cities):new Set();[...CLIN].forEach(s=>{if(!baseKeysHas(s))CLIN.delete(s);});if(MATS.size)applyMatSelection();afterScope();}
 function allClin(on){CLIN=on?new Set(baseKeys()):new Set();afterScope();}
-function setWk(v){NW=+v;render();}
+function setWk(v){NW=+v;if(CLUB>NW)CLUB=1,$('clubN').textContent=1;render();}
+function adjClub(d){CLUB=Math.max(1,Math.min(Math.max(1,NW),CLUB+d));$('clubN').textContent=CLUB;render();}
+function setCmp(v){CMP=v;render();}
 function toggle(k){EXP[k]=!EXP[k];render();}
+// ---- week bucketing (club) + Δ + sparkline (ported from the city funnel) ----
+function bkts(arr){const a=arr.slice(52-NW);if(CLUB<=1)return a.slice();const o=[];for(let i=0;i<a.length;i+=CLUB)o.push(a.slice(i,i+CLUB).reduce((x,y)=>x+(y||0),0));return o;}
+function bktLabels(){const WK=D._meta.weeks.slice(52-NW),lab=D._meta.week_labels;const o=[];for(let i=0;i<WK.length;i+=CLUB){const ch=WK.slice(i,i+CLUB);
+  if(CLUB<=1||ch.length===1){o.push(lab[ch[0]]||ch[0]);continue;}
+  const f=(lab[ch[0]]||ch[0]).split('–')[0].trim(), l=(lab[ch[ch.length-1]]||ch[ch.length-1]).split('–').pop().trim();
+  o.push(f+'–'+l);}return o;}
+function deltaCell(v){if(v.length<2)return '<td></td>';const last=v[v.length-1];const b=CMP==='avg'?v.reduce((a,x)=>a+x,0)/v.length:CMP==='first'?v[0]:Math.max(...v);const d=b?Math.round(100*(last-b)/b):0;return '<td class="'+(d>0?'g':d<0?'r':'')+'" style="font-weight:700" title="latest vs '+CMP+'">'+(b?(d>0?'+':'')+d+'%':'—')+'</td>';}
+function spark(v){const n=v.length;if(n<2)return '<td class="sparkcell"></td>';const mx=Math.max(...v,1),mn=Math.min(...v,0),w=120,h=24,p=3;const x=i=>p+i*(w-2*p)/(n-1),y=val=>h-p-((val-mn)/((mx-mn)||1))*(h-2*p);const pts=v.map((val,i)=>x(i).toFixed(1)+','+y(val).toFixed(1)).join(' ');const col=v[n-1]>=v[0]?'var(--good)':'var(--bad)';return '<td class="sparkcell"><svg class="sp" width="'+w+'" height="'+h+'" viewBox="0 0 '+w+' '+h+'"><polyline fill="none" stroke="'+col+'" stroke-width="1.5" points="'+pts+'"/><circle cx="'+x(n-1).toFixed(1)+'" cy="'+y(v[n-1]).toFixed(1)+'" r="2.2" fill="'+col+'"/></svg></td>';}
 // aggregate a measure across selected clinics, via an accessor returning a weekly array per clinic
 function agg(cl,fn){return cl.reduce((a,c)=>add(a,fn(c)||ZA()),ZA());}
 
 const CHAN_ORDER=['GMB','Google Ads','Meta','Call-in (PCC)','Walk-in','Website','WhatsApp','Practo','JustDial','Organic (untagged)','Other','Untracked'];
 const CATS=['STI','SH','MH','Other'];
-function cells(arr,cls,fmt){fmt=fmt||fmtN;const a=sl(arr);let t=0;let s=a.map((v,i)=>{t+=v||0;return '<td class="'+(cls||'')+(i===a.length-1?' last':'')+'">'+(v?fmt(v):'<span class="zero">·</span>')+'</td>';}).join('');return s+'<td>'+fmt(t)+'</td>';}
+function cells(arr,cls,fmt){fmt=fmt||fmtN;const v=bkts(arr);let t=v.reduce((a,x)=>a+(x||0),0);let s=v.map((x,i)=>'<td class="'+(cls||'')+(i===v.length-1?' last':'')+'">'+(x?fmt(x):'<span class="zero">·</span>')+'</td>').join('');return s+'<td>'+fmt(t)+'</td>'+deltaCell(v)+spark(v);}
 function rowr(label,arr,cls,fmt,tk,col){const chev=tk?'<span class="chev" onclick="toggle(\''+tk+'\')">'+(EXP[tk]?'▾':'▸')+'</span> ':'';
   return '<tr class="'+(cls||'')+'"'+(tk?' style="cursor:pointer"':'')+'><td'+(col?' style="color:'+col+'"':'')+'>'+chev+label+'</td>'+cells(arr,'',fmt)+'</tr>';}
-function pctrow(label,num,den){const a=sl(num),b=sl(den);let tn=0,td=0;let s=a.map((v,i)=>{tn+=v||0;td+=b[i]||0;return '<td>'+(b[i]?pct(v,b[i])+'%':'<span class="zero">·</span>')+'</td>';}).join('');return '<tr class="pct"><td>'+label+'</td>'+s+'<td>'+(td?pct(tn,td)+'%':'—')+'</td></tr>';}
+function pctrow(label,num,den){const nb=bkts(num),db=bkts(den);const rates=nb.map((v,i)=>db[i]?100*v/db[i]:null);let tn=nb.reduce((a,x)=>a+x,0),td=db.reduce((a,x)=>a+x,0);let s=rates.map(r=>'<td>'+(r!=null?Math.round(r)+'%':'<span class="zero">·</span>')+'</td>').join('');const sv=rates.map(r=>r||0);return '<tr class="pct"><td>'+label+'</td>'+s+'<td>'+(td?pct(tn,td)+'%':'—')+'</td>'+deltaCell(sv)+spark(sv)+'</tr>';}
 
 function render(){
   const cl=selClinics();
@@ -164,8 +178,8 @@ function render(){
   if($('names')){ if(!CITY.size&&!CLIN.size&&!TIER.size&&!MATS.size){$('names').style.display='none';} else {
     $('names').innerHTML='<b>'+cl.length+' clinics:</b> '+cl.map(c=>c.disp).sort().join('  ·  '); $('names').style.display=''; } }
   // header
-  const WK=D._meta.weeks.slice(52-NW), lab=D._meta.week_labels;
-  let h='<thead><tr><th>Stage</th>'+WK.map((w,i)=>'<th class="'+(i===WK.length-1?'last':'')+'">'+lab[w]+'</th>').join('')+'<th>total</th></tr></thead><tbody>';
+  const BL=bktLabels();
+  let h='<thead><tr><th>Stage</th>'+BL.map((l,i)=>'<th class="'+(i===BL.length-1?'last':'')+'">'+l+'</th>').join('')+'<th>total</th><th title="latest vs '+CMP+'">Δ</th><th>trend</th></tr></thead><tbody>';
   // ---- STAGE 1: New Bookings (channel/clinic breakdown, no category) ----
   h+=rowr('① New bookings (SC)',agg(cl,c=>c.tot.booked),'stage');
   h+=stageBrk('bk',cl,'booked',false);
@@ -222,7 +236,7 @@ function stageBrk(st,cl,meas,allowCat,fmt){
   });
   return h;
 }
-function cellsInline(arr,fmt){fmt=fmt||fmtN;const a=arr.slice(52-NW);let t=0;return a.map((v,i)=>{t+=v||0;return '<td class="'+(i===a.length-1?'last':'')+'">'+(v?fmt(v):'<span class="zero">·</span>')+'</td>';}).join('')+'<td>'+fmt(t)+'</td>';}
+function cellsInline(arr,fmt){fmt=fmt||fmtN;const v=bkts(arr);let t=v.reduce((a,x)=>a+(x||0),0);return v.map((x,i)=>'<td class="'+(i===v.length-1?'last':'')+'">'+(x?fmt(x):'<span class="zero">·</span>')+'</td>').join('')+'<td>'+fmt(t)+'</td>'+deltaCell(v)+spark(v);}
 window.addEventListener('DOMContentLoaded',boot);
 </script>
 </body>
