@@ -262,14 +262,17 @@ function renderComb(){
     var nc=rowsSel[0].cells.length,sums=new Array(nc).fill(null);
     rowsSel.forEach(function(tr){for(var c=1;c<tr.cells.length&&c<nc;c++){var v=combNum(tr.cells[c]);if(v!=null)sums[c]=(sums[c]||0)+v;}});
     var labels=rowsSel.map(function(tr){return tr.cells[0].textContent.replace(/[▸⟲·]/g,'').trim();}).join(' + ');
-    var totR=combTotalRow(tb);
+    // total for the % row: the grp/tot header row if present, else column-sum of the member rows
+    var totR=combTotalRow(tb), totCells=new Array(nc).fill(null);
+    if(totR){for(var c=1;c<nc&&c<totR.cells.length;c++)totCells[c]=combNum(totR.cells[c]);}
+    else{for(var ri=0;ri<tb.rows.length;ri++){var rr=tb.rows[ri];if(/combtmp|pct/.test(rr.className)||!/(^|\s)sub(\s|$)/.test(rr.className))continue;for(var c=1;c<nc&&c<rr.cells.length;c++){var v=combNum(rr.cells[c]);if(v!=null)totCells[c]=(totCells[c]||0)+v;}}}
     var trS=tb.insertRow(-1);trS.className='combtmp';
     var h='<td style="font-weight:800;color:#4338ca">⊕ '+labels+'</td>';
     for(var c=1;c<nc;c++)h+='<td style="font-weight:700;color:#4338ca">'+(sums[c]==null?'':Math.round(sums[c]).toLocaleString('en-IN'))+'</td>';
     trS.innerHTML=h;
-    if(totR){var trP=tb.insertRow(-1);trP.className='combtmp';var p='<td style="color:#7c5cbf;font-style:italic">⊕ % of total</td>';
-      for(var c=1;c<nc;c++){var tv=combNum(totR.cells[c]);p+='<td style="color:#7c5cbf;font-style:italic">'+((sums[c]!=null&&tv)?Math.round(100*sums[c]/tv)+'%':'')+'</td>';}
-      trP.innerHTML=p;}
+    var trP=tb.insertRow(-1);trP.className='combtmp';var p='<td style="color:#7c5cbf;font-style:italic">⊕ % of total</td>';
+    for(var c=1;c<nc;c++){var tv=totCells[c];p+='<td style="color:#7c5cbf;font-style:italic">'+((sums[c]!=null&&tv)?Math.round(100*sums[c]/tv)+'%':'')+'</td>';}
+    trP.innerHTML=p;
   });
 }
 document.addEventListener('click',function(e){if(!COMBMODE)return;var td=e.target.closest&&e.target.closest('td');if(!td||!td.closest('table.fm'))return;if(td.cellIndex!==0)return;var tr=td.parentNode;if(!tr||tr.classList.contains('combtmp')||/(^|\s)(tot|gband|hd)(\s|$)/.test(tr.className))return;e.preventDefault();e.stopPropagation();var ix=COMBSEL.indexOf(tr);if(ix>=0){tr.classList.remove('combsel');COMBSEL.splice(ix,1);}else{tr.classList.add('combsel');COMBSEL.push(tr);}renderComb();},true);
