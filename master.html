@@ -162,6 +162,7 @@ tr[onclick]:hover td:first-child{color:var(--accent)}
   <div id="gadsCtlBar" style="font-size:12px;color:var(--ink2);margin:0 2px 8px;min-height:26px;display:flex;align-items:center;gap:2px;flex-wrap:wrap"></div>
   <div class="fmwrap"><table class="fm" id="tGads"></table></div>
   <div class="shead">⑨ Google Ads — Cost &amp; Efficiency <span class="lblmuted">(<b>paid Google only</b> — spend = <b>22 tracked cities + national ONLINE</b>. Any brand / experimental campaigns not mapped to a tracked city are excluded, so this can read a little below the raw Google account total. <b>Cost per call</b> = city spend ÷ location-clicks. Lower is better.)</span></div>
+  <div id="gcostCtlBar" style="font-size:12px;color:var(--ink2);margin:0 2px 8px;min-height:26px;display:flex;align-items:center;gap:2px;flex-wrap:wrap"></div>
   <div class="fmwrap"><table class="fm" id="tGcost"></table></div>
   </div>
 </div>
@@ -182,6 +183,7 @@ function setBBRK(v){BBRK=v;if(BCRS===v)BCRS='none';if(BCR3===v||BCR3===BCRS)BCR3
 function setBCRS(v){BCRS=v;if(v==='none'){BCR3='none';}else if(BCR3===v)BCR3='none';render();}
 function setBCR3(v){BCR3=v;render();}
 let GGBRK='city';function setGGBRK(v){GGBRK=v;render();}   // ⑧ Google Ads: break by City or Category
+let GCBRK='city';function setGCBRK(v){GCBRK=v;render();}   // ⑨ Google Cost: break by City or Category
 let QV=false,QVC=[],QVTABLE=null;let CATMODE=false;
 function toggleCat(){CATMODE=!CATMODE;if($('catBtn'))$('catBtn').classList.toggle('on',CATMODE);render();}
 let CMPB='avg';function setCmp(v){CMPB=v;render();}
@@ -796,19 +798,24 @@ function render(){
   GC+=row('· cost per call — ₹ / location-click (city)',costR(citySpend,locT),'sub',RUP,{color:GRN});
   GC+=row('· CPL — ₹ / paid lead (①, city)',costR(citySpend,googCountry),'sub',RUP,{color:GRN});
   GC+=row('· CPB — ₹ / paid booking (city)',costR(citySpend,googBk),'sub',RUP,{color:GRN});
-  // by category — cost per call by SH / STI / MH (founder's ask)
-  CATS.forEach(ct=>{const sp=catSum(ct,'spend');if(!sp.some(v=>v))return;
-    GC+=row(ct+' — spend',sp,'grp',RUP,{color:CATCOL[ct],tkey:'gcc_'+ct});
-    if(EXP['gcc_'+ct]||CATMODE){const cls=CATMODE?'sub catrow':'sub';
-      GC+=row('· cost per call',costR(sp,catSum(ct,'loc_clicks')),cls,RUP,{color:GRN});
-      GC+=row('· CPC',costR(sp,catSum(ct,'clicks')),cls,RUP,{color:VIO});
-      GC+=row('· CPL · paid lead',costR(sp,gpCat(ct)),cls,RUP,{color:GRN});}});
-  // by city (expandable)
-  gcc.forEach(ci=>{const sp=z0(RC[ci].spend);
-    GC+=row(ci+' — spend',sp,'gband',RUP,{color:BLU,tkey:'gcs_'+ci});
-    if(EXP['gcs_'+ci]){
-      GC+=row('· CPC',costR(sp,z0(RC[ci].clicks)),'sub',RUP,{color:VIO});
-      GC+=row('· cost per call',costR(sp,z0(RC[ci].loc_clicks)),'sub',RUP,{color:GRN});}});
+  {const _gc=$('gcostCtlBar');const gsel=(fn,cur,list)=>'<select onchange="'+fn+'(this.value)" style="font-size:11.5px;border:1px solid var(--line);border-radius:6px;padding:3px 8px;margin-left:6px;background:#fff;font-family:Inter;font-weight:600;color:var(--accent);cursor:pointer">'+list.map(o=>'<option value="'+o[0]+'"'+(cur===o[0]?' selected':'')+'>'+o[1]+'</option>').join('')+'</select>';
+   if(_gc)_gc.innerHTML='<span style="font-size:10px;font-weight:700;letter-spacing:.05em;color:var(--muted)">BREAK COST BY</span>'+gsel('setGCBRK',GCBRK,[['city','City'],['cat','Category']])+'<span style="color:var(--muted);margin-left:8px">· city campaigns only</span>';}
+  if(GCBRK==='cat'){
+    CATS.forEach(ct=>{const sp=catSum(ct,'spend');if(!sp.some(v=>v))return;
+      GC+=row(ct+' — spend',sp,'grp',RUP,{color:CATCOL[ct],tkey:'gcc_'+ct});
+      GC+=row('· '+ct+' % of city spend',pctOf(sp,citySpend),'sub',PCT,{color:CATCOL[ct]});
+      if(EXP['gcc_'+ct]){
+        GC+=row('· cost per call',costR(sp,catSum(ct,'loc_clicks')),'sub',RUP,{color:GRN});
+        GC+=row('· CPC',costR(sp,catSum(ct,'clicks')),'sub',RUP,{color:VIO});
+        GC+=row('· CPL · paid lead',costR(sp,gpCat(ct)),'sub',RUP,{color:GRN});}});
+  }else{
+    gcc.forEach(ci=>{const sp=z0(RC[ci].spend);
+      GC+=row(ci+' — spend',sp,'gband',RUP,{color:BLU,tkey:'gcs_'+ci});
+      GC+=row('· '+ci+' % of city spend',pctOf(sp,citySpend),'sub',PCT,{color:BLU});
+      if(EXP['gcs_'+ci]){
+        GC+=row('· CPC',costR(sp,z0(RC[ci].clicks)),'sub',RUP,{color:VIO});
+        GC+=row('· cost per call',costR(sp,z0(RC[ci].loc_clicks)),'sub',RUP,{color:GRN});}});
+  }
   $('tGcost').innerHTML=GC;
 
   // acquisition-side sections (Leads, Lead→Book, Google Ads) aren't split by consult mode → blur + note when a mode is picked
