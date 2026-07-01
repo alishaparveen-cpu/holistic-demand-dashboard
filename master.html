@@ -158,7 +158,8 @@ tr[onclick]:hover td:first-child{color:var(--accent)}
 
   <div class="shead">⑦ Availability <span class="lblmuted">(bookable roster — expand to see each clinic)</span></div>
   <div class="fmwrap"><table class="fm" id="tAvail"></table></div>
-  <div class="shead">⑧ Google Ads funnel <span class="lblmuted">(city → category → impressions → clicks → location-clicks → conversions · Google's own metrics; "conversions" = Google-tracked (web forms + call-extension calls), narrower than the attributed leads in ①)</span></div>
+  <div class="shead">⑧ Google Ads funnel <span class="lblmuted">(impressions → clicks → location-clicks → conversions · Google's own metrics, <b>city-level</b> — follows the City/Tier filter but not clinic/maturity. Break by City or Category to see where STI/SH/MH moved.)</span></div>
+  <div id="gadsCtlBar" style="font-size:12px;color:var(--ink2);margin:0 2px 8px;min-height:26px;display:flex;align-items:center;gap:2px;flex-wrap:wrap"></div>
   <div class="fmwrap"><table class="fm" id="tGads"></table></div>
   <div class="shead">⑨ Google Ads — Cost &amp; Efficiency <span class="lblmuted">(<b>paid Google only</b> — GMB / Organic / Meta / Practo carry no auction spend, shown as —. <b>Cost per call</b> = spend ÷ location-clicks (the founder's terminal metric); CPL / CPB use ① attributed <b>paid</b> leads / bookings. Lower is better.)</span></div>
   <div class="fmwrap"><table class="fm" id="tGcost"></table></div>
@@ -180,6 +181,7 @@ let BBRK='cohort',BCRS='none',BCR3='none';   // ③ Bookings: up to 3 nested dim
 function setBBRK(v){BBRK=v;if(BCRS===v)BCRS='none';if(BCR3===v||BCR3===BCRS)BCR3='none';render();}
 function setBCRS(v){BCRS=v;if(v==='none'){BCR3='none';}else if(BCR3===v)BCR3='none';render();}
 function setBCR3(v){BCR3=v;render();}
+let GGBRK='city';function setGGBRK(v){GGBRK=v;render();}   // ⑧ Google Ads: break by City or Category
 let QV=false,QVC=[],QVTABLE=null;let CATMODE=false;
 function toggleCat(){CATMODE=!CATMODE;if($('catBtn'))$('catBtn').classList.toggle('on',CATMODE);render();}
 let CMPB='avg';function setCmp(v){CMPB=v;render();}
@@ -738,17 +740,35 @@ function render(){
   AV+=mrow('Available days',F.days,'grp',N,{color:BLU});}
   $('tAvail').innerHTML=AV;
   // ⑥ Google Ads funnel — city → category → impr → clicks → loc-clicks → leads
-  QVTABLE='⑥ Google Ads funnel';let G=head('Google Ads · campaign');
+  QVTABLE='⑧ Google Ads funnel';let G=head('Google Ads · campaign');
   const RR2=D._meta.city_google_reach||{};
+  const GCATS=['STI','SH','MH'];const zn=a=>(a||ZA).map(v=>v==null?0:v);
   const gcCities=cities.filter(ci=>RR2[ci]&&RR2[ci].impr&&RR2[ci].impr.some(v=>v)).sort((a,b)=>(RR2[b].impr[WKEND]||0)-(RR2[a].impr[WKEND]||0));
-  const totImpr=gcCities.reduce((a,ci)=>addv(a,(RR2[ci].impr||ZA).map(v=>v==null?0:v)),ZA.slice());
+  const totImpr=gcCities.reduce((a,ci)=>addv(a,zn(RR2[ci].impr)),ZA.slice());
+  {const _gb=$('gadsCtlBar');const gsel=(fn,cur,list)=>'<select onchange="'+fn+'(this.value)" style="font-size:11.5px;border:1px solid var(--line);border-radius:6px;padding:3px 8px;margin-left:6px;background:#fff;font-family:Inter;font-weight:600;color:var(--accent);cursor:pointer">'+list.map(o=>'<option value="'+o[0]+'"'+(cur===o[0]?' selected':'')+'>'+o[1]+'</option>').join('')+'</select>';
+   if(_gb)_gb.innerHTML='<span style="font-size:10px;font-weight:700;letter-spacing:.05em;color:var(--muted)">BREAK GOOGLE ADS BY</span>'+gsel('setGGBRK',GGBRK,[['city','City'],['cat','Category']]);}
+  const gMet=(ci,ct,f)=>{const bc=(RR2[ci].by_cat||{})[ct];return bc?zn(bc[f]):ZA.slice();};
+  const gcatS=(ct,f)=>gcCities.reduce((a,ci)=>addv(a,gMet(ci,ct,f)),ZA.slice());
   G+=row('All Google Ads — impressions',totImpr,'tot',N,{color:BLU});
-  gcCities.forEach(ci=>{const r=RR2[ci];G+=row(ci+' — impressions',(r.impr||ZA).map(v=>v==null?0:v),'gband',N,{color:BLU,tkey:'ga_'+ci});
-    if(EXP['ga_'+ci]){CATS.forEach(ct=>{const bc=(r.by_cat||{})[ct];if(!bc||!bc.impr.some(v=>v))return;
-      const tk='gac_'+ci+ct;G+=row('· '+ct+' — impressions',bc.impr,'grp',N,{color:CATCOL[ct],tkey:tk});
-      if(EXP[tk]){G+=row('· · clicks',bc.clicks,'sub',N,{color:GRN});G+=row('· · CTR %',pctOf(bc.clicks,bc.impr),'sub',PCT,{color:VIO});
-        G+=row('· · location clicks',bc.loc_clicks,'sub',N,{color:GRN});G+=row('· · loc-click % of clicks',pctOf(bc.loc_clicks,bc.clicks),'sub',PCT,{color:VIO});
-        G+=row('· · conversions (Google-tracked)',bc.conv,'sub',N,{color:GRN});G+=row('· · click → conv %',pctOf(bc.conv,bc.clicks),'sub',PCT,{color:VIO});}});}});
+  if(GGBRK==='cat'){
+    GCATS.forEach(ct=>{const im=gcatS(ct,'impr');if(!im.some(v=>v))return;const tk='gc_'+ct;
+      G+=row(ct+' — impressions',im,'gband',N,{color:CATCOL[ct],tkey:tk});
+      G+=row('· '+ct+' % of all impressions',pctOf(im,totImpr),'sub',PCT,{color:CATCOL[ct]});
+      if(EXP[tk]){const cl=gcatS(ct,'clicks'),lc=gcatS(ct,'loc_clicks'),cv=gcatS(ct,'conv');
+        G+=row('· clicks',cl,'sub',N,{color:GRN});G+=row('· CTR %',pctOf(cl,im),'sub',PCT,{color:VIO});
+        G+=row('· location clicks',lc,'sub',N,{color:GRN});G+=row('· conversions (Google-tracked)',cv,'sub',N,{color:GRN});G+=row('· click → conv %',pctOf(cv,cl),'sub',PCT,{color:VIO});
+        gcCities.forEach(ci=>{const cim=gMet(ci,ct,'impr');if(!cim.some(v=>v))return;const tk2='gcc_'+ct+ci;
+          G+=row('· · '+ci+' — impr',cim,'sub2',N,{color:CATCOL[ct],tkey:tk2});
+          if(EXP[tk2]){G+=row('· · · clicks',gMet(ci,ct,'clicks'),'sub2',N,{color:GRN});G+=row('· · · conversions',gMet(ci,ct,'conv'),'sub2',N,{color:GRN});G+=row('· · · click → conv %',pctOf(gMet(ci,ct,'conv'),gMet(ci,ct,'clicks')),'sub2',PCT,{color:VIO});}});}});
+  }else{
+    gcCities.forEach(ci=>{const r=RR2[ci];G+=row(ci+' — impressions',zn(r.impr),'gband',N,{color:BLU,tkey:'ga_'+ci});
+      G+=row('· '+ci+' % of all impressions',pctOf(zn(r.impr),totImpr),'sub',PCT,{color:BLU});
+      if(EXP['ga_'+ci]){GCATS.forEach(ct=>{const bc=(r.by_cat||{})[ct];if(!bc||!bc.impr.some(v=>v))return;
+        const tk='gac_'+ci+ct;G+=row('· '+ct+' — impressions',bc.impr,'grp',N,{color:CATCOL[ct],tkey:tk});
+        if(EXP[tk]){G+=row('· · clicks',bc.clicks,'sub',N,{color:GRN});G+=row('· · CTR %',pctOf(bc.clicks,bc.impr),'sub',PCT,{color:VIO});
+          G+=row('· · location clicks',bc.loc_clicks,'sub',N,{color:GRN});G+=row('· · loc-click % of clicks',pctOf(bc.loc_clicks,bc.clicks),'sub',PCT,{color:VIO});
+          G+=row('· · conversions (Google-tracked)',bc.conv,'sub',N,{color:GRN});G+=row('· · click → conv %',pctOf(bc.conv,bc.clicks),'sub',PCT,{color:VIO});}});}});
+  }
   // national ONLINE Google paid (telehealth, no city)
   const NOL=D._meta.google_online_national;
   if(NOL&&NOL.impr&&NOL.impr.some(v=>v)){
