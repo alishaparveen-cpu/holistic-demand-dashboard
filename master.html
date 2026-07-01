@@ -112,7 +112,18 @@ tr[onclick]:hover td:first-child{color:var(--accent)}
 .mtab.on{color:var(--accent);border-bottom-color:var(--accent)}
 .subnav{display:flex;gap:6px;margin:0 0 14px}
 .stab{background:var(--inset);border:1px solid var(--line);border-radius:8px;padding:6px 15px;font-family:Inter;font-size:13px;font-weight:600;color:var(--accent);cursor:pointer}
-.stab.on{background:var(--accent);color:#fff;border-color:var(--accent)}</style>
+.stab.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+.gchip{background:var(--inset);border:1px solid var(--line);border-radius:7px;padding:4px 11px;margin:0 2px;font-family:Inter;font-size:12px;font-weight:600;color:var(--accent);cursor:pointer}
+.gchip.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+.gflab{font-size:10px;font-weight:700;letter-spacing:.05em;color:var(--muted);margin-right:5px}
+.gfcount{font-size:11px;color:var(--muted);margin-left:auto;font-family:'JetBrains Mono';white-space:nowrap}
+.gcitywrap{position:relative;display:inline-block}
+.gcitybtn{font-size:12px!important;padding:4px 11px!important}
+.gcitypanel{display:none;position:absolute;z-index:40;top:112%;left:0;background:#fff;border:1px solid var(--line);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.15);padding:7px;max-height:300px;overflow:auto;min-width:170px}
+.gcitypanel.open{display:block}
+.gcitypanel label{display:block;font-size:12px;padding:3px 6px;white-space:nowrap;cursor:pointer;font-family:Inter}
+.gcitypanel label:hover{background:var(--inset)}
+.msclr{display:block;font-size:11px;color:var(--accent);cursor:pointer;padding:5px 6px 2px;border-top:1px solid var(--line);margin-top:5px}</style>
 </head>
 <body>
 <div class="wrap">
@@ -170,7 +181,7 @@ tr[onclick]:hover td:first-child{color:var(--accent)}
   </div><!-- /viewFunnel -->
   <div id="viewChannel" style="display:none">
   <div class="subnav"><button class="stab on">🔵 Google Ads</button></div>
-  <div class="shead">⑧ Google Ads funnel <span class="lblmuted">(impressions → clicks → location-clicks → conversions · Google's own metrics, <b>city-level</b> — follows the City/Tier filter but not clinic/maturity. Break by City or Category to see where STI/SH/MH moved.)</span></div>
+  <div class="shead">⑧ Google Ads funnel <span class="lblmuted">(per-campaign WoW funnel — <b>Spend → Impressions → Clicks → Loc-clicks → Leads → Book → Done</b> · filter by <b>Category / Placement (city-mapped vs online vs brand) / City</b>. 5-wk snapshot from the campaign export, 2026-05-18 → 06-15; expand any step for its sub-metrics.)</span></div>
   <div id="gadsCtlBar" style="font-size:12px;color:var(--ink2);margin:0 2px 8px;min-height:26px;display:flex;align-items:center;gap:2px;flex-wrap:wrap"></div>
   <div class="fmwrap"><table class="fm" id="tGads"></table></div>
   <div class="shead">⑨ Google Ads — Cost &amp; Efficiency <span class="lblmuted">(<b>paid Google only</b> — spend = <b>22 tracked cities + national ONLINE</b>. Any brand / experimental campaigns not mapped to a tracked city are excluded, so this can read a little below the raw Google account total. <b>Cost per call</b> = city spend ÷ location-clicks. Lower is better.)</span></div>
@@ -184,6 +195,17 @@ tr[onclick]:hover td:first-child{color:var(--accent)}
 <div id="combBar" class="cmpbar"></div>
 <script>
 let D=null,CUR=null;let NSHOW=6;let WKEND=1;let W0=1;let SHOWPARTIAL=false;let ZREG=[];let EXP={};
+let GAF=null;   // manager's per-campaign Google Ads WoW funnel (data_ga_funnel.json)
+let GCAT='all',GPLACE='all',GCITY=new Set();   // ⑧ campaign filters: category / placement / city-set
+function setGCAT(v){GCAT=v;render();}
+function setGPLACE(v){GPLACE=v;GCITY=new Set();render();}
+function togGCity(c){GCITY.has(c)?GCITY.delete(c):GCITY.add(c);render();}
+function clrGCity(){GCITY=new Set();render();}
+function gaGroup(c){   // placement bucket for the "city-mapped vs others" filter
+  if(String(c.category)==='Brand')return 'brand';
+  if(c.type==='Online'||c.city==='Online / National')return 'online';
+  if(c.city&&c.city!=='Brand'&&c.city!=='Online / National')return 'citymapped';
+  return 'other';}
 let DBRK='cat',DCRS='none',DCR3='none',DCR4='none';   // ④ Done breakdown: up to 4 nested dimensions
 function setDBRK(v){DBRK=v;if(DCRS===v)DCRS='none';if(DCR3===v||DCR3===DCRS)DCR3='none';if(DCR4===v)DCR4='none';render();}
 function setDCRS(v){DCRS=v;if(v==='none'){DCR3='none';DCR4='none';}else if(DCR3===v){DCR3='none';DCR4='none';}render();}
@@ -757,42 +779,39 @@ function render(){
   AV+=mrow('Available days',F.days,'grp',N,{color:BLU});}
   $('tAvail').innerHTML=AV;
   // ⑥ Google Ads funnel — city → category → impr → clicks → loc-clicks → leads
-  QVTABLE='⑧ Google Ads funnel';let G=head('Google Ads · campaign');
-  const RR2=D._meta.city_google_reach||{};
-  const GCATS=['STI','SH','MH'];const zn=a=>(a||ZA).map(v=>v==null?0:v);
-  const gcCities=cities.filter(ci=>RR2[ci]&&RR2[ci].impr&&RR2[ci].impr.some(v=>v)).sort((a,b)=>(RR2[b].impr[WKEND]||0)-(RR2[a].impr[WKEND]||0));
-  const totImpr=gcCities.reduce((a,ci)=>addv(a,zn(RR2[ci].impr)),ZA.slice());
-  {const _gb=$('gadsCtlBar');const gsel=(fn,cur,list)=>'<select onchange="'+fn+'(this.value)" style="font-size:11.5px;border:1px solid var(--line);border-radius:6px;padding:3px 8px;margin-left:6px;background:#fff;font-family:Inter;font-weight:600;color:var(--accent);cursor:pointer">'+list.map(o=>'<option value="'+o[0]+'"'+(cur===o[0]?' selected':'')+'>'+o[1]+'</option>').join('')+'</select>';
-   if(_gb)_gb.innerHTML='<span style="font-size:10px;font-weight:700;letter-spacing:.05em;color:var(--muted)">BREAK GOOGLE ADS BY</span>'+gsel('setGGBRK',GGBRK,[['city','City'],['cat','Category']]);}
-  const gMet=(ci,ct,f)=>{const bc=(RR2[ci].by_cat||{})[ct];return bc?zn(bc[f]):ZA.slice();};
-  const gcatS=(ct,f)=>gcCities.reduce((a,ci)=>addv(a,gMet(ci,ct,f)),ZA.slice());
-  G+=row('All Google Ads — impressions',totImpr,'tot',N,{color:BLU});
-  if(GGBRK==='cat'){
-    GCATS.forEach(ct=>{const im=gcatS(ct,'impr');if(!im.some(v=>v))return;const tk='gc_'+ct;
-      G+=row(ct+' — impressions',im,'gband',N,{color:CATCOL[ct],tkey:tk});
-      G+=row('· '+ct+' % of all impressions',pctOf(im,totImpr),'sub',PCT,{color:CATCOL[ct]});
-      if(EXP[tk]){const cl=gcatS(ct,'clicks'),lc=gcatS(ct,'loc_clicks'),cv=gcatS(ct,'conv');
-        G+=row('· clicks',cl,'sub',N,{color:GRN});G+=row('· CTR %',pctOf(cl,im),'sub',PCT,{color:VIO});
-        G+=row('· location clicks',lc,'sub',N,{color:GRN});G+=row('· conversions (Google-tracked)',cv,'sub',N,{color:GRN});G+=row('· click → conv %',pctOf(cv,cl),'sub',PCT,{color:VIO});
-        gcCities.forEach(ci=>{const cim=gMet(ci,ct,'impr');if(!cim.some(v=>v))return;const tk2='gcc_'+ct+ci;
-          G+=row('· · '+ci+' — impr',cim,'sub2',N,{color:CATCOL[ct],tkey:tk2});
-          if(EXP[tk2]){G+=row('· · · clicks',gMet(ci,ct,'clicks'),'sub2',N,{color:GRN});G+=row('· · · conversions',gMet(ci,ct,'conv'),'sub2',N,{color:GRN});G+=row('· · · click → conv %',pctOf(gMet(ci,ct,'conv'),gMet(ci,ct,'clicks')),'sub2',PCT,{color:VIO});}});}});
-  }else{
-    gcCities.forEach(ci=>{const r=RR2[ci];G+=row(ci+' — impressions',zn(r.impr),'gband',N,{color:BLU,tkey:'ga_'+ci});
-      G+=row('· '+ci+' % of all impressions',pctOf(zn(r.impr),totImpr),'sub',PCT,{color:BLU});
-      if(EXP['ga_'+ci]){GCATS.forEach(ct=>{const bc=(r.by_cat||{})[ct];if(!bc||!bc.impr.some(v=>v))return;
-        const tk='gac_'+ci+ct;G+=row('· '+ct+' — impressions',bc.impr,'grp',N,{color:CATCOL[ct],tkey:tk});
-        if(EXP[tk]){G+=row('· · clicks',bc.clicks,'sub',N,{color:GRN});G+=row('· · CTR %',pctOf(bc.clicks,bc.impr),'sub',PCT,{color:VIO});
-          G+=row('· · location clicks',bc.loc_clicks,'sub',N,{color:GRN});G+=row('· · loc-click % of clicks',pctOf(bc.loc_clicks,bc.clicks),'sub',PCT,{color:VIO});
-          G+=row('· · conversions (Google-tracked)',bc.conv,'sub',N,{color:GRN});G+=row('· · click → conv %',pctOf(bc.conv,bc.clicks),'sub',PCT,{color:VIO});}});}});
-  }
-  // national ONLINE Google paid (telehealth, no city)
-  const NOL=D._meta.google_online_national;
-  if(NOL&&NOL.impr&&NOL.impr.some(v=>v)){
-    G+=row('Google paid · ONLINE — national (telehealth)',NOL.impr,'tot',N,{color:VIO,tkey:'ga_online'});
-    if(EXP['ga_online']){G+=row('· clicks',NOL.clicks,'sub',N,{color:GRN});G+=row('· CTR %',pctOf(NOL.clicks,NOL.impr),'sub',PCT,{color:VIO});
-      ['SH','STI','MH'].forEach(ct=>{const im=(NOL.by_cat[ct]||{}).impr;if(im&&im.some(v=>v)){G+=row('· '+ct+' impressions',im,'sub',N,{color:CATCOL[ct]});G+=row('· '+ct+' clicks',(NOL.by_cat[ct]||{}).clicks,'sub',N,{color:CATCOL[ct]});}});}
-  }
+  QVTABLE='⑧ Google Ads funnel';let G=head('Google Ads · campaign funnel');
+  if(GAF&&GAF.campaigns){
+    const gidx=(GAF._meta.weeks||[]).map(w=>(D._meta.weeks||[]).indexOf(w));   // manager wks → master grid
+    const toGrid=a5=>{const o=Array((D._meta.weeks||[]).length).fill(null);gidx.forEach((gi,k)=>{if(gi>=0)o[gi]=a5[k]||0;});return o;};   // weeks outside the snapshot stay blank, not 0
+    const camps=GAF.campaigns.filter(c=>{
+      if(GCAT!=='all'&&c.category!==GCAT)return false;
+      if(GPLACE!=='all'&&gaGroup(c)!==GPLACE)return false;
+      if(GCITY.size&&!GCITY.has(c.city))return false;
+      return true;});
+    const sum=key=>{const o=[0,0,0,0,0];camps.forEach(c=>{const a=(c.rows||{})[key]||[];for(let k=0;k<5;k++)o[k]+=(a[k]||0);});return toGrid(o);};
+    const spend=sum('spend'),impr=sum('impression'),locImp=sum('loc_impr'),click=sum('click'),locClick=sum('loc_click'),webL=sum('web_leads'),catL=sum('cat_leads'),book=sum('book'),done=sum('done');
+    const _gb=$('gadsCtlBar');
+    if(_gb){
+      const chip=(fn,val,cur,lab)=>'<button onclick="'+fn+'(\''+val+'\')" class="gchip'+(cur===val?' on':'')+'">'+lab+'</button>';
+      let bar='<span class="gflab">Category</span>'+['all','MH','SH','STD','Brand'].map(v=>chip('setGCAT',v,GCAT,v==='all'?'All':v)).join('');
+      bar+='<span class="gflab" style="margin-left:12px">Placement</span>'+[['all','All'],['citymapped','City-mapped'],['online','Online'],['brand','Brand']].map(o=>chip('setGPLACE',o[0],GPLACE,o[1])).join('');
+      const cityList=[...new Set(GAF.campaigns.filter(c=>gaGroup(c)==='citymapped').map(c=>c.city))].sort();
+      bar+='<span class="gflab" style="margin-left:12px">City</span><span class="gcitywrap"><button class="fbtn gcitybtn" onclick="this.nextElementSibling.classList.toggle(\'open\')">'+(GCITY.size?GCITY.size+' cities':'All cities')+' ▾</button><div class="gcitypanel">'+cityList.map(c=>'<label><input type="checkbox" '+(GCITY.has(c)?'checked':'')+' onchange="togGCity(this.value)" value="'+c+'"> '+c+'</label>').join('')+(GCITY.size?'<a class="msclr" onclick="clrGCity()">clear</a>':'')+'</div></span>';
+      bar+='<span class="gfcount">'+camps.length+' of '+GAF.campaigns.length+' campaigns · ₹'+Math.round(spend.reduce((a,b)=>a+(b||0),0)/1000)+'k / 5wk</span>';
+      _gb.innerHTML=bar;
+    }
+    G+=row('Spend (₹)',spend,'tot',N,{color:VIO});
+    G+=row('Impressions',impr,'gband',N,{color:BLU,tkey:'gf_impr'});
+    if(EXP['gf_impr'])G+=row('· Location Impressions',locImp,'sub',N,{color:BLU});
+    G+=row('Clicks',click,'gband',N,{color:GRN,tkey:'gf_click'});
+    if(EXP['gf_click']){G+=row('· CTR %',pctOf(click,impr),'sub',PCT,{color:VIO});G+=row('· Location Clicks',locClick,'sub',N,{color:GRN});}
+    G+=row('Web Leads (UTM)',webL,'gband',N,{color:GRN,tkey:'gf_lead'});
+    if(EXP['gf_lead'])G+=row('· Location-click → category leads',catL,'sub',N,{color:GRN});
+    G+=row('Book',book,'gband',N,{color:'#2b5cad',tkey:'gf_book'});
+    if(EXP['gf_book'])G+=row('· loc-click → book %',pctOf(book,locClick),'sub',PCT,{color:VIO});
+    G+=row('Done',done,'grp',N,{color:GRN,tkey:'gf_done'});
+    if(EXP['gf_done']){G+=row('· book → done %',pctOf(done,book),'sub',PCT,{color:VIO});G+=row('· in-flight (book − done)',book.map((v,i)=>v==null?null:v-(done[i]||0)),'sub',N,{color:'#b0752a'});}
+  }else{G+=row('Google Ads funnel data not loaded (data_ga_funnel.json)',ZA.slice(),'sub',N,{noheat:true});}
   $('tGads').innerHTML=G;
 
   // ⑦ Google Ads — Cost & Efficiency (paid only) — spend → CPC → cost/call → CPL → CPB; by category + by city
@@ -875,8 +894,11 @@ function renderQV(){
   });
   $('qvWrap').innerHTML=html;
 }
-fetch('data_source_recon.json?v='+Date.now()).then(r=>{if(!r.ok)throw new Error('HTTP '+r.status);return r.json();}).then(j=>{
-  D=j;
+Promise.all([
+  fetch('data_source_recon.json?v='+Date.now()).then(r=>{if(!r.ok)throw new Error('HTTP '+r.status);return r.json();}),
+  fetch('data_ga_funnel.json?v='+Date.now()).then(r=>r.ok?r.json():null).catch(()=>null)
+]).then(([j,gf])=>{
+  D=j;GAF=gf;
   W0=(function(){var w=(D._meta&&D._meta.weeks)||[];if(!w.length)return 1;var e=new Date(w[0]+'T00:00:00');e.setDate(e.getDate()+6);var t=new Date();t.setHours(0,0,0,0);return e>t?1:0;})();WKEND=efloor();
   D._meta.clinics=D._meta.clinics.filter(k=>{const c=D.clinics[k];return c&&(((c.bottom||{}).booked||[]).some(v=>v)||((c.avail||{}).slots_total||[]).some(v=>v));});
   try{renderCityOpts();renderClinicOpts();updateScopeBtns();render();}catch(e){$('h1').textContent='Render error: '+e.message;console.error(e);}
