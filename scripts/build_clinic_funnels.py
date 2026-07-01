@@ -110,7 +110,7 @@ def websrc_of(o,s,m,fb,su=''):
 def clinic_funnel(cfg, booked_at=None):
     booked_at=booked_at or {}
     loc=cfg['loc'].replace("'","''")
-    bt={'in':0,'out':0}   # shared-number BACKTRACK moves: leads corrected IN (booked here) / moved OUT (booked elsewhere)
+    bt={'in':Z(),'out':Z(),'inph':set(),'outph':set()}   # shared-number BACKTRACK weekly moves (deduped per patient)
     pcw={}; catwk={}; callraw={}   # callraw[(channel,ph,w)] = primary AI intent (per-channel, no cross-channel dedup)
     def pull(nums, channel, locf):
         if not nums: return
@@ -129,9 +129,9 @@ def clinic_funnel(cfg, booked_at=None):
             if locf:                                    # BACKTRACK: shared number → credit the clinic they BOOKED at
                 bm=(r[6] if len(r)>6 else None); bset=booked_at.get(ph)
                 if bset and loc in bset:
-                    if bm!=loc: bt['in']+=1             # booking gives us a lead AI-locality would have missed
+                    if bm!=loc and ph not in bt['inph']: bt['inph'].add(ph); bt['in'][idx[w]]+=1   # booking gives a lead AI-locality missed
                 elif bset:                              # booked at another MH clinic → belongs there, not here
-                    if bm==loc: bt['out']+=1           # AI-locality credited us, but they booked elsewhere
+                    if bm==loc and ph not in bt['outph']: bt['outph'].add(ph); bt['out'][idx[w]]+=1  # AI-locality credited us, booked elsewhere
                     continue
                 else:                                   # never booked → no booking to backtrack, trust AI locality
                     if bm!=loc: continue
@@ -389,7 +389,7 @@ def clinic_funnel(cfg, booked_at=None):
         TAX[b].setdefault(src,Z())[i]+=1; taxt[b][i]+=1
     bookings['tax']={k:{'total':taxt[k],'by_source':TAX[k]} for k in TAXK}
     leads['backtrack']={'shared_num':(cfg['google'] if (cfg['google'] and not cfg['google_solo']) else None),
-                        'corrected_in':bt['in'],'moved_out':bt['out']}
+                        'in':bt['in'],'out':bt['out'],'corrected_in':sum(bt['in']),'moved_out':sum(bt['out'])}
     nums={'GMB call':','.join(cfg['gmb']) or '—','Google call':cfg['google'] or '—','Organic call':','.join(cfg['organic']) or '—'}
     return {'disp':cfg['disp'],'city':cfg['city'],'loc':cfg['loc'],'numbers':nums,
             'google_shared':(not cfg['google_solo']) if cfg['google'] else None,'leads':leads,'bookings':bookings}
