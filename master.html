@@ -134,7 +134,7 @@ tr[onclick]:hover td:first-child{color:var(--accent)}
   <div id="matNames" style="font-size:12px;color:var(--ink2);margin:0 0 10px;line-height:1.6;display:none"></div>
   <div id="qvWrap" style="display:none"></div>
   <div id="tables">
-  <div class="shead">① Leads <span class="lblmuted">(GMB + Google + Practo — expand a row to see each clinic)</span></div>
+  <div class="shead">① Leads <span class="lblmuted">(fresh <b>new</b> leads each week — a phone's first-ever lead — by source, with how many booked same-week / later / never · <b>national</b>, no clinic split)</span></div>
   <div class="fmwrap"><table class="fm" id="tLeads"></table></div>
 
   <div class="shead">② Lead → Book % <span class="lblmuted">(Σ booked ÷ Σ <b>tracked</b> leads — GMB · Google · Practo only; national WhatsApp / Meta / Organic convert ~13% and are shown in ① Leads · expand for each city's rate)</span></div>
@@ -457,47 +457,32 @@ function render(){
       }});}return h;}
   // ① Leads
   QVTABLE='① Leads';let L=head('Leads');
-  if(SEG!=='all')L+=row('ⓘ leads are acquisition-side — consult filter applies to bookings & outcomes',null,'sub',N,{noheat:true});
-  const NC=D._meta.national_channels||{};
-  const ncL=k=>(NC[k]&&NC[k].leads)||ZA, ncB=k=>(NC[k]&&NC[k].booked)||ZA;
-  const ncSum=['Meta','WhatsApp','Assessment','Landing','OrgCall','Blog','Other','Marketing'].reduce((a,k)=>addv(a,ncL(k)),ZA.slice());
-  L+=row('All leads — clinic + national digital',addv(totLeads,ncSum),'tot',N,{color:BLU});
-  const gmbTot=clinics.reduce((a,x)=>addv(a,F.gmbLeads(x.data)||ZA),ZA.slice());
-  L+=row('Google — GMB + paid (total)',addv(gmbTot,googCountry),'grp',N,{color:GRN,tkey:'gg_leads'});
-  if(EXP['gg_leads']){
-    L+=mrow('· GMB leads (organic)',F.gmbLeads,'sub',N,{color:GRN});
-    L+=row('· Google paid · city-level',googCountry,'sub',N,{color:GRN,tkey:'g_leads'});
-    if(EXP['g_leads']){
-      const RR=D._meta.city_google_reach||{};const NWg=D._meta.weeks.length;
-      const rsum=fld=>{const o=[];for(let i=0;i<NWg;i++){let s=null;cities.forEach(ci=>{const r=RR[ci];if(r&&r[fld]&&r[fld][i]!=null)s=(s||0)+r[fld][i];});o.push(s);}return o;};
-      const rImpr=rsum('impr'),rClk=rsum('clicks');
-      const rcat=ct=>{const o=[];for(let i=0;i<NWg;i++){let s=null;cities.forEach(ci=>{const r=RR[ci];const a=r&&r.by_cat&&r.by_cat[ct]?r.by_cat[ct].impr:null;if(a&&a[i]!=null)s=(s||0)+a[i];});o.push(s);}return o;};
-      if(rImpr.some(v=>v!=null)){
-        L+=row('· impressions (Google Ads)',rImpr,'sub2',N,{color:BLU});
-        CATS.forEach(ct=>{const a=rcat(ct);if(a.some(v=>v!=null)){const cls=CATMODE?'sub2 catrow':'sub2';L+=row('· impr · '+ct,a,cls,N,{color:CATCOL[ct]});L+=row('· impr · '+ct+' %',pctOf(a,rImpr),cls,PCT,{color:CATCOL[ct]});}});
-        L+=row('· clicks',rClk,'sub2',N,{color:GRN});
-        L+=row('· CTR %',pctOf(rClk,rImpr),'sub2',PCT,{color:VIO});
-        L+=row('· click → lead %',pctOf(googCountry,rClk),'sub2',PCT,{color:VIO});
-      }
-      L+=row('· paid calls',gpCall,'sub2',N,{color:GRN});L+=row('· paid web',cityWeb,'sub2',N,{color:GRN});}
-  }
-  L+=mrow('Practo leads',F.practoLeads,'grp',N,{color:GRN});
-  const ncRow=(lbl,k)=>{const ld=ncL(k),bk=ncB(k);L+=row(lbl,ld,'grp',N,{color:GRN,tkey:'nc_'+k});
-    if(EXP['nc_'+k]){L+=row('· booked (Screening Call)',bk,'sub',N,{color:GRN});L+=row('· lead → book %',pctOf(bk,ld),'sub',PCT,{color:VIO});}};
-  ncRow('Meta · FB/IG · national','Meta');
-  // Organic = every non-clinic, non-Meta digital bucket — broken down by entry path
-  const ORGB=[['WhatsApp','WhatsApp (chat)'],['Assessment','Assessment funnel'],['Landing','Landing pages (web)'],['OrgCall','Organic calls (numbers)'],['Blog','Blog / Healthfeed'],['Other','Other / misc'],['Marketing','Marketing-tagged']];
-  const orgKeys=ORGB.map(x=>x[0]);
-  const orgL=orgKeys.reduce((a,k)=>addv(a,ncL(k)),ZA.slice());
-  const orgB=orgKeys.reduce((a,k)=>addv(a,ncB(k)),ZA.slice());
-  L+=row('Organic · national',orgL,'grp',N,{color:GRN,tkey:'nc_org'});
-  if(EXP['nc_org']){
-    ORGB.forEach(([k,lbl])=>{const a=ncL(k);if(a.some(v=>v)){L+=row('· '+lbl,a,'sub',N,{color:GRN,tkey:'nco_'+k});
-      if(EXP['nco_'+k]){L+=row('· · booked',ncB(k),'sub2',N,{color:GRN});L+=row('· · lead → book %',pctOf(ncB(k),a),'sub2',PCT,{color:VIO});}}});
-    L+=row('· booked (Screening Call) — all organic',orgB,'sub',N,{color:GRN});
-    L+=row('· lead → book % — all organic',pctOf(orgB,orgL),'sub',PCT,{color:VIO});
+  const ML=D._meta.master_leads;
+  if(!ML){L+=row('— leads data not built (run build_master_leads.py) —',null,'sub',N,{noheat:true});}
+  else{
+    L+=row('ⓘ a lead has no clinic until it books, so new leads are national — this table is by source only, and ignores the city / clinic / consult filters',null,'sub',N,{noheat:true});
+    const T=ML.total, bookedEver=addv(T.booked_same,T.booked_later);
+    L+=row('New leads this week · fresh phones',T.new_leads,'tot',N,{color:BLU});
+    L+=row('· booked same week → this week’s new bookings',T.booked_same,'sub',N,{color:GRN});
+    L+=row('· booked a later week',T.booked_later,'sub',N,{color:GRN});
+    L+=row('· never booked',T.never_booked,'sub',N,{color:'#B23A2E',invert:true});
+    L+=row('· lead → book % (eventually)',pctOf(bookedEver,T.new_leads),'sub',PCT,{color:VIO});
+    (ML.sources||[]).forEach(s=>{const bs=ML.by_source[s];if(!bs||!bs.new_leads.some(v=>v))return;
+      L+=row(s,bs.new_leads,'grp',N,{color:GRN,tkey:'ml_'+s});
+      if(EXP['ml_'+s]){
+        L+=row('· booked same week',bs.booked_same,'sub',N,{color:GRN});
+        L+=row('· booked later',bs.booked_later,'sub',N,{color:GRN});
+        L+=row('· never booked',bs.never_booked,'sub',N,{color:'#B23A2E',invert:true});
+        L+=row('· lead → book %',pctOf(addv(bs.booked_same,bs.booked_later),bs.new_leads),'sub',PCT,{color:VIO});
+      }});
   }
   $('tLeads').innerHTML=L;
+  // national-channel accessors (still used by ② Lead → Book %)
+  const NC=D._meta.national_channels||{};
+  const ncL=k=>(NC[k]&&NC[k].leads)||ZA, ncB=k=>(NC[k]&&NC[k].booked)||ZA;
+  const _orgKeys=['WhatsApp','Assessment','Landing','OrgCall','Blog','Other','Marketing'];
+  const orgL=_orgKeys.reduce((a,k)=>addv(a,ncL(k)),ZA.slice());
+  const orgB=_orgKeys.reduce((a,k)=>addv(a,ncB(k)),ZA.slice());
   // ② Lead → Book %
   QVTABLE='② Lead → Book %';let LB=head('Conversion');
   const gmbBkSum=clinics.reduce((a,x)=>addv(a,Fn.gmbBkN(x.data)),ZA.slice());
@@ -505,7 +490,7 @@ function render(){
   const googBk=addv(gpBk,cityWebBk);
   const allBk=addv(addv(gmbBkSum,googBk),practoBkSum);
   LB+=row('Overall lead → book % · tracked leads (GMB/Google/Practo)',pctOf(allBk,totLeads),'tot',PCT,{color:BLU});
-  LB+=row('Google — GMB + paid lead → book %',pctOf(addv(gmbBkSum,googBk),addv(gmbTot,googCountry)),'grp',PCT,{color:GRN,tkey:'gg_conv'});
+  LB+=row('Google — GMB + paid lead → book %',pctOf(addv(gmbBkSum,googBk),addv(gmbSum,googCountry)),'grp',PCT,{color:GRN,tkey:'gg_conv'});
   if(EXP['gg_conv']||CATMODE){
   // —— GMB (organic listing) — its own AI audit + category ——
   const gC=f=>clinics.reduce((a,x)=>{const t=lb(x.data).gmb_call;return addv(a,t?(t[f]||ZA):ZA);},ZA.slice());
@@ -524,7 +509,7 @@ function render(){
       if(EXP['gg_oth']||CATMODE){['condition','consult','service','unclear'].forEach(b=>{const sa=oSplit(b);if(sa.some(v=>v)){const sc=CATMODE?'sub2 catrow':'sub2';LB+=row('· · '+OBK[b],sa,sc,N,{color:CATCOL.Other});LB+=row('· · '+OBK[b]+' % of Other',pctOf(sa,a),sc,PCT,{color:CATCOL.Other});}});}
     }else{LB+=row('· '+ct,a,cls,N,{color:CATCOL[ct]});LB+=row('· '+ct+' % of audited',pctOf(a,cAud),cls,PCT,{color:CATCOL[ct]});}
   }});}
-  LB+=row('· GMB lead → book %',pctOf(gmbBkSum,gmbTot),'grp2',PCT,{color:GRN,tkey:'gmb_conv'});
+  LB+=row('· GMB lead → book %',pctOf(gmbBkSum,gmbSum),'grp2',PCT,{color:GRN,tkey:'gmb_conv'});
   if(EXP['gmb_conv']||CATMODE){
     const gca=gC('total'),gan=gC('answered');
     LB+=row('· inbound calls — total',gca,'sub',N,{color:BLU});
