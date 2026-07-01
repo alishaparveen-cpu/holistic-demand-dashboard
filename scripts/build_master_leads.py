@@ -15,8 +15,12 @@ sys.path.insert(0, os.path.dirname(__file__))
 import patch_subcat as PS
 ROOT = PS.ROOT; OUT = os.path.join(ROOT, "data_source_recon.json")
 idx = PS.idx; Z = PS.Z; LO = PS.LO; run_sql = PS.run_sql
-# channel taxonomy aligned with bookings (source + organic_l2), so leads split into GMB / Google / Meta / Call-in / etc.
-SRCS = ["GMB", "Google Ads", "Meta", "WhatsApp", "Walk-in", "Website", "Practo", "JustDial", "Organic (untagged)", "Other"]
+# channel taxonomy aligned with bookings (source + organic_l2), so leads split into GMB / Google / Meta / etc.
+# ONE universe = main_source_wise_leads first-ever phones. The catch-all source='Others' (and blank) is
+# NOT unknown — allo_persons.lead UTM resolves most of it to organic / practo / gmb / google, so we
+# reclassify those rows via a per-phone UTM fallback instead of dumping them in "Other".
+SRCS = ["GMB", "Google Ads", "Meta", "WhatsApp", "Walk-in", "Website", "Practo", "JustDial",
+        "Newspaper", "YouTube", "Organic (untagged)", "Other"]
 
 SQL = """WITH ld AS (
   SELECT phone_no1 ph, source, organic_l2, created_on_date::date d,
@@ -24,44 +28,37 @@ SQL = """WITH ld AS (
   FROM production.public.main_source_wise_leads WHERE created_on_date >= '2023-01-01'),
  fl AS (SELECT ph, source, organic_l2, DATE_TRUNC('week', d + INTERVAL '5 hours 30 minutes')::date fwk FROM ld WHERE rn=1),
  fb AS (SELECT phone_no1 ph, MIN(call_booking_ts) fbt FROM production.public.main_source_wise_leads
-        WHERE call_booking_ts IS NOT NULL GROUP BY 1)
+        WHERE call_booking_ts IS NOT NULL GROUP BY 1),
+ -- one UTM signal per phone from allo_persons.lead, priority practo>gmb>google>organic
+ utm AS (SELECT RIGHT(phone_no,10) ph10,
+    MAX(CASE WHEN utm_source ILIKE 'practo%' THEN 4 WHEN utm_source ILIKE 'gmb%' THEN 3
+             WHEN utm_source ILIKE 'google%' THEN 2 WHEN utm_source ILIKE 'organic%' THEN 1 ELSE 0 END) pr
+    FROM allo_prod.allo_persons.lead WHERE phone_no IS NOT NULL GROUP BY 1)
 SELECT TO_CHAR(fl.fwk,'YYYY-MM-DD') wk,
   CASE WHEN fl.source='Google' THEN 'Google Ads'
        WHEN fl.source IN ('Fb','Facebook','Instagram','Ig','Meta') THEN 'Meta'
        WHEN fl.source='Organic' AND fl.organic_l2 IN ('Google Listing','PC-Inbound') THEN 'GMB'
        WHEN fl.source='Organic' AND fl.organic_l2='WA-Inbound' THEN 'WhatsApp'
        WHEN fl.source='Organic' AND fl.organic_l2='Walk In' THEN 'Walk-in'
-       WHEN fl.source='Organic' AND fl.organic_l2 IN ('Clinic Page','Doctor','Doctor Pages','Sexologist','Treatment Page','Login Page','Healthfeed','Webbot','Homepage','Blog','STD Testing','Assessment Page') THEN 'Website'
+       WHEN fl.source='Organic' AND fl.organic_l2 IN ('Clinic Page','Doctor','Doctor Pages','Sexologist','Treatment Page','Login Page','Healthfeed','Webbot','Homepage','Home Page','Blog','STD Testing','Assessment Page','Evaluation Page','ED Page','PE Page','Author Profile Page') THEN 'Website'
        WHEN fl.source='Organic' THEN 'Organic (untagged)'
        WHEN fl.source='Justdial' THEN 'JustDial'
        WHEN fl.source ILIKE 'Practo%' THEN 'Practo'
+       WHEN fl.source='Newspaper' THEN 'Newspaper'
+       WHEN fl.source='Youtube' THEN 'YouTube'
+       -- catch-all source='Others'/blank → resolve by UTM before giving up to "Other"
+       WHEN u.pr=4 THEN 'Practo'
+       WHEN u.pr=3 THEN 'GMB'
+       WHEN u.pr=2 THEN 'Google Ads'
+       WHEN u.pr=1 THEN 'Organic (untagged)'
        ELSE 'Other' END src,
   COUNT(*) new_leads,
   SUM(CASE WHEN fb.fbt IS NOT NULL AND DATE_TRUNC('week',fb.fbt+INTERVAL '5 hours 30 minutes')::date=fl.fwk THEN 1 ELSE 0 END) booked_same,
   SUM(CASE WHEN fb.fbt IS NOT NULL AND DATE_TRUNC('week',fb.fbt+INTERVAL '5 hours 30 minutes')::date>fl.fwk THEN 1 ELSE 0 END) booked_later,
   SUM(CASE WHEN fb.fbt IS NULL THEN 1 ELSE 0 END) never_booked
-FROM fl LEFT JOIN fb ON fb.ph=fl.ph
+FROM fl LEFT JOIN fb ON fb.ph=fl.ph LEFT JOIN utm u ON u.ph10=RIGHT(fl.ph,10)
 WHERE fl.fwk >= '{lo}' AND fl.fwk < '2026-06-29'
 GROUP BY 1,2;""".format(lo=LO)
-
-# Practo leads are NOT in main_source_wise_leads — they live in allo_persons.lead (utm_source='practo').
-# Same first-ever-phone-by-week logic; booked timing from bookings_data_raw (apt_create_dt).
-PRACTO_SQL = """WITH pl AS (
-  SELECT RIGHT(phone_no,10) ph,
-    DATE_TRUNC('week', created_at + INTERVAL '5 hours 30 minutes')::date wk,
-    ROW_NUMBER() OVER (PARTITION BY RIGHT(phone_no,10) ORDER BY created_at) rn
-  FROM allo_prod.allo_persons.lead
-  WHERE utm_source ILIKE 'practo' AND created_at >= '2023-01-01' AND phone_no IS NOT NULL),
- fl AS (SELECT ph, wk FROM pl WHERE rn=1),
- fb AS (SELECT phone_no ph10, MIN(DATE_TRUNC('week', apt_create_dt + INTERVAL '5 hours 30 minutes')::date) fbw
-        FROM production.public.bookings_data_raw GROUP BY 1)
-SELECT TO_CHAR(fl.wk,'YYYY-MM-DD') wk, COUNT(*) new_leads,
-  SUM(CASE WHEN fb.fbw = fl.wk THEN 1 ELSE 0 END) booked_same,
-  SUM(CASE WHEN fb.fbw > fl.wk THEN 1 ELSE 0 END) booked_later,
-  SUM(CASE WHEN fb.fbw IS NULL OR fb.fbw < fl.wk THEN 1 ELSE 0 END) never_booked
-FROM fl LEFT JOIN fb ON RIGHT(fb.ph10,10)=fl.ph
-WHERE fl.wk >= '{lo}' AND fl.wk < '2026-06-29'
-GROUP BY 1;""".format(lo=LO)
 
 FIELDS = ["new_leads", "booked_same", "booked_later", "never_booked"]
 if __name__ == "__main__":
@@ -77,17 +74,6 @@ if __name__ == "__main__":
         try:
             by_src[src]["new_leads"][i] += int(float(nl)); by_src[src]["booked_same"][i] += int(float(bs))
             by_src[src]["booked_later"][i] += int(float(bl)); by_src[src]["never_booked"][i] += int(float(nb))
-        except (ValueError, TypeError): continue
-    # Practo leads from the DATABASE (allo_persons.lead utm_source='practo') — not in main_source_wise_leads.
-    for line in run_sql(PRACTO_SQL):
-        r = line.split("\t") if isinstance(line, str) else line
-        if len(r) < 5: continue
-        wk, nl, bs, bl, nb = r[:5]
-        if wk not in idx: continue
-        i = idx[wk]
-        try:
-            by_src["Practo"]["new_leads"][i] += int(float(nl)); by_src["Practo"]["booked_same"][i] += int(float(bs))
-            by_src["Practo"]["booked_later"][i] += int(float(bl)); by_src["Practo"]["never_booked"][i] += int(float(nb))
         except (ValueError, TypeError): continue
     total = {f: [sum(by_src[s][f][i] for s in SRCS) for i in range(len(Z()))] for f in FIELDS}
     d["_meta"]["master_leads"] = {"sources": SRCS, "by_source": by_src, "total": total,
