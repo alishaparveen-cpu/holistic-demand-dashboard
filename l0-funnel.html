@@ -6,7 +6,7 @@
 <title>Book → Done Funnel · L0</title>
 <style>
   :root{--bg:#f8fafc;--card:#fff;--card2:#f1f5f9;--line:#e2e8f0;--ink:#0f172a;--mut:#64748b;--accent:#4338ca;
-    --good:#1f6f5c;--bad:#b23a2e;--sti:#dc2626;--sh:#3e6f8e;--oth:#8a8a80;--sheet:#fbfbfa;--hl:#eef2ff;}
+    --good:#1f6f5c;--bad:#b23a2e;--sti:#dc2626;--sh:#3e6f8e;--mh:#7c5cbf;--oth:#8a8a80;--sheet:#fbfbfa;--hl:#eef2ff;}
   *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--ink);font:13px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
   .wrap{max-width:1400px;margin:0 auto;padding:22px 18px 90px}
   a.back{font-size:12.5px;color:var(--accent);text-decoration:none}
@@ -38,7 +38,7 @@
 <div class="wrap">
   <a class="back" href="index.html">← Dashboard</a>
   <h1>Book → Done Funnel <span style="font-weight:500;color:var(--mut);font-size:14px">· L0 · new SC</span></h1>
-  <div class="sub">New screening calls (<b>phone_rank=1</b>, offline) by booking week, from <b>bookings_data_raw</b>. <b>Done = patient ever completed</b> (credits reschedules/rebookings — true conversion); the <i>first-attempt</i> book2done% is shown under it. Category (STI/SH/Other) is diagnosis-based, so it's on Done/Purchased/Revenue only — never on Bookings.</div>
+  <div class="sub">New screening calls (<b>phone_rank=1</b>, offline) by booking week, from <b>bookings_data_raw</b>. <b>Done = patient ever completed</b> (credits reschedules/rebookings — true conversion); the <i>first-attempt</i> book2done% is shown under it. <b>Purchased</b> = a real paid invoice; <b>Revenue</b> = money collected (incl. meds/labs). Category (STI / SH / <b>MH</b> / Other, with sub-types) is diagnosis-based — Done/Purchased/Revenue only, never Bookings. MH is <i>clinical</i> only (ICD-11; porn-addiction & performance-anxiety stay in SH). Break Category × Sub-category to drill in.</div>
   <div class="ctrls">
     <span class="lab">Scope</span><select id="scope"></select>
     <span class="lab" style="margin-left:6px">Maturity</span>
@@ -50,8 +50,8 @@
   <div class="fmwrap"><table class="fm" id="tbl"></table></div>
 </div>
 <script>
-let D=null, AGE={}, MATS=new Set(), NW=12, SCOPE='__all', EXP={};
-const CATCOL={STI:'var(--sti)',SH:'var(--sh)',Other:'var(--oth)'};
+let D=null, AGE={}, MATS=new Set(), NW=12, SCOPE='__all', EXP={}, SUBS={};
+const CATCOL={STI:'var(--sti)',SH:'var(--sh)',MH:'var(--mh)',Other:'var(--oth)'};
 const NOW=Date.now();
 function months(c){const d=AGE[c];if(!d)return null;const t=Date.parse(d);return isNaN(t)?null:(NOW-t)/(1000*60*60*24*30.44);}
 function matB(m){return m<3?'<3mo':m<6?'3-6mo':m<12?'6-12mo':'>1yr';}
@@ -66,7 +66,7 @@ function sl(a){return a.slice(52-NW);}
 async function boot(){
   try{
     const [f,a]=await Promise.all([fetch('data_l0_funnel.json').then(r=>r.json()), fetch('data_clinic_age.json').then(r=>r.ok?r.json():{open:{}}).catch(()=>({open:{}}))]);
-    D=f; AGE=(a&&a.open)||{};
+    D=f; AGE=(a&&a.open)||{}; SUBS=(f._meta&&f._meta.subs)||{};
   }catch(e){$('tbl').innerHTML='<tr><td class="err">Failed to load data_l0_funnel.json</td></tr>';return;}
   // scope dropdown: All + by city + each clinic
   const cities=[...new Set(Object.values(D.clinics).map(c=>c.city))].sort();
@@ -91,7 +91,7 @@ function selClinics(){
 function agg(cl,fn){return cl.reduce((a,c)=>add(a,fn(c)||ZA()),ZA());}
 
 const CHAN_ORDER=['GMB','Google Ads','Meta','Call-in (PCC)','Walk-in','Website','WhatsApp','Practo','JustDial','Organic (untagged)','Other','Untracked'];
-const CATS=['STI','SH','Other'];
+const CATS=['STI','SH','MH','Other'];
 function cells(arr,cls,fmt){fmt=fmt||fmtN;const a=sl(arr);let t=0;let s=a.map((v,i)=>{t+=v||0;return '<td class="'+(cls||'')+(i===a.length-1?' last':'')+'">'+(v?fmt(v):'<span class="zero">·</span>')+'</td>';}).join('');return s+'<td>'+fmt(t)+'</td>';}
 function rowr(label,arr,cls,fmt,tk,col){const chev=tk?'<span class="chev" onclick="toggle(\''+tk+'\')">'+(EXP[tk]?'▾':'▸')+'</span> ':'';
   return '<tr class="'+(cls||'')+'"'+(tk?' style="cursor:pointer"':'')+'><td'+(col?' style="color:'+col+'"':'')+'>'+chev+label+'</td>'+cells(arr,'',fmt)+'</tr>';}
@@ -134,7 +134,7 @@ function stageBrk(st,cl,meas,allowCat,fmt){
   fmt=fmt||fmtN;
   const brk=BRK[st]||(allowCat?'cat':'chan'), crs=CRS[st]||'none';
   const dims=allowCat?[['chan','Channel'],['cat','Category'],['city','City'],['clinic','Clinic']]:[['chan','Channel'],['city','City'],['clinic','Clinic']];
-  const crossOf=(b)=>{const o=[['none','— none —']];dims.forEach(d=>{if(d[0]!==b)o.push([d[0],'× '+d[1]]);});if(!allowCat&&b!=='status')o.push(['status','✓/✗ Done vs Not']);if(meas==='booked')o.push(['status','✓/✗ Done vs Not']);return o.filter((v,i,a)=>a.findIndex(x=>x[0]===v[0])===i);};
+  const crossOf=(b)=>{const o=[['none','— none —']];dims.forEach(d=>{if(d[0]!==b)o.push([d[0],'× '+d[1]]);});if(b==='cat')o.push(['sub','× Sub-category']);if(!allowCat&&b!=='status')o.push(['status','✓/✗ Done vs Not']);if(meas==='booked')o.push(['status','✓/✗ Done vs Not']);return o.filter((v,i,a)=>a.findIndex(x=>x[0]===v[0])===i);};
   const sel=(fn,cur,list)=>'<select onchange="'+fn+'(\''+st+'\',this.value)">'+list.map(o=>'<option value="'+o[0]+'"'+(cur===o[0]?' selected':'')+'>'+o[1]+'</option>').join('')+'</select>';
   let h='<tr><td colspan="60" style="background:var(--card2);padding:5px 10px;text-align:left"><span class="lab">break by</span> '+sel('setBrk',brk,dims)+' '+sel('setCrs',crs,crossOf(brk))+'</td></tr>';
   // members of the primary dim
@@ -153,6 +153,7 @@ function stageBrk(st,cl,meas,allowCat,fmt){
     if(crs==='cat')return CATS.map(ct=>({nm:ct,col:CATCOL[ct],arr:mval(mc,m.ch,ct)}));
     if(crs==='city')return cities.map(ci=>({nm:ci,arr:mval(cl.filter(c=>c.city===ci),m.ch,m.ct)}));
     if(crs==='clinic')return mc.map(c=>({nm:c.disp,arr:mval([c],m.ch,m.ct)}));
+    if(crs==='sub'&&m.ct)return (SUBS[m.ct]||[]).map(sc=>({nm:sc,arr:agg(mc,c=>((c.cat_sub[m.ct]||{})[sc]||{})[meas])}));
     return [];};
   members.forEach(m=>{const arr=memArr(m);if(!arr.some(v=>v))return;const tk='b_'+st+'_'+String(m.nm).replace(/[^a-z0-9]+/gi,'');const hasX=crs!=='none';
     h+=rowr('· '+m.nm,arr,'sub',fmt,hasX?tk:null,m.col);

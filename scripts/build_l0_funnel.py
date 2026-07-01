@@ -5,9 +5,11 @@ Per clinic x week x channel(L0-native) x done-category:
   booked (new SC)
   done_first  = this booking's apt_status_final='COMPLETED'  (matches colleague's book2done)
   done_ever   = the patient EVER completed an SC             (credits reschedule/rebook — true conversion)
-  purchased   = patient ever had a paid consult
-  rev         = patient's paid consult revenue (payable_amount)
-Category (diag_cat, done only): STI / SH / Other  (no MH offline). Bookings carry NO category.
+  purchased   = patient ever had a PAID invoice (real payment, not just a bill)
+  rev         = patient's collected revenue (paid invoices incl. meds/labs)
+Category (done only): STI / SH / MH / Other, with sub-categories (SH -> ED+/PE+/ED+PE+/NSSD).
+  MH = clinical ICD-11 mental dx, EXCLUDING porn-addiction / performance-anxiety (those are SH).
+  Bookings carry NO category (unknown at booking).
 Writes data_l0_funnel.json. Run: AWS_PROFILE=redshift-data python3 scripts/build_l0_funnel.py
 """
 import os, sys, json, subprocess, datetime
@@ -44,34 +46,59 @@ CHANNEL_CASE = """CASE
   WHEN b.source IS NULL THEN 'Untracked'
   ELSE 'Other' END"""
 CHANNELS = ['GMB','Google Ads','Meta','Call-in (PCC)','Walk-in','Website','WhatsApp','Practo','JustDial','Organic (untagged)','Other','Untracked']
-CATS = ['STI','SH','Other']
+CATS = ['STI','SH','MH','Other']
+# sub-categories under each top category
+SUBS = {'STI':['STI'], 'SH':['ED+','PE+','ED+PE+','NSSD','Other SH'], 'MH':['MH'], 'Other':['Other']}
 
 SQL = """WITH win AS (
-  SELECT phone_no, appointment_id, consultation_id, apt_create_dt, apt_status_final, diag_cat,
-         source, organic_l2, phone_rank, locality, city, payable_amount
+  SELECT phone_no, appointment_id, apt_create_dt, apt_status_final, diag_cat,
+         source, organic_l2, phone_rank, locality, city
   FROM production.public.bookings_data_raw
   WHERE offline_location_flag=1 AND date(apt_create_dt) >= '{lo}' AND date(apt_create_dt) < '{hi}'),
- pat AS (   -- per phone: ever completed, the completed diag_cat, revenue, purchased
+ mh AS (   -- appointments with a CLINICAL mental-health dx (ICD-11 6A-6E + kw), EXCLUDING porn-addiction / performance-anxiety (those are SH)
+  SELECT DISTINCT e.appointment_id ap_id
+  FROM allo_prod.allo_encounters.encounters e
+  JOIN allo_prod.allo_observations.diagnoses d ON d.encounter_id=e.id AND d.deleted_at IS NULL
+  WHERE e.deleted_at IS NULL AND e.appointment_id IS NOT NULL
+    AND (d.description LIKE '%(6A%' OR d.description LIKE '%(6B%' OR d.description LIKE '%(6C%' OR d.description LIKE '%(6D%' OR d.description LIKE '%(6E%'
+         OR d.description ILIKE '%depress%' OR d.description ILIKE '%bipolar%' OR d.description ILIKE '%psychosis%' OR d.description ILIKE '%adhd%'
+         OR d.description ILIKE '%ocd%' OR d.description ILIKE '%panic%')
+    AND d.description NOT ILIKE '%porn%' AND d.description NOT ILIKE '%performance anxiety%' AND d.description NOT ILIKE '%sexual%'),
+ paid AS (   -- collected revenue per appointment (paid invoices incl. meds/labs)
+  SELECT e.appointment_id ap_id, SUM(pm.amount)/100.0 amt
+  FROM allo_prod.allo_billing.invoices i
+  JOIN allo_prod.allo_health.payments pm ON pm.invoice_id=i.id AND pm.deleted_at IS NULL
+  JOIN allo_prod.allo_encounters.encounters e ON e.id=i.encounter_id AND e.deleted_at IS NULL AND e.appointment_id IS NOT NULL
+  WHERE i.deleted_at IS NULL AND i.status='paid' GROUP BY 1),
+ apt AS (   -- each appt: top category (MH override) + sub-category + paid amount
+  SELECT w.*,
+    CASE WHEN mh.ap_id IS NOT NULL THEN 'MH' WHEN w.diag_cat='STI' THEN 'STI'
+         WHEN w.diag_cat IN ('ED+','PE+','ED+PE+','NSSD') THEN 'SH' ELSE 'Other' END topcat,
+    CASE WHEN mh.ap_id IS NOT NULL THEN 'MH' WHEN w.diag_cat='STI' THEN 'STI'
+         WHEN w.diag_cat IN ('ED+','PE+','ED+PE+','NSSD') THEN w.diag_cat WHEN w.diag_cat IS NOT NULL AND w.diag_cat<>'oth' THEN 'Other SH'
+         ELSE 'Other' END subcat,
+    COALESCE(paid.amt,0) paid_amt, CASE WHEN paid.ap_id IS NOT NULL THEN 1 ELSE 0 END has_paid
+  FROM win w LEFT JOIN mh ON mh.ap_id=w.appointment_id LEFT JOIN paid ON paid.ap_id=w.appointment_id),
+ pat AS (   -- per phone: ever completed, completed category, purchased, collected revenue
   SELECT phone_no,
     MAX(CASE WHEN apt_status_final='COMPLETED' THEN 1 ELSE 0 END) ever_done,
-    MAX(CASE WHEN apt_status_final='COMPLETED' THEN diag_cat END) done_cat,
-    COALESCE(SUM(DISTINCT CASE WHEN apt_status_final='COMPLETED' THEN payable_amount END),0)/100.0 rev,
-    MAX(CASE WHEN apt_status_final='COMPLETED' AND payable_amount>0 THEN 1 ELSE 0 END) purchased
-  FROM win GROUP BY 1)
+    MAX(CASE WHEN apt_status_final='COMPLETED' THEN topcat END) done_top,
+    MAX(CASE WHEN apt_status_final='COMPLETED' THEN subcat END) done_sub,
+    MAX(CASE WHEN apt_status_final='COMPLETED' AND has_paid=1 THEN 1 ELSE 0 END) purchased,
+    COALESCE(SUM(CASE WHEN apt_status_final='COMPLETED' THEN paid_amt END),0) rev
+  FROM apt GROUP BY 1)
 SELECT b.city, b.locality,
   TO_CHAR(DATE_TRUNC('week', b.apt_create_dt::date),'YYYY-MM-DD') wk,
   {chan} channel,
-  CASE WHEN p.done_cat='STI' THEN 'STI'
-       WHEN p.done_cat IN ('ED+','PE+','ED+PE+','NSSD') THEN 'SH'
-       ELSE 'Other' END dcat,
+  COALESCE(p.done_top,'Other') topcat, COALESCE(p.done_sub,'Other') subcat,
   COUNT(*) booked,
   SUM(CASE WHEN b.apt_status_final='COMPLETED' THEN 1 ELSE 0 END) done_first,
   SUM(COALESCE(p.ever_done,0)) done_ever,
   SUM(COALESCE(p.purchased,0)) purchased,
   SUM(COALESCE(p.rev,0)) rev
-FROM win b JOIN pat p ON p.phone_no=b.phone_no
+FROM apt b JOIN pat p ON p.phone_no=b.phone_no
 WHERE b.phone_rank=1
-GROUP BY 1,2,3,4,5;""".format(lo=LO, hi=HI, chan=CHANNEL_CASE)
+GROUP BY 1,2,3,4,5,6;""".format(lo=LO, hi=HI, chan=CHANNEL_CASE)
 
 def slugify(loc, city):
     s = lambda x: "".join(ch if ch.isalnum() else "_" for ch in (x or "").strip().lower())
@@ -83,35 +110,38 @@ def blank():
     return {'tot': {m: Z() for m in MEAS},
             'chan': defaultdict(lambda: {m: Z() for m in MEAS}),
             'chan_cat': defaultdict(lambda: defaultdict(lambda: {m: Z() for m in MEAS})),
+            'cat_sub': defaultdict(lambda: defaultdict(lambda: {m: Z() for m in MEAS})),  # topcat -> subcat
             'city': ''}
 for r in run_sql(SQL):
-    if len(r) < 10: continue
-    city, loc, wk, chan, dcat, bk, df, de, pu, rv = r[:10]
+    if len(r) < 11: continue
+    city, loc, wk, chan, topcat, subcat, bk, df, de, pu, rv = r[:11]
     if wk not in idx or not loc: continue
     i = idx[wk]
     try: bk=int(float(bk)); df=int(float(df)); de=int(float(de)); pu=int(float(pu)); rv=int(round(float(rv)))
     except ValueError: continue
     if chan not in CHANNELS: chan = 'Other'
-    if dcat not in CATS: dcat = 'Other'
+    if topcat not in CATS: topcat = 'Other'
+    if subcat not in SUBS.get(topcat, ['Other']): subcat = SUBS.get(topcat, ['Other'])[0]
     slug = slugify(loc, city)
     c = clinics.setdefault(slug, blank()); c['city'] = city; c['_loc'] = loc
     vals = {'booked':bk,'done_first':df,'done_ever':de,'purchased':pu,'rev':rv}
     for m in MEAS:
-        c['tot'][m][i]+=vals[m]; c['chan'][chan][m][i]+=vals[m]; c['chan_cat'][chan][dcat][m][i]+=vals[m]
+        c['tot'][m][i]+=vals[m]; c['chan'][chan][m][i]+=vals[m]
+        c['chan_cat'][chan][topcat][m][i]+=vals[m]; c['cat_sub'][topcat][subcat][m][i]+=vals[m]
 
 # sparsify + finalize
+def sp2(dd):   # {k: {m:arr}} -> drop all-zero members
+    return {k: {m: v for m, v in d.items()} for k, d in dd.items() if any(any(a) for a in d.values())}
 out_clin = {}
 for slug, c in clinics.items():
-    chan = {ch: {m: v for m, v in d.items()} for ch, d in c['chan'].items() if any(any(a) for a in d.values())}
-    ccat = {}
-    for ch, cats in c['chan_cat'].items():
-        cc = {ct: {m: v for m, v in d.items()} for ct, d in cats.items() if any(any(a) for a in d.values())}
-        if cc: ccat[ch] = cc
+    chan = sp2(c['chan'])
+    ccat = {ch: sp2(cats) for ch, cats in c['chan_cat'].items()}; ccat = {k: v for k, v in ccat.items() if v}
+    csub = {tc: sp2(subs) for tc, subs in c['cat_sub'].items()}; csub = {k: v for k, v in csub.items() if v}
     disp = (c.get('_loc') or slug.rsplit('_',1)[0].replace('_',' ').title()) + ' · ' + c['city']
-    out_clin[slug] = {'disp': disp, 'city': c['city'], 'tot': c['tot'], 'chan': chan, 'chan_cat': ccat}
+    out_clin[slug] = {'disp': disp, 'city': c['city'], 'tot': c['tot'], 'chan': chan, 'chan_cat': ccat, 'cat_sub': csub}
 
-out = {'_meta': {'weeks': WEEKS, 'week_labels': {w: wlabel(w) for w in WEEKS}, 'channels': CHANNELS, 'cats': CATS,
-                 'note': 'L0 book2done · new SC (phone_rank=1) · done_first=first-booking COMPLETED · done_ever=patient ever completed · offline · from bookings_data_raw'},
+out = {'_meta': {'weeks': WEEKS, 'week_labels': {w: wlabel(w) for w in WEEKS}, 'channels': CHANNELS, 'cats': CATS, 'subs': SUBS,
+                 'note': 'L0 book2done · new SC (phone_rank=1) · done_first=first-booking COMPLETED · done_ever=patient ever completed · purchased=paid invoice · rev=collected (incl meds/labs) · MH=clinical ICD-11 (excl porn/perf-anxiety) · offline · from bookings_data_raw'},
        'clinics': out_clin}
 json.dump(out, open(os.path.join(ROOT, "data_l0_funnel.json"), "w"), separators=(",", ":"))
 
