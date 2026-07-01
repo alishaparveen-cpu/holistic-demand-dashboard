@@ -32,6 +32,14 @@
   .cbar select{padding:3px 8px;font-size:11.5px;color:var(--accent)}
   .zero{color:#cbd5e1} .g{color:var(--good)} .r{color:var(--bad)}
   .err{color:#b23a2e;padding:30px;text-align:center}
+  .ms{position:relative;display:inline-block}
+  .mspanel{display:none;position:absolute;top:calc(100% + 4px);left:0;z-index:30;background:#fff;border:1px solid var(--line);border-radius:9px;box-shadow:0 8px 26px rgba(0,0,0,.14);max-height:320px;overflow:auto;min-width:210px;padding:4px}
+  .mspanel.on{display:block}
+  .msact{display:flex;gap:10px;padding:5px 9px 7px;border-bottom:1px solid var(--line);margin-bottom:3px}
+  .msact a{color:var(--accent);font-size:11px;font-weight:700;cursor:pointer}.msact a:hover{text-decoration:underline}
+  .msi{display:flex;align-items:center;gap:7px;padding:4px 9px;font-size:12px;cursor:pointer;white-space:nowrap;border-radius:5px}
+  .msi:hover{background:var(--card2)} .msi input{cursor:pointer} .msi .c{color:var(--mut);font-size:10.5px;margin-left:auto;padding-left:12px;font-variant-numeric:tabular-nums}
+  .msgrp{font-size:9.5px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--mut);padding:6px 9px 2px}
 </style>
 </head>
 <body>
@@ -40,17 +48,25 @@
   <h1>Book → Done Funnel <span style="font-weight:500;color:var(--mut);font-size:14px">· L0 · new SC</span></h1>
   <div class="sub">New screening calls (<b>phone_rank=1</b>, offline) by booking week, from <b>bookings_data_raw</b>. <b>Done = patient ever completed</b> (credits reschedules/rebookings — true conversion); the <i>first-attempt</i> book2done% is shown under it. <b>Purchased</b> = a real paid invoice; <b>Revenue</b> = money collected (incl. meds/labs). Category (STI / SH / <b>MH</b> / Other, with sub-types) is diagnosis-based — Done/Purchased/Revenue only, never Bookings. MH is <i>clinical</i> only (ICD-11; porn-addiction & performance-anxiety stay in SH). Break Category × Sub-category to drill in.</div>
   <div class="ctrls">
-    <span class="lab">Scope</span><select id="scope"></select>
-    <span class="lab" style="margin-left:6px">Maturity</span>
+    <button class="fbtn" id="ovBtn" onclick="setOverview()">◎ Overview · All India</button>
+    <span class="lab" style="margin-left:4px">Tier</span>
+    <button class="fbtn" data-t="T1" onclick="togTier(this)">Tier 1</button><button class="fbtn" data-t="T2" onclick="togTier(this)">Tier 2</button>
+    <span class="lab" style="margin-left:4px">Cities</span>
+    <div class="ms"><button class="fbtn" id="cityBtn" onclick="openMs(event,'City')">All cities ▾</button><div class="mspanel" id="panelCity"></div></div>
+    <span class="lab" style="margin-left:4px">Clinics</span>
+    <div class="ms"><button class="fbtn" id="clinBtn" onclick="openMs(event,'Clin')">All clinics ▾</button><div class="mspanel" id="panelClin"></div></div>
+    <span class="lab" style="margin-left:4px">Maturity</span>
     <button class="fbtn" data-v="<3mo" onclick="togMat(this)">&lt;3mo</button><button class="fbtn" data-v="3-6mo" onclick="togMat(this)">3–6mo</button><button class="fbtn" data-v="6-12mo" onclick="togMat(this)">6–12mo</button><button class="fbtn" data-v=">1yr" onclick="togMat(this)">&gt;1yr</button>
-    <span class="lab" style="margin-left:6px">Weeks</span><select id="weeks" onchange="setWk(this.value)"><option value="12">12</option><option value="26">26</option><option value="52">52</option></select>
+    <span class="lab" style="margin-left:4px">Weeks</span><select id="weeks" onchange="setWk(this.value)"><option value="12">12</option><option value="26">26</option><option value="52">52</option></select>
     <span id="cnt" class="lab" style="margin-left:auto;text-transform:none;font-weight:600"></span>
   </div>
   <div id="names" class="names"></div>
   <div class="fmwrap"><table class="fm" id="tbl"></table></div>
 </div>
 <script>
-let D=null, AGE={}, MATS=new Set(), NW=12, SCOPE='__all', EXP={}, SUBS={};
+let D=null, AGE={}, MATS=new Set(), CITY=new Set(), CLIN=new Set(), TIER=new Set(), NW=12, EXP={}, SUBS={};
+const T1CITIES=new Set(['Bangalore','Mumbai','Pune','Hyderabad','Chennai']);
+function tierOf(city){return T1CITIES.has(city)?'T1':'T2';}
 const CATCOL={STI:'var(--sti)',SH:'var(--sh)',MH:'var(--mh)',Other:'var(--oth)'};
 const NOW=Date.now();
 function months(c){const d=AGE[c];if(!d)return null;const t=Date.parse(d);return isNaN(t)?null:(NOW-t)/(1000*60*60*24*30.44);}
@@ -68,25 +84,69 @@ async function boot(){
     const [f,a]=await Promise.all([fetch('data_l0_funnel.json').then(r=>r.json()), fetch('data_clinic_age.json').then(r=>r.ok?r.json():{open:{}}).catch(()=>({open:{}}))]);
     D=f; AGE=(a&&a.open)||{}; SUBS=(f._meta&&f._meta.subs)||{};
   }catch(e){$('tbl').innerHTML='<tr><td class="err">Failed to load data_l0_funnel.json</td></tr>';return;}
-  // scope dropdown: All + by city + each clinic
-  const cities=[...new Set(Object.values(D.clinics).map(c=>c.city))].sort();
-  let opt='<option value="__all">All clinics (India)</option>';
-  cities.forEach(ct=>opt+='<option value="city:'+ct+'">'+ct+' (city)</option>');
-  Object.keys(D.clinics).sort((a,b)=>D.clinics[a].disp.localeCompare(D.clinics[b].disp)).forEach(s=>opt+='<option value="'+s+'">'+D.clinics[s].disp+'</option>');
-  $('scope').innerHTML=opt; $('scope').onchange=()=>{SCOPE=$('scope').value;render();};
+  renderCityOptions(); renderClinicOptions(); updateScopeBtns();
+  document.addEventListener('click',e=>{ if(!e.target.closest('.ms')){$('panelCity').classList.remove('on');$('panelClin').classList.remove('on');} });
   render();
 }
-function togMat(b){const v=b.dataset.v;if(MATS.has(v))MATS.delete(v);else MATS.add(v);b.classList.toggle('on',MATS.has(v));render();}
-function setWk(v){NW=+v;render();}
-function toggle(k){EXP[k]=!EXP[k];render();}
-
+// ---- scope helpers ----
+function clinMonths(s){return months(D.clinics[s].disp.split(' · ')[0]);}
+function baseKeys(){ // clinics passing the TIER + CITY gate (the universe the clinic/maturity pickers operate within)
+  let k=Object.keys(D.clinics);
+  if(TIER.size)k=k.filter(s=>TIER.has(tierOf(D.clinics[s].city)));
+  if(CITY.size)k=k.filter(s=>CITY.has(D.clinics[s].city));
+  return k;
+}
 function selClinics(){
-  let keys=Object.keys(D.clinics);
-  if(SCOPE.startsWith('city:'))keys=keys.filter(s=>D.clinics[s].city===SCOPE.slice(5));
-  else if(SCOPE!=='__all')keys=keys.filter(s=>s===SCOPE);
-  if(MATS.size)keys=keys.filter(s=>{const m=months(D.clinics[s].disp.split(' · ')[0]);return m!=null&&MATS.has(matB(m));});
+  let keys=baseKeys();
+  if(CLIN.size)keys=keys.filter(s=>CLIN.has(s));   // explicit clinic pick (also set by maturity)
   return keys.map(s=>D.clinics[s]);
 }
+function setOverview(){CITY.clear();CLIN.clear();TIER.clear();MATS.clear();afterScope();}
+function togTier(b){const t=b.dataset.t;TIER.has(t)?TIER.delete(t):TIER.add(t);
+  // drop city/clinic picks that fall outside the new tier gate
+  [...CITY].forEach(c=>{if(TIER.size&&!TIER.has(tierOf(c)))CITY.delete(c);});
+  [...CLIN].forEach(s=>{if(!baseKeysHas(s))CLIN.delete(s);});
+  afterScope();}
+function baseKeysHas(s){return (!TIER.size||TIER.has(tierOf(D.clinics[s].city)))&&(!CITY.size||CITY.has(D.clinics[s].city));}
+function togCity(c){CITY.has(c)?CITY.delete(c):CITY.add(c);
+  [...CLIN].forEach(s=>{if(!baseKeysHas(s))CLIN.delete(s);});   // keep clinic picks within selected cities
+  if(MATS.size)applyMatSelection();
+  afterScope();}
+function togClin(s){CLIN.has(s)?CLIN.delete(s):CLIN.add(s);afterScope();}
+function togMat(b){const v=b.dataset.v;MATS.has(v)?MATS.delete(v):MATS.add(v);b.classList.toggle('on',MATS.has(v));
+  applyMatSelection(); afterScope();}
+function applyMatSelection(){ // maturity SELECTS the matching clinics (within tier+city gate) into the clinic scope
+  if(!MATS.size){CLIN.clear();return;}
+  CLIN=new Set(baseKeys().filter(s=>{const m=clinMonths(s);return m!=null&&MATS.has(matB(m));}));
+}
+function afterScope(){renderCityOptions();renderClinicOptions();updateScopeBtns();render();}
+function openMs(e,which){e.stopPropagation();const p=$('panel'+which),o=$('panel'+(which==='City'?'Clin':'City'));o.classList.remove('on');p.classList.toggle('on');}
+function updateScopeBtns(){
+  const all=!CITY.size&&!CLIN.size&&!TIER.size&&!MATS.size;
+  $('ovBtn').classList.toggle('on',all);
+  document.querySelectorAll('[data-t]').forEach(b=>b.classList.toggle('on',TIER.has(b.dataset.t)));
+  document.querySelectorAll('[data-v]').forEach(b=>b.classList.toggle('on',MATS.has(b.dataset.v)));
+  $('cityBtn').textContent=(CITY.size?CITY.size+' cit'+(CITY.size===1?'y':'ies'):'All cities')+' ▾';$('cityBtn').classList.toggle('on',!!CITY.size);
+  $('clinBtn').textContent=(CLIN.size?CLIN.size+' clinic'+(CLIN.size===1?'':'s'):'All clinics')+' ▾';$('clinBtn').classList.toggle('on',!!CLIN.size);
+}
+function renderCityOptions(){
+  let cities=[...new Set(Object.keys(D.clinics).filter(s=>!TIER.size||TIER.has(tierOf(D.clinics[s].city))).map(s=>D.clinics[s].city))].sort();
+  let h='<div class="msact"><a onclick="allCity(1)">select all</a><a onclick="allCity(0)">clear</a></div>';
+  ['T1','T2'].forEach(t=>{const grp=cities.filter(c=>tierOf(c)===t);if(!grp.length)return;h+='<div class="msgrp">'+(t==='T1'?'Tier 1':'Tier 2')+'</div>';
+    grp.forEach(c=>{const n=Object.values(D.clinics).filter(x=>x.city===c).length;h+='<label class="msi"><input type="checkbox" '+(CITY.has(c)?'checked':'')+' onclick="togCity(\''+c.replace(/'/g,"\\'")+'\')">'+c+'<span class="c">'+n+'</span></label>';});});
+  $('panelCity').innerHTML=h;
+}
+function renderClinicOptions(){
+  const keys=baseKeys().sort((a,b)=>D.clinics[a].disp.localeCompare(D.clinics[b].disp));
+  let h='<div class="msact"><a onclick="allClin(1)">select all</a><a onclick="allClin(0)">clear</a></div>';
+  if(!keys.length)h+='<div class="msi" style="color:var(--mut)">no clinics in scope</div>';
+  keys.forEach(s=>{const m=clinMonths(s);h+='<label class="msi"><input type="checkbox" '+(CLIN.has(s)?'checked':'')+' onclick="togClin(\''+s.replace(/'/g,"\\'")+'\')">'+D.clinics[s].disp+'<span class="c">'+(m!=null?matB(m):'—')+'</span></label>';});
+  $('panelClin').innerHTML=h;
+}
+function allCity(on){const cities=[...new Set(Object.keys(D.clinics).filter(s=>!TIER.size||TIER.has(tierOf(D.clinics[s].city))).map(s=>D.clinics[s].city))];CITY=on?new Set(cities):new Set();[...CLIN].forEach(s=>{if(!baseKeysHas(s))CLIN.delete(s);});if(MATS.size)applyMatSelection();afterScope();}
+function allClin(on){CLIN=on?new Set(baseKeys()):new Set();afterScope();}
+function setWk(v){NW=+v;render();}
+function toggle(k){EXP[k]=!EXP[k];render();}
 // aggregate a measure across selected clinics, via an accessor returning a weekly array per clinic
 function agg(cl,fn){return cl.reduce((a,c)=>add(a,fn(c)||ZA()),ZA());}
 
@@ -99,8 +159,9 @@ function pctrow(label,num,den){const a=sl(num),b=sl(den);let tn=0,td=0;let s=a.m
 
 function render(){
   const cl=selClinics();
-  $('cnt').textContent=cl.length+' clinic'+(cl.length===1?'':'s')+(MATS.size?' · '+[...MATS].join(', '):'');
-  if($('names')){ if(SCOPE==='__all'&&!MATS.size){$('names').style.display='none';} else {
+  const scopeBits=[]; if(TIER.size)scopeBits.push([...TIER].join('+')); if(CITY.size)scopeBits.push(CITY.size+' cities'); if(MATS.size)scopeBits.push([...MATS].join(', '));
+  $('cnt').textContent=cl.length+' clinic'+(cl.length===1?'':'s')+(scopeBits.length?' · '+scopeBits.join(' · '):'');
+  if($('names')){ if(!CITY.size&&!CLIN.size&&!TIER.size&&!MATS.size){$('names').style.display='none';} else {
     $('names').innerHTML='<b>'+cl.length+' clinics:</b> '+cl.map(c=>c.disp).sort().join('  ·  '); $('names').style.display=''; } }
   // header
   const WK=D._meta.weeks.slice(52-NW), lab=D._meta.week_labels;
