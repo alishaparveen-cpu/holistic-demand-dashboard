@@ -161,7 +161,7 @@ tr[onclick]:hover td:first-child{color:var(--accent)}
   <div class="shead">⑧ Google Ads funnel <span class="lblmuted">(impressions → clicks → location-clicks → conversions · Google's own metrics, <b>city-level</b> — follows the City/Tier filter but not clinic/maturity. Break by City or Category to see where STI/SH/MH moved.)</span></div>
   <div id="gadsCtlBar" style="font-size:12px;color:var(--ink2);margin:0 2px 8px;min-height:26px;display:flex;align-items:center;gap:2px;flex-wrap:wrap"></div>
   <div class="fmwrap"><table class="fm" id="tGads"></table></div>
-  <div class="shead">⑨ Google Ads — Cost &amp; Efficiency <span class="lblmuted">(<b>paid Google only</b> — GMB / Organic / Meta / Practo carry no auction spend, shown as —. <b>Cost per call</b> = spend ÷ location-clicks (the founder's terminal metric); CPL / CPB use ① attributed <b>paid</b> leads / bookings. Lower is better.)</span></div>
+  <div class="shead">⑨ Google Ads — Cost &amp; Efficiency <span class="lblmuted">(<b>paid Google only</b> — spend = <b>22 tracked cities + national ONLINE</b>. Any brand / experimental campaigns not mapped to a tracked city are excluded, so this can read a little below the raw Google account total. <b>Cost per call</b> = city spend ÷ location-clicks. Lower is better.)</span></div>
   <div class="fmwrap"><table class="fm" id="tGcost"></table></div>
   </div>
 </div>
@@ -786,12 +786,16 @@ function render(){
   const z0=a=>(a||ZA).map(v=>v==null?0:v);
   const sumF=f=>gcc.reduce((a,ci)=>addv(a,z0(RC[ci][f])),ZA.slice());
   const catSum=(ct,f)=>gcc.reduce((a,ci)=>{const bc=(RC[ci].by_cat||{})[ct];return addv(a,bc&&bc[f]?z0(bc[f]):ZA);},ZA.slice());
-  const spendT=sumF('spend'),clksT=sumF('clicks'),locT=sumF('loc_clicks');
-  GC+=row('All Google Ads — spend',spendT,'tot',RUP,{color:BLU});
-  GC+=row('· CPC — ₹ / click',costR(spendT,clksT),'sub',RUP,{color:VIO});
-  GC+=row('· cost per call — ₹ / location-click',costR(spendT,locT),'sub',RUP,{color:GRN});
-  GC+=row('· CPL — ₹ / paid lead (①)',costR(spendT,googCountry),'sub',RUP,{color:GRN});
-  GC+=row('· CPB — ₹ / paid booking',costR(spendT,googBk),'sub',RUP,{color:GRN});
+  const NOLC=D._meta.google_online_national||{};const onlSp=z0(NOLC.spend),onlCl=z0(NOLC.clicks);
+  const citySpend=sumF('spend'),cityClk=sumF('clicks'),locT=sumF('loc_clicks');
+  const spendT=addv(citySpend,onlSp);
+  GC+=row('All Google Ads — spend (city + national online)',spendT,'tot',RUP,{color:BLU});
+  GC+=row('· city campaigns (22 tracked cities)',citySpend,'sub',RUP,{color:GRN});
+  GC+=row('· national ONLINE (telehealth)',onlSp,'sub',RUP,{color:'#7c5cbf'});
+  GC+=row('· CPC — ₹ / click (all)',costR(spendT,addv(cityClk,onlCl)),'sub',RUP,{color:VIO});
+  GC+=row('· cost per call — ₹ / location-click (city)',costR(citySpend,locT),'sub',RUP,{color:GRN});
+  GC+=row('· CPL — ₹ / paid lead (①, city)',costR(citySpend,googCountry),'sub',RUP,{color:GRN});
+  GC+=row('· CPB — ₹ / paid booking (city)',costR(citySpend,googBk),'sub',RUP,{color:GRN});
   // by category — cost per call by SH / STI / MH (founder's ask)
   CATS.forEach(ct=>{const sp=catSum(ct,'spend');if(!sp.some(v=>v))return;
     GC+=row(ct+' — spend',sp,'grp',RUP,{color:CATCOL[ct],tkey:'gcc_'+ct});
