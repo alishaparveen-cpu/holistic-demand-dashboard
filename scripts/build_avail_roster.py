@@ -71,9 +71,9 @@ final AS (SELECT r.dt, r.city, r.locality, r.pro_name AS doctor_name, r.block_lo
     FROM roster_daily r
     LEFT JOIN sc_daily sc ON r.dt = sc.dt AND r.pro_name = sc.doctor_name AND r.block_location = sc.block_location
     LEFT JOIN rpt_daily rpt ON r.dt = rpt.dt AND r.pro_name = rpt.doctor_name AND r.block_location = rpt.block_location)
-SELECT TO_CHAR(dt,'YYYY-MM-DD') dt, city, locality,
+SELECT TO_CHAR(dt,'YYYY-MM-DD') dt, city, locality, doctor_name,
   SUM(roster_opened_mins) opened_min, SUM(shrinkage_mins) shrink_min, SUM(net_sc_mins) sc_min, SUM(net_rpt_mins) fu_min
-FROM final GROUP BY 1,2,3;"""
+FROM final GROUP BY 1,2,3,4;"""
 
 def slugify(loc, city):
     s = lambda x: "".join(ch if ch.isalnum() else "_" for ch in (x or "").strip().lower())
@@ -84,40 +84,58 @@ def wk_of(dt):   # Monday-week ISO string
     d = datetime.date.fromisoformat(dt); return (d - datetime.timedelta(days=d.weekday())).isoformat()
 
 FIELDS = ["opened", "shrink", "after_shrink", "sc_net", "fu_net", "net_avail", "dead", "active_wkday", "active_wkend"]
+DFIELDS = ["av_after", "av_sc"]   # per-doctor availability merged into clinic.by_doctor
 if __name__ == "__main__":
     d = json.load(open(OUT)); clinics = d["clinics"]
-    acc = {}   # slug -> field -> [weeks]  (hours; active_* are day counts)
+    day = {}    # (slug, dt) -> {opened,shrink,sc,fu}  (day totals across doctors → clinic rollup + active days)
+    dwk = {}    # slug -> doctor -> {av_after,av_sc}   (per-doctor weekly hours)
     for line in run_sql(SQL):
         r = line.split("\t") if isinstance(line, str) else line
-        if len(r) < 7: continue
-        dt, city, loc, om, sm, scm, fum = r[:7]
+        if len(r) < 8: continue
+        dt, city, loc, doctor, om, sm, scm, fum = r[:8]
         if not loc or loc in ("", "None"): continue
         wk = wk_of(dt)
         if wk not in idx: continue
         slug = slugify(loc, norm_city(city)); i = idx[wk]
         try: om = float(om); sm = float(sm); scm = float(scm); fum = float(fum)
         except (ValueError, TypeError): continue
-        a = acc.setdefault(slug, {f: Z() for f in FIELDS})
-        after = om - sm; netav = scm + fum
-        a["opened"][i] += om / 60.0; a["shrink"][i] += sm / 60.0; a["after_shrink"][i] += after / 60.0
-        a["sc_net"][i] += scm / 60.0; a["fu_net"][i] += fum / 60.0; a["net_avail"][i] += netav / 60.0
-        a["dead"][i] += (after - netav) / 60.0
-        dow = datetime.date.fromisoformat(dt).weekday()   # 0=Mon..6=Sun
-        if after > ACTIVE_MIN:
-            if dow <= 4: a["active_wkday"][i] += 1
-            else: a["active_wkend"][i] += 1
+        after = om - sm
+        dd = day.setdefault((slug, dt), {"opened": 0.0, "shrink": 0.0, "sc": 0.0, "fu": 0.0})
+        dd["opened"] += om; dd["shrink"] += sm; dd["sc"] += scm; dd["fu"] += fum
+        if doctor:
+            e = dwk.setdefault(slug, {}).setdefault(doctor, {f: Z() for f in DFIELDS})
+            e["av_after"][i] += after / 60.0; e["av_sc"][i] += scm / 60.0
 
-    matched = 0
+    acc = {}   # slug -> field -> [weeks]
+    for (slug, dt), v in day.items():
+        i = idx[wk_of(dt)]
+        a = acc.setdefault(slug, {f: Z() for f in FIELDS})
+        after = v["opened"] - v["shrink"]; netav = v["sc"] + v["fu"]
+        a["opened"][i] += v["opened"] / 60.0; a["shrink"][i] += v["shrink"] / 60.0; a["after_shrink"][i] += after / 60.0
+        a["sc_net"][i] += v["sc"] / 60.0; a["fu_net"][i] += v["fu"] / 60.0; a["net_avail"][i] += netav / 60.0
+        a["dead"][i] += (after - netav) / 60.0
+        if after > ACTIVE_MIN:
+            dow = datetime.date.fromisoformat(dt).weekday()
+            a["active_wkday" if dow <= 4 else "active_wkend"][i] += 1
+
+    matched = 0; dmerged = 0
     for slug, c in clinics.items():
-        if slug not in acc: continue
-        a = acc[slug]
-        c["avail_roster"] = {f: ([round(x, 1) for x in a[f]] if f not in ("active_wkday", "active_wkend") else a[f]) for f in FIELDS}
-        matched += 1
+        if slug in acc:
+            a = acc[slug]
+            c["avail_roster"] = {f: ([round(x, 1) for x in a[f]] if f not in ("active_wkday", "active_wkend") else a[f]) for f in FIELDS}
+            matched += 1
+        for dr, fields in (dwk.get(slug) or {}).items():
+            if not any(any(fields[f]) for f in DFIELDS): continue
+            bd = c.setdefault("by_doctor", {}).setdefault(dr, {})
+            for f in DFIELDS:
+                if any(fields[f]): bd[f] = [round(x, 1) for x in fields[f]]; dmerged += 1
     json.dump(d, open(OUT, "w"), separators=(",", ":"))
-    print("avail_roster for %d clinics (of %d)" % (matched, len(clinics)))
+    print("avail_roster for %d clinics (of %d) | doctor-avail merged into %d clinic-doctor fields" % (matched, len(clinics), dmerged))
     am = clinics.get("ameerpet_hyderabad", {}).get("avail_roster")
     if am:
-        wk = d["_meta"]["weeks"][:7]
-        print("Ameerpet weeks      :", wk)
-        for f in ["opened", "shrink", "after_shrink", "sc_net", "active_wkday", "active_wkend"]:
+        print("Ameerpet weeks      :", d["_meta"]["weeks"][:7])
+        for f in ["after_shrink", "sc_net", "active_wkday", "active_wkend"]:
             print("  %-13s:" % f, am[f][:7])
+        bd = clinics["ameerpet_hyderabad"].get("by_doctor", {})
+        for dr in list(bd)[:2]:
+            print("  doc %-22s av_sc=%s" % (dr[:22], bd[dr].get("av_sc", [0])[:6]))
