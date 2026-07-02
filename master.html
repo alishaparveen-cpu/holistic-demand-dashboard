@@ -108,6 +108,7 @@ tr[onclick]:hover td:first-child{color:var(--accent)}
 .msact a{font-size:11px;color:var(--accent);cursor:pointer;font-weight:600}
 .mainnav{display:flex;gap:2px;margin:8px 0 16px;border-bottom:2px solid var(--line)}
 body.dailymode .wk-only{display:none}
+.daily-only{display:none}body.dailymode .daily-only{display:block}
 .mtab{background:none;border:none;border-bottom:2px solid transparent;margin-bottom:-2px;padding:9px 18px;font-family:Inter;font-size:14px;font-weight:600;color:var(--muted);cursor:pointer;transition:color .12s}
 .mtab:hover{color:var(--ink2)}
 .mtab.on{color:var(--accent);border-bottom-color:var(--accent)}
@@ -156,6 +157,10 @@ body.dailymode .wk-only{display:none}
   <div id="matNames" style="font-size:12px;color:var(--ink2);margin:0 0 10px;line-height:1.6;display:none"></div>
   <div id="qvWrap" style="display:none"></div>
   <div id="tables">
+  <div class="daily-only">
+    <div class="shead">◎ Top-level · Total / Online / Offline <span class="lblmuted">(the quick read — calls done, bookings, leads, lead→book% · toggle <b>📅 Week-to-date</b> for the Mon–Wed week-over-week comparison)</span></div>
+    <div class="fmwrap"><table class="fm" id="tSummary"></table></div>
+  </div>
   <div class="shead">① Leads <span class="lblmuted">(fresh <b>new</b> leads each week — a phone's first-ever lead — by source, with how many booked same-week / later / never · <b>national</b>, no clinic split)</span></div>
   <div class="fmwrap"><table class="fm" id="tLeads"></table></div>
 
@@ -524,6 +529,21 @@ function render(){
       Object.keys(bd).map(c=>({c,n:bn[c],d:bd[c]})).sort((a,b)=>(b.d[WKEND]||0)-(a.d[WKEND]||0)).forEach(p=>{if(p.d.some(v=>v))h+=row('· '+p.c,pctOf(p.n,p.d),'sub',PCT,{color:o.color||VIO});});}
     return h;}
   const onlBot=D._meta.online_bottom||{total:{},by_cat:{}};
+  // ◎ Daily top-level summary — Total / Online / Offline (reproduces the TL;DR quick read)
+  {const _sm=$('tSummary');
+   if(_sm){ if(!isDaily())_sm.innerHTML='';
+     else{const offBk=clinics.reduce((a,x)=>addv(a,x.data.bottom.booked||ZA),ZA.slice());
+       const offDn=clinics.reduce((a,x)=>addv(a,x.data.bottom.done||ZA),ZA.slice());
+       const oT=onlBot.total||{},onlBk2=oT.booked||ZA,onlDn2=oT.done||ZA;
+       const ML=D._meta.master_leads||{total:{}},leadsT=(ML.total||{}).new_leads||ZA,lbk=addv((ML.total||{}).booked_same||ZA,(ML.total||{}).booked_later||ZA);
+       let H=head('Metric · total / online / offline');
+       H+=row('Calls done',addv(offDn,onlDn2),'tot',N,{color:GRN});
+       H+=row('· offline',offDn,'sub',N,{color:GRN});H+=row('· online',onlDn2,'sub',N,{color:'#2b5cad'});
+       H+=row('Bookings',addv(offBk,onlBk2),'tot',N,{color:BLU});
+       H+=row('· offline',offBk,'sub',N,{color:BLU});H+=row('· online',onlBk2,'sub',N,{color:'#2b5cad'});
+       H+=row('New leads · national',leadsT,'grp',N,{color:VIO});
+       H+=row('· lead → book %',pctOf(lbk,leadsT),'sub',PCT,{color:VIO});
+       _sm.innerHTML=H;}}}
   const segArr=(off,onl)=>SEG==='online'?(onl||ZA):SEG==='offline'?off:addv(off,onl||ZA);
   const catO=(cat,field)=>{const off=clinics.reduce((a,x)=>{const bc=(x.data.bottom.by_cat||{})[cat];return addv(a,bc?(bc[field]||ZA):ZA);},ZA.slice());const onl=((onlBot.by_cat||{})[cat]||{})[field]||ZA;return segArr(off,onl);};
   const subO=(sub,field)=>clinics.reduce((a,x)=>{const bs=(x.data.bottom.by_subcat||{})[sub];return addv(a,bs?(bs[field]||ZA):ZA);},ZA.slice());

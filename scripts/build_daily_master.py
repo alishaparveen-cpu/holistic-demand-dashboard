@@ -139,6 +139,28 @@ WHERE fl.fd BETWEEN '{lo}' AND '{end}' GROUP BY 1,2;""".format(lo=LO, end=END.is
 LEAD_SRCS = ["GMB", "Google Ads", "Meta", "WhatsApp", "Walk-in", "Website", "Practo", "JustDial", "Newspaper", "YouTube", "Organic (untagged)", "Other"]
 LFIELDS = ["new_leads", "booked_same", "booked_later", "never_booked"]
 
+ONLINE_IDS = "'c7d8c9d2-f389-4e8f-a260-71110195b83f','ffe8d849-3099-48fe-a2df-e324c4befe56'"   # telehealth locations
+# online SC booked by SERVICE day (national pool — dedup per patient/day)
+ONL_BOOK_SQL = """WITH sc AS (
+  SELECT a.patient_id, DATE(a.start_time + INTERVAL '5 hours 30 minutes') dt,
+    ROW_NUMBER() OVER (PARTITION BY a.patient_id, DATE(a.start_time + INTERVAL '5 hours 30 minutes') ORDER BY a.id) rn
+  FROM allo_consultations.appointments a
+  JOIN allo_consultations.types t ON t.id=a.type_id AND t.name='Screening Call'
+  WHERE a.deleted_at IS NULL AND a.location_id IN ({ids}) AND DATE(a.start_time + INTERVAL '5 hours 30 minutes') BETWEEN '{lo}' AND '{end}')
+SELECT TO_CHAR(dt,'YYYY-MM-DD') d, COUNT(*) booked FROM sc WHERE rn=1 GROUP BY 1;""".format(ids=ONLINE_IDS, lo=LO, end=END.isoformat())
+# online SC done/purchased/rev by COMPLETION day
+ONL_DONE_SQL = """WITH inv AS (SELECT e.appointment_id ap_id, SUM(i.amount) amt FROM allo_encounters.encounters e
+    JOIN allo_billing.invoices i ON i.encounter_id=e.id AND i.deleted_at IS NULL AND i.status='paid' WHERE e.deleted_at IS NULL GROUP BY 1),
+  comp AS (SELECT a.id, DATE(COALESCE(a.actual_start_time,a.start_time,a.created_at) + INTERVAL '5 hours 30 minutes') d,
+      ROW_NUMBER() OVER (PARTITION BY a.patient_id, DATE(COALESCE(a.actual_start_time,a.start_time,a.created_at) + INTERVAL '5 hours 30 minutes') ORDER BY a.id) rn
+    FROM allo_consultations.appointments a
+    JOIN allo_consultations.types t ON t.id=a.type_id AND t.name='Screening Call'
+    WHERE a.deleted_at IS NULL AND a.status='COMPLETED' AND a.location_id IN ({ids})
+      AND DATE(COALESCE(a.actual_start_time,a.start_time,a.created_at) + INTERVAL '5 hours 30 minutes') BETWEEN '{lo}' AND '{end}')
+SELECT c.d, COUNT(*) done, SUM(CASE WHEN inv.ap_id IS NOT NULL THEN 1 ELSE 0 END) purchased,
+  SUM(CASE WHEN inv.ap_id IS NOT NULL THEN COALESCE(inv.amt,0) ELSE 0 END) rev_paise
+FROM comp c LEFT JOIN inv ON inv.ap_id=c.id WHERE c.rn=1 GROUP BY 1;""".format(ids=ONLINE_IDS, lo=LO, end=END.isoformat())
+
 def slugify(loc, city):
     s = lambda x: "".join(ch if ch.isalnum() else "_" for ch in (x or "").strip().lower())
     return s(loc) + "_" + s(city)
@@ -209,7 +231,26 @@ if __name__ == "__main__":
         except (ValueError, TypeError): continue
     total = {f: [sum(by_src[s][f][i] for s in LEAD_SRCS) for i in range(NDAYS)] for f in LFIELDS}
 
+    print("online (telehealth) booked / done…")
+    onl = {"booked": Z(), "done": Z(), "purchased": Z(), "rev": Z()}
+    for line in run_sql(ONL_BOOK_SQL):
+        r = line.split("\t") if isinstance(line, str) else line
+        if len(r) < 2: continue
+        d, bk = r[:2]
+        if d not in idx: continue
+        try: onl["booked"][idx[d]] += int(float(bk))
+        except ValueError: continue
+    for line in run_sql(ONL_DONE_SQL):
+        r = line.split("\t") if isinstance(line, str) else line
+        if len(r) < 4: continue
+        d, dn, pu, rvp = r[:4]
+        if d not in idx: continue
+        try: onl["done"][idx[d]] += int(float(dn)); onl["purchased"][idx[d]] += int(float(pu)); onl["rev"][idx[d]] += round(int(float(rvp)) / 100.0)
+        except (ValueError, TypeError): continue
+
     out = {"_meta": {
+        "online_bottom": {"total": onl, "by_cat": {}, "rev_cp": {}},
+        "online_src": {},
         "weeks": DAYS, "daily": True,
         "display": sm.get("display", {}), "city_tier": sm.get("city_tier", {}),
         "clinic_age": sm.get("clinic_age", {}), "clinics": sm.get("clinics", []),
