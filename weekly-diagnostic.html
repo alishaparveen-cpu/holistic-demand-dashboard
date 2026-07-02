@@ -38,6 +38,8 @@
   .mc{display:inline-block;min-width:26px;text-align:center;font-family:'JetBrains Mono';font-size:11px;font-weight:700;border-radius:5px;padding:2px 5px;margin-right:3px}
   .mc.base{background:var(--inset);color:var(--muted)} .mc.red{background:var(--rbg);color:#a8352a} .mc.amber{background:var(--abg);color:#8a6412} .mc.green{background:var(--gbg);color:var(--good)}
   .mlab{font-size:11px;color:var(--ink2);font-weight:600;margin-right:7px;display:inline-block;min-width:78px} .wc{font-size:10.5px;color:var(--bad);margin-left:6px} .fixt{font-size:10.5px;color:var(--muted);margin-left:8px}
+  .slope{display:inline-block;font-weight:800;font-size:13px;margin-right:7px;width:13px;text-align:center;cursor:help}
+  .slope.down{color:var(--bad)}.slope.amber{color:var(--warn)}.slope.up{color:var(--good)}.slope.flat{color:var(--faint)}
   /* ---- founder question chips ---- */
   .qgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(232px,1fr));gap:10px;margin-bottom:16px}
   .qc{background:var(--sheet);border:1px solid var(--line);border-radius:11px;padding:12px 14px;cursor:pointer;transition:box-shadow .15s}
@@ -140,6 +142,22 @@ const mean=a=>{const b=a.filter(x=>x!=null);return b.length?b.reduce((x,y)=>x+y,
 const sum=a=>a.reduce((x,y)=>x+(y||0),0);
 function fmt(v,d){return v==null?'—':(d?(Math.round(v*10)/10):Math.round(v)).toLocaleString('en-IN');}
 function cap(s){return s.charAt(0).toUpperCase()+s.slice(1);}
+// slope of the shown window: distinguishes a steady week-on-week slide from a single bad week
+function slopeInfo(win){
+  const v=win.filter(x=>x!=null);const n=v.length;if(n<3)return null;
+  const my=v.reduce((a,b)=>a+b,0)/n;const mx=(n-1)/2;let num=0,den=0;
+  for(let i=0;i<n;i++){num+=(i-mx)*(v[i]-my);den+=(i-mx)*(i-mx);}
+  const spct=(den&&my)?(num/den)/my:0;                 // fractional change per week
+  let down=0;for(let i=1;i<n;i++)if(v[i]<v[i-1])down++;const downFrac=down/(n-1);
+  const prior=v.slice(0,-1),pAvg=prior.reduce((a,b)=>a+b,0)/prior.length;
+  const lastVsPrior=pAvg?(v[n-1]-pAvg)/pAvg:0;         // is the drop only the latest week?
+  if(spct<=-0.02&&downFrac>=0.5)return {sym:'↘',cls:'down',t:'Sliding — a steady week-on-week decline ('+Math.round(spct*100)+'%/wk), not a blip.'};
+  if(lastVsPrior<=-0.12&&spct>-0.02)return {sym:'⚡',cls:'amber',t:'One-off — mostly the latest week ('+Math.round(lastVsPrior*100)+'% vs the weeks before); earlier weeks were steady.'};
+  if(spct>=0.02)return {sym:'↗',cls:'up',t:'Rising — trending up (+'+Math.round(spct*100)+'%/wk).'};
+  return {sym:'→',cls:'flat',t:'Steady — no clear week-on-week trend.'};
+}
+function slopeBadge(win){const s=slopeInfo(win);return s?'<span class="slope '+s.cls+'" title="'+s.t+'">'+s.sym+'</span>':'<span class="slope flat"></span>';}
+const SLOPE_LEG='<span class="slope down">↘</span>sliding · <span class="slope amber">⚡</span>one-off · <span class="slope flat">→</span>steady';
 const STAGES=[
   {key:'availability',num:1,name:'Availability',short:'Avail',grp:'input',sub:'active days',diag:'Clinic closed / fewer days',fix:'Ops · roster',
    metrics:c=>[{nm:'active days',arr:c.availability.active_days,fmtd:0},{nm:'· weekday days',arr:c.availability.wday_days,fmtd:0},{nm:'· weekend days',arr:c.availability.wend_days,fmtd:0},{nm:'roster hours',arr:c.availability.hours,fmtd:1}],headline:0},
@@ -177,10 +195,10 @@ function whyChips(s,fb){
   if(fb<0){const m=s.bookings;const a=m.hm.arr.slice(-(CURN+BASEN));
     const chips=a.map(v=>'<span class="mc green">'+(v==null?'·':Math.round(v))+'</span>').join('');
     const amb=STAGES.findIndex(st=>s[st.key].st==='amber');
-    return '<span class="mlab">SC bookings</span>'+chips;}
+    return '<span class="mlab">SC bookings</span>'+slopeBadge(a)+chips;}
   const st=STAGES[fb],m=s[st.key];const a=m.hm.arr.slice(-(CURN+BASEN));
   const chips=a.map((v,i)=>{const cur=i>=a.length-CURN;const val=v==null?'·':(m.pct?Math.round(v)+'%':(Math.round(v*10)/10));return '<span class="mc '+(cur?m.st:'base')+'">'+val+'</span>';}).join('');
-  return '<span class="mlab">'+cap(m.hm.nm)+'</span>'+chips;
+  return '<span class="mlab">'+cap(m.hm.nm)+'</span>'+slopeBadge(a)+chips;
 }
 function whyText(s,fb){
   if(fb<0){const amb=STAGES.findIndex(st=>s[st.key].st==='amber');return amb<0?'stable':'watch: '+STAGES[amb].name.toLowerCase()+' '+Math.round(s[STAGES[amb].key].d*100)+'%';}
@@ -219,7 +237,7 @@ function renderOverview(){
       h+='<tr onclick="goClinic(\''+r.slug+'\')" title="open funnel"><td>'+r.c.disp+'</td>'+cells+'<td>'+brk+'</td><td class="why">'+whyText(s,fb)+'</td><td class="drillco">›</td></tr>';});
     h+='</tbody></table></div>';
   } else {
-    h+='<div class="fmwrap"><table class="fm" style="min-width:640px"><thead><tr><th>Clinic</th><th style="text-align:left">earliest break</th><th style="text-align:left">recent '+(CURN+BASEN)+' wks — window vs prior</th><th style="text-align:right">open ›</th></tr></thead><tbody>';
+    h+='<div class="fmwrap"><table class="fm" style="min-width:640px"><thead><tr><th>Clinic</th><th style="text-align:left">earliest break</th><th style="text-align:left">recent '+(CURN+BASEN)+' wks &nbsp;<span style="font-weight:500;text-transform:none;color:var(--faint)">'+SLOPE_LEG+'</span></th><th style="text-align:right">open ›</th></tr></thead><tbody>';
     if(!list.length)h+='<tr><td colspan="4" style="color:var(--muted);padding:16px;text-align:left">Nothing here — healthy for this filter/city.</td></tr>';
     list.forEach(r=>{const s=r.s,fb=s.firstBreak,brk=fb<0?'<span class="brk none" style="color:var(--good)">✓ stable</span>':'<span class="brk red">'+STAGES[fb].num+'·'+STAGES[fb].name+'</span>';
       h+='<tr onclick="goClinic(\''+r.slug+'\')" title="open funnel"><td>'+r.c.disp+'</td><td style="text-align:left">'+brk+'</td><td class="why">'+whyChips(s,fb)+'</td><td class="drillco" style="text-align:right">›</td></tr>';});
@@ -238,7 +256,7 @@ function updateModeUI(){const cmp=(MET!=='break');
 function metricChips(c,stageKey){
   const st=STAGES.find(x=>x.key===stageKey),m=st.metrics(c)[0],ev=evalMetric(m.arr),a=m.arr.slice(-(CURN+BASEN));
   const chips=a.map((v,i)=>{const cur=i>=a.length-CURN;const val=v==null?'·':(m.pct?Math.round(v)+'%':(Math.round(v*10)/10));return '<span class="mc '+(cur?ev.st:'base')+'">'+val+'</span>';}).join('');
-  return {ev,chips,nm:m.nm,pct:m.pct};
+  return {ev,chips,nm:m.nm,pct:m.pct,a};
 }
 function renderMetric(){
   const st=STAGES.find(x=>x.key===MET);
@@ -249,10 +267,10 @@ function renderMetric(){
     +'<span style="font-size:12px;color:var(--ink2);align-self:center;margin-left:4px">comparing every clinic on <b>'+st.metrics(D.clinics[rows[0]?rows[0].slug:Object.keys(D.clinics)[0]])[0].nm+'</b> · '
     +'<span style="color:var(--bad)">🔴 '+nred+' dropped</span> · <span style="color:var(--warn)">🟡 '+namb+'</span> · sorted worst→best</span></div>';
   h+='<div class="densrow"><span class="lab" style="text-transform:none;font-weight:600;color:var(--ink2)">'+rows.length+' clinic'+(rows.length===1?'':'s')+' · '+cityStr()+'</span></div>';
-  h+='<div class="fmwrap"><table class="fm" style="min-width:640px"><thead><tr><th>Clinic</th><th style="text-align:right">Δ vs prior</th><th style="text-align:left">recent '+(CURN+BASEN)+' wks — '+st.name+'</th><th style="text-align:right">open ›</th></tr></thead><tbody>';
+  h+='<div class="fmwrap"><table class="fm" style="min-width:640px"><thead><tr><th>Clinic</th><th style="text-align:right">Δ vs prior</th><th style="text-align:left">recent '+(CURN+BASEN)+' wks — '+st.name+' &nbsp;<span style="font-weight:500;text-transform:none;color:var(--faint)">'+SLOPE_LEG+'</span></th><th style="text-align:right">open ›</th></tr></thead><tbody>';
   if(!rows.length)h+='<tr><td colspan="4" style="color:var(--muted);padding:16px;text-align:left">No clinics.</td></tr>';
   rows.forEach(r=>{const e=r.mc.ev;const dcell=e.d==null?'<span class="flat">—</span>':'<span class="'+(e.d>0?'up':e.d<0?'down':'flat')+'">'+(e.d>0?'+':'')+Math.round(e.d*100)+'% <span class="flat" style="font-weight:500">was '+(r.mc.pct?Math.round(e.base)+'%':Math.round(e.base*10)/10)+'</span></span>';
-    h+='<tr onclick="goClinic(\''+r.slug+'\')" title="open funnel"><td>'+r.c.disp+'</td><td style="text-align:right;font-family:JetBrains Mono">'+dcell+'</td><td class="why">'+r.mc.chips+'</td><td class="drillco" style="text-align:right">›</td></tr>';});
+    h+='<tr onclick="goClinic(\''+r.slug+'\')" title="open funnel"><td>'+r.c.disp+'</td><td style="text-align:right;font-family:JetBrains Mono">'+dcell+'</td><td class="why">'+slopeBadge(r.mc.a)+r.mc.chips+'</td><td class="drillco" style="text-align:right">›</td></tr>';});
   h+='</tbody></table></div>';
   $('root').innerHTML=h;
 }
