@@ -64,7 +64,7 @@
   /* ---- scan table ---- */
   .fmwrap{background:var(--sheet);border:1px solid var(--line);border-radius:var(--r);overflow-x:auto}
   table.fm{border-collapse:collapse;width:100%;font-size:13.5px;min-width:820px}
-  table.fm th{font-family:'JetBrains Mono';font-size:11.5px;letter-spacing:.03em;text-transform:uppercase;color:var(--ink2);font-weight:700;text-align:center;padding:11px 12px;background:var(--inset);border-bottom:1px solid var(--line);white-space:nowrap}
+  table.fm th{font-family:'JetBrains Mono';font-size:13.5px;letter-spacing:.02em;text-transform:uppercase;color:var(--ink2);font-weight:700;text-align:center;padding:13px 12px;background:var(--inset);border-bottom:1px solid var(--line);white-space:nowrap}
   table.fm th:first-child{text-align:left}
   table.fm td{padding:11px 12px;text-align:center;border-bottom:1px solid var(--line2);white-space:nowrap;font-family:'JetBrains Mono';font-variant-numeric:tabular-nums}
   table.fm td:first-child{text-align:left;font-family:Inter;font-weight:600}
@@ -136,6 +136,8 @@
   .frow{display:flex;align-items:center;gap:8px;padding:5px 6px;cursor:zoom-in;border-radius:7px;flex-wrap:wrap}
   .frow:hover{background:var(--hover)}
   .flab{font-size:12.5px;font-weight:600;color:var(--ink2);min-width:158px;flex:none;display:inline-flex;align-items:center;gap:6px}
+  .fchange{flex:none;width:78px;display:inline-flex;justify-content:center}
+  .ftrend{display:inline-flex;align-items:center;flex-wrap:wrap;gap:0}
   .flab .dot{width:9px;height:9px;border-radius:2px;flex:none}
   .frow.head .flab{font-weight:800;color:var(--ink)}
   .fnow{font-family:'JetBrains Mono';font-weight:700;font-size:12.5px;margin-left:6px}
@@ -313,14 +315,20 @@ function bchip(label,arr,color,pct){const e=evalMetric(arr),f=v=>v==null?'—':(
   const zi=ZREG.length;ZREG.push({label:label,arr:arr,col:lc,pct:!!pct});
   return '<span class="bchip" onclick="event.stopPropagation();zoomReg('+zi+')" title="click for week-by-week trend">'+(color?'<span class="dot" style="background:'+color+'"></span>':'')+'<span style="color:'+lc+';font-weight:600">'+label+'</span> <b>'+f(e.cur)+'</b>'+dd+'</span>';}
 function curLabel(){const wl=D.week_labels,NW=wl.length;const c=CURN===1?wl[NW-1]:wl[NW-CURN]+' → '+wl[NW-1];const b=wl[Math.max(0,NW-CURN-BASEN)]+' → '+wl[NW-CURN-1];return {c,b};}
-// one funnel breakdown row: coloured label + slope + recent-window week chips + now-vs-avg; click zooms full trend
-function miniRow(label,arr,pct,color,head){const ev=evalMetric(arr),f=v=>v==null?'—':(pct?Math.round(v)+'%':(Math.round(v*10)/10));
-  const a=arr.slice(-(CURN+BASEN)),nb=a.length-CURN;
-  const chips=a.map((v,i)=>{const cur=i>=nb;const val=v==null?'·':(pct?Math.round(v)+'%':(Math.round(v*10)/10));return '<span class="mc '+(cur?ev.st:'base')+'">'+val+'</span>';}).join('');   // weeks shown linearly, current window coloured
-  const dd=(ev.d==null)?'':'<span class="dd '+(ev.d>0?'up':ev.d<0?'down':'flat')+'" style="font-family:JetBrains Mono;font-weight:800;font-size:12px;margin-left:5px">'+(ev.d>0?'+':'')+Math.round(ev.d*100)+'%</span>';
-  const cmp='<span class="cmp"><span class="vsavg">before</span> '+f(ev.base)+' <span class="vsavg">→ now</span> <b>'+f(ev.cur)+'</b>'+dd+'</span>';   // before vs now, same as the By-metric view
-  const zi=ZREG.length;ZREG.push({label,arr,col:(color&&color!=='var(--faint)')?color:'var(--ink2)',pct:!!pct});
-  return '<div class="frow'+(head?' head':'')+'" onclick="event.stopPropagation();zoomReg('+zi+')" title="click for full trend"><span class="flab"'+(color&&color!=='var(--faint)'?' style="color:'+color+'"':'')+'>'+(color?'<span class="dot" style="background:'+color+'"></span>':'')+label+'</span>'+slopeBadge(a)+chips+cmp+'</div>';}
+// shared trend renderer (used by both By-metric rows and funnel rows so their layout matches):
+// all weeks as chips in a line (current window coloured) → BEFORE AVG → NOW
+function trendHTML(arr,pct,ev){const a=arr.slice(-(CURN+BASEN)),nb=a.length-CURN;
+  const fv=v=>v==null?'·':(pct?Math.round(v)+'%':(Math.round(v*10)/10)),fa=v=>v==null?'—':(pct?Math.round(v)+'%':(Math.round(v*10)/10));
+  const week=a.map((v,i)=>'<span class="mc '+(i>=nb?ev.st:'base')+'">'+fv(v)+'</span>').join('');
+  return week+'<span class="avgmk" style="margin-left:22px"><span class="avglab">before avg</span>'+fa(ev.base)+'</span><span class="avgmk '+ev.st+'" style="margin-left:14px"><span class="avglab">now</span>'+fa(ev.cur)+'</span>';}
+// one funnel breakdown row — same layout as a By-metric row: label · % change · trend; click zooms full trend
+function miniRow(label,arr,pct,color,head){const ev=evalMetric(arr),a=arr.slice(-(CURN+BASEN));
+  const lc=(color&&color!=='var(--faint)')?color:null;
+  const zi=ZREG.length;ZREG.push({label,arr,col:lc||'var(--ink2)',pct:!!pct});
+  return '<div class="frow'+(head?' head':'')+'" onclick="event.stopPropagation();zoomReg('+zi+')" title="click for full trend">'
+    +'<span class="flab"'+(lc?' style="color:'+lc+'"':'')+'>'+(color?'<span class="dot" style="background:'+color+'"></span>':'')+label+'</span>'
+    +'<span class="fchange">'+pctPill(ev)+'</span>'
+    +'<span class="ftrend">'+slopeBadge(a)+trendHTML(arr,pct,ev)+'</span></div>';}
 // ---- time-window selectors (presets + custom) ----
 const CUR_PRESETS=[[1,'this week'],[2,'last 2 weeks'],[3,'last 3 weeks'],[4,'last 4 weeks'],[6,'last 6 weeks'],[8,'last 8 weeks']];
 const BASE_PRESETS=[[4,'prior 4 wks'],[6,'prior 6 wks'],[8,'prior 8 wks'],[12,'prior 12 wks'],[26,'prior 26 wks']];
@@ -406,12 +414,8 @@ function syncOv(){const om=$('ovMetric'),of=$('ovFunnel'),mp=$('metricpick');
   if(mp)mp.style.display=OVMODE==='metric'?'inline-flex':'none';}
 function setOvMode(m){OVMODE=m;MODE='ov';syncOv();render();}
 function metricChips(c,stageKey){
-  const st=STAGES.find(x=>x.key===stageKey),m=st.metrics(c)[0],ev=evalMetric(m.arr),a=m.arr.slice(-(CURN+BASEN)),nb=a.length-CURN;
-  const fv=v=>v==null?'·':(m.pct?Math.round(v)+'%':(Math.round(v*10)/10)),fa=v=>v==null?'—':(m.pct?Math.round(v)+'%':(Math.round(v*10)/10));
-  // all weeks as chips in one linear line (current window coloured), then BEFORE / NOW averages
-  const week=a.map((v,i)=>'<span class="mc '+(i>=nb?ev.st:'base')+'">'+fv(v)+'</span>').join('');
-  const chips=week+'<span class="avgmk" style="margin-left:22px"><span class="avglab">before</span>'+fa(ev.base)+'</span>'+'<span class="avgmk '+ev.st+'" style="margin-left:14px"><span class="avglab">now</span>'+fa(ev.cur)+'</span>';
-  return {ev,chips,nm:m.nm,pct:m.pct,a,arr:m.arr};
+  const st=STAGES.find(x=>x.key===stageKey),m=st.metrics(c)[0],ev=evalMetric(m.arr),a=m.arr.slice(-(CURN+BASEN));
+  return {ev,chips:trendHTML(m.arr,m.pct,ev),nm:m.nm,pct:m.pct,a,arr:m.arr};
 }
 function pctPill(ev){const arw=(ev.d==null)?'':(ev.d<0?'↓ ':ev.d>0?'↑ ':'→ ');return (ev.d==null)?'<span class="flat">—</span>':'<span class="mc '+ev.st+'" style="font-size:14.5px;font-weight:800;min-width:56px">'+arw+Math.abs(Math.round(ev.d*100))+'%</span>';}
 function renderMetric(){
@@ -421,7 +425,7 @@ function renderMetric(){
   rows.sort((a,b)=>(a.mc.ev.d==null?9:a.mc.ev.d)-(b.mc.ev.d==null?9:b.mc.ev.d));   // worst drop first
   const nred=rows.filter(r=>r.mc.ev.st==='red').length, namb=rows.filter(r=>r.mc.ev.st==='amber').length;
   let h='<div class="densrow"><span class="lab" style="text-transform:none;font-weight:600;color:var(--ink2)">'+rows.length+' clinic'+(rows.length===1?'':'s')+' · '+cityStr()+' · '+st.name+' · <span style="color:var(--bad)">🔴 '+nred+'</span> · <span style="color:var(--warn)">🟡 '+namb+'</span> · worst→best &nbsp; <span style="font-weight:500;color:var(--faint)">'+SLOPE_LEG+'</span></span></div>';
-  h+='<div class="fmwrap"><table class="fm" style="min-width:640px"><thead><tr><th style="white-space:nowrap">Clinic</th><th style="text-align:center;white-space:nowrap">change</th><th style="text-align:left">recent '+(CURN+BASEN)+' wks — '+st.name+' &nbsp;<span style="font-weight:500;color:var(--faint)">before → now</span></th><th style="text-align:right">open ›</th></tr></thead><tbody>';
+  h+='<div class="fmwrap"><table class="fm" style="min-width:640px"><thead><tr><th style="white-space:nowrap">Clinic</th><th style="text-align:center;white-space:nowrap">change</th><th style="text-align:left">recent '+(CURN+BASEN)+' wks — '+st.name+' &nbsp;<span style="font-weight:500;color:var(--faint)">before avg → now</span></th><th style="text-align:right">open ›</th></tr></thead><tbody>';
   // Σ Total row — the in-scope clinics combined (recomputes when you filter clinics/cities)
   const scopeSlugs=Object.keys(D.clinics).filter(inScope);
   if(scopeSlugs.length>1){
@@ -452,7 +456,7 @@ function stageParts(s,o){   // breakdown series per stage: lineS = coloured comp
 // funnel body (stage rows + breakdown trend rows) for ANY clinic-shaped object (single clinic OR city aggregate)
 function funnelStagesHTML(o){
   const evs=STAGES.map(s=>evalStage(s,o));
-  let h='<div class="lab" style="text-transform:none;font-weight:500;color:var(--faint);margin:-4px 0 10px">Each row = the recent '+(CURN+BASEN)+' weeks (last '+CURN+' = current, coloured), then <b>before vs now</b> (avg of the '+BASEN+' baseline weeks vs current) · click any row for its full trend.</div>';
+  let h='<div class="lab" style="text-transform:none;font-weight:500;color:var(--faint);margin:-4px 0 10px">Each row = the recent '+(CURN+BASEN)+' weeks (last '+CURN+' = current, coloured), then <b>before avg vs now</b> (avg of the '+BASEN+' baseline weeks vs current) · click any row for its full trend.</div>';
   STAGES.forEach((s,i)=>{const e=evs[i],hm=e.hm,col=COL[e.status];
     const {lineS,chipOnly}=stageParts(s,o);
     let rows=miniRow(hm.nm,hm.arr,hm.pct,col,true);
