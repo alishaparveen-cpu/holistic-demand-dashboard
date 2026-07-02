@@ -668,11 +668,14 @@ function render(){
       if(kid&&EXP[tk])h+=bRender(m.cl,m.f,rest,depth+1,tk,arr);});   // no per-member % rows — use ⊕ Combine for share-of-total
     return h;};
   if(SEG!=='online'&&_b3){const sel3=(fn,cur,list)=>'<select onchange="'+fn+'(this.value)" style="font-size:11.5px;border:1px solid var(--line);border-radius:6px;padding:3px 8px;margin-left:6px;background:#fff;font-family:Inter;font-weight:600;color:var(--accent);cursor:pointer">'+list.map(o=>'<option value="'+o[0]+'"'+(cur===o[0]?' selected':'')+'>'+o[1]+'</option>').join('')+'</select>';
-    const bopt=(excl,none)=>{let ds=['cohort','src','clinic','city','doctor'].filter(d=>excl.indexOf(d)<0);
-      if(none){if(excl.indexOf('cohort')>=0)ds=ds.filter(d=>d!=='src');if(excl.indexOf('src')>=0)ds=ds.filter(d=>d!=='cohort');
-        if(excl.indexOf('doctor')>=0)ds=ds.filter(d=>d!=='cohort'&&d!=='src');if(['cohort','src'].some(x=>excl.indexOf(x)>=0))ds=ds.filter(d=>d!=='doctor');}   // doctor has no cohort/channel split
+    const bopt=(excl,none)=>{if(excl.indexOf('doctor')>=0)return none?[['none','— none —']]:[];   // doctor is terminal
+      let ds=['cohort','src','clinic','city'].filter(d=>excl.indexOf(d)<0);
+      if(none){if(excl.indexOf('cohort')>=0)ds=ds.filter(d=>d!=='src');if(excl.indexOf('src')>=0)ds=ds.filter(d=>d!=='cohort');}
+      if(!excl.some(d=>d==='cohort'||d==='src'))ds.push('doctor');   // doctor only after a geographic-only chain (clinic/city) — no per-doctor cohort/channel split
       const b=ds.map(d=>[d,(none?'× ':'')+bDLB[d]]);return none?[['none','— none —']].concat(b):b;};
-    _b3.innerHTML='<span style="font-size:10px;font-weight:700;letter-spacing:.05em;color:var(--muted)">BREAK BOOKINGS BY</span>'+sel3('setBBRK',BBRK,bopt([],false))+sel3('setBCRS',BCRS,bopt([BBRK],true))+(BCRS!=='none'?sel3('setBCR3',BCR3,bopt([BBRK,BCRS],true)):'');}
+    {let ch='<span style="font-size:10px;font-weight:700;letter-spacing:.05em;color:var(--muted)">BREAK BOOKINGS BY</span>';const lv=[['setBBRK',BBRK],['setBCRS',BCRS],['setBCR3',BCR3]];let ex=[];
+     for(let i=0;i<lv.length;i++){const cur=lv[i][1];ch+=sel3(lv[i][0],cur,bopt(ex,i>0));if(!cur||cur==='none'||cur==='doctor')break;ex.push(cur);}
+     _b3.innerHTML=ch;}}
   if(SEG==='online'){
     if(_b3)_b3.innerHTML='';
     const OS=D._meta.online_src||{};const osCh=['Meta','Google','Organic','GMB','Practo','Direct'];
@@ -686,7 +689,8 @@ function render(){
     if(SEG==='all'){S+=row('· offline clinics',offSrcTot,'sub',N,{color:GRN});
       S+=row('· online telehealth',onlBkN,'sub',N,{color:'#2b5cad'});
       const OS=D._meta.online_src||{};['Meta','Google','Organic','GMB','Practo','Direct'].forEach(ch=>{const a=OS[ch];if(a&&a.some(v=>v))S+=row('· · '+(ch==='Meta'?'Meta (FB/IG)':ch)+' (online)',a,'sub2',N,{color:'#2b5cad'});});}
-    const bchain=[BBRK,BCRS,BCR3].filter((d,i,a)=>d&&d!=='none'&&a.indexOf(d)===i);
+    let bchain=[BBRK,BCRS,BCR3].filter((d,i,a)=>d&&d!=='none'&&a.indexOf(d)===i);
+    {const di=bchain.indexOf('doctor');if(di>=0)bchain=bchain.slice(0,di).some(d=>['cohort','src'].includes(d))?bchain.slice(0,di):bchain.slice(0,di+1);}   // doctor terminal + geography-only
     S+=bRender(clinics,{},bchain,1,'bbrk',offSrcTot);
     // book → done % — moved to the bottom of the bookings table
     S+=row('· book → done % (weekly'+(SEG==='all'?', offline only':'')+' — these bookings done same week)',pctOf(dWk,offSrcTot),'sub',PCT,{color:GRN});
@@ -739,7 +743,8 @@ function render(){
        if(dim==='doctor')return docsIn(cl).map(dr=>({nm:docLbl(dr,cl),cl:cl.filter(x=>(x.data.by_doctor||{})[dr]),f:Object.assign({},f,{doctor:dr})}));
        if(dim==='subcat'&&f.cat)return subsForCat(f.cat).map(k=>({nm:subLbl(k.split('::')[1]||k),color:CATCOL[f.cat],cl,f:Object.assign({},f,{subcat:k})}));
        return [];};
-     const chain=[DBRK,DCRS,DCR3,DCR4].filter((d,i,a)=>d&&d!=='none'&&a.indexOf(d)===i);
+     let chain=[DBRK,DCRS,DCR3,DCR4].filter((d,i,a)=>d&&d!=='none'&&a.indexOf(d)===i);
+     {const di=chain.indexOf('doctor');if(di>=0)chain=chain.slice(0,di).some(d=>['cat','src','subcat'].includes(d))?chain.slice(0,di):chain.slice(0,di+1);}   // doctor is terminal + geography-only (no per-doctor category/source split in the data)
      const _vi=(function(){const B=vbuckets(),c=cols(),s=new Set();c.forEach(j=>{if(B[j])B[j].idxs.forEach(ix=>s.add(ix));});return [...s];})();
      const nzVis=a=>{if(!a)return false;for(let k=0;k<_vi.length;k++)if(a[_vi[k]])return true;return false;};   // nonzero within the visible weeks (hides all-zero rows like empty "Other")
      const renderLvl=(cl,f,dims,depth,pk,parentArr)=>{if(!dims.length)return '';const dim=dims[0],rest=dims.slice(1);let h='';
@@ -751,9 +756,11 @@ function render(){
          if(kid&&EXP[tk])h+=renderLvl(m.cl,m.f,rest,depth+1,tk,arr);});
        return h;};
      const DLB={cat:'Category',src:'Source',city:'City',clinic:'Clinic',subcat:'Sub-category',doctor:'Doctor'};
-     const opt=(excl,none,sub)=>{let ds=['cat','src','city','clinic','doctor'].filter(d=>excl.indexOf(d)<0);if(sub&&excl.indexOf('subcat')<0)ds.push('subcat');const b=ds.map(d=>[d,(none?'× ':'')+DLB[d]]);return none?[['none','— none —']].concat(b):b;};
+     const opt=(excl,none,sub)=>{if(excl.indexOf('doctor')>=0)return none?[['none','— none —']]:[];let ds=['cat','src','city','clinic'].filter(d=>excl.indexOf(d)<0);if(sub&&excl.indexOf('subcat')<0)ds.push('subcat');if(!excl.some(d=>d==='cat'||d==='src'||d==='subcat'))ds.push('doctor');const b=ds.map(d=>[d,(none?'× ':'')+DLB[d]]);return none?[['none','— none —']].concat(b):b;};
      const sel=(fn,cur,list)=>'<select onchange="'+fn+'(this.value)" style="font-size:11.5px;border:1px solid var(--line);border-radius:6px;padding:3px 8px;margin-left:6px;background:#fff;font-family:Inter;font-weight:600;color:var(--accent);cursor:pointer">'+list.map(o=>'<option value="'+o[0]+'"'+(cur===o[0]?' selected':'')+'>'+o[1]+'</option>').join('')+'</select>';
-     if(_cb)_cb.innerHTML='<span style="font-size:10px;font-weight:700;letter-spacing:.05em;color:var(--muted)">BREAK DONE BY</span>'+sel('setDBRK',DBRK,opt([],false,false))+sel('setDCRS',DCRS,opt([DBRK],true,DBRK==='cat'))+(DCRS!=='none'?sel('setDCR3',DCR3,opt([DBRK,DCRS],true,DBRK==='cat'||DCRS==='cat')):'')+(DCR3!=='none'?sel('setDCR4',DCR4,opt([DBRK,DCRS,DCR3],true,DBRK==='cat'||DCRS==='cat'||DCR3==='cat')):'');
+     if(_cb){let ch='<span style="font-size:10px;font-weight:700;letter-spacing:.05em;color:var(--muted)">BREAK DONE BY</span>';const lv=[['setDBRK',DBRK],['setDCRS',DCRS],['setDCR3',DCR3],['setDCR4',DCR4]];let ex=[];
+       for(let i=0;i<lv.length;i++){const cur=lv[i][1];ch+=sel(lv[i][0],cur,opt(ex,i>0,ex.indexOf('cat')>=0));if(!cur||cur==='none'||cur==='doctor')break;ex.push(cur);}
+       _cb.innerHTML=ch;}
      O+=renderLvl(clinics,{},chain,1,'ddrill',dtot);
    } else if(_cb)_cb.innerHTML='';}
   const offPu=clinics.reduce((a,x)=>addv(a,Fn.purchN(x.data)||ZA),ZA.slice()),onlPu=(onlBot.total||{}).purchased||ZA;
@@ -768,16 +775,16 @@ function render(){
    const _pb=$('purCtlBar');
    if(SEG!=='online'){
      const sel=(fn,cur,list)=>'<select onchange="'+fn+'(this.value)" style="font-size:11.5px;border:1px solid var(--line);border-radius:6px;padding:3px 8px;margin-left:6px;background:#fff;font-family:Inter;font-weight:600;color:var(--accent);cursor:pointer">'+list.map(o=>'<option value="'+o[0]+'"'+(cur===o[0]?' selected':'')+'>'+o[1]+'</option>').join('')+'</select>';
-     const crossL=PBRK==='cat'?[['none','— no cross —'],['clinic','× Clinic'],['city','× City'],['doctor','× Doctor']]:PBRK==='clinic'?[['none','— no cross —'],['cat','× Category'],['doctor','× Doctor']]:PBRK==='doctor'?[['none','— no cross —']]:[['none','— no cross —'],['cat','× Category'],['clinic','× Clinic']];
+     const crossL=PBRK==='cat'?[['none','— no cross —'],['clinic','× Clinic'],['city','× City']]:PBRK==='clinic'?[['none','— no cross —'],['cat','× Category'],['doctor','× Doctor']]:PBRK==='doctor'?[['none','— no cross —']]:[['none','— no cross —'],['cat','× Category'],['clinic','× Clinic'],['doctor','× Doctor']];   // doctor cross only under Clinic/City (geographic)
      const pDoc=(dr,cl)=>cl.filter(x=>(x.data.by_doctor||{})[dr]).reduce((a,x)=>addv(a,(x.data.by_doctor[dr]||{}).purchased||ZA),ZA.slice());
      if(_pb)_pb.innerHTML='<span style="font-size:10px;font-weight:700;letter-spacing:.05em;color:var(--muted)">BREAK PURCHASED BY</span>'+sel('setPBRK',PBRK,[['cat','Category'],['clinic','Clinic'],['city','City'],['doctor','Doctor']])+sel('setPCRS',PCRS,crossL);
      const emit=(members,crossFn)=>{members.forEach(m=>{if(!m.arr.some(v=>v))return;const c=m.color||GRN;const tk='pbrk_'+String(m.nm).replace(/[^a-z0-9]+/gi,'');
        P+=row('· '+m.nm,m.arr,'sub',N,{color:c,tkey:(PCRS==='none'?null:tk)});
        if(PCRS!=='none'&&EXP[tk])crossFn(m).forEach(s=>{if(s.arr.some(v=>v))P+=row('· · '+s.nm,s.arr,'sub2',N,{color:s.color||c});});});};
-     if(PBRK==='cat')emit(CATS.map(ct=>({nm:ct,arr:catO(ct,'purchased'),color:CATCOL[ct]})),m=>PCRS==='city'?cities.map(ci=>({nm:ci,arr:cityCatPur(ci,m.nm)})):PCRS==='doctor'?docsIn(clinics).map(dr=>({nm:docLbl(dr,clinics),arr:pDoc(dr,clinics)})):clinics.map(x=>({nm:dNm(x),arr:pCatCl(m.nm,x)})));
+     if(PBRK==='cat')emit(CATS.map(ct=>({nm:ct,arr:catO(ct,'purchased'),color:CATCOL[ct]})),m=>PCRS==='city'?cities.map(ci=>({nm:ci,arr:cityCatPur(ci,m.nm)})):clinics.map(x=>({nm:dNm(x),arr:pCatCl(m.nm,x)})));
      else if(PBRK==='clinic')emit(clinics.map(x=>({nm:dNm(x),arr:x.data.bottom.purchased||ZA,x:x})),m=>PCRS==='doctor'?docsIn([m.x]).map(dr=>({nm:dr,arr:pDoc(dr,[m.x])})):CATS.map(ct=>({nm:ct,arr:pCatCl(ct,m.x),color:CATCOL[ct]})));
      else if(PBRK==='doctor')emit(docsIn(clinics).map(dr=>({nm:docLbl(dr,clinics),arr:pDoc(dr,clinics)})),m=>[]);
-     else emit(cities.map(ci=>({nm:ci,arr:clinics.filter(x=>x.city===ci).reduce((a,x)=>addv(a,x.data.bottom.purchased||ZA),ZA.slice())})),m=>PCRS==='clinic'?clinics.filter(x=>x.city===m.nm).map(x=>({nm:dNm(x),arr:x.data.bottom.purchased||ZA})):CATS.map(ct=>({nm:ct,arr:cityCatPur(m.nm,ct),color:CATCOL[ct]})));
+     else emit(cities.map(ci=>({nm:ci,arr:clinics.filter(x=>x.city===ci).reduce((a,x)=>addv(a,x.data.bottom.purchased||ZA),ZA.slice())})),m=>PCRS==='clinic'?clinics.filter(x=>x.city===m.nm).map(x=>({nm:dNm(x),arr:x.data.bottom.purchased||ZA})):PCRS==='doctor'?docsIn(clinics.filter(x=>x.city===m.nm)).map(dr=>({nm:dr,arr:pDoc(dr,clinics.filter(x=>x.city===m.nm))})):CATS.map(ct=>({nm:ct,arr:cityCatPur(m.nm,ct),color:CATCOL[ct]})));
    } else if(_pb)_pb.innerHTML='';
    $('tPur').innerHTML=P;}
   // ⑥ Revenue — own break-by (Product / Category / Clinic / City) × cross
@@ -801,17 +808,17 @@ function render(){
    const _rb=$('revCtlBar');
    if(SEG!=='online'){
      const sel=(fn,cur,list)=>'<select onchange="'+fn+'(this.value)" style="font-size:11.5px;border:1px solid var(--line);border-radius:6px;padding:3px 8px;margin-left:6px;background:#fff;font-family:Inter;font-weight:600;color:var(--accent);cursor:pointer">'+list.map(o=>'<option value="'+o[0]+'"'+(cur===o[0]?' selected':'')+'>'+o[1]+'</option>').join('')+'</select>';
-     const crossL=RBRK==='product'?[['none','— no cross —'],['cat','× Category'],['clinic','× Clinic'],['city','× City'],['doctor','× Doctor']]:RBRK==='cat'?[['none','— no cross —'],['product','× Product'],['subcat','× Sub-category'],['clinic','× Clinic'],['doctor','× Doctor']]:RBRK==='clinic'?[['none','— no cross —'],['product','× Product'],['cat','× Category'],['doctor','× Doctor']]:RBRK==='doctor'?[['none','— no cross —']]:[['none','— no cross —'],['product','× Product'],['cat','× Category'],['clinic','× Clinic']];
+     const crossL=RBRK==='product'?[['none','— no cross —'],['cat','× Category'],['clinic','× Clinic'],['city','× City']]:RBRK==='cat'?[['none','— no cross —'],['product','× Product'],['subcat','× Sub-category'],['clinic','× Clinic']]:RBRK==='clinic'?[['none','— no cross —'],['product','× Product'],['cat','× Category'],['doctor','× Doctor']]:RBRK==='doctor'?[['none','— no cross —']]:[['none','— no cross —'],['product','× Product'],['cat','× Category'],['clinic','× Clinic'],['doctor','× Doctor']];   // doctor cross only under Clinic/City
      const rDoc=(dr,cl)=>cl.filter(x=>(x.data.by_doctor||{})[dr]).reduce((a,x)=>addv(a,(x.data.by_doctor[dr]||{}).rev||ZA),ZA.slice());
      if(_rb)_rb.innerHTML='<span style="font-size:10px;font-weight:700;letter-spacing:.05em;color:var(--muted)">BREAK REVENUE BY</span>'+sel('setRBRK',RBRK,[['product','Product'],['cat','Category'],['clinic','Clinic'],['city','City'],['doctor','Doctor']])+sel('setRCRS',RCRS,crossL);
      const emit=(members,crossFn)=>{members.forEach(m=>{if(!m.arr.some(v=>v))return;const c=m.color||GRN;const tk='rbrk_'+String(m.nm).replace(/[^a-z0-9]+/gi,'');
        R+=row('· '+m.nm,m.arr,'sub',RUP,{color:c,tkey:(RCRS==='none'?null:tk)});
        if(RCRS!=='none'&&EXP[tk])crossFn(m).forEach(s=>{if(s.arr.some(v=>v))R+=row('· · '+s.nm,s.arr,'sub2',RUP,{color:s.color||c});});});};
      if(RBRK==='product')emit(RP.map(p=>({nm:RPL[p],arr:prodTot(p),key:p})),m=>RCRS==='cat'?CATS.map(ct=>({nm:ct,arr:cpSeg(ct,m.key),color:CATCOL[ct]})):RCRS==='city'?cities.map(ci=>({nm:ci,arr:cityRev(ci,x=>clProd(x,m.key))})):clinics.map(x=>({nm:dNm(x),arr:clProd(x,m.key)})));
-     else if(RBRK==='cat')emit(CATS.map(ct=>({nm:ct,arr:catTot(ct),color:CATCOL[ct],key:ct})),m=>RCRS==='product'?RP.map(p=>({nm:RPL[p],arr:cpSeg(m.key,p)})):RCRS==='subcat'?subsForCat(m.key).map(k=>({nm:subLbl(k.split('::')[1]||k),arr:subO(k,'rev')})):RCRS==='doctor'?docsIn(clinics).map(dr=>({nm:docLbl(dr,clinics),arr:rDoc(dr,clinics)})):clinics.map(x=>({nm:dNm(x),arr:clCat(x,m.key)})));
+     else if(RBRK==='cat')emit(CATS.map(ct=>({nm:ct,arr:catTot(ct),color:CATCOL[ct],key:ct})),m=>RCRS==='product'?RP.map(p=>({nm:RPL[p],arr:cpSeg(m.key,p)})):RCRS==='subcat'?subsForCat(m.key).map(k=>({nm:subLbl(k.split('::')[1]||k),arr:subO(k,'rev')})):clinics.map(x=>({nm:dNm(x),arr:clCat(x,m.key)})));
      else if(RBRK==='clinic')emit(clinics.map(x=>({nm:dNm(x),arr:clRev(x),x:x})),m=>RCRS==='product'?RP.map(p=>({nm:RPL[p],arr:clProd(m.x,p)})):RCRS==='doctor'?docsIn([m.x]).map(dr=>({nm:dr,arr:rDoc(dr,[m.x])})):CATS.map(ct=>({nm:ct,arr:clCat(m.x,ct),color:CATCOL[ct]})));
      else if(RBRK==='doctor')emit(docsIn(clinics).map(dr=>({nm:docLbl(dr,clinics),arr:rDoc(dr,clinics)})),m=>[]);
-     else emit(cities.map(ci=>({nm:ci,arr:cityRev(ci,clRev)})),m=>RCRS==='product'?RP.map(p=>({nm:RPL[p],arr:cityRev(m.nm,x=>clProd(x,p))})):RCRS==='clinic'?clinics.filter(x=>x.city===m.nm).map(x=>({nm:dNm(x),arr:clRev(x)})):CATS.map(ct=>({nm:ct,arr:cityRev(m.nm,x=>clCat(x,ct)),color:CATCOL[ct]})));
+     else emit(cities.map(ci=>({nm:ci,arr:cityRev(ci,clRev)})),m=>RCRS==='product'?RP.map(p=>({nm:RPL[p],arr:cityRev(m.nm,x=>clProd(x,p))})):RCRS==='clinic'?clinics.filter(x=>x.city===m.nm).map(x=>({nm:dNm(x),arr:clRev(x)})):RCRS==='doctor'?docsIn(clinics.filter(x=>x.city===m.nm)).map(dr=>({nm:dr,arr:rDoc(dr,clinics.filter(x=>x.city===m.nm))})):CATS.map(ct=>({nm:ct,arr:cityRev(m.nm,x=>clCat(x,ct)),color:CATCOL[ct]})));
    } else if(_rb)_rb.innerHTML='';
    $('tRev').innerHTML=R;}
   // ⑦ Availability — roster: active days (wd/we) → opened→shrinkage→net-after → SC net available → velocity
