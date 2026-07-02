@@ -216,7 +216,7 @@
 </div>
 <div class="modal" id="modal" onclick="if(event.target===this)closeZ()"><div class="mbox"><div class="mhd"><span id="mTitle"></span><button onclick="closeZ()" title="close">✕</button></div><div id="pickBar" class="pickbar"></div><div id="mBody"></div></div></div>
 <script>
-let D=null, AGE={}, CURN=1, BASEN=4, MODE='ov', C=null, OPEN={}, QF='any', CITYF=new Set(), CLINF=new Set(), TIERF=new Set(), MATF=new Set(), DENSITY='compact', MET='bookings', OVMODE='metric', METSTAT='all', CELLMET={};
+let D=null, AGE={}, CURN=1, BASEN=4, MODE='ov', C=null, OPEN={}, QF='any', CITYF=new Set(), CLINF=new Set(), TIERF=new Set(), MATF=new Set(), DENSITY='compact', MET='bookings', OVMODE='metric', METSTAT='all', DISPMET=null;
 const T1CITIES=new Set(['Bangalore','Mumbai','Pune','Hyderabad','Chennai']);
 function tierOf(city){return T1CITIES.has(city)?'T1':'T2';}
 function clinMonths(slug){const d=AGE[D.clinics[slug].loc];if(!d)return null;const t=Date.parse(d);return isNaN(t)?null:(Date.now()-t)/(1000*60*60*24*30.44);}
@@ -437,10 +437,10 @@ function renderOverview(){
 function setQF(k){QF=k;renderOverview();}
 function toggleDens(){DENSITY=(DENSITY==='full'?'compact':'full');renderOverview();}
 function setView(v){MODE='ov';MET=(v==='issues')?'break':(MET==='break'?'bookings':MET);updateModeUI();render();}
-function setMet(v){MODE='ov';MET=v;CELLMET={};updateModeUI();render();}
+function setMet(v){MODE='ov';MET=v;DISPMET=null;updateModeUI();render();}
 function setMetStat(v){METSTAT=v;render();}
-const METCYCLE=FUNNEL_ORDER.map(i=>STAGES[i].key);   // per-cell metric peek order
-function cycleCell(slug,dir){const cur=CELLMET[slug]||MET;let i=METCYCLE.indexOf(cur);i=(i+dir+METCYCLE.length)%METCYCLE.length;CELLMET[slug]=METCYCLE[i];render();}
+const METCYCLE=FUNNEL_ORDER.map(i=>STAGES[i].key);   // metric-column move order
+function cycleDisp(dir){const cur=DISPMET||MET;let i=METCYCLE.indexOf(cur);i=(i+dir+METCYCLE.length)%METCYCLE.length;DISPMET=(METCYCLE[i]===MET)?null:METCYCLE[i];render();}
 function updateModeUI(){const cmp=(MET!=='break');
   const vi=$('vIssues'),vc=$('vCompare');if(vi)vi.classList.toggle('on',!cmp&&MODE==='ov');if(vc)vc.classList.toggle('on',cmp&&MODE==='ov');
   const mb=$('metricbar');if(mb)mb.style.display=cmp?'flex':'none';
@@ -457,24 +457,26 @@ function metricChips(c,stageKey){
 function pctPill(ev){const arw=(ev.d==null)?'':(ev.d<0?'↓ ':ev.d>0?'↑ ':'→ ');return (ev.d==null)?'<span class="flat">—</span>':'<span class="mc '+ev.st+'" style="font-size:14.5px;font-weight:800;min-width:56px">'+arw+Math.abs(Math.round(ev.d*100))+'%</span>';}
 function renderMetric(){
   ZREG=[];CURZ=null;
-  const st=STAGES.find(x=>x.key===MET);
+  const st=STAGES.find(x=>x.key===MET);                 // fixed metric: sort + status filter + clinic set
+  const dk=DISPMET||MET, dst=STAGES.find(x=>x.key===dk), peek=(dk!==MET);   // displayed metric (moved with header arrows)
   const scopeSlugs=Object.keys(D.clinics).filter(inScope);
   let rows=scopeSlugs.map(slug=>({slug,c:D.clinics[slug],mc:metricChips(D.clinics[slug],MET)}));
-  rows.sort((a,b)=>(a.mc.ev.d==null?9:a.mc.ev.d)-(b.mc.ev.d==null?9:b.mc.ev.d));   // worst on the column metric first
+  rows.sort((a,b)=>(a.mc.ev.d==null?9:a.mc.ev.d)-(b.mc.ev.d==null?9:b.mc.ev.d));   // worst on the fixed metric first
   const nred=rows.filter(r=>r.mc.ev.st==='red').length,namb=rows.filter(r=>r.mc.ev.st==='amber').length,ngrn=rows.filter(r=>r.mc.ev.st==='green').length,ntot=rows.length;
   if(METSTAT!=='all')rows=rows.filter(r=>r.mc.ev.st===METSTAT);
   const sf=(k,lab,n)=>'<button class="ichip'+(METSTAT===k?' on':'')+(n?'':' zero')+'" style="padding:4px 11px;font-size:12px" onclick="setMetStat(\''+k+'\')">'+lab+' <b>'+n+'</b></button>';
   let h='<div class="densrow" style="gap:8px;flex-wrap:wrap"><span class="lab" style="text-transform:none;font-weight:600;color:var(--ink2)">'+cityStr()+' · '+st.name+' · worst→best</span>'
     +'<span style="display:inline-flex;gap:6px;flex-wrap:wrap;margin-left:4px">'+sf('all','All',ntot)+sf('red','🔴 dropped',nred)+sf('amber','🟡 watch',namb)+sf('green','🟢 fine',ngrn)+'</span>'
+    +(peek?'<span class="ichip on" style="padding:4px 11px;font-size:12px" onclick="DISPMET=null;render()">viewing '+dst.name+' · fixed by '+st.name+' · ✕</span>':'')
     +'<span style="font-weight:500;color:var(--faint);font-size:11px;margin-left:auto">'+SLOPE_LEG+'</span></div>';
-  h+='<div class="fmwrap"><table class="fm" style="min-width:640px"><thead><tr><th style="white-space:nowrap">Clinic</th><th style="text-align:center;white-space:nowrap">change</th><th style="text-align:left">metric ‹ › &nbsp;— recent '+(CURN+BASEN)+' wks · <span style="font-weight:500;color:var(--faint)">before avg → now</span></th></tr></thead><tbody>';
-  if(scopeSlugs.length>1){const agg=aggregate(scopeSlugs,'Total'),tmc=metricChips(agg,MET),te=tmc.ev;const tzi=ZREG.length;ZREG.push({label:'Total · '+scopeSlugs.length+' clinics · '+st.name,arr:tmc.arr,col:COL[te.st]||'var(--ink2)',pct:!!tmc.pct,noPrefix:true});
-    h+='<tr class="totalrow" onclick="setOvMode(\'funnel\')" title="open the combined funnel"><td style="white-space:nowrap;width:1%">Σ Total · '+scopeSlugs.length+' clinics</td><td style="text-align:center;width:1%">'+pctPill(te)+'</td><td class="why chipzoom" style="white-space:nowrap;max-width:none" onclick="event.stopPropagation();zoomReg('+tzi+')" title="click for the combined trend graph"><span class="metpk" style="visibility:hidden">'+st.short+'</span>'+slopeBadge(tmc.a)+tmc.chips+'</td></tr>';}
+  const metCol='<span class="metpk'+(peek?' peek':'')+'"><span class="marr" onclick="event.stopPropagation();cycleDisp(-1)">‹</span><b>'+dst.short+'</b><span class="marr" onclick="event.stopPropagation();cycleDisp(1)">›</span></span>';
+  h+='<div class="fmwrap"><table class="fm" style="min-width:640px"><thead><tr><th style="white-space:nowrap">Clinic</th><th style="text-align:center;white-space:nowrap">change</th><th style="text-align:left">'+metCol+' — recent '+(CURN+BASEN)+' wks · <span style="font-weight:500;color:var(--faint)">before avg → now</span></th></tr></thead><tbody>';
+  if(scopeSlugs.length>1){const agg=aggregate(scopeSlugs,'Total'),tmc=metricChips(agg,dk),te=tmc.ev;const tzi=ZREG.length;ZREG.push({label:'Total · '+scopeSlugs.length+' clinics · '+dst.name,arr:tmc.arr,col:COL[te.st]||'var(--ink2)',pct:!!tmc.pct,noPrefix:true});
+    h+='<tr class="totalrow" onclick="setOvMode(\'funnel\')" title="open the combined funnel"><td style="white-space:nowrap;width:1%">Σ Total · '+scopeSlugs.length+' clinics</td><td style="text-align:center;width:1%">'+pctPill(te)+'</td><td class="why chipzoom" style="white-space:nowrap;max-width:none" onclick="event.stopPropagation();zoomReg('+tzi+')" title="click for the combined trend graph">'+slopeBadge(tmc.a)+tmc.chips+'</td></tr>';}
   if(!rows.length)h+='<tr><td colspan="3" style="color:var(--muted);padding:16px;text-align:left">No clinics.</td></tr>';
-  rows.forEach(r=>{const ck=CELLMET[r.slug]||MET, cst=STAGES.find(x=>x.key===ck), mc=(ck===MET?r.mc:metricChips(r.c,ck)), e=mc.ev, peek=(ck!==MET);
-    const zi=ZREG.length;ZREG.push({label:r.c.disp+' · '+cst.name,arr:mc.arr,col:COL[e.st]||'var(--ink2)',pct:!!mc.pct,noPrefix:true});
-    const picker='<span class="metpk'+(peek?' peek':'')+'"><span class="marr" onclick="event.stopPropagation();cycleCell(\''+r.slug+'\',-1)">‹</span><b>'+cst.short+'</b><span class="marr" onclick="event.stopPropagation();cycleCell(\''+r.slug+'\',1)">›</span></span>';
-    h+='<tr onclick="goClinic(\''+r.slug+'\')" title="open funnel"><td style="white-space:nowrap;width:1%">'+r.c.disp+'</td><td style="text-align:center;width:1%">'+pctPill(e)+'</td><td class="why chipzoom" style="white-space:nowrap;max-width:none" onclick="event.stopPropagation();zoomReg('+zi+')" title="click for the trend graph">'+picker+slopeBadge(mc.a)+mc.chips+'</td></tr>';});
+  rows.forEach(r=>{const mc=(dk===MET?r.mc:metricChips(r.c,dk)), e=mc.ev;
+    const zi=ZREG.length;ZREG.push({label:r.c.disp+' · '+dst.name,arr:mc.arr,col:COL[e.st]||'var(--ink2)',pct:!!mc.pct,noPrefix:true});
+    h+='<tr onclick="goClinic(\''+r.slug+'\')" title="open funnel"><td style="white-space:nowrap;width:1%">'+r.c.disp+'</td><td style="text-align:center;width:1%">'+pctPill(e)+'</td><td class="why chipzoom" style="white-space:nowrap;max-width:none" onclick="event.stopPropagation();zoomReg('+zi+')" title="click for the trend graph">'+slopeBadge(mc.a)+mc.chips+'</td></tr>';});
   h+='</tbody></table></div>';
   $('root').innerHTML=h;
 }
