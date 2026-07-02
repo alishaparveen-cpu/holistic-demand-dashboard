@@ -467,13 +467,16 @@ function render(){
       return {slug:x.slug,city:x.city,data};}).filter(Boolean);
   }
   const cities=[...new Set(clinics.map(x=>x.city))];
-  $('h1').textContent='Master Demand Sheet'+(TIERS.size?' · '+[...TIERS].join('+'):'')+(CITY.size?' · '+(CITY.size===1?[...CITY][0]:CITY.size+' cities'):'')+(CLIN.size&&!MATS.size?' · '+CLIN.size+' clinics':'')+(MATS.size?' · '+[...MATS].join(','):'');
-  if($('filtCount'))$('filtCount').textContent=clinics.length+' clinics · '+cities.length+' cities';
-  if($('matNames')){   // list the actual cities + clinics included by the tier/maturity filter
-    if(TIERS.size||MATS.size){
+  const docShort=d=>String(d).replace(/^Dr\.?\s*/,'');
+  const docScope=DOC.size?' · 👤 '+([...DOC].length<=2?[...DOC].map(docShort).join(' + '):DOC.size+' doctors'):'';
+  $('h1').textContent='Master Demand Sheet'+(TIERS.size?' · '+[...TIERS].join('+'):'')+(CITY.size?' · '+(CITY.size===1?[...CITY][0]:CITY.size+' cities'):'')+(CLIN.size&&!MATS.size?' · '+CLIN.size+' clinics':'')+(MATS.size?' · '+[...MATS].join(','):'')+docScope;
+  if($('filtCount'))$('filtCount').textContent=(DOC.size?(DOC.size<=2?[...DOC].map(docShort).join(' + '):DOC.size+' doctors')+' · ':'')+clinics.length+' clinics · '+cities.length+' cities';
+  if($('matNames')){   // scope banner — list the doctors and/or the cities + clinics the filter resolves to
+    if(DOC.size||TIERS.size||MATS.size){
       const cityNames=[...new Set(clinics.map(x=>x.city))].sort();
       const clinNames=clinics.map(x=>(D._meta.display||{})[x.slug]||x.slug).sort();
-      $('matNames').innerHTML='<b>'+([...TIERS,...MATS].join(' · ')||'filtered')+'</b> — <b>'+cityNames.length+' cities:</b> '+(cityNames.join(', ')||'none')+'<br><b>'+clinNames.length+' clinics:</b> '+(clinNames.join('  ·  ')||'none');
+      const docLine=DOC.size?'<b style="color:var(--accent)">👤 Doctors ('+DOC.size+'):</b> '+[...DOC].join('  ·  ')+'<br>':'';
+      $('matNames').innerHTML=docLine+'<b>'+([...TIERS,...MATS].join(' · ')||(DOC.size?'doctor scope':'filtered'))+'</b> — <b>'+cityNames.length+' cities:</b> '+(cityNames.join(', ')||'none')+'<br><b>'+clinNames.length+' clinics:</b> '+(clinNames.join('  ·  ')||'none');
       $('matNames').style.display='';
     } else $('matNames').style.display='none';
   }
@@ -797,7 +800,7 @@ function render(){
    const cpSeg=(cat,p)=>segArr(clinics.reduce((a,x)=>addv(a,(((x.data.bottom.rev_cp||{})[cat]||{})[p])||ZA),ZA.slice()),(((onlBot.rev_cp||{})[cat]||{})[p])||ZA);
    const catTot=cat=>RP.reduce((a,p)=>addv(a,cpSeg(cat,p)),ZA.slice());
    const prodTot=p=>CATS.reduce((a,c)=>addv(a,cpSeg(c,p)),ZA.slice());
-   const revTot=CATS.reduce((a,c)=>addv(a,catTot(c)),ZA.slice());
+   const revTot=clinics.reduce((a,x)=>addv(a,x.data.bottom.rev||ZA),ZA.slice());   // total from bottom.rev (always scoped) — not the category×product cube, which is empty under a doctor filter
    const clRev=x=>x.data.bottom.rev||ZA;
    const clProd=(x,p)=>CATS.reduce((a,ct)=>addv(a,((x.data.bottom.rev_cp||{})[ct]||{})[p]||ZA),ZA.slice());
    const clCat=(x,ct)=>RP.reduce((a,p)=>addv(a,((x.data.bottom.rev_cp||{})[ct]||{})[p]||ZA),ZA.slice());
