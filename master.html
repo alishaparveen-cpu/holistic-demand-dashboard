@@ -107,6 +107,7 @@ tr[onclick]:hover td:first-child{color:var(--accent)}
 .msact{display:flex;gap:10px;padding:2px 6px 6px;border-bottom:1px solid var(--line);margin-bottom:4px}
 .msact a{font-size:11px;color:var(--accent);cursor:pointer;font-weight:600}
 .mainnav{display:flex;gap:2px;margin:8px 0 16px;border-bottom:2px solid var(--line)}
+body.dailymode .wk-only{display:none}
 .mtab{background:none;border:none;border-bottom:2px solid transparent;margin-bottom:-2px;padding:9px 18px;font-family:Inter;font-size:14px;font-weight:600;color:var(--muted);cursor:pointer;transition:color .12s}
 .mtab:hover{color:var(--ink2)}
 .mtab.on{color:var(--accent);border-bottom-color:var(--accent)}
@@ -131,7 +132,8 @@ tr[onclick]:hover td:first-child{color:var(--accent)}
     <a class="back" href="index.html">← Dashboard</a>
   </div>
   <h1 id="h1">Master Demand Sheet</h1>
-  <div class="sub">The full country funnel with dynamic filters — pick <b>Tier / City / Clinic / Maturity</b> (maturity auto-selects the matching clinics) and everything rebases. Every row is the selected-scope total; <b>expand any row to see each clinic's contribution</b>. Heatmap green (high) → red (low); click a sparkline to zoom, or use Quick view.</div>
+  <div class="sub">The full country funnel with dynamic filters — pick <b>Tier / City / Clinic / Doctor / Maturity</b> and everything rebases. <b>Weekly</b> = full 52-week history; <b>Daily</b> = the last 6 weeks day-by-day (incl. the current in-progress days). Same filters, same tables.</div>
+  <div class="mainnav" id="mainNav"><button class="mtab on" data-mv="week" onclick="switchMain('week')">Weekly</button><button class="mtab" data-mv="daily" onclick="switchMain('daily')">Daily</button></div>
   <div class="filt">
     <button class="fbtn" id="ovBtn" onclick="setOverview()">◎ Overview · All India</button>
     <span class="fl" style="margin-left:8px">Tier</span>
@@ -148,7 +150,7 @@ tr[onclick]:hover td:first-child{color:var(--accent)}
     <button class="sbtn fbtn on" data-v="offline" onclick="setSeg('offline')">Offline</button><button class="sbtn fbtn" data-v="online" onclick="setSeg('online')">Online</button><button class="sbtn fbtn" data-v="all" onclick="setSeg('all')">All</button>
     <span id="filtCount" class="fl" style="margin-left:auto"></span>
   </div>
-  <div class="wknav">Showing <b id="wkN">6</b> weeks <button id="wkMinus" onclick="adjWeeks(-2)" title="fewer weeks">−</button><button id="wkPlus" onclick="adjWeeks(2)" title="more weeks">＋</button> &nbsp;·&nbsp; latest <b id="wkEndLab">—</b> <button id="wkOlder" onclick="shiftEnd(1)" title="shift older">◀</button><button id="wkNewer" onclick="shiftEnd(-1)" title="shift newer">▶</button><select id="rngSel" class="cmpsel" onchange="setRange(this.value)" title="how many weeks to show"><option value="6" selected>6 weeks</option><option value="13">13 weeks</option><option value="26">26 weeks</option><option value="51">52 weeks</option></select><button id="addWk" onclick="togPartial()" title="Show the current in-progress week (partial — fewer days than a full week, not directly comparable)" style="display:none;width:auto;padding:0 9px;font-size:12px;">+ this week</button></div>
+  <div class="wknav">Showing <b id="wkN">6</b> <span id="unitWord">weeks</span> <button id="wkMinus" onclick="adjWeeks(-2)" title="fewer weeks">−</button><button id="wkPlus" onclick="adjWeeks(2)" title="more weeks">＋</button> &nbsp;·&nbsp; latest <b id="wkEndLab">—</b> <button id="wkOlder" onclick="shiftEnd(1)" title="shift older">◀</button><button id="wkNewer" onclick="shiftEnd(-1)" title="shift newer">▶</button><select id="rngSel" class="cmpsel" onchange="setRange(this.value)" title="how many weeks to show"><option value="6" selected>6 weeks</option><option value="13">13 weeks</option><option value="26">26 weeks</option><option value="51">52 weeks</option></select><button id="addWk" onclick="togPartial()" title="Show the current in-progress week (partial — fewer days than a full week, not directly comparable)" style="display:none;width:auto;padding:0 9px;font-size:12px;">+ this week</button></div>
   <div class="wknav viewrow"><span class="fl">View</span><span class="granctl"><button id="guW" class="gbtn on" onclick="setUnit('week')">Weekly</button><button id="guM" class="gbtn" onclick="setUnit('month')">Monthly</button><span class="clubbox">club <button class="gstep" onclick="adjClub(-1)" title="fewer">−</button><b id="clubN">1</b>&nbsp;<span id="clubU">wk</span><button class="gstep" onclick="adjClub(1)" title="more — e.g. 3 = quarter or 3-week block">＋</button></span><button id="aggS" class="gbtn on" onclick="setAgg('sum')" title="total over the period">Σ&nbsp;Sum</button><button id="aggA" class="gbtn" onclick="setAgg('avg')" title="average per week / month">x̄&nbsp;Avg</button></span><select id="cmpSel" class="cmpsel" onchange="setCmp(this.value)" title="what the Δ column compares against"><option value="avg">Δ vs avg</option><option value="peak">Δ vs peak wk</option><option value="first">Δ vs first wk</option></select><select id="bandSel" class="cmpsel" onchange="setBand(this.value)" title="show only rows that grew / dropped"><option value="all">all Δ</option><option value="up2">↑ grew &gt;5%</option><option value="up1">↑ grew 0–5%</option><option value="dn1">↓ dropped 0–5%</option><option value="dn2">↓ dropped &gt;5%</option></select><button id="ccBtn" class="catbtn" onclick="toggleCC()" title="colour-code rows by growth / drop">🎨 Colour</button><button id="catBtn" class="catbtn" onclick="toggleCat()">🏷 Category</button><button id="cmpBtn" class="catbtn" onclick="toggleCmp()" title="click any two cells to compare % change">📐 Compare</button><button id="combBtn" class="catbtn" onclick="toggleComb()" title="select rows to sum them + show % of total">⊕ Combine</button><button id="qvBtn" class="qvbtn" onclick="toggleQV()">📈 Quick view</button></div>
 
   <div id="matNames" style="font-size:12px;color:var(--ink2);margin:0 0 10px;line-height:1.6;display:none"></div>
@@ -157,8 +159,10 @@ tr[onclick]:hover td:first-child{color:var(--accent)}
   <div class="shead">① Leads <span class="lblmuted">(fresh <b>new</b> leads each week — a phone's first-ever lead — by source, with how many booked same-week / later / never · <b>national</b>, no clinic split)</span></div>
   <div class="fmwrap"><table class="fm" id="tLeads"></table></div>
 
+  <div class="wk-only">
   <div class="shead">② Lead → Book % <span class="lblmuted">(Σ booked ÷ Σ <b>tracked</b> leads — GMB · Google · Practo only; national WhatsApp / Meta / Organic convert ~13% and are shown in ① Leads · expand for each city's rate)</span></div>
   <div class="fmwrap"><table class="fm" id="tLB"></table></div>
+  </div>
 
   <div class="shead">③ Bookings → Done / Not-done <span class="lblmuted">(SCs <b>scheduled that week</b> (appointment/service week, all patients) → book→done% is a true same-week B2D, matching the ops funnel · break by cohort (new / rebook / relapse), channel, clinic or city — all on the same service-week basis.)</span></div>
   <div id="bookCtlBar" style="font-size:12px;color:var(--ink2);margin:0 2px 8px;min-height:26px;display:flex;align-items:center;gap:2px;flex-wrap:wrap"></div>
@@ -176,8 +180,10 @@ tr[onclick]:hover td:first-child{color:var(--accent)}
   <div id="revCtlBar" style="font-size:12px;color:var(--ink2);margin:0 2px 8px;min-height:26px;display:flex;align-items:center;gap:2px;flex-wrap:wrap"></div>
   <div class="fmwrap"><table class="fm" id="tRev"></table></div>
 
+  <div class="wk-only">
   <div class="shead">⑦ Availability <span class="lblmuted">(roster capacity — <b>active days</b> (weekday/weekend) → opened → <b>net hrs after shrinkage</b> → <b>SC net available hrs</b> · realized roster (is_realized=1), matches the ops roster funnel. Booking velocity ties a booking drop back to capacity.)</span></div>
   <div class="fmwrap"><table class="fm" id="tAvail"></table></div>
+  </div>
   </div>
 </div>
 <div class="modal" id="modal"><div class="mbox"><div class="mhd"><span id="mTitle"></span><button id="pctTgl" class="pcttgl" onclick="togPct()" title="click to show % change between each point">＋&nbsp;% change</button><button id="brkTgl" class="pcttgl" style="display:none;margin-left:8px" onclick="togBrk()" title="click to overlay the sub-category lines">✕&nbsp;clear lines</button><button onclick="closeZ()">✕</button></div><div id="pickBar" class="pickbar"></div><div id="mBody"></div></div></div>
@@ -223,20 +229,21 @@ const PCT=v=>v==null||isNaN(v)?'—':v.toFixed(0)+'%';
 const sum=(a,idx)=>idx.reduce((s,i)=>s+(a[i]||0),0);
 const GRN='#2E7D5B',RED='#B23A2E',BLU='#3E6F8E',VIO='#7B5EA7';
 const CATS=['STI','SH','MH','Other'],CATCOL={STI:'#B23A2E',SH:'#3E6F8E',MH:'#7B5EA7',Other:'#8A8A80'};const SUBPAL=['#3E6F8E','#B23A2E','#7B5EA7','#1F6F5C','#C2691F','#9C8410','#5B8C5A','#A8527D','#4E7C8A','#8A6D3B','#6B7A8F','#B07A2E'];function subLbl(l){return l==='Other sexual'?'Other sexual (dysfunction NOS · nightfall · misc)':l==='No disorder (screened)'?'No disorder (no sexual disorder found)':l;}
-let GRAN='week',GCLUB=1,GAGG='sum';function setUnit(u){GRAN=u;if(u==='month'&&GCLUB>4)GCLUB=1;syncGran();render();}function adjClub(d){GCLUB=Math.max(1,Math.min(GRAN==='month'?6:8,GCLUB+d));syncGran();render();}function setAgg(a){GAGG=a;syncGran();render();}function setGran(v){if(v==='biweek'){GRAN='week';GCLUB=2;}else{GRAN=v;GCLUB=1;}syncGran();render();}function toggleMonth(){setUnit(GRAN==='month'?'week':'month');}function syncGran(){var q=function(i){return document.getElementById(i);};if(q('guW'))q('guW').classList.toggle('on',GRAN==='week');if(q('guM'))q('guM').classList.toggle('on',GRAN==='month');if(q('clubN'))q('clubN').textContent=GCLUB;if(q('clubU'))q('clubU').textContent=(GRAN==='month'?(GCLUB>1?'mos':'mo'):(GCLUB>1?'wks':'wk'));if(q('aggS'))q('aggS').classList.toggle('on',GAGG==='sum');if(q('aggA'))q('aggA').classList.toggle('on',GAGG==='avg');}
+let GRAN='week',GCLUB=1,GAGG='sum';function setUnit(u){if(isDaily()){GRAN='week';GCLUB=(u==='month')?7:1;syncGran();render();return;}GRAN=u;if(u==='month'&&GCLUB>4)GCLUB=1;syncGran();render();}function adjClub(d){GCLUB=Math.max(1,Math.min(GRAN==='month'?6:8,GCLUB+d));syncGran();render();}function setAgg(a){GAGG=a;syncGran();render();}function setGran(v){if(v==='biweek'){GRAN='week';GCLUB=2;}else{GRAN=v;GCLUB=1;}syncGran();render();}function toggleMonth(){setUnit(GRAN==='month'?'week':'month');}function syncGran(){var q=function(i){return document.getElementById(i);};if(q('guW'))q('guW').classList.toggle('on',isDaily()?GCLUB===1:GRAN==='week');if(q('guM'))q('guM').classList.toggle('on',isDaily()?GCLUB>1:GRAN==='month');if(q('clubN'))q('clubN').textContent=GCLUB;if(q('clubU'))q('clubU').textContent=(isDaily()?(GCLUB>1?'days':'day'):(GRAN==='month'?(GCLUB>1?'mos':'mo'):(GCLUB>1?'wks':'wk')));if(q('aggS'))q('aggS').classList.toggle('on',GAGG==='sum');if(q('aggA'))q('aggA').classList.toggle('on',GAGG==='avg');}
 function efloor(){return SHOWPARTIAL?0:W0;}
 function togPartial(){SHOWPARTIAL=!SHOWPARTIAL;WKEND=efloor();render();}
 function setRange(v){const mx=(D._meta.weeks||[]).length;NSHOW=Math.min(mx-1,Math.max(4,+v));WKEND=efloor();render();}
 let HIDDEN=new Set();function hideCol(j){const b=vbuckets()[j];if(b)HIDDEN.add(b.label);render();}function showAllCols(){HIDDEN.clear();render();}
 function mlab(k){const d=new Date(k+'-01T00:00:00');return d.toLocaleString('en',{month:'short'})+" '"+k.slice(2,4);}
-function blab(idxs){const w=D._meta.weeks,a=w[idxs[idxs.length-1]],b=w[idxs[0]];const da=new Date(a+'T00:00:00'),db=new Date(b+'T00:00:00');db.setDate(db.getDate()+6);const m=x=>x.toLocaleString('en',{month:'short'});return da.getDate()+' '+m(da)+'–'+db.getDate()+' '+m(db);}
-let _vbC=null,_vbK='';function vbuckets(){const wAll=(D&&D._meta&&D._meta.weeks)||[];const flat=!(GRAN==='week'&&GCLUB===1);let start=0;if(flat&&wAll.length){const e=new Date(wAll[0]+'T00:00:00');e.setDate(e.getDate()+6);if(new Date()<e)start=1;}const key=GRAN+'|'+GCLUB+'|'+start+'|'+wAll.length;if(_vbK===key)return _vbC;const w=wAll.slice(start);let base;if(GRAN==='month'){const g=[],s={};w.forEach((wk,i)=>{const k=wk.slice(0,7);if(!(k in s)){s[k]=g.length;g.push({key:k,idxs:[]});}g[s[k]].idxs.push(i+start);});base=g.map(x=>({lab:mlab(x.key),idxs:x.idxs}));}else{base=w.map((wk,i)=>({lab:wlab(wk),idxs:[i+start]}));}let r;if(GCLUB<=1){r=base.map(b=>({label:b.lab,idxs:b.idxs,units:1}));}else{r=[];for(let i=0;i<base.length;i+=GCLUB){const grp=base.slice(i,i+GCLUB);const idxs=grp.reduce((a,g)=>a.concat(g.idxs),[]);const label=grp.length<2?grp[0].lab:(GRAN==='month'?grp[grp.length-1].lab+'–'+grp[0].lab:blab(idxs));r.push({label,idxs,units:grp.length});}};try{var _td=new Date();_td.setHours(0,0,0,0);var _oI=wAll.length-1;r.forEach(function(bk){var mI=Math.min.apply(null,bk.idxs);var dt=new Date(wAll[mI]+'T00:00:00');var pe;if(GRAN==='month'){pe=new Date(dt.getFullYear(),dt.getMonth()+1,0);}else{pe=new Date(dt);pe.setDate(pe.getDate()+6);}var pt=pe>_td;if(bk.idxs.indexOf(_oI)>=0){var od=new Date(wAll[_oI]+'T00:00:00');if(GRAN==='month'&&od.getDate()>7)pt=true;}if(GCLUB>1&&bk.units<GCLUB)pt=true;bk.partial=pt;});}catch(e){}_vbC=r;_vbK=key;return r;}
+function blab(idxs){const w=D._meta.weeks,a=w[idxs[idxs.length-1]],b=w[idxs[0]];const da=new Date(a+'T00:00:00'),db=new Date(b+'T00:00:00');if(!isDaily())db.setDate(db.getDate()+6);const m=x=>x.toLocaleString('en',{month:'short'});return da.getDate()+' '+m(da)+'–'+db.getDate()+' '+m(db);}
+let _vbC=null,_vbK='';function vbuckets(){const wAll=(D&&D._meta&&D._meta.weeks)||[];const _po=isDaily()?0:6;const flat=!(GRAN==='week'&&GCLUB===1);let start=0;if(flat&&wAll.length){const e=new Date(wAll[0]+'T00:00:00');e.setDate(e.getDate()+_po);if(new Date()<e)start=1;}const key=GRAN+'|'+GCLUB+'|'+start+'|'+wAll.length;if(_vbK===key)return _vbC;const w=wAll.slice(start);let base;if(GRAN==='month'){const g=[],s={};w.forEach((wk,i)=>{const k=wk.slice(0,7);if(!(k in s)){s[k]=g.length;g.push({key:k,idxs:[]});}g[s[k]].idxs.push(i+start);});base=g.map(x=>({lab:mlab(x.key),idxs:x.idxs}));}else{base=w.map((wk,i)=>({lab:wlab(wk),idxs:[i+start]}));}let r;if(GCLUB<=1){r=base.map(b=>({label:b.lab,idxs:b.idxs,units:1}));}else{r=[];for(let i=0;i<base.length;i+=GCLUB){const grp=base.slice(i,i+GCLUB);const idxs=grp.reduce((a,g)=>a.concat(g.idxs),[]);const label=grp.length<2?grp[0].lab:(GRAN==='month'?grp[grp.length-1].lab+'–'+grp[0].lab:blab(idxs));r.push({label,idxs,units:grp.length});}};try{var _td=new Date();_td.setHours(0,0,0,0);var _oI=wAll.length-1;r.forEach(function(bk){var mI=Math.min.apply(null,bk.idxs);var dt=new Date(wAll[mI]+'T00:00:00');var pe;if(GRAN==='month'){pe=new Date(dt.getFullYear(),dt.getMonth()+1,0);}else{pe=new Date(dt);pe.setDate(pe.getDate()+_po);}var pt=pe>_td;if(bk.idxs.indexOf(_oI)>=0){var od=new Date(wAll[_oI]+'T00:00:00');if(GRAN==='month'&&od.getDate()>7)pt=true;}if(GCLUB>1&&bk.units<GCLUB)pt=true;bk.partial=pt;});}catch(e){}_vbC=r;_vbK=key;return r;}
 function NV(){return vbuckets().length;}
 function bval(arr,b,mode){if(!arr||!b)return null;const vs=b.idxs.map(k=>arr[k]).filter(v=>v!=null&&!isNaN(v));if(!vs.length)return null;const s=vs.reduce((a,x)=>a+x,0);if(mode==='avgWeek')return s/vs.length;if(mode==='avgUnit')return s/(b.units||vs.length);return s;}
 function isPctFmt(f){return f===PCT||(typeof CTRF!=='undefined'&&f===CTRF);}
 function colvals(arr,fmt){const B=vbuckets(),c=cols(),isP=isPctFmt(fmt);const mode=isP?'avgWeek':(GAGG==='avg'?'avgUnit':'sum');return c.map(j=>{if(arr&&arr.length===B.length)return arr[j];return bval(arr,B[j],mode);});}
 let _coC=null,_coK='';function cols(){const key=GRAN+'|'+GCLUB+'|'+NSHOW+'|'+WKEND+'|'+[...HIDDEN].join(',');if(_coK===key)return _coC;const nv=NV();const B=vbuckets();const flat=!(GRAN==='week'&&GCLUB===1);let c;if(flat){c=[];const lo=WKEND,hi=WKEND+NSHOW;for(let j=nv-1;j>=0;j--){const bk=B[j];if(bk&&bk.idxs.some(ix=>ix>=lo&&ix<hi))c.push(j);}}else{c=[];for(let j=WKEND+NSHOW-1;j>=WKEND;j--)if(j<nv&&j>=0)c.push(j);}c=c.filter(j=>B[j]&&!HIDDEN.has(B[j].label)&&!(flat&&B[j].partial));_coC=c;_coK=key;return c;}
-function wlab(w){const d=new Date(w+'T00:00:00'),e=new Date(d);e.setDate(e.getDate()+6);const m=x=>x.toLocaleString('en',{month:'short'});
+function isDaily(){return !!(D&&D._meta&&D._meta.daily);}
+function wlab(w){if(isDaily()){const d=new Date(w+'T00:00:00');return d.toLocaleString('en',{weekday:'short'})+' '+d.getDate()+' '+d.toLocaleString('en',{month:'short'});}const d=new Date(w+'T00:00:00'),e=new Date(d);e.setDate(e.getDate()+6);const m=x=>x.toLocaleString('en',{month:'short'});
   return d.getMonth()===e.getMonth()?`${d.getDate()}–${e.getDate()} ${m(e)}`:`${d.getDate()} ${m(d)}–${e.getDate()} ${m(e)}`;}
 function hexA(hex,a){const n=parseInt(hex.slice(1),16);return `rgba(${n>>16&255},${n>>8&255},${n&255},${a.toFixed(3)})`;}
 function heatBg(v,mn,mx,inv){if(v==null||isNaN(v)||!isFinite(mn)||mn===mx)return'';let t=(v-mn)/((mx-mn)||1);if(inv)t=1-t;
@@ -965,11 +972,51 @@ Promise.all([
   fetch('data_source_recon.json?v='+Date.now()).then(r=>{if(!r.ok)throw new Error('HTTP '+r.status);return r.json();}),
   fetch('data_ga_funnel.json?v='+Date.now()).then(r=>r.ok?r.json():null).catch(()=>null)
 ]).then(([j,gf])=>{
-  D=j;GAF=gf;
-  W0=(function(){var w=(D._meta&&D._meta.weeks)||[];if(!w.length)return 1;var e=new Date(w[0]+'T00:00:00');e.setDate(e.getDate()+6);var t=new Date();t.setHours(0,0,0,0);return e>t?1:0;})();WKEND=efloor();
+  DWEEK=j;GAF=gf;D=j;
   D._meta.clinics=D._meta.clinics.filter(k=>{const c=D.clinics[k];return c&&(((c.bottom||{}).booked||[]).some(v=>v)||((c.avail||{}).slots_total||[]).some(v=>v));});
+  W0=computeW0();WKEND=efloor();
   try{renderCityOpts();renderClinicOpts();renderDoctorOpts();updateScopeBtns();render();}catch(e){$('h1').textContent='Render error: '+e.message;console.error(e);}
 }).catch(e=>{$('h1').textContent='Could not load data_source_recon.json ('+e.message+')';console.error(e);});
+function computeW0(){var w=(D._meta&&D._meta.weeks)||[];if(!w.length)return 1;var e=new Date(w[0]+'T00:00:00');e.setDate(e.getDate()+(isDaily()?0:6));var t=new Date();t.setHours(0,0,0,0);return e>t?1:0;}
+// ── Weekly ⇄ Daily view swap ──
+let DWEEK=null,DDAILY=null,DAILY=false;
+function switchMain(v){
+  document.querySelectorAll('.mtab').forEach(function(b){b.classList.toggle('on',b.getAttribute('data-mv')===v);});
+  document.body.classList.toggle('dailymode',v==='daily');
+  if(v==='daily'){
+    DAILY=true;
+    if(DDAILY){D=DDAILY;afterSwap('daily');}
+    else{
+      var nb=$('mainNav');if(nb)nb.style.opacity='.5';
+      fetch('data_daily_master.json?v='+Date.now()).then(r=>r.json()).then(function(dj){
+        var dl=(dj._meta.weeks||[]).length, srcs=dj._meta.sources||[];
+        var zad=function(){return new Array(dl).fill(0);};
+        var LBK=['gmb_call','gmb_web','gmb_wa','gpaid_call','gpaid_web','practo','meta','organic','untagged'];
+        Object.keys(dj.clinics).forEach(function(k){var c=dj.clinics[k];var bs=c.booked_by_source||{};
+          c.by_source={};srcs.forEach(function(s){c.by_source[s]=bs[s]||zad();});      // ② accessors read every source key
+          c.lead_book={};LBK.forEach(function(s){c.lead_book[s]={total:zad(),leads:zad(),booked:zad()};});
+          if(!c.book_cohort)c.book_cohort={};if(!c.done_cat_source)c.done_cat_source={};if(!c.avail_roster)c.avail_roster={};
+          if(!c.bottom.rev_cp)c.bottom.rev_cp={};if(!c.bottom.by_subcat)c.bottom.by_subcat={};});
+        if(!dj._meta.online_src)dj._meta.online_src={};if(!dj._meta.online)dj._meta.online={};
+        dj._meta.clinics=(dj._meta.clinics||[]).filter(function(k){var c=dj.clinics[k];return c&&((c.bottom||{}).booked||[]).some(function(x){return x;});});
+        DDAILY=dj;D=dj;if(nb)nb.style.opacity='';afterSwap('daily');
+      }).catch(function(e){if(nb)nb.style.opacity='';alert('Could not load daily data: '+e.message);});
+    }
+  } else { DAILY=false;D=DWEEK;afterSwap('week'); }
+}
+function afterSwap(mode){
+  GRAN='week';GCLUB=1;                         // reset granularity on swap
+  NSHOW=(mode==='daily')?14:6;
+  W0=computeW0();WKEND=efloor();
+  // rewrite the range selector + unit wording for the active mode
+  var rs=$('rngSel');
+  if(rs){var opts=(mode==='daily')?[[14,'14 days'],[21,'21 days'],[28,'28 days'],[42,'42 days']]:[[6,'6 weeks'],[13,'13 weeks'],[26,'26 weeks'],[51,'52 weeks']];
+    rs.innerHTML=opts.map(function(o){return '<option value="'+o[0]+'"'+(o[0]===NSHOW?' selected':'')+'>'+o[1]+'</option>';}).join('');}
+  var un=$('unitWord');if(un)un.textContent=(mode==='daily')?'days':'weeks';
+  var gw=$('guW'),gm=$('guM');if(gw)gw.textContent=(mode==='daily')?'Day':'Weekly';if(gm)gm.textContent=(mode==='daily')?'Week':'Monthly';
+  syncGran();try{renderCityOpts();renderClinicOpts();renderDoctorOpts();updateScopeBtns();render();}catch(e){$('h1').textContent='Render error: '+e.message;}
+  window.scrollTo(0,0);
+}
 </script>
 </body>
 </html>
