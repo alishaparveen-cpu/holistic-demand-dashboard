@@ -77,7 +77,7 @@
 <div class="wrap">
   <a class="back" href="index.html">← Dashboard</a>
   <h1>Weekly Diagnostic</h1>
-  <div class="sub">Top-down clinic funnel — <b>Availability → Demand → Conversion → Velocity</b>. We flag the <b>earliest stage that breaks</b>; stages below a break read as likely <i>consequences</i>. <b>Overview</b> scans every clinic to answer "who's broken & where"; pick a clinic to drill in.</div>
+  <div class="sub">Top-down clinic funnel — <b>Availability → Demand → Conversion → Output</b>. We flag the <b>earliest stage that breaks</b>; stages below a break read as likely <i>consequences</i>. <b>Overview</b> scans every clinic to answer "who's broken & where"; pick a clinic to drill in.</div>
   <div class="ctrls">
     <button class="fbtn on" id="mOv" onclick="setMode('ov')">◎ Overview · all clinics</button>
     <span class="lab" style="margin-left:6px">City</span><select id="city"><option value="__all">All cities</option></select>
@@ -96,14 +96,14 @@ const sum=a=>a.reduce((x,y)=>x+(y||0),0);
 function fmt(v,d){return v==null?'—':(d?(Math.round(v*10)/10):Math.round(v)).toLocaleString('en-IN');}
 function cap(s){return s.charAt(0).toUpperCase()+s.slice(1);}
 const STAGES=[
-  {key:'availability',num:1,name:'Availability',short:'Avail',grp:'input',sub:'active days · roster hours',diag:'Clinic closed / fewer days',fix:'Ops · roster',
-   metrics:c=>[{nm:'active days',arr:c.availability.active_days,fmtd:0},{nm:'roster hours',arr:c.availability.hours,fmtd:1}],headline:0},
-  {key:'demand',num:2,name:'Demand',short:'Demand',grp:'input',sub:'new bookings (by channel)',diag:'Channel break — GMB / Ads / Practo',fix:'Marketing',
-   metrics:c=>[{nm:'new bookings',arr:c.demand.bookings,fmtd:0}],headline:0,byChannel:c=>c.demand.by_channel},
-  {key:'conversion',num:3,name:'Conversion',short:'Conv',grp:'input',sub:'book → done %',diag:'Conversion drop — front-desk / follow-up',fix:'Clinic / PCC',
-   metrics:c=>[{nm:'book→done %',arr:c.conversion.book_done_pct,pct:1}],headline:0},
-  {key:'output',num:4,name:'Output',short:'Output',grp:'output',sub:'done · bookings · per active day (wkday/wkend weighted)',diag:'Low output — capacity / conversion',fix:'Ops · staffing',
-   metrics:c=>[{nm:'done',arr:c.output.done,fmtd:0},{nm:'bookings',arr:c.output.bookings,fmtd:0},{nm:'bookings / active weekday',arr:c.output.per_weekday,fmtd:1},{nm:'bookings / active weekend',arr:c.output.per_weekend,fmtd:1}],headline:0,
+  {key:'availability',num:1,name:'Availability',short:'Avail',grp:'input',sub:'active days',diag:'Clinic closed / fewer days',fix:'Ops · roster',
+   metrics:c=>[{nm:'active days',arr:c.availability.active_days,fmtd:0},{nm:'· weekday days',arr:c.availability.wday_days,fmtd:0},{nm:'· weekend days',arr:c.availability.wend_days,fmtd:0},{nm:'roster hours',arr:c.availability.hours,fmtd:1}],headline:0},
+  {key:'demand',num:2,name:'Demand',short:'Demand',grp:'input',sub:'leads',diag:'Channel break — GMB / Ads / Practo',fix:'Marketing',
+   metrics:c=>[{nm:'leads',arr:c.demand.leads,fmtd:0}],headline:0,byChannel:c=>c.demand.by_channel},
+  {key:'conversion',num:3,name:'Conversion',short:'Conv',grp:'input',sub:'lead→book · book→done',diag:'Conversion drop — front-desk / follow-up',fix:'Clinic / PCC',
+   metrics:c=>[{nm:'book→done %',arr:c.conversion.book_done_pct,pct:1},{nm:'lead→book % (tagged-lead ~)',arr:c.conversion.lead_book_pct,pct:1}],headline:0},
+  {key:'output',num:4,name:'Output',short:'Output',grp:'output',sub:'done · bookings/active-day',diag:'Low output — capacity',fix:'Ops · staffing',
+   metrics:c=>[{nm:'done',arr:c.output.done,fmtd:0},{nm:'bookings',arr:c.output.bookings,fmtd:0},{nm:'bookings / active day',arr:c.output.per_active_day,fmtd:1},{nm:'· per active weekday',arr:c.output.per_weekday,fmtd:1},{nm:'· per active weekend',arr:c.output.per_weekend,fmtd:1}],headline:0,
    doneCat:c=>c.output.done_by_cat},
 ];
 function evalMetric(arr){const NW=arr.length;const cur=mean(arr.slice(NW-CURN));const base=mean(arr.slice(Math.max(0,NW-CURN-BASEN),NW-CURN));
@@ -177,8 +177,8 @@ function renderClinic(){
     const tag=isCause?'<span class="cause">ROOT CAUSE</span>':(isConseq?'<span class="conseq">likely consequence</span>':'');const dimc=(firstRed>=0&&i>firstRed)?' dim':'';
     h+='<div class="stagerow"><div class="stage '+e.status+dimc+'" onclick="tog(\''+s.key+'\')"><div class="snum">'+s.num+'</div>'
       +'<div class="sbody"><div class="sname">'+s.name+tag+'</div><div class="ssub">'+s.sub+'</div></div>'
-      +'<div class="sval"><div class="v">'+fmt(hm.ev.cur,hm.fmtd||(hm.pct?1:0))+(hm.pct?'%':'')+'</div><div class="d">'+dpct(hm.ev.d)+'</div></div>'+spark(hm.arr,COL[e.status])+'</div>'
-      +'<div class="chip '+(e.status==='green'?'':e.status)+'"><b>'+s.diag.split(' — ')[0]+'</b>'+(s.diag.includes(' — ')?s.diag.split(' — ')[1]:'')+' · <span style="color:var(--muted)">fix: '+s.fix+'</span></div></div>';
+      +'<div class="sval"><div class="v">'+fmt(hm.ev.cur,hm.fmtd||(hm.pct?1:0))+(hm.pct?'%':'')+'</div><div class="d">'+dpct(hm.ev.d)+' <span class="flat" style="font-weight:500">was '+fmt(hm.ev.base,hm.fmtd||(hm.pct?1:0))+(hm.pct?'%':'')+'</span></div></div>'+spark(hm.arr,COL[e.status])+'</div>'
+      +(e.status==='green'?'<div class="chip"><span style="color:var(--muted)">stable</span></div>':'<div class="chip '+e.status+'"><b>'+s.diag.split(' — ')[0]+'</b>'+(s.diag.includes(' — ')?s.diag.split(' — ')[1]:'')+' · fix: '+s.fix+'</div>')+'</div>';
     h+=drill(s,e);if(i<STAGES.length-1)h+='<div class="conn"></div>';});
   $('root').innerHTML=h;
 }

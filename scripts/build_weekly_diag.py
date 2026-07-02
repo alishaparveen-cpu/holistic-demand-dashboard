@@ -48,6 +48,17 @@ for r in q(f"""SELECT locality, city, TO_CHAR(DATE_TRUNC('week', apt_create_dt::
         e=bdow.setdefault(K(r[1],r[0]),{'wday':[0]*N,'wend':[0]*N}); i=idx[r[2]]
         e['wday'][i]=int(r[3]); e['wend'][i]=int(r[4])
 
+# ---- Demand: offline leads per clinic × week (+ by source) from main_source_wise_leads ----
+leadmap={}
+for r in q(f"""SELECT call_location loc, TO_CHAR(DATE_TRUNC('week', created_on_date::date),'YYYY-MM-DD') wk,
+    COALESCE(NULLIF(source,''),'Other') src, COUNT(*) n
+  FROM production.public.main_source_wise_leads
+  WHERE on_off_flag='Offline' AND created_on_date>='{LO}' AND created_on_date<'{HI}'
+  GROUP BY 1,2,3"""):
+    if len(r)>=4 and r[1] in idx and r[0] and r[0] not in ('True','Online',''):
+        e=leadmap.setdefault(r[0].strip().lower(),{'tot':[0]*N,'src':{}}); i=idx[r[1]]; n=int(r[3])
+        e['tot'][i]+=n; e['src'].setdefault(r[2],[0]*N)[i]+=n
+
 def done_by_cat(c):
     cats={ct:[0]*N for ct in ['SH','STI','MH','Other']}
     for ch,cd in c.get('chan_cat',{}).items():
@@ -63,12 +74,15 @@ for slug,c in L0['clinics'].items():
     booked=tail(c['tot']['booked']); done=tail(c['tot']['done_ever'])
     av=avail.get(k,{'wd':[0]*N,'we':[0]*N,'hr':[0.0]*N}); bd=bdow.get(k,{'wday':[0]*N,'wend':[0]*N})
     adays=[av['wd'][i]+av['we'][i] for i in range(N)]
-    bych={ch:tail(c['chan'][ch]['booked']) for ch in c.get('chan',{}) if sum(tail(c['chan'][ch]['booked']))>0}
+    lm=leadmap.get(loc.strip().lower(),{'tot':[0]*N,'src':{}}); leads=lm['tot']
+    leadsrc={s:lm['src'][s] for s in lm['src'] if sum(lm['src'][s])>0}
     out['clinics'][slug]={
         'disp':c['disp'],'city':c['city'],'loc':loc,
         'availability':{'active_days':adays,'wday_days':av['wd'],'wend_days':av['we'],'hours':av['hr']},
-        'demand':{'bookings':booked,'by_channel':bych},
-        'conversion':{'booked':booked,'done':done,'book_done_pct':[round(100*done[i]/booked[i]) if booked[i] else None for i in range(N)]},
+        'demand':{'leads':leads,'by_channel':leadsrc,'has_leads':sum(leads)>0},
+        'conversion':{'leads':leads,'booked':booked,'done':done,
+            'lead_book_pct':[round(100*booked[i]/leads[i]) if leads[i] else None for i in range(N)],
+            'book_done_pct':[round(100*done[i]/booked[i]) if booked[i] else None for i in range(N)]},
         'output':{'bookings':booked,'done':done,'done_by_cat':done_by_cat(c),
             'per_weekday':rate(bd['wday'],av['wd']),'per_weekend':rate(bd['wend'],av['we']),
             'per_active_day':rate(booked,adays),'bk_wday':bd['wday'],'bk_wend':bd['wend']},
