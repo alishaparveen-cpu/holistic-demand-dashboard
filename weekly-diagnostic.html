@@ -37,6 +37,8 @@
   .msi{display:flex;align-items:center;gap:8px;padding:5px 9px;font-size:12.5px;cursor:pointer;border-radius:5px;white-space:nowrap}.msi:hover{background:var(--inset)} .msi .c{margin-left:auto;color:var(--muted);font-size:10.5px;font-family:'JetBrains Mono'}
   .mc{display:inline-block;min-width:34px;text-align:center;font-family:'JetBrains Mono';font-size:14px;font-weight:700;border-radius:6px;padding:5px 8px;margin-right:4px}
   .mc.base{background:var(--inset);color:var(--muted)} .mc.red{background:var(--rbg);color:#a8352a} .mc.amber{background:var(--abg);color:#8a6412} .mc.green{background:var(--gbg);color:var(--good)}
+  .wk{display:inline-block;min-width:34px;text-align:center;font-family:'JetBrains Mono';font-size:14px;font-weight:600;color:var(--faint);padding:5px 4px}
+  .wk.cur{color:var(--ink);font-weight:800}
   .mlab{font-size:11px;color:var(--ink2);font-weight:600;margin-right:7px;display:inline-block;min-width:78px} .wc{font-size:10.5px;color:var(--bad);margin-left:6px} .fixt{font-size:10.5px;color:var(--muted);margin-left:8px}
   .slope{display:inline-block;font-weight:800;font-size:13px;margin-right:7px;width:13px;text-align:center;cursor:help}
   .slope.down{color:var(--bad)}.slope.amber{color:var(--warn)}.slope.up{color:var(--good)}.slope.flat{color:var(--faint)}
@@ -400,8 +402,8 @@ function syncOv(){const om=$('ovMetric'),of=$('ovFunnel'),mp=$('metricpick');
   if(mp)mp.style.display=OVMODE==='metric'?'inline-flex':'none';}
 function setOvMode(m){OVMODE=m;MODE='ov';syncOv();render();}
 function metricChips(c,stageKey){
-  const st=STAGES.find(x=>x.key===stageKey),m=st.metrics(c)[0],ev=evalMetric(m.arr),a=m.arr.slice(-(CURN+BASEN));
-  const chips=a.map((v,i)=>{const cur=i>=a.length-CURN;const val=v==null?'·':(m.pct?Math.round(v)+'%':(Math.round(v*10)/10));return '<span class="mc '+(cur?ev.st:'base')+'">'+val+'</span>';}).join('');
+  const st=STAGES.find(x=>x.key===stageKey),m=st.metrics(c)[0],ev=evalMetric(m.arr),a=m.arr.slice(-(CURN+BASEN)),nb=a.length-CURN;
+  const chips=a.map((v,i)=>{const cur=i>=nb;const val=v==null?'·':(m.pct?Math.round(v)+'%':(Math.round(v*10)/10));return '<span class="wk'+(cur?' cur':'')+'">'+val+'</span>';}).join('');   // quiet trend: plain numbers, current window bold
   return {ev,chips,nm:m.nm,pct:m.pct,a,arr:m.arr};
 }
 function renderMetric(){
@@ -414,8 +416,8 @@ function renderMetric(){
   h+='<div class="fmwrap"><table class="fm" style="min-width:640px"><thead><tr><th style="white-space:nowrap">Clinic</th><th style="text-align:left">recent '+(CURN+BASEN)+' wks — '+st.name+'</th><th style="text-align:left;padding-left:20px">now vs avg</th><th style="text-align:right">open ›</th></tr></thead><tbody>';
   if(!rows.length)h+='<tr><td colspan="4" style="color:var(--muted);padding:16px;text-align:left">No clinics.</td></tr>';
   rows.forEach(r=>{const e=r.mc.ev,pct=r.mc.pct,f=v=>v==null?'—':(pct?Math.round(v)+'%':(Math.round(v*10)/10));
-    const dchip=(e.d==null)?'':'<span class="mc '+(e.d<0?'red':e.d>0?'green':'base')+'">'+(e.d>0?'+':'')+Math.round(e.d*100)+'%</span>';
-    const dcell=(e.cur==null)?'<span class="flat">—</span>':'<span class="mc '+e.st+'">'+f(e.cur)+'</span><span style="color:var(--muted);font-weight:500;font-size:11px;margin:0 6px">vs avg</span><span class="mc base">'+f(e.base)+'</span> '+dchip;
+    const dchip=(e.d==null)?'':'<span class="mc '+e.st+'" style="font-weight:800">'+(e.d>0?'+':'')+Math.round(e.d*100)+'%</span>';
+    const dcell=(e.cur==null)?'<span class="flat">—</span>':'<span class="mc '+e.st+'">'+f(e.cur)+'</span><span style="color:var(--muted);font-weight:500;font-size:11.5px;margin:0 9px">vs avg '+f(e.base)+'</span>'+dchip;
     const zi=ZREG.length;ZREG.push({label:r.c.disp+' · '+st.name,arr:r.mc.arr,col:COL[e.st]||'var(--ink2)',pct:!!pct,noPrefix:true});
     h+='<tr onclick="goClinic(\''+r.slug+'\')" title="open funnel"><td style="white-space:nowrap;width:1%">'+r.c.disp+'</td><td class="why chipzoom" style="white-space:nowrap;width:1%;max-width:none" onclick="event.stopPropagation();zoomReg('+zi+')" title="click for the trend graph">'+slopeBadge(r.mc.a)+r.mc.chips+'</td><td style="text-align:left;font-family:JetBrains Mono;white-space:nowrap;width:1%;padding-left:20px">'+dcell+'</td><td class="drillco" style="text-align:right">›</td></tr>';});
   h+='</tbody></table></div>';
