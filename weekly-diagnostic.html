@@ -142,7 +142,9 @@
   .fchange{flex:none;width:78px;display:inline-flex;justify-content:center}
   .ftrend{display:inline-flex;align-items:center;flex-wrap:wrap;gap:0}
   .flab .dot{width:9px;height:9px;border-radius:2px;flex:none}
-  .frow.head .flab{font-weight:800;color:var(--ink)}
+  .frow.head{background:var(--inset);border-radius:8px}
+  .frow.head .flab{font-weight:800;color:var(--ink);font-size:14px}
+  .fbreak{margin:4px 0 0 20px;padding-left:14px;border-left:2px solid var(--line2)}
   .fnow{font-family:'JetBrains Mono';font-weight:700;font-size:12.5px;margin-left:6px}
   .cmp{margin-left:auto;padding-left:16px;font-family:'JetBrains Mono';font-size:13.5px;color:var(--ink);white-space:nowrap}
   .cmp b{color:var(--ink);font-weight:800}
@@ -196,10 +198,10 @@
     <span id="metricpick" style="display:inline-flex;gap:6px;align-items:center;flex-wrap:wrap">
       <span class="tlab">Metric</span>
       <button class="mbtn" data-m="availability" onclick="setMet('availability')">Availability</button>
+      <button class="mbtn" data-m="demand" onclick="setMet('demand')">Leads</button>
       <button class="mbtn" data-m="bookings" onclick="setMet('bookings')">Bookings</button>
       <button class="mbtn" data-m="conversion" onclick="setMet('conversion')">book→done %</button>
       <button class="mbtn" data-m="done" onclick="setMet('done')">Done</button>
-      <button class="mbtn" data-m="demand" onclick="setMet('demand')">Leads</button>
       <button class="mbtn" data-m="velocity" onclick="setMet('velocity')">Bookings/active day</button>
     </span>
   </div>
@@ -208,7 +210,7 @@
 </div>
 <div class="modal" id="modal" onclick="if(event.target===this)closeZ()"><div class="mbox"><div class="mhd"><span id="mTitle"></span><button onclick="closeZ()" title="close">✕</button></div><div id="pickBar" class="pickbar"></div><div id="mBody"></div></div></div>
 <script>
-let D=null, AGE={}, CURN=1, BASEN=4, MODE='ov', C=null, OPEN={}, QF='any', CITYF=new Set(), CLINF=new Set(), TIERF=new Set(), MATF=new Set(), DENSITY='compact', MET='bookings', OVMODE='metric';
+let D=null, AGE={}, CURN=1, BASEN=4, MODE='ov', C=null, OPEN={}, QF='any', CITYF=new Set(), CLINF=new Set(), TIERF=new Set(), MATF=new Set(), DENSITY='compact', MET='bookings', OVMODE='metric', METSTAT='all';
 const T1CITIES=new Set(['Bangalore','Mumbai','Pune','Hyderabad','Chennai']);
 function tierOf(city){return T1CITIES.has(city)?'T1':'T2';}
 function clinMonths(slug){const d=AGE[D.clinics[slug].loc];if(!d)return null;const t=Date.parse(d);return isNaN(t)?null:(Date.now()-t)/(1000*60*60*24*30.44);}
@@ -258,6 +260,7 @@ const STAGES=[
    metrics:c=>[{nm:'bookings / active day',arr:c.velocity.per_active_day,fmtd:1}],headline:0,velMath:true},
 ];
 const ISSUE_STAGES=[0,4,1,2,3];   // availability, leads, bookings, book→done, done — used across the issues view
+const FUNNEL_ORDER=[0,4,1,2,3,5]; // availability, leads, bookings, book→done, done, bookings/active day
 function evalMetric(arr){const NW=arr.length;const cur=mean(arr.slice(NW-CURN));const base=mean(arr.slice(Math.max(0,NW-CURN-BASEN),NW-CURN));
   const d=(cur!=null&&base)?((cur-base)/base):null;const st=d==null?'green':d<=-0.15?'red':d<=-0.07?'amber':'green';return {cur,base,d,st};}
 function evalStage(st,c){const ms=st.metrics(c).map(m=>({...m,ev:evalMetric(m.arr)}));
@@ -390,7 +393,7 @@ function renderOverview(){
   const hasIssue=s=>issueCount(s)>0;
   const broken=rows.filter(r=>hasIssue(r.s)).length, healthy=rows.length-broken;
   // badges for EVERY stage a clinic is down on (non-exclusive); selected stage underlined
-  const badges=(s,hi)=>ISSUE_STAGES.map(i=>{const st=STAGES[i],x=s[st.key];const dd=x.d==null?'':' '+Math.round(x.d*100)+'%';return '<span class="brk '+x.st+'"'+(hi===i?' style="text-decoration:underline;text-underline-offset:3px"':'')+'>'+st.short+dd+'</span>';}).join('<span style="color:var(--faint)"> · </span>');
+  const badges=(s,hi)=>ISSUE_STAGES.map(i=>{const st=STAGES[i],x=s[st.key];const p=x.d==null?null:Math.round(x.d*100);const dd=p==null?'':' '+(p>0?'+':'')+p+'%';return '<span class="brk '+x.st+'"'+(hi===i?' style="text-decoration:underline;text-underline-offset:3px"':'')+'>'+st.short+dd+'</span>';}).join('<span style="color:var(--faint)"> · </span>');
   // ISSUE chips — a clinic is counted under EVERY stage it is down on (not just the earliest)
   const stageFilters=ISSUE_STAGES;   // availability, leads, bookings, book→done, done
   const chips=[{key:'any',label:'All issues',n:broken}]
@@ -429,6 +432,7 @@ function setQF(k){QF=k;renderOverview();}
 function toggleDens(){DENSITY=(DENSITY==='full'?'compact':'full');renderOverview();}
 function setView(v){MODE='ov';MET=(v==='issues')?'break':(MET==='break'?'demand':MET);updateModeUI();render();}
 function setMet(v){MODE='ov';MET=v;updateModeUI();render();}
+function setMetStat(v){METSTAT=v;render();}
 function updateModeUI(){const cmp=(MET!=='break');
   const vi=$('vIssues'),vc=$('vCompare');if(vi)vi.classList.toggle('on',!cmp&&MODE==='ov');if(vc)vc.classList.toggle('on',cmp&&MODE==='ov');
   const mb=$('metricbar');if(mb)mb.style.display=cmp?'flex':'none';
@@ -448,8 +452,12 @@ function renderMetric(){
   const st=STAGES.find(x=>x.key===MET);
   let rows=Object.keys(D.clinics).filter(inScope).map(slug=>({slug,c:D.clinics[slug],mc:metricChips(D.clinics[slug],MET)}));
   rows.sort((a,b)=>(a.mc.ev.d==null?9:a.mc.ev.d)-(b.mc.ev.d==null?9:b.mc.ev.d));   // worst drop first
-  const nred=rows.filter(r=>r.mc.ev.st==='red').length, namb=rows.filter(r=>r.mc.ev.st==='amber').length;
-  let h='<div class="densrow"><span class="lab" style="text-transform:none;font-weight:600;color:var(--ink2)">'+rows.length+' clinic'+(rows.length===1?'':'s')+' · '+cityStr()+' · '+st.name+' · <span style="color:var(--bad)">🔴 '+nred+'</span> · <span style="color:var(--warn)">🟡 '+namb+'</span> · worst→best &nbsp; <span style="font-weight:500;color:var(--faint)">'+SLOPE_LEG+'</span></span></div>';
+  const nred=rows.filter(r=>r.mc.ev.st==='red').length, namb=rows.filter(r=>r.mc.ev.st==='amber').length, ngrn=rows.filter(r=>r.mc.ev.st==='green').length, ntot=rows.length;
+  if(METSTAT!=='all')rows=rows.filter(r=>r.mc.ev.st===METSTAT);   // filter clinics by their status on this metric
+  const sf=(k,lab,n)=>'<button class="ichip'+(METSTAT===k?' on':'')+(n?'':' zero')+'" style="padding:4px 11px;font-size:12px" onclick="setMetStat(\''+k+'\')">'+lab+' <b>'+n+'</b></button>';
+  let h='<div class="densrow" style="gap:8px;flex-wrap:wrap"><span class="lab" style="text-transform:none;font-weight:600;color:var(--ink2)">'+cityStr()+' · '+st.name+' · worst→best</span>'
+    +'<span style="display:inline-flex;gap:6px;flex-wrap:wrap;margin-left:4px">'+sf('all','All',ntot)+sf('red','🔴 dropped',nred)+sf('amber','🟡 watch',namb)+sf('green','🟢 fine',ngrn)+'</span>'
+    +'<span style="font-weight:500;color:var(--faint);font-size:11px;margin-left:auto">'+SLOPE_LEG+'</span></div>';
   h+='<div class="fmwrap"><table class="fm" style="min-width:640px"><thead><tr><th style="white-space:nowrap">Clinic</th><th style="text-align:center;white-space:nowrap">change</th><th style="text-align:left">recent '+(CURN+BASEN)+' wks — '+st.name+' &nbsp;<span style="font-weight:500;color:var(--faint)">before avg → now</span></th></tr></thead><tbody>';
   // Σ Total row — the in-scope clinics combined (recomputes when you filter clinics/cities)
   const scopeSlugs=Object.keys(D.clinics).filter(inScope);
@@ -480,21 +488,16 @@ function stageParts(s,o){   // breakdown series per stage: lineS = coloured comp
 }
 // funnel body (stage rows + breakdown trend rows) for ANY clinic-shaped object (single clinic OR city aggregate)
 function funnelStagesHTML(o){
-  const evs=STAGES.map(s=>evalStage(s,o));
-  let h='<div class="lab" style="text-transform:none;font-weight:500;color:var(--faint);margin:-4px 0 10px">Each row = the recent '+(CURN+BASEN)+' weeks (last '+CURN+' = current, coloured), then <b>before avg vs now</b> (avg of the '+BASEN+' baseline weeks vs current) · click any row for its full trend.</div>';
-  STAGES.forEach((s,i)=>{const e=evs[i],hm=e.hm,col=COL[e.status];
+  let h='<div class="lab" style="text-transform:none;font-weight:500;color:var(--faint);margin:-4px 0 10px">Top line of each stage = the headline metric (look here first); the rows nested below it are its breakdown. Each row: recent '+(CURN+BASEN)+' weeks, then <b>before avg → now</b> · click any row for its full trend.</div>';
+  FUNNEL_ORDER.forEach((si,di)=>{const s=STAGES[si],e=evalStage(s,o),hm=e.hm,col=COL[e.status];
     const {lineS,chipOnly}=stageParts(s,o);
-    let rows=miniRow(hm.nm,hm.arr,hm.pct,col,true);
-    rows+=lineS.map(l=>miniRow(l.label,l.arr,l.pct||0,l.color)).join('');
-    rows+=chipOnly.map(c=>miniRow(c.label,c.arr,c.pct||0,'var(--faint)')).join('');
-    const val=fmt(hm.ev.cur,hm.fmtd||(hm.pct?1:0))+(hm.pct?'%':''),was=fmt(hm.ev.base,hm.fmtd||(hm.pct?1:0))+(hm.pct?'%':'');
-    h+='<div class="stagerow"><div class="stage '+e.status+'"><div class="snum">'+s.num+'</div>'
-      +'<div class="sbody"><div style="display:flex;align-items:baseline;justify-content:space-between;gap:12px">'
-        +'<div><div class="sname '+e.status+'">'+s.name+'</div><div class="ssub">'+s.sub+'</div></div>'
-        +'<div class="sval" style="min-width:0"><div class="v">'+val+'</div><div class="d">'+dpct(hm.ev.d)+' <span class="flat" style="font-weight:500">vs before '+was+'</span></div></div></div>'
-        +'<div style="margin-top:8px">'+rows+'</div>'
+    const head=miniRow(hm.nm,hm.arr,hm.pct,col,true);   // headline metric — the focus line
+    const bd=lineS.map(l=>miniRow(l.label,l.arr,l.pct||0,l.color)).join('')+chipOnly.map(c=>miniRow(c.label,c.arr,c.pct||0,'var(--faint)')).join('');   // breakdown, nested
+    h+='<div class="stagerow"><div class="stage '+e.status+'"><div class="snum">'+(di+1)+'</div>'
+      +'<div class="sbody"><div class="sname '+e.status+'">'+s.name+'</div><div class="ssub">'+s.sub+'</div>'
+        +'<div style="margin-top:6px">'+head+(bd?'<div class="fbreak">'+bd+'</div>':'')+'</div>'
       +'</div></div></div>';
-    if(i<STAGES.length-1)h+='<div class="conn"></div>';});
+    if(di<FUNNEL_ORDER.length-1)h+='<div class="conn"></div>';});
   return h;
 }
 // sum all in-scope clinics into one clinic-shaped object for a city-level (or any-scope) funnel
