@@ -25,6 +25,12 @@
   .ichip b{color:var(--ink);margin-left:4px}.ichip.on{background:var(--accent);border-color:var(--accent);color:#fff}.ichip.on b{color:#fff}
   .ichip.zero{opacity:.4} .ichip:hover{border-color:var(--accent)}
   .densrow{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+  .ms{position:relative;display:inline-block}
+  .mspanel{display:none;position:absolute;top:calc(100% + 4px);left:0;z-index:40;background:#fff;border:1px solid var(--line);border-radius:9px;box-shadow:0 8px 26px rgba(0,0,0,.16);max-height:360px;overflow:auto;min-width:240px;padding:5px}
+  .mspanel.on{display:block}
+  .msq{width:100%;padding:7px 10px;border:1px solid var(--line);border-radius:7px;font-size:12.5px;margin-bottom:4px;font-family:Inter;box-sizing:border-box}
+  .msact{display:flex;gap:12px;padding:4px 9px 6px;border-bottom:1px solid var(--line);margin-bottom:3px}.msact a{color:var(--accent);font-size:11px;font-weight:700;cursor:pointer}
+  .msi{display:flex;align-items:center;gap:8px;padding:5px 9px;font-size:12.5px;cursor:pointer;border-radius:5px;white-space:nowrap}.msi:hover{background:var(--inset)} .msi .c{margin-left:auto;color:var(--muted);font-size:10.5px;font-family:'JetBrains Mono'}
   .mc{display:inline-block;min-width:26px;text-align:center;font-family:'JetBrains Mono';font-size:11px;font-weight:700;border-radius:5px;padding:2px 5px;margin-right:3px}
   .mc.base{background:var(--inset);color:var(--muted)} .mc.red{background:var(--rbg);color:#a8352a} .mc.amber{background:var(--abg);color:#8a6412} .mc.green{background:var(--gbg);color:var(--good)}
   .mlab{font-size:11px;color:var(--ink2);font-weight:600;margin-right:7px;display:inline-block;min-width:78px} .wc{font-size:10.5px;color:var(--bad);margin-left:6px} .fixt{font-size:10.5px;color:var(--muted);margin-left:8px}
@@ -96,9 +102,9 @@
   <div class="sub"><b>Inputs</b> (Availability · Demand · book→done) drive <b>Outputs</b> (Bookings · Done · Velocity). We flag the <b>earliest stage that breaks</b>; stages below a break read as likely <i>consequences</i>. Pick your <b>city</b>, then an <b>issue</b> to see which clinics — or open a clinic to drill in.</div>
   <div class="ctrls">
     <button class="fbtn on" id="mOv" onclick="setMode('ov')">◎ Overview · all clinics</button>
-    <span class="lab" style="margin-left:6px">City</span><select id="city"><option value="__all">All cities</option></select>
+    <span class="lab" style="margin-left:6px">Cities</span><div class="ms"><button class="fbtn" id="cityBtn" onclick="openCityMs(event)">All cities ▾</button><div class="mspanel" id="cityPanel"></div></div>
     <span class="lab" style="margin-left:6px">Clinic</span><select id="clinic"></select>
-    <input id="q" placeholder="🔍 search clinic / city" oninput="setSearch(this.value)" style="border:1px solid var(--line);border-radius:9px;padding:7px 11px;font-size:13px;font-family:Inter;min-width:180px;background:#fff">
+    <input id="q" placeholder="🔍 search any clinic" oninput="setSearch(this.value)" style="border:1px solid var(--line);border-radius:9px;padding:7px 11px;font-size:13px;font-family:Inter;min-width:170px;background:#fff">
     <span class="lab" style="margin-left:10px">Compare</span><select id="met" onchange="setMet(this.value)"><option value="break">⚑ Earliest break</option><option value="availability">Availability · active days</option><option value="demand">Demand · leads</option><option value="conversion">book→done %</option><option value="bookings">Bookings</option><option value="done">Done</option><option value="velocity">Velocity</option></select>
     <span class="lab" style="margin-left:10px">Window</span><select id="curn"><option value="1">this week</option><option value="2">last 2 weeks</option><option value="3">last 3 weeks</option><option value="4">last 4 weeks</option></select>
     <span class="lab" style="margin-left:6px">vs prior</span><select id="basen"><option value="4">prior 4 weeks</option><option value="6">prior 6 weeks</option><option value="8">prior 8 weeks</option></select>
@@ -107,7 +113,9 @@
   <div id="root"></div>
 </div>
 <script>
-let D=null, CURN=1, BASEN=4, MODE='ov', C=null, OPEN={}, QF='any', CITYF='__all', DENSITY='compact', SEARCH='', MET='break';
+let D=null, CURN=1, BASEN=4, MODE='ov', C=null, OPEN={}, QF='any', CITYF=new Set(), DENSITY='compact', SEARCH='', MET='break';
+function inCity(city){return !CITYF.size||CITYF.has(city);}
+function cityStr(){return CITYF.size?[...CITYF].join(', '):'All cities';}
 const $=id=>document.getElementById(id);
 const mean=a=>{const b=a.filter(x=>x!=null);return b.length?b.reduce((x,y)=>x+y,0)/b.length:null;};
 const sum=a=>a.reduce((x,y)=>x+(y||0),0);
@@ -163,9 +171,9 @@ function whyText(s,fb){
   return why;
 }
 function renderOverview(){
-  const lbl=curLabel();$('cmpnote').innerHTML='City: <b>'+(CITYF==='__all'?'All clinics':CITYF)+'</b> · '+lbl.c+' vs baseline '+lbl.b+' · red ≤ −15%, amber ≤ −7%.';
+  const lbl=curLabel();$('cmpnote').innerHTML='City: <b>'+cityStr()+'</b> · '+lbl.c+' vs baseline '+lbl.b+' · red ≤ −15%, amber ≤ −7%.';
   if(MET!=='break'){renderMetric();return;}
-  const rows=Object.keys(D.clinics).filter(slug=>CITYF==='__all'||D.clinics[slug].city===CITYF).map(slug=>({slug,c:D.clinics[slug],s:summary(D.clinics[slug])}));
+  const rows=Object.keys(D.clinics).filter(slug=>inCity(D.clinics[slug].city)).map(slug=>({slug,c:D.clinics[slug],s:summary(D.clinics[slug])}));
   const broken=rows.filter(r=>r.s.firstBreak>=0).length, healthy=rows.length-broken;
   // ISSUE chips: Any + one per stage (by earliest/root break) + founder cross
   const chips=[{key:'any',label:'Any issue',n:broken}]
@@ -186,7 +194,7 @@ function renderOverview(){
       .filter(r=>(r.c.disp+' '+r.c.city).toLowerCase().includes(SEARCH));
     banner='Search "'+SEARCH+'" — '+list.length+' match'+(list.length===1?'':'es')+' (all cities)';
   }
-  else if(!list.length && broken===0 && rows.length && (QF==='any'||QF.indexOf('st')===0)){list=rows.slice();banner='✓ No issues in '+(CITYF==='__all'?'any city':CITYF)+' — all '+rows.length+' clinic'+(rows.length===1?'':'s')+' healthy. Showing roster.';}
+  else if(!list.length && broken===0 && rows.length && (QF==='any'||QF.indexOf('st')===0)){list=rows.slice();banner='✓ No issues in '+cityStr()+' — all '+rows.length+' clinic'+(rows.length===1?'':'s')+' healthy. Showing roster.';}
   list.sort((a,b)=>{const fa=a.s.firstBreak<0?9:a.s.firstBreak,fb=b.s.firstBreak<0?9:b.s.firstBreak;if(fa!==fb)return fa-fb;return (a.s.demand.d??0)-(b.s.demand.d??0);});
   h+='<div class="densrow"><span class="lab" style="text-transform:none;font-weight:600;color:'+(banner?'var(--good)':'var(--ink2)')+'">'+(banner||(list.length+' clinic'+(list.length===1?'':'s')+' to look at · '+healthy+' healthy'))+'</span><button class="fbtn" onclick="toggleDens()">'+(DENSITY==='full'?'▾ hide stage detail':'▸ stage detail')+'</button></div>';
   if(DENSITY==='full'){
@@ -216,14 +224,14 @@ function metricChips(c,stageKey){
 }
 function renderMetric(){
   const st=STAGES.find(x=>x.key===MET);
-  let rows=Object.keys(D.clinics).filter(slug=>SEARCH?((D.clinics[slug].disp+' '+D.clinics[slug].city).toLowerCase().includes(SEARCH)):(CITYF==='__all'||D.clinics[slug].city===CITYF))
+  let rows=Object.keys(D.clinics).filter(slug=>SEARCH?((D.clinics[slug].disp+' '+D.clinics[slug].city).toLowerCase().includes(SEARCH)):inCity(D.clinics[slug].city))
     .map(slug=>({slug,c:D.clinics[slug],mc:metricChips(D.clinics[slug],MET)}));
   rows.sort((a,b)=>(a.mc.ev.d==null?9:a.mc.ev.d)-(b.mc.ev.d==null?9:b.mc.ev.d));   // worst drop first
   const nred=rows.filter(r=>r.mc.ev.st==='red').length, namb=rows.filter(r=>r.mc.ev.st==='amber').length;
   let h='<div class="chiprow"><span class="ichip on" style="cursor:default">'+st.name+'</span>'
     +'<span style="font-size:12px;color:var(--ink2);align-self:center;margin-left:4px">comparing every clinic on <b>'+st.metrics(D.clinics[rows[0]?rows[0].slug:Object.keys(D.clinics)[0]])[0].nm+'</b> · '
     +'<span style="color:var(--bad)">🔴 '+nred+' dropped</span> · <span style="color:var(--warn)">🟡 '+namb+'</span> · sorted worst→best</span></div>';
-  h+='<div class="densrow"><span class="lab" style="text-transform:none;font-weight:600;color:var(--ink2)">'+rows.length+' clinic'+(rows.length===1?'':'s')+(SEARCH?' · search "'+SEARCH+'"':(CITYF==='__all'?' · all cities':' · '+CITYF))+'</span></div>';
+  h+='<div class="densrow"><span class="lab" style="text-transform:none;font-weight:600;color:var(--ink2)">'+rows.length+' clinic'+(rows.length===1?'':'s')+(SEARCH?' · search "'+SEARCH+'"':' · '+cityStr())+'</span></div>';
   h+='<div class="fmwrap"><table class="fm" style="min-width:640px"><thead><tr><th>Clinic</th><th style="text-align:right">Δ vs prior</th><th style="text-align:left">recent 6 weeks — '+st.name+'</th><th style="text-align:right">open ›</th></tr></thead><tbody>';
   if(!rows.length)h+='<tr><td colspan="4" style="color:var(--muted);padding:16px;text-align:left">No clinics.</td></tr>';
   rows.forEach(r=>{const e=r.mc.ev;const dcell=e.d==null?'<span class="flat">—</span>':'<span class="'+(e.d>0?'up':e.d<0?'down':'flat')+'">'+(e.d>0?'+':'')+Math.round(e.d*100)+'% <span class="flat" style="font-weight:500">was '+(r.mc.pct?Math.round(e.base)+'%':Math.round(e.base*10)/10)+'</span></span>';

@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Channel View · Allo Demand</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#F6F4EE;--sheet:#fff;--inset:#F4F2EB;--ink:#1A2B26;--ink2:#52605A;--muted:#8A8A80;--faint:#B0A99A;
+  --line:#E5E2D9;--line2:#EEEBE2;--accent:#1F6F5C;--good:#1F6F5C;--bad:#B23A2E;--warn:#B8862E;--vio:#7B5EA7;--r:12px}
+*{box-sizing:border-box}
+body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--ink);margin:0;font-size:13px;line-height:1.45}
+.wrap{max-width:1280px;margin:0 auto;padding:22px 22px 80px}
+.back{font-size:12.5px;color:var(--muted);text-decoration:none}.back:hover{color:var(--accent)}
+h1{font-family:'Fraunces',serif;font-size:29px;font-weight:600;margin:8px 0 2px}
+.sub{color:var(--muted);font-size:13px;margin-bottom:16px;max-width:900px}
+.ctl{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:6px 0 18px}
+.ctl .lbl{font-size:10px;font-weight:700;letter-spacing:.05em;color:var(--muted);text-transform:uppercase}
+select.sel{font-size:12.5px;border:1px solid var(--line);border-radius:8px;padding:5px 9px;background:#fff;font-family:Inter;font-weight:600;color:var(--accent);cursor:pointer}
+.chip{background:var(--inset);border:1px solid var(--line);border-radius:8px;padding:5px 12px;font-family:Inter;font-size:12px;font-weight:600;color:var(--accent);cursor:pointer}
+.chip.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+.shead{font-family:'Fraunces',serif;font-size:17px;font-weight:600;margin:26px 0 8px;display:flex;align-items:center;gap:9px}
+.shead .lblmuted{font-family:Inter;font-size:11.5px;color:var(--muted);font-weight:400}
+.fmwrap{overflow-x:auto;border:1px solid var(--line);border-radius:var(--r);background:var(--sheet)}
+table.fm{border-collapse:collapse;width:100%;font-size:12.5px;min-width:820px}
+table.fm th{font-family:'JetBrains Mono';font-size:9px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);font-weight:600;text-align:right;padding:8px 11px;background:var(--inset);border-bottom:1px solid var(--line);white-space:nowrap}
+table.fm th:first-child{text-align:left}
+table.fm th.lastcol{color:var(--accent)}
+table.fm td{padding:6px 11px;text-align:right;border-bottom:1px solid var(--line2);font-family:'JetBrains Mono';font-variant-numeric:tabular-nums;white-space:nowrap}
+table.fm td:first-child{text-align:left;font-family:'Inter';position:sticky;left:0;background:var(--sheet);min-width:250px;max-width:250px;width:250px;white-space:normal;line-height:1.3;z-index:1}
+table.fm th:first-child{position:sticky;left:0;z-index:3;background:var(--inset);min-width:250px}
+tr.tot td{font-weight:700;color:var(--ink);border-top:2px solid var(--line)}
+tr.grp td{font-weight:700}
+tr.sub td:first-child{padding-left:22px;color:var(--ink2)}
+tr.pct td{font-style:italic;color:var(--vio)}
+tr.pct td:first-child{color:var(--vio)}
+td.av{background:var(--inset);font-weight:600}
+.spark{display:inline-block;vertical-align:middle}
+.chan-hd td{background:linear-gradient(90deg,rgba(31,111,92,.06),transparent);font-weight:700;font-size:13px;border-top:2px solid var(--line)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <a class="back" href="index.html">← Dashboard</a>
+  <h1>Channel View</h1>
+  <div class="sub">Demand by acquisition channel — <b>Google Ads · GMB · Facebook/Meta · Practo</b>. New leads (national) → SC bookings → done, per channel, week over week. Google adds the paid-campaign funnel (spend → impressions → clicks). Bookings/done are the offline clinic network on the service-week basis.</div>
+
+  <div class="ctl">
+    <span class="lbl">Weeks</span>
+    <select id="rng" class="sel" onchange="NSHOW=+this.value;paint()">
+      <option value="6">6 weeks</option><option value="8" selected>8 weeks</option><option value="13">13 weeks</option><option value="26">26 weeks</option><option value="52">52 weeks</option>
+    </select>
+    <span class="lbl" style="margin-left:8px">Focus</span>
+    <span id="chanChips"></span>
+  </div>
+
+  <div id="tables"></div>
+</div>
+<script>
+let D=null,GAF=null,NSHOW=8,FOCUS='all';
+const $=id=>document.getElementById(id);
+const N=v=>v==null||isNaN(v)?'—':Math.round(v).toLocaleString('en-IN');
+const RUP=v=>v==null||isNaN(v)?'—':'₹'+Math.round(v).toLocaleString('en-IN');
+const PCT=v=>v==null||isNaN(v)?'—':Math.round(v)+'%';
+const ZA=()=>[];
+function z(a){return (a||[]).map(v=>v==null?0:v);}
+function addv(a,b){const o=[],n=Math.max((a||[]).length,(b||[]).length);for(let i=0;i<n;i++)o.push(((a||[])[i]||0)+((b||[])[i]||0));return o;}
+function sumKeys(obj,keys){return keys.reduce((a,k)=>addv(a,z((obj||{})[k])),[]);}
+
+// channel definitions — lead source name (master_leads) + booking/done source keys (by_source)
+const CH=[
+  {key:'google',name:'Google Ads',icon:'🔵',color:'#2b5cad',lead:'Google Ads',keys:['gpaid_call','gpaid_web']},
+  {key:'gmb',   name:'GMB',        icon:'📍',color:'#1F6F5C',lead:'GMB',       keys:['gmb_call','gmb_web','gmb_wa']},
+  {key:'meta',  name:'Facebook / Meta',icon:'📘',color:'#3b5998',lead:'Meta',  keys:['meta']},
+  {key:'practo',name:'Practo',     icon:'🩺',color:'#7B5EA7',lead:'Practo',    keys:['practo']},
+];
+
+// ---- data accessors (network) ----
+function leadF(ch,field){const ml=(D._meta.master_leads||{}).by_source||{};return z((ml[ch.lead]||{})[field]);}
+function bookedBy(ch){return (D._meta.clinics||[]).reduce((a,s)=>addv(a,sumKeys((D.clinics[s]||{}).booked_by_source,ch.keys)),[]);}
+function doneBy(ch){return (D._meta.clinics||[]).reduce((a,s)=>addv(a,sumKeys((D.clinics[s]||{}).done_by_source,ch.keys)),[]);}
+
+// ---- rendering ----
+function visIdx(){const n=Math.min(NSHOW,(D._meta.weeks||[]).length);const a=[];for(let i=n-1;i>=0;i--)a.push(i);return a;}
+function wlab(w){const d=new Date(w+'T00:00:00'),e=new Date(d);e.setDate(e.getDate()+6);const m=x=>x.toLocaleString('en',{month:'short'});return d.getDate()+'–'+e.getDate()+' '+m(e);}
+function heatBg(v,lo,hi){if(v==null||hi<=lo)return'';const t=(v-lo)/(hi-lo);// low=red high=green
+  if(t>=.5){const k=(t-.5)/.5;return'rgba(31,111,92,'+(0.05+0.22*k).toFixed(3)+')';}
+  const k=(0.5-t)/.5;return'rgba(178,58,46,'+(0.05+0.22*k).toFixed(3)+')';}
+function spark(arr,idx,color){const vs=idx.map(i=>arr[i]||0);const mx=Math.max(...vs,1),mn=Math.min(...vs,0);const W=88,H=22;const pts=vs.map((v,i)=>{const x=idx.length<2?0:i/(idx.length-1)*W;const y=H-2-((v-mn)/((mx-mn)||1))*(H-4);return x.toFixed(1)+','+y.toFixed(1);}).join(' ');
+  return'<svg class="spark" width="'+W+'" height="'+H+'"><polyline points="'+pts+'" fill="none" stroke="'+(color||'#1F6F5C')+'" stroke-width="1.6"/><circle cx="'+W+'" cy="'+(H-2-((vs[vs.length-1]-mn)/((mx-mn)||1))*(H-4)).toFixed(1)+'" r="2.4" fill="'+(color||'#1F6F5C')+'"/></svg>';}
+function row(label,arr,cls,fmt,o){o=o||{};fmt=fmt||N;const idx=visIdx();const vals=idx.map(i=>(arr||[])[i]);
+  let lo=Infinity,hi=-Infinity;if(!o.noheat)vals.forEach(v=>{if(v!=null&&!isNaN(v)){lo=Math.min(lo,v);hi=Math.max(hi,v);}});
+  let tds='<td'+(o.color?' style="color:'+o.color+'"':'')+'>'+label+'</td>';
+  vals.forEach(v=>{const bg=o.noheat?'':heatBg(v,lo,hi);tds+='<td style="'+(bg?'background:'+bg:'')+'">'+fmt(v)+'</td>';});
+  const nums=vals.filter(v=>v!=null&&!isNaN(v));const avg=nums.length?nums.reduce((a,b)=>a+b,0)/nums.length:null;
+  tds+='<td class="av">'+fmt(avg)+'</td>';
+  tds+='<td>'+(o.noheat?'':spark(arr,idx,o.color))+'</td>';
+  return'<tr class="'+(cls||'')+'">'+tds+'</tr>';}
+function head(lbl){const idx=visIdx();let h='<tr><th>'+lbl+'</th>';idx.forEach((i,k)=>h+='<th'+(k===idx.length-1?' class="lastcol"':'')+'>'+wlab(D._meta.weeks[i])+'</th>');h+='<th class="av">avg</th><th>trend</th></tr>';return h;}
+function tbl(inner){return'<div class="fmwrap"><table class="fm">'+inner+'</table></div>';}
+function ratio(a,b){return a.map((v,i)=>b[i]?Math.round(v/b[i]*100):null);}
+
+function gafGrid(){ // aggregate the Google campaign funnel into the master week grid
+  if(!GAF||!GAF.campaigns)return null;
+  const gidx=(GAF._meta.weeks||[]).map(w=>(D._meta.weeks||[]).indexOf(w));
+  const toGrid=key=>{const o=Array((D._meta.weeks||[]).length).fill(null);const sums=[0,0,0,0,0];GAF.campaigns.forEach(c=>{const a=(c.rows||{})[key]||[];for(let k=0;k<5;k++)sums[k]+=(a[k]||0);});gidx.forEach((gi,k)=>{if(gi>=0)o[gi]=sums[k];});return o;};
+  return{spend:toGrid('spend'),impr:toGrid('impression'),click:toGrid('click'),loc:toGrid('loc_click'),webl:toGrid('web_leads')};
+}
+
+function paint(){
+  if(!D)return;
+  const chs=FOCUS==='all'?CH:CH.filter(c=>c.key===FOCUS);
+  let H='';
+  // overview: totals across the 4 channels
+  if(FOCUS==='all'){
+    const tl=chs.reduce((a,c)=>addv(a,leadF(c,'new_leads')),[]);
+    const tb=chs.reduce((a,c)=>addv(a,bookedBy(c)),[]);
+    const td=chs.reduce((a,c)=>addv(a,doneBy(c)),[]);
+    let O=head('Overview · 4 channels');
+    O+=row('New leads · all channels',tl,'tot',N,{color:'#2b5cad'});
+    O+=row('SC bookings · all channels',tb,'grp',N,{color:'#1F6F5C'});
+    O+=row('Done · all channels',td,'grp',N,{color:'#1F6F5C'});
+    O+=row('· book → done %',ratio(td,tb),'pct',PCT,{noheat:true});
+    H+='<div class="shead">Σ Overview <span class="lblmuted">(New leads national · SC bookings + done are the offline network, service-week)</span></div>'+tbl(O);
+  }
+  // per channel
+  chs.forEach(ch=>{
+    let T=head(ch.name+' · funnel');
+    const nl=leadF(ch,'new_leads'), lbk=addv(leadF(ch,'booked_same'),leadF(ch,'booked_later'));
+    const bk=bookedBy(ch), dn=doneBy(ch);
+    T+=row(ch.icon+' New leads (national)',nl,'tot',N,{color:ch.color});
+    T+=row('· leads booked (eventually)',lbk,'sub',N,{color:ch.color});
+    T+=row('· lead → book %',ratio(lbk,nl),'pct',PCT,{noheat:true});
+    // Google paid campaign funnel
+    if(ch.key==='google'){const g=gafGrid();if(g){
+      T+=row('Paid campaign · spend (₹)',g.spend,'grp',RUP,{color:'#B8862E'});
+      T+=row('· impressions',g.impr,'sub',N,{color:ch.color});
+      T+=row('· clicks',g.click,'sub',N,{color:ch.color});
+      T+=row('· · CTR %',ratio(g.click,g.impr),'pct',PCT,{noheat:true});
+      T+=row('· location clicks',g.loc,'sub',N,{color:ch.color});
+      T+=row('· web leads (UTM)',g.webl,'sub',N,{color:ch.color});
+    }}
+    T+=row('SC bookings (offline network)',bk,'grp',N,{color:'#1F6F5C'});
+    T+=row('Done (completed)',dn,'grp',N,{color:'#1F6F5C'});
+    T+=row('· book → done %',ratio(dn,bk),'pct',PCT,{noheat:true});
+    H+='<div class="shead">'+ch.icon+' '+ch.name+'</div>'+tbl(T);
+  });
+  $('tables').innerHTML=H;
+  // chips
+  $('chanChips').innerHTML=[['all','All channels']].concat(CH.map(c=>[c.key,c.icon+' '+c.name])).map(o=>'<button class="chip'+(FOCUS===o[0]?' on':'')+'" onclick="FOCUS=\''+o[0]+'\';paint()">'+o[1]+'</button>').join(' ');
+}
+
+Promise.all([
+  fetch('data_source_recon.json?v='+Date.now()).then(r=>r.json()),
+  fetch('data_ga_funnel.json?v='+Date.now()).then(r=>r.ok?r.json():null).catch(()=>null)
+]).then(([j,gf])=>{D=j;GAF=gf;paint();}).catch(e=>{$('tables').innerHTML='<div style="color:#B23A2E;padding:20px">Could not load data: '+e.message+'</div>';});
+</script>
+</body>
+</html>
