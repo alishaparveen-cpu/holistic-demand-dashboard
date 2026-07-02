@@ -108,7 +108,7 @@ const STAGES=[
   {key:'done',num:4,name:'Done',short:'Done',grp:'output',sub:'book→done % · by category',diag:'Conversion drop — front-desk / follow-up',fix:'Clinic / PCC',
    metrics:c=>[{nm:'book→done %',arr:c.done.book_done_pct,pct:1},{nm:'done',arr:c.done.done,fmtd:0}],headline:0,doneCat:c=>c.done.by_cat},
   {key:'velocity',num:5,name:'Velocity',short:'Velocity',grp:'output',sub:'bookings / active day (weekday·weekend weighted) ⓘ',diag:'Capacity limit — scheduling / staffing',fix:'Ops · staffing',
-   metrics:c=>[{nm:'bookings / active day',arr:c.velocity.per_active_day,fmtd:1},{nm:'· per active weekday',arr:c.velocity.per_weekday,fmtd:1},{nm:'· per active weekend',arr:c.velocity.per_weekend,fmtd:1}],headline:0,velMath:true},
+   metrics:c=>[{nm:'bookings / active day',arr:c.velocity.per_active_day,fmtd:1}],headline:0,velMath:true},
 ];
 function evalMetric(arr){const NW=arr.length;const cur=mean(arr.slice(NW-CURN));const base=mean(arr.slice(Math.max(0,NW-CURN-BASEN),NW-CURN));
   const d=(cur!=null&&base)?((cur-base)/base):null;const st=d==null?'green':d<=-0.15?'red':d<=-0.07?'amber':'green';return {cur,base,d,st};}
@@ -190,15 +190,22 @@ function drill(s,e){const wl=D.week_labels,NW=D.weeks.length,show=Math.min(NW,8)
   let h='<div class="drill'+(OPEN[s.key]?' open':'')+'" id="dr_'+s.key+'"><div class="dhead">'+s.num+' · '+s.name+' — recent '+show+' weeks</div>';
   h+='<table class="d"><thead><tr><th></th>'+wl.slice(NW-show).map((l,i)=>'<th class="'+(i===show-1?'last':'')+'">'+l+'</th>').join('')+'<th>trend</th></tr></thead><tbody>';
   const row=(nm,arr,pct,fmtd,col)=>{const a=arr.slice(NW-show);return '<tr><td>'+nm+'</td>'+a.map((v,i)=>'<td class="'+(i===a.length-1?'last':'')+'">'+(v==null?'<span class="zero">·</span>':fmt(v,fmtd||(pct?1:0))+(pct?'%':''))+'</td>').join('')+'<td>'+spark(arr,col||'var(--ink2)')+'</td></tr>';};
-  e.ms.forEach(m=>h+=row(m.nm,m.arr,m.pct,m.fmtd,COL[m.ev.st]));
+  if(!s.velMath)e.ms.forEach(m=>h+=row(m.nm,m.arr,m.pct,m.fmtd,COL[m.ev.st]));
   if(s.tax){s.tax(C).forEach(t=>{if(sum(t.arr))h+=row(t.nm,t.arr,0,0,'var(--ink2)');});}
   if(s.byChannel){const bc=s.byChannel(C);Object.keys(bc).sort((a,b)=>sum(bc[b])-sum(bc[a])).forEach(ch=>{if(sum(bc[ch]))h+=row('· '+ch,bc[ch],0,0);});}
   if(s.doneCat){const dc=s.doneCat(C);h+=row('booked (denom)',C.done.booked,0,0);['SH','STI','MH','Other'].forEach(ct=>{if(dc[ct]&&sum(dc[ct]))h+=row('· done · '+ct,dc[ct],0,0,'var(--ink2)');});}
-  if(s.velMath){const v=C.velocity;h+=row('· weekday days',v.wday_days,0,0);h+=row('· weekend days',v.wend_days,0,0);h+=row('· bookings (weekday)',v.bk_wday,0,0);h+=row('· bookings (weekend)',v.bk_wend,0,0);
+  if(s.velMath){const v=C.velocity;
+    h+=row('Weekday bookings',v.bk_wday,0,0);
+    h+=row('· active weekdays',v.wday_days,0,0);
+    h+=row('· bookings / active weekday',v.per_weekday,0,1,'var(--ink2)');
+    h+=row('Weekend bookings',v.bk_wend,0,0);
+    h+=row('· active weekend days',v.wend_days,0,0);
+    h+=row('· bookings / active weekend',v.per_weekend,0,1,'var(--ink2)');
+    h+=row('▪ bookings / active day (combined)',v.per_active_day,0,1,'var(--accent)');
     const i=NW-1,wd=v.wday_days[i],we=v.wend_days[i],bwd=v.bk_wday[i],bwe=v.bk_wend[i],tot=(wd+we)?((bwd+bwe)/(wd+we)).toFixed(1):'—';
     h+='</tbody></table><div style="font-size:11.5px;color:var(--ink2);margin-top:8px;line-height:1.5">'
-      +'<b>How bookings/active-day is built</b> (latest week): weekday rate = '+bwd+' bookings ÷ '+wd+' active weekdays = <b>'+(wd?(bwd/wd).toFixed(1):'—')+'</b>; weekend rate = '+bwe+' ÷ '+we+' = <b>'+(we?(bwe/we).toFixed(1):'—')+'</b>. '
-      +'Combined = (weekday bookings + weekend bookings) ÷ (weekday days + weekend days) = ('+bwd+' + '+bwe+') ÷ ('+wd+' + '+we+') = <b>'+tot+'/day</b>. Weekends run hotter, so a lost weekend day hits output more than a weekday.</div></div>';
+      +'<b>How bookings/active-day is built</b> (latest week): weekday = '+bwd+' bookings ÷ '+wd+' active weekdays = <b>'+(wd?(bwd/wd).toFixed(1):'—')+'</b>; weekend = '+bwe+' ÷ '+we+' = <b>'+(we?(bwe/we).toFixed(1):'—')+'</b>. '
+      +'Combined = ('+bwd+' + '+bwe+') ÷ ('+wd+' + '+we+') = <b>'+tot+'/day</b>. Weekends run hotter, so a lost weekend day hurts more.</div></div>';
     return h;}
   h+='</tbody></table></div>';return h;}
 function tog(k){OPEN[k]=!OPEN[k];const el=$('dr_'+k);if(el)el.classList.toggle('open',OPEN[k]);}
