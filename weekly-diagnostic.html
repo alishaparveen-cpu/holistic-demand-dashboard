@@ -136,7 +136,7 @@
     <span class="lab">Scope</span>
     <div class="ms"><button class="fbtn" id="cityBtn" onclick="openCityMs(event)">All cities ▾</button><div class="mspanel" id="cityPanel"></div></div>
     <div class="ms"><button class="fbtn" id="clinBtn" onclick="openClinMs(event)">All clinics ▾</button><div class="mspanel" id="clinPanel"></div></div>
-    <span class="lab" style="text-transform:none;font-weight:500;color:var(--faint)">▸ click any clinic row to open its full funnel</span>
+    <span class="lab" style="text-transform:none;font-weight:500;color:var(--faint)">▸ pick a <b>City</b> to narrow the list · pick one <b>Clinic</b> (or click any row) to open its funnel</span>
   </div>
   <div class="cmpnote" id="cmpnote"></div>
   <div id="root"></div>
@@ -318,7 +318,7 @@ function renderMetric(){
   h+='</tbody></table></div>';
   $('root').innerHTML=h;
 }
-function goClinic(slug){C=D.clinics[slug];MODE='cl';OPEN={};syncMode();render();}
+function goClinic(slug){CLINF=new Set([slug]);$('clinBtn').textContent=clinBtnLabel();$('clinBtn').classList.add('on');C=D.clinics[slug];MODE='cl';OPEN={};updateModeUI();render();}
 
 // ---------- PER-CLINIC FUNNEL (drill) ----------
 function renderClinic(){
@@ -330,7 +330,7 @@ function renderClinic(){
   if(firstRed<0){vok=true;vh='All stages healthy';vd='No stage dropped past the red threshold in the current window vs baseline.';}
   else{const s=STAGES[firstRed],e=evs[firstRed],hm=e.hm;vh='Earliest break: '+s.num+' · '+s.name;
     vd='<b>'+s.diag+'.</b> '+cap(hm.nm)+' '+fmt(hm.ev.base,hm.fmtd||(hm.pct?1:0))+(hm.pct?'%':'')+' → '+fmt(hm.ev.cur,hm.fmtd||(hm.pct?1:0))+(hm.pct?'%':'')+' ('+Math.round(hm.ev.d*100)+'%). '+(firstRed<STAGES.length-1?'Fix this first ('+s.fix+') — stages below may be a consequence.':'Last stage — likely a real '+s.name.toLowerCase()+' constraint.');}
-  let h='<div style="margin-bottom:12px"><button class="modebtn" onclick="setView(\'issues\')" style="padding:7px 14px;font-size:13px">← back to all clinics</button> <span class="lab" style="text-transform:none;font-weight:600;color:var(--ink);margin-left:6px">'+C.disp+'</span></div>';
+  let h='<div style="margin-bottom:12px"><button class="modebtn" onclick="backToList()" style="padding:7px 14px;font-size:13px">← back to all clinics</button> <span class="lab" style="text-transform:none;font-weight:600;color:var(--ink);margin-left:6px">'+C.disp+'</span></div>';
   h+='<div class="verdict'+(vok?' ok':'')+'"><div class="vh">'+vh+'</div><div class="vd">'+vd+'</div></div>';
   STAGES.forEach((s,i)=>{const e=evs[i],hm=e.hm;const isCause=(i===firstRed),isConseq=(firstRed>=0&&i>firstRed&&e.status!=='green');
     if(i===0)h+='<div class="lab" style="margin:2px 0 6px">Inputs</div>';
@@ -392,7 +392,10 @@ function renderClinPanel(q){q=(q||'').toLowerCase();
   if(!ks.length)h+='<div class="msi" style="color:var(--muted)">no clinics</div>';
   ks.forEach(s=>{h+='<label class="msi" onclick="event.stopPropagation()"><input type="checkbox" '+(CLINF.has(s)?'checked':'')+' onchange="togClin(\''+s+'\')">'+D.clinics[s].disp+'</label>';});
   $('clinPanel').innerHTML=h;}
-function clinChanged(){$('clinBtn').textContent=clinBtnLabel();$('clinBtn').classList.toggle('on',!!CLINF.size);render();}
+function clinChanged(){$('clinBtn').textContent=clinBtnLabel();$('clinBtn').classList.toggle('on',!!CLINF.size);
+  if(CLINF.size===1){C=D.clinics[[...CLINF][0]];MODE='cl';OPEN={};}else{MODE='ov';}   // pick one clinic → its funnel; none/many → the list
+  updateModeUI();render();}
+function backToList(){CLINF=new Set();$('clinBtn').textContent=clinBtnLabel();$('clinBtn').classList.remove('on');MODE='ov';updateModeUI();render();}
 function togClin(s){CLINF.has(s)?CLINF.delete(s):CLINF.add(s);clinChanged();}
 function allClin(on){const q=$('clinQ')?$('clinQ').value.toLowerCase():'';const ks=Object.keys(D.clinics).filter(s=>inCity(D.clinics[s].city)&&D.clinics[s].disp.toLowerCase().includes(q));if(on)ks.forEach(s=>CLINF.add(s));else ks.forEach(s=>CLINF.delete(s));renderClinPanel($('clinQ')?$('clinQ').value:'');clinChanged();}
 async function boot(){
