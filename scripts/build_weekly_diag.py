@@ -19,20 +19,24 @@ def K(city,loc): return (loc or '').strip().lower()+'|'+(city or '').strip().low
 def Z(): return [0]*N
 def zput(d,k,i,v): d.setdefault(k,Z())[i]=d.get(k,Z())[i] if False else d.setdefault(k,Z())[i]
 
-# ---- 1 Availability ----
+# ---- 1 Availability ---- (active days SC-based; hours split into all-roster vs screening-call only)
 avail={}
-for r in q(f"""SELECT lc, city, wk, COUNT(DISTINCT CASE WHEN dow NOT IN (0,6) THEN dt END) wd,
-    COUNT(DISTINCT CASE WHEN dow IN (0,6) THEN dt END) we, ROUND(SUM(mins)/60.0,1) hrs
+for r in q(f"""SELECT lc, city, wk,
+    COUNT(DISTINCT CASE WHEN is_sc AND dow NOT IN (0,6) THEN dt END) wd,
+    COUNT(DISTINCT CASE WHEN is_sc AND dow IN (0,6) THEN dt END) we,
+    ROUND(SUM(CASE WHEN is_sc THEN mins ELSE 0 END)/60.0,1) sc_hrs,
+    ROUND(SUM(mins)/60.0,1) all_hrs
   FROM (SELECT loc.locality lc, loc.city city, DATE(rs.start_time+INTERVAL '5.5 hours') dt,
       EXTRACT(dow FROM (rs.start_time+INTERVAL '5.5 hours')) dow,
       TO_CHAR(DATE_TRUNC('week', rs.start_time+INTERVAL '5.5 hours'),'YYYY-MM-DD') wk,
-      DATEDIFF(minute, rs.start_time, rs.end_time) mins
+      DATEDIFF(minute, rs.start_time, rs.end_time) mins,
+      (rs.type_id='{SC_ROSTER}') is_sc
     FROM allo_consultations.roster_slots rs
     JOIN allo_health.locations loc ON loc.id=rs.location_id AND loc.deleted_at IS NULL AND LOWER(COALESCE(loc.locality,'')) NOT IN ('','online')
-    WHERE rs.type_id='{SC_ROSTER}' AND rs.start_time>='{LO}' AND rs.start_time<'{HI}') z GROUP BY 1,2,3"""):
-    if len(r)>=6 and r[2] in idx:
-        e=avail.setdefault(K(r[1],r[0]),{'wd':Z(),'we':Z(),'hr':[0.0]*N}); i=idx[r[2]]
-        e['wd'][i]=int(r[3]); e['we'][i]=int(r[4]); e['hr'][i]=float(r[5])
+    WHERE rs.start_time>='{LO}' AND rs.start_time<'{HI}') z GROUP BY 1,2,3"""):
+    if len(r)>=7 and r[2] in idx:
+        e=avail.setdefault(K(r[1],r[0]),{'wd':Z(),'we':Z(),'hr':[0.0]*N,'ahr':[0.0]*N}); i=idx[r[2]]
+        e['wd'][i]=int(r[3]); e['we'][i]=int(r[4]); e['hr'][i]=float(r[5]); e['ahr'][i]=float(r[6])
 
 # ---- 2 Demand: leads ----
 leadmap={}
@@ -81,13 +85,13 @@ def rate(num,den): return [round(num[i]/den[i],1) if den[i] else None for i in r
 out={'weeks':WEEKS,'week_labels':WK_LABELS,'clinics':{}}
 for slug,c in L0['clinics'].items():
     loc=c['disp'].split(' · ')[0]; k=K(c['city'],loc)
-    av=avail.get(k,{'wd':Z(),'we':Z(),'hr':[0.0]*N}); adays=[av['wd'][i]+av['we'][i] for i in range(N)]
+    av=avail.get(k,{'wd':Z(),'we':Z(),'hr':[0.0]*N,'ahr':[0.0]*N}); adays=[av['wd'][i]+av['we'][i] for i in range(N)]
     lm=leadmap.get(loc.strip().lower(),{'tot':Z(),'src':{}}); leads=lm['tot']
     b=bk.get(k)
     if not b: b={x:Z() for x in ['booked','done','new_tw','new_old','rebook','relapse','sh','sti','mh','oth','bkwd','bkwe']}
     booked=b['booked']; done=b['done']; newp=[b['new_tw'][i]+b['new_old'][i] for i in range(N)]
     out['clinics'][slug]={'disp':c['disp'],'city':c['city'],'loc':loc,
-        'availability':{'active_days':adays,'wday_days':av['wd'],'wend_days':av['we'],'hours':av['hr']},
+        'availability':{'active_days':adays,'wday_days':av['wd'],'wend_days':av['we'],'hours':av['hr'],'avail_hours':av['ahr']},
         'demand':{'leads':leads,'by_channel':{s:lm['src'][s] for s in lm['src'] if sum(lm['src'][s])>0},'has_leads':sum(leads)>0,
             'lead_book_pct':[round(100*newp[i]/leads[i]) if leads[i] else None for i in range(N)]},
         'bookings':{'total':booked,'new_tw':b['new_tw'],'new_old':b['new_old'],'rebook':b['rebook'],'relapse':b['relapse']},
