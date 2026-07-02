@@ -183,7 +183,12 @@
       <div class="ms"><button class="fbtn" id="cityBtn" onclick="openCityMs(event)">All cities ▾</button><div class="mspanel" id="cityPanel"></div></div>
       <div class="ms"><button class="fbtn" id="clinBtn" onclick="openClinMs(event)">All clinics ▾</button><div class="mspanel" id="clinPanel"></div></div>
     </div>
-    <span class="hint">pick a <b>City</b> to narrow · one <b>Clinic</b> (or click a row) opens its funnel</span>
+    <div class="tgroup"><span class="tlab">Tier</span>
+      <button class="fbtn" data-tier="T1" onclick="togTier('T1')">Tier 1</button><button class="fbtn" data-tier="T2" onclick="togTier('T2')">Tier 2</button>
+    </div>
+    <div class="tgroup"><span class="tlab">Maturity</span>
+      <button class="fbtn" data-mat="&lt;3mo" onclick="togMat('&lt;3mo')">&lt;3mo</button><button class="fbtn" data-mat="3-6mo" onclick="togMat('3-6mo')">3–6mo</button><button class="fbtn" data-mat="6-12mo" onclick="togMat('6-12mo')">6–12mo</button><button class="fbtn" data-mat="&gt;1yr" onclick="togMat('&gt;1yr')">&gt;1yr</button>
+    </div>
   </div>
   <!-- Overview sub-modes (only in Overview) -->
   <div class="ctrls" id="metricbar" style="display:none;gap:12px;margin:-2px 0 10px;align-items:center;flex-wrap:wrap">
@@ -203,10 +208,19 @@
 </div>
 <div class="modal" id="modal" onclick="if(event.target===this)closeZ()"><div class="mbox"><div class="mhd"><span id="mTitle"></span><button onclick="closeZ()" title="close">✕</button></div><div id="pickBar" class="pickbar"></div><div id="mBody"></div></div></div>
 <script>
-let D=null, CURN=1, BASEN=4, MODE='ov', C=null, OPEN={}, QF='any', CITYF=new Set(), CLINF=new Set(), DENSITY='compact', MET='bookings', OVMODE='metric';
+let D=null, AGE={}, CURN=1, BASEN=4, MODE='ov', C=null, OPEN={}, QF='any', CITYF=new Set(), CLINF=new Set(), TIERF=new Set(), MATF=new Set(), DENSITY='compact', MET='bookings', OVMODE='metric';
+const T1CITIES=new Set(['Bangalore','Mumbai','Pune','Hyderabad','Chennai']);
+function tierOf(city){return T1CITIES.has(city)?'T1':'T2';}
+function clinMonths(slug){const d=AGE[D.clinics[slug].loc];if(!d)return null;const t=Date.parse(d);return isNaN(t)?null:(Date.now()-t)/(1000*60*60*24*30.44);}
+function matBucket(m){return m==null?null:(m<3?'<3mo':m<6?'3-6mo':m<12?'6-12mo':'>1yr');}
 function inCity(city){return !CITYF.size||CITYF.has(city);}
-function inScope(slug){return CLINF.size?CLINF.has(slug):inCity(D.clinics[slug].city);}   // explicit clinics win, else city filter
-function cityStr(){if(CLINF.size)return CLINF.size+' clinic'+(CLINF.size===1?'':'s')+' selected';return CITYF.size?(CITYF.size<=2?[...CITYF].join(', '):CITYF.size+' cities'):'All cities';}
+function inScope(slug){const c=D.clinics[slug];
+  if(TIERF.size&&!TIERF.has(tierOf(c.city)))return false;
+  if(MATF.size){const b=matBucket(clinMonths(slug));if(!b||!MATF.has(b))return false;}
+  return CLINF.size?CLINF.has(slug):inCity(c.city);}
+function scopeExtra(){const t=[...TIERF].map(x=>x==='T1'?'Tier 1':'Tier 2'),m=[...MATF];return t.concat(m);}
+function cityStr(){let base=CLINF.size?CLINF.size+' clinic'+(CLINF.size===1?'':'s')+' selected':(CITYF.size?(CITYF.size<=2?[...CITYF].join(', '):CITYF.size+' cities'):'All cities');
+  const ex=scopeExtra();return ex.length?base+' · '+ex.join(', '):base;}
 const $=id=>document.getElementById(id);
 const mean=a=>{const b=a.filter(x=>x!=null);return b.length?b.reduce((x,y)=>x+y,0)/b.length:null;};
 const sum=a=>a.reduce((x,y)=>x+(y||0),0);
@@ -566,6 +580,9 @@ function cityChanged(){$('cityBtn').textContent=cityBtnLabel();$('cityBtn').clas
   if(CLINF.size)[...CLINF].forEach(s=>{if(!inCity(D.clinics[s].city))CLINF.delete(s);});$('clinBtn').textContent=clinBtnLabel();$('clinBtn').classList.toggle('on',!!CLINF.size);
   render();}
 function togCity(c){CITYF.has(c)?CITYF.delete(c):CITYF.add(c);cityChanged();}
+function togTier(t){TIERF.has(t)?TIERF.delete(t):TIERF.add(t);syncScopeBtns();render();}
+function togMat(m){MATF.has(m)?MATF.delete(m):MATF.add(m);syncScopeBtns();render();}
+function syncScopeBtns(){document.querySelectorAll('[data-tier]').forEach(b=>b.classList.toggle('on',TIERF.has(b.dataset.tier)));document.querySelectorAll('[data-mat]').forEach(b=>b.classList.toggle('on',MATF.has(b.dataset.mat)));}
 function allCity(on){CITYF=on?new Set(ALLCITIES):new Set();renderCityPanel($('cityQ')?$('cityQ').value:'');cityChanged();}
 function openClinMs(e){e.stopPropagation();const p=$('clinPanel'),show=!p.classList.contains('on');closePanels();if(show){renderClinPanel('');p.classList.add('on');const q=$('clinQ');if(q)q.focus();}}
 function renderClinPanel(q){q=(q||'').toLowerCase();
@@ -583,6 +600,7 @@ function allClin(on){const q=$('clinQ')?$('clinQ').value.toLowerCase():'';const 
 async function boot(){
   try{D=await fetch('data_weekly_diag.json').then(r=>r.json());}
   catch(e){$('root').innerHTML='<div class="err">Failed to load data_weekly_diag.json</div>';return;}
+  try{AGE=await fetch('data_clinic_age.json').then(r=>r.ok?r.json():{open:{}}).then(a=>(a&&a.open)||{});}catch(e){AGE={};}
   ALLCITIES=[...new Set(Object.values(D.clinics).map(c=>c.city))].sort();
   try{const saved=JSON.parse(localStorage.getItem('wd_city')||'[]');if(Array.isArray(saved))saved.forEach(c=>{if(ALLCITIES.includes(c))CITYF.add(c);});}catch(e){}
   $('cityBtn').textContent=cityBtnLabel();$('cityBtn').classList.toggle('on',!!CITYF.size);
