@@ -141,6 +141,8 @@ tr[onclick]:hover td:first-child{color:var(--accent)}
     <span class="ms"><button class="fbtn" id="cityBtn" onclick="openMs(event,'City')">All cities ▾</button><div class="mspanel" id="panelCity"></div></span>
     <span class="fl" style="margin-left:8px">Clinics</span>
     <span class="ms"><button class="fbtn" id="clinBtn" onclick="openMs(event,'Clin')">All clinics ▾</button><div class="mspanel" id="panelClin"></div></span>
+    <span class="fl" style="margin-left:8px">Doctors</span>
+    <span class="ms"><button class="fbtn" id="docBtn" onclick="openMs(event,'Doc')">All doctors ▾</button><div class="mspanel" id="panelDoc"></div></span>
     <span class="fl" style="margin-left:8px">Maturity</span>
     <button class="fbtn" data-v="<3mo" onclick="togMat(this)">&lt;3mo</button><button class="fbtn" data-v="3-6mo" onclick="togMat(this)">3–6mo</button><button class="fbtn" data-v="6-12mo" onclick="togMat(this)">6–12mo</button><button class="fbtn" data-v=">1yr" onclick="togMat(this)">&gt;1yr</button>
     <span class="fl" style="margin-left:10px">Consult</span>
@@ -375,7 +377,7 @@ function webDetail(label,x,tkey,cityFlag){
   return h;
 }
 
-let TIERS=new Set(), MATS=new Set(), CITY=new Set(), CLIN=new Set();
+let TIERS=new Set(), MATS=new Set(), CITY=new Set(), CLIN=new Set(), DOC=new Set();
 let SEG='offline';
 function setSeg(v){SEG=v;document.querySelectorAll('.sbtn').forEach(b=>b.classList.toggle('on',b.dataset.v===v));render();}
 function matBucket(age){return age<3?'<3mo':(age<6?'3-6mo':(age<12?'6-12mo':'>1yr'));}
@@ -384,12 +386,14 @@ function filterCtx(){let p=[];if(TIERS.size)p.push([...TIERS].join('/'));if(CITY
 function cityOf(slug){return (D._meta.display[slug]||slug).split(' · ').slice(-1)[0];}
 function tierOf(city){return (D._meta.city_tier||{})[city]||'T2';}
 function monthsOf(slug){const a=(D._meta.clinic_age||{})[slug];return typeof a==='number'?a:null;}
+function docsIn(cl){const s=new Set();cl.forEach(x=>Object.keys((x.data||{}).by_doctor||{}).forEach(dr=>s.add(dr)));return [...s].sort();}
+function docLbl(dr,cl){const cs=cl.filter(x=>((x.data||{}).by_doctor||{})[dr]);if(cs.length===1){return dr+' · '+((D._meta.display||{})[cs[0].slug]||cs[0].slug).split(' · ')[0];}return dr+(cs.length>1?' ('+cs.length+' clinics)':'');}
 function baseKeys(){return (D._meta.clinics||[]).filter(s=>{const c=cityOf(s);if(TIERS.size&&!TIERS.has(tierOf(c)))return false;if(CITY.size&&!CITY.has(c))return false;return true;});}
 function baseHas(s){const c=cityOf(s);return (!TIERS.size||TIERS.has(tierOf(c)))&&(!CITY.size||CITY.has(c));}
 function passes(slug){if(!baseHas(slug))return false;if(CLIN.size&&!CLIN.has(slug))return false;return true;}
 function filteredClinics(){return (D._meta.clinics||[]).filter(passes);}
-function afterScope(){renderCityOpts();renderClinicOpts();updateScopeBtns();render();}
-function setOverview(){TIERS.clear();CITY.clear();CLIN.clear();MATS.clear();afterScope();}
+function afterScope(){renderCityOpts();renderClinicOpts();renderDoctorOpts();updateScopeBtns();render();}
+function setOverview(){TIERS.clear();CITY.clear();CLIN.clear();MATS.clear();DOC.clear();afterScope();}
 function clearF(){setOverview();}
 function togTier(b){const t=b.dataset.t;TIERS.has(t)?TIERS.delete(t):TIERS.add(t);[...CITY].forEach(c=>{if(TIERS.size&&!TIERS.has(tierOf(c)))CITY.delete(c);});[...CLIN].forEach(s=>{if(!baseHas(s))CLIN.delete(s);});if(MATS.size)applyMat();afterScope();}
 function togCity(c){CITY.has(c)?CITY.delete(c):CITY.add(c);[...CLIN].forEach(s=>{if(!baseHas(s))CLIN.delete(s);});if(MATS.size)applyMat();afterScope();}
@@ -398,7 +402,7 @@ function togMat(b){const v=b.dataset.v;MATS.has(v)?MATS.delete(v):MATS.add(v);ap
 function applyMat(){if(!MATS.size){CLIN.clear();return;}CLIN=new Set(baseKeys().filter(s=>{const m=monthsOf(s);return m!=null&&MATS.has(matBucket(m));}));}
 function allCity(on){const cs=[...new Set((D._meta.clinics||[]).filter(s=>!TIERS.size||TIERS.has(tierOf(cityOf(s)))).map(cityOf))];CITY=on?new Set(cs):new Set();[...CLIN].forEach(s=>{if(!baseHas(s))CLIN.delete(s);});if(MATS.size)applyMat();afterScope();}
 function allClin(on){CLIN=on?new Set(baseKeys()):new Set();afterScope();}
-function openMs(e,w){e.stopPropagation();const p=document.getElementById('panel'+w),o=document.getElementById('panel'+(w==='City'?'Clin':'City'));if(o)o.classList.remove('on');p.classList.toggle('on');}
+function openMs(e,w){e.stopPropagation();['City','Clin','Doc'].forEach(x=>{if(x!==w){const o=document.getElementById('panel'+x);if(o)o.classList.remove('on');}});const p=document.getElementById('panel'+w);p.classList.toggle('on');}
 function updateScopeBtns(){
   const all=!TIERS.size&&!CITY.size&&!CLIN.size&&!MATS.size;
   const ov=document.getElementById('ovBtn');if(ov)ov.classList.toggle('on',all);
@@ -406,6 +410,7 @@ function updateScopeBtns(){
   document.querySelectorAll('[data-v]').forEach(b=>b.classList.toggle('on',MATS.has(b.dataset.v)));
   const cb=document.getElementById('cityBtn');if(cb){cb.textContent=(CITY.size?CITY.size+' cit'+(CITY.size===1?'y':'ies'):'All cities')+' ▾';cb.classList.toggle('on',!!CITY.size);}
   const lb=document.getElementById('clinBtn');if(lb){lb.textContent=(CLIN.size?CLIN.size+' clinic'+(CLIN.size===1?'':'s'):'All clinics')+' ▾';lb.classList.toggle('on',!!CLIN.size);}
+  const db=document.getElementById('docBtn');if(db){db.textContent=(DOC.size?DOC.size+' doctor'+(DOC.size===1?'':'s'):'All doctors')+' ▾';db.classList.toggle('on',!!DOC.size);}
 }
 function renderCityOpts(){
   let cities=[...new Set((D._meta.clinics||[]).filter(s=>!TIERS.size||TIERS.has(tierOf(cityOf(s)))).map(cityOf))].sort();
@@ -420,7 +425,19 @@ function renderClinicOpts(){
   keys.forEach(s=>{const m=monthsOf(s);h+='<label class="msi"><input type="checkbox" '+(CLIN.has(s)?'checked':'')+' onclick="togClin(\''+s.replace(/'/g,"\\'")+'\')">'+(D._meta.display[s]||s)+'<span class="c">'+(m!=null?matBucket(m):'—')+'</span></label>';});
   const p=document.getElementById('panelClin');if(p)p.innerHTML=h;
 }
-document.addEventListener('click',e=>{if(!e.target.closest('.ms')){['City','Clin'].forEach(w=>{const p=document.getElementById('panel'+w);if(p)p.classList.remove('on');});}});
+function docsInScope(){const s=new Set();filteredClinics().forEach(k=>Object.keys((D.clinics[k]||{}).by_doctor||{}).forEach(dr=>s.add(dr)));return [...s].sort();}
+function togDoc(dr){DOC.has(dr)?DOC.delete(dr):DOC.add(dr);afterScope();}
+function allDoc(on){DOC=on?new Set(docsInScope()):new Set();afterScope();}
+function renderDoctorOpts(){
+  const docs=docsInScope();[...DOC].forEach(dr=>{if(!docs.includes(dr))DOC.delete(dr);});
+  let h='<div class="msact"><a onclick="allDoc(1)">select all</a><a onclick="allDoc(0)">clear</a></div>';
+  if(!docs.length)h+='<div class="msi" style="color:var(--muted)">no doctors in scope</div>';
+  // show doctor + which clinic(s), so cross-clinic picks are unambiguous
+  docs.forEach(dr=>{const cls=filteredClinics().filter(k=>((D.clinics[k]||{}).by_doctor||{})[dr]);const hint=cls.length===1?((D._meta.display[cls[0]]||cls[0]).split(' · ')[0]):cls.length+' clinics';
+    h+='<label class="msi"><input type="checkbox" '+(DOC.has(dr)?'checked':'')+' onclick="togDoc(this.value)" value="'+String(dr).replace(/"/g,'&quot;')+'">'+dr+'<span class="c">'+hint+'</span></label>';});
+  const p=document.getElementById('panelDoc');if(p)p.innerHTML=h;
+}
+document.addEventListener('click',e=>{if(!e.target.closest('.ms')){['City','Clin','Doc'].forEach(w=>{const p=document.getElementById('panel'+w);if(p)p.classList.remove('on');});}});
 function render(){
   if(!D)return;
   ZREG=[];QVC=[];
@@ -433,7 +450,17 @@ function render(){
   if($('wkNewer'))$('wkNewer').disabled=WKEND<=efloor();var _ab=$('addWk');if(_ab){_ab.style.display=(W0===1)?'inline-flex':'none';_ab.textContent=SHOWPARTIAL?'− this week':'+ this week';_ab.style.borderColor=SHOWPARTIAL?'var(--accent)':'';}
   if($('wkOlder'))$('wkOlder').disabled=WKEND>=maxEnd;
   const ZA=Array(D._meta.weeks.length).fill(0);
-  const clinics=filteredClinics().map(s=>({slug:s,city:(D._meta.display[s]||s).split(' · ').slice(-1)[0],data:D.clinics[s]})).filter(x=>x.data);
+  let clinics=filteredClinics().map(s=>({slug:s,city:(D._meta.display[s]||s).split(' · ').slice(-1)[0],data:D.clinics[s]})).filter(x=>x.data);
+  if(DOC.size){   // isolate selected doctors: scope each clinic's outcomes + availability to their by_doctor slice; drop clinics with none
+    const zsrc=()=>{const o={};(D._meta.sources||[]).forEach(k=>o[k]=ZA.slice());return o;};   // all-ZA keyed cube so accessors don't throw; zeroed sub-rows auto-hide
+    clinics=clinics.map(x=>{const bd=x.data.by_doctor||{};const sel=[...DOC].filter(dr=>bd[dr]);if(!sel.length)return null;
+      const S=f=>sel.reduce((a,dr)=>addv(a,bd[dr][f]||ZA),ZA.slice());
+      const bottom=Object.assign({},x.data.bottom,{booked:S('booked'),done:S('done'),purchased:S('purchased'),rev:S('rev'),by_cat:{},by_subcat:{},rev_cp:{}});
+      const av=x.data.avail_roster?Object.assign({},x.data.avail_roster,{after_shrink:S('av_after'),opened:S('av_after'),sc_net:S('av_sc'),net_avail:S('av_sc')}):x.data.avail_roster;
+      const bdSel={};sel.forEach(dr=>bdSel[dr]=bd[dr]);   // keep only selected doctors, so the doctor breakdown stays scoped
+      const data=Object.assign({},x.data,{bottom,avail_roster:av,by_doctor:bdSel,book_cohort:{},by_source:zsrc(),booked_by_source:zsrc(),done_by_source:zsrc(),done_cat_source:{}});
+      return {slug:x.slug,city:x.city,data};}).filter(Boolean);
+  }
   const cities=[...new Set(clinics.map(x=>x.city))];
   $('h1').textContent='Master Demand Sheet'+(TIERS.size?' · '+[...TIERS].join('+'):'')+(CITY.size?' · '+(CITY.size===1?[...CITY][0]:CITY.size+' cities'):'')+(CLIN.size&&!MATS.size?' · '+CLIN.size+' clinics':'')+(MATS.size?' · '+[...MATS].join(','):'');
   if($('filtCount'))$('filtCount').textContent=clinics.length+' clinics · '+cities.length+' cities';
@@ -612,14 +639,16 @@ function render(){
   // (F.srcTotal / by_source is the creation-week demand cube; kept only for the Channel breakdown.)
   const offSrcTot=clinics.reduce((a,x)=>addv(a,Fn.bookedD(x.data)||ZA),ZA.slice()), offDoneTot=sumF3(F.srcTotalDone);
   const _b3=$('bookCtlBar');
-  const bDLB={cohort:'Cohort',src:'Channel',clinic:'Clinic',city:'City'};
+  const bDLB={cohort:'Cohort',src:'Channel',clinic:'Clinic',city:'City',doctor:'Doctor'};
   const bmembers=(dim,cl,f)=>{
     if(dim==='cohort')return COH.map(c=>({nm:c[1],color:c[2],cl,f:Object.assign({},f,{cohort:c[0]})}));
     if(dim==='src')return CH3.map(g=>({nm:g[0],cl,f:Object.assign({},f,{srcKeys:g[1]})}));
     if(dim==='city')return [...new Set(cl.map(x=>x.city))].sort().map(ci=>({nm:ci,cl:cl.filter(x=>x.city===ci),f}));
     if(dim==='clinic')return cl.map(x=>({nm:dN3(x),cl:[x],f}));
+    if(dim==='doctor')return docsIn(cl).map(dr=>({nm:docLbl(dr,cl),cl:cl.filter(x=>(x.data.by_doctor||{})[dr]),f:Object.assign({},f,{doctor:dr})}));
     return [];};
   const bseries=(cl,f)=>{
+    if(f.doctor)return cl.reduce((a,x)=>addv(a,((x.data.by_doctor||{})[f.doctor]||{}).booked||ZA),ZA.slice());
     if(f.cohort&&f.srcKeys)return ZA.slice();   // source × cohort not in the data (would need a pull)
     if(f.cohort)return cl.reduce((a,x)=>addv(a,((x.data.book_cohort||{})[f.cohort]||{}).booked||ZA),ZA.slice());
     if(f.srcKeys)return cl.reduce((a,x)=>{const bsc=x.data.booked_by_source||x.data.by_source||{};return addv(a,f.srcKeys.reduce((b,k)=>addv(b,bsc[k]||ZA),ZA.slice()));},ZA.slice());
@@ -634,8 +663,9 @@ function render(){
       if(kid&&EXP[tk])h+=bRender(m.cl,m.f,rest,depth+1,tk,arr);});   // no per-member % rows — use ⊕ Combine for share-of-total
     return h;};
   if(SEG!=='online'&&_b3){const sel3=(fn,cur,list)=>'<select onchange="'+fn+'(this.value)" style="font-size:11.5px;border:1px solid var(--line);border-radius:6px;padding:3px 8px;margin-left:6px;background:#fff;font-family:Inter;font-weight:600;color:var(--accent);cursor:pointer">'+list.map(o=>'<option value="'+o[0]+'"'+(cur===o[0]?' selected':'')+'>'+o[1]+'</option>').join('')+'</select>';
-    const bopt=(excl,none)=>{let ds=['cohort','src','clinic','city'].filter(d=>excl.indexOf(d)<0);
-      if(none){if(excl.indexOf('cohort')>=0)ds=ds.filter(d=>d!=='src');if(excl.indexOf('src')>=0)ds=ds.filter(d=>d!=='cohort');}   // source×cohort has no data
+    const bopt=(excl,none)=>{let ds=['cohort','src','clinic','city','doctor'].filter(d=>excl.indexOf(d)<0);
+      if(none){if(excl.indexOf('cohort')>=0)ds=ds.filter(d=>d!=='src');if(excl.indexOf('src')>=0)ds=ds.filter(d=>d!=='cohort');
+        if(excl.indexOf('doctor')>=0)ds=ds.filter(d=>d!=='cohort'&&d!=='src');if(['cohort','src'].some(x=>excl.indexOf(x)>=0))ds=ds.filter(d=>d!=='doctor');}   // doctor has no cohort/channel split
       const b=ds.map(d=>[d,(none?'× ':'')+bDLB[d]]);return none?[['none','— none —']].concat(b):b;};
     _b3.innerHTML='<span style="font-size:10px;font-weight:700;letter-spacing:.05em;color:var(--muted)">BREAK BOOKINGS BY</span>'+sel3('setBBRK',BBRK,bopt([],false))+sel3('setBCRS',BCRS,bopt([BBRK],true))+(BCRS!=='none'?sel3('setBCR3',BCR3,bopt([BBRK,BCRS],true)):'');}
   if(SEG==='online'){
@@ -690,6 +720,7 @@ function render(){
    const _cb=$('doneCtlBar');
    if(SEG!=='online'){
      const dseries=(cl,f)=>{
+       if(f.doctor)return cl.reduce((a,x)=>addv(a,((x.data.by_doctor||{})[f.doctor]||{}).done||ZA),ZA.slice());
        if(f.subcat)return cl.reduce((a,x)=>addv(a,((x.data.bottom.by_subcat||{})[f.subcat]||{}).done||ZA),ZA.slice());
        if(f.cat&&f.srcKeys)return cl.reduce((a,x)=>{const cs=((x.data.done_cat_source||{})[f.cat])||{};return addv(a,f.srcKeys.reduce((b,k)=>addv(b,cs[k]||ZA),ZA.slice()));},ZA.slice());
        if(f.cat)return cl.reduce((a,x)=>addv(a,((x.data.bottom.by_cat||{})[f.cat]||{}).done||ZA),ZA.slice());
@@ -700,6 +731,7 @@ function render(){
        if(dim==='src')return SRCG.map(g=>({nm:g[0],cl,f:Object.assign({},f,{srcKeys:g[1]})}));
        if(dim==='city')return [...new Set(cl.map(x=>x.city))].sort().map(ci=>({nm:ci,cl:cl.filter(x=>x.city===ci),f}));
        if(dim==='clinic')return cl.map(x=>({nm:dNm(x),cl:[x],f}));
+       if(dim==='doctor')return docsIn(cl).map(dr=>({nm:docLbl(dr,cl),cl:cl.filter(x=>(x.data.by_doctor||{})[dr]),f:Object.assign({},f,{doctor:dr})}));
        if(dim==='subcat'&&f.cat)return subsForCat(f.cat).map(k=>({nm:subLbl(k.split('::')[1]||k),color:CATCOL[f.cat],cl,f:Object.assign({},f,{subcat:k})}));
        return [];};
      const chain=[DBRK,DCRS,DCR3,DCR4].filter((d,i,a)=>d&&d!=='none'&&a.indexOf(d)===i);
@@ -713,8 +745,8 @@ function render(){
          if(dim==='cat')h+=row('· '.repeat(depth)+m.nm+' % of '+(depth===1?'done':'parent'),pctOf(arr,base),cls+' pct',PCT,{color:m.color||GRN});   // % only at Category level — use ⊕ Combine for other splits
          if(kid&&EXP[tk])h+=renderLvl(m.cl,m.f,rest,depth+1,tk,arr);});
        return h;};
-     const DLB={cat:'Category',src:'Source',city:'City',clinic:'Clinic',subcat:'Sub-category'};
-     const opt=(excl,none,sub)=>{let ds=['cat','src','city','clinic'].filter(d=>excl.indexOf(d)<0);if(sub&&excl.indexOf('subcat')<0)ds.push('subcat');const b=ds.map(d=>[d,(none?'× ':'')+DLB[d]]);return none?[['none','— none —']].concat(b):b;};
+     const DLB={cat:'Category',src:'Source',city:'City',clinic:'Clinic',subcat:'Sub-category',doctor:'Doctor'};
+     const opt=(excl,none,sub)=>{let ds=['cat','src','city','clinic','doctor'].filter(d=>excl.indexOf(d)<0);if(sub&&excl.indexOf('subcat')<0)ds.push('subcat');const b=ds.map(d=>[d,(none?'× ':'')+DLB[d]]);return none?[['none','— none —']].concat(b):b;};
      const sel=(fn,cur,list)=>'<select onchange="'+fn+'(this.value)" style="font-size:11.5px;border:1px solid var(--line);border-radius:6px;padding:3px 8px;margin-left:6px;background:#fff;font-family:Inter;font-weight:600;color:var(--accent);cursor:pointer">'+list.map(o=>'<option value="'+o[0]+'"'+(cur===o[0]?' selected':'')+'>'+o[1]+'</option>').join('')+'</select>';
      if(_cb)_cb.innerHTML='<span style="font-size:10px;font-weight:700;letter-spacing:.05em;color:var(--muted)">BREAK DONE BY</span>'+sel('setDBRK',DBRK,opt([],false,false))+sel('setDCRS',DCRS,opt([DBRK],true,DBRK==='cat'))+(DCRS!=='none'?sel('setDCR3',DCR3,opt([DBRK,DCRS],true,DBRK==='cat'||DCRS==='cat')):'')+(DCR3!=='none'?sel('setDCR4',DCR4,opt([DBRK,DCRS,DCR3],true,DBRK==='cat'||DCRS==='cat'||DCR3==='cat')):'');
      O+=renderLvl(clinics,{},chain,1,'ddrill',dtot);
@@ -731,13 +763,15 @@ function render(){
    const _pb=$('purCtlBar');
    if(SEG!=='online'){
      const sel=(fn,cur,list)=>'<select onchange="'+fn+'(this.value)" style="font-size:11.5px;border:1px solid var(--line);border-radius:6px;padding:3px 8px;margin-left:6px;background:#fff;font-family:Inter;font-weight:600;color:var(--accent);cursor:pointer">'+list.map(o=>'<option value="'+o[0]+'"'+(cur===o[0]?' selected':'')+'>'+o[1]+'</option>').join('')+'</select>';
-     const crossL=PBRK==='cat'?[['none','— no cross —'],['clinic','× Clinic'],['city','× City']]:PBRK==='clinic'?[['none','— no cross —'],['cat','× Category']]:[['none','— no cross —'],['cat','× Category'],['clinic','× Clinic']];
-     if(_pb)_pb.innerHTML='<span style="font-size:10px;font-weight:700;letter-spacing:.05em;color:var(--muted)">BREAK PURCHASED BY</span>'+sel('setPBRK',PBRK,[['cat','Category'],['clinic','Clinic'],['city','City']])+sel('setPCRS',PCRS,crossL);
+     const crossL=PBRK==='cat'?[['none','— no cross —'],['clinic','× Clinic'],['city','× City'],['doctor','× Doctor']]:PBRK==='clinic'?[['none','— no cross —'],['cat','× Category'],['doctor','× Doctor']]:PBRK==='doctor'?[['none','— no cross —']]:[['none','— no cross —'],['cat','× Category'],['clinic','× Clinic']];
+     const pDoc=(dr,cl)=>cl.filter(x=>(x.data.by_doctor||{})[dr]).reduce((a,x)=>addv(a,(x.data.by_doctor[dr]||{}).purchased||ZA),ZA.slice());
+     if(_pb)_pb.innerHTML='<span style="font-size:10px;font-weight:700;letter-spacing:.05em;color:var(--muted)">BREAK PURCHASED BY</span>'+sel('setPBRK',PBRK,[['cat','Category'],['clinic','Clinic'],['city','City'],['doctor','Doctor']])+sel('setPCRS',PCRS,crossL);
      const emit=(members,crossFn)=>{members.forEach(m=>{if(!m.arr.some(v=>v))return;const c=m.color||GRN;const tk='pbrk_'+String(m.nm).replace(/[^a-z0-9]+/gi,'');
        P+=row('· '+m.nm,m.arr,'sub',N,{color:c,tkey:(PCRS==='none'?null:tk)});
        if(PCRS!=='none'&&EXP[tk])crossFn(m).forEach(s=>{if(s.arr.some(v=>v))P+=row('· · '+s.nm,s.arr,'sub2',N,{color:s.color||c});});});};
-     if(PBRK==='cat')emit(CATS.map(ct=>({nm:ct,arr:catO(ct,'purchased'),color:CATCOL[ct]})),m=>PCRS==='city'?cities.map(ci=>({nm:ci,arr:cityCatPur(ci,m.nm)})):clinics.map(x=>({nm:dNm(x),arr:pCatCl(m.nm,x)})));
-     else if(PBRK==='clinic')emit(clinics.map(x=>({nm:dNm(x),arr:x.data.bottom.purchased||ZA,x:x})),m=>CATS.map(ct=>({nm:ct,arr:pCatCl(ct,m.x),color:CATCOL[ct]})));
+     if(PBRK==='cat')emit(CATS.map(ct=>({nm:ct,arr:catO(ct,'purchased'),color:CATCOL[ct]})),m=>PCRS==='city'?cities.map(ci=>({nm:ci,arr:cityCatPur(ci,m.nm)})):PCRS==='doctor'?docsIn(clinics).map(dr=>({nm:docLbl(dr,clinics),arr:pDoc(dr,clinics)})):clinics.map(x=>({nm:dNm(x),arr:pCatCl(m.nm,x)})));
+     else if(PBRK==='clinic')emit(clinics.map(x=>({nm:dNm(x),arr:x.data.bottom.purchased||ZA,x:x})),m=>PCRS==='doctor'?docsIn([m.x]).map(dr=>({nm:dr,arr:pDoc(dr,[m.x])})):CATS.map(ct=>({nm:ct,arr:pCatCl(ct,m.x),color:CATCOL[ct]})));
+     else if(PBRK==='doctor')emit(docsIn(clinics).map(dr=>({nm:docLbl(dr,clinics),arr:pDoc(dr,clinics)})),m=>[]);
      else emit(cities.map(ci=>({nm:ci,arr:clinics.filter(x=>x.city===ci).reduce((a,x)=>addv(a,x.data.bottom.purchased||ZA),ZA.slice())})),m=>PCRS==='clinic'?clinics.filter(x=>x.city===m.nm).map(x=>({nm:dNm(x),arr:x.data.bottom.purchased||ZA})):CATS.map(ct=>({nm:ct,arr:cityCatPur(m.nm,ct),color:CATCOL[ct]})));
    } else if(_pb)_pb.innerHTML='';
    $('tPur').innerHTML=P;}
@@ -762,14 +796,16 @@ function render(){
    const _rb=$('revCtlBar');
    if(SEG!=='online'){
      const sel=(fn,cur,list)=>'<select onchange="'+fn+'(this.value)" style="font-size:11.5px;border:1px solid var(--line);border-radius:6px;padding:3px 8px;margin-left:6px;background:#fff;font-family:Inter;font-weight:600;color:var(--accent);cursor:pointer">'+list.map(o=>'<option value="'+o[0]+'"'+(cur===o[0]?' selected':'')+'>'+o[1]+'</option>').join('')+'</select>';
-     const crossL=RBRK==='product'?[['none','— no cross —'],['cat','× Category'],['clinic','× Clinic'],['city','× City']]:RBRK==='cat'?[['none','— no cross —'],['product','× Product'],['subcat','× Sub-category'],['clinic','× Clinic']]:RBRK==='clinic'?[['none','— no cross —'],['product','× Product'],['cat','× Category']]:[['none','— no cross —'],['product','× Product'],['cat','× Category'],['clinic','× Clinic']];
-     if(_rb)_rb.innerHTML='<span style="font-size:10px;font-weight:700;letter-spacing:.05em;color:var(--muted)">BREAK REVENUE BY</span>'+sel('setRBRK',RBRK,[['product','Product'],['cat','Category'],['clinic','Clinic'],['city','City']])+sel('setRCRS',RCRS,crossL);
+     const crossL=RBRK==='product'?[['none','— no cross —'],['cat','× Category'],['clinic','× Clinic'],['city','× City'],['doctor','× Doctor']]:RBRK==='cat'?[['none','— no cross —'],['product','× Product'],['subcat','× Sub-category'],['clinic','× Clinic'],['doctor','× Doctor']]:RBRK==='clinic'?[['none','— no cross —'],['product','× Product'],['cat','× Category'],['doctor','× Doctor']]:RBRK==='doctor'?[['none','— no cross —']]:[['none','— no cross —'],['product','× Product'],['cat','× Category'],['clinic','× Clinic']];
+     const rDoc=(dr,cl)=>cl.filter(x=>(x.data.by_doctor||{})[dr]).reduce((a,x)=>addv(a,(x.data.by_doctor[dr]||{}).rev||ZA),ZA.slice());
+     if(_rb)_rb.innerHTML='<span style="font-size:10px;font-weight:700;letter-spacing:.05em;color:var(--muted)">BREAK REVENUE BY</span>'+sel('setRBRK',RBRK,[['product','Product'],['cat','Category'],['clinic','Clinic'],['city','City'],['doctor','Doctor']])+sel('setRCRS',RCRS,crossL);
      const emit=(members,crossFn)=>{members.forEach(m=>{if(!m.arr.some(v=>v))return;const c=m.color||GRN;const tk='rbrk_'+String(m.nm).replace(/[^a-z0-9]+/gi,'');
        R+=row('· '+m.nm,m.arr,'sub',RUP,{color:c,tkey:(RCRS==='none'?null:tk)});
        if(RCRS!=='none'&&EXP[tk])crossFn(m).forEach(s=>{if(s.arr.some(v=>v))R+=row('· · '+s.nm,s.arr,'sub2',RUP,{color:s.color||c});});});};
      if(RBRK==='product')emit(RP.map(p=>({nm:RPL[p],arr:prodTot(p),key:p})),m=>RCRS==='cat'?CATS.map(ct=>({nm:ct,arr:cpSeg(ct,m.key),color:CATCOL[ct]})):RCRS==='city'?cities.map(ci=>({nm:ci,arr:cityRev(ci,x=>clProd(x,m.key))})):clinics.map(x=>({nm:dNm(x),arr:clProd(x,m.key)})));
-     else if(RBRK==='cat')emit(CATS.map(ct=>({nm:ct,arr:catTot(ct),color:CATCOL[ct],key:ct})),m=>RCRS==='product'?RP.map(p=>({nm:RPL[p],arr:cpSeg(m.key,p)})):RCRS==='subcat'?subsForCat(m.key).map(k=>({nm:subLbl(k.split('::')[1]||k),arr:subO(k,'rev')})):clinics.map(x=>({nm:dNm(x),arr:clCat(x,m.key)})));
-     else if(RBRK==='clinic')emit(clinics.map(x=>({nm:dNm(x),arr:clRev(x),x:x})),m=>RCRS==='product'?RP.map(p=>({nm:RPL[p],arr:clProd(m.x,p)})):CATS.map(ct=>({nm:ct,arr:clCat(m.x,ct),color:CATCOL[ct]})));
+     else if(RBRK==='cat')emit(CATS.map(ct=>({nm:ct,arr:catTot(ct),color:CATCOL[ct],key:ct})),m=>RCRS==='product'?RP.map(p=>({nm:RPL[p],arr:cpSeg(m.key,p)})):RCRS==='subcat'?subsForCat(m.key).map(k=>({nm:subLbl(k.split('::')[1]||k),arr:subO(k,'rev')})):RCRS==='doctor'?docsIn(clinics).map(dr=>({nm:docLbl(dr,clinics),arr:rDoc(dr,clinics)})):clinics.map(x=>({nm:dNm(x),arr:clCat(x,m.key)})));
+     else if(RBRK==='clinic')emit(clinics.map(x=>({nm:dNm(x),arr:clRev(x),x:x})),m=>RCRS==='product'?RP.map(p=>({nm:RPL[p],arr:clProd(m.x,p)})):RCRS==='doctor'?docsIn([m.x]).map(dr=>({nm:dr,arr:rDoc(dr,[m.x])})):CATS.map(ct=>({nm:ct,arr:clCat(m.x,ct),color:CATCOL[ct]})));
+     else if(RBRK==='doctor')emit(docsIn(clinics).map(dr=>({nm:docLbl(dr,clinics),arr:rDoc(dr,clinics)})),m=>[]);
      else emit(cities.map(ci=>({nm:ci,arr:cityRev(ci,clRev)})),m=>RCRS==='product'?RP.map(p=>({nm:RPL[p],arr:cityRev(m.nm,x=>clProd(x,p))})):RCRS==='clinic'?clinics.filter(x=>x.city===m.nm).map(x=>({nm:dNm(x),arr:clRev(x)})):CATS.map(ct=>({nm:ct,arr:cityRev(m.nm,x=>clCat(x,ct)),color:CATCOL[ct]})));
    } else if(_rb)_rb.innerHTML='';
    $('tRev').innerHTML=R;}
@@ -797,6 +833,11 @@ function render(){
     // 4) Velocity — bookings/done per available SC hour (is a booking drop tied to availability?)
     AV+=row('Booking velocity · bookings ÷ SC net hr',velo(bk,scNet),'grp',N1,{color:VIO,tkey:'av_vel'});
     if(EXP['av_vel'])AV+=row('· Done velocity · done ÷ SC net hr',velo(dn,scNet),'sub',N1,{color:VIO});
+    // 5) By doctor — SC net available hrs (expand)
+    const docSc=(dr,f)=>clinics.filter(x=>(x.data.by_doctor||{})[dr]).reduce((a,x)=>addv(a,(x.data.by_doctor[dr]||{})[f]||ZA),ZA.slice());
+    const docs=docsIn(clinics);
+    if(docs.length){AV+=row('By doctor · SC net available hrs',scNet,'grp',N1,{color:GRN,tkey:'av_doc'});
+      if(EXP['av_doc'])docs.forEach(dr=>{const a=docSc(dr,'av_sc');if(a.some(v=>v))AV+=row('· '+docLbl(dr,clinics),a,'sub',N1,{color:GRN});});}
     AV+=row('ⓘ roster covers the last ~3 months; older weeks read 0',null,'sub',N,{noheat:true});
   }
   $('tAvail').innerHTML=AV;
