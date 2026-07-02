@@ -20,6 +20,11 @@
   .fbtn{background:#fff;border:1px solid var(--line);border-radius:8px;padding:6px 12px;font-size:12.5px;font-weight:600;color:var(--ink2);cursor:pointer;font-family:Inter}
   .fbtn.on{background:var(--accent);border-color:var(--accent);color:#fff}
   .cmpnote{color:var(--muted);font-size:11.5px;margin:-6px 0 14px}
+  .chiprow{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:12px}
+  .ichip{background:#fff;border:1px solid var(--line);border-radius:20px;padding:5px 13px;font-size:12px;font-weight:600;color:var(--ink2);cursor:pointer;font-family:Inter}
+  .ichip b{color:var(--ink);margin-left:4px}.ichip.on{background:var(--accent);border-color:var(--accent);color:#fff}.ichip.on b{color:#fff}
+  .ichip.zero{opacity:.4} .ichip:hover{border-color:var(--accent)}
+  .densrow{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
   /* ---- founder question chips ---- */
   .qgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(232px,1fr));gap:10px;margin-bottom:16px}
   .qc{background:var(--sheet);border:1px solid var(--line);border-radius:11px;padding:12px 14px;cursor:pointer;transition:box-shadow .15s}
@@ -81,7 +86,7 @@
 <div class="wrap">
   <a class="back" href="index.html">← Dashboard</a>
   <h1>Weekly Diagnostic</h1>
-  <div class="sub">Top-down clinic funnel — <b>Availability → Demand → Bookings → Done → Velocity</b>. We flag the <b>earliest stage that breaks</b>; stages below a break read as likely <i>consequences</i>. <b>Overview</b> scans every clinic to answer "who's broken & where"; pick a clinic to drill in.</div>
+  <div class="sub"><b>Inputs</b> (Availability · Demand · book→done) drive <b>Outputs</b> (Bookings · Done · Velocity). We flag the <b>earliest stage that breaks</b>; stages below a break read as likely <i>consequences</i>. Pick your <b>city</b>, then an <b>issue</b> to see which clinics — or open a clinic to drill in.</div>
   <div class="ctrls">
     <button class="fbtn on" id="mOv" onclick="setMode('ov')">◎ Overview · all clinics</button>
     <span class="lab" style="margin-left:6px">City</span><select id="city"><option value="__all">All cities</option></select>
@@ -93,7 +98,7 @@
   <div id="root"></div>
 </div>
 <script>
-let D=null, CURN=1, BASEN=4, MODE='ov', C=null, OPEN={}, QF=null, CITYF='__all';
+let D=null, CURN=1, BASEN=4, MODE='ov', C=null, OPEN={}, QF='any', CITYF='__all', DENSITY='compact';
 const $=id=>document.getElementById(id);
 const mean=a=>{const b=a.filter(x=>x!=null);return b.length?b.reduce((x,y)=>x+y,0)/b.length:null;};
 const sum=a=>a.reduce((x,y)=>x+(y||0),0);
@@ -104,12 +109,14 @@ const STAGES=[
    metrics:c=>[{nm:'active days',arr:c.availability.active_days,fmtd:0},{nm:'· weekday days',arr:c.availability.wday_days,fmtd:0},{nm:'· weekend days',arr:c.availability.wend_days,fmtd:0},{nm:'roster hours',arr:c.availability.hours,fmtd:1}],headline:0},
   {key:'demand',num:2,name:'Demand',short:'Demand',grp:'input',sub:'leads · lead→book %',diag:'Channel break — GMB / Ads / Practo',fix:'Marketing',
    metrics:c=>[{nm:'leads',arr:c.demand.leads,fmtd:0},{nm:'lead→book % (tagged-lead ~)',arr:c.demand.lead_book_pct,pct:1}],headline:0,byChannel:c=>c.demand.by_channel},
-  {key:'bookings',num:3,name:'Bookings',short:'Book',grp:'input',sub:'SC bookings — fresh / carry-in / rebook / relapse',diag:'Fewer SC bookings',fix:'Demand / PCC',
+  {key:'conversion',num:3,name:'book → done',short:'B→D',grp:'input',sub:'book→done % — processing of demand',diag:'Conversion drop — front-desk / follow-up',fix:'Clinic / PCC',
+   metrics:c=>[{nm:'book→done %',arr:c.done.book_done_pct,pct:1}],headline:0},
+  {key:'bookings',num:4,name:'Bookings',short:'Book',grp:'output',sub:'SC bookings — fresh / carry-in / rebook / relapse',diag:'Fewer SC bookings',fix:'Demand / PCC',
    metrics:c=>[{nm:'SC bookings',arr:c.bookings.total,fmtd:0}],headline:0,
    tax:c=>[{nm:'· fresh — lead this week',arr:c.bookings.new_tw},{nm:'· older-week lead (carry-in)',arr:c.bookings.new_old},{nm:'· rebooked (never done)',arr:c.bookings.rebook},{nm:'· relapse (done before)',arr:c.bookings.relapse}]},
-  {key:'done',num:4,name:'Done',short:'Done',grp:'output',sub:'book→done % · by category',diag:'Conversion drop — front-desk / follow-up',fix:'Clinic / PCC',
-   metrics:c=>[{nm:'book→done %',arr:c.done.book_done_pct,pct:1},{nm:'done',arr:c.done.done,fmtd:0}],headline:0,doneCat:c=>c.done.by_cat},
-  {key:'velocity',num:5,name:'Velocity',short:'Velocity',grp:'output',sub:'bookings / active day (weekday·weekend weighted) ⓘ',diag:'Capacity limit — scheduling / staffing',fix:'Ops · staffing',
+  {key:'done',num:5,name:'Done',short:'Done',grp:'output',sub:'completed SCs · by category (SH/STI/MH)',diag:'Done dropped',fix:'Clinic / PCC',
+   metrics:c=>[{nm:'done',arr:c.done.done,fmtd:0}],headline:0,doneCat:c=>c.done.by_cat},
+  {key:'velocity',num:6,name:'Velocity',short:'Velocity',grp:'output',sub:'bookings / active day (weekday·weekend weighted) ⓘ',diag:'Capacity limit — scheduling / staffing',fix:'Ops · staffing',
    metrics:c=>[{nm:'bookings / active day',arr:c.velocity.per_active_day,fmtd:1}],headline:0,velMath:true},
 ];
 function evalMetric(arr){const NW=arr.length;const cur=mean(arr.slice(NW-CURN));const base=mean(arr.slice(Math.max(0,NW-CURN-BASEN),NW-CURN));
@@ -119,7 +126,7 @@ function evalStage(st,c){const ms=st.metrics(c).map(m=>({...m,ev:evalMetric(m.ar
   const hm=st.headline==='worst'?ms.slice().sort((a,b)=>(a.ev.d??0)-(b.ev.d??0))[0]:ms[st.headline];return {ms,status,hm};}
 function summary(c){const s={};STAGES.forEach(st=>{const e=evalStage(st,c);s[st.key]={st:e.status,d:e.hm.ev.d,cur:e.hm.ev.cur,base:e.hm.ev.base,hm:e.hm,pct:e.hm.pct};});
   s.firstBreak=STAGES.findIndex(st=>s[st.key].st==='red');
-  s.velRate=evalMetric(c.output.per_active_day);   // bookings/active-day for the 'velocity dropping' question
+  s.velRate=evalMetric(c.velocity.per_active_day);   // bookings/active-day for the 'velocity dropping' question
   const bc=c.demand.by_channel;let wc=null,wd=0;for(const ch in bc){const e=evalMetric(bc[ch]);if(e.d!=null&&e.d<wd&&sum(bc[ch].slice(-CURN-BASEN))>=3){wd=e.d;wc=ch;}}
   s.worstChan=wc?{ch:wc,d:wd}:null;return s;}
 function spark(arr,col){const v=arr.map(x=>x==null?0:x);const n=v.length;const mx=Math.max(...v,1),mn=Math.min(...v,0),w=90,h=24,p=3;
@@ -130,41 +137,47 @@ function dpct(d){if(d==null)return '<span class="flat">—</span>';const p=Math.
 function curLabel(){const wl=D.week_labels,NW=wl.length;const c=CURN===1?wl[NW-1]:wl[NW-CURN]+' → '+wl[NW-1];const b=wl[Math.max(0,NW-CURN-BASEN)]+' → '+wl[NW-CURN-1];return {c,b};}
 
 // ---------- OVERVIEW (portfolio scan) ----------
-const QUESTIONS=[
-  {key:'ad_ok_dem',cls:'red',label:'Availability OK, but <b>demand dropped</b>',test:s=>s.availability.st==='green'&&(s.demand.st==='red'||s.demand.st==='amber')},
-  {key:'vel',cls:'warn',label:'<b>Bookings / active-day dropping</b> suddenly',test:s=>s.velRate.st==='red'||s.velRate.st==='amber'},
-  {key:'dem',cls:'red',label:'<b>Demand dropped</b> — & from which channel',test:s=>s.demand.st==='red'||s.demand.st==='amber'},
-  {key:'any',cls:'acc',label:'Any clinic with a <b>funnel break</b> (red)',test:s=>s.firstBreak>=0},
-];
+function whyText(s,fb){
+  if(fb<0){const amb=STAGES.findIndex(st=>s[st.key].st==='amber');return amb<0?'stable':'watch: '+STAGES[amb].name.toLowerCase()+' '+Math.round(s[STAGES[amb].key].d*100)+'%';}
+  const st=STAGES[fb],x=s[st.key];let why='<b>'+st.diag.split(' — ')[0]+'</b> · '+cap(x.hm.nm)+' '+Math.round(x.d*100)+'%';
+  if(st.key==='demand'&&s.worstChan)why+=' · worst: '+s.worstChan.ch+' ('+Math.round(s.worstChan.d*100)+'%)';
+  if(fb<STAGES.length-1)why+=' → fix '+st.fix+' first';
+  return why;
+}
 function renderOverview(){
-  const lbl=curLabel();$('cmpnote').innerHTML='Comparing <b>'+lbl.c+'</b> vs baseline <b>'+lbl.b+'</b> · red ≤ −15%, amber ≤ −7% (relative).';
+  const lbl=curLabel();$('cmpnote').innerHTML='City: <b>'+(CITYF==='__all'?'All clinics':CITYF)+'</b> · '+lbl.c+' vs baseline '+lbl.b+' · red ≤ −15%, amber ≤ −7%.';
   const rows=Object.keys(D.clinics).filter(slug=>CITYF==='__all'||D.clinics[slug].city===CITYF).map(slug=>({slug,c:D.clinics[slug],s:summary(D.clinics[slug])}));
-  // question chips (counts)
-  let h='<div class="qgrid">';
-  QUESTIONS.forEach(qq=>{const n=rows.filter(r=>qq.test(r.s)).length;h+='<div class="qc '+qq.cls+(QF===qq.key?' on':'')+'" onclick="setQF(\''+qq.key+'\')"><div class="qn">'+n+'</div><div class="ql">'+qq.label+'</div></div>';});
-  h+='</div>';
-  // table
-  const q=QUESTIONS.find(x=>x.key===QF);
-  let list=rows.slice();
-  if(q)list=list.filter(r=>q.test(r.s));
-  // sort: most broken first (firstBreak asc, then worst demand delta)
+  const broken=rows.filter(r=>r.s.firstBreak>=0).length, healthy=rows.length-broken;
+  // ISSUE chips: Any + one per stage (by earliest/root break) + founder cross
+  const chips=[{key:'any',label:'Any issue',n:broken}]
+    .concat(STAGES.map((st,i)=>({key:'st'+i,label:st.name,n:rows.filter(r=>r.s.firstBreak===i).length})))
+    .concat([{key:'ad_ok_dem',label:'Avail OK · demand ↓',n:rows.filter(r=>r.s.availability.st==='green'&&(r.s.demand.st==='red'||r.s.demand.st==='amber')).length}]);
+  let h='<div class="chiprow">'+chips.map(c=>'<button class="ichip'+(QF===c.key?' on':'')+(c.n?'':' zero')+'" onclick="setQF(\''+c.key+'\')">'+c.label+' <b>'+c.n+'</b></button>').join('')+'</div>';
+  // filter list
+  let list;
+  if(QF==='ad_ok_dem') list=rows.filter(r=>r.s.availability.st==='green'&&(r.s.demand.st==='red'||r.s.demand.st==='amber'));
+  else if(QF&&QF.indexOf('st')===0){const i=+QF.slice(2);list=rows.filter(r=>r.s.firstBreak===i);}
+  else list=rows.filter(r=>r.s.firstBreak>=0);   // 'any'
   list.sort((a,b)=>{const fa=a.s.firstBreak<0?9:a.s.firstBreak,fb=b.s.firstBreak<0?9:b.s.firstBreak;if(fa!==fb)return fa-fb;return (a.s.demand.d??0)-(b.s.demand.d??0);});
-  h+='<div class="fmwrap"><table class="fm"><thead><tr><th>Clinic ('+list.length+')</th>'+STAGES.map(s=>'<th>'+s.short+' Δ</th>').join('')+'<th>earliest break</th><th style="text-align:left">why · vs baseline</th></tr></thead><tbody>';
-  if(!list.length)h+='<tr><td colspan="7" style="color:var(--muted);padding:16px">No clinics match — funnel healthy for this filter/window.</td></tr>';
-  list.forEach(r=>{const s=r.s;
-    const cells=STAGES.map(st=>{const x=s[st.key];const cls=x.st;const dd=x.d==null?'·':(Math.round(x.d*100)+'%');return '<td><span class="cell '+cls+'">'+(x.st==='green'?'<span style="color:var(--muted)">'+dd+'</span>':dd)+'</span></td>';}).join('');
-    const fb=s.firstBreak; const brk=fb<0?'<span class="brk none">—</span>':'<span class="brk red">'+STAGES[fb].num+' · '+STAGES[fb].name+'</span>';
-    let why='';
-    if(fb<0){const amb=STAGES.findIndex(st=>s[st.key].st==='amber');why=amb<0?'stable':'watch: '+STAGES[amb].name.toLowerCase()+' '+Math.round(s[STAGES[amb].key].d*100)+'%';}
-    else{const st=STAGES[fb],x=s[st.key];why='<b>'+st.diag.split(' — ')[0]+'</b> · '+cap(x.hm.nm)+' '+Math.round(x.d*100)+'%';
-      if(st.key==='demand'&&s.worstChan)why+=' · worst channel: '+s.worstChan.ch+' ('+Math.round(s.worstChan.d*100)+'%)';
-      if(fb<STAGES.length-1)why+=' → fix '+st.fix+' first';}
-    h+='<tr><td onclick="goClinic(\''+r.slug+'\')">'+r.c.disp+'</td>'+cells+'<td>'+brk+'</td><td class="why">'+why+'</td></tr>';
-  });
-  h+='</tbody></table></div>';
+  h+='<div class="densrow"><span class="lab" style="text-transform:none;font-weight:600;color:var(--ink2)">'+list.length+' clinic'+(list.length===1?'':'s')+' to look at · '+healthy+' healthy</span><button class="fbtn" onclick="toggleDens()">'+(DENSITY==='full'?'▾ hide stage detail':'▸ stage detail')+'</button></div>';
+  if(DENSITY==='full'){
+    h+='<div class="fmwrap"><table class="fm"><thead><tr><th>Clinic</th>'+STAGES.map(s=>'<th>'+s.short+'</th>').join('')+'<th>break</th><th style="text-align:left">why · vs baseline</th></tr></thead><tbody>';
+    if(!list.length)h+='<tr><td colspan="'+(STAGES.length+3)+'" style="color:var(--muted);padding:16px;text-align:left">Nothing here — healthy for this filter/city.</td></tr>';
+    list.forEach(r=>{const s=r.s;const cells=STAGES.map(st=>{const x=s[st.key];const dd=x.d==null?'·':(Math.round(x.d*100)+'%');return '<td><span class="cell '+x.st+'">'+(x.st==='green'?'<span style="color:var(--muted)">'+dd+'</span>':dd)+'</span></td>';}).join('');
+      const fb=s.firstBreak,brk=fb<0?'<span class="brk none">—</span>':'<span class="brk red">'+STAGES[fb].num+'·'+STAGES[fb].name+'</span>';
+      h+='<tr><td onclick="goClinic(\''+r.slug+'\')">'+r.c.disp+'</td>'+cells+'<td>'+brk+'</td><td class="why">'+whyText(s,fb)+'</td></tr>';});
+    h+='</tbody></table></div>';
+  } else {
+    h+='<div class="fmwrap"><table class="fm" style="min-width:560px"><thead><tr><th>Clinic</th><th style="text-align:left">earliest break</th><th style="text-align:left">why · vs baseline · click to drill</th></tr></thead><tbody>';
+    if(!list.length)h+='<tr><td colspan="3" style="color:var(--muted);padding:16px;text-align:left">Nothing here — healthy for this filter/city.</td></tr>';
+    list.forEach(r=>{const s=r.s,fb=s.firstBreak,brk=fb<0?'<span class="brk none">—</span>':'<span class="brk red">'+STAGES[fb].num+'·'+STAGES[fb].name+'</span>';
+      h+='<tr><td onclick="goClinic(\''+r.slug+'\')">'+r.c.disp+'</td><td style="text-align:left">'+brk+'</td><td class="why">'+whyText(s,fb)+'</td></tr>';});
+    h+='</tbody></table></div>';
+  }
   $('root').innerHTML=h;
 }
-function setQF(k){QF=(QF===k?null:k);renderOverview();}
+function setQF(k){QF=k;renderOverview();}
+function toggleDens(){DENSITY=(DENSITY==='full'?'compact':'full');renderOverview();}
 function goClinic(slug){$('clinic').value=slug;C=D.clinics[slug];MODE='cl';OPEN={};syncMode();render();}
 
 // ---------- PER-CLINIC FUNNEL (drill) ----------
@@ -222,7 +235,9 @@ async function boot(){
   catch(e){$('root').innerHTML='<div class="err">Failed to load data_weekly_diag.json</div>';return;}
   const cities=[...new Set(Object.values(D.clinics).map(c=>c.city))].sort();
   $('city').innerHTML='<option value="__all">All cities</option>'+cities.map(c=>'<option value="'+c+'">'+c+'</option>').join('');
-  $('city').onchange=()=>{CITYF=$('city').value;const ks=clinicOpts();if(MODE==='cl'){C=D.clinics[ks[0]];OPEN={};}render();};
+  try{const saved=localStorage.getItem('wd_city');if(saved&&(saved==='__all'||cities.includes(saved)))CITYF=saved;}catch(e){}
+  $('city').value=CITYF;
+  $('city').onchange=()=>{CITYF=$('city').value;try{localStorage.setItem('wd_city',CITYF);}catch(e){}const ks=clinicOpts();if(MODE==='cl'){C=D.clinics[ks[0]];OPEN={};}render();};
   const ks=clinicOpts();
   $('clinic').onchange=()=>{C=D.clinics[$('clinic').value];MODE='cl';OPEN={};syncMode();render();};
   $('curn').onchange=()=>{CURN=+$('curn').value;render();};
