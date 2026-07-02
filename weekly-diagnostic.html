@@ -289,16 +289,28 @@ function tog(k){OPEN[k]=!OPEN[k];const el=$('dr_'+k);if(el)el.classList.toggle('
 function setMode(m){MODE=m;syncMode();render();}
 function syncMode(){$('mOv').classList.toggle('on',MODE==='ov');$('clinic').style.opacity=MODE==='cl'?'1':'.55';}
 function render(){MODE==='ov'?renderOverview():renderClinic();}
-function clinicOpts(){const ks=Object.keys(D.clinics).filter(s=>CITYF==='__all'||D.clinics[s].city===CITYF).sort((a,b)=>D.clinics[a].disp.localeCompare(D.clinics[b].disp));
+function clinicOpts(){const ks=Object.keys(D.clinics).filter(s=>inCity(D.clinics[s].city)).sort((a,b)=>D.clinics[a].disp.localeCompare(D.clinics[b].disp));
   $('clinic').innerHTML=ks.map(s=>'<option value="'+s+'">'+D.clinics[s].disp+'</option>').join('');return ks;}
+let ALLCITIES=[];
+function openCityMs(e){e.stopPropagation();const p=$('cityPanel');const show=!p.classList.contains('on');document.querySelectorAll('.mspanel').forEach(x=>x.classList.remove('on'));if(show){renderCityPanel('');p.classList.add('on');const q=$('cityQ');if(q)q.focus();}}
+function renderCityPanel(q){q=(q||'').toLowerCase();
+  const list=ALLCITIES.filter(c=>c.toLowerCase().includes(q));
+  let h='<input id="cityQ" class="msq" placeholder="search city…" oninput="renderCityPanel(this.value)" onclick="event.stopPropagation()">'
+    +'<div class="msact"><a onclick="allCity(1)">select all</a><a onclick="allCity(0)">clear</a></div>';
+  list.forEach(c=>{const n=Object.values(D.clinics).filter(x=>x.city===c).length;h+='<label class="msi" onclick="event.stopPropagation()"><input type="checkbox" '+(CITYF.has(c)?'checked':'')+' onchange="togCity(\''+c.replace(/'/g,"\\'")+'\')">'+c+'<span class="c">'+n+'</span></label>';});
+  $('cityPanel').innerHTML=h;}
+function cityChanged(){$('cityBtn').textContent=(CITYF.size?CITYF.size+' cit'+(CITYF.size===1?'y':'ies'):'All cities')+' ▾';$('cityBtn').classList.toggle('on',!!CITYF.size);
+  try{localStorage.setItem('wd_city',JSON.stringify([...CITYF]));}catch(e){}
+  const ks=clinicOpts();if(MODE==='cl'){C=D.clinics[ks[0]];OPEN={};}render();}
+function togCity(c){CITYF.has(c)?CITYF.delete(c):CITYF.add(c);cityChanged();}
+function allCity(on){CITYF=on?new Set(ALLCITIES):new Set();renderCityPanel($('cityQ')?$('cityQ').value:'');cityChanged();}
 async function boot(){
   try{D=await fetch('data_weekly_diag.json').then(r=>r.json());}
   catch(e){$('root').innerHTML='<div class="err">Failed to load data_weekly_diag.json</div>';return;}
-  const cities=[...new Set(Object.values(D.clinics).map(c=>c.city))].sort();
-  $('city').innerHTML='<option value="__all">All cities</option>'+cities.map(c=>'<option value="'+c+'">'+c+'</option>').join('');
-  try{const saved=localStorage.getItem('wd_city');if(saved&&(saved==='__all'||cities.includes(saved)))CITYF=saved;}catch(e){}
-  $('city').value=CITYF;
-  $('city').onchange=()=>{CITYF=$('city').value;try{localStorage.setItem('wd_city',CITYF);}catch(e){}const ks=clinicOpts();if(MODE==='cl'){C=D.clinics[ks[0]];OPEN={};}render();};
+  ALLCITIES=[...new Set(Object.values(D.clinics).map(c=>c.city))].sort();
+  try{const saved=JSON.parse(localStorage.getItem('wd_city')||'[]');if(Array.isArray(saved))saved.forEach(c=>{if(ALLCITIES.includes(c))CITYF.add(c);});}catch(e){}
+  $('cityBtn').textContent=(CITYF.size?CITYF.size+' cit'+(CITYF.size===1?'y':'ies'):'All cities')+' ▾';$('cityBtn').classList.toggle('on',!!CITYF.size);
+  document.addEventListener('click',e=>{if(!e.target.closest('.ms'))document.querySelectorAll('.mspanel').forEach(x=>x.classList.remove('on'));});
   const ks=clinicOpts();
   $('clinic').onchange=()=>{C=D.clinics[$('clinic').value];MODE='cl';OPEN={};syncMode();render();};
   $('curn').onchange=()=>{CURN=+$('curn').value;render();};
