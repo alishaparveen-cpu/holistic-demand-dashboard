@@ -38,6 +38,14 @@ tr.pct td:first-child{color:var(--vio)}
 td.av{background:var(--inset);font-weight:600}
 .spark{display:inline-block;vertical-align:middle}
 .chan-hd td{background:linear-gradient(90deg,rgba(31,111,92,.06),transparent);font-weight:700;font-size:13px;border-top:2px solid var(--line)}
+.lbl{font-size:10px;font-weight:700;letter-spacing:.05em;color:var(--muted);text-transform:uppercase}
+.gdms{position:relative;display:inline-block}
+.gdpanel{display:none;position:absolute;z-index:40;top:112%;left:0;background:#fff;border:1px solid var(--line);border-radius:9px;box-shadow:0 10px 30px rgba(0,0,0,.15);max-height:340px;overflow:auto;padding:8px;min-width:200px}
+.gdpanel.open{display:block}
+.gdpanel label{display:block;font-size:12px;padding:3px 6px;white-space:nowrap;cursor:pointer;font-family:Inter}
+.gdpanel label:hover{background:var(--inset)}
+.gdpanel a{display:block;font-size:11px;color:var(--accent);cursor:pointer;padding:5px 6px;border-top:1px solid var(--line);margin-top:4px}
+.gdsearch{width:100%;box-sizing:border-box;padding:6px 8px;margin-bottom:5px;border:1px solid var(--line);border-radius:6px;font-family:Inter;font-size:12px}
 </style>
 </head>
 <body>
@@ -48,7 +56,7 @@ td.av{background:var(--inset);font-weight:600}
 
   <div class="ctl">
     <span class="lbl">Weeks</span>
-    <select id="rng" class="sel" onchange="NSHOW=+this.value;paint()">
+    <select id="rng" class="sel" onchange="NSHOW=+this.value;paint();paintGD()">
       <option value="6">6 weeks</option><option value="8" selected>8 weeks</option><option value="13">13 weeks</option><option value="26">26 weeks</option><option value="52">52 weeks</option>
     </select>
     <span class="lbl" style="margin-left:8px">Focus</span>
@@ -56,6 +64,13 @@ td.av{background:var(--inset);font-weight:600}
   </div>
 
   <div id="tables"></div>
+
+  <!-- ═══ Google Ads · detail master view ═══ -->
+  <div style="margin-top:34px;border-top:3px solid var(--line);padding-top:20px">
+    <div class="shead" style="font-size:20px">🔵 Google Ads · detail funnel <span class="lblmuted">(per-campaign export — filter by category / placement / city / campaign, then the full funnel: spend → impressions → clicks → leads → book → done. Break down by campaign, city or category. 5-wk snapshot.)</span></div>
+    <div id="gdCtl" style="margin:8px 0 14px"></div>
+    <div id="gdetail"></div>
+  </div>
 </div>
 <script>
 let D=null,GAF=null,NSHOW=8,FOCUS='all';
@@ -151,10 +166,83 @@ function paint(){
   $('chanChips').innerHTML=[['all','All channels']].concat(CH.map(c=>[c.key,c.icon+' '+c.name])).map(o=>'<button class="chip'+(FOCUS===o[0]?' on':'')+'" onclick="FOCUS=\''+o[0]+'\';paint()">'+o[1]+'</button>').join(' ');
 }
 
+// ═══ Google Ads · detail master view ═══
+const GVIO='#7B5EA7',GBLU='#2b5cad',GGRN='#1F6F5C',GAMB='#b0752a';
+let GDCAT='all',GDPLACE='all',GDBRK='none',GDMET='spend',GDCITY=new Set(),GDCAMP=new Set();
+function placeOf(c){if(String(c.category)==='Brand')return'brand';if(c.type==='Online'||c.city==='Online / National')return'online';if(c.city&&c.city!=='Brand'&&c.city!=='Online / National')return'citymapped';return'other';}
+function gafwk(){return (GAF._meta.weeks||[]).map(w=>(D._meta.weeks||[]).indexOf(w));}
+function gdAll(){return (GAF&&GAF.campaigns)?GAF.campaigns:[];}
+function gdCamps(){return gdAll().filter(c=>{if(GDCAT!=='all'&&c.category!==GDCAT)return false;if(GDPLACE!=='all'&&placeOf(c)!==GDPLACE)return false;if(GDCITY.size&&!GDCITY.has(c.city))return false;if(GDCAMP.size&&!GDCAMP.has(c.slug))return false;return true;});}
+function gdSum(camps,key){const s=[0,0,0,0,0];camps.forEach(c=>{const a=(c.rows||{})[key]||[];for(let k=0;k<5;k++)s[k]+=(a[k]||0);});const o=Array((D._meta.weeks||[]).length).fill(null);gafwk().forEach((gi,k)=>{if(gi>=0)o[gi]=s[k];});return o;}
+function setGDCAT(v){GDCAT=v;GDCAMP=new Set();paintGD();}
+function setGDPLACE(v){GDPLACE=v;GDCITY=new Set();GDCAMP=new Set();paintGD();}
+function setGDBRK(v){GDBRK=v;paintGD();}
+function setGDMET(v){GDMET=v;paintGD();}
+function togGDCity(c){GDCITY.has(c)?GDCITY.delete(c):GDCITY.add(c);GDCAMP=new Set();paintGD();}
+function clrGDCity(){GDCITY=new Set();paintGD();}
+function togGDCamp(s){GDCAMP.has(s)?GDCAMP.delete(s):GDCAMP.add(s);paintGD();}
+function clrGDCamp(){GDCAMP=new Set();paintGD();}
+const GDMETS=[['spend','Spend ₹','rup'],['impression','Impressions','n'],['click','Clicks','n'],['loc_click','Loc clicks','n'],['web_leads','Web leads','n'],['cat_leads','Category leads','n'],['book','Book','n'],['done','Done','n'],['cpl','CPL ₹/lead','rup'],['b2d','Book→Done %','pct']];
+function paintGD(){
+  const _gd=$('gdetail');if(!_gd)return;
+  if(!GAF||!GAF.campaigns){_gd.innerHTML='<div style="color:var(--muted);padding:16px">No Google campaign data (data_ga_funnel.json).</div>';return;}
+  const camps=gdCamps(),S=k=>gdSum(camps,k);
+  const spend=S('spend'),impr=S('impression'),locImp=S('loc_impr'),click=S('click'),locC=S('loc_click'),cityCall=S('city_calls'),gmbCall=S('gmb_calls'),webL=S('web_leads'),catL=S('cat_leads'),book=S('book'),done=S('done');
+  const rat=(a,b)=>a.map((v,i)=>b[i]?Math.round(v/b[i]*100):null);
+  const cpX=(sp,x)=>sp.map((v,i)=>x[i]?Math.round(v/x[i]):null);
+  const chip=(fn,val,cur,lab)=>'<button onclick="'+fn+'(\''+val+'\')" class="chip'+(cur===val?' on':'')+'">'+lab+'</button>';
+  let bar='<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px">';
+  bar+='<span class="lbl">Category</span>'+['all','MH','SH','STD','Brand'].map(v=>chip('setGDCAT',v,GDCAT,v==='all'?'All':v)).join('');
+  bar+='<span class="lbl" style="margin-left:10px">Placement</span>'+[['all','All'],['citymapped','City-mapped'],['online','Online'],['brand','Brand']].map(o=>chip('setGDPLACE',o[0],GDPLACE,o[1])).join('');
+  bar+='</div><div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">';
+  const cityList=[...new Set(gdAll().filter(c=>placeOf(c)==='citymapped').map(c=>c.city))].sort();
+  bar+='<span class="lbl">City</span><span class="gdms"><button class="chip" onclick="this.nextElementSibling.classList.toggle(\'open\');event.stopPropagation()">'+(GDCITY.size?GDCITY.size+' cities':'All cities')+' ▾</button><div class="gdpanel">'+cityList.map(c=>'<label><input type="checkbox" '+(GDCITY.has(c)?'checked':'')+' onchange="togGDCity(this.value)" value="'+c+'"> '+c+'</label>').join('')+(GDCITY.size?'<a onclick="clrGDCity()">clear</a>':'')+'</div></span>';
+  bar+='<span class="lbl" style="margin-left:8px">Campaign</span><span class="gdms"><button class="chip" onclick="this.nextElementSibling.classList.toggle(\'open\');event.stopPropagation()">'+(GDCAMP.size?GDCAMP.size+' campaigns':'All ('+camps.length+')')+' ▾</button><div class="gdpanel" style="min-width:300px"><input class="gdsearch" placeholder="🔍 search campaign…" oninput="var q=this.value.toLowerCase();[...this.parentNode.querySelectorAll(String.fromCharCode(108,97,98,101,108))].forEach(function(l){l.style.display=l.textContent.toLowerCase().indexOf(q)>=0?\'\':\'none\'})" onclick="event.stopPropagation()">'+camps.map(c=>'<label><input type="checkbox" '+(GDCAMP.has(c.slug)?'checked':'')+' onchange="togGDCamp(this.value)" value="'+c.slug+'"> '+c.name+'</label>').join('')+(GDCAMP.size?'<a onclick="clrGDCamp()">clear</a>':'')+'</div></span>';
+  bar+='<span style="margin-left:auto;font-size:11px;color:var(--muted);font-family:JetBrains Mono">'+camps.length+' of '+gdAll().length+' campaigns · ₹'+Math.round(spend.reduce((a,b)=>a+(b||0),0)/1000)+'k / 5wk</span></div>';
+  $('gdCtl').innerHTML=bar;
+  let T=head('Google Ads · funnel');
+  T+=row('Spend (₹)',spend,'tot',RUP,{color:GAMB});
+  T+=row('Impressions',impr,'grp',N,{color:GBLU});
+  T+=row('· location impressions',locImp,'sub',N,{color:GBLU});
+  T+=row('· loc-impr %',rat(locImp,impr),'pct',PCT,{noheat:true});
+  T+=row('Clicks',click,'grp',N,{color:GGRN});
+  T+=row('· CTR %',rat(click,impr),'pct',PCT,{noheat:true});
+  T+=row('· location clicks',locC,'sub',N,{color:GGRN});
+  T+=row('· loc-click % of clicks',rat(locC,click),'pct',PCT,{noheat:true});
+  T+=row('· city phone calls (Google paid)',cityCall,'sub',N,{color:GGRN});
+  T+=row('· GMB phone calls (organic)',gmbCall,'sub',N,{color:GGRN});
+  T+=row('Web leads (UTM)',webL,'grp',N,{color:GGRN});
+  T+=row('· loc-click → lead % (C2L)',rat(webL,locC),'pct',PCT,{noheat:true});
+  T+=row('· CPL — ₹ per lead',cpX(spend,webL),'sub',RUP,{color:GAMB});
+  T+=row('· category-specific leads',catL,'sub',N,{color:GGRN});
+  T+=row('Book',book,'grp',N,{color:GBLU});
+  T+=row('· lead → book %',rat(book,webL),'pct',PCT,{noheat:true});
+  T+=row('· CPB — ₹ per book',cpX(spend,book),'sub',RUP,{color:GAMB});
+  T+=row('Done',done,'grp',N,{color:GGRN});
+  T+=row('· book → done %',rat(done,book),'pct',PCT,{noheat:true});
+  T+=row('· CPD — ₹ per done',cpX(spend,done),'sub',RUP,{color:GAMB});
+  let html=tbl(T);
+  const bsel=(fn,cur,list)=>'<select class="sel" onchange="'+fn+'(this.value)">'+list.map(o=>'<option value="'+o[0]+'"'+(cur===o[0]?' selected':'')+'>'+o[1]+'</option>').join('')+'</select>';
+  html+='<div style="display:flex;gap:8px;align-items:center;margin:18px 0 8px"><span class="lbl">Break down by</span>'+bsel('setGDBRK',GDBRK,[['none','— none —'],['campaign','Campaign'],['city','City'],['category','Category']])+(GDBRK!=='none'?'<span class="lbl" style="margin-left:8px">Metric</span>'+bsel('setGDMET',GDMET,GDMETS.map(m=>[m[0],m[1]])):'')+'</div>';
+  if(GDBRK!=='none'){
+    let members=[];
+    if(GDBRK==='campaign')members=camps.map(c=>({nm:c.name,camps:[c]}));
+    else{const key=GDBRK==='city'?'city':'category';const g={};camps.forEach(c=>{(g[c[key]]=g[c[key]]||[]).push(c);});members=Object.keys(g).sort().map(k=>({nm:k,camps:g[k]}));}
+    const met=GDMETS.find(m=>m[0]===GDMET)||GDMETS[0];
+    const fmt=met[2]==='rup'?RUP:met[2]==='pct'?PCT:N;
+    const memArr=cs=>{if(GDMET==='cpl')return cpX(gdSum(cs,'spend'),gdSum(cs,'web_leads'));if(GDMET==='b2d')return rat(gdSum(cs,'done'),gdSum(cs,'book'));return gdSum(cs,GDMET);};
+    let B=head(met[1]+' · by '+GDBRK);
+    members.map(m=>({nm:m.nm,a:memArr(m.camps)})).filter(m=>m.a.some(v=>v!=null&&v!==0)).sort((x,y)=>{const lx=x.a.filter(v=>v!=null).pop()||0,ly=y.a.filter(v=>v!=null).pop()||0;return ly-lx;}).forEach(m=>{B+=row('· '+m.nm,m.a,'sub',fmt,{noheat:GDMET==='b2d'||GDMET==='cpl'});});
+    html+=tbl(B);
+  }
+  _gd.innerHTML=html;
+}
+document.addEventListener('click',function(e){if(!e.target.closest('.gdms'))document.querySelectorAll('.gdpanel.open').forEach(function(p){p.classList.remove('open');});});
+
 Promise.all([
   fetch('data_source_recon.json?v='+Date.now()).then(r=>r.json()),
   fetch('data_ga_funnel.json?v='+Date.now()).then(r=>r.ok?r.json():null).catch(()=>null)
-]).then(([j,gf])=>{D=j;GAF=gf;paint();}).catch(e=>{$('tables').innerHTML='<div style="color:#B23A2E;padding:20px">Could not load data: '+e.message+'</div>';});
+]).then(([j,gf])=>{D=j;GAF=gf;paint();paintGD();}).catch(e=>{$('tables').innerHTML='<div style="color:#B23A2E;padding:20px">Could not load data: '+e.message+'</div>';});
 </script>
 </body>
 </html>
