@@ -108,6 +108,21 @@
   table.d td.last{color:var(--accent);font-weight:700}
   table.d tr.subr td{font-size:11px;color:var(--ink2)} table.d tr.subr td:first-child{padding-left:18px;font-weight:500;color:var(--muted)}
   .dhead{font-family:Fraunces;font-size:14px;font-weight:600;margin-bottom:7px}
+  /* ---- redesigned per-clinic funnel: readable stage cards ---- */
+  .sgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(440px,1fr));gap:14px}
+  .scard{background:var(--sheet);border:1px solid var(--line);border-left:4px solid var(--line);border-radius:var(--r);padding:14px 16px 12px}
+  .scard.red{border-left-color:var(--bad)} .scard.amber{border-left-color:var(--warn)} .scard.green{border-left-color:var(--good)}
+  .scard-hd{display:flex;align-items:center;gap:12px;margin-bottom:9px}
+  .scard-t{flex:1;min-width:0}
+  .chartwrap{cursor:zoom-in;background:var(--inset);border-radius:9px;padding:9px 8px 4px;margin:2px 0 9px;position:relative}
+  .chartwrap:hover{box-shadow:inset 0 0 0 1.5px var(--line)}
+  .chartwrap .zhint{position:absolute;top:6px;right:9px;font-size:10px;color:var(--faint);opacity:0;transition:opacity .15s}
+  .chartwrap:hover .zhint{opacity:1}
+  .bchips{display:flex;flex-wrap:wrap;gap:7px 15px;font-size:12.5px;line-height:1.5}
+  .bchip{display:inline-flex;align-items:baseline;gap:5px;color:var(--ink2)}
+  .bchip .dot{width:9px;height:9px;border-radius:2px;display:inline-block;align-self:center}
+  .bchip b{color:var(--ink);font-family:'JetBrains Mono';font-weight:700}
+  .bchip .dd{font-family:'JetBrains Mono';font-size:11px;font-weight:700;margin-left:1px}
   .zero{color:var(--faint)} .err{color:var(--bad);padding:30px;text-align:center}
   /* redesigned toolbar */
   .toolbar{display:flex;align-items:center;gap:14px;flex-wrap:wrap;background:#fff;border:1px solid var(--line);border-radius:12px;padding:9px 14px;margin-bottom:10px;box-shadow:0 1px 3px rgba(0,0,0,.03)}
@@ -251,6 +266,28 @@ function openZoom(z){if(!z)return;if(z!==CURZ){PICKA=null;PICKB=null;}CURZ=z;
   $('modal').classList.add('on');}
 document.addEventListener('keydown',e=>{if(e.key==='Escape')closeZ();});
 function dpct(d){if(d==null)return '<span class="flat">—</span>';const p=Math.round(d*100);return '<span class="'+(p>0?'up':p<0?'down':'flat')+'">'+(p>0?'+':'')+p+'%</span>';}
+// breakdown line palette (distinct from red/amber/green status colours)
+const BPAL=['#C2691F','#5B8DB8','#9B6BB0','#B0894E','#4E9A8A','#8A8A80'];
+// readable inline multi-line chart — main series bold + value labels, breakdown thin; last ~12 weeks
+function miniChart(series,labels,pct){
+  const W=720,H=176,pad=36,padT=16,padB=28,SHOW=Math.min(labels.length,12),off=labels.length-SHOW;
+  const L=labels.slice(off),n=L.length;
+  const S=series.map(s=>({...s,v:s.arr.slice(off).map(x=>x==null||isNaN(x)?null:x)}));
+  let all=[];S.forEach(s=>s.v.forEach(x=>{if(x!=null)all.push(x);}));
+  const vmn=all.length?Math.min(...all):0,vmx=all.length?Math.max(...all):1,rng=(vmx-vmn)||Math.abs(vmx)||1;
+  const lo=Math.max(0,vmn-rng*0.12),hi=vmx+rng*0.20;
+  const x=i=>pad+i*(W-pad-10)/((n-1)||1),y=v=>H-padB-((v-lo)/((hi-lo)||1))*(H-padB-padT);
+  const F=v=>v==null?'':(pct?Math.round(v)+'%':(Math.round(v*10)/10));
+  let gl='';[0,.5,1].forEach(f=>{const yy=H-padB-(f*(H-padB-padT));gl+='<line x1="'+pad+'" y1="'+yy.toFixed(1)+'" x2="'+(W-10)+'" y2="'+yy.toFixed(1)+'" stroke="#EAE6DB"/><text x="2" y="'+(yy+3).toFixed(1)+'" font-size="10" fill="#B0A99A">'+F(lo+f*(hi-lo))+'</text>';});
+  let xl='';L.forEach((l,i)=>{if(n>7&&i%2===1&&i!==n-1)return;xl+='<text x="'+x(i).toFixed(1)+'" y="'+(H-8)+'" font-size="9.5" fill="#8A8A80" text-anchor="middle">'+l.split('–')[0].split(' → ')[0]+'</text>';});
+  let lines='';S.forEach(s=>{let prev=null;s.v.forEach((val,i)=>{if(val==null){prev=null;return;}if(prev!=null)lines+='<line x1="'+x(prev.i).toFixed(1)+'" y1="'+y(prev.v).toFixed(1)+'" x2="'+x(i).toFixed(1)+'" y2="'+y(val).toFixed(1)+'" stroke="'+s.color+'" stroke-width="'+(s.main?2.6:1.4)+'" opacity="'+(s.main?1:0.8)+'"/>';prev={i,v:val};});});
+  let mk='';S.forEach(s=>{if(!s.main)return;s.v.forEach((val,i)=>{if(val==null)return;const lab=(n>9&&i%2===1&&i!==n-1)?'':F(val);mk+='<circle cx="'+x(i).toFixed(1)+'" cy="'+y(val).toFixed(1)+'" r="2.7" fill="'+s.color+'"/>'+(lab?'<text x="'+x(i).toFixed(1)+'" y="'+(y(val)-7).toFixed(1)+'" font-size="10.5" fill="'+s.color+'" text-anchor="middle" font-weight="700">'+lab+'</text>':'');});});
+  return '<svg viewBox="0 0 '+W+' '+H+'" width="100%" style="display:block">'+gl+xl+lines+mk+'</svg>';
+}
+// latest value + delta (now vs before) for a breakdown component chip
+function bchip(label,arr,color,pct){const e=evalMetric(arr),f=v=>v==null?'—':(pct?Math.round(v)+'%':(Math.round(v*10)/10));
+  const dd=(e.d==null)?'':'<span class="dd '+(e.d>0?'up':e.d<0?'down':'flat')+'">'+(e.d>0?'+':'')+Math.round(e.d*100)+'%</span>';
+  return '<span class="bchip">'+(color?'<span class="dot" style="background:'+color+'"></span>':'')+label+' <b>'+f(e.cur)+'</b>'+dd+'</span>';}
 function curLabel(){const wl=D.week_labels,NW=wl.length;const c=CURN===1?wl[NW-1]:wl[NW-CURN]+' → '+wl[NW-1];const b=wl[Math.max(0,NW-CURN-BASEN)]+' → '+wl[NW-CURN-1];return {c,b};}
 // ---- time-window selectors (presets + custom) ----
 const CUR_PRESETS=[[1,'this week'],[2,'last 2 weeks'],[3,'last 3 weeks'],[4,'last 4 weeks'],[6,'last 6 weeks'],[8,'last 8 weeks']];
@@ -345,22 +382,36 @@ function renderMetric(){
   h+='</tbody></table></div>';
   $('root').innerHTML=h;
 }
-function goClinic(slug){CLINF=new Set([slug]);$('clinBtn').textContent=clinBtnLabel();$('clinBtn').classList.add('on');C=D.clinics[slug];MODE='cl';OPEN={};
-  STAGES.forEach(s=>{if(evalStage(s,C).status!=='green')OPEN[s.key]=true;});   // peek: auto-open broken stages
-  updateModeUI();render();}
+function goClinic(slug){CLINF=new Set([slug]);$('clinBtn').textContent=clinBtnLabel();$('clinBtn').classList.add('on');C=D.clinics[slug];MODE='cl';OPEN={};updateModeUI();render();}
 
-// ---------- PER-CLINIC FUNNEL (drill) ----------
+// ---------- PER-CLINIC FUNNEL (readable stage cards) ----------
 function renderClinic(){
   if(!C){$('root').innerHTML='';return;}
   ZREG=[];CURZ=null;
-  const lbl=curLabel();$('cmpnote').innerHTML='Comparing <b>'+lbl.c+'</b> vs baseline <b>'+lbl.b+'</b> · red ≤ −15%, amber ≤ −7% · broken stages open automatically.';
+  const lbl=curLabel();$('cmpnote').innerHTML='Comparing <b>'+lbl.c+'</b> vs baseline <b>'+lbl.b+'</b> · red ≤ −15%, amber ≤ −7% · each chart shows the last 12 weeks — click to zoom full history.';
   const evs=STAGES.map(s=>evalStage(s,C));
-  let h='<div style="margin-bottom:14px"><button class="modebtn" onclick="backToList()" style="padding:7px 14px;font-size:13px">← back to all clinics</button> <span class="lab" style="text-transform:none;font-weight:700;font-size:16px;color:var(--ink);margin-left:8px">'+C.disp+'</span></div>';
-  STAGES.forEach((s,i)=>{const e=evs[i],hm=e.hm;
-    h+='<div class="stagerow"><div class="stage '+e.status+'" onclick="tog(\''+s.key+'\')"><div class="snum">'+s.num+'</div>'
-      +'<div class="sbody"><div class="sname '+e.status+'">'+s.name+'<span class="caret">'+(OPEN[s.key]?'▾':'▸')+'</span></div><div class="ssub">'+s.sub+'</div></div>'
-      +'<div class="sval"><div class="v">'+fmt(hm.ev.cur,hm.fmtd||(hm.pct?1:0))+(hm.pct?'%':'')+'</div><div class="d">'+dpct(hm.ev.d)+' <span class="flat" style="font-weight:500">was '+fmt(hm.ev.base,hm.fmtd||(hm.pct?1:0))+(hm.pct?'%':'')+'</span></div></div>'+zspark(s.num+' · '+s.name,hm.arr,COL[e.status],hm.pct)+'</div></div>';
-    h+=drill(s,e);if(i<STAGES.length-1)h+='<div class="conn"></div>';});
+  let h='<div style="margin-bottom:14px"><button class="modebtn" onclick="backToList()" style="padding:7px 14px;font-size:13px">← back to all clinics</button> <span class="lab" style="text-transform:none;font-weight:700;font-size:17px;color:var(--ink);margin-left:8px">'+C.disp+'</span></div>';
+  h+='<div class="sgrid">';
+  STAGES.forEach((s,i)=>{const e=evs[i],hm=e.hm,col=COL[e.status];
+    let lineS=[],chipOnly=[];
+    if(s.key==='availability'){lineS=[{label:'weekday days',arr:C.availability.wday_days,color:BPAL[0]},{label:'weekend days',arr:C.availability.wend_days,color:BPAL[1]}];chipOnly=[{label:'available hrs',arr:C.availability.avail_hours||C.availability.hours},{label:'screening-call hrs',arr:C.availability.hours}];}
+    else if(s.key==='bookings'){lineS=[{label:'fresh',arr:C.bookings.new_tw,color:BPAL[0]},{label:'carry-in',arr:C.bookings.new_old,color:BPAL[1]},{label:'rebook',arr:C.bookings.rebook,color:BPAL[2]},{label:'relapse',arr:C.bookings.relapse,color:BPAL[3]}];}
+    else if(s.key==='conversion'){chipOnly=[{label:'booked',arr:C.done.booked},{label:'done',arr:C.done.done}];}
+    else if(s.key==='done'){const dc=C.done.by_cat;['SH','STI','MH','Other'].forEach((ct,k)=>{if(dc[ct]&&sum(dc[ct]))lineS.push({label:ct,arr:dc[ct],color:BPAL[k]});});}
+    else if(s.key==='demand'){const bc=C.demand.by_channel;Object.keys(bc).sort((a,b)=>sum(bc[b])-sum(bc[a])).slice(0,5).forEach((ch,k)=>{if(sum(bc[ch]))lineS.push({label:ch,arr:bc[ch],color:BPAL[k]});});chipOnly=[{label:'lead→book%',arr:C.demand.lead_book_pct,pct:1}];}
+    else if(s.key==='velocity'){const v=C.velocity;lineS=[{label:'per weekday',arr:v.per_weekday,color:BPAL[0]},{label:'per weekend',arr:v.per_weekend,color:BPAL[1]}];chipOnly=[{label:'wday bookings',arr:v.bk_wday},{label:'wend bookings',arr:v.bk_wend}];}
+    const series=[{label:hm.nm,arr:hm.arr,color:col,main:true}].concat(lineS.map(l=>({label:l.label,arr:l.arr,color:l.color})));
+    const zi=ZREG.length;ZREG.push({label:s.num+' · '+s.name,arr:hm.arr,col:col,pct:!!hm.pct});
+    const chart=miniChart(series,D.week_labels,!!hm.pct);
+    const chips=lineS.map(l=>bchip(l.label,l.arr,l.color,l.pct||0)).join('')+chipOnly.map(c=>bchip(c.label,c.arr,'var(--faint)',c.pct||0)).join('');
+    const val=fmt(hm.ev.cur,hm.fmtd||(hm.pct?1:0))+(hm.pct?'%':''),was=fmt(hm.ev.base,hm.fmtd||(hm.pct?1:0))+(hm.pct?'%':'');
+    h+='<div class="scard '+e.status+'">'
+      +'<div class="scard-hd"><div class="snum">'+s.num+'</div><div class="scard-t"><div class="sname '+e.status+'">'+s.name+'</div><div class="ssub">'+s.sub+'</div></div>'
+      +'<div class="sval"><div class="v">'+val+'</div><div class="d">'+dpct(hm.ev.d)+' <span class="flat" style="font-weight:500">was '+was+'</span></div></div></div>'
+      +'<div class="chartwrap" onclick="zoomReg('+zi+')"><span class="zhint">⤢ zoom full history</span>'+chart+'</div>'
+      +(chips?'<div class="bchips">'+chips+'</div>':'')
+    +'</div>';});
+  h+='</div>';
   $('root').innerHTML=h;
 }
 function drill(s,e){const wl=D.week_labels,NW=D.weeks.length,show=Math.min(NW,8);
