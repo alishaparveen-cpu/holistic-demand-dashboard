@@ -44,6 +44,13 @@
   .marr{cursor:pointer;color:var(--muted);font-weight:800;font-size:16px;line-height:1;padding:1px 5px;border-radius:5px}
   .marr:hover{color:var(--accent);background:var(--hover)}
   .metpk.peek{color:var(--accent)} .metpk.peek b{color:var(--accent)}
+  .condgrp{display:inline-flex;align-items:center;gap:7px;background:var(--sheet);border:1px solid var(--line);border-radius:9px;padding:3px 5px 3px 10px}
+  .condlab{font-size:12px;font-weight:700;color:var(--ink2)}
+  .cseg-wrap{display:inline-flex;border:1px solid var(--line);border-radius:7px;overflow:hidden}
+  .cseg{border:none;background:var(--inset);padding:4px 9px;font-size:12px;cursor:pointer;color:var(--muted);font-family:Inter;font-weight:600;border-right:1px solid var(--line)}
+  .cseg:last-child{border-right:none}
+  .cseg.on{background:var(--accent);color:#fff;box-shadow:inset 0 0 0 1px var(--accent)}
+  .cseg:hover:not(.on){background:var(--hover);color:var(--ink)}
   .nvlbl{font-size:10px;font-weight:700;text-transform:uppercase;color:var(--faint);margin-right:5px;letter-spacing:.03em}
   .avgmk{font-family:'JetBrains Mono';font-weight:800;font-size:14.5px;color:var(--ink2);margin:0 4px;white-space:nowrap;vertical-align:middle}
   .avgmk.red{color:#a8352a}.avgmk.amber{color:#8a6412}.avgmk.green{color:var(--good)}
@@ -442,7 +449,7 @@ function setMet(v){MODE='ov';   // multi-select columns: click to add/remove · 
   if(i<0)METSEL.push(v); else if(i>0){METSEL.splice(i,1);METSEL.unshift(v);} else if(METSEL.length>1)METSEL.splice(i,1);
   MET=METSEL[0];updateModeUI();render();}
 function metricEval(c,key){const st=STAGES.find(x=>x.key===key),m=st.metrics(c)[0];return {ev:evalMetric(m.arr),arr:m.arr,pct:m.pct};}
-function cycleCond(key){const c=MCOND[key];const nx=c===undefined?'red':c==='red'?'green':c==='green'?'amber':undefined;if(nx)MCOND[key]=nx;else delete MCOND[key];render();}
+function setCond(key,v){if(v==='any')delete MCOND[key];else MCOND[key]=v;render();}
 function clearMet(){METSEL=['bookings'];MET='bookings';MCOND={};updateModeUI();render();}
 function updateModeUI(){const cmp=(MET!=='break');
   const vi=$('vIssues'),vc=$('vCompare');if(vi)vi.classList.toggle('on',!cmp&&MODE==='ov');if(vc)vc.classList.toggle('on',cmp&&MODE==='ov');
@@ -472,7 +479,9 @@ function renderMetric(){
   let rows=scopeSlugs.filter(slug=>{const c=D.clinics[slug];return METSEL.every(k=>{const req=MCOND[k];return !req||metricEval(c,k).ev.st===req;});})   // AND of the per-metric conditions
     .map(slug=>({slug,c:D.clinics[slug],pe:metricEval(D.clinics[slug],primary.key).ev}));
   rows.sort((a,b)=>(a.pe.d==null?9:a.pe.d)-(b.pe.d==null?9:b.pe.d));   // worst on the primary (sorted) metric first
-  const cc=(k)=>{const st=STAGES.find(x=>x.key===k),c=MCOND[k];const lbl=c==='red'?'🔴 dropped':c==='green'?'🟢 fine':c==='amber'?'🟡 watch':'· any';return '<button class="ichip'+(c?' on':'')+'" style="padding:4px 11px;font-size:12px" onclick="cycleCond(\''+k+'\')" title="click to require a status: any → dropped → fine → watch">'+st.short+' '+lbl+'</button>';};
+  const cc=(k)=>{const st=STAGES.find(x=>x.key===k),cur=MCOND[k]||'any';
+    const opt=(v,lab)=>'<button class="cseg'+(cur===v?' on':'')+'" onclick="setCond(\''+k+'\',\''+v+'\')">'+lab+'</button>';
+    return '<span class="condgrp"><span class="condlab">'+st.short+'</span><span class="cseg-wrap">'+opt('any','any')+opt('red','🔴')+opt('amber','🟡')+opt('green','🟢')+'</span></span>';};
   let h='<div class="densrow" style="gap:8px;flex-wrap:wrap"><span class="lab" style="text-transform:none;font-weight:600;color:var(--ink2)">'+rows.length+' clinic'+(rows.length===1?'':'s')+' · '+cityStr()+' · sorted by <b>'+primary.name+'</b></span>'
     +'<span style="display:inline-flex;gap:6px;flex-wrap:wrap;margin-left:4px">'+metrics.map(s=>cc(s.key)).join('')+'</span>'
     +'<button class="fbtn" style="padding:5px 13px;font-size:12px;font-weight:700" onclick="clearMet()">✕ clear all</button>'
