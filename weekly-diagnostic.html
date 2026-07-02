@@ -257,6 +257,7 @@ const STAGES=[
   {key:'velocity',num:6,name:'Bookings / active day',short:'Bk/day',sub:'weekday·weekend weighted ⓘ',diag:'Capacity limit — scheduling / staffing',fix:'Ops · staffing',
    metrics:c=>[{nm:'bookings / active day',arr:c.velocity.per_active_day,fmtd:1}],headline:0,velMath:true},
 ];
+const ISSUE_STAGES=[0,4,1,2,3];   // availability, leads, bookings, book→done, done — used across the issues view
 function evalMetric(arr){const NW=arr.length;const cur=mean(arr.slice(NW-CURN));const base=mean(arr.slice(Math.max(0,NW-CURN-BASEN),NW-CURN));
   const d=(cur!=null&&base)?((cur-base)/base):null;const st=d==null?'green':d<=-0.15?'red':d<=-0.07?'amber':'green';return {cur,base,d,st};}
 function evalStage(st,c){const ms=st.metrics(c).map(m=>({...m,ev:evalMetric(m.arr)}));
@@ -365,10 +366,9 @@ function whyChips(s,fb){
   return '<span class="mlab">'+cap(m.hm.nm)+'</span>'+slopeBadge(a)+chips;
 }
 // all four metrics' recent-window chips, one clickable row each (availability, leads, bookings, done)
-function allChips(s,disp){return [0,4,1,3].map(i=>{const st=STAGES[i],m=s[st.key],a=m.hm.arr.slice(-(CURN+BASEN)),nb=a.length-CURN;
-  const chips=a.map((v,idx)=>{const cur=idx>=nb;const val=v==null?'·':(m.pct?Math.round(v)+'%':(Math.round(v*10)/10));return '<span class="mc '+(cur?m.st:'base')+'">'+val+'</span>';}).join('');
+function allChips(s,disp){return ISSUE_STAGES.map(i=>{const st=STAGES[i],m=s[st.key],a=m.hm.arr.slice(-(CURN+BASEN));
   const zi=ZREG.length;ZREG.push({label:(disp?disp+' · ':'')+st.name,arr:m.hm.arr,col:COL[m.st]||'var(--ink2)',pct:!!m.pct,noPrefix:true});
-  return '<div class="crow" onclick="event.stopPropagation();zoomReg('+zi+')" title="click for the trend graph"><span class="clab">'+st.short+'</span>'+slopeBadge(a)+chips+'</div>';}).join('');}
+  return '<div class="crow" onclick="event.stopPropagation();zoomReg('+zi+')" title="click for the trend graph"><span class="clab">'+st.short+'</span>'+slopeBadge(a)+trendHTML(m.hm.arr,m.pct,m.hm.ev)+'</div>';}).join('');}
 function whyText(s,fb){
   if(fb<0){const amb=STAGES.findIndex(st=>s[st.key].st==='amber');return amb<0?'stable':'watch: '+STAGES[amb].name.toLowerCase()+' '+Math.round(s[STAGES[amb].key].d*100)+'%';}
   const st=STAGES[fb],x=s[st.key];let why='<b>'+st.diag.split(' — ')[0]+'</b> · '+cap(x.hm.nm)+' '+Math.round(x.d*100)+'%';
@@ -377,8 +377,10 @@ function whyText(s,fb){
   return why;
 }
 function renderOverview(){
-  const lbl=curLabel();$('cmpnote').innerHTML='Comparing <b>'+(CURN===1?'this week':'the last '+CURN+' weeks')+'</b> ('+lbl.c+') against the <b>average of the prior '+BASEN+' weeks</b> ('+lbl.b+') · every % is <b>vs that average</b> · scope: <b>'+cityStr()+'</b> &nbsp;<span class="legend">🔴 dropped ≥15% &nbsp; 🟡 ≥7%</span>';
+  const lbl=curLabel();const cmpHTML='Comparing <b>'+(CURN===1?'this week':'the last '+CURN+' weeks')+'</b> ('+lbl.c+') against the <b>average of the prior '+BASEN+' weeks</b> ('+lbl.b+') · every % is <b>vs that average</b> · scope: <b>'+cityStr()+'</b> &nbsp;<span class="legend">🔴 dropped ≥15% &nbsp; 🟡 ≥7%</span>';
+  $('cmpnote').innerHTML=cmpHTML;
   if(MET!=='break'){if(OVMODE==='funnel')renderScopeFunnel();else renderMetric();return;}
+  $('cmpnote').innerHTML='';   // issues view: the comparison line goes below the filter chips instead
   ZREG=[];CURZ=null;   // for click-to-zoom on the metric chip rows
   const rows=Object.keys(D.clinics).filter(inScope).map(slug=>({slug,c:D.clinics[slug],s:summary(D.clinics[slug])}));
   const isIssue=st=>st==='red'||st==='amber';
@@ -388,13 +390,14 @@ function renderOverview(){
   const hasIssue=s=>issueCount(s)>0;
   const broken=rows.filter(r=>hasIssue(r.s)).length, healthy=rows.length-broken;
   // badges for EVERY stage a clinic is down on (non-exclusive); selected stage underlined
-  const badges=(s,hi)=>[0,4,1,3].map(i=>{const st=STAGES[i],x=s[st.key];const dd=x.d==null?'':' '+Math.round(x.d*100)+'%';return '<span class="brk '+x.st+'"'+(hi===i?' style="text-decoration:underline;text-underline-offset:3px"':'')+'>'+st.short+dd+'</span>';}).join('<span style="color:var(--faint)"> · </span>');   // availability, leads, bookings, done only
+  const badges=(s,hi)=>ISSUE_STAGES.map(i=>{const st=STAGES[i],x=s[st.key];const dd=x.d==null?'':' '+Math.round(x.d*100)+'%';return '<span class="brk '+x.st+'"'+(hi===i?' style="text-decoration:underline;text-underline-offset:3px"':'')+'>'+st.short+dd+'</span>';}).join('<span style="color:var(--faint)"> · </span>');
   // ISSUE chips — a clinic is counted under EVERY stage it is down on (not just the earliest)
-  const stageFilters=[0,4,1,3];   // availability, leads, bookings, done — the four filters that matter
+  const stageFilters=ISSUE_STAGES;   // availability, leads, bookings, book→done, done
   const chips=[{key:'any',label:'All issues',n:broken}]
     .concat(stageFilters.map(i=>({key:'st'+i,label:STAGES[i].name,n:rows.filter(r=>isIssue(r.s[STAGES[i].key].st)).length})))
     .concat([{key:'healthy',label:'✓ No issues',n:healthy},{key:'allc',label:'All clinics',n:rows.length}]);
   let h='<div class="chiprow">'+chips.map(c=>'<button class="ichip'+(QF===c.key?' on':'')+(c.n?'':' zero')+'" onclick="setQF(\''+c.key+'\')">'+c.label+' <b>'+c.n+'</b></button>').join('')+'</div>';
+  h+='<div class="cmpnote" style="margin:2px 0 12px">'+cmpHTML+'</div>';
   // filter list
   let list, selIdx=(QF&&QF.indexOf('st')===0)?+QF.slice(2):-1;
   if(QF==='ad_ok_dem') list=rows.filter(r=>r.s.availability.st==='green'&&isIssue(r.s.demand.st));
@@ -408,16 +411,16 @@ function renderOverview(){
   const scopeMsg=selIdx>=0?(' with a <b>'+STAGES[selIdx].name+'</b> issue'):' to look at';
   h+='<div class="densrow"><span class="lab" style="text-transform:none;font-weight:600;color:'+(banner?'var(--good)':'var(--ink2)')+'">'+(banner||(list.length+' clinic'+(list.length===1?'':'s')+scopeMsg+' · '+healthy+' healthy · a clinic shows under <b>every</b> stage it is down on'))+'</span><button class="fbtn" onclick="toggleDens()">'+(DENSITY==='full'?'▾ hide Δ matrix':'▸ Δ matrix (all stages)')+'</button></div>';
   if(DENSITY==='full'){
-    h+='<div class="fmwrap"><table class="fm"><thead><tr><th>Clinic</th>'+STAGES.map(s=>'<th>'+s.short+'</th>').join('')+'<th style="text-align:left">where\'s the issue?</th><th></th></tr></thead><tbody>';
-    if(!list.length)h+='<tr><td colspan="'+(STAGES.length+3)+'" style="color:var(--muted);padding:16px;text-align:left">Nothing here — healthy for this filter/city.</td></tr>';
+    h+='<div class="fmwrap"><table class="fm"><thead><tr><th>Clinic</th>'+STAGES.map(s=>'<th>'+s.short+'</th>').join('')+'<th style="text-align:left">where\'s the issue?</th></tr></thead><tbody>';
+    if(!list.length)h+='<tr><td colspan="'+(STAGES.length+2)+'" style="color:var(--muted);padding:16px;text-align:left">Nothing here — healthy for this filter/city.</td></tr>';
     list.forEach(r=>{const s=r.s;const cells=STAGES.map(st=>{const x=s[st.key];const dd=x.d==null?'·':(Math.round(x.d*100)+'%');return '<td><span class="cell '+x.st+'">'+(x.st==='green'?'<span style="color:var(--muted)">'+dd+'</span>':dd)+'</span></td>';}).join('');
-      h+='<tr onclick="goClinic(\''+r.slug+'\')" title="open funnel"><td>'+r.c.disp+'</td>'+cells+'<td class="why">'+badges(s,selIdx)+'</td><td class="drillco">›</td></tr>';});
+      h+='<tr onclick="goClinic(\''+r.slug+'\')" title="open funnel"><td>'+r.c.disp+'</td>'+cells+'<td class="why">'+badges(s,selIdx)+'</td></tr>';});
     h+='</tbody></table></div>';
   } else {
-    h+='<div class="fmwrap"><table class="fm" style="min-width:640px"><thead><tr><th>Clinic</th><th style="text-align:left">where\'s the issue?</th><th style="text-align:left">recent '+(CURN+BASEN)+' wks &nbsp;<span style="font-weight:500;text-transform:none;color:var(--faint)">'+SLOPE_LEG+'</span></th><th style="text-align:right">open ›</th></tr></thead><tbody>';
-    if(!list.length)h+='<tr><td colspan="4" style="color:var(--muted);padding:16px;text-align:left">Nothing here — healthy for this filter/city.</td></tr>';
+    h+='<div class="fmwrap"><table class="fm" style="min-width:640px"><thead><tr><th>Clinic</th><th style="text-align:left">where\'s the issue?</th><th style="text-align:left">recent '+(CURN+BASEN)+' wks &nbsp;<span style="font-weight:500;text-transform:none;color:var(--faint)">'+SLOPE_LEG+'</span></th></tr></thead><tbody>';
+    if(!list.length)h+='<tr><td colspan="3" style="color:var(--muted);padding:16px;text-align:left">Nothing here — healthy for this filter/city.</td></tr>';
     list.forEach(r=>{const s=r.s;const bl=brokenIdx(s);const chipIdx=(selIdx>=0&&isIssue(s[STAGES[selIdx].key].st))?selIdx:(bl.length?bl[0]:-1);
-      h+='<tr onclick="goClinic(\''+r.slug+'\')" title="open funnel"><td>'+r.c.disp+'</td><td class="why"><div style="width:340px;white-space:normal;line-height:1.9">'+badges(s,selIdx)+'</div></td><td class="why">'+allChips(s,r.c.disp)+'</td><td class="drillco" style="text-align:right">›</td></tr>';});
+      h+='<tr onclick="goClinic(\''+r.slug+'\')" title="open funnel"><td>'+r.c.disp+'</td><td class="why"><div style="width:340px;white-space:normal;line-height:1.9">'+badges(s,selIdx)+'</div></td><td class="why">'+allChips(s,r.c.disp)+'</td></tr>';});
     h+='</tbody></table></div>';
   }
   $('root').innerHTML=h;
@@ -447,18 +450,18 @@ function renderMetric(){
   rows.sort((a,b)=>(a.mc.ev.d==null?9:a.mc.ev.d)-(b.mc.ev.d==null?9:b.mc.ev.d));   // worst drop first
   const nred=rows.filter(r=>r.mc.ev.st==='red').length, namb=rows.filter(r=>r.mc.ev.st==='amber').length;
   let h='<div class="densrow"><span class="lab" style="text-transform:none;font-weight:600;color:var(--ink2)">'+rows.length+' clinic'+(rows.length===1?'':'s')+' · '+cityStr()+' · '+st.name+' · <span style="color:var(--bad)">🔴 '+nred+'</span> · <span style="color:var(--warn)">🟡 '+namb+'</span> · worst→best &nbsp; <span style="font-weight:500;color:var(--faint)">'+SLOPE_LEG+'</span></span></div>';
-  h+='<div class="fmwrap"><table class="fm" style="min-width:640px"><thead><tr><th style="white-space:nowrap">Clinic</th><th style="text-align:center;white-space:nowrap">change</th><th style="text-align:left">recent '+(CURN+BASEN)+' wks — '+st.name+' &nbsp;<span style="font-weight:500;color:var(--faint)">before avg → now</span></th><th style="text-align:right">open ›</th></tr></thead><tbody>';
+  h+='<div class="fmwrap"><table class="fm" style="min-width:640px"><thead><tr><th style="white-space:nowrap">Clinic</th><th style="text-align:center;white-space:nowrap">change</th><th style="text-align:left">recent '+(CURN+BASEN)+' wks — '+st.name+' &nbsp;<span style="font-weight:500;color:var(--faint)">before avg → now</span></th></tr></thead><tbody>';
   // Σ Total row — the in-scope clinics combined (recomputes when you filter clinics/cities)
   const scopeSlugs=Object.keys(D.clinics).filter(inScope);
   if(scopeSlugs.length>1){
     const agg=aggregate(scopeSlugs,'Total'),tmc=metricChips(agg,MET),te=tmc.ev;
     const tzi=ZREG.length;ZREG.push({label:'Total · '+scopeSlugs.length+' clinics · '+st.name,arr:tmc.arr,col:COL[te.st]||'var(--ink2)',pct:!!tmc.pct,noPrefix:true});
-    h+='<tr class="totalrow" onclick="setOvMode(\'funnel\')" title="open the combined funnel"><td style="white-space:nowrap;width:1%">Σ Total · '+scopeSlugs.length+' clinics</td><td style="text-align:center;width:1%">'+pctPill(te)+'</td><td class="why chipzoom" style="white-space:nowrap;max-width:none" onclick="event.stopPropagation();zoomReg('+tzi+')" title="click for the combined trend graph">'+slopeBadge(tmc.a)+tmc.chips+'</td><td class="drillco" style="text-align:right">›</td></tr>';
+    h+='<tr class="totalrow" onclick="setOvMode(\'funnel\')" title="open the combined funnel"><td style="white-space:nowrap;width:1%">Σ Total · '+scopeSlugs.length+' clinics</td><td style="text-align:center;width:1%">'+pctPill(te)+'</td><td class="why chipzoom" style="white-space:nowrap;max-width:none" onclick="event.stopPropagation();zoomReg('+tzi+')" title="click for the combined trend graph">'+slopeBadge(tmc.a)+tmc.chips+'</td></tr>';
   }
-  if(!rows.length)h+='<tr><td colspan="4" style="color:var(--muted);padding:16px;text-align:left">No clinics.</td></tr>';
+  if(!rows.length)h+='<tr><td colspan="3" style="color:var(--muted);padding:16px;text-align:left">No clinics.</td></tr>';
   rows.forEach(r=>{const e=r.mc.ev;
     const zi=ZREG.length;ZREG.push({label:r.c.disp+' · '+st.name,arr:r.mc.arr,col:COL[e.st]||'var(--ink2)',pct:!!r.mc.pct,noPrefix:true});
-    h+='<tr onclick="goClinic(\''+r.slug+'\')" title="open funnel"><td style="white-space:nowrap;width:1%">'+r.c.disp+'</td><td style="text-align:center;width:1%">'+pctPill(e)+'</td><td class="why chipzoom" style="white-space:nowrap;max-width:none" onclick="event.stopPropagation();zoomReg('+zi+')" title="click for the trend graph">'+slopeBadge(r.mc.a)+r.mc.chips+'</td><td class="drillco" style="text-align:right">›</td></tr>';});
+    h+='<tr onclick="goClinic(\''+r.slug+'\')" title="open funnel"><td style="white-space:nowrap;width:1%">'+r.c.disp+'</td><td style="text-align:center;width:1%">'+pctPill(e)+'</td><td class="why chipzoom" style="white-space:nowrap;max-width:none" onclick="event.stopPropagation();zoomReg('+zi+')" title="click for the trend graph">'+slopeBadge(r.mc.a)+r.mc.chips+'</td></tr>';});
   h+='</tbody></table></div>';
   $('root').innerHTML=h;
 }
