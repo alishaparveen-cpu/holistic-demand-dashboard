@@ -216,7 +216,7 @@
 </div>
 <div class="modal" id="modal" onclick="if(event.target===this)closeZ()"><div class="mbox"><div class="mhd"><span id="mTitle"></span><button onclick="closeZ()" title="close">✕</button></div><div id="pickBar" class="pickbar"></div><div id="mBody"></div></div></div>
 <script>
-let D=null, AGE={}, CURN=1, BASEN=4, MODE='ov', C=null, OPEN={}, QF='any', CITYF=new Set(), CLINF=new Set(), TIERF=new Set(), MATF=new Set(), DENSITY='compact', MET='bookings', OVMODE='metric', METSTAT='all', DISPMET=null;
+let D=null, AGE={}, CURN=1, BASEN=4, MODE='ov', C=null, OPEN={}, QF='any', CITYF=new Set(), CLINF=new Set(), TIERF=new Set(), MATF=new Set(), DENSITY='compact', MET='bookings', OVMODE='metric', METSTAT='all', METSEL=['bookings'];
 const T1CITIES=new Set(['Bangalore','Mumbai','Pune','Hyderabad','Chennai']);
 function tierOf(city){return T1CITIES.has(city)?'T1':'T2';}
 function clinMonths(slug){const d=AGE[D.clinics[slug].loc];if(!d)return null;const t=Date.parse(d);return isNaN(t)?null:(Date.now()-t)/(1000*60*60*24*30.44);}
@@ -436,15 +436,17 @@ function renderOverview(){
 }
 function setQF(k){QF=k;renderOverview();}
 function toggleDens(){DENSITY=(DENSITY==='full'?'compact':'full');renderOverview();}
-function setView(v){MODE='ov';MET=(v==='issues')?'break':(MET==='break'?'bookings':MET);updateModeUI();render();}
-function setMet(v){MODE='ov';MET=v;DISPMET=null;updateModeUI();render();}
+function setView(v){MODE='ov';MET=(v==='issues')?'break':(METSEL[0]||'bookings');updateModeUI();render();}
+function setMet(v){MODE='ov';   // multi-select columns: click to add/remove · click a non-first to sort by it
+  const i=METSEL.indexOf(v);
+  if(i<0)METSEL.push(v); else if(i>0){METSEL.splice(i,1);METSEL.unshift(v);} else if(METSEL.length>1)METSEL.splice(i,1);
+  MET=METSEL[0];updateModeUI();render();}
 function setMetStat(v){METSTAT=v;render();}
-const METCYCLE=FUNNEL_ORDER.map(i=>STAGES[i].key);   // metric-column move order
-function cycleDisp(dir){const cur=DISPMET||MET;let i=METCYCLE.indexOf(cur);i=(i+dir+METCYCLE.length)%METCYCLE.length;DISPMET=(METCYCLE[i]===MET)?null:METCYCLE[i];render();}
+function metricEval(c,key){const st=STAGES.find(x=>x.key===key),m=st.metrics(c)[0];return {ev:evalMetric(m.arr),arr:m.arr,pct:m.pct};}
 function updateModeUI(){const cmp=(MET!=='break');
   const vi=$('vIssues'),vc=$('vCompare');if(vi)vi.classList.toggle('on',!cmp&&MODE==='ov');if(vc)vc.classList.toggle('on',cmp&&MODE==='ov');
   const mb=$('metricbar');if(mb)mb.style.display=cmp?'flex':'none';
-  document.querySelectorAll('.mbtn').forEach(b=>b.classList.toggle('on',cmp&&b.dataset.m===MET));
+  document.querySelectorAll('.mbtn').forEach(b=>{const sel=cmp&&METSEL.includes(b.dataset.m);b.classList.toggle('on',sel);b.classList.toggle('primary',sel&&b.dataset.m===METSEL[0]);});
   syncOv();}
 function syncOv(){const om=$('ovMetric'),of=$('ovFunnel'),mp=$('metricpick');
   if(om)om.classList.toggle('on',OVMODE==='metric');if(of)of.classList.toggle('on',OVMODE==='funnel');
@@ -455,28 +457,30 @@ function metricChips(c,stageKey){
   return {ev,chips:trendHTML(m.arr,m.pct,ev),nm:m.nm,pct:m.pct,a,arr:m.arr};
 }
 function pctPill(ev){const arw=(ev.d==null)?'':(ev.d<0?'↓ ':ev.d>0?'↑ ':'→ ');return (ev.d==null)?'<span class="flat">—</span>':'<span class="mc '+ev.st+'" style="font-size:14.5px;font-weight:800;min-width:56px">'+arw+Math.abs(Math.round(ev.d*100))+'%</span>';}
+// compact per-metric cell: change% pill · before → now; click zooms the trend
+function mcell(me,disp,stName){const e=me.ev,f=v=>v==null?'—':(me.pct?Math.round(v)+'%':(Math.round(v*10)/10));
+  const zi=ZREG.length;ZREG.push({label:(disp?disp+' · ':'')+stName,arr:me.arr,col:COL[e.st]||'var(--ink2)',pct:!!me.pct,noPrefix:true});
+  const xy=(e.base==null||e.cur==null)?'':'<span style="font-family:JetBrains Mono;font-size:12.5px;margin-left:9px"><span style="color:var(--muted)">'+f(e.base)+'</span> <span style="color:var(--faint)">→</span> <b>'+f(e.cur)+'</b></span>';
+  return '<td class="chipzoom" style="cursor:zoom-in;white-space:nowrap" onclick="event.stopPropagation();zoomReg('+zi+')">'+pctPill(e)+xy+'</td>';}
 function renderMetric(){
   ZREG=[];CURZ=null;
-  const st=STAGES.find(x=>x.key===MET);                 // fixed metric: sort + status filter + clinic set
-  const dk=DISPMET||MET, dst=STAGES.find(x=>x.key===dk), peek=(dk!==MET);   // displayed metric (moved with header arrows)
+  const metrics=METSEL.map(k=>STAGES.find(x=>x.key===k)).filter(Boolean);
+  if(!metrics.length){METSEL=['bookings'];MET='bookings';return renderMetric();}
+  const primary=metrics[0];
   const scopeSlugs=Object.keys(D.clinics).filter(inScope);
-  let rows=scopeSlugs.map(slug=>({slug,c:D.clinics[slug],mc:metricChips(D.clinics[slug],MET)}));
-  rows.sort((a,b)=>(a.mc.ev.d==null?9:a.mc.ev.d)-(b.mc.ev.d==null?9:b.mc.ev.d));   // worst on the fixed metric first
-  const nred=rows.filter(r=>r.mc.ev.st==='red').length,namb=rows.filter(r=>r.mc.ev.st==='amber').length,ngrn=rows.filter(r=>r.mc.ev.st==='green').length,ntot=rows.length;
-  if(METSTAT!=='all')rows=rows.filter(r=>r.mc.ev.st===METSTAT);
+  let rows=scopeSlugs.map(slug=>{const c=D.clinics[slug];return {slug,c,pe:metricEval(c,primary.key).ev};});
+  rows.sort((a,b)=>(a.pe.d==null?9:a.pe.d)-(b.pe.d==null?9:b.pe.d));   // worst on the primary (sorted) metric first
+  const nred=rows.filter(r=>r.pe.st==='red').length,namb=rows.filter(r=>r.pe.st==='amber').length,ngrn=rows.filter(r=>r.pe.st==='green').length,ntot=rows.length;
+  if(METSTAT!=='all')rows=rows.filter(r=>r.pe.st===METSTAT);
   const sf=(k,lab,n)=>'<button class="ichip'+(METSTAT===k?' on':'')+(n?'':' zero')+'" style="padding:4px 11px;font-size:12px" onclick="setMetStat(\''+k+'\')">'+lab+' <b>'+n+'</b></button>';
-  let h='<div class="densrow" style="gap:8px;flex-wrap:wrap"><span class="lab" style="text-transform:none;font-weight:600;color:var(--ink2)">'+cityStr()+' · '+st.name+' · worst→best</span>'
+  let h='<div class="densrow" style="gap:8px;flex-wrap:wrap"><span class="lab" style="text-transform:none;font-weight:600;color:var(--ink2)">'+cityStr()+' · sorted by <b>'+primary.name+'</b></span>'
     +'<span style="display:inline-flex;gap:6px;flex-wrap:wrap;margin-left:4px">'+sf('all','All',ntot)+sf('red','🔴 dropped',nred)+sf('amber','🟡 watch',namb)+sf('green','🟢 fine',ngrn)+'</span>'
-    +(peek?'<span class="ichip on" style="padding:4px 11px;font-size:12px" onclick="DISPMET=null;render()">viewing '+dst.name+' · fixed by '+st.name+' · ✕</span>':'')
-    +'<span style="font-weight:500;color:var(--faint);font-size:11px;margin-left:auto">'+SLOPE_LEG+'</span></div>';
-  const metCol='<span class="metpk'+(peek?' peek':'')+'"><span class="marr" onclick="event.stopPropagation();cycleDisp(-1)">‹</span><b>'+dst.short+'</b><span class="marr" onclick="event.stopPropagation();cycleDisp(1)">›</span></span>';
-  h+='<div class="fmwrap"><table class="fm" style="min-width:640px"><thead><tr><th style="white-space:nowrap">Clinic</th><th style="text-align:center;white-space:nowrap">change</th><th style="text-align:left">'+metCol+' — recent '+(CURN+BASEN)+' wks · <span style="font-weight:500;color:var(--faint)">before avg → now</span></th></tr></thead><tbody>';
-  if(scopeSlugs.length>1){const agg=aggregate(scopeSlugs,'Total'),tmc=metricChips(agg,dk),te=tmc.ev;const tzi=ZREG.length;ZREG.push({label:'Total · '+scopeSlugs.length+' clinics · '+dst.name,arr:tmc.arr,col:COL[te.st]||'var(--ink2)',pct:!!tmc.pct,noPrefix:true});
-    h+='<tr class="totalrow" onclick="setOvMode(\'funnel\')" title="open the combined funnel"><td style="white-space:nowrap;width:1%">Σ Total · '+scopeSlugs.length+' clinics</td><td style="text-align:center;width:1%">'+pctPill(te)+'</td><td class="why chipzoom" style="white-space:nowrap;max-width:none" onclick="event.stopPropagation();zoomReg('+tzi+')" title="click for the combined trend graph">'+slopeBadge(tmc.a)+tmc.chips+'</td></tr>';}
-  if(!rows.length)h+='<tr><td colspan="3" style="color:var(--muted);padding:16px;text-align:left">No clinics.</td></tr>';
-  rows.forEach(r=>{const mc=(dk===MET?r.mc:metricChips(r.c,dk)), e=mc.ev;
-    const zi=ZREG.length;ZREG.push({label:r.c.disp+' · '+dst.name,arr:mc.arr,col:COL[e.st]||'var(--ink2)',pct:!!mc.pct,noPrefix:true});
-    h+='<tr onclick="goClinic(\''+r.slug+'\')" title="open funnel"><td style="white-space:nowrap;width:1%">'+r.c.disp+'</td><td style="text-align:center;width:1%">'+pctPill(e)+'</td><td class="why chipzoom" style="white-space:nowrap;max-width:none" onclick="event.stopPropagation();zoomReg('+zi+')" title="click for the trend graph">'+slopeBadge(mc.a)+mc.chips+'</td></tr>';});
+    +'<span style="font-weight:500;color:var(--faint);font-size:11px;margin-left:auto">click metrics above to add / remove columns · click a column\'s metric to sort by it</span></div>';
+  h+='<div class="fmwrap"><table class="fm" style="min-width:640px"><thead><tr><th style="white-space:nowrap">Clinic</th>'+metrics.map(s=>'<th style="text-align:left;white-space:nowrap">'+s.name+(s.key===primary.key?' ▾':'')+' <span style="font-weight:500;color:var(--faint)">Δ · before→now</span></th>').join('')+'</tr></thead><tbody>';
+  if(scopeSlugs.length>1){const agg=aggregate(scopeSlugs,'Total');
+    h+='<tr class="totalrow" onclick="setOvMode(\'funnel\')" title="open the combined funnel"><td style="white-space:nowrap;width:1%">Σ Total · '+scopeSlugs.length+' clinics</td>'+metrics.map(s=>mcell(metricEval(agg,s.key),'Total',s.name)).join('')+'</tr>';}
+  if(!rows.length)h+='<tr><td colspan="'+(metrics.length+1)+'" style="color:var(--muted);padding:16px;text-align:left">No clinics.</td></tr>';
+  rows.forEach(r=>{h+='<tr onclick="goClinic(\''+r.slug+'\')" title="open funnel"><td style="white-space:nowrap;width:1%">'+r.c.disp+'</td>'+metrics.map(s=>mcell(metricEval(r.c,s.key),r.c.disp,s.name)).join('')+'</tr>';});
   h+='</tbody></table></div>';
   $('root').innerHTML=h;
 }
