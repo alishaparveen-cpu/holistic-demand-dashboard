@@ -39,6 +39,10 @@
   .mc.base{background:var(--inset);color:var(--muted)} .mc.red{background:var(--rbg);color:#a8352a} .mc.amber{background:var(--abg);color:#8a6412} .mc.green{background:var(--gbg);color:var(--good)}
   .mc.now{background:#fff;color:var(--ink);font-weight:800;box-shadow:inset 0 0 0 1.5px var(--line)}
   .nvlbl{font-size:10px;font-weight:700;text-transform:uppercase;color:var(--faint);margin-right:5px;letter-spacing:.03em}
+  .mc.pw{opacity:.55}
+  .avgmk{font-family:'JetBrains Mono';font-weight:800;font-size:14.5px;color:var(--ink2);margin:0 5px 0 16px;white-space:nowrap;vertical-align:middle}
+  .avgmk.red{color:#a8352a}.avgmk.amber{color:#8a6412}.avgmk.green{color:var(--good)}
+  .avgmk .avglab{font-size:9px;font-weight:700;text-transform:uppercase;color:var(--faint);margin-right:4px;letter-spacing:.03em}
   .mlab{font-size:11px;color:var(--ink2);font-weight:600;margin-right:7px;display:inline-block;min-width:78px} .wc{font-size:10.5px;color:var(--bad);margin-left:6px} .fixt{font-size:10.5px;color:var(--muted);margin-left:8px}
   .slope{display:inline-block;font-weight:800;font-size:13px;margin-right:7px;width:13px;text-align:center;cursor:help}
   .slope.down{color:var(--bad)}.slope.amber{color:var(--warn)}.slope.up{color:var(--good)}.slope.flat{color:var(--faint)}
@@ -404,9 +408,14 @@ function syncOv(){const om=$('ovMetric'),of=$('ovFunnel'),mp=$('metricpick');
 function setOvMode(m){OVMODE=m;MODE='ov';syncOv();render();}
 function metricChips(c,stageKey){
   const st=STAGES.find(x=>x.key===stageKey),m=st.metrics(c)[0],ev=evalMetric(m.arr),a=m.arr.slice(-(CURN+BASEN)),nb=a.length-CURN;
-  const chips=a.map((v,i)=>{const cur=i>=nb;const val=v==null?'·':(m.pct?Math.round(v)+'%':(Math.round(v*10)/10));return '<span class="mc '+(cur?ev.st:'base')+'">'+val+'</span>';}).join('');   // current window coloured by status
+  const fv=v=>v==null?'·':(m.pct?Math.round(v)+'%':(Math.round(v*10)/10)),fa=v=>v==null?'—':(m.pct?Math.round(v)+'%':(Math.round(v*10)/10));
+  // previous weeks (faint) → BEFORE avg → current weeks (coloured) → NOW avg
+  const prev=a.slice(0,nb).map(v=>'<span class="mc base pw">'+fv(v)+'</span>').join('');
+  const cur=a.slice(nb).map(v=>'<span class="mc '+ev.st+'">'+fv(v)+'</span>').join('');
+  const chips=prev+'<span class="avgmk"><span class="avglab">before</span>'+fa(ev.base)+'</span>'+cur+'<span class="avgmk '+ev.st+'"><span class="avglab">now</span>'+fa(ev.cur)+'</span>';
   return {ev,chips,nm:m.nm,pct:m.pct,a,arr:m.arr};
 }
+function pctPill(ev){const arw=(ev.d==null)?'':(ev.d<0?'↓ ':ev.d>0?'↑ ':'→ ');return (ev.d==null)?'<span class="flat">—</span>':'<span class="mc '+ev.st+'" style="font-size:14.5px;font-weight:800;min-width:56px">'+arw+Math.abs(Math.round(ev.d*100))+'%</span>';}
 function renderMetric(){
   ZREG=[];CURZ=null;
   const st=STAGES.find(x=>x.key===MET);
@@ -414,24 +423,18 @@ function renderMetric(){
   rows.sort((a,b)=>(a.mc.ev.d==null?9:a.mc.ev.d)-(b.mc.ev.d==null?9:b.mc.ev.d));   // worst drop first
   const nred=rows.filter(r=>r.mc.ev.st==='red').length, namb=rows.filter(r=>r.mc.ev.st==='amber').length;
   let h='<div class="densrow"><span class="lab" style="text-transform:none;font-weight:600;color:var(--ink2)">'+rows.length+' clinic'+(rows.length===1?'':'s')+' · '+cityStr()+' · '+st.name+' · <span style="color:var(--bad)">🔴 '+nred+'</span> · <span style="color:var(--warn)">🟡 '+namb+'</span> · worst→best &nbsp; <span style="font-weight:500;color:var(--faint)">'+SLOPE_LEG+'</span></span></div>';
-  h+='<div class="fmwrap"><table class="fm" style="min-width:640px"><thead><tr><th style="white-space:nowrap">Clinic</th><th style="text-align:left">recent '+(CURN+BASEN)+' wks — '+st.name+'</th><th style="text-align:left;padding-left:20px">before vs now</th><th style="text-align:right">open ›</th></tr></thead><tbody>';
+  h+='<div class="fmwrap"><table class="fm" style="min-width:640px"><thead><tr><th style="white-space:nowrap">Clinic</th><th style="text-align:center;white-space:nowrap">change</th><th style="text-align:left">recent '+(CURN+BASEN)+' wks — '+st.name+' &nbsp;<span style="font-weight:500;color:var(--faint)">before → now</span></th><th style="text-align:right">open ›</th></tr></thead><tbody>';
   // Σ Total row — the in-scope clinics combined (recomputes when you filter clinics/cities)
   const scopeSlugs=Object.keys(D.clinics).filter(inScope);
   if(scopeSlugs.length>1){
-    const agg=aggregate(scopeSlugs,'Total'),tmc=metricChips(agg,MET),te=tmc.ev,tf=v=>v==null?'—':(tmc.pct?Math.round(v)+'%':(Math.round(v*10)/10));
-    const ta=(te.d==null)?'':(te.d<0?'↓ ':te.d>0?'↑ ':'→ ');
-    const tdchip=(te.d==null)?'':'<span class="mc '+te.st+'" style="font-weight:800;font-size:13.5px">'+ta+Math.abs(Math.round(te.d*100))+'%</span>';
-    const tdcell=(te.cur==null)?'—':'<span class="nvlbl">before</span><span class="mc base">'+tf(te.base)+'</span><span class="nvlbl" style="margin-left:10px">now</span><span class="mc '+te.st+'" style="font-weight:800">'+tf(te.cur)+'</span> &nbsp;'+tdchip;
+    const agg=aggregate(scopeSlugs,'Total'),tmc=metricChips(agg,MET),te=tmc.ev;
     const tzi=ZREG.length;ZREG.push({label:'Total · '+scopeSlugs.length+' clinics · '+st.name,arr:tmc.arr,col:COL[te.st]||'var(--ink2)',pct:!!tmc.pct,noPrefix:true});
-    h+='<tr class="totalrow" onclick="setOvMode(\'funnel\')" title="open the combined funnel"><td style="white-space:nowrap;width:1%">Σ Total · '+scopeSlugs.length+' clinics</td><td class="why chipzoom" style="white-space:nowrap;width:1%;max-width:none" onclick="event.stopPropagation();zoomReg('+tzi+')" title="click for the combined trend graph">'+slopeBadge(tmc.a)+tmc.chips+'</td><td style="text-align:left;font-family:JetBrains Mono;white-space:nowrap;width:1%;padding-left:20px">'+tdcell+'</td><td class="drillco" style="text-align:right">›</td></tr>';
+    h+='<tr class="totalrow" onclick="setOvMode(\'funnel\')" title="open the combined funnel"><td style="white-space:nowrap;width:1%">Σ Total · '+scopeSlugs.length+' clinics</td><td style="text-align:center;width:1%">'+pctPill(te)+'</td><td class="why chipzoom" style="white-space:nowrap;max-width:none" onclick="event.stopPropagation();zoomReg('+tzi+')" title="click for the combined trend graph">'+slopeBadge(tmc.a)+tmc.chips+'</td><td class="drillco" style="text-align:right">›</td></tr>';
   }
   if(!rows.length)h+='<tr><td colspan="4" style="color:var(--muted);padding:16px;text-align:left">No clinics.</td></tr>';
-  rows.forEach(r=>{const e=r.mc.ev,pct=r.mc.pct,f=v=>v==null?'—':(pct?Math.round(v)+'%':(Math.round(v*10)/10));
-    const arw=(e.d==null)?'':(e.d<0?'↓ ':e.d>0?'↑ ':'→ ');
-    const dchip=(e.d==null)?'':'<span class="mc '+e.st+'" style="font-weight:800;font-size:13.5px">'+arw+Math.abs(Math.round(e.d*100))+'%</span>';
-    const dcell=(e.cur==null)?'<span class="flat">—</span>':'<span class="nvlbl">before</span><span class="mc base">'+f(e.base)+'</span><span class="nvlbl" style="margin-left:10px">now</span><span class="mc '+e.st+'" style="font-weight:800">'+f(e.cur)+'</span> &nbsp;'+dchip;
-    const zi=ZREG.length;ZREG.push({label:r.c.disp+' · '+st.name,arr:r.mc.arr,col:COL[e.st]||'var(--ink2)',pct:!!pct,noPrefix:true});
-    h+='<tr onclick="goClinic(\''+r.slug+'\')" title="open funnel"><td style="white-space:nowrap;width:1%">'+r.c.disp+'</td><td class="why chipzoom" style="white-space:nowrap;width:1%;max-width:none" onclick="event.stopPropagation();zoomReg('+zi+')" title="click for the trend graph">'+slopeBadge(r.mc.a)+r.mc.chips+'</td><td style="text-align:left;font-family:JetBrains Mono;white-space:nowrap;width:1%;padding-left:20px">'+dcell+'</td><td class="drillco" style="text-align:right">›</td></tr>';});
+  rows.forEach(r=>{const e=r.mc.ev;
+    const zi=ZREG.length;ZREG.push({label:r.c.disp+' · '+st.name,arr:r.mc.arr,col:COL[e.st]||'var(--ink2)',pct:!!r.mc.pct,noPrefix:true});
+    h+='<tr onclick="goClinic(\''+r.slug+'\')" title="open funnel"><td style="white-space:nowrap;width:1%">'+r.c.disp+'</td><td style="text-align:center;width:1%">'+pctPill(e)+'</td><td class="why chipzoom" style="white-space:nowrap;max-width:none" onclick="event.stopPropagation();zoomReg('+zi+')" title="click for the trend graph">'+slopeBadge(r.mc.a)+r.mc.chips+'</td><td class="drillco" style="text-align:right">›</td></tr>';});
   h+='</tbody></table></div>';
   $('root').innerHTML=h;
 }
