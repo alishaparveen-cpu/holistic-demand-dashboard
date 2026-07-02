@@ -41,8 +41,12 @@
   table.fm th{font-family:'JetBrains Mono';font-size:9px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);font-weight:600;text-align:center;padding:8px 10px;background:var(--inset);border-bottom:1px solid var(--line);white-space:nowrap}
   table.fm th:first-child{text-align:left}
   table.fm td{padding:7px 10px;text-align:center;border-bottom:1px solid var(--line2);white-space:nowrap;font-family:'JetBrains Mono';font-variant-numeric:tabular-nums}
-  table.fm td:first-child{text-align:left;font-family:Inter;font-weight:600;cursor:pointer}
-  table.fm td:first-child:hover{color:var(--accent)}
+  table.fm td:first-child{text-align:left;font-family:Inter;font-weight:600}
+  table.fm tbody tr[onclick]{cursor:pointer}
+  table.fm tbody tr[onclick]:hover td{background:var(--inset)}
+  table.fm tbody tr[onclick]:hover td:first-child{color:var(--accent)}
+  .drillco{color:var(--faint);font-weight:700;padding-left:6px}
+  table.fm tbody tr[onclick]:hover .drillco{color:var(--accent)}
   tr.hide{display:none}
   .cell{display:inline-block;min-width:52px;border-radius:6px;padding:2px 7px;font-weight:700;font-size:12px}
   .cell.red{background:var(--rbg);color:#a8352a}.cell.amber{background:var(--abg);color:#8a6412}.cell.green{color:var(--muted);background:transparent}
@@ -94,14 +98,15 @@
     <button class="fbtn on" id="mOv" onclick="setMode('ov')">◎ Overview · all clinics</button>
     <span class="lab" style="margin-left:6px">City</span><select id="city"><option value="__all">All cities</option></select>
     <span class="lab" style="margin-left:6px">Clinic</span><select id="clinic"></select>
-    <span class="lab" style="margin-left:10px">Current</span><select id="curn"><option value="1">latest week</option><option value="3">last 3 weeks</option><option value="4">last 4 weeks</option></select>
-    <span class="lab" style="margin-left:6px">vs baseline</span><select id="basen"><option value="4">prior 4 weeks</option><option value="6">prior 6 weeks</option><option value="8">prior 8 weeks</option></select>
+    <input id="q" placeholder="🔍 search clinic / city" oninput="setSearch(this.value)" style="border:1px solid var(--line);border-radius:9px;padding:7px 11px;font-size:13px;font-family:Inter;min-width:180px;background:#fff">
+    <span class="lab" style="margin-left:10px">Window</span><select id="curn"><option value="1">this week</option><option value="2">last 2 weeks</option><option value="3">last 3 weeks</option><option value="4">last 4 weeks</option></select>
+    <span class="lab" style="margin-left:6px">vs prior</span><select id="basen"><option value="4">prior 4 weeks</option><option value="6">prior 6 weeks</option><option value="8">prior 8 weeks</option></select>
   </div>
   <div class="cmpnote" id="cmpnote"></div>
   <div id="root"></div>
 </div>
 <script>
-let D=null, CURN=1, BASEN=4, MODE='ov', C=null, OPEN={}, QF='any', CITYF='__all', DENSITY='compact';
+let D=null, CURN=1, BASEN=4, MODE='ov', C=null, OPEN={}, QF='any', CITYF='__all', DENSITY='compact', SEARCH='';
 const $=id=>document.getElementById(id);
 const mean=a=>{const b=a.filter(x=>x!=null);return b.length?b.reduce((x,y)=>x+y,0)/b.length:null;};
 const sum=a=>a.reduce((x,y)=>x+(y||0),0);
@@ -174,27 +179,33 @@ function renderOverview(){
   else if(QF&&QF.indexOf('st')===0){const i=+QF.slice(2);list=rows.filter(r=>r.s.firstBreak===i);}
   else list=rows.filter(r=>r.s.firstBreak>=0);   // 'any'
   let banner='';
-  if(!list.length && broken===0 && rows.length && (QF==='any'||QF.indexOf('st')===0)){list=rows.slice();banner='✓ No issues in '+(CITYF==='__all'?'any city':CITYF)+' — all '+rows.length+' clinic'+(rows.length===1?'':'s')+' healthy. Showing roster.';}
+  if(SEARCH){   // global finder: search across ALL clinics, ignore city/chip/broken filters
+    list=Object.keys(D.clinics).map(slug=>({slug,c:D.clinics[slug],s:summary(D.clinics[slug])}))
+      .filter(r=>(r.c.disp+' '+r.c.city).toLowerCase().includes(SEARCH));
+    banner='Search "'+SEARCH+'" — '+list.length+' match'+(list.length===1?'':'es')+' (all cities)';
+  }
+  else if(!list.length && broken===0 && rows.length && (QF==='any'||QF.indexOf('st')===0)){list=rows.slice();banner='✓ No issues in '+(CITYF==='__all'?'any city':CITYF)+' — all '+rows.length+' clinic'+(rows.length===1?'':'s')+' healthy. Showing roster.';}
   list.sort((a,b)=>{const fa=a.s.firstBreak<0?9:a.s.firstBreak,fb=b.s.firstBreak<0?9:b.s.firstBreak;if(fa!==fb)return fa-fb;return (a.s.demand.d??0)-(b.s.demand.d??0);});
   h+='<div class="densrow"><span class="lab" style="text-transform:none;font-weight:600;color:'+(banner?'var(--good)':'var(--ink2)')+'">'+(banner||(list.length+' clinic'+(list.length===1?'':'s')+' to look at · '+healthy+' healthy'))+'</span><button class="fbtn" onclick="toggleDens()">'+(DENSITY==='full'?'▾ hide stage detail':'▸ stage detail')+'</button></div>';
   if(DENSITY==='full'){
-    h+='<div class="fmwrap"><table class="fm"><thead><tr><th>Clinic</th>'+STAGES.map(s=>'<th>'+s.short+'</th>').join('')+'<th>break</th><th style="text-align:left">why · vs baseline</th></tr></thead><tbody>';
-    if(!list.length)h+='<tr><td colspan="'+(STAGES.length+3)+'" style="color:var(--muted);padding:16px;text-align:left">Nothing here — healthy for this filter/city.</td></tr>';
+    h+='<div class="fmwrap"><table class="fm"><thead><tr><th>Clinic</th>'+STAGES.map(s=>'<th>'+s.short+'</th>').join('')+'<th>break</th><th style="text-align:left">why · vs baseline</th><th></th></tr></thead><tbody>';
+    if(!list.length)h+='<tr><td colspan="'+(STAGES.length+4)+'" style="color:var(--muted);padding:16px;text-align:left">Nothing here — healthy for this filter/city.</td></tr>';
     list.forEach(r=>{const s=r.s;const cells=STAGES.map(st=>{const x=s[st.key];const dd=x.d==null?'·':(Math.round(x.d*100)+'%');return '<td><span class="cell '+x.st+'">'+(x.st==='green'?'<span style="color:var(--muted)">'+dd+'</span>':dd)+'</span></td>';}).join('');
       const fb=s.firstBreak,brk=fb<0?'<span class="brk none" style="color:var(--good)">✓ stable</span>':'<span class="brk red">'+STAGES[fb].num+'·'+STAGES[fb].name+'</span>';
-      h+='<tr><td onclick="goClinic(\''+r.slug+'\')">'+r.c.disp+'</td>'+cells+'<td>'+brk+'</td><td class="why">'+whyText(s,fb)+'</td></tr>';});
+      h+='<tr onclick="goClinic(\''+r.slug+'\')" title="open funnel"><td>'+r.c.disp+'</td>'+cells+'<td>'+brk+'</td><td class="why">'+whyText(s,fb)+'</td><td class="drillco">›</td></tr>';});
     h+='</tbody></table></div>';
   } else {
-    h+='<div class="fmwrap"><table class="fm" style="min-width:640px"><thead><tr><th>Clinic</th><th style="text-align:left">earliest break</th><th style="text-align:left">recent 6 weeks — latest vs prior (click to drill)</th></tr></thead><tbody>';
-    if(!list.length)h+='<tr><td colspan="3" style="color:var(--muted);padding:16px;text-align:left">Nothing here — healthy for this filter/city.</td></tr>';
+    h+='<div class="fmwrap"><table class="fm" style="min-width:640px"><thead><tr><th>Clinic</th><th style="text-align:left">earliest break</th><th style="text-align:left">recent 6 weeks — latest vs prior</th><th style="text-align:right">open ›</th></tr></thead><tbody>';
+    if(!list.length)h+='<tr><td colspan="4" style="color:var(--muted);padding:16px;text-align:left">Nothing here — healthy for this filter/city.</td></tr>';
     list.forEach(r=>{const s=r.s,fb=s.firstBreak,brk=fb<0?'<span class="brk none" style="color:var(--good)">✓ stable</span>':'<span class="brk red">'+STAGES[fb].num+'·'+STAGES[fb].name+'</span>';
-      h+='<tr><td onclick="goClinic(\''+r.slug+'\')">'+r.c.disp+'</td><td style="text-align:left">'+brk+'</td><td class="why">'+whyChips(s,fb)+'</td></tr>';});
+      h+='<tr onclick="goClinic(\''+r.slug+'\')" title="open funnel"><td>'+r.c.disp+'</td><td style="text-align:left">'+brk+'</td><td class="why">'+whyChips(s,fb)+'</td><td class="drillco" style="text-align:right">›</td></tr>';});
     h+='</tbody></table></div>';
   }
   $('root').innerHTML=h;
 }
 function setQF(k){QF=k;renderOverview();}
 function toggleDens(){DENSITY=(DENSITY==='full'?'compact':'full');renderOverview();}
+function setSearch(v){SEARCH=(v||'').trim().toLowerCase();renderOverview();}
 function goClinic(slug){$('clinic').value=slug;C=D.clinics[slug];MODE='cl';OPEN={};syncMode();render();}
 
 // ---------- PER-CLINIC FUNNEL (drill) ----------
