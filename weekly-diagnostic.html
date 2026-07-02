@@ -103,8 +103,7 @@
   <div class="ctrls">
     <button class="fbtn on" id="mOv" onclick="setMode('ov')">◎ Overview · all clinics</button>
     <span class="lab" style="margin-left:6px">Cities</span><div class="ms"><button class="fbtn" id="cityBtn" onclick="openCityMs(event)">All cities ▾</button><div class="mspanel" id="cityPanel"></div></div>
-    <span class="lab" style="margin-left:6px">Clinic</span><select id="clinic"></select>
-    <input id="q" placeholder="🔍 search any clinic" oninput="setSearch(this.value)" style="border:1px solid var(--line);border-radius:9px;padding:7px 11px;font-size:13px;font-family:Inter;min-width:170px;background:#fff">
+    <span class="lab" style="margin-left:6px">Clinics</span><div class="ms"><button class="fbtn" id="clinBtn" onclick="openClinMs(event)">All clinics ▾</button><div class="mspanel" id="clinPanel"></div></div>
     <span class="lab" style="margin-left:10px">Compare</span><select id="met" onchange="setMet(this.value)"><option value="break">⚑ Earliest break</option><option value="availability">Availability · active days</option><option value="demand">Demand · leads</option><option value="conversion">book→done %</option><option value="bookings">Bookings</option><option value="done">Done</option><option value="velocity">Velocity</option></select>
     <span class="lab" style="margin-left:10px">Window</span><select id="curn"><option value="1">this week</option><option value="2">last 2 weeks</option><option value="3">last 3 weeks</option><option value="4">last 4 weeks</option></select>
     <span class="lab" style="margin-left:6px">vs prior</span><select id="basen"><option value="4">prior 4 weeks</option><option value="6">prior 6 weeks</option><option value="8">prior 8 weeks</option></select>
@@ -113,9 +112,10 @@
   <div id="root"></div>
 </div>
 <script>
-let D=null, CURN=1, BASEN=4, MODE='ov', C=null, OPEN={}, QF='any', CITYF=new Set(), DENSITY='compact', SEARCH='', MET='break';
+let D=null, CURN=1, BASEN=4, MODE='ov', C=null, OPEN={}, QF='any', CITYF=new Set(), CLINF=new Set(), DENSITY='compact', MET='break';
 function inCity(city){return !CITYF.size||CITYF.has(city);}
-function cityStr(){return CITYF.size?[...CITYF].join(', '):'All cities';}
+function inScope(slug){return CLINF.size?CLINF.has(slug):inCity(D.clinics[slug].city);}   // explicit clinics win, else city filter
+function cityStr(){if(CLINF.size)return CLINF.size+' clinic'+(CLINF.size===1?'':'s')+' selected';return CITYF.size?(CITYF.size<=2?[...CITYF].join(', '):CITYF.size+' cities'):'All cities';}
 const $=id=>document.getElementById(id);
 const mean=a=>{const b=a.filter(x=>x!=null);return b.length?b.reduce((x,y)=>x+y,0)/b.length:null;};
 const sum=a=>a.reduce((x,y)=>x+(y||0),0);
@@ -155,11 +155,11 @@ function curLabel(){const wl=D.week_labels,NW=wl.length;const c=CURN===1?wl[NW-1
 
 // ---------- OVERVIEW (portfolio scan) ----------
 function whyChips(s,fb){
-  if(fb<0){const m=s.bookings;const a=m.hm.arr.slice(-6);
+  if(fb<0){const m=s.bookings;const a=m.hm.arr.slice(-(CURN+BASEN));
     const chips=a.map(v=>'<span class="mc green">'+(v==null?'·':Math.round(v))+'</span>').join('');
     const amb=STAGES.findIndex(st=>s[st.key].st==='amber');
     return '<span class="mlab">SC bookings</span>'+chips;}
-  const st=STAGES[fb],m=s[st.key];const a=m.hm.arr.slice(-6);
+  const st=STAGES[fb],m=s[st.key];const a=m.hm.arr.slice(-(CURN+BASEN));
   const chips=a.map((v,i)=>{const cur=i>=a.length-CURN;const val=v==null?'·':(m.pct?Math.round(v)+'%':(Math.round(v*10)/10));return '<span class="mc '+(cur?m.st:'base')+'">'+val+'</span>';}).join('');
   return '<span class="mlab">'+cap(m.hm.nm)+'</span>'+chips;
 }
@@ -173,7 +173,7 @@ function whyText(s,fb){
 function renderOverview(){
   const lbl=curLabel();$('cmpnote').innerHTML='City: <b>'+cityStr()+'</b> · '+lbl.c+' vs baseline '+lbl.b+' · red ≤ −15%, amber ≤ −7%.';
   if(MET!=='break'){renderMetric();return;}
-  const rows=Object.keys(D.clinics).filter(slug=>inCity(D.clinics[slug].city)).map(slug=>({slug,c:D.clinics[slug],s:summary(D.clinics[slug])}));
+  const rows=Object.keys(D.clinics).filter(inScope).map(slug=>({slug,c:D.clinics[slug],s:summary(D.clinics[slug])}));
   const broken=rows.filter(r=>r.s.firstBreak>=0).length, healthy=rows.length-broken;
   // ISSUE chips: Any + one per stage (by earliest/root break) + founder cross
   const chips=[{key:'any',label:'Any issue',n:broken}]
@@ -189,12 +189,7 @@ function renderOverview(){
   else if(QF&&QF.indexOf('st')===0){const i=+QF.slice(2);list=rows.filter(r=>r.s.firstBreak===i);}
   else list=rows.filter(r=>r.s.firstBreak>=0);   // 'any'
   let banner='';
-  if(SEARCH){   // global finder: search across ALL clinics, ignore city/chip/broken filters
-    list=Object.keys(D.clinics).map(slug=>({slug,c:D.clinics[slug],s:summary(D.clinics[slug])}))
-      .filter(r=>(r.c.disp+' '+r.c.city).toLowerCase().includes(SEARCH));
-    banner='Search "'+SEARCH+'" — '+list.length+' match'+(list.length===1?'':'es')+' (all cities)';
-  }
-  else if(!list.length && broken===0 && rows.length && (QF==='any'||QF.indexOf('st')===0)){list=rows.slice();banner='✓ No issues in '+cityStr()+' — all '+rows.length+' clinic'+(rows.length===1?'':'s')+' healthy. Showing roster.';}
+  if(!list.length && broken===0 && rows.length && (QF==='any'||QF.indexOf('st')===0)){list=rows.slice();banner='✓ No issues in '+cityStr()+' — all '+rows.length+' clinic'+(rows.length===1?'':'s')+' healthy. Showing roster.';}
   list.sort((a,b)=>{const fa=a.s.firstBreak<0?9:a.s.firstBreak,fb=b.s.firstBreak<0?9:b.s.firstBreak;if(fa!==fb)return fa-fb;return (a.s.demand.d??0)-(b.s.demand.d??0);});
   h+='<div class="densrow"><span class="lab" style="text-transform:none;font-weight:600;color:'+(banner?'var(--good)':'var(--ink2)')+'">'+(banner||(list.length+' clinic'+(list.length===1?'':'s')+' to look at · '+healthy+' healthy'))+'</span><button class="fbtn" onclick="toggleDens()">'+(DENSITY==='full'?'▾ hide stage detail':'▸ stage detail')+'</button></div>';
   if(DENSITY==='full'){
@@ -205,7 +200,7 @@ function renderOverview(){
       h+='<tr onclick="goClinic(\''+r.slug+'\')" title="open funnel"><td>'+r.c.disp+'</td>'+cells+'<td>'+brk+'</td><td class="why">'+whyText(s,fb)+'</td><td class="drillco">›</td></tr>';});
     h+='</tbody></table></div>';
   } else {
-    h+='<div class="fmwrap"><table class="fm" style="min-width:640px"><thead><tr><th>Clinic</th><th style="text-align:left">earliest break</th><th style="text-align:left">recent 6 weeks — latest vs prior</th><th style="text-align:right">open ›</th></tr></thead><tbody>';
+    h+='<div class="fmwrap"><table class="fm" style="min-width:640px"><thead><tr><th>Clinic</th><th style="text-align:left">earliest break</th><th style="text-align:left">recent '+(CURN+BASEN)+' wks — window vs prior</th><th style="text-align:right">open ›</th></tr></thead><tbody>';
     if(!list.length)h+='<tr><td colspan="4" style="color:var(--muted);padding:16px;text-align:left">Nothing here — healthy for this filter/city.</td></tr>';
     list.forEach(r=>{const s=r.s,fb=s.firstBreak,brk=fb<0?'<span class="brk none" style="color:var(--good)">✓ stable</span>':'<span class="brk red">'+STAGES[fb].num+'·'+STAGES[fb].name+'</span>';
       h+='<tr onclick="goClinic(\''+r.slug+'\')" title="open funnel"><td>'+r.c.disp+'</td><td style="text-align:left">'+brk+'</td><td class="why">'+whyChips(s,fb)+'</td><td class="drillco" style="text-align:right">›</td></tr>';});
@@ -215,31 +210,29 @@ function renderOverview(){
 }
 function setQF(k){QF=k;renderOverview();}
 function toggleDens(){DENSITY=(DENSITY==='full'?'compact':'full');renderOverview();}
-function setSearch(v){SEARCH=(v||'').trim().toLowerCase();renderOverview();}
 function setMet(v){MET=v;renderOverview();}
 function metricChips(c,stageKey){
-  const st=STAGES.find(x=>x.key===stageKey),m=st.metrics(c)[0],ev=evalMetric(m.arr),a=m.arr.slice(-6);
+  const st=STAGES.find(x=>x.key===stageKey),m=st.metrics(c)[0],ev=evalMetric(m.arr),a=m.arr.slice(-(CURN+BASEN));
   const chips=a.map((v,i)=>{const cur=i>=a.length-CURN;const val=v==null?'·':(m.pct?Math.round(v)+'%':(Math.round(v*10)/10));return '<span class="mc '+(cur?ev.st:'base')+'">'+val+'</span>';}).join('');
   return {ev,chips,nm:m.nm,pct:m.pct};
 }
 function renderMetric(){
   const st=STAGES.find(x=>x.key===MET);
-  let rows=Object.keys(D.clinics).filter(slug=>SEARCH?((D.clinics[slug].disp+' '+D.clinics[slug].city).toLowerCase().includes(SEARCH)):inCity(D.clinics[slug].city))
-    .map(slug=>({slug,c:D.clinics[slug],mc:metricChips(D.clinics[slug],MET)}));
+  let rows=Object.keys(D.clinics).filter(inScope).map(slug=>({slug,c:D.clinics[slug],mc:metricChips(D.clinics[slug],MET)}));
   rows.sort((a,b)=>(a.mc.ev.d==null?9:a.mc.ev.d)-(b.mc.ev.d==null?9:b.mc.ev.d));   // worst drop first
   const nred=rows.filter(r=>r.mc.ev.st==='red').length, namb=rows.filter(r=>r.mc.ev.st==='amber').length;
   let h='<div class="chiprow"><span class="ichip on" style="cursor:default">'+st.name+'</span>'
     +'<span style="font-size:12px;color:var(--ink2);align-self:center;margin-left:4px">comparing every clinic on <b>'+st.metrics(D.clinics[rows[0]?rows[0].slug:Object.keys(D.clinics)[0]])[0].nm+'</b> · '
     +'<span style="color:var(--bad)">🔴 '+nred+' dropped</span> · <span style="color:var(--warn)">🟡 '+namb+'</span> · sorted worst→best</span></div>';
-  h+='<div class="densrow"><span class="lab" style="text-transform:none;font-weight:600;color:var(--ink2)">'+rows.length+' clinic'+(rows.length===1?'':'s')+(SEARCH?' · search "'+SEARCH+'"':' · '+cityStr())+'</span></div>';
-  h+='<div class="fmwrap"><table class="fm" style="min-width:640px"><thead><tr><th>Clinic</th><th style="text-align:right">Δ vs prior</th><th style="text-align:left">recent 6 weeks — '+st.name+'</th><th style="text-align:right">open ›</th></tr></thead><tbody>';
+  h+='<div class="densrow"><span class="lab" style="text-transform:none;font-weight:600;color:var(--ink2)">'+rows.length+' clinic'+(rows.length===1?'':'s')+' · '+cityStr()+'</span></div>';
+  h+='<div class="fmwrap"><table class="fm" style="min-width:640px"><thead><tr><th>Clinic</th><th style="text-align:right">Δ vs prior</th><th style="text-align:left">recent '+(CURN+BASEN)+' wks — '+st.name+'</th><th style="text-align:right">open ›</th></tr></thead><tbody>';
   if(!rows.length)h+='<tr><td colspan="4" style="color:var(--muted);padding:16px;text-align:left">No clinics.</td></tr>';
   rows.forEach(r=>{const e=r.mc.ev;const dcell=e.d==null?'<span class="flat">—</span>':'<span class="'+(e.d>0?'up':e.d<0?'down':'flat')+'">'+(e.d>0?'+':'')+Math.round(e.d*100)+'% <span class="flat" style="font-weight:500">was '+(r.mc.pct?Math.round(e.base)+'%':Math.round(e.base*10)/10)+'</span></span>';
     h+='<tr onclick="goClinic(\''+r.slug+'\')" title="open funnel"><td>'+r.c.disp+'</td><td style="text-align:right;font-family:JetBrains Mono">'+dcell+'</td><td class="why">'+r.mc.chips+'</td><td class="drillco" style="text-align:right">›</td></tr>';});
   h+='</tbody></table></div>';
   $('root').innerHTML=h;
 }
-function goClinic(slug){$('clinic').value=slug;C=D.clinics[slug];MODE='cl';OPEN={};syncMode();render();}
+function goClinic(slug){C=D.clinics[slug];MODE='cl';OPEN={};syncMode();render();}
 
 // ---------- PER-CLINIC FUNNEL (drill) ----------
 function renderClinic(){
@@ -287,35 +280,44 @@ function drill(s,e){const wl=D.week_labels,NW=D.weeks.length,show=Math.min(NW,8)
 function tog(k){OPEN[k]=!OPEN[k];const el=$('dr_'+k);if(el)el.classList.toggle('open',OPEN[k]);}
 
 function setMode(m){MODE=m;syncMode();render();}
-function syncMode(){$('mOv').classList.toggle('on',MODE==='ov');$('clinic').style.opacity=MODE==='cl'?'1':'.55';}
+function syncMode(){$('mOv').classList.toggle('on',MODE==='ov');}
 function render(){MODE==='ov'?renderOverview():renderClinic();}
-function clinicOpts(){const ks=Object.keys(D.clinics).filter(s=>inCity(D.clinics[s].city)).sort((a,b)=>D.clinics[a].disp.localeCompare(D.clinics[b].disp));
-  $('clinic').innerHTML=ks.map(s=>'<option value="'+s+'">'+D.clinics[s].disp+'</option>').join('');return ks;}
 let ALLCITIES=[];
-function openCityMs(e){e.stopPropagation();const p=$('cityPanel');const show=!p.classList.contains('on');document.querySelectorAll('.mspanel').forEach(x=>x.classList.remove('on'));if(show){renderCityPanel('');p.classList.add('on');const q=$('cityQ');if(q)q.focus();}}
-function renderCityPanel(q){q=(q||'').toLowerCase();
-  const list=ALLCITIES.filter(c=>c.toLowerCase().includes(q));
-  let h='<input id="cityQ" class="msq" placeholder="search city…" oninput="renderCityPanel(this.value)" onclick="event.stopPropagation()">'
-    +'<div class="msact"><a onclick="allCity(1)">select all</a><a onclick="allCity(0)">clear</a></div>';
+function cityBtnLabel(){return (CITYF.size?(CITYF.size<=2?[...CITYF].join(', '):CITYF.size+' cities'):'All cities')+' ▾';}
+function clinBtnLabel(){return (CLINF.size?(CLINF.size===1?D.clinics[[...CLINF][0]].loc:CLINF.size+' clinics'):'All clinics')+' ▾';}
+function closePanels(){document.querySelectorAll('.mspanel').forEach(x=>x.classList.remove('on'));}
+function openCityMs(e){e.stopPropagation();const p=$('cityPanel'),show=!p.classList.contains('on');closePanels();if(show){renderCityPanel('');p.classList.add('on');const q=$('cityQ');if(q)q.focus();}}
+function renderCityPanel(q){q=(q||'').toLowerCase();const list=ALLCITIES.filter(c=>c.toLowerCase().includes(q));
+  let h='<input id="cityQ" class="msq" placeholder="search city…" oninput="renderCityPanel(this.value)" onclick="event.stopPropagation()"><div class="msact"><a onclick="allCity(1)">select all</a><a onclick="allCity(0)">clear</a></div>';
   list.forEach(c=>{const n=Object.values(D.clinics).filter(x=>x.city===c).length;h+='<label class="msi" onclick="event.stopPropagation()"><input type="checkbox" '+(CITYF.has(c)?'checked':'')+' onchange="togCity(\''+c.replace(/'/g,"\\'")+'\')">'+c+'<span class="c">'+n+'</span></label>';});
   $('cityPanel').innerHTML=h;}
-function cityChanged(){$('cityBtn').textContent=(CITYF.size?CITYF.size+' cit'+(CITYF.size===1?'y':'ies'):'All cities')+' ▾';$('cityBtn').classList.toggle('on',!!CITYF.size);
+function cityChanged(){$('cityBtn').textContent=cityBtnLabel();$('cityBtn').classList.toggle('on',!!CITYF.size);
   try{localStorage.setItem('wd_city',JSON.stringify([...CITYF]));}catch(e){}
-  const ks=clinicOpts();if(MODE==='cl'){C=D.clinics[ks[0]];OPEN={};}render();}
+  if(CLINF.size)[...CLINF].forEach(s=>{if(!inCity(D.clinics[s].city))CLINF.delete(s);});$('clinBtn').textContent=clinBtnLabel();$('clinBtn').classList.toggle('on',!!CLINF.size);
+  render();}
 function togCity(c){CITYF.has(c)?CITYF.delete(c):CITYF.add(c);cityChanged();}
 function allCity(on){CITYF=on?new Set(ALLCITIES):new Set();renderCityPanel($('cityQ')?$('cityQ').value:'');cityChanged();}
+function openClinMs(e){e.stopPropagation();const p=$('clinPanel'),show=!p.classList.contains('on');closePanels();if(show){renderClinPanel('');p.classList.add('on');const q=$('clinQ');if(q)q.focus();}}
+function renderClinPanel(q){q=(q||'').toLowerCase();
+  const ks=Object.keys(D.clinics).filter(s=>inCity(D.clinics[s].city)&&D.clinics[s].disp.toLowerCase().includes(q)).sort((a,b)=>D.clinics[a].disp.localeCompare(D.clinics[b].disp));
+  let h='<input id="clinQ" class="msq" placeholder="search clinic…" oninput="renderClinPanel(this.value)" onclick="event.stopPropagation()"><div class="msact"><a onclick="allClin(1)">select all</a><a onclick="allClin(0)">clear</a></div>';
+  if(!ks.length)h+='<div class="msi" style="color:var(--muted)">no clinics</div>';
+  ks.forEach(s=>{h+='<label class="msi" onclick="event.stopPropagation()"><input type="checkbox" '+(CLINF.has(s)?'checked':'')+' onchange="togClin(\''+s+'\')">'+D.clinics[s].disp+'</label>';});
+  $('clinPanel').innerHTML=h;}
+function clinChanged(){$('clinBtn').textContent=clinBtnLabel();$('clinBtn').classList.toggle('on',!!CLINF.size);render();}
+function togClin(s){CLINF.has(s)?CLINF.delete(s):CLINF.add(s);clinChanged();}
+function allClin(on){const q=$('clinQ')?$('clinQ').value.toLowerCase():'';const ks=Object.keys(D.clinics).filter(s=>inCity(D.clinics[s].city)&&D.clinics[s].disp.toLowerCase().includes(q));if(on)ks.forEach(s=>CLINF.add(s));else ks.forEach(s=>CLINF.delete(s));renderClinPanel($('clinQ')?$('clinQ').value:'');clinChanged();}
 async function boot(){
   try{D=await fetch('data_weekly_diag.json').then(r=>r.json());}
   catch(e){$('root').innerHTML='<div class="err">Failed to load data_weekly_diag.json</div>';return;}
   ALLCITIES=[...new Set(Object.values(D.clinics).map(c=>c.city))].sort();
   try{const saved=JSON.parse(localStorage.getItem('wd_city')||'[]');if(Array.isArray(saved))saved.forEach(c=>{if(ALLCITIES.includes(c))CITYF.add(c);});}catch(e){}
-  $('cityBtn').textContent=(CITYF.size?CITYF.size+' cit'+(CITYF.size===1?'y':'ies'):'All cities')+' ▾';$('cityBtn').classList.toggle('on',!!CITYF.size);
-  document.addEventListener('click',e=>{if(!e.target.closest('.ms'))document.querySelectorAll('.mspanel').forEach(x=>x.classList.remove('on'));});
-  const ks=clinicOpts();
-  $('clinic').onchange=()=>{C=D.clinics[$('clinic').value];MODE='cl';OPEN={};syncMode();render();};
+  $('cityBtn').textContent=cityBtnLabel();$('cityBtn').classList.toggle('on',!!CITYF.size);
+  $('clinBtn').textContent=clinBtnLabel();
+  document.addEventListener('click',e=>{if(!e.target.closest('.ms'))closePanels();});
   $('curn').onchange=()=>{CURN=+$('curn').value;render();};
   $('basen').onchange=()=>{BASEN=+$('basen').value;render();};
-  C=D.clinics[ks[0]];syncMode();render();
+  C=D.clinics[Object.keys(D.clinics)[0]];syncMode();render();
 }
 window.addEventListener('DOMContentLoaded',boot);
 </script>
