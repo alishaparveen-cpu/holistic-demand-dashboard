@@ -131,12 +131,12 @@
   <!-- ── 1) what am I looking at + time window ── -->
   <div class="toolbar">
     <div class="tgroup"><span class="tlab">View</span>
-      <div class="seg"><button class="segbtn on" id="vIssues" onclick="setView('issues')">⚠ Where are the issues?</button><button class="segbtn" id="vCompare" onclick="setView('compare')">📊 Compare on a metric</button></div>
+      <div class="seg"><button class="segbtn on" id="vIssues" onclick="setView('issues')">⚠ Where are the issues?</button><button class="segbtn" id="vCompare" onclick="setView('compare')">📊 Overview</button></div>
     </div>
     <div class="tgroup" style="margin-left:auto"><span class="tlab">Compare</span>
-      <select id="curn"><option value="1">this week</option><option value="2">last 2 weeks</option><option value="3">last 3 weeks</option><option value="4">last 4 weeks</option></select>
+      <select id="curn" onchange="setCurN(this.value)"></select>
       <span style="font-size:12px;font-weight:600;color:var(--faint)">vs</span>
-      <select id="basen"><option value="4">prior 4 wks</option><option value="6">prior 6 wks</option><option value="8">prior 8 wks</option></select>
+      <select id="basen" onchange="setBaseN(this.value)"></select>
     </div>
   </div>
   <!-- metric picker (only in Compare view) -->
@@ -147,7 +147,7 @@
     <button class="mbtn" data-m="done" onclick="setMet('done')">Done</button>
     <button class="mbtn" data-m="availability" onclick="setMet('availability')">Availability</button>
     <button class="mbtn" data-m="conversion" onclick="setMet('conversion')">book→done %</button>
-    <button class="mbtn" data-m="velocity" onclick="setMet('velocity')">Velocity</button>
+    <button class="mbtn" data-m="velocity" onclick="setMet('velocity')">Bookings/active day</button>
   </div>
   <!-- ── 2) scope ── -->
   <div class="toolbar">
@@ -199,7 +199,7 @@ const STAGES=[
    metrics:c=>[{nm:'done',arr:c.done.done,fmtd:0}],headline:0,doneCat:c=>c.done.by_cat},
   {key:'demand',num:5,name:'Demand',short:'Demand',sub:'leads · lead→book %',diag:'Channel break — GMB / Ads / Practo',fix:'Marketing',
    metrics:c=>[{nm:'leads',arr:c.demand.leads,fmtd:0},{nm:'lead→book % (tagged-lead ~)',arr:c.demand.lead_book_pct,pct:1}],headline:0,byChannel:c=>c.demand.by_channel},
-  {key:'velocity',num:6,name:'Velocity',short:'Velocity',sub:'bookings / active day (weekday·weekend weighted) ⓘ',diag:'Capacity limit — scheduling / staffing',fix:'Ops · staffing',
+  {key:'velocity',num:6,name:'Bookings / active day',short:'Bk/day',sub:'weekday·weekend weighted ⓘ',diag:'Capacity limit — scheduling / staffing',fix:'Ops · staffing',
    metrics:c=>[{nm:'bookings / active day',arr:c.velocity.per_active_day,fmtd:1}],headline:0,velMath:true},
 ];
 function evalMetric(arr){const NW=arr.length;const cur=mean(arr.slice(NW-CURN));const base=mean(arr.slice(Math.max(0,NW-CURN-BASEN),NW-CURN));
@@ -252,6 +252,13 @@ function openZoom(z){if(!z)return;if(z!==CURZ){PICKA=null;PICKB=null;}CURZ=z;
 document.addEventListener('keydown',e=>{if(e.key==='Escape')closeZ();});
 function dpct(d){if(d==null)return '<span class="flat">—</span>';const p=Math.round(d*100);return '<span class="'+(p>0?'up':p<0?'down':'flat')+'">'+(p>0?'+':'')+p+'%</span>';}
 function curLabel(){const wl=D.week_labels,NW=wl.length;const c=CURN===1?wl[NW-1]:wl[NW-CURN]+' → '+wl[NW-1];const b=wl[Math.max(0,NW-CURN-BASEN)]+' → '+wl[NW-CURN-1];return {c,b};}
+// ---- time-window selectors (presets + custom) ----
+const CUR_PRESETS=[[1,'this week'],[2,'last 2 weeks'],[3,'last 3 weeks'],[4,'last 4 weeks'],[6,'last 6 weeks'],[8,'last 8 weeks']];
+const BASE_PRESETS=[[4,'prior 4 wks'],[6,'prior 6 wks'],[8,'prior 8 wks'],[12,'prior 12 wks'],[26,'prior 26 wks']];
+function fillSel(id,presets,val,unit){const opts=presets.slice();if(!opts.some(p=>p[0]===val))opts.push([val,val+' '+unit]);opts.sort((a,b)=>a[0]-b[0]);
+  $(id).innerHTML=opts.map(p=>'<option value="'+p[0]+'"'+(p[0]===val?' selected':'')+'>'+p[1]+'</option>').join('')+'<option value="custom">✎ custom…</option>';}
+function setCurN(v){if(v==='custom'){const n=parseInt(prompt('Current window — how many recent weeks? (1–20)',CURN),10);if(!(n>=1)){fillSel('curn',CUR_PRESETS,CURN,'weeks');return;}CURN=Math.min(n,20);}else CURN=+v;fillSel('curn',CUR_PRESETS,CURN,'weeks');render();}
+function setBaseN(v){const maxb=(D?D.weeks.length:26)-CURN;if(v==='custom'){const n=parseInt(prompt('Baseline — how many prior weeks to compare against? (1–'+maxb+')',BASEN),10);if(!(n>=1)){fillSel('basen',BASE_PRESETS,BASEN,'wks');return;}BASEN=Math.min(n,maxb);}else BASEN=+v;fillSel('basen',BASE_PRESETS,BASEN,'wks');render();}
 
 // ---------- OVERVIEW (portfolio scan) ----------
 function whyChips(s,fb){
@@ -330,10 +337,11 @@ function renderMetric(){
     +'<span style="font-size:12px;color:var(--ink2);align-self:center;margin-left:4px">comparing every clinic on <b>'+st.metrics(D.clinics[rows[0]?rows[0].slug:Object.keys(D.clinics)[0]])[0].nm+'</b> · '
     +'<span style="color:var(--bad)">🔴 '+nred+' dropped</span> · <span style="color:var(--warn)">🟡 '+namb+'</span> · sorted worst→best</span></div>';
   h+='<div class="densrow"><span class="lab" style="text-transform:none;font-weight:600;color:var(--ink2)">'+rows.length+' clinic'+(rows.length===1?'':'s')+' · '+cityStr()+'</span></div>';
-  h+='<div class="fmwrap"><table class="fm" style="min-width:640px"><thead><tr><th>Clinic</th><th style="text-align:right">Δ vs prior</th><th style="text-align:left">recent '+(CURN+BASEN)+' wks — '+st.name+' &nbsp;<span style="font-weight:500;text-transform:none;color:var(--faint)">'+SLOPE_LEG+'</span></th><th style="text-align:right">open ›</th></tr></thead><tbody>';
+  h+='<div class="fmwrap"><table class="fm" style="min-width:640px"><thead><tr><th>Clinic</th><th style="text-align:left">recent '+(CURN+BASEN)+' wks — '+st.name+' &nbsp;<span style="font-weight:500;text-transform:none;color:var(--faint)">'+SLOPE_LEG+'</span></th><th style="text-align:right">now vs before</th><th style="text-align:right">open ›</th></tr></thead><tbody>';
   if(!rows.length)h+='<tr><td colspan="4" style="color:var(--muted);padding:16px;text-align:left">No clinics.</td></tr>';
-  rows.forEach(r=>{const e=r.mc.ev;const dcell=e.d==null?'<span class="flat">—</span>':'<span class="'+(e.d>0?'up':e.d<0?'down':'flat')+'">'+(e.d>0?'+':'')+Math.round(e.d*100)+'% <span class="flat" style="font-weight:500">was '+(r.mc.pct?Math.round(e.base)+'%':Math.round(e.base*10)/10)+'</span></span>';
-    h+='<tr onclick="goClinic(\''+r.slug+'\')" title="open funnel"><td>'+r.c.disp+'</td><td style="text-align:right;font-family:JetBrains Mono">'+dcell+'</td><td class="why">'+slopeBadge(r.mc.a)+r.mc.chips+'</td><td class="drillco" style="text-align:right">›</td></tr>';});
+  rows.forEach(r=>{const e=r.mc.ev,pct=r.mc.pct,f=v=>v==null?'—':(pct?Math.round(v)+'%':(Math.round(v*10)/10));
+    const dcell=(e.cur==null||e.d==null)?'<span class="flat">'+f(e.cur)+'</span>':'<b>'+f(e.cur)+'</b> <span class="flat">vs</span> '+f(e.base)+' &nbsp;<span class="'+(e.d>0?'up':e.d<0?'down':'flat')+'" style="font-weight:700">'+(e.d>0?'+':'')+Math.round(e.d*100)+'%</span>';
+    h+='<tr onclick="goClinic(\''+r.slug+'\')" title="open funnel"><td>'+r.c.disp+'</td><td class="why">'+slopeBadge(r.mc.a)+r.mc.chips+'</td><td style="text-align:right;font-family:JetBrains Mono;white-space:nowrap">'+dcell+'</td><td class="drillco" style="text-align:right">›</td></tr>';});
   h+='</tbody></table></div>';
   $('root').innerHTML=h;
 }
@@ -418,8 +426,7 @@ async function boot(){
   $('cityBtn').textContent=cityBtnLabel();$('cityBtn').classList.toggle('on',!!CITYF.size);
   $('clinBtn').textContent=clinBtnLabel();
   document.addEventListener('click',e=>{if(!e.target.closest('.ms'))closePanels();});
-  $('curn').onchange=()=>{CURN=+$('curn').value;render();};
-  $('basen').onchange=()=>{BASEN=+$('basen').value;render();};
+  fillSel('curn',CUR_PRESETS,CURN,'weeks');fillSel('basen',BASE_PRESETS,BASEN,'wks');
   C=D.clinics[Object.keys(D.clinics)[0]];syncMode();render();
 }
 window.addEventListener('DOMContentLoaded',boot);
