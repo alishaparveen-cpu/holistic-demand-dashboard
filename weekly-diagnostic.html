@@ -25,6 +25,9 @@
   .ichip b{color:var(--ink);margin-left:4px}.ichip.on{background:var(--accent);border-color:var(--accent);color:#fff}.ichip.on b{color:#fff}
   .ichip.zero{opacity:.4} .ichip:hover{border-color:var(--accent)}
   .densrow{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+  .mc{display:inline-block;min-width:26px;text-align:center;font-family:'JetBrains Mono';font-size:11px;font-weight:700;border-radius:5px;padding:2px 5px;margin-right:3px}
+  .mc.base{background:var(--inset);color:var(--muted)} .mc.red{background:var(--rbg);color:#a8352a} .mc.amber{background:var(--abg);color:#8a6412} .mc.green{background:var(--gbg);color:var(--good)}
+  .mlab{font-size:11px;color:var(--ink2);font-weight:600;margin-right:7px;display:inline-block;min-width:78px} .wc{font-size:10.5px;color:var(--bad);margin-left:6px} .fixt{font-size:10.5px;color:var(--muted);margin-left:8px}
   /* ---- founder question chips ---- */
   .qgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(232px,1fr));gap:10px;margin-bottom:16px}
   .qc{background:var(--sheet);border:1px solid var(--line);border-radius:11px;padding:12px 14px;cursor:pointer;transition:box-shadow .15s}
@@ -137,6 +140,13 @@ function dpct(d){if(d==null)return '<span class="flat">—</span>';const p=Math.
 function curLabel(){const wl=D.week_labels,NW=wl.length;const c=CURN===1?wl[NW-1]:wl[NW-CURN]+' → '+wl[NW-1];const b=wl[Math.max(0,NW-CURN-BASEN)]+' → '+wl[NW-CURN-1];return {c,b};}
 
 // ---------- OVERVIEW (portfolio scan) ----------
+function whyChips(s,fb){
+  if(fb<0)return '<span class="mlab" style="color:var(--muted)">stable</span>';
+  const st=STAGES[fb],m=s[st.key];const a=m.hm.arr.slice(-6);
+  const chips=a.map((v,i)=>{const cur=i>=a.length-CURN;const val=v==null?'·':(m.pct?Math.round(v)+'%':(Math.round(v*10)/10));return '<span class="mc '+(cur?m.st:'base')+'">'+val+'</span>';}).join('');
+  let extra=(st.key==='demand'&&s.worstChan)?'<span class="wc">'+s.worstChan.ch+' '+Math.round(s.worstChan.d*100)+'%</span>':'';
+  return '<span class="mlab">'+cap(m.hm.nm)+'</span>'+chips+extra+'<span class="fixt">fix '+st.fix+'</span>';
+}
 function whyText(s,fb){
   if(fb<0){const amb=STAGES.findIndex(st=>s[st.key].st==='amber');return amb<0?'stable':'watch: '+STAGES[amb].name.toLowerCase()+' '+Math.round(s[STAGES[amb].key].d*100)+'%';}
   const st=STAGES[fb],x=s[st.key];let why='<b>'+st.diag.split(' — ')[0]+'</b> · '+cap(x.hm.nm)+' '+Math.round(x.d*100)+'%';
@@ -168,10 +178,10 @@ function renderOverview(){
       h+='<tr><td onclick="goClinic(\''+r.slug+'\')">'+r.c.disp+'</td>'+cells+'<td>'+brk+'</td><td class="why">'+whyText(s,fb)+'</td></tr>';});
     h+='</tbody></table></div>';
   } else {
-    h+='<div class="fmwrap"><table class="fm" style="min-width:560px"><thead><tr><th>Clinic</th><th style="text-align:left">earliest break</th><th style="text-align:left">why · vs baseline · click to drill</th></tr></thead><tbody>';
+    h+='<div class="fmwrap"><table class="fm" style="min-width:640px"><thead><tr><th>Clinic</th><th style="text-align:left">earliest break</th><th style="text-align:left">recent 6 weeks — latest vs prior (click to drill)</th></tr></thead><tbody>';
     if(!list.length)h+='<tr><td colspan="3" style="color:var(--muted);padding:16px;text-align:left">Nothing here — healthy for this filter/city.</td></tr>';
     list.forEach(r=>{const s=r.s,fb=s.firstBreak,brk=fb<0?'<span class="brk none">—</span>':'<span class="brk red">'+STAGES[fb].num+'·'+STAGES[fb].name+'</span>';
-      h+='<tr><td onclick="goClinic(\''+r.slug+'\')">'+r.c.disp+'</td><td style="text-align:left">'+brk+'</td><td class="why">'+whyText(s,fb)+'</td></tr>';});
+      h+='<tr><td onclick="goClinic(\''+r.slug+'\')">'+r.c.disp+'</td><td style="text-align:left">'+brk+'</td><td class="why">'+whyChips(s,fb)+'</td></tr>';});
     h+='</tbody></table></div>';
   }
   $('root').innerHTML=h;
