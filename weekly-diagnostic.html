@@ -40,6 +40,15 @@
   .mlab{font-size:11px;color:var(--ink2);font-weight:600;margin-right:7px;display:inline-block;min-width:78px} .wc{font-size:10.5px;color:var(--bad);margin-left:6px} .fixt{font-size:10.5px;color:var(--muted);margin-left:8px}
   .slope{display:inline-block;font-weight:800;font-size:13px;margin-right:7px;width:13px;text-align:center;cursor:help}
   .slope.down{color:var(--bad)}.slope.amber{color:var(--warn)}.slope.up{color:var(--good)}.slope.flat{color:var(--faint)}
+  .sp{cursor:zoom-in} .zsp{cursor:zoom-in;display:inline-block}
+  .modal{position:fixed;inset:0;background:rgba(20,25,22,.45);display:none;align-items:center;justify-content:center;z-index:50;padding:20px}
+  .modal.on{display:flex}
+  .mbox{background:#fff;border-radius:14px;padding:18px 20px;max-width:760px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.25)}
+  .mhd{display:flex;justify-content:space-between;align-items:center;font-family:Fraunces;font-size:17px;font-weight:600;margin-bottom:6px;gap:12px}
+  .mhd button{border:none;background:none;font-size:18px;cursor:pointer;color:var(--muted)}
+  .pickbar{font-size:12px;color:var(--ink2);min-height:20px;margin:2px 0 6px}
+  .pclear{color:var(--muted);cursor:pointer;font-size:11px;margin-left:6px} .pclear:hover{color:var(--bad)}
+  .lgd{font-size:11px;color:var(--muted);margin-top:6px}
   /* ---- founder question chips ---- */
   .qgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(232px,1fr));gap:10px;margin-bottom:16px}
   .qc{background:var(--sheet);border:1px solid var(--line);border-radius:11px;padding:12px 14px;cursor:pointer;transition:box-shadow .15s}
@@ -132,6 +141,7 @@
   <div class="cmpnote" id="cmpnote"></div>
   <div id="root"></div>
 </div>
+<div class="modal" id="modal" onclick="if(event.target===this)closeZ()"><div class="mbox"><div class="mhd"><span id="mTitle"></span><button onclick="closeZ()" title="close">✕</button></div><div id="pickBar" class="pickbar"></div><div id="mBody"></div></div></div>
 <script>
 let D=null, CURN=1, BASEN=4, MODE='ov', C=null, OPEN={}, QF='any', CITYF=new Set(), CLINF=new Set(), DENSITY='compact', MET='break';
 function inCity(city){return !CITYF.size||CITYF.has(city);}
@@ -187,6 +197,40 @@ function spark(arr,col){const v=arr.map(x=>x==null?0:x);const n=v.length;const m
   const x=i=>p+i*(w-2*p)/(n-1),y=val=>h-p-((val-mn)/((mx-mn)||1))*(h-2*p);
   return '<svg class="sp" width="'+w+'" height="'+h+'"><polyline fill="none" stroke="'+col+'" stroke-width="1.5" points="'+v.map((val,i)=>x(i).toFixed(1)+','+y(val).toFixed(1)).join(' ')+'"/><circle cx="'+x(n-1).toFixed(1)+'" cy="'+y(v[n-1]).toFixed(1)+'" r="2.3" fill="'+col+'"/></svg>';}
 const COL={red:'var(--bad)',amber:'var(--warn)',green:'var(--good)'};
+// ---------- click-to-zoom sparklines ----------
+let ZREG=[],CURZ=null,PICKA=null,PICKB=null;
+function zspark(label,arr,col,pct){const i=ZREG.length;ZREG.push({label,arr,col:col||'var(--ink2)',pct:!!pct});
+  return '<span class="zsp" onclick="event.stopPropagation();zoomReg('+i+')" title="click to zoom">'+spark(arr,col)+'</span>';}
+function zoomReg(i){openZoom(ZREG[i]);}
+function fmtZ(v,pct){return v==null?'·':(pct?Math.round(v)+'%':(Math.round(v*10)/10).toLocaleString('en-IN'));}
+function pickPt(i){if(PICKA===null)PICKA=i;else if(PICKB===null){if(i===PICKA)PICKA=null;else PICKB=i;}else{PICKA=i;PICKB=null;}if(CURZ)openZoom(CURZ);}
+function clearPick(){PICKA=null;PICKB=null;if(CURZ)openZoom(CURZ);}
+function closeZ(){$('modal').classList.remove('on');PICKA=null;PICKB=null;CURZ=null;}
+function openZoom(z){if(!z)return;if(z!==CURZ){PICKA=null;PICKB=null;}CURZ=z;
+  const F=v=>fmtZ(v,z.pct),labels=D.week_labels,col=z.col;
+  $('mTitle').textContent=(C?C.disp+' · ':'')+z.label;
+  const W=700,H=300,pad=40,padT=26;
+  const v=z.arr.map(x=>x==null||isNaN(x)?null:x),n=v.length;
+  const valid=v.filter(x=>x!=null);const vmn=valid.length?Math.min(...valid):0,vmx=valid.length?Math.max(...valid):1,rng=(vmx-vmn)||Math.abs(vmx)||1;
+  const lo=Math.max(0,vmn-rng*0.18),hi=vmx+rng*0.18;
+  const x=i=>pad+i*(W-2*pad)/((n-1)||1),y=val=>{let yy=H-pad-((val-lo)/((hi-lo)||1))*(H-pad-padT);return yy<padT?padT:(yy>H-pad?H-pad:yy);};
+  let p='',pts='',lbls='',prev=null;
+  v.forEach((val,i)=>{if(val==null){prev=null;return;}if(prev!=null)p+='<line x1="'+x(prev.i).toFixed(1)+'" y1="'+y(prev.v).toFixed(1)+'" x2="'+x(i).toFixed(1)+'" y2="'+y(val).toFixed(1)+'" stroke="'+col+'" stroke-width="2"/>';prev={i,v:val};
+    const sel=(i===PICKA||i===PICKB);
+    pts+='<circle cx="'+x(i).toFixed(1)+'" cy="'+y(val).toFixed(1)+'" r="13" fill="transparent" style="cursor:pointer" onclick="pickPt('+i+')"></circle><circle cx="'+x(i).toFixed(1)+'" cy="'+y(val).toFixed(1)+'" r="'+(sel?5.5:3.2)+'" fill="'+(sel?(i===PICKA?'#1F6F5C':'#C2691F'):col)+'" stroke="'+(sel?'#fff':col)+'" stroke-width="'+(sel?2:0)+'" style="cursor:pointer" onclick="pickPt('+i+')"><title>'+labels[i]+': '+F(val)+'</title></circle>';
+    lbls+='<text x="'+x(i).toFixed(1)+'" y="'+(y(val)-9).toFixed(1)+'" font-size="11" fill="'+col+'" text-anchor="middle" font-weight="700">'+F(val)+'</text>';});
+  let gl='';[0,.5,1].forEach(f=>{const yy=H-pad-(f*(H-pad-padT));gl+='<line x1="'+pad+'" y1="'+yy+'" x2="'+(W-pad)+'" y2="'+yy+'" stroke="#EEEBE2"/><text x="4" y="'+(yy+3)+'" font-size="10" fill="#999">'+F(lo+f*(hi-lo))+'</text>';});
+  const rot=n>8;const Hv=rot?H+44:H;let xl='';labels.forEach((L,i)=>{const lx=x(i).toFixed(1),ly=(H-pad+15).toFixed(1);if(rot)xl+='<text x="'+lx+'" y="'+ly+'" font-size="9" fill="#999" text-anchor="end" transform="rotate(-40 '+lx+' '+ly+')">'+L+'</text>';else xl+='<text x="'+lx+'" y="'+(H-9)+'" font-size="9" fill="#999" text-anchor="middle">'+L+'</text>';});
+  const avg=valid.length?valid.reduce((a,b)=>a+b,0)/valid.length:null;
+  let avgLine='';if(avg!=null){const ya=y(avg);avgLine='<line x1="'+pad+'" y1="'+ya.toFixed(1)+'" x2="'+(W-pad)+'" y2="'+ya.toFixed(1)+'" stroke="'+col+'" stroke-width="1.3" stroke-dasharray="6 4" opacity="0.5"/>';}
+  let connector='';if(PICKA!=null&&PICKB!=null&&v[PICKA]!=null&&v[PICKB]!=null)connector='<line x1="'+x(PICKA).toFixed(1)+'" y1="'+y(v[PICKA]).toFixed(1)+'" x2="'+x(PICKB).toFixed(1)+'" y2="'+y(v[PICKB]).toFixed(1)+'" stroke="#C2691F" stroke-width="1.6" stroke-dasharray="5 3"/>';
+  $('mBody').innerHTML='<svg width="100%" viewBox="0 0 '+W+' '+Hv+'">'+gl+avgLine+connector+p+pts+lbls+xl+'</svg><div class="lgd">oldest→newest · '+n+' weeks · dashed = average'+(avg!=null?' ('+F(avg)+')':'')+'</div>';
+  const pb=$('pickBar');
+  if(PICKA!=null&&PICKB!=null&&v[PICKA]!=null&&v[PICKB]!=null){const a=v[PICKA],b=v[PICKB],pc=a?Math.round((b-a)/Math.abs(a)*100):0,c=pc>0?'#1F6F5C':pc<0?'#B23A2E':'#52605A';pb.innerHTML='<b style="color:#1F6F5C">'+labels[PICKA]+'</b> '+F(a)+' → <b style="color:#C2691F">'+labels[PICKB]+'</b> '+F(b)+' &nbsp;<span style="color:'+c+';font-weight:700;font-size:14px">'+(pc>0?'+':'')+pc+'%</span> <span class="pclear" onclick="clearPick()">✕ clear</span>';}
+  else if(PICKA!=null)pb.innerHTML='Selected <b style="color:#1F6F5C">'+labels[PICKA]+'</b> '+F(v[PICKA])+' — click another point to compare <span class="pclear" onclick="clearPick()">✕</span>';
+  else pb.innerHTML='<span style="color:var(--muted)">➜ Click any two points to compare — % change between them.</span>';
+  $('modal').classList.add('on');}
+document.addEventListener('keydown',e=>{if(e.key==='Escape')closeZ();});
 function dpct(d){if(d==null)return '<span class="flat">—</span>';const p=Math.round(d*100);return '<span class="'+(p>0?'up':p<0?'down':'flat')+'">'+(p>0?'+':'')+p+'%</span>';}
 function curLabel(){const wl=D.week_labels,NW=wl.length;const c=CURN===1?wl[NW-1]:wl[NW-CURN]+' → '+wl[NW-1];const b=wl[Math.max(0,NW-CURN-BASEN)]+' → '+wl[NW-CURN-1];return {c,b};}
 
@@ -279,6 +323,7 @@ function goClinic(slug){C=D.clinics[slug];MODE='cl';OPEN={};syncMode();render();
 // ---------- PER-CLINIC FUNNEL (drill) ----------
 function renderClinic(){
   if(!C){$('root').innerHTML='';return;}
+  ZREG=[];CURZ=null;
   const lbl=curLabel();$('cmpnote').innerHTML='Comparing <b>'+lbl.c+'</b> vs baseline <b>'+lbl.b+'</b> · red ≤ −15%, amber ≤ −7%.';
   const evs=STAGES.map(s=>evalStage(s,C));const firstRed=evs.findIndex(e=>e.status==='red');
   let vh,vd,vok=false;
@@ -294,14 +339,14 @@ function renderClinic(){
     const dtag=(e.status==='green')?'':'<span class="dtag '+e.status+'">'+s.diag.split(' — ')[0]+' · fix '+s.fix+'</span>';
     h+='<div class="stagerow"><div class="stage '+e.status+dimc+'" onclick="tog(\''+s.key+'\')"><div class="snum">'+s.num+'</div>'
       +'<div class="sbody"><div class="sname">'+s.name+tag+dtag+'</div><div class="ssub">'+s.sub+'</div></div>'
-      +'<div class="sval"><div class="v">'+fmt(hm.ev.cur,hm.fmtd||(hm.pct?1:0))+(hm.pct?'%':'')+'</div><div class="d">'+dpct(hm.ev.d)+' <span class="flat" style="font-weight:500">was '+fmt(hm.ev.base,hm.fmtd||(hm.pct?1:0))+(hm.pct?'%':'')+'</span></div></div>'+spark(hm.arr,COL[e.status])+'</div></div>';
+      +'<div class="sval"><div class="v">'+fmt(hm.ev.cur,hm.fmtd||(hm.pct?1:0))+(hm.pct?'%':'')+'</div><div class="d">'+dpct(hm.ev.d)+' <span class="flat" style="font-weight:500">was '+fmt(hm.ev.base,hm.fmtd||(hm.pct?1:0))+(hm.pct?'%':'')+'</span></div></div>'+zspark(s.num+' · '+s.name,hm.arr,COL[e.status],hm.pct)+'</div></div>';
     h+=drill(s,e);if(i<STAGES.length-1)h+='<div class="conn"></div>';});
   $('root').innerHTML=h;
 }
 function drill(s,e){const wl=D.week_labels,NW=D.weeks.length,show=Math.min(NW,8);
   let h='<div class="drill'+(OPEN[s.key]?' open':'')+'" id="dr_'+s.key+'"><div class="dhead">'+s.num+' · '+s.name+' — recent '+show+' weeks</div>';
   h+='<table class="d"><thead><tr><th></th>'+wl.slice(NW-show).map((l,i)=>'<th class="'+(i===show-1?'last':'')+'">'+l+'</th>').join('')+'<th>trend</th></tr></thead><tbody>';
-  const row=(nm,arr,pct,fmtd,col)=>{const a=arr.slice(NW-show);return '<tr><td>'+nm+'</td>'+a.map((v,i)=>'<td class="'+(i===a.length-1?'last':'')+'">'+(v==null?'<span class="zero">·</span>':fmt(v,fmtd||(pct?1:0))+(pct?'%':''))+'</td>').join('')+'<td>'+spark(arr,col||'var(--ink2)')+'</td></tr>';};
+  const row=(nm,arr,pct,fmtd,col)=>{const a=arr.slice(NW-show);return '<tr><td>'+nm+'</td>'+a.map((v,i)=>'<td class="'+(i===a.length-1?'last':'')+'">'+(v==null?'<span class="zero">·</span>':fmt(v,fmtd||(pct?1:0))+(pct?'%':''))+'</td>').join('')+'<td>'+zspark(nm.replace(/^[·▪ ]+/,''),arr,col||'var(--ink2)',pct)+'</td></tr>';};
   if(!s.velMath)e.ms.forEach(m=>h+=row(m.nm,m.arr,m.pct,m.fmtd,COL[m.ev.st]));
   if(s.tax){s.tax(C).forEach(t=>{if(sum(t.arr))h+=row(t.nm,t.arr,0,0,'var(--ink2)');});}
   if(s.byChannel){const bc=s.byChannel(C);Object.keys(bc).sort((a,b)=>sum(bc[b])-sum(bc[a])).forEach(ch=>{if(sum(bc[ch]))h+=row('· '+ch,bc[ch],0,0);});}
