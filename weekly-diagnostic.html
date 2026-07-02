@@ -141,7 +141,10 @@ function curLabel(){const wl=D.week_labels,NW=wl.length;const c=CURN===1?wl[NW-1
 
 // ---------- OVERVIEW (portfolio scan) ----------
 function whyChips(s,fb){
-  if(fb<0)return '<span class="mlab" style="color:var(--muted)">stable</span>';
+  if(fb<0){const m=s.bookings;const a=m.hm.arr.slice(-6);
+    const chips=a.map(v=>'<span class="mc green">'+(v==null?'·':Math.round(v))+'</span>').join('');
+    const amb=STAGES.findIndex(st=>s[st.key].st==='amber');
+    return '<span class="mlab">SC bookings</span>'+chips+'<span class="fixt">'+(amb<0?'all stable':'watch '+STAGES[amb].name.toLowerCase()+' '+Math.round(s[STAGES[amb].key].d*100)+'%')+'</span>';}
   const st=STAGES[fb],m=s[st.key];const a=m.hm.arr.slice(-6);
   const chips=a.map((v,i)=>{const cur=i>=a.length-CURN;const val=v==null?'·':(m.pct?Math.round(v)+'%':(Math.round(v*10)/10));return '<span class="mc '+(cur?m.st:'base')+'">'+val+'</span>';}).join('');
   let extra=(st.key==='demand'&&s.worstChan)?'<span class="wc">'+s.worstChan.ch+' '+Math.round(s.worstChan.d*100)+'%</span>':'';
@@ -161,26 +164,31 @@ function renderOverview(){
   // ISSUE chips: Any + one per stage (by earliest/root break) + founder cross
   const chips=[{key:'any',label:'Any issue',n:broken}]
     .concat(STAGES.map((st,i)=>({key:'st'+i,label:st.name,n:rows.filter(r=>r.s.firstBreak===i).length})))
-    .concat([{key:'ad_ok_dem',label:'Avail OK · demand ↓',n:rows.filter(r=>r.s.availability.st==='green'&&(r.s.demand.st==='red'||r.s.demand.st==='amber')).length}]);
+    .concat([{key:'ad_ok_dem',label:'Avail OK · demand ↓',n:rows.filter(r=>r.s.availability.st==='green'&&(r.s.demand.st==='red'||r.s.demand.st==='amber')).length}])
+    .concat([{key:'healthy',label:'✓ No issues',n:healthy},{key:'allc',label:'All clinics',n:rows.length}]);
   let h='<div class="chiprow">'+chips.map(c=>'<button class="ichip'+(QF===c.key?' on':'')+(c.n?'':' zero')+'" onclick="setQF(\''+c.key+'\')">'+c.label+' <b>'+c.n+'</b></button>').join('')+'</div>';
   // filter list
   let list;
   if(QF==='ad_ok_dem') list=rows.filter(r=>r.s.availability.st==='green'&&(r.s.demand.st==='red'||r.s.demand.st==='amber'));
+  else if(QF==='healthy') list=rows.filter(r=>r.s.firstBreak<0);
+  else if(QF==='allc') list=rows.slice();
   else if(QF&&QF.indexOf('st')===0){const i=+QF.slice(2);list=rows.filter(r=>r.s.firstBreak===i);}
   else list=rows.filter(r=>r.s.firstBreak>=0);   // 'any'
+  let banner='';
+  if(!list.length && broken===0 && rows.length && (QF==='any'||QF.indexOf('st')===0)){list=rows.slice();banner='✓ No issues in '+(CITYF==='__all'?'any city':CITYF)+' — all '+rows.length+' clinic'+(rows.length===1?'':'s')+' healthy. Showing roster.';}
   list.sort((a,b)=>{const fa=a.s.firstBreak<0?9:a.s.firstBreak,fb=b.s.firstBreak<0?9:b.s.firstBreak;if(fa!==fb)return fa-fb;return (a.s.demand.d??0)-(b.s.demand.d??0);});
-  h+='<div class="densrow"><span class="lab" style="text-transform:none;font-weight:600;color:var(--ink2)">'+list.length+' clinic'+(list.length===1?'':'s')+' to look at · '+healthy+' healthy</span><button class="fbtn" onclick="toggleDens()">'+(DENSITY==='full'?'▾ hide stage detail':'▸ stage detail')+'</button></div>';
+  h+='<div class="densrow"><span class="lab" style="text-transform:none;font-weight:600;color:'+(banner?'var(--good)':'var(--ink2)')+'">'+(banner||(list.length+' clinic'+(list.length===1?'':'s')+' to look at · '+healthy+' healthy'))+'</span><button class="fbtn" onclick="toggleDens()">'+(DENSITY==='full'?'▾ hide stage detail':'▸ stage detail')+'</button></div>';
   if(DENSITY==='full'){
     h+='<div class="fmwrap"><table class="fm"><thead><tr><th>Clinic</th>'+STAGES.map(s=>'<th>'+s.short+'</th>').join('')+'<th>break</th><th style="text-align:left">why · vs baseline</th></tr></thead><tbody>';
     if(!list.length)h+='<tr><td colspan="'+(STAGES.length+3)+'" style="color:var(--muted);padding:16px;text-align:left">Nothing here — healthy for this filter/city.</td></tr>';
     list.forEach(r=>{const s=r.s;const cells=STAGES.map(st=>{const x=s[st.key];const dd=x.d==null?'·':(Math.round(x.d*100)+'%');return '<td><span class="cell '+x.st+'">'+(x.st==='green'?'<span style="color:var(--muted)">'+dd+'</span>':dd)+'</span></td>';}).join('');
-      const fb=s.firstBreak,brk=fb<0?'<span class="brk none">—</span>':'<span class="brk red">'+STAGES[fb].num+'·'+STAGES[fb].name+'</span>';
+      const fb=s.firstBreak,brk=fb<0?'<span class="brk none" style="color:var(--good)">✓ stable</span>':'<span class="brk red">'+STAGES[fb].num+'·'+STAGES[fb].name+'</span>';
       h+='<tr><td onclick="goClinic(\''+r.slug+'\')">'+r.c.disp+'</td>'+cells+'<td>'+brk+'</td><td class="why">'+whyText(s,fb)+'</td></tr>';});
     h+='</tbody></table></div>';
   } else {
     h+='<div class="fmwrap"><table class="fm" style="min-width:640px"><thead><tr><th>Clinic</th><th style="text-align:left">earliest break</th><th style="text-align:left">recent 6 weeks — latest vs prior (click to drill)</th></tr></thead><tbody>';
     if(!list.length)h+='<tr><td colspan="3" style="color:var(--muted);padding:16px;text-align:left">Nothing here — healthy for this filter/city.</td></tr>';
-    list.forEach(r=>{const s=r.s,fb=s.firstBreak,brk=fb<0?'<span class="brk none">—</span>':'<span class="brk red">'+STAGES[fb].num+'·'+STAGES[fb].name+'</span>';
+    list.forEach(r=>{const s=r.s,fb=s.firstBreak,brk=fb<0?'<span class="brk none" style="color:var(--good)">✓ stable</span>':'<span class="brk red">'+STAGES[fb].num+'·'+STAGES[fb].name+'</span>';
       h+='<tr><td onclick="goClinic(\''+r.slug+'\')">'+r.c.disp+'</td><td style="text-align:left">'+brk+'</td><td class="why">'+whyChips(s,fb)+'</td></tr>';});
     h+='</tbody></table></div>';
   }
