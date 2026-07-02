@@ -215,7 +215,10 @@
       <button class="mbtn" data-m="bookings" onclick="setMet('bookings')">Bookings</button>
       <button class="mbtn" data-m="conversion" onclick="setMet('conversion')">book→done %</button>
       <button class="mbtn" data-m="done" onclick="setMet('done')">Done</button>
+      <button class="mbtn" data-m="purchased" onclick="setMet('purchased')">Purchased</button>
+      <button class="mbtn" data-m="revenue" onclick="setMet('revenue')">Revenue</button>
       <button class="mbtn" data-m="velocity" onclick="setMet('velocity')">Bookings/active day</button>
+      <button class="mbtn" data-m="doctors" onclick="setMet('doctors')">Doctors</button>
     </span>
   </div>
   <div class="cmpnote" id="cmpnote"></div>
@@ -269,11 +272,17 @@ const STAGES=[
    metrics:c=>[{nm:'done',arr:c.done.done,fmtd:0}],headline:0,doneCat:c=>c.done.by_cat},
   {key:'demand',num:5,name:'Leads',short:'Leads',sub:'leads · lead→book %',diag:'Channel break — GMB / Ads / Practo',fix:'Marketing',
    metrics:c=>[{nm:'leads',arr:c.demand.leads,fmtd:0},{nm:'lead→book % (tagged-lead ~)',arr:c.demand.lead_book_pct,pct:1}],headline:0,byChannel:c=>c.demand.by_channel},
-  {key:'velocity',num:6,name:'Bookings / active day',short:'Bk/day',sub:'weekday·weekend weighted ⓘ',diag:'Capacity limit — scheduling / staffing',fix:'Ops · staffing',
+  {key:'velocity',num:8,name:'Bookings / active day',short:'Bk/day',sub:'weekday·weekend weighted ⓘ',diag:'Capacity limit — scheduling / staffing',fix:'Ops · staffing',
    metrics:c=>[{nm:'bookings / active day',arr:c.velocity.per_active_day,fmtd:1}],headline:0,velMath:true},
+  {key:'purchased',num:6,name:'Purchased',short:'Purch',sub:'paid after SC · by category',diag:'Fewer purchases',fix:'Clinic · sales',
+   metrics:c=>[{nm:'purchased',arr:(c.purchased&&c.purchased.total)||[],fmtd:0}],headline:0,catCube:c=>c.purchased&&c.purchased.by_cat},
+  {key:'revenue',num:7,name:'Revenue',short:'Rev',sub:'₹ from paid invoices · by category',diag:'Revenue dropped',fix:'Clinic · sales',
+   metrics:c=>[{nm:'revenue (₹)',arr:(c.revenue&&c.revenue.rev)||[],fmtd:0}],headline:0,catCube:c=>c.revenue&&c.revenue.by_cat},
+  {key:'doctors',num:9,name:'Doctors',short:'Docs',sub:'active providers · per-doctor drill',diag:'Fewer active doctors',fix:'Ops · staffing',
+   metrics:c=>[{nm:'active doctors',arr:(c.doctors&&c.doctors.count)||[],fmtd:0}],headline:0,byDoctor:true},
 ];
-const ISSUE_STAGES=[0,4,1,2,3];   // availability, leads, bookings, book→done, done — used across the issues view
-const FUNNEL_ORDER=[0,4,1,2,3,5]; // availability, leads, bookings, book→done, done, bookings/active day
+const ISSUE_STAGES=[0,4,1,2,3,6,7,5];   // availability, leads, bookings, book→done, done, purchased, revenue, bk/day
+const FUNNEL_ORDER=[0,4,1,2,3,6,7,5,8]; // the 8 agreed metrics in order, then Doctors (per-doctor drill) in the clinic funnel
 function evalMetric(arr){const NW=arr.length;const cur=mean(arr.slice(NW-CURN));const base=mean(arr.slice(Math.max(0,NW-CURN-BASEN),NW-CURN));
   const d=(cur!=null&&base)?((cur-base)/base):null;const st=d==null?'green':d<=-0.15?'red':d<=-0.07?'amber':'green';return {cur,base,d,st};}
 function evalStage(st,c){const ms=st.metrics(c).map(m=>({...m,ev:evalMetric(m.arr)}));
@@ -505,6 +514,8 @@ function stageParts(s,o){   // breakdown series per stage: lineS = coloured comp
   else if(s.key==='done'){const dc=o.done.by_cat;['SH','STI','MH','Other'].forEach((ct,k)=>{if(dc[ct]&&sum(dc[ct]))lineS.push({label:ct,arr:dc[ct],color:BPAL[k]});});}
   else if(s.key==='demand'){const bc=o.demand.by_channel;Object.keys(bc).sort((a,b)=>sum(bc[b])-sum(bc[a])).slice(0,5).forEach((ch,k)=>{if(sum(bc[ch]))lineS.push({label:ch,arr:bc[ch],color:BPAL[k]});});chipOnly=[{label:'lead→book%',arr:o.demand.lead_book_pct,pct:1}];}
   else if(s.key==='velocity'){const v=o.velocity;lineS=[{label:'per weekday',arr:v.per_weekday,color:BPAL[0]},{label:'per weekend',arr:v.per_weekend,color:BPAL[1]}];chipOnly=[{label:'wday bookings',arr:v.bk_wday},{label:'wend bookings',arr:v.bk_wend}];}
+  else if(s.key==='purchased'||s.key==='revenue'){const dc=(s.catCube&&s.catCube(o))||{};['SH','STI','MH','Other'].forEach((ct,k)=>{if(dc[ct]&&sum(dc[ct]))lineS.push({label:ct,arr:dc[ct],color:BPAL[k]});});}
+  else if(s.key==='doctors'){const bd=o.by_doctor||{};Object.keys(bd).sort((a,b)=>sum(b&&bd[b].booked||[])-sum(a&&bd[a].booked||[])).slice(0,6).forEach((dr,k)=>{const bk=bd[dr].booked||[];if(sum(bk))lineS.push({label:dr.replace(/^Dr\.?\s*/,''),arr:bk,color:BPAL[k%BPAL.length]});});}
   return {lineS,chipOnly};
 }
 // funnel body (stage rows + breakdown trend rows) for ANY clinic-shaped object (single clinic OR city aggregate)
@@ -529,6 +540,9 @@ function aggregate(slugs,label){
     demand:{leads:Z(),by_channel:{},lead_book_pct:Z()},
     bookings:{total:Z(),new_tw:Z(),new_old:Z(),rebook:Z(),relapse:Z()},
     done:{booked:Z(),done:Z(),book_done_pct:Z(),by_cat:{SH:Z(),STI:Z(),MH:Z(),Other:Z()}},
+    purchased:{total:Z(),by_cat:{SH:Z(),STI:Z(),MH:Z(),Other:Z()}},
+    revenue:{rev:Z(),by_cat:{SH:Z(),STI:Z(),MH:Z(),Other:Z()}},
+    doctors:{count:Z()},by_doctor:{},
     velocity:{bookings:Z(),wday_days:Z(),wend_days:Z(),bk_wday:Z(),bk_wend:Z(),per_active_day:Z(),per_weekday:Z(),per_weekend:Z()}};
   slugs.forEach(sl=>{const c=D.clinics[sl];
     ['active_days','wday_days','wend_days','hours','avail_hours'].forEach(k=>a.availability[k]=add(a.availability[k],c.availability[k]));
@@ -537,6 +551,10 @@ function aggregate(slugs,label){
     ['total','new_tw','new_old','rebook','relapse'].forEach(k=>a.bookings[k]=add(a.bookings[k],c.bookings[k]));
     a.done.booked=add(a.done.booked,c.done.booked);a.done.done=add(a.done.done,c.done.done);
     ['SH','STI','MH','Other'].forEach(ct=>a.done.by_cat[ct]=add(a.done.by_cat[ct],c.done.by_cat[ct]));
+    if(c.purchased){a.purchased.total=add(a.purchased.total,c.purchased.total);['SH','STI','MH','Other'].forEach(ct=>a.purchased.by_cat[ct]=add(a.purchased.by_cat[ct],(c.purchased.by_cat||{})[ct]));}
+    if(c.revenue){a.revenue.rev=add(a.revenue.rev,c.revenue.rev);['SH','STI','MH','Other'].forEach(ct=>a.revenue.by_cat[ct]=add(a.revenue.by_cat[ct],(c.revenue.by_cat||{})[ct]));}
+    if(c.doctors)a.doctors.count=add(a.doctors.count,c.doctors.count);
+    if(c.by_doctor)for(const dr in c.by_doctor){const bd=a.by_doctor[dr]=a.by_doctor[dr]||{booked:Z(),done:Z(),purchased:Z(),rev:Z()};['booked','done','purchased','rev'].forEach(k=>bd[k]=add(bd[k],c.by_doctor[dr][k]));}
     ['bk_wday','bk_wend'].forEach(k=>a.velocity[k]=add(a.velocity[k],c.velocity[k]));});
   const newp=add(a.bookings.new_tw,a.bookings.new_old),rate=(num,den)=>num.map((v,i)=>den[i]?Math.round(v/den[i]*10)/10:null);
   a.demand.lead_book_pct=a.demand.leads.map((L,i)=>L?Math.round(100*newp[i]/L):null);
