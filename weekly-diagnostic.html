@@ -71,7 +71,7 @@
   tr.hide{display:none}
   .cell{display:inline-block;min-width:52px;border-radius:6px;padding:2px 7px;font-weight:700;font-size:12px}
   .cell.red{background:var(--rbg);color:#a8352a}.cell.amber{background:var(--abg);color:#8a6412}.cell.green{color:var(--muted);background:transparent}
-  .brk{font-family:Inter;font-weight:700}.brk.red{color:var(--bad)}.brk.none{color:var(--muted);font-weight:500}
+  .brk{font-family:Inter;font-weight:700;white-space:nowrap}.brk.red{color:var(--bad)}.brk.amber{color:var(--warn)}.brk.none{color:var(--muted);font-weight:500}
   .why{font-family:Inter;color:var(--ink2);text-align:left!important;font-size:13px;white-space:normal;max-width:420px}
   /* ---- per-clinic funnel (drill) ---- */
   .verdict{background:var(--sheet);border:1px solid var(--line);border-left:4px solid var(--bad);border-radius:var(--r);padding:14px 18px;margin-bottom:16px}
@@ -322,36 +322,44 @@ function renderOverview(){
   const lbl=curLabel();$('cmpnote').innerHTML='Comparing <b>'+(CURN===1?'this week':'the last '+CURN+' weeks')+'</b> ('+lbl.c+') against the <b>average of the prior '+BASEN+' weeks</b> ('+lbl.b+') · every % is <b>vs that average</b> · scope: <b>'+cityStr()+'</b> &nbsp;<span class="legend">🔴 dropped ≥15% &nbsp; 🟡 ≥7%</span>';
   if(MET!=='break'){renderMetric();return;}
   const rows=Object.keys(D.clinics).filter(inScope).map(slug=>({slug,c:D.clinics[slug],s:summary(D.clinics[slug])}));
-  const broken=rows.filter(r=>r.s.firstBreak>=0).length, healthy=rows.length-broken;
-  // ISSUE chips: Any + one per stage (by earliest/root break) + founder cross
+  const isIssue=st=>st==='red'||st==='amber';
+  const redCount=s=>STAGES.filter(st=>s[st.key].st==='red').length;
+  const issueCount=s=>STAGES.filter(st=>isIssue(s[st.key].st)).length;
+  const brokenIdx=s=>STAGES.map((st,i)=>isIssue(s[st.key].st)?i:-1).filter(i=>i>=0);
+  const hasIssue=s=>issueCount(s)>0;
+  const broken=rows.filter(r=>hasIssue(r.s)).length, healthy=rows.length-broken;
+  // badges for EVERY stage a clinic is down on (non-exclusive); selected stage underlined
+  const badges=(s,hi)=>{const bl=brokenIdx(s);if(!bl.length)return '<span class="brk none" style="color:var(--good)">✓ stable</span>';
+    return bl.map(i=>{const x=s[STAGES[i].key];return '<span class="brk '+x.st+'"'+(hi===i?' style="text-decoration:underline;text-underline-offset:3px"':'')+'>'+STAGES[i].short+' '+Math.round(x.d*100)+'%</span>';}).join('<span style="color:var(--faint)"> · </span>');};
+  // ISSUE chips — a clinic is counted under EVERY stage it is down on (not just the earliest)
   const chips=[{key:'any',label:'Any issue',n:broken}]
-    .concat(STAGES.map((st,i)=>({key:'st'+i,label:st.name,n:rows.filter(r=>r.s.firstBreak===i).length})))
-    .concat([{key:'ad_ok_dem',label:'Avail OK · demand ↓',n:rows.filter(r=>r.s.availability.st==='green'&&(r.s.demand.st==='red'||r.s.demand.st==='amber')).length}])
+    .concat(STAGES.map((st,i)=>({key:'st'+i,label:st.name,n:rows.filter(r=>isIssue(r.s[st.key].st)).length})))
+    .concat([{key:'ad_ok_dem',label:'Avail OK · demand ↓',n:rows.filter(r=>r.s.availability.st==='green'&&isIssue(r.s.demand.st)).length}])
     .concat([{key:'healthy',label:'✓ No issues',n:healthy},{key:'allc',label:'All clinics',n:rows.length}]);
   let h='<div class="chiprow">'+chips.map(c=>'<button class="ichip'+(QF===c.key?' on':'')+(c.n?'':' zero')+'" onclick="setQF(\''+c.key+'\')">'+c.label+' <b>'+c.n+'</b></button>').join('')+'</div>';
   // filter list
-  let list;
-  if(QF==='ad_ok_dem') list=rows.filter(r=>r.s.availability.st==='green'&&(r.s.demand.st==='red'||r.s.demand.st==='amber'));
-  else if(QF==='healthy') list=rows.filter(r=>r.s.firstBreak<0);
+  let list, selIdx=(QF&&QF.indexOf('st')===0)?+QF.slice(2):-1;
+  if(QF==='ad_ok_dem') list=rows.filter(r=>r.s.availability.st==='green'&&isIssue(r.s.demand.st));
+  else if(QF==='healthy') list=rows.filter(r=>!hasIssue(r.s));
   else if(QF==='allc') list=rows.slice();
-  else if(QF&&QF.indexOf('st')===0){const i=+QF.slice(2);list=rows.filter(r=>r.s.firstBreak===i);}
-  else list=rows.filter(r=>r.s.firstBreak>=0);   // 'any'
+  else if(selIdx>=0){list=rows.filter(r=>isIssue(r.s[STAGES[selIdx].key].st));}
+  else list=rows.filter(r=>hasIssue(r.s));   // 'any'
   let banner='';
-  if(!list.length && broken===0 && rows.length && (QF==='any'||QF.indexOf('st')===0)){list=rows.slice();banner='✓ No issues in '+cityStr()+' — all '+rows.length+' clinic'+(rows.length===1?'':'s')+' healthy. Showing roster.';}
-  list.sort((a,b)=>{const fa=a.s.firstBreak<0?9:a.s.firstBreak,fb=b.s.firstBreak<0?9:b.s.firstBreak;if(fa!==fb)return fa-fb;return (a.s.demand.d??0)-(b.s.demand.d??0);});
-  h+='<div class="densrow"><span class="lab" style="text-transform:none;font-weight:600;color:'+(banner?'var(--good)':'var(--ink2)')+'">'+(banner||(list.length+' clinic'+(list.length===1?'':'s')+' to look at · '+healthy+' healthy'))+'</span><button class="fbtn" onclick="toggleDens()">'+(DENSITY==='full'?'▾ hide stage detail':'▸ stage detail')+'</button></div>';
+  if(!list.length && broken===0 && rows.length && (QF==='any'||selIdx>=0)){list=rows.slice();banner='✓ No issues in '+cityStr()+' — all '+rows.length+' clinic'+(rows.length===1?'':'s')+' healthy. Showing roster.';}
+  list.sort((a,b)=>{const rc=redCount(b.s)-redCount(a.s);if(rc)return rc;const ic=issueCount(b.s)-issueCount(a.s);if(ic)return ic;const fa=brokenIdx(a.s)[0];const fb2=brokenIdx(b.s)[0];return (fa==null?9:fa)-(fb2==null?9:fb2);});
+  const scopeMsg=selIdx>=0?(' with a <b>'+STAGES[selIdx].name+'</b> issue'):' to look at';
+  h+='<div class="densrow"><span class="lab" style="text-transform:none;font-weight:600;color:'+(banner?'var(--good)':'var(--ink2)')+'">'+(banner||(list.length+' clinic'+(list.length===1?'':'s')+scopeMsg+' · '+healthy+' healthy · a clinic shows under <b>every</b> stage it is down on'))+'</span><button class="fbtn" onclick="toggleDens()">'+(DENSITY==='full'?'▾ hide Δ matrix':'▸ Δ matrix (all stages)')+'</button></div>';
   if(DENSITY==='full'){
-    h+='<div class="fmwrap"><table class="fm"><thead><tr><th>Clinic</th>'+STAGES.map(s=>'<th>'+s.short+'</th>').join('')+'<th>where\'s the issue?</th><th style="text-align:left">why · vs avg baseline</th><th></th></tr></thead><tbody>';
-    if(!list.length)h+='<tr><td colspan="'+(STAGES.length+4)+'" style="color:var(--muted);padding:16px;text-align:left">Nothing here — healthy for this filter/city.</td></tr>';
+    h+='<div class="fmwrap"><table class="fm"><thead><tr><th>Clinic</th>'+STAGES.map(s=>'<th>'+s.short+'</th>').join('')+'<th style="text-align:left">where\'s the issue?</th><th></th></tr></thead><tbody>';
+    if(!list.length)h+='<tr><td colspan="'+(STAGES.length+3)+'" style="color:var(--muted);padding:16px;text-align:left">Nothing here — healthy for this filter/city.</td></tr>';
     list.forEach(r=>{const s=r.s;const cells=STAGES.map(st=>{const x=s[st.key];const dd=x.d==null?'·':(Math.round(x.d*100)+'%');return '<td><span class="cell '+x.st+'">'+(x.st==='green'?'<span style="color:var(--muted)">'+dd+'</span>':dd)+'</span></td>';}).join('');
-      const fb=s.firstBreak,brk=fb<0?'<span class="brk none" style="color:var(--good)">✓ stable</span>':'<span class="brk red">'+STAGES[fb].name+'</span>';
-      h+='<tr onclick="goClinic(\''+r.slug+'\')" title="open funnel"><td>'+r.c.disp+'</td>'+cells+'<td>'+brk+'</td><td class="why">'+whyText(s,fb)+'</td><td class="drillco">›</td></tr>';});
+      h+='<tr onclick="goClinic(\''+r.slug+'\')" title="open funnel"><td>'+r.c.disp+'</td>'+cells+'<td class="why">'+badges(s,selIdx)+'</td><td class="drillco">›</td></tr>';});
     h+='</tbody></table></div>';
   } else {
     h+='<div class="fmwrap"><table class="fm" style="min-width:640px"><thead><tr><th>Clinic</th><th style="text-align:left">where\'s the issue?</th><th style="text-align:left">recent '+(CURN+BASEN)+' wks &nbsp;<span style="font-weight:500;text-transform:none;color:var(--faint)">'+SLOPE_LEG+'</span></th><th style="text-align:right">open ›</th></tr></thead><tbody>';
     if(!list.length)h+='<tr><td colspan="4" style="color:var(--muted);padding:16px;text-align:left">Nothing here — healthy for this filter/city.</td></tr>';
-    list.forEach(r=>{const s=r.s,fb=s.firstBreak,brk=fb<0?'<span class="brk none" style="color:var(--good)">✓ stable</span>':'<span class="brk red">'+STAGES[fb].name+'</span>';
-      h+='<tr onclick="goClinic(\''+r.slug+'\')" title="open funnel"><td>'+r.c.disp+'</td><td style="text-align:left">'+brk+'</td><td class="why">'+whyChips(s,fb)+'</td><td class="drillco" style="text-align:right">›</td></tr>';});
+    list.forEach(r=>{const s=r.s;const bl=brokenIdx(s);const chipIdx=(selIdx>=0&&isIssue(s[STAGES[selIdx].key].st))?selIdx:(bl.length?bl[0]:-1);
+      h+='<tr onclick="goClinic(\''+r.slug+'\')" title="open funnel"><td>'+r.c.disp+'</td><td class="why"><div style="width:250px;white-space:normal;line-height:1.9">'+badges(s,selIdx)+'</div></td><td class="why">'+whyChips(s,chipIdx)+'</td><td class="drillco" style="text-align:right">›</td></tr>';});
     h+='</tbody></table></div>';
   }
   $('root').innerHTML=h;
