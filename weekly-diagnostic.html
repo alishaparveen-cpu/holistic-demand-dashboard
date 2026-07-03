@@ -183,9 +183,6 @@
   <h1>Quick Diagnostic</h1>
   <!-- ── 1) what am I looking at + time window ── -->
   <div class="toolbar">
-    <div class="tgroup"><span class="tlab">View</span>
-      <div class="seg"><button class="segbtn on" id="vCompare" onclick="setView('compare')">📊 Overview</button><button class="segbtn" id="vIssues" onclick="setView('issues')">⚠ Where are the issues?</button></div>
-    </div>
     <div class="tgroup" style="margin-left:auto"><span class="tlab">Compare</span>
       <select id="curn" onchange="setCurN(this.value)"></select>
       <span style="font-size:12px;font-weight:600;color:var(--faint)">vs</span>
@@ -197,6 +194,7 @@
     <div class="tgroup"><span class="tlab">Scope</span>
       <div class="ms"><button class="fbtn" id="cityBtn" onclick="openCityMs(event)">All cities ▾</button><div class="mspanel" id="cityPanel"></div></div>
       <div class="ms"><button class="fbtn" id="clinBtn" onclick="openClinMs(event)">All clinics ▾</button><div class="mspanel" id="clinPanel"></div></div>
+      <div class="ms"><button class="fbtn" id="docBtn" onclick="openDocMs(event)">All doctors ▾</button><div class="mspanel" id="docPanel"></div></div>
     </div>
     <div class="tgroup"><span class="tlab">Tier</span>
       <button class="fbtn" data-tier="T1" onclick="togTier('T1')">Tier 1</button><button class="fbtn" data-tier="T2" onclick="togTier('T2')">Tier 2</button>
@@ -218,7 +216,6 @@
       <button class="mbtn" data-m="purchased" onclick="setMet('purchased')">Purchased</button>
       <button class="mbtn" data-m="revenue" onclick="setMet('revenue')">Revenue</button>
       <button class="mbtn" data-m="velocity" onclick="setMet('velocity')">Bookings/active day</button>
-      <button class="mbtn" data-m="doctors" onclick="setMet('doctors')">Doctors</button>
     </span>
   </div>
   <div class="cmpnote" id="cmpnote"></div>
@@ -226,7 +223,7 @@
 </div>
 <div class="modal" id="modal" onclick="if(event.target===this)closeZ()"><div class="mbox"><div class="mhd"><span id="mTitle"></span><button onclick="closeZ()" title="close">✕</button></div><div id="pickBar" class="pickbar"></div><div id="mBody"></div></div></div>
 <script>
-let D=null, AGE={}, CURN=1, BASEN=4, MODE='ov', C=null, OPEN={}, QF='any', CITYF=new Set(), CLINF=new Set(), TIERF=new Set(), MATF=new Set(), DENSITY='compact', MET='bookings', OVMODE='metric', METSEL=['bookings'], MCOND={};
+let D=null, AGE={}, CURN=1, BASEN=4, MODE='ov', C=null, OPEN={}, QF='any', CITYF=new Set(), CLINF=new Set(), TIERF=new Set(), MATF=new Set(), DOCF=new Set(), DENSITY='compact', MET='bookings', OVMODE='metric', METSEL=['bookings'], MCOND={};
 const T1CITIES=new Set(['Bangalore','Mumbai','Pune','Hyderabad','Chennai']);
 function tierOf(city){return T1CITIES.has(city)?'T1':'T2';}
 function clinMonths(slug){const d=AGE[D.clinics[slug].loc];if(!d)return null;const t=Date.parse(d);return isNaN(t)?null:(Date.now()-t)/(1000*60*60*24*30.44);}
@@ -235,7 +232,27 @@ function inCity(city){return !CITYF.size||CITYF.has(city);}
 function inScope(slug){const c=D.clinics[slug];
   if(TIERF.size&&!TIERF.has(tierOf(c.city)))return false;
   if(MATF.size){const b=matBucket(clinMonths(slug));if(!b||!MATF.has(b))return false;}
+  if(DOCF.size&&(!c.by_doctor||![...DOCF].some(dr=>c.by_doctor[dr])))return false;
   return CLINF.size?CLINF.has(slug):inCity(c.city);}
+// scoped-clinic accessor: when doctors are selected in scope, rescale the doctor-attributable metrics
+// (bookings, book→done, done, purchased, revenue, bookings/active-day) to just those doctors' slices.
+// availability & leads aren't doctor-attributable, so they stay clinic-level.
+function CL(slug){const c=D.clinics[slug];if(!DOCF.size||!c.by_doctor)return c;
+  const sel=[...DOCF].filter(dr=>c.by_doctor[dr]);if(!sel.length)return c;
+  const N=D.weeks.length,Z=()=>new Array(N).fill(0),add=(a,b)=>a.map((x,i)=>x+((b&&b[i])||0));
+  let booked=Z(),done=Z(),purchased=Z(),rev=Z();
+  sel.forEach(dr=>{const f=c.by_doctor[dr];booked=add(booked,f.booked);done=add(done,f.done);purchased=add(purchased,f.purchased);rev=add(rev,f.rev);});
+  const ad=c.availability.active_days||Z();
+  const pct=(n,d)=>n.map((x,i)=>d[i]?Math.round(100*x/d[i]):null),rate=(n,d)=>n.map((x,i)=>d[i]?Math.round(10*x/d[i])/10:null);
+  const o=Object.assign({},c);
+  o.bookings=Object.assign({},c.bookings,{total:booked});
+  o.done=Object.assign({},c.done,{booked:booked,done:done,book_done_pct:pct(done,booked),by_cat:{}});   // no by_doctor×category split → drop cat breakdown while doctor-scoped
+  o.purchased=Object.assign({},c.purchased||{},{total:purchased,by_cat:{}});
+  o.revenue=Object.assign({},c.revenue||{},{rev:rev,by_cat:{}});
+  o.velocity=Object.assign({},c.velocity,{bookings:booked,per_active_day:rate(booked,ad)});
+  o.doctors={count:c.doctors?c.doctors.count:Z()};
+  o.by_doctor=Object.fromEntries(sel.map(dr=>[dr,c.by_doctor[dr]]));
+  return o;}
 function scopeExtra(){const t=[...TIERF].map(x=>x==='T1'?'Tier 1':'Tier 2'),m=[...MATF];return t.concat(m);}
 function cityStr(){let base=CLINF.size?CLINF.size+' clinic'+(CLINF.size===1?'':'s')+' selected':(CITYF.size?(CITYF.size<=2?[...CITYF].join(', '):CITYF.size+' cities'):'All cities');
   const ex=scopeExtra();return ex.length?base+' · '+ex.join(', '):base;}
@@ -485,8 +502,8 @@ function renderMetric(){
   if(!metrics.length){METSEL=['bookings'];MET='bookings';return renderMetric();}
   const primary=metrics[0];
   const scopeSlugs=Object.keys(D.clinics).filter(inScope);
-  let rows=scopeSlugs.filter(slug=>{const c=D.clinics[slug];return METSEL.every(k=>{const req=MCOND[k];return !req||metricEval(c,k).ev.st===req;});})   // AND of the per-metric conditions
-    .map(slug=>({slug,c:D.clinics[slug],pe:metricEval(D.clinics[slug],primary.key).ev}));
+  let rows=scopeSlugs.filter(slug=>{const c=CL(slug);return METSEL.every(k=>{const req=MCOND[k];return !req||metricEval(c,k).ev.st===req;});})   // AND of the per-metric conditions
+    .map(slug=>{const c=CL(slug);return{slug,c,pe:metricEval(c,primary.key).ev};});
   rows.sort((a,b)=>(a.pe.d==null?9:a.pe.d)-(b.pe.d==null?9:b.pe.d));   // worst on the primary (sorted) metric first
   const cc=(k)=>{const st=STAGES.find(x=>x.key===k),cur=MCOND[k]||'any';
     const opt=(v,lab)=>'<button class="cseg'+(cur===v?' on':'')+'" onclick="setCond(\''+k+'\',\''+v+'\')">'+lab+'</button>';
@@ -503,7 +520,7 @@ function renderMetric(){
   h+='</tbody></table></div>';
   $('root').innerHTML=h;
 }
-function goClinic(slug){CLINF=new Set([slug]);$('clinBtn').textContent=clinBtnLabel();$('clinBtn').classList.add('on');C=D.clinics[slug];MODE='cl';OPEN={};updateModeUI();render();}
+function goClinic(slug){CLINF=new Set([slug]);$('clinBtn').textContent=clinBtnLabel();$('clinBtn').classList.add('on');C=CL(slug);MODE='cl';OPEN={};updateModeUI();render();}
 
 // ---------- PER-CLINIC FUNNEL (funnel + colour chips, trend on click) ----------
 function stageParts(s,o){   // breakdown series per stage: lineS = coloured components, chipOnly = off-scale
@@ -544,7 +561,7 @@ function aggregate(slugs,label){
     revenue:{rev:Z(),by_cat:{SH:Z(),STI:Z(),MH:Z(),Other:Z()}},
     doctors:{count:Z()},by_doctor:{},
     velocity:{bookings:Z(),wday_days:Z(),wend_days:Z(),bk_wday:Z(),bk_wend:Z(),per_active_day:Z(),per_weekday:Z(),per_weekend:Z()}};
-  slugs.forEach(sl=>{const c=D.clinics[sl];
+  slugs.forEach(sl=>{const c=CL(sl);
     ['active_days','wday_days','wend_days','hours','avail_hours'].forEach(k=>a.availability[k]=add(a.availability[k],c.availability[k]));
     a.demand.leads=add(a.demand.leads,c.demand.leads);
     for(const ch in c.demand.by_channel)a.demand.by_channel[ch]=add(a.demand.by_channel[ch]||Z(),c.demand.by_channel[ch]);
@@ -623,7 +640,8 @@ function renderCityPanel(q){q=(q||'').toLowerCase();const list=ALLCITIES.filter(
 function cityChanged(){$('cityBtn').textContent=cityBtnLabel();$('cityBtn').classList.toggle('on',!!CITYF.size);
   try{localStorage.setItem('wd_city',JSON.stringify([...CITYF]));}catch(e){}
   if(CLINF.size)[...CLINF].forEach(s=>{if(!inCity(D.clinics[s].city))CLINF.delete(s);});$('clinBtn').textContent=clinBtnLabel();$('clinBtn').classList.toggle('on',!!CLINF.size);
-  render();}
+  syncDocBtn();render();}
+function syncDocBtn(){if(!$('docBtn'))return;const avail=new Set(docNames());[...DOCF].forEach(dr=>{if(!avail.has(dr))DOCF.delete(dr);});$('docBtn').textContent=docBtnLabel();$('docBtn').classList.toggle('on',!!DOCF.size);}
 function togCity(c){CITYF.has(c)?CITYF.delete(c):CITYF.add(c);cityChanged();}
 function togTier(t){TIERF.has(t)?TIERF.delete(t):TIERF.add(t);syncScopeBtns();render();}
 function togMat(m){MATF.has(m)?MATF.delete(m):MATF.add(m);syncScopeBtns();render();}
@@ -637,11 +655,26 @@ function renderClinPanel(q){q=(q||'').toLowerCase();
   ks.forEach(s=>{h+='<label class="msi" onclick="event.stopPropagation()"><input type="checkbox" '+(CLINF.has(s)?'checked':'')+' onchange="togClin(\''+s+'\')">'+D.clinics[s].disp+'</label>';});
   $('clinPanel').innerHTML=h;}
 function clinChanged(){$('clinBtn').textContent=clinBtnLabel();$('clinBtn').classList.toggle('on',!!CLINF.size);
-  if(CLINF.size===1){C=D.clinics[[...CLINF][0]];MODE='cl';OPEN={};}else{MODE='ov';}   // pick one clinic → its funnel; none/many → the list
-  updateModeUI();render();}
+  if(CLINF.size===1){C=CL([...CLINF][0]);MODE='cl';OPEN={};}else{MODE='ov';}   // pick one clinic → its funnel; none/many → the list
+  syncDocBtn();updateModeUI();render();}
 function backToList(){CLINF=new Set();$('clinBtn').textContent=clinBtnLabel();$('clinBtn').classList.remove('on');MODE='ov';updateModeUI();render();}
 function togClin(s){CLINF.has(s)?CLINF.delete(s):CLINF.add(s);clinChanged();}
 function allClin(on){const q=$('clinQ')?$('clinQ').value.toLowerCase():'';const ks=Object.keys(D.clinics).filter(s=>inCity(D.clinics[s].city)&&D.clinics[s].disp.toLowerCase().includes(q));if(on)ks.forEach(s=>CLINF.add(s));else ks.forEach(s=>CLINF.delete(s));renderClinPanel($('clinQ')?$('clinQ').value:'');clinChanged();}
+// ---- Doctors scope (after clinics): pick doctor(s) → metrics rescale to their slices via CL() ----
+function docShort(dr){return (dr||'').replace(/^Dr\.?\s*/i,'');}
+function docNames(){const s=new Set();Object.keys(D.clinics).forEach(sl=>{const c=D.clinics[sl];if(CLINF.size?!CLINF.has(sl):!inCity(c.city))return;if(c.by_doctor)Object.keys(c.by_doctor).forEach(dr=>s.add(dr));});return [...s].sort((a,b)=>docShort(a).localeCompare(docShort(b)));}
+function docBtnLabel(){return (DOCF.size?(DOCF.size===1?docShort([...DOCF][0]):DOCF.size+' doctors'):'All doctors')+' ▾';}
+function openDocMs(e){e.stopPropagation();const p=$('docPanel'),show=!p.classList.contains('on');closePanels();if(show){renderDocPanel('');p.classList.add('on');const q=$('docQ');if(q)q.focus();}}
+function renderDocPanel(q){q=(q||'').toLowerCase();const ks=docNames().filter(d=>docShort(d).toLowerCase().includes(q));
+  let h='<input id="docQ" class="msq" placeholder="search doctor…" oninput="renderDocPanel(this.value)" onclick="event.stopPropagation()"><div class="msact"><a onclick="allDoc(1)">select all</a><a onclick="allDoc(0)">clear</a></div>';
+  if(!ks.length)h+='<div class="msi" style="color:var(--muted)">no doctors in scope</div>';
+  ks.forEach(d=>{h+='<label class="msi" onclick="event.stopPropagation()"><input type="checkbox" '+(DOCF.has(d)?'checked':'')+' onchange="togDoc(\''+d.replace(/'/g,"\\'")+'\')">'+docShort(d)+'</label>';});
+  $('docPanel').innerHTML=h;}
+function docChanged(){$('docBtn').textContent=docBtnLabel();$('docBtn').classList.toggle('on',!!DOCF.size);
+  if(MODE==='cl'&&CLINF.size===1)C=CL([...CLINF][0]);
+  render();}
+function togDoc(d){DOCF.has(d)?DOCF.delete(d):DOCF.add(d);docChanged();}
+function allDoc(on){const q=$('docQ')?$('docQ').value.toLowerCase():'';const ks=docNames().filter(d=>docShort(d).toLowerCase().includes(q));if(on)ks.forEach(d=>DOCF.add(d));else ks.forEach(d=>DOCF.delete(d));renderDocPanel($('docQ')?$('docQ').value:'');docChanged();}
 async function boot(){
   try{D=await fetch('data_weekly_diag.json').then(r=>r.json());}
   catch(e){$('root').innerHTML='<div class="err">Failed to load data_weekly_diag.json</div>';return;}
