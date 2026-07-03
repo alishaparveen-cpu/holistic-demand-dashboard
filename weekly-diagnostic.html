@@ -118,13 +118,13 @@
   .stagerow{display:flex;align-items:stretch;gap:14px}
   .stage{flex:1;background:var(--sheet);border:1px solid var(--line);border-left:4px solid var(--line);border-radius:var(--r);padding:14px 18px;transition:box-shadow .15s;display:flex;align-items:flex-start;gap:14px;cursor:default}
   .stage:hover{box-shadow:0 3px 12px rgba(20,50,80,.08)}
-  .stage.red{border-left-color:var(--bad);background:linear-gradient(90deg,var(--rbg),var(--sheet) 60%)}
-  .stage.amber{border-left-color:var(--warn);background:linear-gradient(90deg,var(--abg),var(--sheet) 60%)}
+  .stage.red{border-left-color:var(--bad)}
+  .stage.amber{border-left-color:var(--warn)}
   .stage.green{border-left-color:var(--good)}
   .snum{width:32px;height:32px;flex:none;border-radius:9px;background:var(--inset);color:var(--accent);font-family:'JetBrains Mono';font-weight:700;font-size:15px;display:flex;align-items:center;justify-content:center}
   .stage.red .snum{background:var(--bad);color:#fff}.stage.amber .snum{background:var(--warn);color:#fff}.stage.green .snum{background:var(--good);color:#fff}
   .sbody{flex:1;min-width:0}.sname{font-weight:700;font-size:16px;color:var(--ink)}
-  .sname.red{color:var(--bad)} .sname.amber{color:#8a6412}
+  .sname .chan{font-weight:600;color:var(--muted);font-size:13px}
   .sname .caret{font-size:11px;color:var(--faint);margin-left:7px;font-weight:600;vertical-align:middle}
   .ssub{color:var(--muted);font-size:12px;margin-top:2px}
   .sval{text-align:right;font-family:'JetBrains Mono';flex:none;min-width:132px}.sval .v{font-size:24px;font-weight:700}.sval .d{font-size:12px;font-weight:700;margin-top:1px}
@@ -173,8 +173,10 @@
   .frow .mc{width:48px;flex:none;box-sizing:border-box;text-align:center;margin-right:3px}
   .fchange .mc{width:auto;min-width:auto;white-space:nowrap}   /* the %change pill keeps its natural width */
   .frow .avgmk{flex:none}
-  .frow .avgmk.avgbefore{min-width:132px;margin-left:16px}
-  .frow .avgmk.avgnow{margin-left:10px}
+  .frow .avgmk.avgbefore{min-width:96px;margin-left:14px}
+  .frow .avgmk.avgnow{margin-left:12px}
+  .sparkwrap{display:inline-flex;align-items:center;flex:none;width:100px}
+  .sp{vertical-align:middle}
   .flab .dot{width:9px;height:9px;border-radius:2px;flex:none}
   .frow.head{background:var(--inset);border-radius:8px}
   .frow.head .flab{font-weight:800;color:var(--ink);font-size:14px}
@@ -233,6 +235,7 @@
   <!-- Overview sub-modes (only in Overview) -->
   <div class="ctrls" id="metricbar" style="display:none;gap:12px;margin:-2px 0 10px;align-items:center;flex-wrap:wrap">
     <div class="seg"><button class="segbtn on" id="ovMetric" onclick="setOvMode('metric')" style="font-size:12.5px;padding:7px 13px">📊 By metric</button><button class="segbtn" id="ovFunnel" onclick="setOvMode('funnel')" style="font-size:12.5px;padding:7px 13px">🩺 Funnel</button></div>
+    <div class="seg" id="grpseg"><button class="segbtn on" id="grpCity" onclick="setGrp('city')" style="font-size:12.5px;padding:7px 13px">🏙 By city</button><button class="segbtn" id="grpClinic" onclick="setGrp('clinic')" style="font-size:12.5px;padding:7px 13px">🏥 By clinic</button></div>
     <span id="metricpick" style="display:inline-flex;gap:6px;align-items:center;flex-wrap:wrap">
       <span class="tlab">Metric</span>
       <button class="mbtn" data-m="availability" onclick="setMet('availability')">Availability</button>
@@ -251,7 +254,7 @@
 </div>
 <div class="modal" id="modal" onclick="if(event.target===this)closeZ()"><div class="mbox"><div class="mhd"><span id="mTitle"></span><button onclick="closeZ()" title="close">✕</button></div><div id="pickBar" class="pickbar"></div><div id="mBody"></div></div></div>
 <script>
-let D=null, AGE={}, CURN=1, BASEN=4, MODE='ov', C=null, OPEN={}, QF='any', CITYF=new Set(), CLINF=new Set(), TIERF=new Set(), MATF=new Set(), DOCF=new Set(), SEG='offline', DENSITY='compact', MET='bookings', OVMODE='metric', METSEL=['bookings'], MCOND={}, MSUB={};
+let D=null, AGE={}, CURN=1, BASEN=4, MODE='ov', C=null, OPEN={}, QF='any', CITYF=new Set(), CLINF=new Set(), TIERF=new Set(), MATF=new Set(), DOCF=new Set(), SEG='offline', DENSITY='compact', MET='bookings', OVMODE='metric', METSEL=['bookings'], MCOND={}, MSUB={}, GRP='city';
 let QD=null, FUNNEL2='sc';   // SC/FU/Combined — data sourced from master demand (data_quick_diag.json)
 function setFunnel2(v){FUNNEL2=v;['sc','fu','all'].forEach(x=>{const b=$('fn2'+x);if(b)b.classList.toggle('on',x===v);});applyVariant();if(MODE==='cl'&&C){const s=C._slug;C=D.clinics[s]||C;}render();}
 function applyVariant(){   // overlay the matched SC/FU/Combined numbers onto each clinic (remapped to D.weeks)
@@ -338,7 +341,7 @@ const STAGES=[
    metrics:c=>[{nm:'bookings / active day',arr:c.velocity.per_active_day,fmtd:1}],headline:0,velMath:true},
   {key:'purchased',num:6,name:'Purchased',short:'Purch',sub:'paid after SC · by category',diag:'Fewer purchases',fix:'Clinic · sales',
    metrics:c=>[{nm:'purchased',arr:(c.purchased&&c.purchased.total)||[],fmtd:0}],headline:0,catCube:c=>c.purchased&&c.purchased.by_cat},
-  {key:'revenue',num:7,name:'Revenue',short:'Rev',sub:'₹ from paid invoices · by category',diag:'Revenue dropped',fix:'Clinic · sales',
+  {key:'revenue',num:7,name:'Revenue',short:'Rev',sub:'done-week invoiced ₹ · by category',diag:'Revenue dropped',fix:'Clinic · sales',
    metrics:c=>[{nm:'revenue (₹)',arr:(c.revenue&&c.revenue.rev)||[],fmtd:0}],headline:0,catCube:c=>c.revenue&&c.revenue.by_cat},
   {key:'doctors',num:9,name:'Doctors',short:'Docs',sub:'active providers · per-doctor drill',diag:'Fewer active doctors',fix:'Ops · staffing',
    metrics:c=>[{nm:'active doctors',arr:(c.doctors&&c.doctors.count)||[],fmtd:0}],headline:0,byDoctor:true},
@@ -422,10 +425,13 @@ function bchip(label,arr,color,pct){const e=evalMetric(arr),f=v=>v==null?'—':(
 function curLabel(){const wl=D.week_labels,NW=wl.length;const c=CURN===1?wl[NW-1]:wl[NW-CURN]+' → '+wl[NW-1];const b=wl[Math.max(0,NW-CURN-BASEN)]+' → '+wl[NW-CURN-1];return {c,b};}
 // shared trend renderer (used by both By-metric rows and funnel rows so their layout matches):
 // all weeks as chips in a line (current window coloured) → BEFORE AVG → NOW
-function trendHTML(arr,pct,ev){const a=arr.slice(-(CURN+BASEN)),nb=a.length-CURN;
-  const fv=v=>v==null?'·':(pct?Math.round(v)+'%':(Math.round(v*10)/10)),fa=v=>v==null?'—':(pct?Math.round(v)+'%':(Math.round(v*10)/10));
-  const week=a.map((v,i)=>'<span class="mc '+(i>=nb?ev.st:'base')+'">'+fv(v)+'</span>').join('');
-  return week+'<span class="avgmk avgbefore"><span class="avglab">before avg</span>'+fa(ev.base)+'</span><span class="avgmk avgnow '+ev.st+'"><span class="avglab">now</span>'+fa(ev.cur)+'</span>';}
+// summary trend cell: a compact sparkline (recent window) + before → now. Raw week numbers live in the click-to-zoom modal.
+function trendHTML(arr,pct,ev){const a=arr.slice(-(CURN+BASEN));
+  const fa=v=>v==null?'—':(pct?Math.round(v)+'%':(Math.round(v*10)/10));
+  const line=ev.st==='red'?'var(--bad)':ev.st==='amber'?'var(--warn)':'var(--faint)';   // colour only flags the eye
+  return '<span class="sparkwrap">'+spark(a,line)+'</span>'
+    +'<span class="avgmk avgbefore"><span class="avglab">before</span>'+fa(ev.base)+'</span>'
+    +'<span class="avgmk avgnow '+ev.st+'"><span class="avglab">now</span>'+fa(ev.cur)+'</span>';}
 // one funnel breakdown row — fixed columns so numbers align vertically across every row & nesting level
 // (label indents by depth; the chip / before-avg / now columns stay put so children sum straight down)
 function miniRow(label,arr,pct,color,depth,head){const ev=evalMetric(arr),a=arr.slice(-(CURN+BASEN));
@@ -467,8 +473,8 @@ function whyText(s,fb){
   return why;
 }
 function renderOverview(){
-  const lbl=curLabel();const cmpHTML='Comparing <b>'+(CURN===1?'this week':'the last '+CURN+' weeks')+'</b> ('+lbl.c+') against the <b>average of the prior '+BASEN+' weeks</b> ('+lbl.b+') · every % is <b>vs that average</b> · scope: <b>'+cityStr()+'</b> &nbsp;<span class="legend">🔴 dropped ≥15% &nbsp; 🟡 ≥7%</span>';
-  $('cmpnote').innerHTML=cmpHTML;
+  // comparison detail already lives in the pill bar's COMPARE chip → keep this line to just the colour legend
+  $('cmpnote').innerHTML='<span class="legend">🔴 dropped ≥15% · 🟡 ≥7% · every % vs the prior '+BASEN+'-wk average</span>';
   if(MET!=='break'){if(OVMODE==='funnel')renderScopeFunnel();else renderMetric();return;}
   $('cmpnote').innerHTML='';   // issues view: the comparison line goes below the filter chips instead
   ZREG=[];CURZ=null;   // for click-to-zoom on the metric chip rows
@@ -550,10 +556,15 @@ function updateModeUI(){const cmp=(MET!=='break');
   const mb=$('metricbar');if(mb)mb.style.display=cmp?'flex':'none';
   document.querySelectorAll('.mbtn').forEach(b=>{const sel=cmp&&METSEL.includes(b.dataset.m);b.classList.toggle('on',sel);b.classList.toggle('primary',sel&&b.dataset.m===METSEL[0]);});
   syncOv();}
-function syncOv(){const om=$('ovMetric'),of=$('ovFunnel'),mp=$('metricpick');
+function syncOv(){const om=$('ovMetric'),of=$('ovFunnel'),mp=$('metricpick'),gs=$('grpseg');
   if(om)om.classList.toggle('on',OVMODE==='metric');if(of)of.classList.toggle('on',OVMODE==='funnel');
-  if(mp)mp.style.display=OVMODE==='metric'?'inline-flex':'none';}
+  if(mp)mp.style.display=OVMODE==='metric'?'inline-flex':'none';
+  if(gs)gs.style.display=OVMODE==='metric'?'inline-flex':'none';
+  const gc=$('grpCity'),gk=$('grpClinic');if(gc)gc.classList.toggle('on',GRP==='city');if(gk)gk.classList.toggle('on',GRP==='clinic');}
 function setOvMode(m){OVMODE=m;MODE='ov';syncOv();render();}
+function setGrp(g){GRP=g;syncOv();render();}
+function drillCity(ct){CITYF=new Set([ct]);GRP='clinic';cityChanged();syncOv();}   // click a city → its clinics
+function backToCities(){CITYF=new Set();GRP='city';cityChanged();syncOv();}
 function metricChips(c,stageKey){
   const st=STAGES.find(x=>x.key===stageKey),m=st.metrics(c)[0],ev=evalMetric(m.arr),a=m.arr.slice(-(CURN+BASEN));
   return {ev,chips:trendHTML(m.arr,m.pct,ev),nm:m.nm,pct:m.pct,a,arr:m.arr};
@@ -589,8 +600,16 @@ function renderMetric(){
   if(!metrics.length){METSEL=['bookings'];MET='bookings';return renderMetric();}
   const primary=metrics[0];
   const scopeSlugs=Object.keys(D.clinics).filter(inScope);
-  let rows=scopeSlugs.filter(slug=>{const c=CL(slug);return METSEL.every(k=>{const req=MCOND[k];return !req||!req.length||(!naMetric(c,k)&&req.includes(metricEval(c,k).ev.st));});})   // AND across metrics; within a metric, OR across the selected statuses
-    .map(slug=>{const c=CL(slug);return{slug,c,pe:metricEval(c,primary.key).ev};});
+  const passCond=c=>METSEL.every(k=>{const req=MCOND[k];return !req||!req.length||(!naMetric(c,k)&&req.includes(metricEval(c,k).ev.st));});   // AND across metrics; within a metric, OR across the selected statuses
+  const byCity=GRP==='city',unit=byCity?'city':'clinic';
+  let rows;
+  if(byCity){   // one row per city, aggregating its in-scope clinics; click a city to drill into its clinics
+    const grp={};scopeSlugs.forEach(s=>{const ct=D.clinics[s].city;(grp[ct]=grp[ct]||[]).push(s);});
+    rows=Object.keys(grp).map(ct=>{const agg=aggregate(grp[ct],ct);if(SEG==='online'&&grp[ct].every(s=>D.clinics[s]._online))agg._online=true;return{label:ct,n:grp[ct].length,c:agg,click:"drillCity('"+ct.replace(/'/g,"\\'")+"')"};}).filter(r=>passCond(r.c));
+  }else{
+    rows=scopeSlugs.filter(s=>passCond(CL(s))).map(s=>{const c=CL(s);return{label:c.disp,n:0,c:c,click:"goClinic('"+s+"')"};});
+  }
+  rows.forEach(r=>{r.pe=metricEval(r.c,primary.key).ev;});
   rows.sort((a,b)=>(a.pe.d==null?9:a.pe.d)-(b.pe.d==null?9:b.pe.d));   // worst on the primary (sorted) metric first
   const cc=(k)=>{const st=STAGES.find(x=>x.key===k),sel=MCOND[k]||[];
     const opt=(v,lab,on)=>'<button class="cseg'+(on?' on':'')+'" onclick="setCond(\''+k+'\',\''+v+'\')">'+lab+'</button>';
@@ -598,15 +617,16 @@ function renderMetric(){
     if(sd&&sd.length>1){const cur=MSUB[k]||'';
       sub='<select class="subsel" title="narrow this metric to one breakdown (e.g. a lead channel or a category)" onchange="setSub(\''+k+'\',this.value)"><option value="">'+sd[0].label+'</option>'+sd.slice(1).map(d=>'<option value="'+d.label.replace(/"/g,'')+'"'+(cur===d.label?' selected':'')+'>'+d.label+'</option>').join('')+'</select>';}
     return '<span class="condgrp"><span class="condlab">'+st.short+'</span><span class="cseg-wrap">'+opt('any','any',!sel.length)+opt('red','🔴',sel.includes('red'))+opt('amber','🟡',sel.includes('amber'))+opt('green','🟢',sel.includes('green'))+'</span>'+sub+'</span>';};
-  let h='<div class="densrow" style="gap:8px;flex-wrap:wrap"><span class="lab" style="text-transform:none;font-weight:600;color:var(--ink2)">'+rows.length+' clinic'+(rows.length===1?'':'s')+' · '+cityStr()+' · sorted by <b>'+primary.name+'</b></span>'
+  const backBtn=(!byCity&&CITYF.size===1)?'<button class="fbtn" style="padding:5px 12px;font-size:12px;font-weight:700;border-color:var(--accent);color:var(--accent)" onclick="backToCities()">← all cities</button> ':'';
+  let h='<div class="densrow" style="gap:8px;flex-wrap:wrap">'+backBtn+'<span class="lab" style="text-transform:none;font-weight:600;color:var(--ink2)">'+rows.length+' '+(rows.length===1?unit:(byCity?'cities':'clinics'))+' · '+cityStr()+' · sorted by <b>'+primary.name+'</b></span>'
     +'<span style="display:inline-flex;gap:6px;flex-wrap:wrap;margin-left:4px">'+metrics.map(s=>cc(s.key)).join('')+'</span>'
     +'<button class="fbtn" style="padding:5px 13px;font-size:12px;font-weight:700" onclick="clearMet()">✕ clear all</button>'
-    +'<span style="font-weight:500;color:var(--faint);font-size:11px;margin-left:auto">metric buttons ↑ add/remove rows · chips here set a required status (dropped/fine…) — clinics match ALL</span></div>';
-  h+='<div class="fmwrap"><table class="fm" style="min-width:640px"><thead><tr><th style="white-space:nowrap">Clinic</th><th style="text-align:left">selected metrics · change · recent '+(CURN+BASEN)+' wks · before avg → now</th></tr></thead><tbody>';
+    +'<span style="font-weight:500;color:var(--faint);font-size:11px;margin-left:auto">metric buttons ↑ add/remove rows · chips set a required status — '+(byCity?'cities':'clinics')+' match ALL'+(byCity?' · click a city to drill into its clinics':'')+'</span></div>';
+  h+='<div class="fmwrap"><table class="fm" style="min-width:640px"><thead><tr><th style="white-space:nowrap">'+(byCity?'City':'Clinic')+'</th><th style="text-align:left">selected metrics · change · recent '+(CURN+BASEN)+' wks · before avg → now</th></tr></thead><tbody>';
   if(scopeSlugs.length>1){const agg=aggregate(scopeSlugs,'Total');
-    h+='<tr class="totalrow" onclick="setOvMode(\'funnel\')" title="open the combined funnel"><td style="white-space:nowrap;width:1%">Σ Total · '+scopeSlugs.length+'</td><td class="why">'+metricStack(agg,'Total')+'</td></tr>';}
-  if(!rows.length)h+='<tr><td colspan="2" style="color:var(--muted);padding:16px;text-align:left">No clinics match these conditions.</td></tr>';
-  rows.forEach(r=>{h+='<tr onclick="goClinic(\''+r.slug+'\')" title="open funnel"><td style="white-space:nowrap;width:1%">'+r.c.disp+'</td><td class="why">'+metricStack(r.c,r.c.disp)+'</td></tr>';});
+    h+='<tr class="totalrow" onclick="setOvMode(\'funnel\')" title="open the combined funnel"><td style="white-space:nowrap;width:1%">Σ Total · '+scopeSlugs.length+' clinics</td><td class="why">'+metricStack(agg,'Total')+'</td></tr>';}
+  if(!rows.length)h+='<tr><td colspan="2" style="color:var(--muted);padding:16px;text-align:left">No '+unit+'s match these conditions.</td></tr>';
+  rows.forEach(r=>{h+='<tr onclick="'+r.click+'" title="'+(byCity?'drill into '+r.label+' clinics':'open funnel')+'"><td style="white-space:nowrap;width:1%">'+(byCity?'🏙 '+r.label+' · '+r.n:r.label)+'</td><td class="why">'+metricStack(r.c,r.label)+'</td></tr>';});
   h+='</tbody></table></div>';
   $('root').innerHTML=h;
 }
@@ -649,7 +669,7 @@ function funnelStagesHTML(o){
         : lineS.map(l=>miniRow(l.label,l.arr,l.pct||0,l.color,1)).join('')
       )+chipOnly.map(c=>miniRow(c.label,c.arr,c.pct||0,'var(--faint)',1)).join('');   // breakdown — indent via label only
     h+='<div class="stagerow"><div class="stage '+e.status+'"><div class="snum">'+(di+1)+'</div>'
-      +'<div class="sbody"><div class="sname '+e.status+'">'+s.name+'</div><div class="ssub">'+s.sub+'</div>'
+      +'<div class="sbody"><div class="sname">'+metricNameFull(s.key)+' <span class="chan">· '+segWord()+'</span></div><div class="ssub">'+s.sub+'</div>'
         +'<div class="fbody">'+head+bd+'</div>'
       +'</div></div></div>';
     if(di<FUNNEL_ORDER.length-1)h+='<div class="conn"></div>';});
@@ -749,6 +769,7 @@ function filterbarHTML(){
   if(CLINF.size&&!MATF.size)chips.push(P('Clinics','<b>'+(CLINF.size===1?D.clinics[[...CLINF][0]].loc:CLINF.size+' selected')+'</b>'));
   if(DOCF.size)chips.push(P('Doctor','<b>'+(DOCF.size===1?docShort([...DOCF][0]):DOCF.size+' doctors')+'</b>'));
   if(MODE==='cl'&&C)chips.push(P('Clinic','<b>'+C.disp+'</b>'));
+  if(OVMODE==='metric'&&MODE==='ov')chips.push(P('Rows','<b>'+(GRP==='city'?'by city':'by clinic')+'</b>'));
   if(OVMODE==='metric'&&MODE==='ov')chips.push(P('Metric','<b>'+METSEL.map(k=>metricNameFull(k)+(MSUB[k]?' · '+MSUB[k]:'')+(MCOND[k]&&MCOND[k].length?' ('+MCOND[k].map(s=>s==='red'?'🔴':s==='amber'?'🟡':'🟢').join('')+')':'')).join('  •  ')+'</b>'));
   const lbl=curLabel(),dw=dataWindowInfo();
   chips.push(P('Compare','<b>'+(CURN===1?'this week':'last '+CURN+' wks')+'</b> ('+lbl.c+') vs <b>prior '+BASEN+' wks</b> avg'));
