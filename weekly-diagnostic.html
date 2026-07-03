@@ -63,7 +63,9 @@
   .mlab{font-size:11px;color:var(--ink2);font-weight:600;margin-right:7px;display:inline-block;min-width:78px}
   .crow{display:flex;align-items:center;gap:6px;margin:3px 0;cursor:zoom-in;border-radius:7px;padding:2px 5px;transition:background .12s}
   .crow:hover{background:var(--hover)}
-  .crow .clab{min-width:88px;font-size:11.5px;font-weight:600;color:var(--ink2)} .wc{font-size:10.5px;color:var(--bad);margin-left:6px} .fixt{font-size:10.5px;color:var(--muted);margin-left:8px}
+  .crow .clab{width:210px;flex:none;font-size:11.5px;font-weight:600;color:var(--ink2);white-space:normal;line-height:1.3}
+  .crow .clab .mnm{color:var(--ink);font-weight:700} .crow .clab .mseg{color:var(--muted);font-weight:500;font-size:10.5px} .crow .clab .msub{color:var(--accent);font-weight:600;font-size:10.5px}
+  .wc{font-size:10.5px;color:var(--bad);margin-left:6px} .fixt{font-size:10.5px;color:var(--muted);margin-left:8px}
   .slope{display:inline-block;font-weight:800;font-size:13px;margin-right:7px;width:13px;text-align:center;cursor:help}
   .slope.down{color:var(--bad)}.slope.amber{color:var(--warn)}.slope.up{color:var(--good)}.slope.flat{color:var(--faint)}
   .sp{cursor:zoom-in} .zsp{cursor:zoom-in;display:inline-block}
@@ -549,12 +551,17 @@ function metricChips(c,stageKey){
 }
 function pctPill(ev){const arw=(ev.d==null)?'':(ev.d<0?'↓ ':ev.d>0?'↑ ':'→ ');return (ev.d==null)?'<span class="flat">—</span>':'<span class="mc '+ev.st+'" style="font-size:14.5px;font-weight:800;min-width:56px">'+arw+Math.abs(Math.round(ev.d*100))+'%</span>';}
 // one metric row inside a clinic's vertical stack: label · change% · chips · before→now; click zooms
+// full, explicit metric label: clear name · consult segment · sub-dimension (e.g. "SC bookings · offline · new patients")
+const METRIC_FULL={availability:'Availability · active days',demand:'Leads',bookings:'SC bookings',conversion:'Book → done %',done:'Done (completed SC)',purchased:'Purchased (paid SC)',revenue:'Revenue (₹)',velocity:'Bookings / active day',doctors:'Active doctors'};
+function segWord(){return SEG==='online'?'online':SEG==='all'?'all consults':'offline';}
+function metricLabelHTML(key){const nm=METRIC_FULL[key]||key,sub=MSUB[key];
+  return '<span class="mnm">'+nm+'</span><span class="mseg"> · '+segWord()+'</span>'+(sub?'<span class="msub"> · '+sub+'</span>':'');}
+function metricLabelText(key){return (METRIC_FULL[key]||key)+' · '+segWord()+(MSUB[key]?' · '+MSUB[key]:'');}
 function metricRow(c,key,disp){const st=STAGES.find(x=>x.key===key);
-  if(naMetric(c,key))return '<div class="crow" style="cursor:default;opacity:.45"><span class="clab">'+st.short+'</span><span class="flat">—</span><span style="font-size:11px;color:var(--faint);margin-left:6px">n/a for online</span></div>';
+  if(naMetric(c,key))return '<div class="crow" style="cursor:default;opacity:.45"><span class="clab">'+metricLabelHTML(key)+'</span><span class="flat">—</span><span style="font-size:11px;color:var(--faint);margin-left:6px">n/a for online</span></div>';
   const m=st.metrics(c)[0],sub=MSUB[key],pct=sub?false:!!m.pct,arr=metricArr(c,key),ev=evalMetric(arr),a=arr.slice(-(CURN+BASEN));
-  const subLab=sub?'<span style="color:var(--faint);font-weight:500"> · '+sub+'</span>':'';
-  const zi=ZREG.length;ZREG.push({label:disp+' · '+st.name+(sub?' · '+sub:''),arr:arr,col:COL[ev.st]||'var(--ink2)',pct:pct,noPrefix:true});
-  return '<div class="crow" onclick="event.stopPropagation();zoomReg('+zi+')"><span class="clab">'+st.short+subLab+'</span>'+pctPill(ev)+'<span style="margin:0 2px 0 6px">'+slopeBadge(a)+'</span>'+trendHTML(arr,pct,ev)+'</div>';}
+  const zi=ZREG.length;ZREG.push({label:disp+' · '+metricLabelText(key),arr:arr,col:COL[ev.st]||'var(--ink2)',pct:pct,noPrefix:true});
+  return '<div class="crow" onclick="event.stopPropagation();zoomReg('+zi+')"><span class="clab">'+metricLabelHTML(key)+'</span>'+pctPill(ev)+'<span style="margin:0 2px 0 6px">'+slopeBadge(a)+'</span>'+trendHTML(arr,pct,ev)+'</div>';}
 function metricStack(c,disp){return METSEL.map(k=>metricRow(c,k,disp)).join('');}
 function renderMetric(){
   ZREG=[];CURZ=null;
