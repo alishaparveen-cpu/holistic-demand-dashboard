@@ -53,7 +53,9 @@
   .cseg:hover:not(.on){background:var(--hover);color:var(--ink)}
   .subsel{margin-left:5px;font-size:11.5px;border:1px solid var(--line);border-radius:6px;padding:3px 6px;background:var(--inset);font-family:Inter;font-weight:600;color:var(--accent);cursor:pointer;vertical-align:middle}
   .nvlbl{font-size:10px;font-weight:700;text-transform:uppercase;color:var(--faint);margin-right:5px;letter-spacing:.03em}
-  .avgmk{font-family:'JetBrains Mono';font-weight:800;font-size:14.5px;color:var(--ink2);margin:0 4px;white-space:nowrap;vertical-align:middle}
+  .avgmk{font-family:'JetBrains Mono';font-weight:800;font-size:14.5px;color:var(--ink2);white-space:nowrap;display:inline-flex;align-items:baseline;gap:0}
+  .avgmk.avgbefore{margin-left:16px}.avgmk.avgnow{margin-left:10px}
+  .crow .avgmk.avgbefore{margin-left:auto}   /* By-metric rows keep before/now pushed to the right */
   .avgmk.red{color:#a8352a}.avgmk.amber{color:#8a6412}.avgmk.green{color:var(--good)}
   .avgmk .avglab{font-size:9px;font-weight:700;text-transform:uppercase;color:var(--faint);margin-right:4px;letter-spacing:.03em}
   .mlab{font-size:11px;color:var(--ink2);font-weight:600;margin-right:7px;display:inline-block;min-width:78px}
@@ -150,13 +152,17 @@
   .bchip b{color:var(--ink);font-family:'JetBrains Mono';font-weight:700}
   .bchip .dd{font-family:'JetBrains Mono';font-size:11px;font-weight:700;margin-left:1px}
   .trend-cap{font-size:10px;color:var(--faint);text-align:right;margin-top:3px;letter-spacing:.02em}
-  .frow{display:flex;flex-direction:row;align-items:center;flex-wrap:wrap;gap:8px 10px;padding:6px 8px;cursor:zoom-in;border-radius:7px}
+  .frow{display:flex;flex-direction:row;align-items:center;gap:0;padding:4px 6px;cursor:zoom-in;border-radius:7px;overflow-x:auto}
   .frow:hover{background:var(--hover)}
-  .frow-top{display:flex;align-items:center;gap:10px;flex:none}
-  .frow-bot{padding-left:0;flex:1;min-width:220px}
-  .flab{font-size:12.5px;font-weight:600;color:var(--ink2);min-width:150px;flex:none;display:inline-flex;align-items:center;gap:6px}
-  .fchange{flex:none;width:78px;display:inline-flex;justify-content:flex-start}
-  .ftrend{display:inline-flex;align-items:center;flex-wrap:wrap;gap:0}
+  .fbody{margin-top:6px}
+  .flab{width:290px;flex:none;font-size:12.5px;font-weight:600;color:var(--ink2);display:inline-flex;align-items:center;gap:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .fchange{flex:none;width:82px;display:inline-flex;justify-content:flex-start}
+  .fslope{flex:none;width:30px;display:inline-flex;justify-content:center}
+  .frow .mc{width:48px;flex:none;box-sizing:border-box;text-align:center;margin-right:3px}
+  .fchange .mc{width:auto;min-width:auto;white-space:nowrap}   /* the %change pill keeps its natural width */
+  .frow .avgmk{flex:none}
+  .frow .avgmk.avgbefore{min-width:132px;margin-left:16px}
+  .frow .avgmk.avgnow{margin-left:10px}
   .flab .dot{width:9px;height:9px;border-radius:2px;flex:none}
   .frow.head{background:var(--inset);border-radius:8px}
   .frow.head .flab{font-weight:800;color:var(--ink);font-size:14px}
@@ -391,18 +397,18 @@ function curLabel(){const wl=D.week_labels,NW=wl.length;const c=CURN===1?wl[NW-1
 function trendHTML(arr,pct,ev){const a=arr.slice(-(CURN+BASEN)),nb=a.length-CURN;
   const fv=v=>v==null?'·':(pct?Math.round(v)+'%':(Math.round(v*10)/10)),fa=v=>v==null?'—':(pct?Math.round(v)+'%':(Math.round(v*10)/10));
   const week=a.map((v,i)=>'<span class="mc '+(i>=nb?ev.st:'base')+'">'+fv(v)+'</span>').join('');
-  return week+'<span class="avgmk" style="margin-left:auto"><span class="avglab">before avg</span>'+fa(ev.base)+'</span><span class="avgmk '+ev.st+'" style="margin-left:14px"><span class="avglab">now</span>'+fa(ev.cur)+'</span>';}
-// one funnel breakdown row — same layout as a By-metric row: label · % change · trend; click zooms full trend
-function miniRow(label,arr,pct,color,head){const ev=evalMetric(arr),a=arr.slice(-(CURN+BASEN));
+  return week+'<span class="avgmk avgbefore"><span class="avglab">before avg</span>'+fa(ev.base)+'</span><span class="avgmk avgnow '+ev.st+'"><span class="avglab">now</span>'+fa(ev.cur)+'</span>';}
+// one funnel breakdown row — fixed columns so numbers align vertically across every row & nesting level
+// (label indents by depth; the chip / before-avg / now columns stay put so children sum straight down)
+function miniRow(label,arr,pct,color,depth,head){const ev=evalMetric(arr),a=arr.slice(-(CURN+BASEN));
   const lc=(color&&color!=='var(--faint)')?color:null;
   const zi=ZREG.length;ZREG.push({label,arr,col:lc||'var(--ink2)',pct:!!pct});
+  const pad=6+(depth||0)*20;
   return '<div class="frow'+(head?' head':'')+'" onclick="event.stopPropagation();zoomReg('+zi+')" title="click for full trend">'
-    +'<div class="frow-top">'
-      +'<span class="flab"'+(lc?' style="color:'+lc+'"':'')+'>'+(color?'<span class="dot" style="background:'+color+'"></span>':'')+label+'</span>'
-      +'<span class="fchange">'+pctPill(ev)+'</span>'
-      +'<span class="fslope">'+slopeBadge(a)+'</span>'
-    +'</div>'
-    +'<div class="ftrend frow-bot">'+trendHTML(arr,pct,ev)+'</div></div>';}
+    +'<span class="flab" style="padding-left:'+pad+'px'+(lc?';color:'+lc:'')+'">'+(color?'<span class="dot" style="background:'+color+'"></span>':'')+label+'</span>'
+    +'<span class="fchange">'+pctPill(ev)+'</span>'
+    +'<span class="fslope">'+slopeBadge(a)+'</span>'
+    +trendHTML(arr,pct,ev)+'</div>';}
 // ---- time-window selectors (presets + custom) ----
 const CUR_PRESETS=[[1,'this week'],[2,'last 2 weeks'],[3,'last 3 weeks'],[4,'last 4 weeks'],[6,'last 6 weeks'],[8,'last 8 weeks']];
 const BASE_PRESETS=[[4,'prior 4 wks'],[6,'prior 6 wks'],[8,'prior 8 wks'],[12,'prior 12 wks'],[26,'prior 26 wks']];
@@ -590,14 +596,14 @@ function funnelStagesHTML(o){
     if(o._online&&(s.key==='availability'||s.key==='demand'||s.key==='velocity'))return;   // n/a for online
     const e=evalStage(s,o),hm=e.hm,col=COL[e.status];
     const {lineS,chipOnly,groups}=stageParts(s,o);
-    const head=miniRow(hm.nm,hm.arr,hm.pct,col,true);   // headline metric — the focus line
-    const bd=(groups   // grouped: parent row (e.g. new patients) then its children nested one level deeper
-        ? groups.map(g=>miniRow(g.label,g.arr,0,g.color)+'<div class="fbreak">'+g.children.map(ch=>miniRow(ch.label,ch.arr,0,ch.color)).join('')+'</div>').join('')
-        : lineS.map(l=>miniRow(l.label,l.arr,l.pct||0,l.color)).join('')
-      )+chipOnly.map(c=>miniRow(c.label,c.arr,c.pct||0,'var(--faint)')).join('');   // breakdown, nested
+    const head=miniRow(hm.nm,hm.arr,hm.pct,col,0,true);   // headline metric — the focus line (depth 0)
+    const bd=(groups   // grouped: parent row (depth 1, e.g. new patients) then its children (depth 2)
+        ? groups.map(g=>miniRow(g.label,g.arr,0,g.color,1)+g.children.map(ch=>miniRow(ch.label,ch.arr,0,ch.color,2)).join('')).join('')
+        : lineS.map(l=>miniRow(l.label,l.arr,l.pct||0,l.color,1)).join('')
+      )+chipOnly.map(c=>miniRow(c.label,c.arr,c.pct||0,'var(--faint)',1)).join('');   // breakdown — indent via label only
     h+='<div class="stagerow"><div class="stage '+e.status+'"><div class="snum">'+(di+1)+'</div>'
       +'<div class="sbody"><div class="sname '+e.status+'">'+s.name+'</div><div class="ssub">'+s.sub+'</div>'
-        +'<div style="margin-top:6px">'+head+(bd?'<div class="fbreak">'+bd+'</div>':'')+'</div>'
+        +'<div class="fbody">'+head+bd+'</div>'
       +'</div></div></div>';
     if(di<FUNNEL_ORDER.length-1)h+='<div class="conn"></div>';});
   return h;
