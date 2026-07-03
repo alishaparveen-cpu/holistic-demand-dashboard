@@ -51,6 +51,7 @@
   .cseg:last-child{border-right:none}
   .cseg.on{background:var(--accent);color:#fff;box-shadow:inset 0 0 0 1px var(--accent)}
   .cseg:hover:not(.on){background:var(--hover);color:var(--ink)}
+  .subsel{margin-left:5px;font-size:11.5px;border:1px solid var(--line);border-radius:6px;padding:3px 6px;background:var(--inset);font-family:Inter;font-weight:600;color:var(--accent);cursor:pointer;vertical-align:middle}
   .nvlbl{font-size:10px;font-weight:700;text-transform:uppercase;color:var(--faint);margin-right:5px;letter-spacing:.03em}
   .avgmk{font-family:'JetBrains Mono';font-weight:800;font-size:14.5px;color:var(--ink2);margin:0 4px;white-space:nowrap;vertical-align:middle}
   .avgmk.red{color:#a8352a}.avgmk.amber{color:#8a6412}.avgmk.green{color:var(--good)}
@@ -226,7 +227,7 @@
 </div>
 <div class="modal" id="modal" onclick="if(event.target===this)closeZ()"><div class="mbox"><div class="mhd"><span id="mTitle"></span><button onclick="closeZ()" title="close">✕</button></div><div id="pickBar" class="pickbar"></div><div id="mBody"></div></div></div>
 <script>
-let D=null, AGE={}, CURN=1, BASEN=4, MODE='ov', C=null, OPEN={}, QF='any', CITYF=new Set(), CLINF=new Set(), TIERF=new Set(), MATF=new Set(), DOCF=new Set(), SEG='offline', DENSITY='compact', MET='bookings', OVMODE='metric', METSEL=['bookings'], MCOND={};
+let D=null, AGE={}, CURN=1, BASEN=4, MODE='ov', C=null, OPEN={}, QF='any', CITYF=new Set(), CLINF=new Set(), TIERF=new Set(), MATF=new Set(), DOCF=new Set(), SEG='offline', DENSITY='compact', MET='bookings', OVMODE='metric', METSEL=['bookings'], MCOND={}, MSUB={};
 // availability / leads / bookings-per-active-day don't exist for online (national telehealth, no clinics/roster)
 function naMetric(c,key){return !!(c&&c._online)&&(key==='availability'||key==='demand'||key==='velocity');}
 const T1CITIES=new Set(['Bangalore','Mumbai','Navi Mumbai','Pune','Hyderabad','Chennai']);
@@ -482,14 +483,27 @@ function setMet(v){MODE='ov';   // multi-select columns: click to add/remove · 
   const i=METSEL.indexOf(v);
   if(i<0)METSEL.push(v); else if(i>0){METSEL.splice(i,1);METSEL.unshift(v);} else if(METSEL.length>1)METSEL.splice(i,1);
   MET=METSEL[0];updateModeUI();render();}
-function metricEval(c,key){const st=STAGES.find(x=>x.key===key),m=st.metrics(c)[0];return {ev:evalMetric(m.arr),arr:m.arr,pct:m.pct};}
+// ---- fifth level: per-metric sub-dimension (Leads→channel, Done/Purch/Rev→category, Bookings/Availability→split) ----
+let _CHU=null;
+function chanUnion(){if(_CHU)return _CHU;const s=new Set();Object.values(D.clinics).forEach(c=>{if(c.demand&&c.demand.by_channel)Object.keys(c.demand.by_channel).forEach(ch=>s.add(ch));});_CHU=[...s].sort();return _CHU;}
+function subDims(key){const Z=()=>new Array(D.weeks.length).fill(0);
+  if(key==='demand')return [{label:'all leads',get:c=>c.demand.leads}].concat(chanUnion().map(ch=>({label:ch,get:c=>(c.demand.by_channel||{})[ch]||Z()})));
+  if(key==='done')return [{label:'all done',get:c=>c.done.done}].concat(['SH','STI','MH','Other'].map(ct=>({label:ct,get:c=>(c.done.by_cat||{})[ct]||Z()})));
+  if(key==='purchased')return [{label:'all purchased',get:c=>(c.purchased&&c.purchased.total)||Z()}].concat(['SH','STI','MH','Other'].map(ct=>({label:ct,get:c=>((c.purchased&&c.purchased.by_cat)||{})[ct]||Z()})));
+  if(key==='revenue')return [{label:'all revenue',get:c=>(c.revenue&&c.revenue.rev)||Z()}].concat(['SH','STI','MH','Other'].map(ct=>({label:ct,get:c=>((c.revenue&&c.revenue.by_cat)||{})[ct]||Z()})));
+  if(key==='bookings')return [{label:'all bookings',get:c=>c.bookings.total},{label:'fresh',get:c=>c.bookings.new_tw},{label:'carry-in',get:c=>c.bookings.new_old},{label:'rebook',get:c=>c.bookings.rebook},{label:'relapse',get:c=>c.bookings.relapse}];
+  if(key==='availability')return [{label:'active days',get:c=>c.availability.active_days},{label:'weekday days',get:c=>c.availability.wday_days},{label:'weekend days',get:c=>c.availability.wend_days},{label:'available hrs',get:c=>c.availability.avail_hours||c.availability.hours},{label:'screening-call hrs',get:c=>c.availability.hours}];
+  return null;}   // conversion / velocity / doctors → no sub-dimension
+function metricArr(c,key){const sel=MSUB[key];if(sel){const sd=subDims(key),f=sd&&sd.find(x=>x.label===sel);if(f){const a=f.get(c);return (a&&a.length)?a:new Array(D.weeks.length).fill(0);}}return STAGES.find(x=>x.key===key).metrics(c)[0].arr;}
+function setSub(key,v){if(!v)delete MSUB[key];else MSUB[key]=v;render();}
+function metricEval(c,key){const st=STAGES.find(x=>x.key===key),m=st.metrics(c)[0],arr=metricArr(c,key);return {ev:evalMetric(arr),arr:arr,pct:MSUB[key]?0:m.pct};}
 function setCond(key,v){   // multi-select: toggle a status in/out of this metric's required set; 'any' clears it
   if(v==='any'){delete MCOND[key];render();return;}
   const cur=MCOND[key]?MCOND[key].slice():[],i=cur.indexOf(v);
   if(i<0)cur.push(v);else cur.splice(i,1);
   if(cur.length)MCOND[key]=cur;else delete MCOND[key];
   render();}
-function clearMet(){METSEL=['bookings'];MET='bookings';MCOND={};updateModeUI();render();}
+function clearMet(){METSEL=['bookings'];MET='bookings';MCOND={};MSUB={};updateModeUI();render();}
 function updateModeUI(){const cmp=(MET!=='break');
   const vi=$('vIssues'),vc=$('vCompare');if(vi)vi.classList.toggle('on',!cmp&&MODE==='ov');if(vc)vc.classList.toggle('on',cmp&&MODE==='ov');
   const mb=$('metricbar');if(mb)mb.style.display=cmp?'flex':'none';
@@ -507,9 +521,10 @@ function pctPill(ev){const arw=(ev.d==null)?'':(ev.d<0?'↓ ':ev.d>0?'↑ ':'→
 // one metric row inside a clinic's vertical stack: label · change% · chips · before→now; click zooms
 function metricRow(c,key,disp){const st=STAGES.find(x=>x.key===key);
   if(naMetric(c,key))return '<div class="crow" style="cursor:default;opacity:.45"><span class="clab">'+st.short+'</span><span class="flat">—</span><span style="font-size:11px;color:var(--faint);margin-left:6px">n/a for online</span></div>';
-  const m=st.metrics(c)[0],ev=evalMetric(m.arr),a=m.arr.slice(-(CURN+BASEN));
-  const zi=ZREG.length;ZREG.push({label:disp+' · '+st.name,arr:m.arr,col:COL[ev.st]||'var(--ink2)',pct:!!m.pct,noPrefix:true});
-  return '<div class="crow" onclick="event.stopPropagation();zoomReg('+zi+')"><span class="clab">'+st.short+'</span>'+pctPill(ev)+'<span style="margin:0 2px 0 6px">'+slopeBadge(a)+'</span>'+trendHTML(m.arr,m.pct,ev)+'</div>';}
+  const m=st.metrics(c)[0],sub=MSUB[key],pct=sub?false:!!m.pct,arr=metricArr(c,key),ev=evalMetric(arr),a=arr.slice(-(CURN+BASEN));
+  const subLab=sub?'<span style="color:var(--faint);font-weight:500"> · '+sub+'</span>':'';
+  const zi=ZREG.length;ZREG.push({label:disp+' · '+st.name+(sub?' · '+sub:''),arr:arr,col:COL[ev.st]||'var(--ink2)',pct:pct,noPrefix:true});
+  return '<div class="crow" onclick="event.stopPropagation();zoomReg('+zi+')"><span class="clab">'+st.short+subLab+'</span>'+pctPill(ev)+'<span style="margin:0 2px 0 6px">'+slopeBadge(a)+'</span>'+trendHTML(arr,pct,ev)+'</div>';}
 function metricStack(c,disp){return METSEL.map(k=>metricRow(c,k,disp)).join('');}
 function renderMetric(){
   ZREG=[];CURZ=null;
@@ -522,7 +537,10 @@ function renderMetric(){
   rows.sort((a,b)=>(a.pe.d==null?9:a.pe.d)-(b.pe.d==null?9:b.pe.d));   // worst on the primary (sorted) metric first
   const cc=(k)=>{const st=STAGES.find(x=>x.key===k),sel=MCOND[k]||[];
     const opt=(v,lab,on)=>'<button class="cseg'+(on?' on':'')+'" onclick="setCond(\''+k+'\',\''+v+'\')">'+lab+'</button>';
-    return '<span class="condgrp"><span class="condlab">'+st.short+'</span><span class="cseg-wrap">'+opt('any','any',!sel.length)+opt('red','🔴',sel.includes('red'))+opt('amber','🟡',sel.includes('amber'))+opt('green','🟢',sel.includes('green'))+'</span></span>';};
+    const sd=subDims(k);let sub='';   // fifth level: apply the status + trend to a breakdown component
+    if(sd&&sd.length>1){const cur=MSUB[k]||'';
+      sub='<select class="subsel" title="narrow this metric to one breakdown (e.g. a lead channel or a category)" onchange="setSub(\''+k+'\',this.value)"><option value="">'+sd[0].label+'</option>'+sd.slice(1).map(d=>'<option value="'+d.label.replace(/"/g,'')+'"'+(cur===d.label?' selected':'')+'>'+d.label+'</option>').join('')+'</select>';}
+    return '<span class="condgrp"><span class="condlab">'+st.short+'</span><span class="cseg-wrap">'+opt('any','any',!sel.length)+opt('red','🔴',sel.includes('red'))+opt('amber','🟡',sel.includes('amber'))+opt('green','🟢',sel.includes('green'))+'</span>'+sub+'</span>';};
   let h='<div class="densrow" style="gap:8px;flex-wrap:wrap"><span class="lab" style="text-transform:none;font-weight:600;color:var(--ink2)">'+rows.length+' clinic'+(rows.length===1?'':'s')+' · '+cityStr()+' · sorted by <b>'+primary.name+'</b></span>'
     +'<span style="display:inline-flex;gap:6px;flex-wrap:wrap;margin-left:4px">'+metrics.map(s=>cc(s.key)).join('')+'</span>'
     +'<button class="fbtn" style="padding:5px 13px;font-size:12px;font-weight:700" onclick="clearMet()">✕ clear all</button>'
