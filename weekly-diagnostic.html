@@ -70,6 +70,7 @@
   .ctltag.inl{min-width:auto;flex:none;margin-left:6px}
   .ctlsep{width:1px;height:20px;background:var(--line);margin:0 5px;flex:none}
   .chelp{font-size:11px;font-weight:500;color:var(--muted);margin-left:8px}
+  .scopecount{margin-left:auto;font-size:11px;color:var(--muted);font-family:'JetBrains Mono';white-space:nowrap;padding-left:10px}
   .nvlbl{font-size:10px;font-weight:700;text-transform:uppercase;color:var(--faint);margin-right:5px;letter-spacing:.03em}
   .avgmk{font-family:'JetBrains Mono';font-weight:800;font-size:14.5px;color:var(--ink2);white-space:nowrap;display:inline-flex;align-items:baseline;gap:0}
   .avgmk.avgbefore{margin-left:16px}.avgmk.avgnow{margin-left:10px}
@@ -215,21 +216,21 @@
   <h1>Quick Diagnostic</h1>
   <!-- ── clean single-panel filters ── -->
   <div class="ctlpanel">
-    <div class="ctltier"><span class="ctltag">Consult</span>
-      <div class="seg"><button class="segbtn on" id="segOff" onclick="setSeg('offline')">🏥 Offline</button><button class="segbtn" id="segOn" onclick="setSeg('online')">🌐 Online</button><button class="segbtn" id="segAll" onclick="setSeg('all')">Σ All</button></div>
-    </div>
     <div class="ctltier"><span class="ctltag">Funnel</span>
       <div class="seg"><button class="segbtn on" id="fn2sc" onclick="setFunnel2('sc')">🩺 SC · demand</button><button class="segbtn" id="fn2fu" onclick="setFunnel2('fu')">🔁 FU · ops</button><button class="segbtn" id="fn2all" onclick="setFunnel2('all')">🌐 All</button></div>
     </div>
     <div class="ctltier"><span class="ctltag">Scope</span>
+      <button class="fbtn" id="allIndiaBtn" onclick="resetScopeAll()">◎ All India</button>
       <button class="fbtn" data-tier="T1" onclick="togTier('T1')">Tier 1</button><button class="fbtn" data-tier="T2" onclick="togTier('T2')">Tier 2</button>
       <span class="ctlsep"></span>
       <div class="ms"><button class="fbtn" id="cityBtn" onclick="openCityMs(event)">All cities ▾</button><div class="mspanel" id="cityPanel"></div></div>
       <div class="ms"><button class="fbtn" id="clinBtn" onclick="openClinMs(event)">All clinics ▾</button><div class="mspanel" id="clinPanel"></div></div>
       <div class="ms"><button class="fbtn" id="docBtn" onclick="openDocMs(event)">All doctors ▾</button><div class="mspanel" id="docPanel"></div></div>
       <span class="ctlsep"></span>
-      <span class="ctltag inl">Maturity</span>
       <button class="fbtn" data-mat="&lt;3mo" onclick="togMat('&lt;3mo')">&lt;3mo</button><button class="fbtn" data-mat="3-6mo" onclick="togMat('3-6mo')">3–6mo</button><button class="fbtn" data-mat="6-12mo" onclick="togMat('6-12mo')">6–12mo</button><button class="fbtn" data-mat="&gt;1yr" onclick="togMat('&gt;1yr')">&gt;1yr</button>
+      <span class="ctlsep"></span>
+      <div class="seg"><button class="segbtn on" id="segOff" onclick="setSeg('offline')">🏥 Offline</button><button class="segbtn" id="segOn" onclick="setSeg('online')">🌐 Online</button><button class="segbtn" id="segAll" onclick="setSeg('all')">Σ All</button></div>
+      <span class="scopecount" id="scopeCount"></span>
     </div>
     <div class="ctltier"><span class="ctltag">Compare</span>
       <select id="curn" onchange="setCurN(this.value)"></select>
@@ -778,7 +779,7 @@ function filterbarHTML(){
   const win='<span class="fwin"><span class="fk">📅 Data</span><b>'+dw.n+' wks</b> · '+dw.first+' → '+dw.last+'<span class="fstale">'+dw.stale+'</span></span>';
   return '<div class="fchips">'+chips.join('')+'</div>'+win;
 }
-function render(){const fb=$('filterbar');if(fb)fb.innerHTML=filterbarHTML();MODE==='ov'?renderOverview():renderClinic();}
+function render(){const fb=$('filterbar');if(fb)fb.innerHTML=filterbarHTML();const sc=$('scopeCount');if(sc)sc.textContent=scopeCountHTML();const ai=$('allIndiaBtn');if(ai)ai.classList.toggle('on',!TIERF.size&&!MATF.size&&!CITYF.size&&!CLINF.size&&!DOCF.size);MODE==='ov'?renderOverview():renderClinic();}
 let ALLCITIES=[];
 function cityBtnLabel(){return (CITYF.size?(CITYF.size<=2?[...CITYF].join(', '):CITYF.size+' cities'):'All cities')+' ▾';}
 function clinBtnLabel(){return (CLINF.size?(CLINF.size===1?D.clinics[[...CLINF][0]].loc:CLINF.size+' clinics'):'All clinics')+' ▾';}
@@ -807,7 +808,21 @@ function applyMatF(){
   else CLINF=new Set(Object.keys(D.clinics).filter(s=>{const c=D.clinics[s];if(c._online)return false;if(TIERF.size&&!TIERF.has(tierOf(c.city)))return false;if(!inCity(c.city))return false;const b=matBucket(clinMonths(s));return b&&MATF.has(b);}));
   if($('clinBtn')){$('clinBtn').textContent=clinBtnLabel();$('clinBtn').classList.toggle('on',!!CLINF.size);}
   syncDocBtn();}
-function syncScopeBtns(){document.querySelectorAll('[data-tier]').forEach(b=>b.classList.toggle('on',TIERF.has(b.dataset.tier)));document.querySelectorAll('[data-mat]').forEach(b=>b.classList.toggle('on',MATF.has(b.dataset.mat)));}
+function syncScopeBtns(){document.querySelectorAll('[data-tier]').forEach(b=>b.classList.toggle('on',TIERF.has(b.dataset.tier)));document.querySelectorAll('[data-mat]').forEach(b=>b.classList.toggle('on',MATF.has(b.dataset.mat)));
+  const ai=$('allIndiaBtn');if(ai)ai.classList.toggle('on',!TIERF.size&&!MATF.size&&!CITYF.size&&!CLINF.size&&!DOCF.size);}
+function resetScopeAll(){TIERF=new Set();MATF=new Set();CITYF=new Set();CLINF=new Set();DOCF=new Set();   // ◎ All India — clear geographic scope
+  syncScopeBtns();
+  if($('cityBtn')){$('cityBtn').textContent=cityBtnLabel();$('cityBtn').classList.remove('on');}
+  if($('clinBtn')){$('clinBtn').textContent=clinBtnLabel();$('clinBtn').classList.remove('on');}
+  if($('docBtn')){$('docBtn').textContent=docBtnLabel();$('docBtn').classList.remove('on');}
+  render();}
+function scopeCountHTML(){let n=0;const cities=new Set();
+  Object.keys(D.clinics).forEach(s=>{const c=D.clinics[s];if(c._online)return;
+    if(TIERF.size&&!TIERF.has(tierOf(c.city)))return;
+    if(DOCF.size&&(!c.by_doctor||![...DOCF].some(dr=>c.by_doctor[dr])))return;
+    if(CLINF.size?!CLINF.has(s):!inCity(c.city))return;
+    n++;cities.add(c.city);});
+  return n+' clinic'+(n===1?'':'s')+' · '+cities.size+' cit'+(cities.size===1?'y':'ies');}
 function allCity(on){CITYF=on?new Set(ALLCITIES):new Set();renderCityPanel($('cityQ')?$('cityQ').value:'');cityChanged();}
 function openClinMs(e){e.stopPropagation();const p=$('clinPanel'),show=!p.classList.contains('on');closePanels();if(show){renderClinPanel('');p.classList.add('on');const q=$('clinQ');if(q)q.focus();}}
 function renderClinPanel(q){q=(q||'').toLowerCase();
