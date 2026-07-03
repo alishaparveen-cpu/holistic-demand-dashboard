@@ -36,6 +36,8 @@
   .msq{width:100%;padding:7px 10px;border:1px solid var(--line);border-radius:7px;font-size:12.5px;margin-bottom:4px;font-family:Inter;box-sizing:border-box}
   .msact{display:flex;gap:12px;padding:4px 9px 6px;border-bottom:1px solid var(--line);margin-bottom:3px}.msact a{color:var(--accent);font-size:11px;font-weight:700;cursor:pointer}
   .msi{display:flex;align-items:center;gap:8px;padding:5px 9px;font-size:12.5px;cursor:pointer;border-radius:5px;white-space:nowrap}.msi:hover{background:var(--inset)} .msi .c{margin-left:auto;color:var(--muted);font-size:10.5px;font-family:'JetBrains Mono'}
+  #docPanel{min-width:290px}
+  .docclin{margin-left:auto;color:var(--muted);font-size:10.5px;text-align:right;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:170px;padding-left:10px}
   .mc{display:inline-block;min-width:34px;text-align:center;font-family:'JetBrains Mono';font-size:14px;font-weight:700;border-radius:6px;padding:5px 8px;margin-right:4px}
   .mc.base{background:var(--inset);color:var(--ink2);box-shadow:inset 0 0 0 1px var(--line)} .mc.red{background:var(--rbg);color:#a8352a} .mc.amber{background:var(--abg);color:#8a6412} .mc.green{background:var(--gbg);color:var(--good)}
   .mc.now{background:#fff;color:var(--ink);font-weight:800;box-shadow:inset 0 0 0 1.5px var(--line)}
@@ -203,6 +205,9 @@
     <div class="tgroup"><span class="tlab">Consult</span>
       <div class="seg"><button class="segbtn on" id="segOff" onclick="setSeg('offline')" style="font-size:12.5px;padding:7px 13px">🏥 Offline</button><button class="segbtn" id="segOn" onclick="setSeg('online')" style="font-size:12.5px;padding:7px 13px">🌐 Online</button><button class="segbtn" id="segAll" onclick="setSeg('all')" style="font-size:12.5px;padding:7px 13px">Σ All</button></div>
     </div>
+    <div class="tgroup"><span class="tlab">Funnel</span>
+      <div class="seg"><button class="segbtn on" id="fn2sc" onclick="setFunnel2('sc')" style="font-size:12.5px;padding:7px 13px">🩺 SC · demand</button><button class="segbtn" id="fn2fu" onclick="setFunnel2('fu')" style="font-size:12.5px;padding:7px 13px">🔁 FU · ops</button><button class="segbtn" id="fn2all" onclick="setFunnel2('all')" style="font-size:12.5px;padding:7px 13px">🌐 All</button></div>
+    </div>
     <div class="tgroup"><span class="tlab">Scope</span>
       <div class="ms"><button class="fbtn" id="cityBtn" onclick="openCityMs(event)">All cities ▾</button><div class="mspanel" id="cityPanel"></div></div>
       <div class="ms"><button class="fbtn" id="clinBtn" onclick="openClinMs(event)">All clinics ▾</button><div class="mspanel" id="clinPanel"></div></div>
@@ -236,6 +241,17 @@
 <div class="modal" id="modal" onclick="if(event.target===this)closeZ()"><div class="mbox"><div class="mhd"><span id="mTitle"></span><button onclick="closeZ()" title="close">✕</button></div><div id="pickBar" class="pickbar"></div><div id="mBody"></div></div></div>
 <script>
 let D=null, AGE={}, CURN=1, BASEN=4, MODE='ov', C=null, OPEN={}, QF='any', CITYF=new Set(), CLINF=new Set(), TIERF=new Set(), MATF=new Set(), DOCF=new Set(), SEG='offline', DENSITY='compact', MET='bookings', OVMODE='metric', METSEL=['bookings'], MCOND={}, MSUB={};
+let QD=null, FUNNEL2='sc';   // SC/FU/Combined — data sourced from master demand (data_quick_diag.json)
+function setFunnel2(v){FUNNEL2=v;['sc','fu','all'].forEach(x=>{const b=$('fn2'+x);if(b)b.classList.toggle('on',x===v);});applyVariant();if(MODE==='cl'&&C){const s=C._slug;C=D.clinics[s]||C;}render();}
+function applyVariant(){   // overlay the matched SC/FU/Combined numbers onto each clinic (remapped to D.weeks)
+  if(!QD)return; const dw=D.weeks, qw=QD.weeks, qi=qw.map(w=>dw.indexOf(w));
+  const rm=arr=>{const o=Array(dw.length).fill(null);(arr||[]).forEach((v,i)=>{const g=qi[i];if(g>=0)o[g]=v;});return o;};
+  const rmObj=o=>{const r={};for(const k in o){r[k]=Array.isArray(o[k])?rm(o[k]):rmObj(o[k]);}return r;};
+  for(const slug in QD.clinics){const c=D.clinics[slug];if(!c)continue;const v=QD.clinics[slug][FUNNEL2];if(!v)continue;
+    if(!c._slug)c._slug=slug;
+    c.bookings=rmObj(v.bookings); c.done=rmObj(v.done); c.availability=Object.assign({},c.availability,rmObj(v.availability));
+    c.velocity=rmObj(v.velocity); c.by_doctor=rmObj(v.by_doctor);}
+}
 // availability / leads / bookings-per-active-day don't exist for online (national telehealth, no clinics/roster)
 function naMetric(c,key){return !!(c&&c._online)&&(key==='availability'||key==='demand'||key==='velocity');}
 const T1CITIES=new Set(['Bangalore','Mumbai','Navi Mumbai','Pune','Hyderabad','Chennai']);
@@ -727,17 +743,23 @@ function allClin(on){const q=$('clinQ')?$('clinQ').value.toLowerCase():'';const 
 function docShort(dr){return (dr||'').replace(/^Dr\.?\s*/i,'');}
 function docNames(){const s=new Set();Object.keys(D.clinics).forEach(sl=>{const c=D.clinics[sl];if(CLINF.size?!CLINF.has(sl):!inCity(c.city))return;if(c.by_doctor)Object.keys(c.by_doctor).forEach(dr=>s.add(dr));});return [...s].sort((a,b)=>docShort(a).localeCompare(docShort(b)));}
 function docBtnLabel(){return (DOCF.size?(DOCF.size===1?docShort([...DOCF][0]):DOCF.size+' doctors'):'All doctors')+' ▾';}
-function openDocMs(e){e.stopPropagation();const p=$('docPanel'),show=!p.classList.contains('on');closePanels();if(show){renderDocPanel('');p.classList.add('on');const q=$('docQ');if(q)q.focus();}}
-function renderDocPanel(q){q=(q||'').toLowerCase();const ks=docNames().filter(d=>docShort(d).toLowerCase().includes(q));
-  let h='<input id="docQ" class="msq" placeholder="search doctor…" oninput="renderDocPanel(this.value)" onclick="event.stopPropagation()"><div class="msact"><a onclick="allDoc(1)">select all</a><a onclick="allDoc(0)">clear</a></div>';
+function openDocMs(e){e.stopPropagation();const p=$('docPanel'),show=!p.classList.contains('on');closePanels();if(show){renderDocPanel();p.classList.add('on');const q=$('docQ');if(q)q.focus();}}
+function docClinics(dr){const cs=[];Object.keys(D.clinics).forEach(sl=>{const c=D.clinics[sl];if(c._online)return;if(CLINF.size?!CLINF.has(sl):!inCity(c.city))return;if(c.by_doctor&&c.by_doctor[dr])cs.push({loc:c.loc||c.disp,city:c.city});});return cs;}
+function renderDocPanel(){const ks=docNames();   // render full list ONCE; search filters in place so the input keeps focus
+  let h='<input id="docQ" class="msq" placeholder="search doctor / clinic / city…" oninput="filterDoc(this.value)" onclick="event.stopPropagation()"><div class="msact"><a onclick="allDoc(1)">select all</a><a onclick="allDoc(0)">clear</a></div>';
   if(!ks.length)h+='<div class="msi" style="color:var(--muted)">no doctors in scope</div>';
-  ks.forEach(d=>{h+='<label class="msi" onclick="event.stopPropagation()"><input type="checkbox" '+(DOCF.has(d)?'checked':'')+' onchange="togDoc(\''+d.replace(/'/g,"\\'")+'\')">'+docShort(d)+'</label>';});
+  ks.forEach(d=>{const cl=docClinics(d),locs=cl.map(x=>x.loc),show=locs.length<=2?locs.join(', '):locs.slice(0,2).join(', ')+' +'+(locs.length-2);
+    const srch=(docShort(d)+' '+cl.map(x=>x.loc+' '+x.city).join(' ')).toLowerCase().replace(/"/g,'');
+    h+='<label class="msi" data-s="'+srch+'" onclick="event.stopPropagation()"><input type="checkbox" '+(DOCF.has(d)?'checked':'')+' onchange="togDoc(\''+d.replace(/'/g,"\\'")+'\')"><span>'+docShort(d)+'</span><span class="docclin" title="'+locs.join(', ').replace(/"/g,'')+'">'+(show||'—')+'</span></label>';});
   $('docPanel').innerHTML=h;}
+function filterDoc(q){q=(q||'').toLowerCase().trim();document.querySelectorAll('#docPanel label.msi').forEach(l=>{l.style.display=(l.getAttribute('data-s')||'').includes(q)?'':'none';});}
 function docChanged(){$('docBtn').textContent=docBtnLabel();$('docBtn').classList.toggle('on',!!DOCF.size);
   if(MODE==='cl'&&CLINF.size===1)C=CL([...CLINF][0]);
   render();}
 function togDoc(d){DOCF.has(d)?DOCF.delete(d):DOCF.add(d);docChanged();}
-function allDoc(on){const q=$('docQ')?$('docQ').value.toLowerCase():'';const ks=docNames().filter(d=>docShort(d).toLowerCase().includes(q));if(on)ks.forEach(d=>DOCF.add(d));else ks.forEach(d=>DOCF.delete(d));renderDocPanel($('docQ')?$('docQ').value:'');docChanged();}
+function allDoc(on){const q=($('docQ')?$('docQ').value:'').toLowerCase().trim();
+  docNames().forEach(d=>{const hay=(docShort(d)+' '+docClinics(d).map(x=>x.loc+' '+x.city).join(' ')).toLowerCase();if(!q||hay.includes(q)){on?DOCF.add(d):DOCF.delete(d);}});
+  renderDocPanel();const inp=$('docQ');if(inp&&q){inp.value=q;filterDoc(q);}docChanged();}
 // Build "🌐 Online · <city>" pseudo-clinics from national telehealth data (D.online.by_city) so the
 // Consult=Online / All toggle can fold online demand into the same per-clinic table. Online has no
 // availability / leads / velocity (national, no roster), so those render as "— n/a".
@@ -765,6 +787,8 @@ async function boot(){
   try{D=await fetch('data_weekly_diag.json').then(r=>r.json());}
   catch(e){$('root').innerHTML='<div class="err">Failed to load data_weekly_diag.json</div>';return;}
   try{AGE=await fetch('data_clinic_age.json').then(r=>r.ok?r.json():{open:{}}).then(a=>(a&&a.open)||{});}catch(e){AGE={};}
+  try{QD=await fetch('data_quick_diag.json?v='+Date.now()).then(r=>r.ok?r.json():null);}catch(e){QD=null;}
+  if(QD)applyVariant();   // master-demand matched numbers become the source of truth (SC default)
   buildOnlineClinics();
   ALLCITIES=[...new Set(Object.values(D.clinics).map(c=>c.city))].sort();
   try{const saved=JSON.parse(localStorage.getItem('wd_city')||'[]');if(Array.isArray(saved))saved.forEach(c=>{if(ALLCITIES.includes(c))CITYF.add(c);});}catch(e){}
