@@ -2,7 +2,7 @@
 <title>Demand Master — L2-matched</title>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600&display=swap');
-:root{--bg:#F6F4EE;--sheet:#FCFBF7;--ink:#22201B;--ink2:#54504A;--muted:#8A8579;--line:#E4DFD3;--line2:#EFEBE0;--inset:#F1EEE4;--accent:#1F6F5C;--gold:#C2691F;--vio:#7B5EA7;--blu:#3E6F8E;--bad:#B23A2E;--good:#2E7D5B}
+:root{--bg:#EDF3F9;--sheet:#fff;--ink:#16232E;--ink2:#44566A;--muted:#7B8A9B;--faint:#A6B4C3;--line:#D5DFEA;--line2:#E5ECF3;--inset:#E4EDF6;--hover:#D2E1F1;--accent:#2C6CAE;--gold:#C2691F;--vio:#7B5EA7;--blu:#3E6F8E;--bad:#B23A2E;--good:#1F6F5C;--gbg:#E5F0EB;--rbg:#FBEDEB;--abg:#FAF2E6}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);font-family:Inter,sans-serif;padding:22px 26px 80px;max-width:1320px}
 a.back{color:var(--muted);text-decoration:none;font-size:12.5px}
@@ -40,7 +40,20 @@ table.fm td{padding:6px 10px;text-align:right;border-bottom:1px solid var(--line
 table.fm td:first-child{text-align:left;font-family:Inter;color:var(--ink2);position:sticky;left:0;background:var(--sheet);z-index:1}
 td.avgc{background:#FBFAF5;font-weight:600;color:var(--ink)}
 td.dc{font-weight:700}
-tr.hd td{background:#EEF3F0;font-family:Inter;font-weight:700;color:var(--ink);font-size:12px;padding:8px 10px;border-top:1px solid var(--line)}
+th.dcol,td.dc{width:82px;text-align:center}
+th.avgcol,td.avgc{width:64px}
+th.nowcol,td.nowc{width:58px}
+th.nowcol{color:var(--accent)}
+/* diagnostic-style chips for the funnel table */
+table.fm td .wkc{display:inline-block;min-width:26px;text-align:center;background:var(--inset);border:1px solid var(--line);border-radius:6px;padding:3px 7px;font-weight:700;color:var(--ink2)}
+td.nowc{background:var(--sheet)}
+td.nowc .wkc{font-weight:800;color:var(--ink)}
+td.nowc .wkc.up{background:var(--gbg);color:var(--good);border-color:transparent}
+td.nowc .wkc.dn{background:var(--rbg);color:var(--bad);border-color:transparent}
+td.dc .dpill{display:inline-block;min-width:56px;text-align:center;border-radius:6px;padding:3px 8px;font-weight:800;background:var(--inset);color:var(--muted)}
+td.dc .dpill.up{background:var(--gbg);color:var(--good)}
+td.dc .dpill.dn{background:var(--rbg);color:var(--bad)}
+tr.hd td{background:#E4EDF6;font-family:Inter;font-weight:700;color:var(--ink);font-size:12px;padding:8px 10px;border-top:1px solid var(--line)}
 tr.hd td:first-child{background:#EEF3F0}
 tr.tot td{font-weight:700;color:var(--ink);font-size:13px;background:#FBFAF5}
 tr.tot td:first-child{font-family:Inter;background:#FBFAF5;border-left:3px solid var(--accent)}
@@ -74,13 +87,18 @@ tr.cat td:first-child{padding-left:24px;font-size:12px;font-weight:600;color:var
 <body>
 <a class="back" href="index.html">← Dashboard</a>
 <h1 id="h1">Demand Master</h1>
-<div class="sub"><b>demand → bookings → done → category → revenue → capacity</b>, reconciled to the L2 ops sheet. Offline Screening-Call funnel · bookings = distinct patient · revenue = done-week invoiced.</div>
+<div class="sub"><b>demand → bookings → done → category → revenue → capacity</b>, reconciled to the L2 ops sheet. Pick a <b>Channel</b> (offline clinics · online telehealth · both) · bookings = distinct patient · revenue = done-week invoiced.</div>
 
 <div class="ctlpanel">
   <div class="ctltier">
     <span class="ctltag">Funnel</span>
     <span class="seg"><button id="fnSC" class="on" onclick="setFunnel('sc')">🩺 Screening Calls · demand</button><button id="fnFU" onclick="setFunnel('fu')">🔁 Follow-ups · ops</button><button id="fnALL" onclick="setFunnel('all')">🌐 Combined · all</button></span>
     <span class="fl" style="margin-left:10px;color:var(--muted)">SC = new demand · FU = retention · Combined = whole business (SC + FU)</span>
+  </div>
+  <div class="ctltier">
+    <span class="ctltag">Channel</span>
+    <span class="seg"><button id="scoff" class="on" onclick="setScope('off')">🏥 Offline</button><button id="sconl" onclick="setScope('onl')">💻 Online</button><button id="scboth" onclick="setScope('both')">Σ Both</button></span>
+    <span class="fl" style="margin-left:10px;color:var(--muted)">Offline = physical clinics · Online = telehealth (national) · Both = all consults</span>
   </div>
   <div class="ctltier">
     <span class="ctltag">Scope</span>
@@ -116,10 +134,27 @@ tr.cat td:first-child{padding-left:24px;font-size:12px;font-weight:600;color:var
 </div></div>
 
 <script>
-let SC_BK=null,SC_EC=null,FU_BK=null,FU_EC=null,BK=null,EC=null,AV=null,REC=null;
+let SC_BK=null,SC_EC=null,FU_BK=null,FU_EC=null,BK=null,EC=null,AV=null,REC=null,PR=null;
+let SC_BK_ON=null,SC_EC_ON=null,FU_BK_ON=null,FU_EC_ON=null;   // online cubes (telehealth)
 let FUNNEL='sc';   // 'sc' = Screening Calls (demand) · 'fu' = Follow-ups (ops) · 'all' = combined
-let ALL_BK=null,ALL_EC=null;
+let SCOPE='off';   // 'off' = offline clinics · 'onl' = online (telehealth) · 'both' = all channels
+let ALL_BK=null,ALL_EC=null,DATASETS=null;
 function setFunnel(f){FUNNEL=f;['sc','fu','all'].forEach(x=>document.getElementById('fn'+x.toUpperCase()).classList.toggle('on',f===x));render();}
+function setScope(s){SCOPE=s;['off','onl','both'].forEach(x=>document.getElementById('sc'+x).classList.toggle('on',s===x));
+  CITY.clear();CLIN.clear();TIER.clear();MAT.clear();DOC.clear();   // scope changes the clinic universe → reset scope filters
+  ['cityBtn','clinBtn','docBtn'].forEach(id=>{const b=document.getElementById(id);if(b)b.textContent=b.textContent.replace(/^\S.*▾$/,id==='cityBtn'?'All cities ▾':id==='clinBtn'?'All clinics ▾':'All doctors ▾');});
+  render();}
+// build the 3×3 scope×funnel dataset matrix from the loaded cubes
+function buildDatasets(){
+  const offAllBk=combineData(SC_BK,FU_BK),offAllEc=combineData(SC_EC,FU_EC);
+  const onAllBk=combineData(SC_BK_ON,FU_BK_ON),onAllEc=combineData(SC_EC_ON,FU_EC_ON);
+  ALL_BK=offAllBk;ALL_EC=offAllEc;
+  const OFF={sc:[SC_BK,SC_EC],fu:[FU_BK,FU_EC],all:[offAllBk,offAllEc]};
+  const ON ={sc:[SC_BK_ON,SC_EC_ON],fu:[FU_BK_ON,FU_EC_ON],all:[onAllBk,onAllEc]};
+  const BOTH={sc:[combineData(SC_BK,SC_BK_ON),combineData(SC_EC,SC_EC_ON)],
+              fu:[combineData(FU_BK,FU_BK_ON),combineData(FU_EC,FU_EC_ON)],
+              all:[combineData(offAllBk,onAllBk),combineData(offAllEc,onAllEc)]};
+  DATASETS={off:OFF,onl:ON,both:BOTH};}
 // element-wise sum of two datasets (aligned by week key), merging nested by_cat/by_doctor/by_source
 function combineData(A,B){if(!A)return B;if(!B)return A;
   const weeks=[...new Set([...A._meta.weeks,...B._meta.weeks])].sort();
@@ -164,6 +199,9 @@ function aggEC(keys,f,cat){const w=BK._meta.weeks,ew=EC._meta.weeks,o=ZA(w.lengt
     if(a)ew.forEach((wk,ei)=>{const gi=map[ei];if(gi>=0)o[gi]+=a[ei]||0;});});return o;}
 function aggAV(keys,f){if(!AV)return null;const w=BK._meta.weeks,aw=AV._meta.weeks,o=ZA(w.length),map=aw.map(wk=>w.indexOf(wk));
   keys.forEach(k=>{const c=AV.clinics[k];if(!c||!c[f])return;aw.forEach((wk,ai)=>{const gi=map[ai];if(gi>=0)o[gi]+=c[f][ai]||0;});});return o;}
+// paid-date revenue (cash collected) — align paid-rev weeks to BK axis, sum given channel(s) over keys
+function aggPR(keys,chans){if(!PR)return null;const w=BK._meta.weeks,pw=PR._meta.weeks,o=ZA(w.length),map=pw.map(wk=>w.indexOf(wk));
+  keys.forEach(k=>{const c=PR.clinics[k];if(!c)return;chans.forEach(ch=>{const a=c[ch];if(!a)return;pw.forEach((wk,pi)=>{const gi=map[pi];if(gi>=0)o[gi]+=a[pi]||0;});});});return o;}
 // category rollups → sub-categories (finer diagnoses)
 const CATGRP=[['STI · infections',['STI']],
   ['SH · sexual health',['ED+','PE+','ED+PE+','LSD','DE','DYS','VGS','FSAD','AORG']],
@@ -190,10 +228,13 @@ function heatBg(t){if(t==null)return'';const g='31,111,92',r='178,58,46';return 
 
 let SEQ=0;
 function render(){
-  BK=FUNNEL==='fu'?FU_BK:FUNNEL==='all'?ALL_BK:SC_BK; EC=FUNNEL==='fu'?FU_EC:FUNNEL==='all'?ALL_EC:SC_EC;   // active dataset
+  const ds=(DATASETS&&DATASETS[SCOPE]&&DATASETS[SCOPE][FUNNEL])||[SC_BK,SC_EC];
+  BK=ds[0];EC=ds[1];   // active dataset for current scope × funnel
   const isFU=FUNNEL==='fu', isSC=FUNNEL==='sc', isALL=FUNNEL==='all';
-  const bkLab=isFU?'FU Offline Bookings':isALL?'All Offline Bookings · SC + FU':'SC Offline Bookings';
-  const dnLab=isFU?'Follow-up Consults Done':isALL?'All Consults Done · SC + FU':'Screening Calls Done';
+  const isOnl=SCOPE==='onl', isBoth=SCOPE==='both';
+  const chan=isOnl?'Online':isBoth?'All-channel':'Offline';
+  const bkLab=(isFU?'FU':isALL?'All':'SC')+' '+chan+' Bookings'+(isALL?' · SC + FU':'');
+  const dnLab=(isFU?'Follow-up':isALL?'All':'Screening Call')+' Consults Done'+(isOnl?' · online':isBoth?' · all-channel':'');
   const keys=scopedKeys(), B=vbuckets();
   ZREG=[];
   const spk=(lab,vals,fmt,color)=>{const idx=ZREG.length;ZREG.push({t:lab.replace(/<[^>]+>/g,'').trim(),v:vals.slice(),L:B.map(b=>b.lab),f:fmt||N,c:color});return '<td class="sparkcell" onclick="zoomReg('+idx+')">'+sparkline(vals,color)+'</td>';};
@@ -202,29 +243,54 @@ function render(){
   const cities=[...new Set(keys.map(k=>k.split('|')[0]))];
   document.getElementById('h1').textContent='Demand Master'+(DOC.size?' · 👤 '+(DOC.size<=2?[...DOC].map(d=>d.replace(/^Dr\.?\s*/,'')).join(' + '):DOC.size+' doctors'):CITY.size===1?' · '+[...CITY][0]:TIER.size?' · '+[...TIER].join('+'):'');
   document.getElementById('filtCount').textContent=(DOC.size?DOC.size+' doctors · ':'')+keys.length+' clinics · '+cities.length+' cities';
-  document.getElementById('tbl').style.setProperty('--fmw',(300+B.length*74+150)+'px');
+  document.getElementById('tbl').style.setProperty('--fmw',(300+B.length*74+240)+'px');
 
   const cmpOpts=['avg','first','peak'].map(o=>'<option value="'+o+'"'+(CMPB===o?' selected':'')+'>'+o+'</option>').join('');
   const dcolTh='<th class="dcol">Δ vs <select class="thsel" onchange="CMPB=this.value;render()" onclick="event.stopPropagation()">'+cmpOpts+'</select></th>';
-  const head='<tr><th>scope</th>'+B.map((b,k)=>'<th class="'+(k===B.length-1?'lastcol':'')+'">'+b.lab+'</th>').join('')+dcolTh+'<th class="avgcol">'+(CMPB==='peak'?'peak':CMPB==='first'?'first':'avg')+'</th><th>trend</th></tr>';
+  const head='<tr><th>scope</th>'+dcolTh+B.map((b,k)=>'<th class="'+(k===B.length-1?'lastcol':'')+'">'+b.lab+'</th>').join('')+'<th class="avgcol">before '+(CMPB==='peak'?'peak':CMPB==='first'?'first':'avg')+'</th><th class="nowcol">now</th><th>trend</th></tr>';
   // row of a count/value metric
   function row(lab,arr,cls,fmt,o){o=o||{};fmt=fmt||N;const cv=B.map(b=>bval(arr,b));
     const ref=CMPB==='peak'?Math.max(...cv.filter(x=>x!=null)):CMPB==='first'?cv[0]:cv.reduce((a,x)=>a+(x||0),0)/cv.length;
     const last=cv[cv.length-1];const dn=(ref&&last!=null)?Math.round((last-ref)/Math.abs(ref)*100):null;
     const mn=Math.min(...cv),mx=Math.max(...cv),rg=mx-mn||1;
-    let h='<tr class="'+(cls||'')+(o.tkey?' exp'+(EXP[o.tkey]?' open':''):'')+'"'+(o.tkey?' onclick="toggle(\''+o.tkey+'\')"':'')+'><td>'+lab+'</td>';
-    cv.forEach((v,k)=>{const t=(HEAT&&cls!=='hd')?heatBg((v-mn)/rg):'';h+='<td class="'+(k===cv.length-1?'lastcol':'')+'" style="'+t+'">'+fmt(v)+'</td>';});
-    h+='<td class="dc" style="color:'+(dn>0?'var(--good)':dn<0?'var(--bad)':'var(--muted)')+'">'+(dn==null?'—':(dn>0?'+':'')+dn+'%')+'</td><td class="avgc">'+fmt(ref)+'</td>'+spk(lab,cv,fmt,o.color||'#8a8579')+'</tr>';
+    const _isB=cls==='hd';const _dcls=dn==null?'':(dn>0?'up':dn<0?'dn':'');
+    const _dC=_isB?'<td class="dc"></td>':'<td class="dc"><span class="dpill '+_dcls+'">'+(dn==null?'—':((dn>0?'↑ ':dn<0?'↓ ':'→ ')+Math.abs(dn)+'%'))+'</span></td>';
+    let h='<tr class="'+(cls||'')+(o.tkey?' exp'+(EXP[o.tkey]?' open':''):'')+'"'+(o.tkey?' onclick="toggle(\''+o.tkey+'\')"':'')+'><td>'+lab+'</td>'+_dC;
+    cv.forEach((v,k)=>{const t=(HEAT&&cls!=='hd')?heatBg((v-mn)/rg):'';const inner=(v==null||isNaN(v))?'—':fmt(v);const cell=(t||_isB)?inner:'<span class="wkc">'+inner+'</span>';h+='<td class="'+(k===cv.length-1?'lastcol':'')+'" style="'+t+'">'+cell+'</td>';});
+    const _nowC=_isB?'<td class="nowc"></td>':'<td class="nowc"><span class="wkc '+_dcls+'">'+((last==null||isNaN(last))?'—':fmt(last))+'</span></td>';
+    h+='<td class="avgc">'+fmt(ref)+'</td>'+_nowC+spk(lab,cv,fmt,o.color||'#8a8579')+'</tr>';
     return h;}
   function prow(lab,nu,de,fmt){fmt=fmt||P;const cv=B.map(b=>pctBucket(nu,de,b));const mult=fmt===P?100:1;const disp=cv.map(v=>v==null?null:v*mult);
     const ref=disp.filter(x=>x!=null).reduce((a,x)=>a+x,0)/disp.filter(x=>x!=null).length;const last=disp[disp.length-1];const dn=(ref&&last!=null)?Math.round((last-ref)/Math.abs(ref)*100):null;
-    let h='<tr class="pct"><td>'+lab+'</td>';disp.forEach((v,k)=>h+='<td class="'+(k===cv.length-1?'lastcol':'')+'">'+(v==null?'—':fmt(v))+'</td>');
-    h+='<td class="dc" style="color:'+(dn>0?'var(--good)':dn<0?'var(--bad)':'var(--muted)')+'">'+(dn==null?'—':(dn>0?'+':'')+dn+'%')+'</td><td class="avgc">'+(isNaN(ref)?'—':fmt(ref))+'</td>'+spk(lab,disp,fmt,'#9b8bbf')+'</tr>';return h;}
-  const hd=(t,pick)=>'<tr class="hd"><td colspan="'+(B.length+4)+'">'+t+(pick||'')+'</td></tr>';
+    const _dcls=dn==null?'':(dn>0?'up':dn<0?'dn':'');
+    const _dC='<td class="dc"><span class="dpill '+_dcls+'">'+(dn==null?'—':((dn>0?'↑ ':dn<0?'↓ ':'→ ')+Math.abs(dn)+'%'))+'</span></td>';
+    let h='<tr class="pct"><td>'+lab+'</td>'+_dC;disp.forEach((v,k)=>h+='<td class="'+(k===cv.length-1?'lastcol':'')+'">'+(v==null?'—':'<span class="wkc">'+fmt(v)+'</span>')+'</td>');
+    const _nowC='<td class="nowc"><span class="wkc '+_dcls+'">'+((last==null||isNaN(last))?'—':fmt(last))+'</span></td>';
+    h+='<td class="avgc">'+(isNaN(ref)?'—':fmt(ref))+'</td>'+_nowC+spk(lab,disp,fmt,'#9b8bbf')+'</tr>';return h;}
+  const hd=(t,pick)=>'<tr class="hd"><td colspan="'+(B.length+5)+'">'+t+(pick||'')+'</td></tr>';
   const BOPTS=[['none','—'],['city','City'],['clinic','Clinic'],['doctor','Doctor'],['tier','Tier'],['maturity','Maturity']];
   const EXTRA={dem:[['source','Source']],done:[['source','Source'],['category','Category'],['subcategory','Sub-category']],rev:[['category','Category'],['subcategory','Sub-category']],cap:[]};
-  const brkSel=(sec)=>{const dims=BRKS[sec];const opts=BOPTS.concat(EXTRA[sec]||[]);let h='';
-    for(let i=0;i<4;i++){if(i>0&&dims[i-1]==='none')break;const lab=i===0?'break':'then';
+  const GEORANK={tier:1,city:2,clinic:3};   // broader → narrower
+  // valid dims to offer at a given level, given what's already chosen (kills meaningless combos)
+  function optsFor(sec,dims,level){
+    const used=dims.slice(0,level).filter(d=>d!=='none');
+    if(used.some(d=>['doctor','source','subcategory'].includes(d)))return [];   // terminal leaf → nothing further
+    let opts=BOPTS.concat(EXTRA[sec]||[]).filter(o=>o[0]==='none'||!used.includes(o[0]));
+    if(isFU)opts=opts.filter(o=>o[0]!=='source');                               // FU has no source data
+    if(isOnl)opts=opts.filter(o=>!['city','clinic','tier','maturity'].includes(o[0]));   // online is national (one bucket) → geo breaks are meaningless
+    if(DOC.size)opts=opts.filter(o=>!['source','category','subcategory'].includes(o[0]));  // doctor slice: only geo/doctor sliceable (by_cat/by_source are whole-clinic)
+    const gr=used.filter(d=>d in GEORANK).map(d=>GEORANK[d]);
+    if(gr.length){const mn=Math.min(...gr);opts=opts.filter(o=>!(o[0] in GEORANK)||GEORANK[o[0]]>mn);}  // only strictly-narrower geo
+    if(used.includes('clinic')||used.includes('maturity'))opts=opts.filter(o=>o[0]!=='maturity'&&!(o[0] in GEORANK)||o[0]==='none');
+    if(used.includes('category'))opts=opts.filter(o=>o[0]==='none'||o[0]==='subcategory');  // category → only its sub-types
+    return opts;
+  }
+  function sanitizeBrk(sec){const dims=BRKS[sec];for(let i=0;i<4;i++){if(dims[i]==='none')break;
+    const ok=optsFor(sec,dims,i).map(o=>o[0]);if(ok.indexOf(dims[i])<0){for(let j=i;j<4;j++)dims[j]='none';break;}}}
+  ['dem','done','rev','cap'].forEach(sanitizeBrk);
+  const brkSel=(sec)=>{const dims=BRKS[sec];let h='';
+    for(let i=0;i<4;i++){if(i>0&&dims[i-1]==='none')break;const opts=optsFor(sec,dims,i);
+      if(opts.filter(o=>o[0]!=='none').length===0)break;const lab=i===0?'break':'then';
       h+='<select class="brkpick" onchange="setBrk(\''+sec+'\','+i+',this.value)">'+opts.map(o=>'<option value="'+o[0]+'"'+(dims[i]===o[0]?' selected':'')+'>'+(o[0]==='none'?'— '+lab+' —':lab+': '+o[1])+'</option>').join('')+'</select>';}
     return h;};
   const MATLAB={'<3':'<3mo','3-6':'3–6mo','6-12':'6–12mo','>12':'>1yr','?':'—'};
@@ -244,7 +310,7 @@ function render(){
   // member-aware aggregation (doctor members use by_doctor slice)
   function bkMem(m,f){if(m.src){const o=ZA(BK._meta.weeks.length);m.keys.forEach(k=>{const bs=(BK.clinics[k].by_source||{})[m.src];if(bs)sumInto(o,bs[f]);});return o;}
     if(!m.doc)return aggBK(m.keys,f);const o=ZA(BK._meta.weeks.length);m.keys.forEach(k=>{const bd=(BK.clinics[k].by_doctor||{})[m.doc];if(bd)sumInto(o,bd[f]);});return o;}
-  function ecMem(m,f){if(!m.doc)return aggEC(m.keys,f);const w=BK._meta.weeks,ew=EC._meta.weeks,o=ZA(w.length),map=ew.map(wk=>w.indexOf(wk));m.keys.forEach(k=>{const bd=(EC.clinics[k].by_doctor||{})[m.doc];if(bd&&bd[f])ew.forEach((wk,ei)=>{const gi=map[ei];if(gi>=0)o[gi]+=bd[f][ei]||0;});});return o;}
+  function ecMem(m,f){if(!m.doc)return aggEC(m.keys,f);const w=BK._meta.weeks,ew=EC._meta.weeks,o=ZA(w.length),map=ew.map(wk=>w.indexOf(wk));m.keys.forEach(k=>{const c=EC.clinics[k];if(!c)return;const bd=(c.by_doctor||{})[m.doc];if(bd&&bd[f])ew.forEach((wk,ei)=>{const gi=map[ei];if(gi>=0)o[gi]+=bd[f][ei]||0;});});return o;}
   const NWK=BK._meta.weeks.length;
   function doneAgg(m){   // Done broken by source (bookings cube) / category / sub-category / doctor / geography
     if(m.src){const o=ZA(NWK);m.keys.forEach(k=>{const bs=(BK.clinics[k].by_source||{})[m.src];if(bs)sumInto(o,bs.done);});return o;}
@@ -305,8 +371,23 @@ function render(){
   h+=prow('RPC — ₹/consult · products only (ex-consult)',prod,eDone,RUP);
   h+=prow('done → purchased %',purch,eDone);
   h+=row('· Consultation fee',cons,'sub',RUP);h+=row('· Medicines',meds,'sub',RUP);h+=row('· Tests / diagnostics',test,'sub',RUP);h+=row('· Therapy',ther,'sub',RUP);
+  // ── paid-date revenue (cash actually collected this week) — separate axis, kept alongside for comparison ──
+  if(PR){
+    const NEWOFF=['New Offline','New · offline (SC)'],NEWON=['New Online','New · online (SC)'],REPEAT=['Repeat','Repeat (FU / queries)'],
+      DIRECT=['Direct','Direct purchase'],OTHER=['Other','Other'],NOINV=['no_invoice','Un-invoiced'];
+    const CH={off:{sc:[NEWOFF],fu:[REPEAT],all:[NEWOFF,REPEAT,DIRECT,OTHER]},
+              onl:{sc:[NEWON],fu:[REPEAT],all:[NEWON,REPEAT]},
+              both:{sc:[NEWOFF,NEWON],fu:[REPEAT],all:[NEWOFF,NEWON,REPEAT,DIRECT,OTHER,NOINV]}};
+    const PCH=CH[SCOPE][FUNNEL];
+    const pkeys=SCOPE==='off'?keys:Object.keys(PR.clinics);   // online has no clinic geo → national when scope includes online
+    const paidTot=aggPR(pkeys,PCH.map(c=>c[0]));
+    const chNote=isFU?'Repeat channel':isALL?'all channels':(isOnl?'New-Online channel':isBoth?'New Offline + Online':'New-Offline channel');
+    h+=hd('④b Value — paid-date (cash collected)'+(DOC.size?'':' <span style="font-weight:400;color:var(--muted);font-size:11px">(actual payments · '+chNote+(SCOPE!=='off'?' · online = national':'')+' · pairs with invoiced above)</span>'));
+    h+=row('<b>Revenue · paid</b> · cash in',paidTot,'tot',RUP,{color:'#7A5CC2'});
+    PCH.forEach(c=>{const a=aggPR(pkeys,[c[0]]);if(a&&a.some(v=>v))h+=row('· '+c[1],a,'sub',RUP);});
+    h+=prow('paid ÷ invoiced (collection vs booked value)',paidTot,total);}
 
-  if(!isFU && AV){const scH=aggAV(keys,'net_sc_hrs'),scS=aggAV(keys,'net_sc_slots'),adays=aggAV(keys,'active_days');
+  if(!isFU && SCOPE==='off' && AV){const scH=aggAV(keys,'net_sc_hrs'),scS=aggAV(keys,'net_sc_slots'),adays=aggAV(keys,'active_days');
     h+=hd('⑤ Capacity & utilisation (realized roster)',brkSel('cap'));
     h+=row('<b>SC net available hrs</b>',scH,'tot',N1,{color:'#3E6F8E'});
     h+=brkRows('cap',m=>aggAV(m.keys,'net_sc_hrs'));   // availability has no doctor grain → doctor break approximates to clinic capacity
@@ -387,12 +468,21 @@ Promise.all([
   fetch('data_availability.json?v='+Date.now()).then(r=>r.ok?r.json():null).catch(()=>null),
   fetch('data_source_recon.json?v='+Date.now()).then(r=>r.ok?r.json():null).catch(()=>null),
   fetch('data_fu_bookings.json?v='+Date.now()).then(r=>r.ok?r.json():null).catch(()=>null),
-  fetch('data_fu_econ.json?v='+Date.now()).then(r=>r.ok?r.json():null).catch(()=>null)
-]).then(([bk,ec,av,rec,fubk,fuec])=>{SC_BK=bk;SC_EC=ec;FU_BK=fubk;FU_EC=fuec;BK=bk;EC=ec;AV=av;REC=rec;
-  ALL_BK=combineData(SC_BK,FU_BK);ALL_EC=combineData(SC_EC,FU_EC);
+  fetch('data_fu_econ.json?v='+Date.now()).then(r=>r.ok?r.json():null).catch(()=>null),
+  fetch('data_paid_rev.json?v='+Date.now()).then(r=>r.ok?r.json():null).catch(()=>null),
+  fetch('data_sc_bookings_online.json?v='+Date.now()).then(r=>r.ok?r.json():null).catch(()=>null),
+  fetch('data_d2p_econ_online.json?v='+Date.now()).then(r=>r.ok?r.json():null).catch(()=>null),
+  fetch('data_fu_bookings_online.json?v='+Date.now()).then(r=>r.ok?r.json():null).catch(()=>null),
+  fetch('data_fu_econ_online.json?v='+Date.now()).then(r=>r.ok?r.json():null).catch(()=>null)
+]).then(([bk,ec,av,rec,fubk,fuec,pr,scbkon,scecon,fubkon,fuecon])=>{SC_BK=bk;SC_EC=ec;FU_BK=fubk;FU_EC=fuec;BK=bk;EC=ec;AV=av;REC=rec;PR=pr;
+  const EMPTYON={_meta:{weeks:bk._meta.weeks},clinics:{}};   // graceful fallback if an online cube is missing
+  SC_BK_ON=scbkon||EMPTYON;SC_EC_ON=scecon||EMPTYON;FU_BK_ON=fubkon||EMPTYON;FU_EC_ON=fuecon||EMPTYON;
+  buildDatasets();
   const m=(rec&&rec._meta)||{};const disp=m.display||{},tier=m.city_tier||{},age=m.clinic_age||{};
   const key2slug={};Object.keys(disp).forEach(slug=>{const parts=String(disp[slug]).split(' · ');if(parts.length>=2){key2slug[parts[parts.length-1]+'|'+parts.slice(0,-1).join(' · ')]=slug;}});
-  allKeys().forEach(k=>{const city=k.split('|')[0];const slug=key2slug[k];KEY2META[k]={city,tier:tier[city]||'?',mat:slug?matBucket(age[slug]):null};});
+  // meta for every key across all datasets (incl. the 'Online|Online' national bucket)
+  const km=new Set();['off','onl','both'].forEach(s=>['sc','fu','all'].forEach(f=>{const d=DATASETS[s][f][0];if(d)Object.keys(d.clinics).forEach(k=>km.add(k));}));
+  km.forEach(k=>{const city=k.split('|')[0];const slug=key2slug[k];KEY2META[k]=k==='Online|Online'?{city:'Online',tier:'—',mat:null,online:1}:{city,tier:tier[city]||'?',mat:slug?matBucket(age[slug]):null};});
   render();
 }).catch(e=>{document.body.insertAdjacentHTML('beforeend','<p style="color:#B23A2E">Load error: '+e.message+'</p>');});
 </script>
