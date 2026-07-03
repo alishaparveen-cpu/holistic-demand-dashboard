@@ -54,6 +54,14 @@
   .cseg.on{background:var(--accent);color:#fff;box-shadow:inset 0 0 0 1px var(--accent)}
   .cseg:hover:not(.on){background:var(--hover);color:var(--ink)}
   .subsel{margin-left:5px;font-size:11.5px;border:1px solid var(--line);border-radius:6px;padding:3px 6px;background:var(--inset);font-family:Inter;font-weight:600;color:var(--accent);cursor:pointer;vertical-align:middle}
+  #filterbar{display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px;background:#fff;border:1px solid var(--line);border-radius:11px;padding:9px 13px;margin-bottom:9px;box-shadow:0 1px 3px rgba(0,0,0,.03)}
+  #filterbar .fchips{display:flex;flex-wrap:wrap;gap:6px;align-items:center;flex:1;min-width:0}
+  .fchip{display:inline-flex;align-items:baseline;gap:5px;background:var(--inset);border-radius:7px;padding:3px 9px;font-size:12px;color:var(--ink)}
+  .fchip .fk{font-size:9.5px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}
+  .fchip b{font-weight:700}
+  .fwin{margin-left:auto;display:inline-flex;align-items:baseline;gap:6px;font-size:12px;color:var(--ink2);white-space:nowrap;font-family:'JetBrains Mono'}
+  .fwin .fk{font-family:Inter;font-size:9.5px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}
+  .fstale{color:var(--bad);font-weight:800;font-family:Inter}
   .nvlbl{font-size:10px;font-weight:700;text-transform:uppercase;color:var(--faint);margin-right:5px;letter-spacing:.03em}
   .avgmk{font-family:'JetBrains Mono';font-weight:800;font-size:14.5px;color:var(--ink2);white-space:nowrap;display:inline-flex;align-items:baseline;gap:0}
   .avgmk.avgbefore{margin-left:16px}.avgmk.avgnow{margin-left:10px}
@@ -237,6 +245,7 @@
       <button class="mbtn" data-m="velocity" onclick="setMet('velocity')">Bookings/active day</button>
     </span>
   </div>
+  <div id="filterbar"></div>
   <div class="cmpnote" id="cmpnote"></div>
   <div id="root"></div>
 </div>
@@ -267,7 +276,7 @@ function inScope(slug){const c=D.clinics[slug];
   if(SEG==='offline'&&on)return false;
   if(SEG==='online'&&!on)return false;
   if(TIERF.size&&!TIERF.has(tierOf(c.city)))return false;
-  if(MATF.size){const b=matBucket(clinMonths(slug));if(!b||!MATF.has(b))return false;}
+  // maturity no longer gates here — togMat selects the matching clinics into CLINF (like master), so CLINF drives it
   if(DOCF.size&&(!c.by_doctor||![...DOCF].some(dr=>c.by_doctor[dr])))return false;
   return CLINF.size?CLINF.has(slug):inCity(c.city);}
 // scoped-clinic accessor: when doctors are selected in scope, rescale the doctor-attributable metrics
@@ -725,7 +734,28 @@ function tog(k){OPEN[k]=!OPEN[k];render();}
 
 function setMode(m){MODE=m;syncMode();render();}
 function syncMode(){updateModeUI();}
-function render(){MODE==='ov'?renderOverview():renderClinic();}
+// active-filters + data-window summary bar (so with many filters you always see exactly what you're looking at)
+function dataWindowInfo(){const w=D.week_labels||D.weeks,n=w.length,lastStart=D.weeks[n-1];
+  let stale='';try{const end=Date.parse(lastStart)+6*864e5,days=Math.floor((Date.now()-end)/864e5);if(days>14)stale=' ⚠ '+days+'d old — may be stale';}catch(e){}
+  return {n:n,first:w[0],last:w[n-1],stale:stale};}
+function filterbarHTML(){
+  const P=(lab,val,cls)=>'<span class="fchip '+(cls||'')+'"><span class="fk">'+lab+'</span>'+val+'</span>';
+  let chips=[];
+  chips.push(P('Consult','<b>'+(SEG==='online'?'Online':SEG==='all'?'All':'Offline')+'</b>'));
+  chips.push(P('Funnel','<b>'+(FUNNEL2==='fu'?'FU · ops':FUNNEL2==='all'?'All':'SC · demand')+'</b>'));
+  if(TIERF.size)chips.push(P('Tier','<b>'+[...TIERF].map(t=>t==='T1'?'1':'2').join(' + ')+'</b>'));
+  if(MATF.size)chips.push(P('Maturity','<b>'+[...MATF].join(', ')+'</b>'));
+  if(CITYF.size)chips.push(P('City','<b>'+(CITYF.size<=2?[...CITYF].join(', '):CITYF.size+' cities')+'</b>'));
+  if(CLINF.size&&!MATF.size)chips.push(P('Clinics','<b>'+(CLINF.size===1?D.clinics[[...CLINF][0]].loc:CLINF.size+' selected')+'</b>'));
+  if(DOCF.size)chips.push(P('Doctor','<b>'+(DOCF.size===1?docShort([...DOCF][0]):DOCF.size+' doctors')+'</b>'));
+  if(MODE==='cl'&&C)chips.push(P('Clinic','<b>'+C.disp+'</b>'));
+  if(OVMODE==='metric'&&MODE==='ov')chips.push(P('Metric','<b>'+METSEL.map(k=>metricNameFull(k)+(MSUB[k]?' · '+MSUB[k]:'')+(MCOND[k]&&MCOND[k].length?' ('+MCOND[k].map(s=>s==='red'?'🔴':s==='amber'?'🟡':'🟢').join('')+')':'')).join('  •  ')+'</b>'));
+  const lbl=curLabel(),dw=dataWindowInfo();
+  chips.push(P('Compare','<b>'+(CURN===1?'this week':'last '+CURN+' wks')+'</b> ('+lbl.c+') vs <b>prior '+BASEN+' wks</b> avg'));
+  const win='<span class="fwin"><span class="fk">📅 Data</span><b>'+dw.n+' wks</b> · '+dw.first+' → '+dw.last+'<span class="fstale">'+dw.stale+'</span></span>';
+  return '<div class="fchips">'+chips.join('')+'</div>'+win;
+}
+function render(){const fb=$('filterbar');if(fb)fb.innerHTML=filterbarHTML();MODE==='ov'?renderOverview():renderClinic();}
 let ALLCITIES=[];
 function cityBtnLabel(){return (CITYF.size?(CITYF.size<=2?[...CITYF].join(', '):CITYF.size+' cities'):'All cities')+' ▾';}
 function clinBtnLabel(){return (CLINF.size?(CLINF.size===1?D.clinics[[...CLINF][0]].loc:CLINF.size+' clinics'):'All clinics')+' ▾';}
@@ -737,15 +767,23 @@ function renderCityPanel(q){q=(q||'').toLowerCase();const list=ALLCITIES.filter(
   $('cityPanel').innerHTML=h;}
 function cityChanged(){$('cityBtn').textContent=cityBtnLabel();$('cityBtn').classList.toggle('on',!!CITYF.size);
   try{localStorage.setItem('wd_city',JSON.stringify([...CITYF]));}catch(e){}
-  if(CLINF.size)[...CLINF].forEach(s=>{if(!inCity(D.clinics[s].city))CLINF.delete(s);});$('clinBtn').textContent=clinBtnLabel();$('clinBtn').classList.toggle('on',!!CLINF.size);
+  if(MATF.size)applyMatF();   // maturity selection re-derives the clinic set for the new city scope
+  else if(CLINF.size)[...CLINF].forEach(s=>{if(!inCity(D.clinics[s].city))CLINF.delete(s);});
+  $('clinBtn').textContent=clinBtnLabel();$('clinBtn').classList.toggle('on',!!CLINF.size);
   syncDocBtn();render();}
 function syncDocBtn(){if(!$('docBtn'))return;const avail=new Set(docNames());[...DOCF].forEach(dr=>{if(!avail.has(dr))DOCF.delete(dr);});$('docBtn').textContent=docBtnLabel();$('docBtn').classList.toggle('on',!!DOCF.size);}
 function togCity(c){CITYF.has(c)?CITYF.delete(c):CITYF.add(c);cityChanged();}
 function setSeg(v){SEG=v;const ids={offline:'segOff',online:'segOn',all:'segAll'};for(const k in ids){const b=$(ids[k]);if(b)b.classList.toggle('on',k===v);}
   if(MODE==='cl'&&C&&C._online&&SEG==='offline'){backToList();return;}   // leave an online funnel when switching to offline
   syncDocBtn();render();}
-function togTier(t){TIERF.has(t)?TIERF.delete(t):TIERF.add(t);syncScopeBtns();render();}
-function togMat(m){MATF.has(m)?MATF.delete(m):MATF.add(m);syncScopeBtns();render();}
+function togTier(t){TIERF.has(t)?TIERF.delete(t):TIERF.add(t);syncScopeBtns();if(MATF.size)applyMatF();render();}
+function togMat(m){MATF.has(m)?MATF.delete(m):MATF.add(m);syncScopeBtns();applyMatF();render();}
+// selecting a maturity bucket selects the matching clinics into the clinic multiselect (same as master's applyMat)
+function applyMatF(){
+  if(!MATF.size){CLINF=new Set();}
+  else CLINF=new Set(Object.keys(D.clinics).filter(s=>{const c=D.clinics[s];if(c._online)return false;if(TIERF.size&&!TIERF.has(tierOf(c.city)))return false;if(!inCity(c.city))return false;const b=matBucket(clinMonths(s));return b&&MATF.has(b);}));
+  if($('clinBtn')){$('clinBtn').textContent=clinBtnLabel();$('clinBtn').classList.toggle('on',!!CLINF.size);}
+  syncDocBtn();}
 function syncScopeBtns(){document.querySelectorAll('[data-tier]').forEach(b=>b.classList.toggle('on',TIERF.has(b.dataset.tier)));document.querySelectorAll('[data-mat]').forEach(b=>b.classList.toggle('on',MATF.has(b.dataset.mat)));}
 function allCity(on){CITYF=on?new Set(ALLCITIES):new Set();renderCityPanel($('cityQ')?$('cityQ').value:'');cityChanged();}
 function openClinMs(e){e.stopPropagation();const p=$('clinPanel'),show=!p.classList.contains('on');closePanels();if(show){renderClinPanel('');p.classList.add('on');const q=$('clinQ');if(q)q.focus();}}
