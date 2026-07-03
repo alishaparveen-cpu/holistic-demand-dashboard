@@ -42,5 +42,25 @@ for slug,c in D['clinics'].items():
     matched+=1; tot_pur+=sum(pur); tot_rev+=sum(rev)
 
 if tot_pur==0: print('ABORT: 0 purchased across all clinics — not writing.'); raise SystemExit(1)
+
+# ---- Online (national telehealth) — for the Offline/Online/All toggle ----
+# Online has no clinics/availability/leads; it's national, with a per-city split. We expose booked/done/
+# purchased/rev (+ by_cat) remapped to the 26 diagnostic weeks, national and by city.
+def cube(src):   # src = {'total':{booked,done,purchased,rev}, 'by_cat':{cat:{...}}}
+    if not isinstance(src,dict): return None
+    tot=src.get('total',{}) if isinstance(src.get('total'),dict) else {}
+    o={'booked':remap(tot.get('booked',[])),'done':remap(tot.get('done',[])),
+       'purchased':remap(tot.get('purchased',[])),'rev':remap(tot.get('rev',[]))}
+    bc=src.get('by_cat',{}) if isinstance(src.get('by_cat'),dict) else {}
+    o['by_cat']={k:{'booked':remap(bc.get(k,{}).get('booked',[])),'done':remap(bc.get(k,{}).get('done',[])),
+                    'purchased':remap(bc.get(k,{}).get('purchased',[])),'rev':remap(bc.get(k,{}).get('rev',[]))}
+                 for k in CATS if isinstance(bc.get(k),dict)}
+    return o
+onb=SR['_meta'].get('online_bottom'); onbc=SR['_meta'].get('online_bottom_city',{})
+D['online']={'national':cube(onb) if onb else None,
+             'by_city':{ct:cube(v) for ct,v in onbc.items() if isinstance(v,dict)} if isinstance(onbc,dict) else {}}
+on_tot=sum(D['online']['national']['booked']) if D['online']['national'] else 0
+
 json.dump(D,open(DP,'w'),separators=(',',':'))
-print('patched %d clinics · total purchased %d · total revenue %d' % (matched, tot_pur, tot_rev))
+print('patched %d clinics · total purchased %d · total revenue %d · online booked(26wk) %d across %d cities'
+      % (matched, tot_pur, tot_rev, on_tot, len(D['online']['by_city'])))
