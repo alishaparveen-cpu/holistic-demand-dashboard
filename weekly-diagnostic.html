@@ -483,7 +483,12 @@ function setMet(v){MODE='ov';   // multi-select columns: click to add/remove · 
   if(i<0)METSEL.push(v); else if(i>0){METSEL.splice(i,1);METSEL.unshift(v);} else if(METSEL.length>1)METSEL.splice(i,1);
   MET=METSEL[0];updateModeUI();render();}
 function metricEval(c,key){const st=STAGES.find(x=>x.key===key),m=st.metrics(c)[0];return {ev:evalMetric(m.arr),arr:m.arr,pct:m.pct};}
-function setCond(key,v){if(v==='any')delete MCOND[key];else MCOND[key]=v;render();}
+function setCond(key,v){   // multi-select: toggle a status in/out of this metric's required set; 'any' clears it
+  if(v==='any'){delete MCOND[key];render();return;}
+  const cur=MCOND[key]?MCOND[key].slice():[],i=cur.indexOf(v);
+  if(i<0)cur.push(v);else cur.splice(i,1);
+  if(cur.length)MCOND[key]=cur;else delete MCOND[key];
+  render();}
 function clearMet(){METSEL=['bookings'];MET='bookings';MCOND={};updateModeUI();render();}
 function updateModeUI(){const cmp=(MET!=='break');
   const vi=$('vIssues'),vc=$('vCompare');if(vi)vi.classList.toggle('on',!cmp&&MODE==='ov');if(vc)vc.classList.toggle('on',cmp&&MODE==='ov');
@@ -512,12 +517,12 @@ function renderMetric(){
   if(!metrics.length){METSEL=['bookings'];MET='bookings';return renderMetric();}
   const primary=metrics[0];
   const scopeSlugs=Object.keys(D.clinics).filter(inScope);
-  let rows=scopeSlugs.filter(slug=>{const c=CL(slug);return METSEL.every(k=>{const req=MCOND[k];return !req||(!naMetric(c,k)&&metricEval(c,k).ev.st===req);});})   // AND of the per-metric conditions
+  let rows=scopeSlugs.filter(slug=>{const c=CL(slug);return METSEL.every(k=>{const req=MCOND[k];return !req||!req.length||(!naMetric(c,k)&&req.includes(metricEval(c,k).ev.st));});})   // AND across metrics; within a metric, OR across the selected statuses
     .map(slug=>{const c=CL(slug);return{slug,c,pe:metricEval(c,primary.key).ev};});
   rows.sort((a,b)=>(a.pe.d==null?9:a.pe.d)-(b.pe.d==null?9:b.pe.d));   // worst on the primary (sorted) metric first
-  const cc=(k)=>{const st=STAGES.find(x=>x.key===k),cur=MCOND[k]||'any';
-    const opt=(v,lab)=>'<button class="cseg'+(cur===v?' on':'')+'" onclick="setCond(\''+k+'\',\''+v+'\')">'+lab+'</button>';
-    return '<span class="condgrp"><span class="condlab">'+st.short+'</span><span class="cseg-wrap">'+opt('any','any')+opt('red','🔴')+opt('amber','🟡')+opt('green','🟢')+'</span></span>';};
+  const cc=(k)=>{const st=STAGES.find(x=>x.key===k),sel=MCOND[k]||[];
+    const opt=(v,lab,on)=>'<button class="cseg'+(on?' on':'')+'" onclick="setCond(\''+k+'\',\''+v+'\')">'+lab+'</button>';
+    return '<span class="condgrp"><span class="condlab">'+st.short+'</span><span class="cseg-wrap">'+opt('any','any',!sel.length)+opt('red','🔴',sel.includes('red'))+opt('amber','🟡',sel.includes('amber'))+opt('green','🟢',sel.includes('green'))+'</span></span>';};
   let h='<div class="densrow" style="gap:8px;flex-wrap:wrap"><span class="lab" style="text-transform:none;font-weight:600;color:var(--ink2)">'+rows.length+' clinic'+(rows.length===1?'':'s')+' · '+cityStr()+' · sorted by <b>'+primary.name+'</b></span>'
     +'<span style="display:inline-flex;gap:6px;flex-wrap:wrap;margin-left:4px">'+metrics.map(s=>cc(s.key)).join('')+'</span>'
     +'<button class="fbtn" style="padding:5px 13px;font-size:12px;font-weight:700" onclick="clearMet()">✕ clear all</button>'
