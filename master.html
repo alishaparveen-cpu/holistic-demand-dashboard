@@ -29,9 +29,21 @@ h1{font-family:'Fraunces',serif;font-size:29px;font-weight:600;margin:8px 0 2px}
 .fmwrap{background:var(--sheet);border:1px solid var(--line);border-radius:var(--r);overflow-x:auto}
 table.fm{border-collapse:collapse;width:100%;font-size:12.5px;min-width:var(--fmw,760px);table-layout:fixed}
 /* fixed aux-column widths so every funnel table shares the SAME grid → weeks line up vertically table-to-table (united view) */
-table.fm th.avgcol,table.fm td.avgc{width:58px}
-table.fm th.dcol,table.fm td.dc{width:66px}
+table.fm th.avgcol,table.fm td.avgc{width:62px}
+table.fm th.dcol,table.fm td.dc{width:78px}
+table.fm th.nowcol,table.fm td.nowc{width:58px}
+table.fm th.nowcol{color:var(--accent)}
 table.fm th:last-child,table.fm td:last-child{width:116px}
+/* diagnostic-style chips for the funnel table */
+table.fm td .wkc{display:inline-block;min-width:26px;text-align:center;background:var(--inset);border:1px solid var(--line);border-radius:6px;padding:3px 7px;font-weight:700;color:var(--ink2)}
+table.fm td.nowc{background:var(--sheet)}
+table.fm td.nowc .wkc{font-weight:800;color:var(--ink)}
+table.fm td.nowc .wkc.up{background:var(--gbg);color:var(--good);border-color:transparent}
+table.fm td.nowc .wkc.dn{background:var(--rbg);color:var(--bad);border-color:transparent}
+table.fm td.dc{text-align:center}
+table.fm td.dc .dpill{display:inline-block;min-width:56px;text-align:center;border-radius:6px;padding:3px 8px;font-weight:800;background:var(--inset);color:var(--muted)}
+table.fm td.dc .dpill.up{background:var(--gbg);color:var(--good)}
+table.fm td.dc .dpill.dn{background:var(--rbg);color:var(--bad)}
 table.fm th{font-family:'JetBrains Mono';font-size:9px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);font-weight:600;text-align:right;padding:8px 11px;background:var(--inset);border-bottom:1px solid var(--line);white-space:nowrap}
 table.fm th:first-child{text-align:left}
 table.fm th.lastcol{color:var(--accent)}
@@ -328,13 +340,14 @@ function heatBg(v,mn,mx,inv){if(v==null||isNaN(v)||!isFinite(mn)||mn===mx)return
   // consistent gradient across every cell (only shown when 🎨 Heatmap is ON): green (high) → red (low)
   if(t>=0.5)return hexA(GRN,0.04+0.17*((t-0.5)/0.5));
   return hexA(RED,0.04+0.17*((0.5-t)/0.5));}
-function head(lbl){const B=vbuckets(),c=cols();return '<tr><th>'+lbl+(HIDDEN.size?` <span class="hidex" style="color:var(--accent)" title="restore hidden columns" onclick="showAllCols()">⟲${HIDDEN.size}</span>`:'')+'</th>'+c.map((j,p)=>`<th class="${p===c.length-1?'lastcol':''}${B[j]&&B[j].partial?' pcol':''}"${B[j]&&B[j].partial?' title="partial period — fewer weeks/months than the others, not directly comparable"':''}>${B[j]?B[j].label:''}<span class="hidex" title="hide this column" onclick="hideCol(${j})">×</span></th>`).join('')+'<th class="avgcol">'+(CMPB==='peak'?'peak':CMPB==='first'?'first':'avg')+'</th><th class="dcol">Δ now</th><th>trend</th>'+'</tr>';}
+function head(lbl){const B=vbuckets(),c=cols();return '<tr><th>'+lbl+(HIDDEN.size?` <span class="hidex" style="color:var(--accent)" title="restore hidden columns" onclick="showAllCols()">⟲${HIDDEN.size}</span>`:'')+'</th>'+'<th class="dcol">change</th>'+c.map((j,p)=>`<th class="${p===c.length-1?'lastcol':''}${B[j]&&B[j].partial?' pcol':''}"${B[j]&&B[j].partial?' title="partial period — fewer weeks/months than the others, not directly comparable"':''}>${B[j]?B[j].label:''}<span class="hidex" title="hide this column" onclick="hideCol(${j})">×</span></th>`).join('')+'<th class="avgcol">before '+(CMPB==='peak'?'peak':CMPB==='first'?'first':'avg')+'</th><th class="nowcol">now</th><th>trend</th>'+'</tr>';}
 function row(label,arr,cls,fmt,o){fmt=fmt||N;o=o||{};const cv=colvals(arr,fmt);const _C=cols(),_B=vbuckets();
   if(QVTABLE&&arr&&cls!=='gband')QVC.push({t:QVTABLE,label:String(label).replace(/^· /,''),arr,color:o.color||BLU,fmt});
   let mn=Infinity,mx=-Infinity;cv.forEach(v=>{if(v!=null&&!isNaN(v)){mn=Math.min(mn,v);mx=Math.max(mx,v);}});
   let t='';cv.forEach((v,p)=>{const last=p===cv.length-1;const pcol=_B[_C[p]]&&_B[_C[p]].partial;
     const bg=(!HEAT||o.noheat||cls==='gband'||pcol)?'':heatBg(v,mn,mx,o.invert);const st=bg?`style="background:${bg}"`:'';
-    t+=`<td class="${last?'lastcol':''}${pcol?' pcol':''}" ${st}>${(v==null||isNaN(v))?'—':fmt(v)}</td>`;});
+    const inner=(v==null||isNaN(v))?'—':fmt(v);const cellIn=(bg||cls==='gband'||cls==='hd')?inner:`<span class="wkc">${inner}</span>`;   // chip-style unless heat/header band
+    t+=`<td class="${last?'lastcol':''}${pcol?' pcol':''}" ${st}>${cellIn}</td>`;});
   const lbl=(o.tkey?`<span class="chev">${EXP[o.tkey]?'▾':'▸'}</span> `:'')+label;
   const clk=o.tkey?` onclick="toggle('${o.tkey}')"`:'';
   const _vv=cv.filter(v=>v!=null&&!isNaN(v));
@@ -343,12 +356,15 @@ function row(label,arr,cls,fmt,o){fmt=fmt||N;o=o||{};const cv=colvals(arr,fmt);c
   const _dp=(_base&&_lst!=null&&!isNaN(_lst))?Math.round((_lst-_base)/Math.abs(_base)*100):null;
   const _up=o.invert?(_dp<0):(_dp>0);
   const _avgC=`<td class="avgc">${_base!=null?fmt(_base):'\u2014'}</td>`;
-  const _dC=`<td class="dc" style="color:${_dp==null?'var(--muted)':(_up?'var(--good)':'var(--bad)')}">${_dp==null?'\u2014':(_dp>=0?'+':'')+_dp+'%'}</td>`;
+  const _isBand=(cls==='gband'||cls==='hd');
+  const _dcls=_dp==null?'':(_up?'up':'dn');
+  const _dC=_isBand?'<td class="dc"></td>':`<td class="dc"><span class="dpill ${_dcls}">${_dp==null?'\u2014':((_dp>0?'\u2191 ':_dp<0?'\u2193 ':'\u2192 ')+Math.abs(_dp)+'%')}</span></td>`;
+  const _nowC=_isBand?'<td class="nowc"></td>':`<td class="nowc"><span class="wkc ${_dp==null?'':(_up?'up':'dn')}">${(_lst==null||isNaN(_lst))?'\u2014':fmt(_lst)}</span></td>`;
   const _band=_dp==null?'flat':(_dp>5?'up2':_dp>0?'up1':_dp<-5?'dn2':_dp<0?'dn1':'flat');
   const _bbg={up2:'rgba(31,111,92,.30)',up1:'rgba(31,111,92,.13)',dn1:'rgba(178,58,46,.13)',dn2:'rgba(178,58,46,.30)',flat:''}[_band];
   const _rst=((DBAND!=='all'&&_band!==DBAND&&cls!=='tot'&&cls!=='gband'&&cls!=='hd')?'opacity:.2;':'')+(o.tkey?'cursor:pointer;':'')+((CATMODE&&!(cls||'').includes('catrow'))?'opacity:.4;filter:blur(.8px);':'');
   const _lbg=(CCODE&&_bbg)?` style="background:linear-gradient(${_bbg},${_bbg}),var(--sheet)"`:'';
-  return `<tr class="${cls||''}"${clk} style="${_rst}"><td${_lbg} title="${String(label).replace(/"/g,'&quot;')}">${lbl}</td>${t}${_avgC}${_dC}${arr?sparkCell(cv,o.color||BLU,label,fmt,o.series):'<td></td>'}</tr>`;}
+  return `<tr class="${cls||''}"${clk} style="${_rst}"><td${_lbg} title="${String(label).replace(/"/g,'&quot;')}">${lbl}</td>${_dC}${t}${_avgC}${_nowC}${arr?sparkCell(cv,o.color||BLU,label,fmt,o.series):'<td></td>'}</tr>`;}
 function spark(cv,color){const pts=[];(cv||[]).forEach((x,i)=>{if(x!=null&&!isNaN(x))pts.push([i,x]);});
   const W=124,H=30;if(pts.length<2)return `<svg class="sp" width="${W}" height="${H}"></svg>`;
   const n=(cv||[]).length,vals=pts.map(p=>p[1]);let mn=Math.min(...vals),mx=Math.max(...vals);const rng=(mx-mn)||1;mn-=rng*0.14;mx+=rng*0.10;
