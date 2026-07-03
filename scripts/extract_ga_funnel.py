@@ -18,12 +18,16 @@ import os, re, sys, json
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 WEEKS = ["2026-05-18", "2026-05-25", "2026-06-01", "2026-06-08", "2026-06-15"]  # oldest→newest
 
-# funnel row label (normalised, lowercased, no leading '·') -> json key
+# funnel row label (normalised, lowercased, no leading '·') -> json key.
+# NOTE: manager's "Category Specific Lead" is the COUNT row (e.g. 17,26,21,33,27); the
+# "· Location Click to Category Specific Leads" row is a % — do NOT map that to a count.
 ROWMAP = {
-    "spend": "spend", "impression": "impression", "location impressions": "loc_impr",
+    "spend": "spend", "impression": "impression", "is": "impr_share", "budget util": "budget_util",
+    "location impressions": "loc_impr",
     "click": "click", "loc clicks": "loc_click", "web leads (utm campaign)": "web_leads",
     "city phone calls (google paid)": "city_calls", "gmb phone calls (organic)": "gmb_calls",
-    "location click to category specific leads": "cat_leads", "book": "book", "done": "done",
+    "category specific lead": "cat_leads",
+    "book": "book", "done": "done", "purchased": "purchased", "revenue": "revenue",
 }
 TAG = re.compile(r"<[^>]+>")
 TD = re.compile(r"<td[^>]*>(.*?)</td>", re.S | re.I)

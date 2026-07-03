@@ -1,0 +1,143 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Clinic funnel — L2-matched preview</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600&display=swap');
+:root{--bg:#F6F4EE;--sheet:#FCFBF7;--ink:#22201B;--ink2:#54504A;--muted:#8A8579;--line:#E4DFD3;--line2:#EFEBE0;--accent:#1F6F5C;--gold:#C2691F;--vio:#7B5EA7;--blu:#3E6F8E}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:Inter,sans-serif;padding:28px 30px 60px;max-width:1120px}
+h1{font-family:Fraunces,serif;font-weight:600;font-size:27px;margin:0 0 3px}
+.sub{color:var(--ink2);font-size:13.5px;margin-bottom:16px;line-height:1.5;max-width:820px}
+.bar{display:flex;align-items:center;gap:10px;margin:14px 0 18px}
+.bar label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
+select{height:34px;border:1px solid var(--line);border-radius:9px;background:#fff;font-family:Inter;font-size:14px;font-weight:600;color:var(--ink);padding:0 10px;cursor:pointer}
+.badge{margin-left:auto;font-size:11px;color:var(--accent);background:#EAF1ED;border:1px solid #CFE3DA;border-radius:20px;padding:4px 11px;font-weight:700}
+.wrap{background:var(--sheet);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+table{border-collapse:collapse;width:100%;font-size:13px;table-layout:fixed}
+th{font-family:'JetBrains Mono';font-size:9.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);font-weight:600;text-align:right;padding:11px 12px;background:#F1EEE4;border-bottom:1px solid var(--line);white-space:nowrap}
+th:first-child{text-align:left;width:290px}
+th:last-child{color:var(--accent)}
+td{padding:7px 12px;text-align:right;border-bottom:1px solid var(--line2);font-family:'JetBrains Mono';font-variant-numeric:tabular-nums;white-space:nowrap}
+td:first-child{text-align:left;font-family:Inter;color:var(--ink2)}
+tr.hd td{background:#EEF3F0;font-family:Inter;font-weight:700;color:var(--ink);font-size:12px;letter-spacing:.02em;padding:8px 12px;border-top:1px solid var(--line)}
+tr.tot td{font-weight:700;color:var(--ink);font-size:13.5px;background:#FBFAF5}
+tr.tot td:first-child{font-family:Inter}
+tr.sub td:first-child{padding-left:28px;font-size:12px;color:var(--ink2)}
+tr.sub2 td:first-child{padding-left:44px;font-size:11.5px;color:var(--muted)}
+tr.pct td{color:var(--vio)}
+tr.pct td:first-child{color:var(--muted);font-size:11.5px}
+tr.cat td:first-child{padding-left:28px;font-size:12px}
+.lastcol{background:#FBFAF5}
+.foot{font-size:11.5px;color:var(--muted);margin-top:12px;line-height:1.6}
+b.k{color:var(--ink)}
+.miss{color:#B23A2E;font-size:12px;margin-top:8px}
+</style></head>
+<body>
+<h1 id="h1">Clinic funnel — L2-matched</h1>
+<div class="sub">Full reconciled clinic view. <b>Bookings</b> = Lead-to-Book (distinct patient) · <b>Done/B2D</b> · <b>Revenue</b> = done-week invoiced (D2P) · <b>Capacity</b> = realized roster. Every number ties to the L2 sheet.</div>
+<div class="bar">
+  <label>Clinic</label><select id="clinicSel" onchange="render()"></select>
+  <span class="badge">L2-matched ✓</span>
+</div>
+<div class="wrap"><table id="tbl"></table></div>
+<div class="foot" id="foot"></div>
+
+<script>
+let BK=null,EC=null,AV=null;
+const N=v=>v==null||isNaN(v)?'—':Math.round(v).toLocaleString('en-IN');
+const N1=v=>v==null||isNaN(v)?'—':(Math.round(v*10)/10).toLocaleString('en-IN');
+const RUP=v=>v==null||isNaN(v)?'—':'₹'+Math.round(v).toLocaleString('en-IN');
+const P=v=>v==null||isNaN(v)?'—':Math.round(v)+'%';
+const wlab=w=>{const d=new Date(w+'T00:00:00'),e=new Date(d);e.setDate(e.getDate()+6);
+  const m=x=>x.toLocaleString('en',{month:'short'});
+  return d.getMonth()===e.getMonth()?`${d.getDate()}–${e.getDate()} ${m(e)}`:`${d.getDate()} ${m(d)}–${e.getDate()} ${m(e)}`;};
+const CATLAB={'STI':'STI','ED+':'ED+','PE+':'PE+','ED+PE+':'ED + PE','MH':'Mental Health','NOS':'Not-specified','oth':'Other'};
+
+function commonWeeks(){
+  const es=new Set(EC._meta.weeks);
+  const w=BK._meta.weeks.filter(x=>es.has(x) && x<='2026-06-22');
+  return w.slice(-8);
+}
+function render(){
+  const key=document.getElementById('clinicSel').value;
+  const b=BK.clinics[key]||{}, e=EC.clinics[key]||{}, a=(AV&&AV.clinics[key])||null;
+  const bi=w=>BK._meta.weeks.indexOf(w), ei=w=>EC._meta.weeks.indexOf(w), ai=w=>AV?AV._meta.weeks.indexOf(w):-1;
+  const W=commonWeeks();
+  document.getElementById('h1').textContent='Clinic funnel — '+key.replace('|',' · ');
+  const gv=(o,f,idxfn,w)=>{if(!o||!o[f])return 0;const i=idxfn(w);return i<0?0:(o[f][i]||0);};
+  const head='<tr><th>'+key.replace('|',' · ')+'</th>'+W.map((w,k)=>'<th class="'+(k===W.length-1?'lastcol':'')+'">'+wlab(w)+'</th>').join('')+'</tr>';
+  const cells=(fn,cls,fmt)=>W.map((w,k)=>'<td class="'+(k===W.length-1?'lastcol ':'')+(cls||'')+'">'+fmt(fn(w))+'</td>').join('');
+  const row=(lab,fn,rc,cls,fmt)=>'<tr class="'+(rc||'')+'"><td>'+lab+'</td>'+cells(fn,cls,fmt||N)+'</tr>';
+  const hdr=t=>'<tr class="hd"><td colspan="'+(W.length+1)+'">'+t+'</td></tr>';
+
+  const booked=w=>gv(b,'booked',bi,w), done=w=>gv(b,'done',bi,w);
+  const ftS=w=>gv(b,'ft_same',bi,w), ftP=w=>gv(b,'ft_prev',bi,w), ftN=w=>gv(b,'ft_nolead',bi,w);
+  const rep=w=>gv(b,'repeat',bi,w), ret=w=>gv(b,'ret_return',bi,w), reb=w=>gv(b,'ret_rebook',bi,w);
+  const newT=w=>ftS(w)+ftP(w)+ftN(w);
+  const eDone=w=>gv(e,'done',ei,w), purch=w=>gv(e,'purchased',ei,w);
+  const meds=w=>gv(e,'meds_val',ei,w), test=w=>gv(e,'test_val',ei,w), ther=w=>gv(e,'ther_val',ei,w);
+  const prod=w=>meds(w)+test(w)+ther(w);
+
+  let h=head;
+  // ① DEMAND
+  h+=hdr('① Demand — SC bookings');
+  h+=row('<b class="k">SC Offline Bookings</b> · distinct patient',booked,'tot');
+  h+=row('New patients (1st-time)',newT,'sub');
+  h+=row('· from this week’s leads',ftS,'sub2');
+  h+=row('· from earlier leads (backlog)',ftP,'sub2');
+  if(W.some(w=>ftN(w)))h+=row('· no lead tracked',ftN,'sub2');
+  h+=row('Repeat patients',rep,'sub');
+  h+=row('· re-book (never completed before)',reb,'sub2');
+  h+=row('· return (completed before)',ret,'sub2');
+  // ② CONVERSION
+  h+=hdr('② Conversion — book → done');
+  h+=row('<b class="k">Screening Calls Done</b>',done,'tot');
+  h+=row('book → done %',w=>booked(w)?done(w)/booked(w)*100:null,'pct','',P);
+  // ③ DONE BY CATEGORY
+  const cats=Object.keys(e.by_cat||{});
+  if(cats.length){
+    const lw=W[W.length-1];
+    cats.sort((x,y)=>gv(e.by_cat[y],'done',ei,lw)-gv(e.by_cat[x],'done',ei,lw));
+    h+=hdr('③ Done by category (clinical diagnosis)');
+    cats.forEach(c=>{const cd=w=>gv(e.by_cat[c],'done',ei,w);if(W.some(w=>cd(w)))h+=row((CATLAB[c]||c),cd,'cat');});
+  }
+  // ④ VALUE
+  h+=hdr('④ Value — done-week (invoiced)');
+  h+=row('<b class="k">Revenue</b> · what these consults are worth',prod,'tot','',RUP);
+  h+=row('RPC — ₹ per done consult',w=>eDone(w)?prod(w)/eDone(w):null,'pct','',RUP);
+  h+=row('done → purchased %',w=>eDone(w)?purch(w)/eDone(w)*100:null,'pct','',P);
+  h+=row('· Medicines',meds,'sub','',RUP);
+  h+=row('· Tests / diagnostics',test,'sub','',RUP);
+  h+=row('· Therapy',ther,'sub','',RUP);
+  // ⑤ CAPACITY & UTILISATION
+  if(a){
+    const scH=w=>gv(a,'net_sc_hrs',ai,w), scS=w=>gv(a,'net_sc_slots',ai,w);
+    const opn=w=>gv(a,'opened_hrs',ai,w), adays=w=>gv(a,'active_days',ai,w);
+    h+=hdr('⑤ Capacity & utilisation (realized roster)');
+    h+=row('<b class="k">SC net available hrs</b>',scH,'tot','',N1);
+    h+=row('SC slots offered',scS,'sub');
+    h+=row('utilisation — done ÷ slots',w=>scS(w)?done(w)/scS(w)*100:null,'pct','',P);
+    h+=row('active clinic-days',adays,'sub');
+    h+=row('booking velocity — booked ÷ active-day',w=>adays(w)?booked(w)/adays(w):null,'pct','',N1);
+  }
+  document.getElementById('tbl').innerHTML=h;
+
+  const lw=W[W.length-1];
+  let f='Latest ('+wlab(lw)+'): booked <b class="k">'+booked(lw)+'</b> (new '+newT(lw)+' / repeat '+rep(lw)+') → done <b class="k">'+done(lw)+'</b> ('+P(booked(lw)?done(lw)/booked(lw)*100:0)+') → revenue <b class="k">'+RUP(prod(lw))+'</b> ('+RUP(eDone(lw)?prod(lw)/eDone(lw):0)+'/consult).';
+  if(!a)f+='<div class="miss">⏳ availability data (data_availability.json) not loaded yet — capacity/utilisation section hidden.</div>';
+  f+='<br>Sources: bookings <i>data_sc_bookings.json</i> · economics <i>data_d2p_econ.json</i> · capacity <i>data_availability.json</i>. All reconciled to L2.';
+  document.getElementById('foot').innerHTML=f;
+}
+Promise.all([
+  fetch('data_sc_bookings.json?v='+Date.now()).then(r=>r.json()),
+  fetch('data_d2p_econ.json?v='+Date.now()).then(r=>r.json()),
+  fetch('data_availability.json?v='+Date.now()).then(r=>r.ok?r.json():null).catch(()=>null)
+]).then(([bk,ec,av])=>{BK=bk;EC=ec;AV=av;
+  const keys=Object.keys(bk.clinics).filter(k=>ec.clinics[k]).sort();
+  const i=BK._meta.weeks.indexOf('2026-06-22');
+  keys.sort((a,b)=>(bk.clinics[b].booked[i]||0)-(bk.clinics[a].booked[i]||0));
+  const sel=document.getElementById('clinicSel');
+  sel.innerHTML=keys.map(k=>'<option value="'+k+'"'+(k==='Bangalore|Indiranagar'?' selected':'')+'>'+k.replace('|',' · ')+'</option>').join('');
+  render();
+}).catch(e=>{document.body.insertAdjacentHTML('beforeend','<p style="color:#B23A2E">Load error: '+e.message+'</p>');});
+</script>
+</body></html>
