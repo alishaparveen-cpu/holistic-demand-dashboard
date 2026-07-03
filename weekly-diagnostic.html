@@ -316,12 +316,12 @@ const SLOPE_LEG='<span class="slope down">↘</span>sliding · <span class="slop
 const STAGES=[
   {key:'availability',num:1,name:'Availability',short:'Avail',sub:'active days · available hours',diag:'Clinic closed / fewer days',fix:'Ops · roster',
    metrics:c=>[{nm:'active days',arr:c.availability.active_days,fmtd:0},{nm:'↳ weekday days',arr:c.availability.wday_days,fmtd:0},{nm:'↳ weekend days',arr:c.availability.wend_days,fmtd:0},{nm:'available hours',arr:c.availability.avail_hours||c.availability.hours,fmtd:0},{nm:'↳ screening-call available hours',arr:c.availability.hours,fmtd:0}],headline:0},
-  {key:'bookings',num:2,name:'Bookings',short:'Book',sub:'SC bookings — new patients (fresh / carry-in) · repeat patients (never-done / relapse)',diag:'Fewer SC bookings',fix:'Demand / PCC',
-   metrics:c=>[{nm:'SC bookings',arr:c.bookings.total,fmtd:0}],headline:0,
+  {key:'bookings',num:2,name:'Bookings',short:'Book',sub:'new patients (fresh / carry-in) · repeat patients (never-done / relapse)',diag:'Fewer bookings',fix:'Demand / PCC',
+   metrics:c=>[{nm:funnelWord()+' bookings',arr:c.bookings.total,fmtd:0}],headline:0,
    tax:c=>[{nm:'↳ fresh — lead this week',arr:c.bookings.new_tw},{nm:'↳ older-week lead (carry-in)',arr:c.bookings.new_old},{nm:'↳ rebooked (never done)',arr:c.bookings.rebook},{nm:'↳ relapse (done before)',arr:c.bookings.relapse}]},
   {key:'conversion',num:3,name:'Book → done',short:'B→D',sub:'book→done % — processing of demand',diag:'Conversion drop — front-desk / follow-up',fix:'Clinic / PCC',
    metrics:c=>[{nm:'book→done %',arr:c.done.book_done_pct,pct:1}],headline:0},
-  {key:'done',num:4,name:'Done',short:'Done',sub:'completed SCs · by category (SH/STI/MH)',diag:'Done dropped',fix:'Clinic / PCC',
+  {key:'done',num:4,name:'Done',short:'Done',sub:'completed · by category (SH/STI/MH)',diag:'Done dropped',fix:'Clinic / PCC',
    metrics:c=>[{nm:'done',arr:c.done.done,fmtd:0}],headline:0,doneCat:c=>c.done.by_cat},
   {key:'demand',num:5,name:'Leads',short:'Leads',sub:'leads · lead→book %',diag:'Channel break — GMB / Ads / Practo',fix:'Marketing',
    metrics:c=>[{nm:'leads',arr:c.demand.leads,fmtd:0},{nm:'lead→book % (tagged-lead ~)',arr:c.demand.lead_book_pct,pct:1}],headline:0,byChannel:c=>c.demand.by_channel},
@@ -551,12 +551,23 @@ function metricChips(c,stageKey){
 }
 function pctPill(ev){const arw=(ev.d==null)?'':(ev.d<0?'↓ ':ev.d>0?'↑ ':'→ ');return (ev.d==null)?'<span class="flat">—</span>':'<span class="mc '+ev.st+'" style="font-size:14.5px;font-weight:800;min-width:56px">'+arw+Math.abs(Math.round(ev.d*100))+'%</span>';}
 // one metric row inside a clinic's vertical stack: label · change% · chips · before→now; click zooms
-// full, explicit metric label: clear name · consult segment · sub-dimension (e.g. "SC bookings · offline · new patients")
-const METRIC_FULL={availability:'Availability · active days',demand:'Leads',bookings:'SC bookings',conversion:'Book → done %',done:'Done (completed SC)',purchased:'Purchased (paid SC)',revenue:'Revenue (₹)',velocity:'Bookings / active day',doctors:'Active doctors'};
+// full, explicit metric label: clear name · consult segment · sub-dimension (e.g. "Follow-up bookings · offline · new patients")
 function segWord(){return SEG==='online'?'online':SEG==='all'?'all consults':'offline';}
-function metricLabelHTML(key){const nm=METRIC_FULL[key]||key,sub=MSUB[key];
-  return '<span class="mnm">'+nm+'</span><span class="mseg"> · '+segWord()+'</span>'+(sub?'<span class="msub"> · '+sub+'</span>':'');}
-function metricLabelText(key){return (METRIC_FULL[key]||key)+' · '+segWord()+(MSUB[key]?' · '+MSUB[key]:'');}
+function funnelWord(){return FUNNEL2==='fu'?'Follow-up':FUNNEL2==='all'?'SC + FU':'SC';}   // SC·demand / FU·ops / All funnel variant
+function metricNameFull(key){const fw=funnelWord();switch(key){   // outcome metrics carry the SC/FU/All variant; leads is demand-side (variant-agnostic)
+  case 'availability':return 'Availability · active days'+(FUNNEL2==='sc'?'':' ('+fw+')');
+  case 'demand':return 'Leads';
+  case 'bookings':return fw+' bookings';
+  case 'conversion':return fw+' book → done %';
+  case 'done':return fw+' done (completed)';
+  case 'purchased':return fw+' purchased (paid)';
+  case 'revenue':return fw+' revenue (₹)';
+  case 'velocity':return fw+' bookings / active day';
+  case 'doctors':return 'Active doctors';
+  default:return key;}}
+function metricLabelHTML(key){const sub=MSUB[key];
+  return '<span class="mnm">'+metricNameFull(key)+'</span><span class="mseg"> · '+segWord()+'</span>'+(sub?'<span class="msub"> · '+sub+'</span>':'');}
+function metricLabelText(key){return metricNameFull(key)+' · '+segWord()+(MSUB[key]?' · '+MSUB[key]:'');}
 function metricRow(c,key,disp){const st=STAGES.find(x=>x.key===key);
   if(naMetric(c,key))return '<div class="crow" style="cursor:default;opacity:.45"><span class="clab">'+metricLabelHTML(key)+'</span><span class="flat">—</span><span style="font-size:11px;color:var(--faint);margin-left:6px">n/a for online</span></div>';
   const m=st.metrics(c)[0],sub=MSUB[key],pct=sub?false:!!m.pct,arr=metricArr(c,key),ev=evalMetric(arr),a=arr.slice(-(CURN+BASEN));
