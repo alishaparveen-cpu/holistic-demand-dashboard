@@ -37,7 +37,7 @@
   .msact{display:flex;gap:12px;padding:4px 9px 6px;border-bottom:1px solid var(--line);margin-bottom:3px}.msact a{color:var(--accent);font-size:11px;font-weight:700;cursor:pointer}
   .msi{display:flex;align-items:center;gap:8px;padding:5px 9px;font-size:12.5px;cursor:pointer;border-radius:5px;white-space:nowrap}.msi:hover{background:var(--inset)} .msi .c{margin-left:auto;color:var(--muted);font-size:10.5px;font-family:'JetBrains Mono'}
   .mc{display:inline-block;min-width:34px;text-align:center;font-family:'JetBrains Mono';font-size:14px;font-weight:700;border-radius:6px;padding:5px 8px;margin-right:4px}
-  .mc.base{background:var(--inset);color:var(--muted)} .mc.red{background:var(--rbg);color:#a8352a} .mc.amber{background:var(--abg);color:#8a6412} .mc.green{background:var(--gbg);color:var(--good)}
+  .mc.base{background:var(--inset);color:var(--ink2);box-shadow:inset 0 0 0 1px var(--line)} .mc.red{background:var(--rbg);color:#a8352a} .mc.amber{background:var(--abg);color:#8a6412} .mc.green{background:var(--gbg);color:var(--good)}
   .mc.now{background:#fff;color:var(--ink);font-weight:800;box-shadow:inset 0 0 0 1.5px var(--line)}
   .metpk{display:inline-flex;align-items:center;gap:3px;min-width:104px;font-family:Inter;font-size:12px;color:var(--ink2);margin-right:10px;vertical-align:middle}
   .metpk b{min-width:52px;text-align:center;font-weight:700}
@@ -291,7 +291,7 @@ const SLOPE_LEG='<span class="slope down">↘</span>sliding · <span class="slop
 const STAGES=[
   {key:'availability',num:1,name:'Availability',short:'Avail',sub:'active days · available hours',diag:'Clinic closed / fewer days',fix:'Ops · roster',
    metrics:c=>[{nm:'active days',arr:c.availability.active_days,fmtd:0},{nm:'↳ weekday days',arr:c.availability.wday_days,fmtd:0},{nm:'↳ weekend days',arr:c.availability.wend_days,fmtd:0},{nm:'available hours',arr:c.availability.avail_hours||c.availability.hours,fmtd:0},{nm:'↳ screening-call available hours',arr:c.availability.hours,fmtd:0}],headline:0},
-  {key:'bookings',num:2,name:'Bookings',short:'Book',sub:'SC bookings — fresh / carry-in / rebook / relapse',diag:'Fewer SC bookings',fix:'Demand / PCC',
+  {key:'bookings',num:2,name:'Bookings',short:'Book',sub:'SC bookings — new patients (fresh / carry-in) · repeat patients (never-done / relapse)',diag:'Fewer SC bookings',fix:'Demand / PCC',
    metrics:c=>[{nm:'SC bookings',arr:c.bookings.total,fmtd:0}],headline:0,
    tax:c=>[{nm:'↳ fresh — lead this week',arr:c.bookings.new_tw},{nm:'↳ older-week lead (carry-in)',arr:c.bookings.new_old},{nm:'↳ rebooked (never done)',arr:c.bookings.rebook},{nm:'↳ relapse (done before)',arr:c.bookings.relapse}]},
   {key:'conversion',num:3,name:'Book → done',short:'B→D',sub:'book→done % — processing of demand',diag:'Conversion drop — front-desk / follow-up',fix:'Clinic / PCC',
@@ -496,7 +496,9 @@ function subDims(key){const Z=()=>new Array(D.weeks.length).fill(0);
   if(key==='done')return [{label:'all done',get:c=>c.done.done}].concat(['SH','STI','MH','Other'].map(ct=>({label:ct,get:c=>(c.done.by_cat||{})[ct]||Z()})));
   if(key==='purchased')return [{label:'all purchased',get:c=>(c.purchased&&c.purchased.total)||Z()}].concat(['SH','STI','MH','Other'].map(ct=>({label:ct,get:c=>((c.purchased&&c.purchased.by_cat)||{})[ct]||Z()})));
   if(key==='revenue')return [{label:'all revenue',get:c=>(c.revenue&&c.revenue.rev)||Z()}].concat(['SH','STI','MH','Other'].map(ct=>({label:ct,get:c=>((c.revenue&&c.revenue.by_cat)||{})[ct]||Z()})));
-  if(key==='bookings')return [{label:'all bookings',get:c=>c.bookings.total},{label:'fresh',get:c=>c.bookings.new_tw},{label:'carry-in',get:c=>c.bookings.new_old},{label:'rebook',get:c=>c.bookings.rebook},{label:'relapse',get:c=>c.bookings.relapse}];
+  if(key==='bookings'){const ad=(x,y)=>x.map((v,i)=>(v||0)+((y&&y[i])||0));return [{label:'all bookings',get:c=>c.bookings.total},
+    {label:'new patients',get:c=>ad(c.bookings.new_tw,c.bookings.new_old)},{label:'— fresh (lead this week)',get:c=>c.bookings.new_tw},{label:'— older-week lead',get:c=>c.bookings.new_old},
+    {label:'repeat patients',get:c=>ad(c.bookings.rebook,c.bookings.relapse)},{label:'— never done before',get:c=>c.bookings.rebook},{label:'— relapse (done before)',get:c=>c.bookings.relapse}];}
   if(key==='availability')return [{label:'active days',get:c=>c.availability.active_days},{label:'weekday days',get:c=>c.availability.wday_days},{label:'weekend days',get:c=>c.availability.wend_days},{label:'available hrs',get:c=>c.availability.avail_hours||c.availability.hours},{label:'screening-call hrs',get:c=>c.availability.hours}];
   return null;}   // conversion / velocity / doctors → no sub-dimension
 function metricArr(c,key){const sel=MSUB[key];if(sel){const sd=subDims(key),f=sd&&sd.find(x=>x.label===sel);if(f){const a=f.get(c);return (a&&a.length)?a:new Array(D.weeks.length).fill(0);}}return STAGES.find(x=>x.key===key).metrics(c)[0].arr;}
@@ -561,17 +563,25 @@ function renderMetric(){
 function goClinic(slug){CLINF=new Set([slug]);$('clinBtn').textContent=clinBtnLabel();$('clinBtn').classList.add('on');C=CL(slug);MODE='cl';OPEN={};updateModeUI();render();}
 
 // ---------- PER-CLINIC FUNNEL (funnel + colour chips, trend on click) ----------
-function stageParts(s,o){   // breakdown series per stage: lineS = coloured components, chipOnly = off-scale
-  let lineS=[],chipOnly=[];
+function stageParts(s,o){   // breakdown series per stage: lineS = coloured components, chipOnly = off-scale, groups = 2-level nest
+  let lineS=[],chipOnly=[],groups=null;
   if(s.key==='availability'){lineS=[{label:'weekday days',arr:o.availability.wday_days,color:BPAL[0]},{label:'weekend days',arr:o.availability.wend_days,color:BPAL[1]}];chipOnly=[{label:'available hrs',arr:o.availability.avail_hours||o.availability.hours},{label:'screening-call hrs',arr:o.availability.hours}];}
-  else if(s.key==='bookings'){lineS=[{label:'fresh',arr:o.bookings.new_tw,color:BPAL[0]},{label:'carry-in',arr:o.bookings.new_old,color:BPAL[1]},{label:'rebook',arr:o.bookings.rebook,color:BPAL[2]},{label:'relapse',arr:o.bookings.relapse,color:BPAL[3]}];}
+  else if(s.key==='bookings'){const B=o.bookings,ad=(x,y)=>x.map((v,i)=>(v||0)+((y&&y[i])||0));   // new patients (fresh/carry-in) vs repeat patients (rebooked/relapse)
+    groups=[
+      {label:'new patients',arr:ad(B.new_tw,B.new_old),color:BPAL[0],children:[
+        {label:'fresh — lead this week',arr:B.new_tw,color:BPAL[0]},
+        {label:'older-week lead (carry-in)',arr:B.new_old,color:BPAL[1]}]},
+      {label:'repeat patients',arr:ad(B.rebook,B.relapse),color:BPAL[2],children:[
+        {label:'never done before',arr:B.rebook,color:BPAL[2]},
+        {label:'relapse — done before, booked again',arr:B.relapse,color:BPAL[3]}]}
+    ];}
   else if(s.key==='conversion'){chipOnly=[{label:'booked',arr:o.done.booked},{label:'done',arr:o.done.done}];}
   else if(s.key==='done'){const dc=o.done.by_cat;['SH','STI','MH','Other'].forEach((ct,k)=>{if(dc[ct]&&sum(dc[ct]))lineS.push({label:ct,arr:dc[ct],color:BPAL[k]});});}
   else if(s.key==='demand'){const bc=o.demand.by_channel;Object.keys(bc).sort((a,b)=>sum(bc[b])-sum(bc[a])).slice(0,5).forEach((ch,k)=>{if(sum(bc[ch]))lineS.push({label:ch,arr:bc[ch],color:BPAL[k]});});chipOnly=[{label:'lead→book%',arr:o.demand.lead_book_pct,pct:1}];}
   else if(s.key==='velocity'){const v=o.velocity;lineS=[{label:'per weekday',arr:v.per_weekday,color:BPAL[0]},{label:'per weekend',arr:v.per_weekend,color:BPAL[1]}];chipOnly=[{label:'wday bookings',arr:v.bk_wday},{label:'wend bookings',arr:v.bk_wend}];}
   else if(s.key==='purchased'||s.key==='revenue'){const dc=(s.catCube&&s.catCube(o))||{};['SH','STI','MH','Other'].forEach((ct,k)=>{if(dc[ct]&&sum(dc[ct]))lineS.push({label:ct,arr:dc[ct],color:BPAL[k]});});}
   else if(s.key==='doctors'){const bd=o.by_doctor||{};Object.keys(bd).sort((a,b)=>sum(b&&bd[b].booked||[])-sum(a&&bd[a].booked||[])).slice(0,6).forEach((dr,k)=>{const bk=bd[dr].booked||[];if(sum(bk))lineS.push({label:dr.replace(/^Dr\.?\s*/,''),arr:bk,color:BPAL[k%BPAL.length]});});}
-  return {lineS,chipOnly};
+  return {lineS,chipOnly,groups};
 }
 // funnel body (stage rows + breakdown trend rows) for ANY clinic-shaped object (single clinic OR city aggregate)
 function funnelStagesHTML(o){
@@ -579,9 +589,12 @@ function funnelStagesHTML(o){
   FUNNEL_ORDER.forEach((si,di)=>{const s=STAGES[si];
     if(o._online&&(s.key==='availability'||s.key==='demand'||s.key==='velocity'))return;   // n/a for online
     const e=evalStage(s,o),hm=e.hm,col=COL[e.status];
-    const {lineS,chipOnly}=stageParts(s,o);
+    const {lineS,chipOnly,groups}=stageParts(s,o);
     const head=miniRow(hm.nm,hm.arr,hm.pct,col,true);   // headline metric — the focus line
-    const bd=lineS.map(l=>miniRow(l.label,l.arr,l.pct||0,l.color)).join('')+chipOnly.map(c=>miniRow(c.label,c.arr,c.pct||0,'var(--faint)')).join('');   // breakdown, nested
+    const bd=(groups   // grouped: parent row (e.g. new patients) then its children nested one level deeper
+        ? groups.map(g=>miniRow(g.label,g.arr,0,g.color)+'<div class="fbreak">'+g.children.map(ch=>miniRow(ch.label,ch.arr,0,ch.color)).join('')+'</div>').join('')
+        : lineS.map(l=>miniRow(l.label,l.arr,l.pct||0,l.color)).join('')
+      )+chipOnly.map(c=>miniRow(c.label,c.arr,c.pct||0,'var(--faint)')).join('');   // breakdown, nested
     h+='<div class="stagerow"><div class="stage '+e.status+'"><div class="snum">'+(di+1)+'</div>'
       +'<div class="sbody"><div class="sname '+e.status+'">'+s.name+'</div><div class="ssub">'+s.sub+'</div>'
         +'<div style="margin-top:6px">'+head+(bd?'<div class="fbreak">'+bd+'</div>':'')+'</div>'
