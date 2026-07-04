@@ -275,7 +275,7 @@ function applyVariant(){   // overlay the matched SC/FU/Combined numbers onto ea
     if(v.revenue)c.revenue=rmObj(v.revenue); if(v.purchased)c.purchased=rmObj(v.purchased);}
 }
 // availability / leads / bookings-per-active-day don't exist for online (national telehealth, no clinics/roster)
-function naMetric(c,key){return !!(c&&c._online)&&(key==='availability'||key==='demand'||key==='velocity');}
+function naMetric(c,key){return (!!(c&&c._online)&&(key==='availability'||key==='demand'||key==='velocity'))||(FUNNEL2==='fu'&&key==='demand');}   // follow-ups have no new-lead concept
 const T1CITIES=new Set(['Bangalore','Mumbai','Navi Mumbai','Pune','Hyderabad','Chennai']);
 function tierOf(city){return T1CITIES.has(city)?'T1':'T2';}
 function clinMonths(slug){const d=AGE[D.clinics[slug].loc];if(!d)return null;const t=Date.parse(d);return isNaN(t)?null:(Date.now()-t)/(1000*60*60*24*30.44);}
@@ -593,7 +593,7 @@ function metricLabelHTML(key){const sub=MSUB[key];
   return '<span class="mnm">'+metricNameFull(key)+'</span><span class="mseg"> · '+segWord()+'</span>'+(sub?'<span class="msub"> · '+sub+'</span>':'');}
 function metricLabelText(key){return metricNameFull(key)+' · '+segWord()+(MSUB[key]?' · '+MSUB[key]:'');}
 function metricRow(c,key,disp){const st=STAGES.find(x=>x.key===key);
-  if(naMetric(c,key))return '<div class="crow" style="cursor:default;opacity:.45"><span class="clab">'+metricLabelHTML(key)+'</span><span class="flat">—</span><span style="font-size:11px;color:var(--faint);margin-left:6px">n/a for online</span></div>';
+  if(naMetric(c,key)){const why=(FUNNEL2==='fu'&&key==='demand')?'follow-ups':'online';return '<div class="crow" style="cursor:default;opacity:.45"><span class="clab">'+metricLabelHTML(key)+'</span><span class="flat">—</span><span style="font-size:11px;color:var(--faint);margin-left:6px">n/a for '+why+'</span></div>';}
   const m=st.metrics(c)[0],sub=MSUB[key],pct=sub?false:!!m.pct,arr=metricArr(c,key),ev=evalMetric(arr),a=arr.slice(-(CURN+BASEN));
   const zi=ZREG.length;ZREG.push({label:disp+' · '+metricLabelText(key),arr:arr,col:COL[ev.st]||'var(--ink2)',pct:pct,noPrefix:true});
   return '<div class="crow" onclick="event.stopPropagation();zoomReg('+zi+')"><span class="clab">'+metricLabelHTML(key)+'</span>'+pctPill(ev)+'<span style="margin:0 2px 0 6px">'+slopeBadge(a)+'</span>'+trendHTML(arr,pct,ev)+'</div>';}
@@ -666,6 +666,7 @@ function funnelStagesHTML(o){
   let h='<div class="lab" style="text-transform:none;font-weight:500;color:var(--faint);margin:-4px 0 10px">Top line of each stage = the headline metric (look here first); the rows nested below it are its breakdown. Each row: recent '+(CURN+BASEN)+' weeks, then <b>before avg → now</b> · click any row for its full trend.</div>';
   FUNNEL_ORDER.forEach((si,di)=>{const s=STAGES[si];
     if(o._online&&(s.key==='availability'||s.key==='demand'||s.key==='velocity'))return;   // n/a for online
+    if(FUNNEL2==='fu'&&s.key==='demand')return;   // follow-ups have no new-lead stage
     const e=evalStage(s,o),hm=e.hm,col=COL[e.status];
     let {lineS,chipOnly,groups}=stageParts(s,o);
     const nz=arr=>arr&&arr.some(v=>v!=null&&v!==0);   // drop all-zero breakdown rows (e.g. a variant that doesn't carry that split, like velocity weekday/weekend)
