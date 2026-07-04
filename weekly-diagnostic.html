@@ -275,9 +275,10 @@ function applyVariant(){   // overlay the matched SC/FU/Combined numbers onto ea
   for(const slug in QD.clinics){const c=D.clinics[slug];if(!c)continue;const v=QD.clinics[slug][FUNNEL2];if(!v)continue;
     if(!c._slug)c._slug=slug;
     c.bookings=rmObj(v.bookings); c.done=rmObj(v.done); c.availability=Object.assign({},c.availability,rmObj(v.availability));
-    if(!c._velSplit&&c.velocity)c._velSplit={wday_days:c.velocity.wday_days,wend_days:c.velocity.wend_days,bk_wday:c.velocity.bk_wday,bk_wend:c.velocity.bk_wend,per_weekday:c.velocity.per_weekday,per_weekend:c.velocity.per_weekend};   // base data carries the weekday/weekend split (SC); QD variants don't
+    if(!c._velSplit&&c.velocity)c._velSplit={wday_days:c.velocity.wday_days,wend_days:c.velocity.wend_days,bk_wday:c.velocity.bk_wday,bk_wend:c.velocity.bk_wend,per_weekday:c.velocity.per_weekday,per_weekend:c.velocity.per_weekend};   // base data's SC weekday/weekend split (fallback if QD lacks it)
     c.velocity=rmObj(v.velocity); c.by_doctor=rmObj(v.by_doctor);
-    if(FUNNEL2==='sc'&&c._velSplit)c.velocity=Object.assign({},c.velocity,c._velSplit);   // restore split so bookings/active-day shows weekday vs weekend
+    const hasSplit=c.velocity.per_weekday&&c.velocity.per_weekday.some(x=>x!=null);   // QD now carries the split for sc/fu/all (appt day-of-week)
+    if(!hasSplit&&FUNNEL2==='sc'&&c._velSplit)c.velocity=Object.assign({},c.velocity,c._velSplit);   // stale-data fallback: base SC split
     if(v.revenue)c.revenue=rmObj(v.revenue); if(v.purchased)c.purchased=rmObj(v.purchased);}
 }
 // availability / leads / bookings-per-active-day don't exist for online (national telehealth, no clinics/roster)
@@ -361,8 +362,8 @@ const STAGES=[
    metrics:c=>[{nm:'purchased',arr:(c.purchased&&c.purchased.total)||[],fmtd:0}],headline:0,catCube:c=>c.purchased&&c.purchased.by_cat},
   {key:'revenue',num:7,name:'Revenue',short:'Rev',sub:'done-week invoiced ₹ · by category',diag:'Revenue dropped',fix:'Clinic · sales',
    metrics:c=>[{nm:'revenue (₹)',arr:(c.revenue&&c.revenue.rev)||[],fmtd:0}],headline:0,catCube:c=>c.revenue&&c.revenue.by_cat},
-  {key:'doctors',num:9,name:'Doctors',short:'Docs',sub:'active providers · per-doctor drill',diag:'Fewer active doctors',fix:'Ops · staffing',
-   metrics:c=>[{nm:'active doctors',arr:(c.doctors&&c.doctors.count)||[],fmtd:0}],headline:0,byDoctor:true},
+  {key:'doctors',num:9,name:'Doctors',short:'Docs',sub:'headline = count of active providers · each doctor row = that doctor’s bookings',diag:'Fewer active doctors',fix:'Ops · staffing',
+   metrics:c=>[{nm:'active doctors (count)',arr:(c.doctors&&c.doctors.count)||[],fmtd:0}],headline:0,byDoctor:true},
 ];
 const ISSUE_STAGES=[0,4,1,2,3,6,7,5];   // availability, leads, bookings, book→done, done, purchased, revenue, bk/day
 const FUNNEL_ORDER=[0,4,1,2,3,6,7,5,8]; // the 8 agreed metrics in order, then Doctors (per-doctor drill) in the clinic funnel
@@ -402,7 +403,7 @@ function closeZ(){$('modal').classList.remove('on');PICKA=null;PICKB=null;CURZ=n
 function openZoom(z){if(!z)return;if(z!==CURZ){PICKA=null;PICKB=null;}CURZ=z;
   const WIN=Math.min(CURN+BASEN,z.arr.length);   // show only the selected window (current + baseline weeks)
   const F=v=>fmtZ(v,z.pct),labels=D.week_labels.slice(-WIN),col=z.col;
-  $('mTitle').textContent=(z.noPrefix?'':(C?C.disp+' · ':''))+z.label;
+  $('mTitle').textContent=(z.noPrefix?'':((MODE==='cl'&&C)?C.disp+' · ':cityStr()+' · '))+z.label;
   const W=700,H=300,pad=40,padT=26;
   const v=z.arr.slice(-WIN).map(x=>x==null||isNaN(x)?null:x),n=v.length;
   const valid=v.filter(x=>x!=null);const vmn=valid.length?Math.min(...valid):0,vmx=valid.length?Math.max(...valid):1,rng=(vmx-vmn)||Math.abs(vmx)||1;
@@ -454,7 +455,7 @@ function curLabel(){const wl=(CLUB>1?clubLabels():D.week_labels),NW=wl.length;co
 // shared trend renderer (used by both By-metric rows and funnel rows so their layout matches):
 // readable week-number chips (baseline quiet, current window coloured) → BEFORE AVG → NOW
 function trendHTML(arr,pct,ev){const a=arr.slice(-(CURN+BASEN)),nb=a.length-CURN;
-  const f=v=>v==null?'·':(pct?Math.round(v)+'%':(Math.abs(v)>=1000?Math.round(v).toLocaleString('en-US'):(Math.round(v*10)/10)));
+  const f=v=>v==null?'·':(pct?Math.round(v)+'%':(Math.abs(v)>=1e7?(v/1e7).toFixed(2)+'Cr':Math.abs(v)>=1e5?(v/1e5).toFixed(1)+'L':Math.abs(v)>=1000?Math.round(v).toLocaleString('en-US'):(Math.round(v*10)/10)));
   const week=a.map((v,i)=>'<span class="mc '+(i>=nb?ev.st:'base')+'">'+f(v)+'</span>').join('');
   return week+'<span class="avgmk avgbefore"><span class="avglab">before</span>'+(ev.base==null?'—':f(ev.base))+'</span><span class="avgmk avgnow '+ev.st+'"><span class="avglab">now</span>'+(ev.cur==null?'—':f(ev.cur))+'</span>';}
 // one funnel breakdown row — fixed columns so numbers align vertically across every row & nesting level
@@ -750,9 +751,13 @@ function aggregate(slugs,label){
     ['SH','STI','MH','Other'].forEach(ct=>a.done.by_cat[ct]=add(a.done.by_cat[ct],c.done.by_cat[ct]));
     if(c.purchased){a.purchased.total=add(a.purchased.total,c.purchased.total);['SH','STI','MH','Other'].forEach(ct=>a.purchased.by_cat[ct]=add(a.purchased.by_cat[ct],(c.purchased.by_cat||{})[ct]));}
     if(c.revenue){a.revenue.rev=add(a.revenue.rev,c.revenue.rev);['SH','STI','MH','Other'].forEach(ct=>a.revenue.by_cat[ct]=add(a.revenue.by_cat[ct],(c.revenue.by_cat||{})[ct]));}
-    if(c.doctors)a.doctors.count=add(a.doctors.count,c.doctors.count);
     if(c.by_doctor)for(const dr in c.by_doctor){const bd=a.by_doctor[dr]=a.by_doctor[dr]||{booked:Z(),done:Z(),purchased:Z(),rev:Z()};['booked','done','purchased','rev'].forEach(k=>bd[k]=add(bd[k],c.by_doctor[dr][k]));}
     ['bk_wday','bk_wend'].forEach(k=>a.velocity[k]=add(a.velocity[k],c.velocity[k]));});
+  // online telehealth doctors are national (no per-city split) — merge them in whenever the online channel is in scope
+  if(SEG!=='offline'&&slugs.some(s=>D.clinics[s]&&D.clinics[s]._online)){const od=ONLINE_DOC[FUNNEL2]||{};
+    for(const dr in od){const bd=a.by_doctor[dr]=a.by_doctor[dr]||{booked:Z(),done:Z(),purchased:Z(),rev:Z()};['booked','done','purchased','rev'].forEach(k=>bd[k]=add(bd[k],od[dr][k]));}}
+  // active doctors = DISTINCT providers with a booking that week (from the scoped by_doctor) — no double-count across clinics, responds to every filter
+  a.doctors.count=Array.from({length:N},(_,i)=>Object.values(a.by_doctor).filter(bd=>(bd.booked[i]||0)>0).length);
   const newp=add(a.bookings.new_tw,a.bookings.new_old),rate=(num,den)=>num.map((v,i)=>den[i]?Math.round(v/den[i]*10)/10:null);
   a.demand.lead_book_pct=a.demand.leads.map((L,i)=>L?Math.round(100*newp[i]/L):null);
   a.done.book_done_pct=a.done.booked.map((B,i)=>B?Math.round(100*a.done.done[i]/B):null);
@@ -934,6 +939,25 @@ function buildOnlineClinics(){
       doctors:{count:Z()},by_doctor:{}};
   }
 }
+// national online per-doctor (telehealth has no per-city/clinic identity) — loaded from the online cubes, per funnel variant
+let ONLINE_DOC={sc:{},fu:{},all:{}};
+async function loadOnlineDoc(){
+  const g=async u=>{try{return await fetch(u+'?v='+Date.now()).then(r=>r.ok?r.json():null);}catch(e){return null;}};
+  const [scb,fub,sce,fue]=await Promise.all([g('data_sc_bookings_online.json'),g('data_fu_bookings_online.json'),g('data_d2p_econ_online.json'),g('data_fu_econ_online.json')]);
+  const dw=D.weeks,Zz=()=>new Array(dw.length).fill(0);
+  const rm=(arr,cw)=>{const o=Zz();(cw||[]).forEach((w,i)=>{const gi=dw.indexOf(w);if(gi>=0)o[gi]=(arr||[])[i]||0;});return o;};
+  function variant(bk,ec){const out={};
+    const bd=(bk&&bk.clinics['Online|Online']&&bk.clinics['Online|Online'].by_doctor)||{},bw=bk&&bk._meta.weeks;
+    const ed=(ec&&ec.clinics['Online|Online']&&ec.clinics['Online|Online'].by_doctor)||{},ew=ec&&ec._meta.weeks;
+    const ensure=dr=>out[dr]=out[dr]||{booked:Zz(),done:Zz(),purchased:Zz(),rev:Zz()};
+    for(const dr in bd){ensure(dr);out[dr].booked=rm(bd[dr].booked,bw);out[dr].done=rm(bd[dr].done,bw);}
+    for(const dr in ed){ensure(dr);out[dr].purchased=rm(ed[dr].purchased,ew);
+      out[dr].rev=['meds_val','test_val','ther_val','cons_val'].reduce((a,f)=>a.map((v,i)=>v+rm(ed[dr][f],ew)[i]),Zz());}
+    return out;}
+  ONLINE_DOC.sc=variant(scb,sce);ONLINE_DOC.fu=variant(fub,fue);
+  const all={};[ONLINE_DOC.sc,ONLINE_DOC.fu].forEach(v=>{for(const dr in v){all[dr]=all[dr]||{booked:Zz(),done:Zz(),purchased:Zz(),rev:Zz()};['booked','done','purchased','rev'].forEach(k=>all[dr][k]=all[dr][k].map((x,i)=>x+v[dr][k][i]));}});
+  ONLINE_DOC.all=all;
+}
 async function boot(){
   try{D=await fetch('data_weekly_diag.json').then(r=>r.json());}
   catch(e){$('root').innerHTML='<div class="err">Failed to load data_weekly_diag.json</div>';return;}
@@ -941,6 +965,7 @@ async function boot(){
   try{QD=await fetch('data_quick_diag.json?v='+Date.now()).then(r=>r.ok?r.json():null);}catch(e){QD=null;}
   if(QD)applyVariant();   // master-demand matched numbers become the source of truth (SC default)
   buildOnlineClinics();
+  await loadOnlineDoc();
   ALLCITIES=[...new Set(Object.values(D.clinics).map(c=>c.city))].sort();
   try{const saved=JSON.parse(localStorage.getItem('wd_city')||'[]');if(Array.isArray(saved))saved.forEach(c=>{if(ALLCITIES.includes(c))CITYF.add(c);});}catch(e){}
   $('cityBtn').textContent=cityBtnLabel();$('cityBtn').classList.toggle('on',!!CITYF.size);

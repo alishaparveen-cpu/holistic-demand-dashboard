@@ -122,12 +122,13 @@ def doctors_block(bcube, ecube, key):
         out[dr] = {"booked": booked, "done": done, "purchased": purch, "rev": rev}
     return out
 
-def velocity_block(booked, av):
-    ad = av["active_days"]
-    return {"bookings": booked, "wday_days": av["wday_days"], "wend_days": av["wend_days"],
-            "bk_wday": [None]*NW, "bk_wend": [None]*NW,   # matched bookings not split weekday/weekend
+def velocity_block(booked, av, bkwd, bkwe):
+    ad = av["active_days"]; wd = av["wday_days"]; we = av["wend_days"]
+    return {"bookings": booked, "wday_days": wd, "wend_days": we,
+            "bk_wday": bkwd, "bk_wend": bkwe,   # bookings split by appt day-of-week (sums back to booked)
             "per_active_day": [round(booked[i]/ad[i], 1) if ad[i] else None for i in range(NW)],
-            "per_weekday": [None]*NW, "per_weekend": [None]*NW}
+            "per_weekday": [round(bkwd[i]/wd[i], 1) if wd[i] else None for i in range(NW)],
+            "per_weekend": [round(bkwe[i]/we[i], 1) if we[i] else None for i in range(NW)]}
 
 def variant_sc(key):
     booked = bk_get(SCB, key, "booked"); done = bk_get(SCB, key, "done")
@@ -136,7 +137,8 @@ def variant_sc(key):
                          "rebook": bk_get(SCB, key, "ret_rebook"), "relapse": bk_get(SCB, key, "ret_return")},
             "done": {"booked": booked, "done": done, "book_done_pct": pct(done, booked), "by_cat": by_cat_block(SCE, key)},
             "revenue": rev_block(SCE, key), "purchased": purch_block(SCE, key),
-            "availability": av, "velocity": velocity_block(booked, av), "by_doctor": doctors_block(SCB, SCE, key)}
+            "availability": av, "velocity": velocity_block(booked, av, bk_get(SCB, key, "bkwd"), bk_get(SCB, key, "bkwe")),
+            "by_doctor": doctors_block(SCB, SCE, key)}
 
 def variant_fu(key):
     booked = bk_get(FUB, key, "booked"); done = bk_get(FUB, key, "done")
@@ -144,7 +146,8 @@ def variant_fu(key):
     return {"bookings": {"total": booked, "new_tw": Z(), "new_old": Z(), "rebook": Z(), "relapse": Z()},
             "done": {"booked": booked, "done": done, "book_done_pct": pct(done, booked), "by_cat": by_cat_block(FUE, key)},
             "revenue": rev_block(FUE, key), "purchased": purch_block(FUE, key),
-            "availability": av, "velocity": velocity_block(booked, av), "by_doctor": doctors_block(FUB, FUE, key)}
+            "availability": av, "velocity": velocity_block(booked, av, bk_get(FUB, key, "bkwd"), bk_get(FUB, key, "bkwe")),
+            "by_doctor": doctors_block(FUB, FUE, key)}
 
 def merge_variant(a, b):
     booked = add(a["bookings"]["total"], b["bookings"]["total"])
@@ -159,11 +162,13 @@ def merge_variant(a, b):
            "by_cat": {roll: add(a["revenue"]["by_cat"][roll], b["revenue"]["by_cat"][roll]) for roll in ROLL}}
     pur = {"total": add(a["purchased"]["total"], b["purchased"]["total"]),
            "by_cat": {roll: add(a["purchased"]["by_cat"][roll], b["purchased"]["by_cat"][roll]) for roll in ROLL}}
+    bkwd = add(a["velocity"]["bk_wday"], b["velocity"]["bk_wday"])   # SC + FU weekday bookings
+    bkwe = add(a["velocity"]["bk_wend"], b["velocity"]["bk_wend"])   # SC + FU weekend bookings
     return {"bookings": {"total": booked, "new_tw": a["bookings"]["new_tw"], "new_old": a["bookings"]["new_old"],
                          "rebook": a["bookings"]["rebook"], "relapse": a["bookings"]["relapse"]},
             "done": {"booked": booked, "done": done, "book_done_pct": pct(done, booked), "by_cat": bc},
             "revenue": rev, "purchased": pur,
-            "availability": a["availability"], "velocity": velocity_block(booked, a["availability"]), "by_doctor": dr}
+            "availability": a["availability"], "velocity": velocity_block(booked, a["availability"], bkwd, bkwe), "by_doctor": dr}
 
 
 def main():

@@ -18,7 +18,13 @@ SQL = f"""
 WITH fu AS (
   SELECT apt.patient_id, apt.status,
     date_trunc('week', apt.start_time + interval '5.5 hours')::date AS week_start,
-    loc.city, loc.locality AS clinic, COALESCE(pro.name,'—') AS doctor
+    loc.city, loc.locality AS clinic, COALESCE(pro.name,'—') AS doctor,
+    EXTRACT(dow FROM apt.start_time + interval '5.5 hours') AS dow,   -- 0=Sun … 6=Sat, IST
+    -- one representative appt per patient per (clinic, doctor, week) so the weekday/weekend
+    -- split sums back to booked (each distinct patient bucketed once, by their first appt's day)
+    row_number() over (partition by apt.patient_id,
+      date_trunc('week', apt.start_time + interval '5.5 hours'), loc.city, loc.locality, COALESCE(pro.name,'—')
+      order by apt.start_time asc) AS rn
   FROM allo_consultations.appointments apt
   JOIN allo_consultations.types t ON apt.type_id=t.id AND t.deleted_at IS NULL AND t.name='Follow Up'
   JOIN allo_health.locations loc ON apt.location_id=loc.id AND loc.deleted_at IS NULL AND lower(loc.name) NOT LIKE '%online%'
@@ -27,7 +33,9 @@ WITH fu AS (
 )
 SELECT city, clinic, doctor, week_start,
   count(distinct patient_id) AS booked,
-  count(distinct case when status IN ('COMPLETED','RECONSULTED') then patient_id end) AS done
+  count(distinct case when status IN ('COMPLETED','RECONSULTED') then patient_id end) AS done,
+  count(distinct case when rn=1 and dow NOT IN (0,6) then patient_id end) AS bkwd,   -- weekday bookings
+  count(distinct case when rn=1 and dow IN (0,6) then patient_id end) AS bkwe        -- weekend bookings
 FROM fu WHERE week_start >= '{START_WK}' GROUP BY 1,2,3,4 ORDER BY 1,2,3,4;
 """
 
@@ -44,7 +52,7 @@ def main():
     weeks = sorted({r[3] for r in rows})
     widx = {w: i for i, w in enumerate(weeks)}
     NW = len(weeks)
-    FIELDS = ["booked", "done"]
+    FIELDS = ["booked", "done", "bkwd", "bkwe"]
 
     def blank():
         return {f: [0]*NW for f in FIELDS}
@@ -54,7 +62,7 @@ def main():
         city, clinic, doctor, wk = r[0], r[1], r[2], r[3]
         key = f"{city}|{clinic}"
         i = widx[wk]
-        vals = [int(v) for v in r[4:6]]
+        vals = [int(v) for v in r[4:8]]
         o = clinics.setdefault(key, blank())
         dd = o.setdefault("by_doctor", {}).setdefault(doctor, blank())
         for f, v in zip(FIELDS, vals):
