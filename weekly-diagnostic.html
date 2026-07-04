@@ -236,6 +236,9 @@
       <select id="curn" onchange="setCurN(this.value)"></select>
       <span class="chelp" style="margin-left:2px">vs</span>
       <select id="basen" onchange="setBaseN(this.value)"></select>
+      <span class="ctlsep"></span>
+      <span class="ctltag inl" title="club weeks into blocks to see the long-term trend">Club</span>
+      <div class="seg"><button class="segbtn on" id="club1" onclick="setClub(1)">Weekly</button><button class="segbtn" id="club2" onclick="setClub(2)">2-wk</button><button class="segbtn" id="club4" onclick="setClub(4)">4-wk</button></div>
     </div>
   </div>
   <!-- Overview sub-modes (only in Overview) -->
@@ -259,7 +262,7 @@
 </div>
 <div class="modal" id="modal" onclick="if(event.target===this)closeZ()"><div class="mbox"><div class="mhd"><span id="mTitle"></span><button onclick="closeZ()" title="close">✕</button></div><div id="pickBar" class="pickbar"></div><div id="mBody"></div></div></div>
 <script>
-let D=null, AGE={}, CURN=1, BASEN=4, MODE='ov', C=null, OPEN={}, QF='any', CITYF=new Set(), CLINF=new Set(), TIERF=new Set(), MATF=new Set(), DOCF=new Set(), SEG='offline', DENSITY='compact', MET='bookings', OVMODE='metric', METSEL=['bookings'], MCOND={}, MSUB={}, GRP='city';
+let D=null, AGE={}, CURN=1, BASEN=4, MODE='ov', C=null, OPEN={}, QF='any', CITYF=new Set(), CLINF=new Set(), TIERF=new Set(), MATF=new Set(), DOCF=new Set(), SEG='offline', DENSITY='compact', MET='bookings', OVMODE='metric', METSEL=['bookings'], MCOND={}, MSUB={}, GRP='city', CLUB=1;
 let QD=null, FUNNEL2='sc';   // SC/FU/Combined — data sourced from master demand (data_quick_diag.json)
 function setFunnel2(v){FUNNEL2=v;['sc','fu','all'].forEach(x=>{const b=$('fn2'+x);if(b)b.classList.toggle('on',x===v);});applyVariant();if(MODE==='cl'&&C){const s=C._slug;C=D.clinics[s]||C;}render();}
 function applyVariant(){   // overlay the matched SC/FU/Combined numbers onto each clinic (remapped to D.weeks)
@@ -355,9 +358,17 @@ const STAGES=[
 ];
 const ISSUE_STAGES=[0,4,1,2,3,6,7,5];   // availability, leads, bookings, book→done, done, purchased, revenue, bk/day
 const FUNNEL_ORDER=[0,4,1,2,3,6,7,5,8]; // the 8 agreed metrics in order, then Doctors (per-doctor drill) in the clinic funnel
+// club weeks into CLUB-sized buckets (averaged, from the newest week back) so long-term trends are legible.
+// averaging keeps a consistent scale and preserves the trend shape + %change; the zoom still shows raw weeks.
+function clubArr(arr){if(CLUB<=1||!arr)return arr;const N=arr.length,out=[];
+  for(let end=N;end>0;end-=CLUB){const st=Math.max(0,end-CLUB),v=arr.slice(st,end).filter(x=>x!=null);out.unshift(v.length?v.reduce((a,b)=>a+b,0)/v.length:null);}
+  return out;}
+function clubLabels(){if(CLUB<=1)return D.week_labels;const wl=D.week_labels,N=wl.length,out=[];
+  for(let end=N;end>0;end-=CLUB){const st=Math.max(0,end-CLUB);out.unshift(st===end-1?wl[st]:wl[st].split('–')[0].split('—')[0].trim()+'…'+wl[end-1]);}
+  return out;}
 function evalMetric(arr){const NW=arr.length;const cur=mean(arr.slice(NW-CURN));const base=mean(arr.slice(Math.max(0,NW-CURN-BASEN),NW-CURN));
   const d=(cur!=null&&base)?((cur-base)/base):null;const st=d==null?'green':d<=-0.15?'red':d<=-0.07?'amber':'green';return {cur,base,d,st};}
-function evalStage(st,c){const ms=st.metrics(c).map(m=>({...m,ev:evalMetric(m.arr)}));
+function evalStage(st,c){const ms=st.metrics(c).map(m=>({...m,ev:evalMetric(clubArr(m.arr))}));
   let status='green';if(st.headline==='worst')status=ms.some(m=>m.ev.st==='red')?'red':ms.some(m=>m.ev.st==='amber')?'amber':'green';else status=ms[st.headline].ev.st;
   const hm=st.headline==='worst'?ms.slice().sort((a,b)=>(a.ev.d??0)-(b.ev.d??0))[0]:ms[st.headline];return {ms,status,hm};}
 function summary(c){const s={};STAGES.forEach(st=>{const e=evalStage(st,c);s[st.key]={st:e.status,d:e.hm.ev.d,cur:e.hm.ev.cur,base:e.hm.ev.base,hm:e.hm,pct:e.hm.pct};});
@@ -429,7 +440,7 @@ function bchip(label,arr,color,pct){const e=evalMetric(arr),f=v=>v==null?'—':(
   const lc=(color&&color!=='var(--faint)')?color:'var(--ink2)';
   const zi=ZREG.length;ZREG.push({label:label,arr:arr,col:lc,pct:!!pct});
   return '<span class="bchip" onclick="event.stopPropagation();zoomReg('+zi+')" title="click for week-by-week trend">'+(color?'<span class="dot" style="background:'+color+'"></span>':'')+'<span style="color:'+lc+';font-weight:600">'+label+'</span> <b>'+f(e.cur)+'</b>'+dd+'</span>';}
-function curLabel(){const wl=D.week_labels,NW=wl.length;const c=CURN===1?wl[NW-1]:wl[NW-CURN]+' → '+wl[NW-1];const b=wl[Math.max(0,NW-CURN-BASEN)]+' → '+wl[NW-CURN-1];return {c,b};}
+function curLabel(){const wl=(CLUB>1?clubLabels():D.week_labels),NW=wl.length;const c=CURN===1?wl[NW-1]:wl[NW-CURN]+' → '+wl[NW-1];const b=wl[Math.max(0,NW-CURN-BASEN)]+' → '+wl[NW-CURN-1];return {c,b};}
 // shared trend renderer (used by both By-metric rows and funnel rows so their layout matches):
 // readable week-number chips (baseline quiet, current window coloured) → BEFORE AVG → NOW
 function trendHTML(arr,pct,ev){const a=arr.slice(-(CURN+BASEN)),nb=a.length-CURN;
@@ -438,9 +449,9 @@ function trendHTML(arr,pct,ev){const a=arr.slice(-(CURN+BASEN)),nb=a.length-CURN
   return week+'<span class="avgmk avgbefore"><span class="avglab">before</span>'+(ev.base==null?'—':f(ev.base))+'</span><span class="avgmk avgnow '+ev.st+'"><span class="avglab">now</span>'+(ev.cur==null?'—':f(ev.cur))+'</span>';}
 // one funnel breakdown row — fixed columns so numbers align vertically across every row & nesting level
 // (label indents by depth; the chip / before-avg / now columns stay put so children sum straight down)
-function miniRow(label,arr,pct,color,depth,head){const ev=evalMetric(arr),a=arr.slice(-(CURN+BASEN));
+function miniRow(label,arr,pct,color,depth,head){const raw=arr;arr=clubArr(arr);const ev=evalMetric(arr),a=arr.slice(-(CURN+BASEN));
   const lc=(color&&color!=='var(--faint)')?color:null;
-  const zi=ZREG.length;ZREG.push({label,arr,col:lc||'var(--ink2)',pct:!!pct});
+  const zi=ZREG.length;ZREG.push({label,arr:raw,col:lc||'var(--ink2)',pct:!!pct});   // zoom shows raw weekly
   const pad=6+(depth||0)*20;
   return '<div class="frow'+(head?' head':'')+'" onclick="event.stopPropagation();zoomReg('+zi+')" title="click for full trend">'
     +'<span class="flab" style="padding-left:'+pad+'px'+(lc?';color:'+lc:'')+'">'+(color?'<span class="dot" style="background:'+color+'"></span>':'')+label+'</span>'
@@ -452,8 +463,14 @@ const CUR_PRESETS=[[1,'this week'],[2,'last 2 weeks'],[3,'last 3 weeks'],[4,'las
 const BASE_PRESETS=[[4,'prior 4 wks'],[6,'prior 6 wks'],[8,'prior 8 wks'],[12,'prior 12 wks'],[26,'prior 26 wks']];
 function fillSel(id,presets,val,unit){const opts=presets.slice();if(!opts.some(p=>p[0]===val))opts.push([val,val+' '+unit]);opts.sort((a,b)=>a[0]-b[0]);
   $(id).innerHTML=opts.map(p=>'<option value="'+p[0]+'"'+(p[0]===val?' selected':'')+'>'+p[1]+'</option>').join('')+'<option value="custom">✎ custom…</option>';}
-function setCurN(v){if(v==='custom'){const n=parseInt(prompt('Current window — how many recent weeks? (1–20)',CURN),10);if(!(n>=1)){fillSel('curn',CUR_PRESETS,CURN,'weeks');return;}CURN=Math.min(n,20);}else CURN=+v;fillSel('curn',CUR_PRESETS,CURN,'weeks');render();}
-function setBaseN(v){const maxb=(D?D.weeks.length:26)-CURN;if(v==='custom'){const n=parseInt(prompt('Baseline — how many prior weeks to compare against? (1–'+maxb+')',BASEN),10);if(!(n>=1)){fillSel('basen',BASE_PRESETS,BASEN,'wks');return;}BASEN=Math.min(n,maxb);}else BASEN=+v;fillSel('basen',BASE_PRESETS,BASEN,'wks');render();}
+function setCurN(v){if(v==='custom'){const n=parseInt(prompt('Current window — how many recent weeks? (1–20)',CURN),10);if(!(n>=1)){fillSel('curn',curPresetsC(),CURN,'weeks');return;}CURN=Math.min(n,20);}else CURN=+v;fillSel('curn',curPresetsC(),CURN,'weeks');render();}
+function setBaseN(v){const maxb=(D?D.weeks.length:26)-CURN;if(v==='custom'){const n=parseInt(prompt('Baseline — how many prior weeks to compare against? (1–'+maxb+')',BASEN),10);if(!(n>=1)){fillSel('basen',basePresetsC(),BASEN,'wks');return;}BASEN=Math.min(n,maxb);}else BASEN=+v;fillSel('basen',basePresetsC(),BASEN,'wks');render();}
+// club-aware compare presets: values are BLOCK counts; labels show the week span (4-wk club → "last 8 wks" = 2 blocks)
+function curPresetsC(){return CLUB<=1?CUR_PRESETS:[[1,'last '+CLUB+' wks'],[2,'last '+(2*CLUB)+' wks'],[3,'last '+(3*CLUB)+' wks'],[6,'last '+(6*CLUB)+' wks']];}
+function basePresetsC(){return CLUB<=1?BASE_PRESETS:[[2,'prior '+(2*CLUB)+' wks'],[3,'prior '+(3*CLUB)+' wks'],[6,'prior '+(6*CLUB)+' wks']];}
+function setClub(k){CLUB=k;['club1','club2','club4'].forEach(id=>{const b=$(id);if(b)b.classList.toggle('on',id==='club'+k);});
+  CURN=1;BASEN=(k>1?3:4);   // reset windows to sensible defaults for the new grain
+  fillSel('curn',curPresetsC(),CURN,'weeks');fillSel('basen',basePresetsC(),BASEN,'wks');render();}
 
 // ---------- OVERVIEW (portfolio scan) ----------
 function whyChips(s,fb){
@@ -517,7 +534,7 @@ function renderOverview(){
       h+='<tr onclick="goClinic(\''+r.slug+'\')" title="open funnel"><td>'+r.c.disp+'</td>'+cells+'<td class="why">'+badges(s,selIdx)+'</td></tr>';});
     h+='</tbody></table></div>';
   } else {
-    h+='<div class="fmwrap"><table class="fm" style="min-width:640px"><thead><tr><th>Clinic</th><th style="text-align:left">where\'s the issue?</th><th style="text-align:left">recent '+(CURN+BASEN)+' wks &nbsp;<span style="font-weight:500;text-transform:none;color:var(--faint)">'+SLOPE_LEG+'</span></th></tr></thead><tbody>';
+    h+='<div class="fmwrap"><table class="fm" style="min-width:640px"><thead><tr><th>Clinic</th><th style="text-align:left">where\'s the issue?</th><th style="text-align:left">recent '+(CURN+BASEN)+(CLUB>1?' × '+CLUB+'-wk blocks':' wks')+' &nbsp;<span style="font-weight:500;text-transform:none;color:var(--faint)">'+SLOPE_LEG+'</span></th></tr></thead><tbody>';
     if(!list.length)h+='<tr><td colspan="3" style="color:var(--muted);padding:16px;text-align:left">Nothing here — healthy for this filter/city.</td></tr>';
     list.forEach(r=>{const s=r.s;const bl=brokenIdx(s);const chipIdx=(selIdx>=0&&isIssue(s[STAGES[selIdx].key].st))?selIdx:(bl.length?bl[0]:-1);
       h+='<tr onclick="goClinic(\''+r.slug+'\')" title="open funnel"><td>'+r.c.disp+'</td><td class="why"><div style="width:340px;white-space:normal;line-height:1.9">'+badges(s,selIdx)+'</div></td><td class="why">'+allChips(s,r.c.disp)+'</td></tr>';});
@@ -547,7 +564,7 @@ function subDims(key){const Z=()=>new Array(D.weeks.length).fill(0);
   return null;}   // conversion / velocity / doctors → no sub-dimension
 function metricArr(c,key){const sel=MSUB[key];if(sel){const sd=subDims(key),f=sd&&sd.find(x=>x.label===sel);if(f){const a=f.get(c);return (a&&a.length)?a:new Array(D.weeks.length).fill(0);}}return STAGES.find(x=>x.key===key).metrics(c)[0].arr;}
 function setSub(key,v){if(!v)delete MSUB[key];else MSUB[key]=v;render();}
-function metricEval(c,key){const st=STAGES.find(x=>x.key===key),m=st.metrics(c)[0],arr=metricArr(c,key);return {ev:evalMetric(arr),arr:arr,pct:MSUB[key]?0:m.pct};}
+function metricEval(c,key){const st=STAGES.find(x=>x.key===key),m=st.metrics(c)[0],arr=clubArr(metricArr(c,key));return {ev:evalMetric(arr),arr:arr,pct:MSUB[key]?0:m.pct};}
 function setCond(key,v){   // multi-select: toggle a status in/out of this metric's required set; 'any' clears it
   if(v==='any'){delete MCOND[key];render();return;}
   const cur=MCOND[key]?MCOND[key].slice():[],i=cur.indexOf(v);
@@ -594,8 +611,8 @@ function metricLabelHTML(key){const sub=MSUB[key];
 function metricLabelText(key){return metricNameFull(key)+' · '+segWord()+(MSUB[key]?' · '+MSUB[key]:'');}
 function metricRow(c,key,disp){const st=STAGES.find(x=>x.key===key);
   if(naMetric(c,key)){const why=(FUNNEL2==='fu'&&key==='demand')?'follow-ups':'online';return '<div class="crow" style="cursor:default;opacity:.45"><span class="clab">'+metricLabelHTML(key)+'</span><span class="flat">—</span><span style="font-size:11px;color:var(--faint);margin-left:6px">n/a for '+why+'</span></div>';}
-  const m=st.metrics(c)[0],sub=MSUB[key],pct=sub?false:!!m.pct,arr=metricArr(c,key),ev=evalMetric(arr),a=arr.slice(-(CURN+BASEN));
-  const zi=ZREG.length;ZREG.push({label:disp+' · '+metricLabelText(key),arr:arr,col:COL[ev.st]||'var(--ink2)',pct:pct,noPrefix:true});
+  const m=st.metrics(c)[0],sub=MSUB[key],pct=sub?false:!!m.pct,raw=metricArr(c,key),arr=clubArr(raw),ev=evalMetric(arr),a=arr.slice(-(CURN+BASEN));
+  const zi=ZREG.length;ZREG.push({label:disp+' · '+metricLabelText(key),arr:raw,col:COL[ev.st]||'var(--ink2)',pct:pct,noPrefix:true});   // zoom shows raw weekly
   return '<div class="crow" onclick="event.stopPropagation();zoomReg('+zi+')"><span class="clab">'+metricLabelHTML(key)+'</span>'+pctPill(ev)+'<span style="margin:0 2px 0 6px">'+slopeBadge(a)+'</span>'+trendHTML(arr,pct,ev)+'</div>';}
 function metricStack(c,disp){return METSEL.map(k=>metricRow(c,k,disp)).join('');}
 function renderMetric(){
@@ -627,7 +644,7 @@ function renderMetric(){
     +'<button class="fbtn" style="padding:5px 13px;font-size:12px;font-weight:700" onclick="clearMet()">✕ clear all</button>'
     +'<span style="font-weight:500;color:var(--faint);font-size:11px;margin-left:auto">metric buttons ↑ add/remove rows · chips set a required status — '+(byCity?'cities':'clinics')+' match ALL'+(byCity?' · click a city to drill into its clinics':'')+'</span></div>';
   const lbl=curLabel();
-  h+='<div class="fmwrap"><table class="fm" style="min-width:640px"><thead><tr><th style="white-space:nowrap">'+(byCity?'City':'Clinic')+'</th><th style="text-align:left">selected metrics · change · recent '+(CURN+BASEN)+' wks · before avg → <b style="color:var(--ink)">now '+lbl.c+'</b> <span style="text-transform:none;font-weight:500;color:var(--faint)">vs prior '+BASEN+'-wk avg ('+lbl.b+')</span></th></tr></thead><tbody>';
+  h+='<div class="fmwrap"><table class="fm" style="min-width:640px"><thead><tr><th style="white-space:nowrap">'+(byCity?'City':'Clinic')+'</th><th style="text-align:left">selected metrics · change · recent '+(CURN+BASEN)+(CLUB>1?' × '+CLUB+'-wk blocks':' wks')+' · before avg → <b style="color:var(--ink)">now '+lbl.c+'</b> <span style="text-transform:none;font-weight:500;color:var(--faint)">vs prior '+BASEN+'-wk avg ('+lbl.b+')</span></th></tr></thead><tbody>';
   if(scopeSlugs.length>1){const agg=aggregate(scopeSlugs,'Total');
     h+='<tr class="totalrow" onclick="setOvMode(\'funnel\')" title="open the combined funnel"><td style="white-space:nowrap;width:1%">Σ Total · '+scopeSlugs.length+' clinics</td><td class="why">'+metricStack(agg,'Total')+'</td></tr>';}
   if(!rows.length)h+='<tr><td colspan="2" style="color:var(--muted);padding:16px;text-align:left">No '+unit+'s match these conditions.</td></tr>';
@@ -663,7 +680,7 @@ function stageParts(s,o){   // breakdown series per stage: lineS = coloured comp
 }
 // funnel body (stage rows + breakdown trend rows) for ANY clinic-shaped object (single clinic OR city aggregate)
 function funnelStagesHTML(o){
-  let h='<div class="lab" style="text-transform:none;font-weight:500;color:var(--faint);margin:-4px 0 10px">Top line of each stage = the headline metric (look here first); the rows nested below it are its breakdown. Each row: recent '+(CURN+BASEN)+' weeks, then <b>before avg → now</b> · click any row for its full trend.</div>';
+  let h='<div class="lab" style="text-transform:none;font-weight:500;color:var(--faint);margin:-4px 0 10px">Top line of each stage = the headline metric (look here first); the rows nested below it are its breakdown. Each row: recent '+(CURN+BASEN)+(CLUB>1?' × '+CLUB+'-wk blocks':' weeks')+', then <b>before avg → now</b> · click any row for its full trend.</div>';
   FUNNEL_ORDER.forEach((si,di)=>{const s=STAGES[si];
     if(o._online&&(s.key==='availability'||s.key==='demand'||s.key==='velocity'))return;   // n/a for online
     if(FUNNEL2==='fu'&&s.key==='demand')return;   // follow-ups have no new-lead stage
@@ -898,7 +915,7 @@ async function boot(){
   $('cityBtn').textContent=cityBtnLabel();$('cityBtn').classList.toggle('on',!!CITYF.size);
   $('clinBtn').textContent=clinBtnLabel();
   document.addEventListener('click',e=>{if(!e.target.closest('.ms'))closePanels();});
-  fillSel('curn',CUR_PRESETS,CURN,'weeks');fillSel('basen',BASE_PRESETS,BASEN,'wks');
+  fillSel('curn',curPresetsC(),CURN,'weeks');fillSel('basen',basePresetsC(),BASEN,'wks');
   C=D.clinics[Object.keys(D.clinics)[0]];syncMode();render();
 }
 window.addEventListener('DOMContentLoaded',boot);
