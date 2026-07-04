@@ -235,11 +235,13 @@
       <span class="scopecount" id="scopeCount"></span>
     </div>
     <div class="ctltier"><span class="ctltag">Period</span>
-      <div class="seg"><button class="segbtn" id="grainD" onclick="setGrain('daily')">Daily</button><button class="segbtn on" id="grainW" onclick="setGrain('weekly')">Weekly</button><button class="segbtn" id="grainM" onclick="setGrain('monthly')">Monthly</button></div>
+      <div class="seg"><button class="segbtn on" id="grainW" onclick="setGrain('weekly')">Weekly</button><button class="segbtn" id="grainM" onclick="setGrain('monthly')">Monthly</button><button class="segbtn" id="grainD" onclick="setGrain('daily')">Daily</button></div>
       <span class="ctlsep"></span>
       <select id="curn" onchange="setCurN(this.value)"></select>
       <span class="chelp" style="margin-left:2px">vs</span>
       <select id="basen" onchange="setBaseN(this.value)"></select>
+      <span class="ctlsep" id="aggSep" style="display:none"></span>
+      <div class="seg" id="aggSeg" style="display:none"><button class="segbtn on" id="aggSum" onclick="setClubAgg('sum')" title="each block = total over its weeks">Σ Sum</button><button class="segbtn" id="aggAvg" onclick="setClubAgg('avg')" title="each block = average week">x̄ Avg</button></div>
     </div>
   </div>
   <!-- Overview sub-modes (only in Overview) -->
@@ -263,7 +265,7 @@
 </div>
 <div class="modal" id="modal" onclick="if(event.target===this)closeZ()"><div class="mbox"><div class="mhd"><span id="mTitle"></span><button onclick="closeZ()" title="close">✕</button></div><div id="pickBar" class="pickbar"></div><div id="mBody"></div></div></div>
 <script>
-let D=null, AGE={}, CURN=1, BASEN=4, MODE='ov', C=null, OPEN={}, QF='any', CITYF=new Set(), CLINF=new Set(), TIERF=new Set(), MATF=new Set(), DOCF=new Set(), SEG='offline', DENSITY='compact', MET='bookings', OVMODE='metric', METSEL=['bookings'], MCOND={}, MSUB={}, GRP='city', CLUB=1, GRAIN='weekly', SHOWSHARE=false;
+let D=null, AGE={}, CURN=1, BASEN=4, MODE='ov', C=null, OPEN={}, QF='any', CITYF=new Set(), CLINF=new Set(), TIERF=new Set(), MATF=new Set(), DOCF=new Set(), SEG='offline', DENSITY='compact', MET='bookings', OVMODE='metric', METSEL=['bookings'], MCOND={}, MSUB={}, GRP='city', CLUB=1, GRAIN='weekly', SHOWSHARE=false, CLUBAGG='sum';
 let QD=null, FUNNEL2='sc';   // SC/FU/Combined — data sourced from master demand (data_quick_diag.json)
 function setFunnel2(v){FUNNEL2=v;['sc','fu','all'].forEach(x=>{const b=$('fn2'+x);if(b)b.classList.toggle('on',x===v);});applyVariant();if(MODE==='cl'&&C){const s=C._slug;C=D.clinics[s]||C;}render();}
 function applyVariant(){   // overlay the matched SC/FU/Combined numbers onto each clinic (remapped to D.weeks)
@@ -362,15 +364,17 @@ const ISSUE_STAGES=[0,4,1,2,3,6,7,5];   // availability, leads, bookings, book�
 const FUNNEL_ORDER=[0,4,1,2,3,6,7,5,8]; // the 8 agreed metrics in order, then Doctors (per-doctor drill) in the clinic funnel
 // club weeks into CLUB-sized buckets (averaged, from the newest week back) so long-term trends are legible.
 // averaging keeps a consistent scale and preserves the trend shape + %change; the zoom still shows raw weeks.
-function clubArr(arr){if(CLUB<=1||!arr)return arr;const N=arr.length,out=[];
-  for(let end=N;end>0;end-=CLUB){const st=Math.max(0,end-CLUB),v=arr.slice(st,end).filter(x=>x!=null);out.unshift(v.length?v.reduce((a,b)=>a+b,0)/v.length:null);}
+// rates (%, per-day) must always average when clubbing; counts follow CLUBAGG (Σ Sum default / x̄ Avg)
+function isRate(key,pct){return !!pct||key==='conversion'||key==='velocity';}
+function clubArr(arr,rate){if(CLUB<=1||!arr)return arr;const N=arr.length,out=[],useAvg=rate||CLUBAGG==='avg';
+  for(let end=N;end>0;end-=CLUB){const st=Math.max(0,end-CLUB),v=arr.slice(st,end).filter(x=>x!=null),s=v.reduce((a,b)=>a+b,0);out.unshift(v.length?(useAvg?s/v.length:s):null);}
   return out;}
 function clubLabels(){if(CLUB<=1)return D.week_labels;const wl=D.week_labels,N=wl.length,out=[];
   for(let end=N;end>0;end-=CLUB){const st=Math.max(0,end-CLUB);out.unshift(st===end-1?wl[st]:wl[st].split('–')[0].split('—')[0].trim()+'…'+wl[end-1]);}
   return out;}
 function evalMetric(arr){const NW=arr.length;const cur=mean(arr.slice(NW-CURN));const base=mean(arr.slice(Math.max(0,NW-CURN-BASEN),NW-CURN));
   const d=(cur!=null&&base)?((cur-base)/base):null;const st=d==null?'green':d<=-0.15?'red':d<=-0.07?'amber':'green';return {cur,base,d,st};}
-function evalStage(st,c){const ms=st.metrics(c).map(m=>({...m,ev:evalMetric(clubArr(m.arr))}));
+function evalStage(st,c){const ms=st.metrics(c).map(m=>({...m,ev:evalMetric(clubArr(m.arr,isRate(st.key,m.pct)))}));
   let status='green';if(st.headline==='worst')status=ms.some(m=>m.ev.st==='red')?'red':ms.some(m=>m.ev.st==='amber')?'amber':'green';else status=ms[st.headline].ev.st;
   const hm=st.headline==='worst'?ms.slice().sort((a,b)=>(a.ev.d??0)-(b.ev.d??0))[0]:ms[st.headline];return {ms,status,hm};}
 function summary(c){const s={};STAGES.forEach(st=>{const e=evalStage(st,c);s[st.key]={st:e.status,d:e.hm.ev.d,cur:e.hm.ev.cur,base:e.hm.ev.base,hm:e.hm,pct:e.hm.pct};});
@@ -451,7 +455,7 @@ function trendHTML(arr,pct,ev){const a=arr.slice(-(CURN+BASEN)),nb=a.length-CURN
   return week+'<span class="avgmk avgbefore"><span class="avglab">before</span>'+(ev.base==null?'—':f(ev.base))+'</span><span class="avgmk avgnow '+ev.st+'"><span class="avglab">now</span>'+(ev.cur==null?'—':f(ev.cur))+'</span>';}
 // one funnel breakdown row — fixed columns so numbers align vertically across every row & nesting level
 // (label indents by depth; the chip / before-avg / now columns stay put so children sum straight down)
-function miniRow(label,arr,pct,color,depth,head){const raw=arr;arr=clubArr(arr);const ev=evalMetric(arr),a=arr.slice(-(CURN+BASEN));
+function miniRow(label,arr,pct,color,depth,head,rate){const raw=arr;arr=clubArr(arr,rate||!!pct);const ev=evalMetric(arr),a=arr.slice(-(CURN+BASEN));
   const lc=(color&&color!=='var(--faint)')?color:null;
   const zi=ZREG.length;ZREG.push({label,arr:raw,col:lc||'var(--ink2)',pct:!!pct});   // zoom shows raw weekly
   const pad=6+(depth||0)*20;
@@ -474,8 +478,10 @@ function basePresetsC(){return CLUB<=1?BASE_PRESETS:[[1,'prior '+CLUB+' wks'],[2
 function setGrain(g){GRAIN=g;['grainD','grainW','grainM'].forEach(id=>{const b=$(id);if(b)b.classList.toggle('on',id==='grain'+g[0].toUpperCase());});
   if(g==='monthly'){CLUB=4;CURN=1;BASEN=1;}else{CLUB=1;CURN=1;BASEN=4;}
   const dis=(g==='daily');if($('curn'))$('curn').disabled=dis;if($('basen'))$('basen').disabled=dis;
+  const showAgg=(g==='monthly')?'inline-flex':'none';if($('aggSeg'))$('aggSeg').style.display=showAgg;if($('aggSep'))$('aggSep').style.display=(g==='monthly')?'inline-block':'none';
   if(!dis){fillSel('curn',curPresetsC(),CURN,'weeks');fillSel('basen',basePresetsC(),BASEN,'wks');}
   render();}
+function setClubAgg(m){CLUBAGG=m;['aggSum','aggAvg'].forEach(id=>{const b=$(id);if(b)b.classList.toggle('on',id==='agg'+(m==='sum'?'Sum':'Avg'));});render();}
 
 // ---------- OVERVIEW (portfolio scan) ----------
 function whyChips(s,fb){
@@ -569,7 +575,7 @@ function subDims(key){const Z=()=>new Array(D.weeks.length).fill(0);
   return null;}   // conversion / velocity / doctors → no sub-dimension
 function metricArr(c,key){const sel=MSUB[key];if(sel){const sd=subDims(key),f=sd&&sd.find(x=>x.label===sel);if(f){const a=f.get(c);return (a&&a.length)?a:new Array(D.weeks.length).fill(0);}}return STAGES.find(x=>x.key===key).metrics(c)[0].arr;}
 function setSub(key,v){if(!v)delete MSUB[key];else MSUB[key]=v;render();}
-function metricEval(c,key){const st=STAGES.find(x=>x.key===key),m=st.metrics(c)[0],arr=clubArr(metricArr(c,key));return {ev:evalMetric(arr),arr:arr,pct:MSUB[key]?0:m.pct};}
+function metricEval(c,key){const st=STAGES.find(x=>x.key===key),m=st.metrics(c)[0],arr=clubArr(metricArr(c,key),MSUB[key]?false:isRate(key,m.pct));return {ev:evalMetric(arr),arr:arr,pct:MSUB[key]?0:m.pct};}
 function setCond(key,v){   // multi-select: toggle a status in/out of this metric's required set; 'any' clears it
   if(v==='any'){delete MCOND[key];render();return;}
   const cur=MCOND[key]?MCOND[key].slice():[],i=cur.indexOf(v);
@@ -616,7 +622,7 @@ function metricLabelHTML(key){const sub=MSUB[key];
 function metricLabelText(key){return metricNameFull(key)+' · '+segWord()+(MSUB[key]?' · '+MSUB[key]:'');}
 function metricRow(c,key,disp){const st=STAGES.find(x=>x.key===key);
   if(naMetric(c,key)){const why=(FUNNEL2==='fu'&&key==='demand')?'follow-ups':'online';return '<div class="crow" style="cursor:default;opacity:.45"><span class="clab">'+metricLabelHTML(key)+'</span><span class="flat">—</span><span style="font-size:11px;color:var(--faint);margin-left:6px">n/a for '+why+'</span></div>';}
-  const m=st.metrics(c)[0],sub=MSUB[key],pct=sub?false:!!m.pct,raw=metricArr(c,key),arr=clubArr(raw),ev=evalMetric(arr),a=arr.slice(-(CURN+BASEN));
+  const m=st.metrics(c)[0],sub=MSUB[key],pct=sub?false:!!m.pct,raw=metricArr(c,key),arr=clubArr(raw,sub?false:isRate(key,m.pct)),ev=evalMetric(arr),a=arr.slice(-(CURN+BASEN));
   const zi=ZREG.length;ZREG.push({label:disp+' · '+metricLabelText(key),arr:raw,col:COL[ev.st]||'var(--ink2)',pct:pct,noPrefix:true});   // zoom shows raw weekly
   return '<div class="crow" onclick="event.stopPropagation();zoomReg('+zi+')"><span class="clab">'+metricLabelHTML(key)+'</span>'+pctPill(ev)+'<span style="margin:0 2px 0 6px">'+slopeBadge(a)+'</span>'+trendHTML(arr,pct,ev)+'</div>';}
 function metricStack(c,disp){return METSEL.map(k=>metricRow(c,k,disp)).join('');}
@@ -624,7 +630,7 @@ function toggleShare(){SHOWSHARE=!SHOWSHARE;render();}
 // first pass at the "% share" option — Offline vs Online mix of the sorted metric's current value, in the geo scope
 function shareLine(metricKey){
   const st=STAGES.find(x=>x.key===metricKey),nm=st.name;
-  const marr=o=>st.metrics(o)[0].arr,nowV=o=>{const e=evalMetric(clubArr(marr(o)));return e.cur||0;};
+  const marr=o=>st.metrics(o)[0].arr,rt=isRate(metricKey,st.metrics(Object.values(D.clinics)[0])[0].pct),nowV=o=>{const e=evalMetric(clubArr(marr(o),rt));return e.cur||0;};
   const inGeo=s=>{const c=D.clinics[s];if(TIERF.size&&!TIERF.has(tierOf(c.city)))return false;if(DOCF.size&&(!c.by_doctor||![...DOCF].some(dr=>c.by_doctor[dr])))return false;if(!c._online&&!sum(c.bookings.total))return false;return CLINF.size?CLINF.has(s):inCity(c.city);};
   const geo=Object.keys(D.clinics).filter(inGeo),off=geo.filter(s=>!D.clinics[s]._online),on=geo.filter(s=>D.clinics[s]._online);
   const offV=off.length?nowV(aggregate(off,'o')):0,onV=on.length?nowV(aggregate(on,'o')):0,tot=offV+onV;
@@ -660,8 +666,7 @@ function renderMetric(){
   let h='<div class="densrow" style="gap:8px;flex-wrap:wrap">'+backBtn+'<span class="lab" style="text-transform:none;font-weight:600;color:var(--ink2)">'+rows.length+' '+(rows.length===1?unit:(byCity?'cities':'clinics'))+' · '+cityStr()+' · sorted by <b>'+primary.name+'</b></span>'
     +'<span style="display:inline-flex;gap:6px;flex-wrap:wrap;margin-left:4px">'+metrics.map(s=>cc(s.key)).join('')+'</span>'
     +shareBtn
-    +'<button class="fbtn" style="padding:5px 13px;font-size:12px;font-weight:700" onclick="clearMet()">✕ clear all</button>'
-    +'<span style="font-weight:500;color:var(--faint);font-size:11px;margin-left:auto">metric buttons ↑ add/remove rows · chips set a required status — '+(byCity?'cities':'clinics')+' match ALL'+(byCity?' · click a city to drill into its clinics':'')+'</span></div>';
+    +'<button class="fbtn" style="padding:5px 13px;font-size:12px;font-weight:700;margin-left:auto" onclick="clearMet()">✕ clear all</button></div>';
   if(SHOWSHARE)h+=shareLine(primary.key);
   const lbl=curLabel();
   h+='<div class="fmwrap"><table class="fm" style="min-width:640px"><thead><tr><th style="white-space:nowrap">'+(byCity?'City':'Clinic')+'</th><th style="text-align:left">selected metrics · change · recent '+(CURN+BASEN)+(CLUB>1?' × '+CLUB+'-wk blocks':' wks')+' · before avg → <b style="color:var(--ink)">now '+lbl.c+'</b> <span style="text-transform:none;font-weight:500;color:var(--faint)">vs prior '+BASEN+'-wk avg ('+lbl.b+')</span></th></tr></thead><tbody>';
@@ -693,7 +698,7 @@ function stageParts(s,o){   // breakdown series per stage: lineS = coloured comp
   else if(s.key==='conversion'){chipOnly=[{label:'booked',arr:o.done.booked},{label:'done',arr:o.done.done}];}
   else if(s.key==='done'){const dc=o.done.by_cat;['SH','STI','MH','Other'].forEach((ct,k)=>{if(dc[ct]&&sum(dc[ct]))lineS.push({label:ct,arr:dc[ct],color:BPAL[k]});});}
   else if(s.key==='demand'){const bc=o.demand.by_channel;Object.keys(bc).sort((a,b)=>sum(bc[b])-sum(bc[a])).slice(0,5).forEach((ch,k)=>{if(sum(bc[ch]))lineS.push({label:ch,arr:bc[ch],color:BPAL[k]});});chipOnly=[{label:'lead→book%',arr:o.demand.lead_book_pct,pct:1}];}
-  else if(s.key==='velocity'){const v=o.velocity;lineS=[{label:'per weekday',arr:v.per_weekday,color:BPAL[0]},{label:'per weekend',arr:v.per_weekend,color:BPAL[1]}];chipOnly=[{label:'wday bookings',arr:v.bk_wday},{label:'wend bookings',arr:v.bk_wend}];}
+  else if(s.key==='velocity'){const v=o.velocity;lineS=[{label:'per weekday',arr:v.per_weekday,color:BPAL[0],rate:1},{label:'per weekend',arr:v.per_weekend,color:BPAL[1],rate:1}];chipOnly=[{label:'wday bookings',arr:v.bk_wday},{label:'wend bookings',arr:v.bk_wend}];}
   else if(s.key==='purchased'||s.key==='revenue'){const dc=(s.catCube&&s.catCube(o))||{};['SH','STI','MH','Other'].forEach((ct,k)=>{if(dc[ct]&&sum(dc[ct]))lineS.push({label:ct,arr:dc[ct],color:BPAL[k]});});}
   else if(s.key==='doctors'){const bd=o.by_doctor||{};Object.keys(bd).sort((a,b)=>sum(b&&bd[b].booked||[])-sum(a&&bd[a].booked||[])).slice(0,6).forEach((dr,k)=>{const bk=bd[dr].booked||[];if(sum(bk))lineS.push({label:dr.replace(/^Dr\.?\s*/,''),arr:bk,color:BPAL[k%BPAL.length]});});}
   return {lineS,chipOnly,groups};
@@ -708,11 +713,11 @@ function funnelStagesHTML(o){
     let {lineS,chipOnly,groups}=stageParts(s,o);
     const nz=arr=>arr&&arr.some(v=>v!=null&&v!==0);   // drop all-zero breakdown rows (e.g. a variant that doesn't carry that split, like velocity weekday/weekend)
     lineS=lineS.filter(l=>nz(l.arr));chipOnly=chipOnly.filter(c=>nz(c.arr));
-    const head=miniRow(hm.nm,hm.arr,hm.pct,col,0,true);   // headline metric — the focus line (depth 0)
+    const head=miniRow(hm.nm,hm.arr,hm.pct,col,0,true,isRate(s.key,hm.pct));   // headline metric — the focus line (depth 0)
     const bd=(groups   // grouped: parent row (depth 1, e.g. new patients) then its children (depth 2)
         ? groups.map(g=>miniRow(g.label,g.arr,0,g.color,1)+g.children.map(ch=>miniRow(ch.label,ch.arr,0,ch.color,2)).join('')).join('')
-        : lineS.map(l=>miniRow(l.label,l.arr,l.pct||0,l.color,1)).join('')
-      )+chipOnly.map(c=>miniRow(c.label,c.arr,c.pct||0,'var(--faint)',1)).join('');   // breakdown — indent via label only
+        : lineS.map(l=>miniRow(l.label,l.arr,l.pct||0,l.color,1,l.rate||l.pct)).join('')
+      )+chipOnly.map(c=>miniRow(c.label,c.arr,c.pct||0,'var(--faint)',1,c.rate||c.pct)).join('');   // breakdown — indent via label only
     h+='<div class="stagerow"><div class="stage '+e.status+'"><div class="snum">'+(di+1)+'</div>'
       +'<div class="sbody"><div class="sname">'+metricNameFull(s.key)+' <span class="chan">· '+segWord()+'</span></div><div class="ssub">'+s.sub+'</div>'
         +'<div class="fbody">'+head+bd+'</div>'
