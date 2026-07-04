@@ -71,6 +71,8 @@
   .ctlsep{width:1px;height:20px;background:var(--line);margin:0 5px;flex:none}
   .chelp{font-size:11px;font-weight:500;color:var(--muted);margin-left:8px}
   .scopecount{margin-left:auto;font-size:11px;color:var(--muted);font-family:'JetBrains Mono';white-space:nowrap;padding-left:10px}
+  .shareln{background:var(--inset);border-radius:8px;padding:7px 12px;margin:0 0 8px;font-size:12.5px;color:var(--ink2);display:inline-block}
+  .shareln .son{color:var(--accent)} .shareln .smut{color:var(--muted);font-size:11.5px}
   .nvlbl{font-size:10px;font-weight:700;text-transform:uppercase;color:var(--faint);margin-right:5px;letter-spacing:.03em}
   .avgmk{font-family:'JetBrains Mono';font-weight:800;font-size:14.5px;color:var(--ink2);white-space:nowrap;display:inline-flex;align-items:baseline;gap:0}
   .avgmk.avgbefore{margin-left:16px}.avgmk.avgnow{margin-left:10px}
@@ -261,7 +263,7 @@
 </div>
 <div class="modal" id="modal" onclick="if(event.target===this)closeZ()"><div class="mbox"><div class="mhd"><span id="mTitle"></span><button onclick="closeZ()" title="close">✕</button></div><div id="pickBar" class="pickbar"></div><div id="mBody"></div></div></div>
 <script>
-let D=null, AGE={}, CURN=1, BASEN=4, MODE='ov', C=null, OPEN={}, QF='any', CITYF=new Set(), CLINF=new Set(), TIERF=new Set(), MATF=new Set(), DOCF=new Set(), SEG='offline', DENSITY='compact', MET='bookings', OVMODE='metric', METSEL=['bookings'], MCOND={}, MSUB={}, GRP='city', CLUB=1, GRAIN='weekly';
+let D=null, AGE={}, CURN=1, BASEN=4, MODE='ov', C=null, OPEN={}, QF='any', CITYF=new Set(), CLINF=new Set(), TIERF=new Set(), MATF=new Set(), DOCF=new Set(), SEG='offline', DENSITY='compact', MET='bookings', OVMODE='metric', METSEL=['bookings'], MCOND={}, MSUB={}, GRP='city', CLUB=1, GRAIN='weekly', SHOWSHARE=false;
 let QD=null, FUNNEL2='sc';   // SC/FU/Combined — data sourced from master demand (data_quick_diag.json)
 function setFunnel2(v){FUNNEL2=v;['sc','fu','all'].forEach(x=>{const b=$('fn2'+x);if(b)b.classList.toggle('on',x===v);});applyVariant();if(MODE==='cl'&&C){const s=C._slug;C=D.clinics[s]||C;}render();}
 function applyVariant(){   // overlay the matched SC/FU/Combined numbers onto each clinic (remapped to D.weeks)
@@ -618,6 +620,18 @@ function metricRow(c,key,disp){const st=STAGES.find(x=>x.key===key);
   const zi=ZREG.length;ZREG.push({label:disp+' · '+metricLabelText(key),arr:raw,col:COL[ev.st]||'var(--ink2)',pct:pct,noPrefix:true});   // zoom shows raw weekly
   return '<div class="crow" onclick="event.stopPropagation();zoomReg('+zi+')"><span class="clab">'+metricLabelHTML(key)+'</span>'+pctPill(ev)+'<span style="margin:0 2px 0 6px">'+slopeBadge(a)+'</span>'+trendHTML(arr,pct,ev)+'</div>';}
 function metricStack(c,disp){return METSEL.map(k=>metricRow(c,k,disp)).join('');}
+function toggleShare(){SHOWSHARE=!SHOWSHARE;render();}
+// first pass at the "% share" option — Offline vs Online mix of the sorted metric's current value, in the geo scope
+function shareLine(metricKey){
+  const st=STAGES.find(x=>x.key===metricKey),nm=st.name;
+  const marr=o=>st.metrics(o)[0].arr,nowV=o=>{const e=evalMetric(clubArr(marr(o)));return e.cur||0;};
+  const inGeo=s=>{const c=D.clinics[s];if(TIERF.size&&!TIERF.has(tierOf(c.city)))return false;if(DOCF.size&&(!c.by_doctor||![...DOCF].some(dr=>c.by_doctor[dr])))return false;if(!c._online&&!sum(c.bookings.total))return false;return CLINF.size?CLINF.has(s):inCity(c.city);};
+  const geo=Object.keys(D.clinics).filter(inGeo),off=geo.filter(s=>!D.clinics[s]._online),on=geo.filter(s=>D.clinics[s]._online);
+  const offV=off.length?nowV(aggregate(off,'o')):0,onV=on.length?nowV(aggregate(on,'o')):0,tot=offV+onV;
+  if(!tot)return '<div class="shareln">no <b>'+nm+'</b> in scope to split.</div>';
+  const p=v=>Math.round(v/tot*100);
+  return '<div class="shareln">◧ <b>'+nm+'</b> mix (now) — Offline <b class="son">'+p(offV)+'%</b> · Online <b class="son">'+p(onV)+'%</b> <span class="smut">of '+(st.key==='revenue'?'₹':'')+Math.round(tot).toLocaleString('en-US')+' total</span></div>';
+}
 function renderMetric(){
   ZREG=[];CURZ=null;
   const metrics=METSEL.map(k=>STAGES.find(x=>x.key===k)).filter(Boolean);
@@ -642,10 +656,13 @@ function renderMetric(){
       sub='<select class="subsel" title="narrow this metric to one breakdown (e.g. a lead channel or a category)" onchange="setSub(\''+k+'\',this.value)"><option value="">'+sd[0].label+'</option>'+sd.slice(1).map(d=>'<option value="'+d.label.replace(/"/g,'')+'"'+(cur===d.label?' selected':'')+'>'+d.label+'</option>').join('')+'</select>';}
     return '<span class="condgrp"><span class="condlab">'+st.short+'</span><span class="cseg-wrap">'+opt('any','any',!sel.length)+opt('red','🔴',sel.includes('red'))+opt('amber','🟡',sel.includes('amber'))+opt('green','🟢',sel.includes('green'))+'</span>'+sub+'</span>';};
   const backBtn=(!byCity&&CITYF.size===1)?'<button class="fbtn" style="padding:5px 12px;font-size:12px;font-weight:700;border-color:var(--accent);color:var(--accent)" onclick="backToCities()">← all cities</button> ':'';
+  const shareBtn='<button class="fbtn'+(SHOWSHARE?' on':'')+'" style="padding:5px 12px;font-size:12px;font-weight:700" onclick="toggleShare()" title="show the Offline vs Online mix for the sorted metric">◧ % share</button>';
   let h='<div class="densrow" style="gap:8px;flex-wrap:wrap">'+backBtn+'<span class="lab" style="text-transform:none;font-weight:600;color:var(--ink2)">'+rows.length+' '+(rows.length===1?unit:(byCity?'cities':'clinics'))+' · '+cityStr()+' · sorted by <b>'+primary.name+'</b></span>'
     +'<span style="display:inline-flex;gap:6px;flex-wrap:wrap;margin-left:4px">'+metrics.map(s=>cc(s.key)).join('')+'</span>'
+    +shareBtn
     +'<button class="fbtn" style="padding:5px 13px;font-size:12px;font-weight:700" onclick="clearMet()">✕ clear all</button>'
     +'<span style="font-weight:500;color:var(--faint);font-size:11px;margin-left:auto">metric buttons ↑ add/remove rows · chips set a required status — '+(byCity?'cities':'clinics')+' match ALL'+(byCity?' · click a city to drill into its clinics':'')+'</span></div>';
+  if(SHOWSHARE)h+=shareLine(primary.key);
   const lbl=curLabel();
   h+='<div class="fmwrap"><table class="fm" style="min-width:640px"><thead><tr><th style="white-space:nowrap">'+(byCity?'City':'Clinic')+'</th><th style="text-align:left">selected metrics · change · recent '+(CURN+BASEN)+(CLUB>1?' × '+CLUB+'-wk blocks':' wks')+' · before avg → <b style="color:var(--ink)">now '+lbl.c+'</b> <span style="text-transform:none;font-weight:500;color:var(--faint)">vs prior '+BASEN+'-wk avg ('+lbl.b+')</span></th></tr></thead><tbody>';
   if(scopeSlugs.length>1){const agg=aggregate(scopeSlugs,'Total');
