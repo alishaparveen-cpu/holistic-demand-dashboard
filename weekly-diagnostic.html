@@ -232,13 +232,12 @@
       <button class="fbtn" data-mat="&lt;3mo" onclick="togMat('&lt;3mo')">&lt;3mo</button><button class="fbtn" data-mat="3-6mo" onclick="togMat('3-6mo')">3–6mo</button><button class="fbtn" data-mat="6-12mo" onclick="togMat('6-12mo')">6–12mo</button><button class="fbtn" data-mat="&gt;1yr" onclick="togMat('&gt;1yr')">&gt;1yr</button>
       <span class="scopecount" id="scopeCount"></span>
     </div>
-    <div class="ctltier"><span class="ctltag">Compare</span>
+    <div class="ctltier"><span class="ctltag">Period</span>
+      <div class="seg"><button class="segbtn" id="grainD" onclick="setGrain('daily')">Daily</button><button class="segbtn on" id="grainW" onclick="setGrain('weekly')">Weekly</button><button class="segbtn" id="grainM" onclick="setGrain('monthly')">Monthly</button></div>
+      <span class="ctlsep"></span>
       <select id="curn" onchange="setCurN(this.value)"></select>
       <span class="chelp" style="margin-left:2px">vs</span>
       <select id="basen" onchange="setBaseN(this.value)"></select>
-      <span class="ctlsep"></span>
-      <span class="ctltag inl" title="club weeks into blocks to see the long-term trend">Club</span>
-      <div class="seg"><button class="segbtn on" id="club1" onclick="setClub(1)">Weekly</button><button class="segbtn" id="club2" onclick="setClub(2)">2-wk</button><button class="segbtn" id="club4" onclick="setClub(4)">4-wk</button></div>
     </div>
   </div>
   <!-- Overview sub-modes (only in Overview) -->
@@ -262,7 +261,7 @@
 </div>
 <div class="modal" id="modal" onclick="if(event.target===this)closeZ()"><div class="mbox"><div class="mhd"><span id="mTitle"></span><button onclick="closeZ()" title="close">✕</button></div><div id="pickBar" class="pickbar"></div><div id="mBody"></div></div></div>
 <script>
-let D=null, AGE={}, CURN=1, BASEN=4, MODE='ov', C=null, OPEN={}, QF='any', CITYF=new Set(), CLINF=new Set(), TIERF=new Set(), MATF=new Set(), DOCF=new Set(), SEG='offline', DENSITY='compact', MET='bookings', OVMODE='metric', METSEL=['bookings'], MCOND={}, MSUB={}, GRP='city', CLUB=1;
+let D=null, AGE={}, CURN=1, BASEN=4, MODE='ov', C=null, OPEN={}, QF='any', CITYF=new Set(), CLINF=new Set(), TIERF=new Set(), MATF=new Set(), DOCF=new Set(), SEG='offline', DENSITY='compact', MET='bookings', OVMODE='metric', METSEL=['bookings'], MCOND={}, MSUB={}, GRP='city', CLUB=1, GRAIN='weekly';
 let QD=null, FUNNEL2='sc';   // SC/FU/Combined — data sourced from master demand (data_quick_diag.json)
 function setFunnel2(v){FUNNEL2=v;['sc','fu','all'].forEach(x=>{const b=$('fn2'+x);if(b)b.classList.toggle('on',x===v);});applyVariant();if(MODE==='cl'&&C){const s=C._slug;C=D.clinics[s]||C;}render();}
 function applyVariant(){   // overlay the matched SC/FU/Combined numbers onto each clinic (remapped to D.weeks)
@@ -288,6 +287,7 @@ function inScope(slug){const c=D.clinics[slug];
   const on=!!c._online;
   if(SEG==='offline'&&on)return false;
   if(SEG==='online'&&!on)return false;
+  if(!on&&!sum(c.bookings.total))return false;   // hide non-functional clinics (0 bookings across the window)
   if(TIERF.size&&!TIERF.has(tierOf(c.city)))return false;
   // maturity no longer gates here — togMat selects the matching clinics into CLINF (like master), so CLINF drives it
   if(DOCF.size&&(!c.by_doctor||![...DOCF].some(dr=>c.by_doctor[dr])))return false;
@@ -467,10 +467,13 @@ function setCurN(v){if(v==='custom'){const n=parseInt(prompt('Current window —
 function setBaseN(v){const maxb=(D?D.weeks.length:26)-CURN;if(v==='custom'){const n=parseInt(prompt('Baseline — how many prior weeks to compare against? (1–'+maxb+')',BASEN),10);if(!(n>=1)){fillSel('basen',basePresetsC(),BASEN,'wks');return;}BASEN=Math.min(n,maxb);}else BASEN=+v;fillSel('basen',basePresetsC(),BASEN,'wks');render();}
 // club-aware compare presets: values are BLOCK counts; labels show the week span (4-wk club → "last 8 wks" = 2 blocks)
 function curPresetsC(){return CLUB<=1?CUR_PRESETS:[[1,'last '+CLUB+' wks'],[2,'last '+(2*CLUB)+' wks'],[3,'last '+(3*CLUB)+' wks'],[6,'last '+(6*CLUB)+' wks']];}
-function basePresetsC(){return CLUB<=1?BASE_PRESETS:[[2,'prior '+(2*CLUB)+' wks'],[3,'prior '+(3*CLUB)+' wks'],[6,'prior '+(6*CLUB)+' wks']];}
-function setClub(k){CLUB=k;['club1','club2','club4'].forEach(id=>{const b=$(id);if(b)b.classList.toggle('on',id==='club'+k);});
-  CURN=1;BASEN=(k>1?3:4);   // reset windows to sensible defaults for the new grain
-  fillSel('curn',curPresetsC(),CURN,'weeks');fillSel('basen',basePresetsC(),BASEN,'wks');render();}
+function basePresetsC(){return CLUB<=1?BASE_PRESETS:[[1,'prior '+CLUB+' wks'],[2,'prior '+(2*CLUB)+' wks'],[3,'prior '+(3*CLUB)+' wks'],[4,'prior '+(4*CLUB)+' wks'],[6,'prior '+(6*CLUB)+' wks']];}
+// Period: Daily / Weekly / Monthly. Weekly = weekly grain; Monthly = 4-week blocks (4w vs 4/8/12…); Daily needs a daily feed.
+function setGrain(g){GRAIN=g;['grainD','grainW','grainM'].forEach(id=>{const b=$(id);if(b)b.classList.toggle('on',id==='grain'+g[0].toUpperCase());});
+  if(g==='monthly'){CLUB=4;CURN=1;BASEN=1;}else{CLUB=1;CURN=1;BASEN=4;}
+  const dis=(g==='daily');if($('curn'))$('curn').disabled=dis;if($('basen'))$('basen').disabled=dis;
+  if(!dis){fillSel('curn',curPresetsC(),CURN,'weeks');fillSel('basen',basePresetsC(),BASEN,'wks');}
+  render();}
 
 // ---------- OVERVIEW (portfolio scan) ----------
 function whyChips(s,fb){
@@ -801,7 +804,9 @@ function filterbarHTML(){
   const win='<span class="fwin"><span class="fk">📅 Data</span><b>'+dw.n+' wks</b> · '+dw.first+' → '+dw.last+'<span class="fstale">'+dw.stale+'</span></span>';
   return '<div class="fchips">'+chips.join('')+'</div>'+win;
 }
-function render(){const sc=$('scopeCount');if(sc)sc.textContent=scopeCountHTML();const ai=$('allIndiaBtn');if(ai)ai.classList.toggle('on',!TIERF.size&&!MATF.size&&!CITYF.size&&!CLINF.size&&!DOCF.size);MODE==='ov'?renderOverview():renderClinic();}
+function render(){const sc=$('scopeCount');if(sc)sc.textContent=scopeCountHTML();const ai=$('allIndiaBtn');if(ai)ai.classList.toggle('on',!TIERF.size&&!MATF.size&&!CITYF.size&&!CLINF.size&&!DOCF.size);
+  if(GRAIN==='daily'){const cn=$('cmpnote');if(cn)cn.innerHTML='';$('root').innerHTML='<div style="background:#fff;border:1px solid var(--line);border-radius:12px;padding:34px;text-align:center;color:var(--ink2);font-size:14px">📅 <b>Daily view needs a daily data feed.</b><br><span style="color:var(--muted);font-size:12.5px">The Quick Diagnostic currently holds weekly data (the Master sheet has daily). This tab lights up once daily data is wired in.</span></div>';return;}
+  MODE==='ov'?renderOverview():renderClinic();}
 let ALLCITIES=[];
 function cityBtnLabel(){return (CITYF.size?(CITYF.size<=2?[...CITYF].join(', '):CITYF.size+' cities'):'All cities')+' ▾';}
 function clinBtnLabel(){return (CLINF.size?(CLINF.size===1?D.clinics[[...CLINF][0]].loc:CLINF.size+' clinics'):'All clinics')+' ▾';}
@@ -839,7 +844,7 @@ function resetScopeAll(){TIERF=new Set();MATF=new Set();CITYF=new Set();CLINF=ne
   if($('docBtn')){$('docBtn').textContent=docBtnLabel();$('docBtn').classList.remove('on');}
   render();}
 function scopeCountHTML(){let n=0;const cities=new Set();
-  Object.keys(D.clinics).forEach(s=>{const c=D.clinics[s];if(c._online)return;
+  Object.keys(D.clinics).forEach(s=>{const c=D.clinics[s];if(c._online)return;if(!sum(c.bookings.total))return;
     if(TIERF.size&&!TIERF.has(tierOf(c.city)))return;
     if(DOCF.size&&(!c.by_doctor||![...DOCF].some(dr=>c.by_doctor[dr])))return;
     if(CLINF.size?!CLINF.has(s):!inCity(c.city))return;
