@@ -70,6 +70,18 @@ iit AS (SELECT inv.encounter_id, SUM(ii.payable_amount::FLOAT)/100 AS ther_pbl F
   JOIN allo_billing.invoice_items ii ON ii.invoice_id=inv.id AND ii.deleted_at IS NULL
   WHERE inv.deleted_at IS NULL AND inv.status NOT IN ('created','cancelled') AND ii.type_id IN ({THER})
     AND inv.encounter_id IN (SELECT encounter_id FROM elig) GROUP BY inv.encounter_id),
+iib_d AS (SELECT inv.encounter_id, SUM(ii.payable_amount::FLOAT)/100 AS med_b FROM allo_billing.invoices inv
+  JOIN allo_billing.invoice_items ii ON ii.invoice_id=inv.id AND ii.deleted_at IS NULL
+  WHERE inv.deleted_at IS NULL AND inv.status NOT IN ('cancelled') AND ii.type='drug'
+    AND inv.encounter_id IN (SELECT encounter_id FROM elig) GROUP BY inv.encounter_id),
+iib_l AS (SELECT inv.encounter_id, SUM(ii.payable_amount::FLOAT)/100 AS test_b FROM allo_billing.invoices inv
+  JOIN allo_billing.invoice_items ii ON ii.invoice_id=inv.id AND ii.deleted_at IS NULL
+  WHERE inv.deleted_at IS NULL AND inv.status NOT IN ('cancelled') AND ii.type='lab'
+    AND inv.encounter_id IN (SELECT encounter_id FROM elig) GROUP BY inv.encounter_id),
+iib_t AS (SELECT inv.encounter_id, SUM(ii.payable_amount::FLOAT)/100 AS ther_b FROM allo_billing.invoices inv
+  JOIN allo_billing.invoice_items ii ON ii.invoice_id=inv.id AND ii.deleted_at IS NULL
+  WHERE inv.deleted_at IS NULL AND inv.status NOT IN ('cancelled') AND ii.type_id IN ({THER})
+    AND inv.encounter_id IN (SELECT encounter_id FROM elig) GROUP BY inv.encounter_id),
 cons_fee AS (SELECT c.id AS cons_id, MAX(ii.payable_amount::FLOAT/100) AS cons_amt
   FROM allo_consultations.consultations c
   JOIN allo_billing.invoice_items ii ON ii.id=c.invoice_item_id AND ii.deleted_at IS NULL AND ii.type='consultation'
@@ -89,6 +101,7 @@ appt_level AS (
     CASE WHEN typ.name='Screening Call' AND (CASE WHEN aploc.id IN ({TELE}) OR aploc.id IS NULL THEN 0 ELSE 1 END)=1 THEN 'offline_sc'
          WHEN typ.name='Screening Call' THEN 'online_sc' ELSE 'repeat' END AS segment,
     MAX(COALESCE(iid.med_pbl,0)) AS med_amt, MAX(COALESCE(iil.test_pbl,0)) AS test_amt, MAX(COALESCE(iit.ther_pbl,0)) AS ther_amt, MAX(COALESCE(cf.cons_amt,0)) AS cons_amt,
+    MAX(COALESCE(iib_d.med_b,0)) AS pres_med_amt, MAX(COALESCE(iib_l.test_b,0)) AS pres_test_amt, MAX(COALESCE(iib_t.ther_b,0)) AS pres_ther_amt,
     CASE WHEN MAX(inv.inv_amt)>0 THEN 1 ELSE 0 END AS purchased_flag
   FROM allo_consultations.appointments ap JOIN current_range cr ON TRUE
   JOIN allo_consultations.types typ ON ap.type_id=typ.id AND typ.deleted_at IS NULL
@@ -98,7 +111,7 @@ appt_level AS (
   LEFT JOIN paperform_qa pf ON pf.patient_id=ap.patient_id
   LEFT JOIN dl ON dl.provider_id=ap.provider_id AND dl.block_dt=DATE(ap.start_time+INTERVAL '5.5 hours') AND dl.block_id=ap.block_id
   LEFT JOIN invoice_data inv ON inv.encounter_id=enc.id
-  LEFT JOIN iid ON iid.encounter_id=enc.id LEFT JOIN iil ON iil.encounter_id=enc.id LEFT JOIN iit ON iit.encounter_id=enc.id LEFT JOIN cons_fee cf ON cf.cons_id=ap.consultation_id
+  LEFT JOIN iid ON iid.encounter_id=enc.id LEFT JOIN iil ON iil.encounter_id=enc.id LEFT JOIN iit ON iit.encounter_id=enc.id LEFT JOIN iib_d ON iib_d.encounter_id=enc.id LEFT JOIN iib_l ON iib_l.encounter_id=enc.id LEFT JOIN iib_t ON iib_t.encounter_id=enc.id LEFT JOIN cons_fee cf ON cf.cons_id=ap.consultation_id
   WHERE ap.deleted_at IS NULL AND ap.status IN ('COMPLETED','RECONSULTED')
     AND typ.name IN ('Screening Call','Follow Up','Report Reading','Patient Queries') AND ap.consultation_id IS NOT NULL
     AND ap.start_time+INTERVAL '5.5 hours' >= cr.start_range
@@ -109,7 +122,10 @@ SELECT doc_city, doc_locality, doctor, week_start, diagnosis,
   ROUND(SUM(CASE WHEN segment='offline_sc' THEN med_amt  ELSE 0 END)) AS meds_val,
   ROUND(SUM(CASE WHEN segment='offline_sc' THEN test_amt ELSE 0 END)) AS test_val,
   ROUND(SUM(CASE WHEN segment='offline_sc' THEN ther_amt ELSE 0 END)) AS ther_val,
-  ROUND(SUM(CASE WHEN segment='offline_sc' THEN cons_amt ELSE 0 END)) AS cons_val
+  ROUND(SUM(CASE WHEN segment='offline_sc' THEN cons_amt ELSE 0 END)) AS cons_val,
+  ROUND(SUM(CASE WHEN segment='offline_sc' THEN pres_med_amt  ELSE 0 END)) AS pres_meds_val,
+  ROUND(SUM(CASE WHEN segment='offline_sc' THEN pres_test_amt ELSE 0 END)) AS pres_test_val,
+  ROUND(SUM(CASE WHEN segment='offline_sc' THEN pres_ther_amt ELSE 0 END)) AS pres_ther_val
 FROM appt_level
 WHERE week_start >= DATE_TRUNC('week', DATEADD(month, -{MONTHS_BACK}, CURRENT_DATE))::date AND segment='offline_sc'
 GROUP BY 1,2,3,4,5 ORDER BY 1,2,3,4,5;
@@ -128,7 +144,7 @@ def main():
     weeks = sorted({r[3] for r in rows})
     widx = {w: i for i, w in enumerate(weeks)}
     NW = len(weeks)
-    FIELDS = ["done", "purchased", "meds_val", "test_val", "ther_val", "cons_val"]
+    FIELDS = ["done", "purchased", "meds_val", "test_val", "ther_val", "cons_val", "pres_meds_val", "pres_test_val", "pres_ther_val"]
 
     def blank():
         return {f: [0]*NW for f in FIELDS}
@@ -138,14 +154,16 @@ def main():
         city, loc, doctor, wk, cat = r[0], r[1], r[2], r[3], r[4]
         key = f"{city}|{loc}"
         i = widx[wk]
-        vals = [int(float(x)) for x in r[5:11]]
+        vals = [int(float(x)) for x in r[5:14]]
         o = clinics.setdefault(key, blank())
         c = o.setdefault("by_cat", {}).setdefault(cat, blank())
         dd = o.setdefault("by_doctor", {}).setdefault(doctor, blank())
+        ddc = dd.setdefault("cat_done", {}).setdefault(cat, [0]*NW)   # per-doctor per-category DONE (for doctor-level category-share)
         for f, v in zip(FIELDS, vals):
             o[f][i] += v          # clinic total
             c[f][i] += v          # per-category (sum over doctors)
             dd[f][i] += v         # per-doctor (sum over categories)
+            if f == "done": ddc[i] += v
 
     out = {"_meta": {"weeks": weeks,
                      "source": "L2 D2P (invoiced) · DONE-date offline SC · what consults were worth",

@@ -16,10 +16,10 @@ DP=os.path.join(ROOT,'data_weekly_diag.json'); D=json.load(open(DP))
 WDW=D['weeks']; N=len(WDW)
 SRW=SR['_meta']['weeks']; srmap={w:i for i,w in enumerate(SRW)}   # sr weeks are newest-first
 missing=[w for w in WDW if w not in srmap]
-if missing: print('ABORT: weeks not in source_recon:',missing[:3]); raise SystemExit(1)
-SIDX=[srmap[w] for w in WDW]           # for each diagnostic week (ascending) -> index into sr arrays
+if missing: print('WARN: weeks not in source_recon → patched as 0 (source_recon lags a week):',missing[:3])   # QD overlay carries the real economics for the Quick Diagnostic; these D fields feed other views only
+SIDX=[srmap.get(w,-1) for w in WDW]    # for each diagnostic week (ascending) -> index into sr arrays (-1 = week not yet in source_recon)
 CATS=['SH','STI','MH','Other']
-def remap(arr): return [ (arr[s] if s<len(arr) else 0) or 0 for s in SIDX ]
+def remap(arr): return [ (arr[s] if 0<=s<len(arr) else 0) or 0 for s in SIDX ]
 
 matched=0; tot_pur=0; tot_rev=0
 for slug,c in D['clinics'].items():

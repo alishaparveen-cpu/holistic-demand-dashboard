@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Overview — Attribution: correct → corrected → final</title>
+<style>
+  :root{--bg:#EDF3F9;--card:#fff;--ink:#1f2d3d;--muted:#5b6b7d;--faint:#8a94a0;--line:#e2e8ef;
+    --accent:#2C6CAE;--accent-bg:#EAF1FB;--green:#2E7D5B;--gold:#C2691F;--red:#B4453E;}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:'Inter',system-ui,-apple-system,sans-serif;font-size:13px;padding:24px}
+  .wrap{max-width:960px;margin:0 auto}
+  h1{font-family:'Fraunces',Georgia,serif;font-size:22px;font-weight:600;letter-spacing:-.3px;margin:0}
+  .top{border-bottom:2px solid var(--accent);padding-bottom:12px;margin-bottom:4px;display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px}
+  .sub{font-size:12px;color:var(--muted)}
+  .btn{font:inherit;font-size:12px;font-weight:600;border:1px solid #cfe0f2;background:#fff;color:var(--accent);border-radius:7px;padding:6px 11px;cursor:pointer}
+  .btn.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .sec-h{font-weight:700;font-size:11px;letter-spacing:.5px;margin:22px 0 8px;display:flex;align-items:center;gap:8px}
+  .badge{display:inline-flex;width:20px;height:20px;border-radius:50%;color:#fff;align-items:center;justify-content:center;font-size:11px;font-weight:700}
+  .card{background:var(--card);border-radius:10px;padding:6px 14px 12px;box-shadow:0 1px 2px rgba(31,45,61,.05)}
+  table{width:100%;border-collapse:collapse;font-size:12px}
+  th,td{padding:6px 9px;text-align:right}
+  th:first-child,td:first-child{text-align:left}
+  thead th{font-size:10px;letter-spacing:.4px;color:var(--faint);border-bottom:1px solid var(--line);font-weight:700}
+  td .bk{color:var(--faint);font-size:11px}
+  tr.tot td{border-top:2px solid #d5e0ec;font-weight:700}
+  .arrow{color:var(--gold);font-weight:700}
+  .sys{color:var(--muted)} .our{color:var(--accent);font-weight:600}
+  .note{background:#f7f9fb;border:1px solid var(--line);border-radius:8px;padding:9px 13px;font-size:11.5px;color:var(--muted);margin:6px 0 0}
+  .numnote{color:var(--faint);font-size:11px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <div><h1>Overview · Attribution — correct → corrected → final</h1>
+      <div class="sub" id="wkspan"></div></div>
+    <button class="btn" id="mg" onclick="toggleMG()">GMB+Google: split</button>
+  </div>
+
+  <div class="sec-h"><span class="badge" style="background:#5b6b7d">①</span> SYSTEM — raw <code>utm_source</code>, every caller (un-corrected · matches colleague's numbers)</div>
+  <div class="card"><table id="system"></table>
+    <div class="note">The system's own <code>allo_persons.lead.utm_source</code> for all callers, with <b>no corrections</b> — <code>organic</code> stays Organic, <code>gmb</code> stays GMB. This is the "before" view your colleague's query produces (GMB 945, Organic 418, Google 404 …).</div>
+  </div>
+
+  <div class="sec-h"><span class="badge" style="background:#5b6b7d">①b</span> SYSTEM — this-week leads only (lead created THIS week) → reconciles to the 1,626 funnel base</div>
+  <div class="card"><table id="system_tw"></table>
+    <div class="note">Same raw system source, filtered to callers whose <b>lead was created this week</b> (drops prior-week/aged &amp; no-lead callers). Total ties to the funnel's this-week-lead base (1,626 for 22–28 Jun).</div>
+  </div>
+
+  <div class="sec-h"><span class="badge" style="background:var(--gold)">②</span> OUR CORRECTIONS — which line the call came from, what the system said, what we attributed it to</div>
+  <div class="card"><table id="corr"></table>
+    <div class="note">Each row = an exotel line we overrode. <span class="sys">system said</span> <span class="arrow">→</span> <span class="our">we attributed to</span>. Callers = over the shown weeks.</div>
+  </div>
+
+  <div class="sec-h"><span class="badge" style="background:var(--gold)">③</span> THE CORRECTED FUNNEL — system → corrected, net shift per channel (4-week total)</div>
+  <div class="card"><table id="shift"></table>
+    <div class="note">What the corrections do to each channel. <span style="color:var(--green)">▲ gained</span> / <span style="color:var(--red)">▼ lost</span> vs the raw system tag — e.g. Brand appears, Organic collapses, Google Ads gains the campaign numbers.</div>
+  </div>
+
+  <div class="sec-h"><span class="badge" style="background:var(--accent)">④</span> FINAL LEAD SOURCES — after corrections, ALL callers weekly by channel</div>
+  <div class="card"><table id="final"></table></div>
+
+  <div class="sec-h"><span class="badge" style="background:var(--accent)">④b</span> FINAL — this-week leads only, by corrected channel → reconciles to 1,626</div>
+  <div class="card"><table id="final_tw"></table>
+    <div class="note">The <b>corrected</b> sources, filtered to <b>this-week leads only</b> (the demand-attributable base, 1,626). Same corrections as ④ — Brand appears, Organic shrinks — but for fresh this-week leads only.</div>
+  </div>
+
+  <div class="note" id="foot" style="margin-top:14px"></div>
+</div>
+
+<script>
+const fmt=n=>Number(n||0).toLocaleString('en-IN');
+const pct=(a,b)=>b?(100*a/b):0;
+const wlab=w=>{const s=new Date(w+'T00:00:00'),e=new Date(s);e.setDate(e.getDate()+6);
+  const sm=s.toLocaleString('en',{month:'short'}),em=e.toLocaleString('en',{month:'short'});
+  return sm===em?`${s.getDate()}–${e.getDate()} ${sm}`:`${s.getDate()} ${sm}–${e.getDate()} ${em}`;};
+const cb=(c,b)=>c?`<b>${fmt(c)}</b> <span class="bk">${fmt(b)}·${pct(b,c).toFixed(0)}%</span>`:'—';
+const ORDER=['GMB','Google Ads','Brand','Meta','Practo','JustDial','Organic','Offline','Other','Undetermined'];
+let DATA=null, COLS=[], MG=false;
+function toggleMG(){MG=!MG;const b=document.getElementById('mg');b.textContent='GMB+Google: '+(MG?'merged':'split');b.classList.toggle('on',MG);renderChan();}
+function mergeGG(o){ if(!MG) return o||{}; const n=Object.assign({},o); if(n['GMB']||n['Google Ads']){const g=n['GMB']||[0,0],a=n['Google Ads']||[0,0];n['GMB + Google']=[g[0]+a[0],g[1]+a[1]];delete n['GMB'];delete n['Google Ads'];} return n; }
+function chanTable(id,obj){
+  const order=(MG?['GMB + Google']:['GMB','Google Ads']).concat(ORDER.filter(c=>c!=='GMB'&&c!=='Google Ads'));
+  const M={}; COLS.forEach(w=>M[w]=mergeGG(obj[w]||{}));
+  const extra=[]; COLS.forEach(w=>{for(const k in M[w]) if(!order.includes(k)&&!extra.includes(k)) extra.push(k);});
+  const present=order.concat(extra).filter(c=>COLS.some(w=>M[w][c]));
+  let h='<thead><tr><th>Channel</th>'+COLS.map(w=>`<th>${wlab(w)}</th>`).join('')+'</tr></thead><tbody>';
+  present.forEach(c=>{ h+=`<tr><td class="lab"${c==='Undetermined'?' style="color:var(--red)"':''}><b>${c}</b></td>`+
+    COLS.map(w=>`<td>${cb((M[w][c]||[0,0])[0],(M[w][c]||[0,0])[1])}</td>`).join('')+'</tr>';});
+  h+=`<tr class="tot"><td>= total</td>`+COLS.map(w=>{let c=0,b=0;for(const k in M[w]){c+=M[w][k][0];b+=M[w][k][1];}return `<td>${cb(c,b)}</td>`;}).join('')+'</tr>';
+  document.getElementById(id).innerHTML=h+'</tbody>';
+}
+function renderShift(){
+  const sysT={},finT={};
+  COLS.forEach(w=>{ for(const k in (DATA.system[w]||{})) sysT[k]=(sysT[k]||0)+DATA.system[w][k][0];
+                    for(const k in (DATA.final[w]||{}))  finT[k]=(finT[k]||0)+DATA.final[w][k][0]; });
+  if(MG){ const mm=o=>{if(o['GMB']!==undefined||o['Google Ads']!==undefined){o['GMB + Google']=(o['GMB']||0)+(o['Google Ads']||0);delete o['GMB'];delete o['Google Ads'];}}; mm(sysT); mm(finT); }
+  const keys=[...new Set([...Object.keys(sysT),...Object.keys(finT)])].sort((a,b)=>(finT[b]||0)-(finT[a]||0));
+  let h='<thead><tr><th>Channel</th><th>System (raw)</th><th>Corrected (final)</th><th>Δ</th></tr></thead><tbody>';
+  keys.forEach(k=>{ const s=sysT[k]||0,f=finT[k]||0,d=f-s; const dc=d>0?'var(--green)':d<0?'var(--red)':'var(--faint)';
+    h+=`<tr><td class="lab"><b>${k}</b></td><td>${s?fmt(s):'—'}</td><td><b>${f?fmt(f):'—'}</b></td><td style="color:${dc}">${d>0?'▲ +'+fmt(d):d<0?'▼ '+fmt(-d):'—'}</td></tr>`;});
+  const st=Object.values(sysT).reduce((a,x)=>a+x,0), ft=Object.values(finT).reduce((a,x)=>a+x,0);
+  h+=`<tr class="tot"><td>= total callers</td><td>${fmt(st)}</td><td>${fmt(ft)}</td><td>0</td></tr>`;
+  document.getElementById('shift').innerHTML=h+'</tbody>';
+}
+function renderChan(){ chanTable('system',DATA.system); chanTable('system_tw',DATA.system_tw); renderShift(); chanTable('final',DATA.final); chanTable('final_tw',DATA.final_tw); }
+
+fetch('data_overview.json').then(r=>r.json()).then(D=>{
+  DATA=D; COLS=D.weeks.slice(-5,-1); const cols=COLS;
+  const s0=new Date(cols[0]+'T00:00:00'),e1=new Date(cols[cols.length-1]+'T00:00:00');e1.setDate(e1.getDate()+6);
+  document.getElementById('wkspan').innerHTML=`inbound call leads · last 4 complete weeks · <b>${s0.getDate()} ${s0.toLocaleString('en',{month:'short'})} – ${e1.getDate()} ${e1.toLocaleString('en',{month:'short'})}</b>`;
+  renderChan();
+
+  // ② corrections — number-level, summed over shown cols, sorted by callers
+  const rows=D.corrections.map(c=>{let ca=0,bk=0;cols.forEach(w=>{const v=c.wk[w];if(v){ca+=v[0];bk+=v[1];}});return {...c,ca,bk};})
+    .filter(c=>c.ca>0).sort((a,b)=>b.ca-a.ca);
+  let ch='<thead><tr><th>Exotel line</th><th style="text-align:left">what it is</th><th style="text-align:left">system said</th><th></th><th style="text-align:left">we attributed</th><th>callers</th><th>booked</th></tr></thead><tbody>';
+  rows.forEach(c=>{ ch+=`<tr><td><b>${c.number}</b></td><td style="text-align:left" class="numnote">${c.note||'—'}</td>`+
+    `<td style="text-align:left"><span class="sys">${c.sys}</span></td><td class="arrow">→</td><td style="text-align:left"><span class="our">${c.our}</span></td>`+
+    `<td><b>${fmt(c.ca)}</b></td><td>${fmt(c.bk)}</td></tr>`;});
+  const tc=rows.reduce((a,c)=>a+c.ca,0), tb=rows.reduce((a,c)=>a+c.bk,0);
+  ch+=`<tr class="tot"><td colspan="5">= ${rows.length} corrected lines</td><td>${fmt(tc)}</td><td>${fmt(tb)}</td></tr>`;
+  document.getElementById('corr').innerHTML=ch+'</tbody>';
+
+  document.getElementById('foot').innerHTML=`<b style="color:var(--ink)">The story:</b> most call-leads the system already tagged right (①). For ${rows.length} lines it was wrong or blank — we corrected them (②), the biggest being <b>08046800927</b> &amp; <b>08071175797</b> → <b>Brand</b>, and campaign numbers → <b>Google Ads</b>. ③ is the trustworthy final source mix used everywhere else.`;
+}).catch(e=>{document.body.innerHTML='<div class="wrap"><p style="color:#B4453E">Could not load data_overview.json — run <code>python3 scripts/build_overview.py</code>.</p></div>';});
+</script>
+</body>
+</html>

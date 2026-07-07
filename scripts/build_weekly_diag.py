@@ -14,7 +14,7 @@ def q(sql):
 L0=json.load(open(os.path.join(ROOT,'data_l0_funnel.json')))
 ALLW=L0['_meta']['weeks']; ALLLAB=L0['_meta']['week_labels']
 N=26; WEEKS=ALLW[-N:]; WK_LABELS=[ALLLAB[w] for w in WEEKS]; idx={w:i for i,w in enumerate(WEEKS)}
-LO=WEEKS[0]; HI='2026-06-29'; SC_ROSTER='cd02525c-1528-4047-a12c-1ad526c28c9a'
+LO=WEEKS[0]; HI='2026-07-06'; SC_ROSTER='cd02525c-1528-4047-a12c-1ad526c28c9a'
 def K(city,loc): return (loc or '').strip().lower()+'|'+(city or '').strip().lower()
 def Z(): return [0]*N
 def zput(d,k,i,v): d.setdefault(k,Z())[i]=d.get(k,Z())[i] if False else d.setdefault(k,Z())[i]
@@ -35,8 +35,24 @@ for r in q(f"""SELECT lc, city, wk,
     JOIN allo_health.locations loc ON loc.id=rs.location_id AND loc.deleted_at IS NULL AND LOWER(COALESCE(loc.locality,'')) NOT IN ('','online')
     WHERE rs.start_time>='{LO}' AND rs.start_time<'{HI}') z GROUP BY 1,2,3"""):
     if len(r)>=7 and r[2] in idx:
-        e=avail.setdefault(K(r[1],r[0]),{'wd':Z(),'we':Z(),'hr':[0.0]*N,'ahr':[0.0]*N}); i=idx[r[2]]
+        e=avail.setdefault(K(r[1],r[0]),{'wd':Z(),'we':Z(),'hr':[0.0]*N,'ahr':[0.0]*N,'awd':Z(),'awe':Z()}); i=idx[r[2]]
         e['wd'][i]=int(r[3]); e['we'][i]=int(r[4]); e['hr'][i]=float(r[5]); e['ahr'][i]=float(r[6])
+
+# ---- 1b Attendance: days actually WORKED (≥1 completed offline consult that day) ----
+for r in q(f"""SELECT loc.locality lc, loc.city city,
+    TO_CHAR(DATE_TRUNC('week', apt.start_time+INTERVAL '5.5 hours'),'YYYY-MM-DD') wk,
+    COUNT(DISTINCT CASE WHEN EXTRACT(dow FROM (apt.start_time+INTERVAL '5.5 hours')) NOT IN (0,6)
+                        THEN DATE(apt.start_time+INTERVAL '5.5 hours') END) awd,
+    COUNT(DISTINCT CASE WHEN EXTRACT(dow FROM (apt.start_time+INTERVAL '5.5 hours')) IN (0,6)
+                        THEN DATE(apt.start_time+INTERVAL '5.5 hours') END) awe
+  FROM allo_consultations.appointments apt
+  JOIN allo_health.locations loc ON loc.id=apt.location_id AND loc.deleted_at IS NULL
+    AND LOWER(COALESCE(loc.locality,'')) NOT IN ('','online') AND LOWER(loc.name) NOT LIKE '%online%'
+  WHERE apt.deleted_at IS NULL AND apt.status IN ('COMPLETED','RECONSULTED')
+    AND apt.start_time>='{LO}' AND apt.start_time<'{HI}' GROUP BY 1,2,3"""):
+    if len(r)>=5 and r[2] in idx:
+        e=avail.setdefault(K(r[1],r[0]),{'wd':Z(),'we':Z(),'hr':[0.0]*N,'ahr':[0.0]*N,'awd':Z(),'awe':Z()}); i=idx[r[2]]
+        e['awd'][i]=int(r[3]); e['awe'][i]=int(r[4])
 
 # ---- 2 Demand: leads ----
 leadmap={}
@@ -85,13 +101,15 @@ def rate(num,den): return [round(num[i]/den[i],1) if den[i] else None for i in r
 out={'weeks':WEEKS,'week_labels':WK_LABELS,'clinics':{}}
 for slug,c in L0['clinics'].items():
     loc=c['disp'].split(' · ')[0]; k=K(c['city'],loc)
-    av=avail.get(k,{'wd':Z(),'we':Z(),'hr':[0.0]*N,'ahr':[0.0]*N}); adays=[av['wd'][i]+av['we'][i] for i in range(N)]
+    av=avail.get(k,{'wd':Z(),'we':Z(),'hr':[0.0]*N,'ahr':[0.0]*N,'awd':Z(),'awe':Z()}); adays=[av['wd'][i]+av['we'][i] for i in range(N)]
+    awd=av.get('awd',Z()); awe=av.get('awe',Z()); att_days=[awd[i]+awe[i] for i in range(N)]
     lm=leadmap.get(loc.strip().lower(),{'tot':Z(),'src':{}}); leads=lm['tot']
     b=bk.get(k)
     if not b: b={x:Z() for x in ['booked','done','new_tw','new_old','rebook','relapse','sh','sti','mh','oth','bkwd','bkwe']}
     booked=b['booked']; done=b['done']; newp=[b['new_tw'][i]+b['new_old'][i] for i in range(N)]
     out['clinics'][slug]={'disp':c['disp'],'city':c['city'],'loc':loc,
-        'availability':{'active_days':adays,'wday_days':av['wd'],'wend_days':av['we'],'hours':av['hr'],'avail_hours':av['ahr']},
+        'availability':{'active_days':adays,'wday_days':av['wd'],'wend_days':av['we'],'hours':av['hr'],'avail_hours':av['ahr'],
+            'attend_days':att_days,'attend_wday':awd,'attend_wend':awe},
         'demand':{'leads':leads,'by_channel':{s:lm['src'][s] for s in lm['src'] if sum(lm['src'][s])>0},'has_leads':sum(leads)>0,
             'lead_book_pct':[round(100*newp[i]/leads[i]) if leads[i] else None for i in range(N)]},
         'bookings':{'total':booked,'new_tw':b['new_tw'],'new_old':b['new_old'],'rebook':b['rebook'],'relapse':b['relapse']},
@@ -105,3 +123,9 @@ if tb==0:
     print('ABORT: 0 bookings across all clinics (SSO expired / query failed) — NOT writing, keeping existing data.'); raise SystemExit(1)
 json.dump(out,open(os.path.join(ROOT,'data_weekly_diag.json'),'w'),separators=(',',':'))
 print('wrote data_weekly_diag.json ·',len(out['clinics']),'clinics ·',N,'wk · total bookings',tb)
+# re-apply the Practo-leads merge so the marketing "Practo" source survives every rebuild (idempotent, local-only)
+try:
+    subprocess.run(['python3',os.path.join(ROOT,'scripts','build_practo_from_flow.py')],check=True)   # CSV → data_practo_flow_leads.json on this week grid
+    subprocess.run(['python3',os.path.join(ROOT,'scripts','patch_practo_into_demand.py')],check=True) # inject into demand.by_channel
+except Exception as e:
+    print('WARN: Practo merge failed:',e)

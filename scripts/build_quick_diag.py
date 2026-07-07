@@ -9,7 +9,7 @@ Inputs (all already reconciled to L2):
   data_sc_bookings.json · data_fu_bookings.json · data_d2p_econ.json · data_fu_econ.json
   data_availability.json · data_source_recon.json (slug↔City|Locality map, city/tier)
 Output per clinic (slug): {city, sc/fu/all:{bookings{total,new_tw,new_old,rebook,relapse},
-  done{booked,done,book_done_pct,by_cat{SH,STI,MH,Other}}, availability{...}, velocity{...}, by_doctor{}}}
+  done{booked,done,book_done_pct,by_cat{MH,ED+,ED+PE+,PE+,STI,Oth,NOS}}, availability{...}, velocity{...}, by_doctor{}}}
 
 Run: python3 scripts/build_quick_diag.py   (pure local — no DB)
 """
@@ -21,6 +21,8 @@ def L(f): return json.load(open(os.path.join(ROOT, f)))
 SCB, FUB = L("data_sc_bookings.json"), L("data_fu_bookings.json")
 SCE, FUE = L("data_d2p_econ.json"), L("data_fu_econ.json")
 AV, REC = L("data_availability.json"), L("data_source_recon.json")
+AVD = L("data_avail_doctor.json")   # per-DOCTOR days-attended/rostered (build_avail_doctor.py) → fills by_doctor availability
+_avd_norm = lambda n: (n or "").replace("\xa0", " ").strip()
 
 # ── target week axis: last 26 complete weeks (Mon start, fully elapsed) ──
 today = datetime.date.today()
@@ -51,14 +53,20 @@ for slug, s in disp.items():
         slug2key[slug] = p[-1] + "|" + " · ".join(p[:-1])
 tier = REC["_meta"].get("city_tier", {})
 
-# category rollup (finer diagnoses -> SH/STI/MH/Other)
-ROLL = {"SH": ["ED+", "PE+", "ED+PE+", "LSD", "DE", "DYS", "VGS", "FSAD", "AORG"],
-        "STI": ["STI"], "MH": ["MH", "PA", "CM"], "Other": ["NOS", "oth"]}
+# category rollup (finer diagnoses -> the 7 city-head buckets: MH·ED+·ED+PE+·PE+·STI·Oth·NOS).
+# ED/PE keep their own buckets (what city heads track); the rarer SH conditions fold into Oth; NOS stands alone.
+ROLL = {"MH": ["MH"], "PA": ["PA"], "CM": ["CM"], "ED+": ["ED+"], "ED+PE+": ["ED+PE+"], "PE+": ["PE+"],
+        "STI": ["STI"], "Oth": ["LSD", "DE", "DYS", "VGS", "FSAD", "AORG", "oth"], "NOS": ["NOS"]}
+# MH sub-codes: MH=Mental Health Concern · PA=Porn Addiction · CM=Compulsive Masturbation (grouped as MH in the UI tree)
 
 def bk_get(cube, key, field):
     c = cube["clinics"].get(key)
     if not c or field not in c: return Z()
     return remap(c[field], cube["_meta"]["weeks"])
+
+def bk_sum(cube, key, *fields):   # sum of several fields (e.g. older-week = ft_prev + ft_nolead)
+    arrs = [bk_get(cube, key, f) for f in fields]
+    return [sum(x) for x in zip(*arrs)] if arrs else Z()
 
 def econ_cat(cube, key, cat_codes, field):
     c = cube["clinics"].get(key)
@@ -91,21 +99,91 @@ def econ_rev_cat(cube, key, codes):
         o = add(o, econ_cat(cube, key, codes, f))
     return o
 
+def line_block(cube, key, field):   # one revenue line (meds/test/ther/cons): total + by-category, for per-line RPC
+    return {"tot": econ_tot(cube, key, field), "by_cat": {roll: econ_cat(cube, key, codes, field) for roll, codes in ROLL.items()}}
+
 def rev_block(cube, key):
-    return {"rev": econ_rev_tot(cube, key), "by_cat": {roll: econ_rev_cat(cube, key, codes) for roll, codes in ROLL.items()}}
+    b = {"rev": econ_rev_tot(cube, key), "by_cat": {roll: econ_rev_cat(cube, key, codes) for roll, codes in ROLL.items()}}
+    for nm, field in (("meds", "meds_val"), ("test", "test_val"), ("ther", "ther_val"), ("cons", "cons_val")):
+        b[nm] = line_block(cube, key, field)
+    pm, pt, ph = econ_tot(cube, key, "pres_meds_val"), econ_tot(cube, key, "pres_test_val"), econ_tot(cube, key, "pres_ther_val")   # billed value incl unpaid, per line (for per-line Pres AOV / prescribe value)
+    b["pres_meds"], b["pres_test"], b["pres_ther"] = pm, pt, ph
+    b["pres_val"] = add(add(pm, pt), ph)   # overall billed product value = sum of the three lines (Pres AOV = pres_val / done)
+    return b
 
 def purch_block(cube, key):
     return {"total": econ_tot(cube, key, "purchased"), "by_cat": by_cat_block(cube, key, "purchased")}
 
-def avail_block(key):
-    c = AV["clinics"].get(key)
-    if not c:
-        return {"active_days": Z(), "wday_days": Z(), "wend_days": Z(), "avail_hours": Z(), "hours": Z()}
-    g = lambda f: remap(c.get(f, []), AV["_meta"]["weeks"])
-    return {"active_days": g("active_days"), "wday_days": g("wkday_days"), "wend_days": g("wkend_days"),
-            "avail_hours": g("opened_hrs"), "hours": g("net_sc_hrs")}
+# ── national ONLINE telehealth, per SC/FU/All variant (from the online cubes; single 'Online|Online' key) ──
+try:
+    SCBO, FUBO = L("data_sc_bookings_online.json"), L("data_fu_bookings_online.json")
+    SCEO, FUEO = L("data_d2p_econ_online.json"), L("data_fu_econ_online.json")
+except Exception:
+    SCBO = FUBO = SCEO = FUEO = None
+OKEY = "Online|Online"
+def online_variant(bcube, ecube):
+    booked = bk_get(bcube, OKEY, "booked"); done = bk_get(bcube, OKEY, "done")
+    return {"bookings": {"total": booked, "nat": booked, "city": booked, "new_tw": Z(), "new_old": Z(), "rebook": Z(), "relapse": Z(),
+                         "by_source": source_block(bcube, OKEY) if "by_source" in (bcube["clinics"].get(OKEY) or {}) else {}},
+            "done": {"booked": booked, "booked_nat": booked, "booked_city": booked, "done": done, "done_nat": done, "done_city": done, "book_done_pct": pct(done, booked), "by_cat": by_cat_block(ecube, OKEY)},
+            "revenue": rev_block(ecube, OKEY), "purchased": purch_block(ecube, OKEY)}
+def online_all(a, b):
+    bk = add(a["bookings"]["total"], b["bookings"]["total"]); dn = add(a["done"]["done"], b["done"]["done"])
+    rev = {"rev": add(a["revenue"]["rev"], b["revenue"]["rev"]),
+           "by_cat": {r: add(a["revenue"]["by_cat"][r], b["revenue"]["by_cat"][r]) for r in ROLL}}
+    for nm in ("meds", "test", "ther", "cons"):
+        rev[nm] = {"tot": add(a["revenue"][nm]["tot"], b["revenue"][nm]["tot"]),
+                   "by_cat": {r: add(a["revenue"][nm]["by_cat"][r], b["revenue"][nm]["by_cat"][r]) for r in ROLL}}
+    for pk in ("pres_val", "pres_meds", "pres_test", "pres_ther"):
+        rev[pk] = add(a["revenue"].get(pk, Z()), b["revenue"].get(pk, Z()))
+    return {"bookings": {"total": bk, "nat": bk, "city": bk, "new_tw": Z(), "new_old": Z(), "rebook": Z(), "relapse": Z(), "by_source": a["bookings"].get("by_source", {})},
+            "done": {"booked": bk, "booked_nat": bk, "booked_city": bk, "done": dn, "done_nat": dn, "done_city": dn, "book_done_pct": pct(dn, bk),
+                     "by_cat": {r: add(a["done"]["by_cat"][r], b["done"]["by_cat"][r]) for r in ROLL}},
+            "revenue": rev,
+            "purchased": {"total": add(a["purchased"]["total"], b["purchased"]["total"]),
+                          "by_cat": {r: add(a["purchased"]["by_cat"][r], b["purchased"]["by_cat"][r]) for r in ROLL}}}
+def online_block():
+    if not SCBO: return None
+    osc = online_variant(SCBO, SCEO); ofu = online_variant(FUBO, FUEO)
+    return {"sc": osc, "fu": ofu, "all": online_all(osc, ofu)}
 
-def doctors_block(bcube, ecube, key):
+def avail_block(key, slug=None):
+    c = AV["clinics"].get(key)
+    base = {"active_days": Z(), "wday_days": Z(), "wend_days": Z(), "avail_hours": Z(), "hours": Z(), "sc_slots": Z(), "rpt_slots": Z(),
+            "attend_days": Z(), "attend_wday": Z(), "attend_wend": Z()}
+    if c:
+        g = lambda f: remap(c.get(f, []), AV["_meta"]["weeks"])
+        base = {"active_days": g("active_days"), "wday_days": g("wkday_days"), "wend_days": g("wkend_days"),
+                "avail_hours": g("opened_hrs"), "hours": g("net_sc_hrs"), "sc_slots": g("net_sc_slots"), "rpt_slots": g("net_rpt_slots"),
+                "attend_days": g("attend_days"), "attend_wday": g("attend_wkday"), "attend_wend": g("attend_wkend")}
+    ar = (REC["clinics"].get(slug, {}) if slug else {}).get("avail_roster")   # ops-roster hours (matches the Macro sheet)
+    if ar:
+        rw = REC["_meta"]["weeks"]; rg = lambda f: remap(ar.get(f, []), rw)
+        base.update({"opened_ash": rg("after_shrink"),
+                     "net_sc_hrs_r": rg("sc_net"), "net_rpt_hrs": rg("fu_net"), "net_avail_hrs": rg("net_avail"), "dead_hrs": rg("dead")})
+    # rostered/shrink HOURS from the per-doctor block logic, summed to clinic → covers ALL clinics (not just the ops-roster subset), consistent with per-doctor
+    avd = AVD["clinics"].get(slug) if slug else None
+    if avd:
+        aw = AVD["_meta"]["weeks"]; oh = Z(); sh = Z()
+        for dd in avd["by_doctor"].values():
+            oh = add(oh, remap(dd.get("rostered_hrs", []), aw)); sh = add(sh, remap(dd.get("shrink_hrs", []), aw))
+        base["rostered_hrs"] = oh; base["shrink_hrs"] = sh
+    return base
+
+def avail_doctor_block(slug, dr):
+    """Per-doctor days-attended/rostered for this clinic, name-matched (nbsp-normalised), remapped to WEEKS.
+    Returns None when the doctor has no roster/attendance at this clinic (they book here but attend elsewhere)."""
+    cl = AVD["clinics"].get(slug)
+    if not cl: return None
+    bd = cl["by_doctor"]; want = _avd_norm(dr)
+    src = bd.get(dr) or next((v for k, v in bd.items() if _avd_norm(k) == want), None)
+    if not src: return None
+    aw = AVD["_meta"]["weeks"]; g = lambda f: remap(src.get(f, []), aw)
+    return {"active_days": g("active_days"), "wday_days": g("wday_days"), "wend_days": g("wend_days"),
+            "attend_days": g("attend_days"), "attend_wday": g("attend_wday"), "attend_wend": g("attend_wend"),
+            "rostered_hrs": g("rostered_hrs"), "shrink_hrs": g("shrink_hrs")}
+
+def doctors_block(bcube, ecube, key, slug=None):
     out = {}
     bc = (bcube["clinics"].get(key) or {}).get("by_doctor", {})
     ec = (ecube["clinics"].get(key) or {}).get("by_doctor", {})
@@ -114,61 +192,137 @@ def doctors_block(bcube, ecube, key):
         e = ec.get(dr, {})
         booked = remap(b.get("booked", []), bcube["_meta"]["weeks"]) if b else Z()
         done = remap(b.get("done", []), bcube["_meta"]["weeks"]) if b else Z()
-        rev = Z()
+        lines = {"meds": Z(), "test": Z(), "ther": Z(), "cons": Z()}   # per-doctor product-line revenue (for doctor-level RPC by line)
         if e:
-            for f in ("meds_val", "test_val", "ther_val", "cons_val"):
-                if f in e: rev = add(rev, remap(e[f], ecube["_meta"]["weeks"]))
+            for f, k in (("meds_val", "meds"), ("test_val", "test"), ("ther_val", "ther"), ("cons_val", "cons")):
+                if f in e: lines[k] = remap(e[f], ecube["_meta"]["weeks"])
+        rev = add(add(lines["meds"], lines["test"]), add(lines["ther"], lines["cons"]))
         purch = remap(e.get("purchased", []), ecube["_meta"]["weeks"]) if e else Z()
-        out[dr] = {"booked": booked, "done": done, "purchased": purch, "rev": rev}
+        newp = Z()   # per-doctor NEW patients = fresh + carry-in (ft_same + ft_prev + ft_nolead)
+        if b:
+            for f in ("ft_same", "ft_prev", "ft_nolead"):
+                if f in b: newp = add(newp, remap(b[f], bcube["_meta"]["weeks"]))
+        catdone = {roll: Z() for roll in ROLL}   # per-doctor DONE by category (rolled to CATS buckets)
+        ecd = (e.get("cat_done") or {}) if e else {}
+        if ecd:
+            for roll, codes in ROLL.items():
+                for code in codes:
+                    if code in ecd: catdone[roll] = add(catdone[roll], remap(ecd[code], ecube["_meta"]["weeks"]))
+        presL = {"pres_meds": Z(), "pres_test": Z(), "pres_ther": Z()}   # per-doctor billed value per line (Pres AOV / prescribe value)
+        if e:
+            for f, k in (("pres_meds_val", "pres_meds"), ("pres_test_val", "pres_test"), ("pres_ther_val", "pres_ther")):
+                if f in e: presL[k] = remap(e[f], ecube["_meta"]["weeks"])
+        presv = add(add(presL["pres_meds"], presL["pres_test"]), presL["pres_ther"])
+        rec = {"booked": booked, "done": done, "purchased": purch, "rev": rev, "new": newp, "cat_done": catdone,
+               "meds": lines["meds"], "test": lines["test"], "ther": lines["ther"], "cons": lines["cons"],
+               "pres_val": presv, "pres_meds": presL["pres_meds"], "pres_test": presL["pres_test"], "pres_ther": presL["pres_ther"]}
+        av = avail_doctor_block(slug, dr) if slug else None
+        if av: rec["availability"] = av
+        out[dr] = rec
     return out
 
-def velocity_block(booked, av, bkwd, bkwe):
+def velocity_block(booked, av, bkwd, bkwe, dnwd=None, dnwe=None):
     ad = av["active_days"]; wd = av["wday_days"]; we = av["wend_days"]
+    dnwd = dnwd or Z(); dnwe = dnwe or Z()
     return {"bookings": booked, "wday_days": wd, "wend_days": we,
             "bk_wday": bkwd, "bk_wend": bkwe,   # bookings split by appt day-of-week (sums back to booked)
+            "done_wday": dnwd, "done_wend": dnwe,   # done split by appt day-of-week (for done-velocity)
             "per_active_day": [round(booked[i]/ad[i], 1) if ad[i] else None for i in range(NW)],
             "per_weekday": [round(bkwd[i]/wd[i], 1) if wd[i] else None for i in range(NW)],
-            "per_weekend": [round(bkwe[i]/we[i], 1) if we[i] else None for i in range(NW)]}
+            "per_weekend": [round(bkwe[i]/we[i], 1) if we[i] else None for i in range(NW)],
+            "done_per_weekday": [round(dnwd[i]/wd[i], 1) if wd[i] else None for i in range(NW)],
+            "done_per_weekend": [round(dnwe[i]/we[i], 1) if we[i] else None for i in range(NW)]}
 
-def variant_sc(key):
+def source_block(cube, key):   # bookings+done split by lead source. by_source[src] = {booked, done, +grain-distinct variants}
+    c = cube["clinics"].get(key)
+    if not c: return {}
+    wks = cube["_meta"]["weeks"]; out = {}
+    for src, dd in (c.get("by_source") or {}).items():
+        if not isinstance(dd, dict): continue
+        bk = dd.get("booked") or []
+        if not any(bk): continue
+        rec = {"booked": remap(bk, wks), "done": remap(dd.get("done") or [], wks)}
+        for f in ("booked_nat", "booked_city", "done_nat", "done_city"):
+            if dd.get(f) is not None:
+                rec[f] = remap(dd.get(f), wks)
+        # cross-cut: new (fresh+carry-in) and repeat patients WITHIN each source (from the per-source patient-type splits already in the cube)
+        sn = dd.get("ft_same") or []; sp = dd.get("ft_prev") or []; snl = dd.get("ft_nolead") or []; rp = dd.get("repeat") or []
+        n = max(len(sn), len(sp), len(snl), len(rp), 0)
+        get = lambda a, i: (a[i] if i < len(a) else 0) or 0
+        rec["new"] = remap([get(sn, i) + get(sp, i) + get(snl, i) for i in range(n)], wks)
+        rec["repeat"] = remap(rp, wks)
+        # finer sub-bucket × source (level-3 cross): within fresh / older-week / never-done / relapse, the lead source
+        rb = dd.get("ret_rebook") or []; rr = dd.get("ret_return") or []
+        rec["fresh"]   = remap(sn, wks)                                              # ft_same
+        rec["older"]   = remap([get(sp, i) + get(snl, i) for i in range(n)], wks)     # ft_prev + ft_nolead (carry-in)
+        rec["never"]   = remap(rb, wks)                                              # ret_rebook (never completed before)
+        rec["relapse"] = remap(rr, wks)                                             # ret_return (done before, booked again)
+        out[src] = rec
+    return out
+
+def variant_sc(key, slug=None):
     booked = bk_get(SCB, key, "booked"); done = bk_get(SCB, key, "done")
-    av = avail_block(key)
-    return {"bookings": {"total": booked, "new_tw": bk_get(SCB, key, "ft_same"), "new_old": bk_get(SCB, key, "ft_prev"),
-                         "rebook": bk_get(SCB, key, "ret_rebook"), "relapse": bk_get(SCB, key, "ret_return")},
-            "done": {"booked": booked, "done": done, "book_done_pct": pct(done, booked), "by_cat": by_cat_block(SCE, key)},
+    b_nat = bk_get(SCB, key, "booked_nat"); b_city = bk_get(SCB, key, "booked_city")
+    d_nat = bk_get(SCB, key, "done_nat"); d_city = bk_get(SCB, key, "done_city")
+    if not any(b_nat): b_nat = booked          # graceful fallback if cube predates grain fields
+    if not any(b_city): b_city = booked
+    if not any(d_nat): d_nat = done
+    if not any(d_city): d_city = done
+    av = avail_block(key, slug)
+    return {"bookings": {"total": booked, "nat": b_nat, "city": b_city, "new_tw": bk_get(SCB, key, "ft_same"), "new_old": bk_sum(SCB, key, "ft_prev", "ft_nolead"),
+                         "no1w": bk_get(SCB, key, "ft_prev_1w"), "no2_4w": bk_get(SCB, key, "ft_prev_2_4w"), "no1_3mo": bk_get(SCB, key, "ft_prev_1_3mo"), "no3mo": bk_get(SCB, key, "ft_prev_3mo"),   # older-lead bookings binned by lead age
+                         "rebook": bk_get(SCB, key, "ret_rebook"), "relapse": bk_get(SCB, key, "ret_return"),
+                         "by_source": source_block(SCB, key)},
+            "done": {"booked": booked, "booked_nat": b_nat, "booked_city": b_city, "done": done, "done_nat": d_nat, "done_city": d_city, "book_done_pct": pct(done, booked), "by_cat": by_cat_block(SCE, key)},
             "revenue": rev_block(SCE, key), "purchased": purch_block(SCE, key),
-            "availability": av, "velocity": velocity_block(booked, av, bk_get(SCB, key, "bkwd"), bk_get(SCB, key, "bkwe")),
-            "by_doctor": doctors_block(SCB, SCE, key)}
+            "availability": av, "velocity": velocity_block(booked, av, bk_get(SCB, key, "bkwd"), bk_get(SCB, key, "bkwe"), bk_get(SCB, key, "done_wkday"), bk_get(SCB, key, "done_wkend")),
+            "by_doctor": doctors_block(SCB, SCE, key, slug)}
 
-def variant_fu(key):
+def variant_fu(key, slug=None):
     booked = bk_get(FUB, key, "booked"); done = bk_get(FUB, key, "done")
-    av = avail_block(key)
-    return {"bookings": {"total": booked, "new_tw": Z(), "new_old": Z(), "rebook": Z(), "relapse": Z()},
-            "done": {"booked": booked, "done": done, "book_done_pct": pct(done, booked), "by_cat": by_cat_block(FUE, key)},
+    av = avail_block(key, slug)
+    return {"bookings": {"total": booked, "nat": booked, "city": booked, "new_tw": Z(), "new_old": Z(), "rebook": Z(), "relapse": Z(), "by_source": {}},
+            "done": {"booked": booked, "booked_nat": booked, "booked_city": booked, "done": done, "done_nat": done, "done_city": done, "book_done_pct": pct(done, booked), "by_cat": by_cat_block(FUE, key)},
             "revenue": rev_block(FUE, key), "purchased": purch_block(FUE, key),
-            "availability": av, "velocity": velocity_block(booked, av, bk_get(FUB, key, "bkwd"), bk_get(FUB, key, "bkwe")),
-            "by_doctor": doctors_block(FUB, FUE, key)}
+            "availability": av, "velocity": velocity_block(booked, av, bk_get(FUB, key, "bkwd"), bk_get(FUB, key, "bkwe"), bk_get(FUB, key, "done_wkday"), bk_get(FUB, key, "done_wkend")),
+            "by_doctor": doctors_block(FUB, FUE, key, slug)}
 
 def merge_variant(a, b):
     booked = add(a["bookings"]["total"], b["bookings"]["total"])
     done = add(a["done"]["done"], b["done"]["done"])
+    b_nat = add(a["bookings"].get("nat", a["bookings"]["total"]), b["bookings"].get("nat", b["bookings"]["total"]))
+    b_city = add(a["bookings"].get("city", a["bookings"]["total"]), b["bookings"].get("city", b["bookings"]["total"]))
+    d_nat = add(a["done"].get("done_nat", a["done"]["done"]), b["done"].get("done_nat", b["done"]["done"]))
+    d_city = add(a["done"].get("done_city", a["done"]["done"]), b["done"].get("done_city", b["done"]["done"]))
     bc = {roll: add(a["done"]["by_cat"][roll], b["done"]["by_cat"][roll]) for roll in ROLL}
     dr = {}
     for d in set(a["by_doctor"]) | set(b["by_doctor"]):
-        x = a["by_doctor"].get(d, {"booked": Z(), "done": Z(), "purchased": Z(), "rev": Z()})
-        y = b["by_doctor"].get(d, {"booked": Z(), "done": Z(), "purchased": Z(), "rev": Z()})
-        dr[d] = {k: add(x[k], y[k]) for k in ("booked", "done", "purchased", "rev")}
+        blank_dr = {"booked": Z(), "done": Z(), "purchased": Z(), "rev": Z(), "new": Z(), "meds": Z(), "test": Z(), "ther": Z(), "cons": Z()}
+        x = a["by_doctor"].get(d, blank_dr)
+        y = b["by_doctor"].get(d, blank_dr)
+        dr[d] = {k: add(x.get(k, Z()), y.get(k, Z())) for k in ("booked", "done", "purchased", "rev", "new", "meds", "test", "ther", "cons", "pres_val", "pres_meds", "pres_test", "pres_ther")}
+        dr[d]["cat_done"] = {roll: add((x.get("cat_done", {}) or {}).get(roll, Z()), (y.get("cat_done", {}) or {}).get(roll, Z())) for roll in ROLL}
+        av = x.get("availability") or y.get("availability")   # physical attendance is funnel-independent — keep one, don't sum SC+FU
+        if av: dr[d]["availability"] = av
     rev = {"rev": add(a["revenue"]["rev"], b["revenue"]["rev"]),
            "by_cat": {roll: add(a["revenue"]["by_cat"][roll], b["revenue"]["by_cat"][roll]) for roll in ROLL}}
+    for nm in ("meds", "test", "ther", "cons"):
+        rev[nm] = {"tot": add(a["revenue"][nm]["tot"], b["revenue"][nm]["tot"]),
+                   "by_cat": {roll: add(a["revenue"][nm]["by_cat"][roll], b["revenue"][nm]["by_cat"][roll]) for roll in ROLL}}
+    for pk in ("pres_val", "pres_meds", "pres_test", "pres_ther"):
+        rev[pk] = add(a["revenue"].get(pk, Z()), b["revenue"].get(pk, Z()))
     pur = {"total": add(a["purchased"]["total"], b["purchased"]["total"]),
            "by_cat": {roll: add(a["purchased"]["by_cat"][roll], b["purchased"]["by_cat"][roll]) for roll in ROLL}}
     bkwd = add(a["velocity"]["bk_wday"], b["velocity"]["bk_wday"])   # SC + FU weekday bookings
     bkwe = add(a["velocity"]["bk_wend"], b["velocity"]["bk_wend"])   # SC + FU weekend bookings
-    return {"bookings": {"total": booked, "new_tw": a["bookings"]["new_tw"], "new_old": a["bookings"]["new_old"],
-                         "rebook": a["bookings"]["rebook"], "relapse": a["bookings"]["relapse"]},
-            "done": {"booked": booked, "done": done, "book_done_pct": pct(done, booked), "by_cat": bc},
+    dnwd = add(a["velocity"].get("done_wday", Z()), b["velocity"].get("done_wday", Z()))
+    dnwe = add(a["velocity"].get("done_wend", Z()), b["velocity"].get("done_wend", Z()))
+    return {"bookings": {"total": booked, "nat": b_nat, "city": b_city, "new_tw": a["bookings"]["new_tw"], "new_old": a["bookings"]["new_old"],
+                         "no1w": a["bookings"].get("no1w", Z()), "no2_4w": a["bookings"].get("no2_4w", Z()), "no1_3mo": a["bookings"].get("no1_3mo", Z()), "no3mo": a["bookings"].get("no3mo", Z()),   # lead-age buckets from SC (FU has none)
+                         "rebook": a["bookings"]["rebook"], "relapse": a["bookings"]["relapse"], "by_source": a["bookings"].get("by_source", {})},
+            "done": {"booked": booked, "booked_nat": b_nat, "booked_city": b_city, "done": done, "done_nat": d_nat, "done_city": d_city, "book_done_pct": pct(done, booked), "by_cat": bc},
             "revenue": rev, "purchased": pur,
-            "availability": a["availability"], "velocity": velocity_block(booked, a["availability"], bkwd, bkwe), "by_doctor": dr}
+            "availability": a["availability"], "velocity": velocity_block(booked, a["availability"], bkwd, bkwe, dnwd, dnwe), "by_doctor": dr}
 
 
 def main():
@@ -181,12 +335,12 @@ def main():
             city, loc = (key.split("|") + [""])[:2]
             slug = (loc + "_" + city).lower().replace(" ", "_")
         city = key.split("|")[0]
-        sc = variant_sc(key); fu = variant_fu(key)
+        sc = variant_sc(key, slug); fu = variant_fu(key, slug)
         clinics[slug] = {"city": city, "tier": tier.get(city, "?"),
                          "sc": sc, "fu": fu, "all": merge_variant(sc, fu)}
     wl = [datetime.date.fromisoformat(w).strftime("%d %b") for w in WEEKS]
     out = {"weeks": WEEKS, "week_labels": wl, "source": "master-demand matched files (SC+FU+econ+avail)",
-           "clinics": clinics}
+           "clinics": clinics, "online": online_block()}
     json.dump(out, open(os.path.join(ROOT, "data_quick_diag.json"), "w"), separators=(",", ":"))
 
     # verify: national latest week

@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Non-Call Leads — Online Funnel</title>
+<style>
+  :root{--bg:#EDF3F9;--card:#fff;--ink:#1f2d3d;--muted:#5b6b7d;--faint:#8a94a0;--line:#e2e8ef;
+    --accent:#6b4fa0;--accent-bg:#efeaf7;--red:#B4453E;}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:'Inter',system-ui,-apple-system,sans-serif;font-size:13px;padding:24px}
+  .wrap{max-width:940px;margin:0 auto}
+  h1{font-family:'Fraunces',Georgia,serif;font-size:22px;font-weight:600;letter-spacing:-.3px;margin:0}
+  .top{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid var(--accent);padding-bottom:12px;margin-bottom:4px;flex-wrap:wrap;gap:10px}
+  .sub{font-size:12px;color:var(--muted)} .sub a{color:var(--accent)}
+  .ctrl{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+  .btn{font:inherit;font-size:12px;font-weight:600;border:1px solid #d6cbe8;background:#fff;color:var(--accent);border-radius:7px;padding:6px 11px;cursor:pointer}
+  .btn.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+  select{font:inherit;font-size:12px;font-weight:600;color:var(--accent);background:var(--accent-bg);border:1px solid #d6cbe8;border-radius:7px;padding:6px 9px;cursor:pointer}
+  .sec-h{font-weight:700;font-size:10px;letter-spacing:.6px;color:var(--faint);margin:20px 0 8px}
+  .card{background:var(--card);border-radius:10px;padding:6px 14px 12px;box-shadow:0 1px 2px rgba(31,45,61,.05)}
+  table{width:100%;border-collapse:collapse;font-size:12px}
+  th,td{padding:6px 9px;text-align:right}
+  th:first-child,td:first-child{text-align:left}
+  thead th{font-size:10px;letter-spacing:.4px;color:var(--faint);border-bottom:1px solid var(--line);font-weight:700}
+  td .bk{color:var(--faint);font-size:11px}
+  tr.tot td{border-top:2px solid #d5e0ec;font-weight:700}
+  tr.cathdr td{background:#f4f2fa;font-weight:600;padding-top:8px}
+  td.subc{color:var(--muted);font-size:11.5px} td.subc:first-child{padding-left:24px}
+  .note{background:#f7f9fb;border:1px solid var(--line);border-radius:8px;padding:10px 14px;font-size:12px;color:var(--muted);margin-top:12px}
+  caption{caption-side:bottom;text-align:left;font-size:11px;color:var(--faint);padding-top:6px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <div><h1>Non-Call Leads · Online Funnel</h1>
+      <div class="sub">this-week new leads that did <b>not</b> call — convert online · source = CRM utm_source × utm_medium</div>
+      <div class="sub" id="wkspan" style="margin-top:4px"></div>
+      <div class="sub" style="margin-top:2px">↔ <a href="l2b-final.html">Call Leads funnel</a></div></div>
+    <div class="ctrl">
+      <button class="btn on" id="mFull" onclick="setMode('full')">Full weeks</button>
+      <button class="btn" id="mWtd" onclick="setMode('wtd')">Week-to-date</button>
+      <select id="cut" onchange="render()" style="display:none"></select>
+      <button class="btn" id="mg" onclick="toggleMG()">GMB+Google: split</button>
+    </div>
+  </div>
+
+  <div class="sec-h">① FUNNEL — new leads → didn't call → booked online (+ combined with calls)</div>
+  <div class="card"><table id="funtab"></table></div>
+
+  <div class="sec-h">② SOURCE of non-call leads — nested buckets · leads · booked · book%</div>
+  <div class="card"><table id="srctab"></table></div>
+
+  <div class="note" id="foot" style="margin-top:16px"></div>
+</div>
+
+<script>
+const fmt=n=>Number(n||0).toLocaleString('en-IN');
+const pct=(a,b)=>b?(100*a/b):0;
+const DAYS=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+const wlab=w=>{const s=new Date(w+'T00:00:00'),e=new Date(s);e.setDate(e.getDate()+6);
+  const sm=s.toLocaleString('en',{month:'short'}),em=e.toLocaleString('en',{month:'short'});
+  return sm===em?`${s.getDate()}–${e.getDate()} ${sm}`:`${s.getDate()} ${sm}–${e.getDate()} ${em}`;};
+const cb=(c,b)=>c?`<b>${fmt(c)}</b> <span class="bk">${fmt(b)}·${pct(b,c).toFixed(0)}%</span>`:'—';
+const CATS=[['Messaging',['WhatsApp']],['Paid ads',['Google Ads','Meta']],['Listings / Local',['GMB','Practo','JustDial']],
+  ['Website / Organic',['Website','Organic (other)']],['Referral / Other',['Other']],['Internal (exclude)',['Internal (staff tool)']],['Unknown',['(no source)']]];
+let D=null,F=null,MODE='full',CUT=6,MG=false;
+function toggleMG(){MG=!MG;const b=document.getElementById('mg');b.textContent='GMB+Google: '+(MG?'merged':'split');b.classList.toggle('on',MG);render();}
+function mergeSR(SR){ if(!MG) return; for(const w in SR){const g=SR[w]['GMB'],a=SR[w]['Google Ads'];if(g||a){SR[w]['GMB + Google']=[(g?g[0]:0)+(a?a[0]:0),(g?g[1]:0)+(a?a[1]:0)];delete SR[w]['GMB'];delete SR[w]['Google Ads'];}} }
+const CATS_MG=[['Messaging',['WhatsApp']],['Google (GMB + Ads)',['GMB + Google']],['Paid ads',['Meta']],['Listings / Local',['Practo','JustDial']],['Website / Organic',['Website','Organic (other)']],['Referral / Other',['Other']],['Internal (exclude)',['Internal (staff tool)']],['Unknown',['(no source)']]];
+const win=(o,N)=>{if(!o)return[0,0];let c=0,b=0;for(let d=0;d<=N;d++){c+=o.cal[d]||0;b+=o.bkd[d]||0;}return[c,b];};
+const winArr=(a,N)=>{let s=0;for(let d=0;d<=N;d++)s+=(a&&a[d])||0;return s;};
+const callBooked=(w,N)=>{let b=0;const c=(F&&F.chan[w])||{};for(const ch in c){for(let d=0;d<=N;d++)b+=c[ch].bkd[d]||0;}return b;};
+
+function setMode(m){MODE=m;document.getElementById('mFull').classList.toggle('on',m==='full');
+  document.getElementById('mWtd').classList.toggle('on',m==='wtd');
+  document.getElementById('cut').style.display=m==='wtd'?'inline-block':'none';render();}
+
+function render(){
+  const N=MODE==='full'?6:parseInt(document.getElementById('cut').value);
+  const all=D.weeks, cols=MODE==='full'?all.slice(-5,-1):all.slice(-5), partial=all[all.length-1];
+  const dayspan=MODE==='full'?'full week (Mon–Sun)':('Mon–'+DAYS[N]);
+  const SR={},NL={};
+  cols.forEach(w=>{ SR[w]={}; for(const ch in (D.src[w]||{})){const v=win(D.src[w][ch],N);if(v[0]||v[1])SR[w][ch]=v;} NL[w]=winArr(D.newtot[w],N); });
+  mergeSR(SR);
+  const wtot=w=>{let c=0,b=0;for(const ch in SR[w]){c+=SR[w][ch][0];b+=SR[w][ch][1];}return[c,b];};
+  document.getElementById('wkspan').innerHTML=MODE==='full'
+    ? `last 4 complete weeks · <b>full Mon–Sun</b>`
+    : `<b>${dayspan}</b> window · last 5 weeks incl. in-progress`;
+
+  // ① funnel + combined
+  let fh='<thead><tr><th>Stage</th>'+cols.map(w=>`<th>${wlab(w)}${w===partial?' ◑':''}</th>`).join('')+'</tr></thead><tbody>';
+  fh+=`<tr><td><b>New leads created</b></td>`+cols.map(w=>`<td><b>${fmt(NL[w])}</b></td>`).join('')+'</tr>';
+  fh+=`<tr><td style="padding-left:22px">↳ did NOT call (online)</td>`+cols.map(w=>{const t=wtot(w);return `<td>${fmt(t[0])} <span class="bk">${pct(t[0],NL[w]).toFixed(0)}%</span></td>`;}).join('')+'</tr>';
+  fh+=`<tr><td><b>→ Booked online (no call)</b></td>`+cols.map(w=>{const t=wtot(w);return `<td><b>${fmt(t[1])}</b> <span class="bk">${pct(t[1],t[0]).toFixed(0)}%</span></td>`;}).join('')+'</tr>';
+  if(F){ fh+=`<tr style="color:var(--faint)"><td style="padding-left:22px">＋ call-booked (call funnel)</td>`+cols.map(w=>`<td>${fmt(callBooked(w,N))}</td>`).join('')+'</tr>';
+    fh+=`<tr class="tot"><td>= TOTAL weekly booked (call + web)</td>`+cols.map(w=>{const tb=wtot(w)[1]+callBooked(w,N);return `<td><b>${fmt(tb)}</b> <span class="bk">of ${fmt(NL[w])}·${pct(tb,NL[w]).toFixed(0)}%</span></td>`;}).join('')+'</tr>'; }
+  document.getElementById('funtab').innerHTML=fh+`</tbody><caption>Window: <b>${dayspan}</b>. Bottom row = total demand booked (online + call funnel) of all new leads. ◑ = in-progress week.</caption>`;
+
+  // ② nested source
+  let sh='<thead><tr><th>Bucket → source</th>'+cols.map(w=>`<th>${wlab(w)}${w===partial?' ◑':''}</th>`).join('')+'</tr></thead><tbody>';
+  (MG?CATS_MG:CATS).forEach(([cat,chs])=>{ const present=chs.filter(c=>cols.some(w=>SR[w][c])); if(!present.length)return;
+    sh+=`<tr class="cathdr"><td><b>${cat}</b></td>`+cols.map(w=>{let lc=0,bc=0;present.forEach(c=>{const d=SR[w][c]||[0,0];lc+=d[0];bc+=d[1];});return `<td>${cb(lc,bc)}</td>`;}).join('')+'</tr>';
+    present.forEach(c=>{ sh+=`<tr><td class="subc">· ${c}</td>`+cols.map(w=>`<td class="subc">${cb((SR[w][c]||[0,0])[0],(SR[w][c]||[0,0])[1])}</td>`).join('')+'</tr>';});
+  });
+  sh+=`<tr class="tot"><td>= all non-call leads</td>`+cols.map(w=>{const t=wtot(w);return `<td>${cb(t[0],t[1])}</td>`;}).join('')+'</tr>';
+  document.getElementById('srctab').innerHTML=sh+'</tbody>';
+
+  const lw=cols[cols.length-1], wa=SR[lw]['WhatsApp']||[0,0], t=wtot(lw);
+  document.getElementById('foot').innerHTML=`<b style="color:var(--ink)">Read:</b> ${pct(t[0],NL[lw]).toFixed(0)}% of new leads never call. <b>WhatsApp</b> is the biggest non-call bucket (${fmt(wa[0])} leads, ${pct(wa[1],wa[0]).toFixed(0)}% book) — huge volume, weak conversion. <b>Internal (staff tool)</b> = retool records, not real demand.`;
+}
+
+Promise.all([fetch('data_noncall.json').then(r=>r.json()), fetch('data_l2b_final.json').then(r=>r.json()).catch(()=>null)])
+.then(([d,f])=>{ D=d; F=f;
+  const pw=d.weeks[d.weeks.length-1], dsum=[0,0,0,0,0,0,0];
+  for(const ch in (d.src[pw]||{})) for(let x=0;x<7;x++) dsum[x]+=d.src[pw][ch].cal[x]||0;
+  CUT=0; for(let x=6;x>=0;x--){ if(dsum[x]>0){CUT=x;break;} }
+  const sel=document.getElementById('cut');
+  DAYS.forEach((nm,i)=>{const o=document.createElement('option');o.value=i;o.textContent='Mon–'+nm;sel.appendChild(o);});
+  sel.value=CUT; render();
+}).catch(e=>{document.body.innerHTML='<div class="wrap"><p style="color:#B4453E">Could not load data_noncall.json — run <code>python3 scripts/build_noncall.py</code>.</p></div>';});
+</script>
+</body>
+</html>

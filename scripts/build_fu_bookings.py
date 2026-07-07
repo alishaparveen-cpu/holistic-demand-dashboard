@@ -35,7 +35,9 @@ SELECT city, clinic, doctor, week_start,
   count(distinct patient_id) AS booked,
   count(distinct case when status IN ('COMPLETED','RECONSULTED') then patient_id end) AS done,
   count(distinct case when rn=1 and dow NOT IN (0,6) then patient_id end) AS bkwd,   -- weekday bookings
-  count(distinct case when rn=1 and dow IN (0,6) then patient_id end) AS bkwe        -- weekend bookings
+  count(distinct case when rn=1 and dow IN (0,6) then patient_id end) AS bkwe,       -- weekend bookings
+  count(distinct case when status IN ('COMPLETED','RECONSULTED') and dow NOT IN (0,6) then patient_id end) AS done_wkday,   -- weekday DONE
+  count(distinct case when status IN ('COMPLETED','RECONSULTED') and dow IN (0,6) then patient_id end) AS done_wkend        -- weekend DONE
 FROM fu WHERE week_start >= '{START_WK}' GROUP BY 1,2,3,4 ORDER BY 1,2,3,4;
 """
 
@@ -52,7 +54,7 @@ def main():
     weeks = sorted({r[3] for r in rows})
     widx = {w: i for i, w in enumerate(weeks)}
     NW = len(weeks)
-    FIELDS = ["booked", "done", "bkwd", "bkwe"]
+    FIELDS = ["booked", "done", "bkwd", "bkwe", "done_wkday", "done_wkend"]
 
     def blank():
         return {f: [0]*NW for f in FIELDS}
@@ -62,7 +64,7 @@ def main():
         city, clinic, doctor, wk = r[0], r[1], r[2], r[3]
         key = f"{city}|{clinic}"
         i = widx[wk]
-        vals = [int(v) for v in r[4:8]]
+        vals = [int(v) for v in r[4:10]]
         o = clinics.setdefault(key, blank())
         dd = o.setdefault("by_doctor", {}).setdefault(doctor, blank())
         for f, v in zip(FIELDS, vals):

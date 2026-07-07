@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Final — Combined Demand (call + web)</title>
+<style>
+  :root{--bg:#EDF3F9;--card:#fff;--ink:#1f2d3d;--muted:#5b6b7d;--faint:#8a94a0;--line:#e2e8ef;
+    --accent:#1F6F5C;--accent-bg:#e7f1ec;--gold:#C2691F;--red:#B4453E;}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:'Inter',system-ui,-apple-system,sans-serif;font-size:13px;padding:24px}
+  .wrap{max-width:960px;margin:0 auto}
+  h1{font-family:'Fraunces',Georgia,serif;font-size:22px;font-weight:600;letter-spacing:-.3px;margin:0}
+  .top{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid var(--accent);padding-bottom:12px;margin-bottom:4px;flex-wrap:wrap;gap:10px}
+  .sub{font-size:12px;color:var(--muted)}
+  .ctrl{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+  .btn{font:inherit;font-size:12px;font-weight:600;border:1px solid #c4ddd3;background:#fff;color:var(--accent);border-radius:7px;padding:6px 11px;cursor:pointer}
+  .btn.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+  select{font:inherit;font-size:12px;font-weight:600;color:var(--accent);background:var(--accent-bg);border:1px solid #c4ddd3;border-radius:7px;padding:6px 9px;cursor:pointer}
+  .sec-h{font-weight:700;font-size:10px;letter-spacing:.6px;color:var(--faint);margin:20px 0 8px}
+  .card{background:var(--card);border-radius:10px;padding:6px 14px 12px;box-shadow:0 1px 2px rgba(31,45,61,.05)}
+  table{width:100%;border-collapse:collapse;font-size:12px}
+  th,td{padding:6px 9px;text-align:right}
+  th:first-child,td:first-child{text-align:left}
+  thead th{font-size:10px;letter-spacing:.4px;color:var(--faint);border-bottom:1px solid var(--line);font-weight:700}
+  td .bk{color:var(--faint);font-size:11px}
+  tr.tot td{border-top:2px solid #d5e0ec;font-weight:700}
+  .note{background:#f7f9fb;border:1px solid var(--line);border-radius:8px;padding:10px 14px;font-size:12px;color:var(--muted);margin-top:12px}
+  caption{caption-side:bottom;text-align:left;font-size:11px;color:var(--faint);padding-top:6px}
+  .tag{font-size:10px;font-weight:600;padding:1px 7px;border-radius:20px}
+  .tag.call{background:#e7f1ec;color:#1F6F5C} .tag.web{background:#efeaf7;color:#6b4fa0} .tag.mix{background:#f1f4f7;color:#5b6b7d}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <div><h1>Final · Combined Demand (call + web)</h1>
+      <div class="sub">all new leads → booked · booked-by-source from the <b>raw system utm</b> (no corrections) · call + web unified</div>
+      <div class="sub" id="wkspan" style="margin-top:4px"></div></div>
+    <div class="ctrl">
+      <button class="btn on" id="mFull" onclick="setMode('full')">Full weeks</button>
+      <button class="btn" id="mWtd" onclick="setMode('wtd')">Week-to-date</button>
+      <select id="nwk" onchange="setNWK(this.value)" title="how many weeks to show"><option value="4">4 wks</option><option value="6">6 wks</option><option value="8">8 wks</option><option value="10">10 wks</option></select>
+      <span id="wtdrange" style="display:none;gap:4px;align-items:center"><select id="cutS" onchange="render()" title="from day"></select><span style="color:var(--faint);font-weight:700">→</span><select id="cutE" onchange="render()" title="to day"></select></span>
+      <button class="btn" id="mg" onclick="toggleMG()">GMB+Google: split</button>
+    </div>
+  </div>
+
+  <div class="sec-h">① TOTAL DEMAND — new leads → booked (call + web)</div>
+  <div class="card"><table id="funtab"></table></div>
+
+  <div class="sec-h">② BOOKED BY SOURCE — <b>raw system utm</b> · call + web combined (no corrections)</div>
+  <div class="card"><table id="srctab"></table></div>
+
+  <div class="sec-h">③ BOOKED BY SOURCE — <b>corrected call attribution</b> · call + web combined (final)</div>
+  <div class="card"><table id="srctab2"></table></div>
+
+  <div class="note" id="foot" style="margin-top:16px"></div>
+</div>
+
+<script>
+const fmt=n=>Number(n||0).toLocaleString('en-IN');
+const pct=(a,b)=>b?(100*a/b):0;
+const DAYS=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+const wlab=w=>{const s=new Date(w+'T00:00:00'),e=new Date(s);e.setDate(e.getDate()+6);
+  const sm=s.toLocaleString('en',{month:'short'}),em=e.toLocaleString('en',{month:'short'});
+  return sm===em?`${s.getDate()}–${e.getDate()} ${sm}`:`${s.getDate()} ${sm}–${e.getDate()} ${em}`;};
+// call channel -> unified ; web channel -> unified
+// system source (no corrections): call = raw utm ; web = raw utm × medium (WhatsApp/Website split)
+const CALLMAP={GMB:'GMB','Google Ads':'Google Ads',Organic:'Organic',Meta:'Meta',Practo:'Practo',JustDial:'JustDial',Other:'Other','Direct / Call (blank)':'Direct / Unknown'};
+// corrected call attribution (F.chan) — the resolved source after applying dialed-number + override corrections
+const CHANMAP={GMB:'GMB','Google Ads':'Google Ads',Brand:'Brand',Organic:'Organic',Meta:'Meta',Practo:'Practo',JustDial:'JustDial',Offline:'Offline',Undetermined:'Undetermined',Other:'Other'};
+const WEBMAP={WhatsApp:'WhatsApp','Google Ads':'Google Ads',Meta:'Meta',GMB:'GMB',Practo:'Practo',Website:'Website','Organic (other)':'Organic',JustDial:'JustDial','Internal (staff tool)':'Internal','Other':'Other','(no source)':'Direct / Unknown'};
+const ORDER=['GMB','Google Ads','WhatsApp','Organic','Meta','Practo','Website','JustDial','Internal','Other','Direct / Unknown'];
+const ORDER2=['GMB','Google Ads','Brand','WhatsApp','Organic','Meta','Practo','Website','JustDial','Internal','Offline','Undetermined','Other','Direct / Unknown'];
+let F=null,D=null,O=null,MODE='full',CUT=6,MG=false,NWK=4,WSTART=0;
+function setNWK(n){NWK=parseInt(n);render();}
+const opsWin=(w,N)=>{const a=(O&&O.opsbk[w])||[];let s=0;for(let d=WSTART;d<=N;d++)s+=a[d]||0;return s;};
+function toggleMG(){MG=!MG;const b=document.getElementById('mg');b.textContent='GMB+Google: '+(MG?'merged':'split');b.classList.toggle('on',MG);render();}
+function mergeSrc(o){ if(!MG) return o; const n=Object.assign({},o); const g=n['GMB'],a=n['Google Ads']; if(g||a){n['GMB + Google']={cc:(g?g.cc:0)+(a?a.cc:0),cb:(g?g.cb:0)+(a?a.cb:0),wc:(g?g.wc:0)+(a?a.wc:0),wb:(g?g.wb:0)+(a?a.wb:0)};delete n['GMB'];delete n['Google Ads'];} return n; }
+const winBk=(o,N)=>{if(!o)return 0;let b=0;for(let d=WSTART;d<=N;d++)b+=o.bkd[d]||0;return b;};
+const winCt=(o,N)=>{if(!o)return 0;let c=0;for(let d=WSTART;d<=N;d++)c+=o.cal[d]||0;return c;};
+const winArr=(a,N)=>{let s=0;for(let d=WSTART;d<=N;d++)s+=(a&&a[d])||0;return s;};
+
+function setMode(m){MODE=m;document.getElementById('mFull').classList.toggle('on',m==='full');
+  document.getElementById('mWtd').classList.toggle('on',m==='wtd');
+  document.getElementById('wtdrange').style.display=m==='wtd'?'inline-flex':'none';render();}
+
+// per week: {source:{cc,cb,wc,wb}} — call/web contacts & booked, windowed
+// callKey: F.sys (raw system utm) or F.chan (corrected attribution) ; map: matching CALLMAP/CHANMAP
+function bySourceWith(w,N,callKey,map){
+  const o={}; const e=s=>o[s]||(o[s]={cc:0,cb:0,wc:0,wb:0});
+  const c=(F&&F[callKey]&&F[callKey][w])||{}; for(const ch in c){const x=e(map[ch]||'Other');x.cc+=winCt(c[ch],N);x.cb+=winBk(c[ch],N);}
+  const wv=(D&&D.src[w])||{}; for(const ch in wv){const x=e(WEBMAP[ch]||'Other');x.wc+=winCt(wv[ch],N);x.wb+=winBk(wv[ch],N);}
+  return o;
+}
+const bySource=(w,N)=>bySourceWith(w,N,'sys',CALLMAP);            // raw system utm
+const bySourceCorr=(w,N)=>bySourceWith(w,N,'chan',CHANMAP);       // corrected call attribution + web
+const bk=s=>s.cb+s.wb, ct=s=>s.cc+s.wc;
+function render(){
+  let N;
+  if(MODE==='full'){WSTART=0;N=6;}
+  else{WSTART=parseInt(document.getElementById('cutS').value)||0;N=parseInt(document.getElementById('cutE').value);if(isNaN(N))N=6;if(WSTART>N)WSTART=N;}
+  const all=D.weeks, cols=MODE==='full'?all.slice(-(NWK+1),-1):all.slice(-NWK), partial=all[all.length-1];
+  const dayspan=MODE==='full'?'full week (Mon–Sun)':(WSTART===N?DAYS[N]+' only':DAYS[WSTART]+'–'+DAYS[N]);
+  const NL=w=>winArr(D.newtot[w],N);
+  const SB={}; cols.forEach(w=>SB[w]=mergeSrc(bySource(w,N)));
+  const ORD=(MG?['GMB + Google']:['GMB','Google Ads']).concat(ORDER.filter(s=>s!=='GMB'&&s!=='Google Ads'));
+  const totBk=w=>{let b=0;for(const s in SB[w])b+=bk(SB[w][s]);return b;};
+  document.getElementById('wkspan').innerHTML=MODE==='full'?`last ${cols.length} complete weeks · <b>full Mon–Sun</b>`:`<b>${dayspan}</b> window · last ${cols.length} weeks incl. in-progress`;
+
+  // ① total demand
+  let fh='<thead><tr><th>Stage</th>'+cols.map(w=>`<th>${wlab(w)}${w===partial?' ◑':''}</th>`).join('')+'</tr></thead><tbody>';
+  fh+=`<tr><td><b>New leads created</b></td>`+cols.map(w=>`<td><b>${fmt(NL(w))}</b></td>`).join('')+'</tr>';
+  fh+=`<tr><td style="padding-left:22px">booked via call</td>`+cols.map(w=>{let b=0;for(const s in SB[w])b+=SB[w][s].cb;return `<td>${fmt(b)}</td>`;}).join('')+'</tr>';
+  fh+=`<tr><td style="padding-left:22px">booked via web (online)</td>`+cols.map(w=>{let b=0;for(const s in SB[w])b+=SB[w][s].wb;return `<td>${fmt(b)}</td>`;}).join('')+'</tr>';
+  fh+=`<tr class="tot"><td>= TOTAL booked · tracked lead→book</td>`+cols.map(w=>{const b=totBk(w);return `<td><b>${fmt(b)}</b> <span class="bk">${pct(b,NL(w)).toFixed(0)}%</span></td>`;}).join('')+'</tr>';
+  if(O){
+    fh+=`<tr style="color:var(--faint)"><td style="padding-left:22px">＋ untracked (aged web-leads · walk-ins · prior callers)</td>`+cols.map(w=>{const g=Math.max(0,opsWin(w,N)-totBk(w));return `<td>${fmt(g)}</td>`;}).join('')+'</tr>';
+    fh+=`<tr class="tot" style="border-top:2px solid var(--accent)"><td>= FINAL new-patient bookings this week <span class="bk" style="font-weight:400">(ops view · by booking week)</span></td>`+cols.map(w=>`<td><b>${fmt(opsWin(w,N))}</b></td>`).join('')+'</tr>';
+  }
+  document.getElementById('funtab').innerHTML=fh+`</tbody><caption>Window: <b>${dayspan}</b>. <b>Tracked lead→book</b> = booked this week from a this-week call/web-lead. <b>Final</b> adds bookings from prior-week leads / walk-ins (matches the ops sheet). ◑ = in-progress.</caption>`;
+
+  // ②/③ booked by source — shared renderer (SB = per-week source map, ord = channel order)
+  function srcTableHTML(SBx, ord){
+    const agg={}; ord.forEach(s=>{let cb=0,wb=0,cc=0,wc=0;cols.forEach(w=>{const d=SBx[w][s];if(d){cb+=d.cb;wb+=d.wb;cc+=d.cc;wc+=d.wc;}});if(cb+wb>0)agg[s]={cb,wb,cc,wc};});
+    const present=Object.keys(agg).sort((a,b)=>(agg[b].cb+agg[b].wb)-(agg[a].cb+agg[a].wb));
+    const routeTag=s=>{const t=agg[s].cb+agg[s].wb;const cs=agg[s].cb/t;return cs>=.8?'<span class="tag call">call</span>':cs<=.2?'<span class="tag web">web</span>':'<span class="tag mix">mixed</span>';};
+    const tot=w=>{let b=0;for(const s in SBx[w])b+=bk(SBx[w][s]);return b;};
+    let sh='<thead><tr><th>Source</th><th>route</th>'+cols.map(w=>`<th>${wlab(w)}${w===partial?' ◑':''}</th>`).join('')+'</tr></thead><tbody>';
+    present.forEach(s=>{ const dim=(s==='Direct / Unknown'||s==='Internal'||s==='Undetermined'); sh+=`<tr><td class="lab"${dim?' style="color:var(--faint)"':''}><b>${s}</b></td><td style="text-align:left">${routeTag(s)}</td>`+
+      cols.map(w=>{const d=SBx[w][s];if(!d||(d.cb+d.wb)===0)return '<td>—</td>';const bkd=d.cb+d.wb,con=d.cc+d.wc;return `<td><b>${fmt(bkd)}</b> <span class="bk">${pct(bkd,con).toFixed(0)}% of ${fmt(con)}</span></td>`;}).join('')+'</tr>';});
+    sh+=`<tr class="tot"><td>= total booked</td><td></td>`+cols.map(w=>`<td><b>${fmt(tot(w))}</b></td>`).join('')+'</tr>';
+    return {html:sh+'</tbody>', present};
+  }
+  // ② raw system utm
+  const rawT=srcTableHTML(SB,ORD);
+  document.getElementById('srctab').innerHTML=rawT.html+'<caption>Each cell: <b>booked</b> · <span class="bk">conversion% of contacts</span> (contacts = call callers + web leads). Source = <b>raw system utm</b> (no corrections). Sorted by booked.</caption>';
+  // ③ corrected: call-born leads reassigned by the line they dialed + overrides, then re-combined with web (web unchanged)
+  const SB2={}; cols.forEach(w=>SB2[w]=mergeSrc(bySourceCorr(w,N)));
+  const ORD2=(MG?['GMB + Google']:['GMB','Google Ads']).concat(ORDER2.filter(s=>s!=='GMB'&&s!=='Google Ads'));
+  document.getElementById('srctab2').innerHTML=srcTableHTML(SB2,ORD2).html+'<caption><b>Corrected</b>: same bookings, call source resolved by dialed line + overrides — <b>Brand</b> &amp; <b>Offline</b> split out, <b>Undetermined</b> = unresolved. Web unchanged. Totals match ②.</caption>';
+
+  const present=rawT.present;
+  const lw=cols[cols.length-1], b=totBk(lw), top=present.slice(0,3).map(s=>`${s} ${fmt(SB[lw][s]?bk(SB[lw][s]):0)}`).join(' · ');
+  document.getElementById('foot').innerHTML=`<b style="color:var(--ink)">${wlab(lw)} (${dayspan}):</b> ${fmt(NL(lw))} new leads → <b>${fmt(b)} booked</b> (${pct(b,NL(lw)).toFixed(0)}% lead→book). Top booked sources (raw): <b>${top}</b>. <b>② raw</b> = system utm as-is; <b>③ corrected</b> = call-born leads reassigned to the line they dialed (Undetermined shrinks, GMB/Google grow). Web unchanged.`;
+}
+
+Promise.all([fetch('data_l2b_final.json').then(r=>r.json()), fetch('data_noncall.json').then(r=>r.json()), fetch('data_ops_bookings.json').then(r=>r.json()).catch(()=>null)])
+.then(([f,d,o])=>{ F=f; D=d; O=o;
+  const pw=d.weeks[d.weeks.length-1], dsum=[0,0,0,0,0,0,0];
+  for(const ch in (d.src[pw]||{})) for(let x=0;x<7;x++) dsum[x]+=d.src[pw][ch].cal[x]||0;
+  CUT=0; for(let x=6;x>=0;x--){ if(dsum[x]>0){CUT=x;break;} }
+  const selS=document.getElementById('cutS'), selE=document.getElementById('cutE');
+  DAYS.forEach((nm,i)=>{selS.appendChild(new Option(nm,i));selE.appendChild(new Option(nm,i));});
+  selS.value=0; selE.value=CUT; render();
+}).catch(e=>{document.body.innerHTML='<div class="wrap"><p style="color:#B4453E">Could not load data — run both build_l2b_final.py and build_noncall.py.</p></div>';});
+</script>
+</body>
+</html>

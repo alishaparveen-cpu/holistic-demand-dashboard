@@ -33,7 +33,16 @@ SQL = """WITH ld AS (
  utm AS (SELECT RIGHT(phone_no,10) ph10,
     MAX(CASE WHEN utm_source ILIKE 'practo%' THEN 4 WHEN utm_source ILIKE 'gmb%' THEN 3
              WHEN utm_source ILIKE 'google%' THEN 2 WHEN utm_source ILIKE 'organic%' THEN 1 ELSE 0 END) pr
-    FROM allo_prod.allo_persons.lead WHERE phone_no IS NOT NULL GROUP BY 1)
+    FROM allo_prod.allo_persons.lead WHERE phone_no IS NOT NULL GROUP BY 1),
+ -- each phone's FIRST appointment → online (telehealth loc / null) or offline (physical clinic)
+ fa AS (SELECT ph10, is_online, appt_wk FROM (
+    SELECT RIGHT(pat.phone_no,10) ph10,
+      CASE WHEN ap.location_id IN ('c7d8c9d2-f389-4e8f-a260-71110195b83f','ffe8d849-3099-48fe-a2df-e324c4befe56') OR ap.location_id IS NULL THEN 1 ELSE 0 END is_online,
+      DATE_TRUNC('week', ap.start_time + INTERVAL '5 hours 30 minutes')::date appt_wk,
+      ROW_NUMBER() OVER (PARTITION BY RIGHT(pat.phone_no,10) ORDER BY ap.start_time) rn
+    FROM allo_prod.allo_persons.patient pat
+    JOIN allo_prod.allo_consultations.appointments ap ON ap.patient_id=pat.id AND ap.deleted_at IS NULL
+    WHERE pat.phone_no IS NOT NULL AND pat.deleted_at IS NULL) WHERE rn=1)
 SELECT TO_CHAR(fl.fwk,'YYYY-MM-DD') wk,
   CASE WHEN fl.source='Google' THEN 'Google Ads'
        WHEN fl.source IN ('Fb','Facebook','Instagram','Ig','Meta') THEN 'Meta'
@@ -54,25 +63,31 @@ SELECT TO_CHAR(fl.fwk,'YYYY-MM-DD') wk,
        ELSE 'Other' END src,
   COUNT(*) new_leads,
   SUM(CASE WHEN fb.fbt IS NOT NULL AND DATE_TRUNC('week',fb.fbt+INTERVAL '5 hours 30 minutes')::date=fl.fwk THEN 1 ELSE 0 END) booked_same,
+  SUM(CASE WHEN fb.fbt IS NOT NULL AND DATE_TRUNC('week',fb.fbt+INTERVAL '5 hours 30 minutes')::date=fl.fwk AND COALESCE(fa.is_online,0)=0 THEN 1 ELSE 0 END) booked_off,
+  SUM(CASE WHEN fb.fbt IS NOT NULL AND DATE_TRUNC('week',fb.fbt+INTERVAL '5 hours 30 minutes')::date=fl.fwk AND COALESCE(fa.is_online,0)=0 AND fa.appt_wk<=fl.fwk THEN 1 ELSE 0 END) booked_off_apptsame,
+  SUM(CASE WHEN fb.fbt IS NOT NULL AND DATE_TRUNC('week',fb.fbt+INTERVAL '5 hours 30 minutes')::date=fl.fwk AND COALESCE(fa.is_online,0)=0 AND fa.appt_wk>fl.fwk THEN 1 ELSE 0 END) booked_off_apptlater,
+  SUM(CASE WHEN fb.fbt IS NOT NULL AND DATE_TRUNC('week',fb.fbt+INTERVAL '5 hours 30 minutes')::date=fl.fwk AND fa.is_online=1 THEN 1 ELSE 0 END) booked_on,
   SUM(CASE WHEN fb.fbt IS NOT NULL AND DATE_TRUNC('week',fb.fbt+INTERVAL '5 hours 30 minutes')::date>fl.fwk THEN 1 ELSE 0 END) booked_later,
   SUM(CASE WHEN fb.fbt IS NULL THEN 1 ELSE 0 END) never_booked
-FROM fl LEFT JOIN fb ON fb.ph=fl.ph LEFT JOIN utm u ON u.ph10=RIGHT(fl.ph,10)
+FROM fl LEFT JOIN fb ON fb.ph=fl.ph LEFT JOIN utm u ON u.ph10=RIGHT(fl.ph,10) LEFT JOIN fa ON fa.ph10=RIGHT(fl.ph,10)
 WHERE fl.fwk >= '{lo}' AND fl.fwk < '2026-06-29'
 GROUP BY 1,2;""".format(lo=LO)
 
-FIELDS = ["new_leads", "booked_same", "booked_later", "never_booked"]
+FIELDS = ["new_leads", "booked_same", "booked_off", "booked_off_apptsame", "booked_off_apptlater", "booked_on", "booked_later", "never_booked"]
 if __name__ == "__main__":
     d = json.load(open(OUT))
     by_src = {s: {f: Z() for f in FIELDS} for s in SRCS}
     for line in run_sql(SQL):
         r = line.split("\t") if isinstance(line, str) else line
-        if len(r) < 6: continue
-        wk, src, nl, bs, bl, nb = r[:6]
+        if len(r) < 10: continue
+        wk, src, nl, bs, boff, boff_as, boff_al, bon, bl, nb = r[:10]
         if wk not in idx: continue
         if src not in SRCS: src = "Other"
         i = idx[wk]
         try:
             by_src[src]["new_leads"][i] += int(float(nl)); by_src[src]["booked_same"][i] += int(float(bs))
+            by_src[src]["booked_off"][i] += int(float(boff)); by_src[src]["booked_on"][i] += int(float(bon))
+            by_src[src]["booked_off_apptsame"][i] += int(float(boff_as)); by_src[src]["booked_off_apptlater"][i] += int(float(boff_al))
             by_src[src]["booked_later"][i] += int(float(bl)); by_src[src]["never_booked"][i] += int(float(nb))
         except (ValueError, TypeError): continue
     total = {f: [sum(by_src[s][f][i] for s in SRCS) for i in range(len(Z()))] for f in FIELDS}
@@ -81,4 +96,11 @@ if __name__ == "__main__":
     json.dump(d, open(OUT, "w"), separators=(",", ":"))
     tn = sum(total["new_leads"]); tb = sum(total["booked_same"]) + sum(total["booked_later"]); tnv = sum(total["never_booked"])
     print("new leads %d | booked eventually %d (%.0f%%) | never %d" % (tn, tb, 100 * tb / tn if tn else 0, tnv))
-    print("by source (new leads):", {s: sum(by_src[s]["new_leads"]) for s in SRCS})
+    print("booked same-week: offline %d + online %d = %d (check ties to booked_same %d)" % (
+        sum(total["booked_off"]), sum(total["booked_on"]), sum(total["booked_off"]) + sum(total["booked_on"]), sum(total["booked_same"])))
+    vw = "2026-06-22"
+    if vw in idx:
+        j = idx[vw]
+        print("  %s: booked offline(call) %d = appt-this-wk %d + appt-later %d · online %d" % (
+            vw, total["booked_off"][j], total["booked_off_apptsame"][j], total["booked_off_apptlater"][j], total["booked_on"][j]))
+        print("     (appt-this-wk should ≈ offline funnel ft_same ~1,008)")

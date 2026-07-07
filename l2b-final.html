@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Call Leads Only — L2B Final Funnel</title>
+<style>
+  :root{--bg:#EDF3F9;--card:#fff;--ink:#1f2d3d;--muted:#5b6b7d;--faint:#8a94a0;--line:#e2e8ef;
+    --accent:#2C6CAE;--accent-bg:#EAF1FB;--green:#2E7D5B;--gold:#C2691F;--red:#B4453E;--slate:#3E6F8E;}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:'Inter',system-ui,-apple-system,sans-serif;font-size:13px;padding:24px}
+  .wrap{max-width:920px;margin:0 auto}
+  h1{font-family:'Fraunces',Georgia,serif;font-size:23px;font-weight:600;letter-spacing:-.3px;margin:0}
+  .top{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid var(--accent);padding-bottom:12px;margin-bottom:4px;flex-wrap:wrap;gap:10px}
+  .sub{font-size:12px;color:var(--muted)}
+  .ctrl{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+  .btn{font:inherit;font-size:12px;font-weight:600;border:1px solid #cfe0f2;background:#fff;color:var(--accent);border-radius:7px;padding:6px 11px;cursor:pointer}
+  .btn.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+  select{font:inherit;font-size:12px;font-weight:600;color:var(--accent);background:var(--accent-bg);border:1px solid #cfe0f2;border-radius:7px;padding:6px 9px;cursor:pointer}
+  .sec-h{font-weight:700;font-size:10px;letter-spacing:.6px;color:var(--faint);margin:20px 0 8px}
+  .card{background:var(--card);border-radius:10px;padding:6px 14px 12px;box-shadow:0 1px 2px rgba(31,45,61,.05)}
+  table{width:100%;border-collapse:collapse;font-size:12px}
+  th,td{padding:7px 9px;text-align:right}
+  th:first-child,td:first-child{text-align:left}
+  thead th{font-size:10px;letter-spacing:.4px;color:var(--faint);border-bottom:1px solid var(--line);font-weight:700}
+  td .bk{color:var(--faint);font-size:11px}
+  tr.tot td{border-top:2px solid #d5e0ec;font-weight:700}
+  .note{background:#f7f9fb;border:1px solid var(--line);border-radius:8px;padding:10px 14px;font-size:12px;color:var(--muted);margin-top:12px}
+  .pillrow td:first-child{border-left:3px solid transparent;padding-left:10px}
+  caption{caption-side:bottom;text-align:left;font-size:11px;color:var(--faint);padding-top:6px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <div><h1>Call Leads Only · L2B Final Funnel</h1>
+      <div class="sub">inbound new-patient calls only · source = dialed-number override → CRM utm → undetermined</div>
+      <div class="sub" id="wkspan" style="margin-top:4px"></div></div>
+    <div class="ctrl">
+      <button class="btn on" id="mFull" onclick="setMode('full')">Full weeks</button>
+      <button class="btn" id="mWtd" onclick="setMode('wtd')">Week-to-date</button>
+      <select id="cut" onchange="render()" style="display:none"></select>
+      <button class="btn" id="mg" onclick="toggleMG()">GMB+Google: split</button>
+    </div>
+  </div>
+
+  <div class="sec-h">① FUNNEL — new leads → called → callers → booked</div>
+  <div class="card"><table id="funtab"></table></div>
+
+  <div class="sec-h">② SYSTEM SOURCE — raw <code>utm_source</code>, uncorrected (~97% right · matches colleague)</div>
+  <div class="card"><table id="systab"></table></div>
+
+  <div class="sec-h">②b SYSTEM SOURCE — this-week leads only, uncorrected → reconciles to 1,626</div>
+  <div class="card"><table id="systab_tw"></table></div>
+
+  <div class="sec-h">③ HOW SOURCE WAS RESOLVED (provenance) — callers · booked · L2B</div>
+  <div class="card"><table id="provtab"></table><div class="note" id="prov-note"></div></div>
+
+  <div class="sec-h">④ FINAL SOURCE after corrections — callers · booked · L2B</div>
+  <div class="card"><table id="chtab"></table></div>
+
+  <div class="note" id="foot" style="margin-top:16px"></div>
+</div>
+
+<script>
+const fmt=n=>Number(n||0).toLocaleString('en-IN');
+const pct=(a,b)=>b?(100*a/b):0;
+const DAYS=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+const wlab=w=>{const s=new Date(w+'T00:00:00'),e=new Date(s);e.setDate(e.getDate()+6);
+  const sm=s.toLocaleString('en',{month:'short'}),em=e.toLocaleString('en',{month:'short'});
+  return sm===em?`${s.getDate()}–${e.getDate()} ${sm}`:`${s.getDate()} ${sm}–${e.getDate()} ${em}`;};
+const cb=(c,b)=>c?`<b>${fmt(c)}</b> <span class="bk">${fmt(b)}·${pct(b,c).toFixed(0)}%</span>`:'—';
+const cvar=v=>getComputedStyle(document.documentElement).getPropertyValue(v).trim()||'#888';
+let D=null, MODE='full', CUT=(new Date().getDay()+6)%7, MG=false;   // CUT: 0=Mon..6=Sun ; MG=merge GMB+Google
+function toggleMG(){ MG=!MG; document.getElementById('mg').textContent='GMB+Google: '+(MG?'merged':'split'); document.getElementById('mg').classList.toggle('on',MG); render(); }
+function mergeGG(o){ if(!MG) return o; const n=Object.assign({},o); if(n['GMB']||n['Google Ads']){const g=n['GMB']||[0,0],a=n['Google Ads']||[0,0];n['GMB + Google']=[g[0]+a[0],g[1]+a[1]];delete n['GMB'];delete n['Google Ads'];} return n; }
+
+function win(o,N){ if(!o)return[0,0]; let c=0,b=0; for(let d=0;d<=N;d++){c+=o.cal[d]||0;b+=o.bkd[d]||0;} return[c,b]; }
+function winLeads(a,N){ let s=0; for(let d=0;d<=N;d++) s+=(a&&a[d])||0; return s; }
+function build(N){
+  const TW={},CH={},PV={},VT={},LD={},SY={},SYT={};
+  D.weeks.forEach(w=>{ CH[w]={}; let tc=0,tb=0;
+    for(const ch in (D.chan[w]||{})){ const v=win(D.chan[w][ch],N); if(v[0]||v[1]){CH[w][ch]=v;tc+=v[0];tb+=v[1];} }
+    TW[w]=[tc,tb];
+    SY[w]={}; for(const ch in (D.sys[w]||{})){ const v=win(D.sys[w][ch],N); if(v[0]||v[1])SY[w][ch]=v; }
+    SYT[w]={}; for(const ch in (D.sys_tw[w]||{})){ const v=win(D.sys_tw[w][ch],N); if(v[0]||v[1])SYT[w][ch]=v; }
+    PV[w]={}; for(const k in (D.prov[w]||{})) PV[w][k]=win(D.prov[w][k],N);
+    VT[w]={}; for(const k in (D.vint[w]||{})) VT[w][k]=win(D.vint[w][k],N);
+    LD[w]=winLeads(D.leadsnew[w],N);
+  });
+  return {TW,CH,PV,VT,LD,SY,SYT};
+}
+
+function setMode(m){ MODE=m;
+  document.getElementById('mFull').classList.toggle('on',m==='full');
+  document.getElementById('mWtd').classList.toggle('on',m==='wtd');
+  document.getElementById('cut').style.display = m==='wtd'?'inline-block':'none';
+  render();
+}
+
+function render(){
+  const N = MODE==='full' ? 6 : parseInt(document.getElementById('cut').value);
+  const W = build(N);
+  const all=D.weeks, partial=all[all.length-1];
+  const cols = MODE==='full' ? all.slice(-5,-1) : all.slice(-5);
+  const dayspan = MODE==='full' ? 'full week (Mon–Sun)' : ('Mon–'+DAYS[N]);
+  document.getElementById('wkspan').innerHTML = MODE==='full'
+    ? `last 4 complete weeks · <b>full Mon–Sun</b>`
+    : `<b>${dayspan}</b> window · last 5 weeks incl. in-progress — apples-to-apples partial compare`;
+
+  // ① funnel
+  const vv=(w,k)=>W.VT[w]?.[k]||[0,0];
+  const rows=[
+    ['New leads created', w=>W.LD[w], null, 'head'],
+    ['↳ this-week leads that called', w=>vv(w,'this_wk')[0], w=>pct(vv(w,'this_wk')[0],W.LD[w]), 'ind'],
+    ['+ aged leads (earlier) called', w=>vv(w,'earlier')[0], null, 'ind'],
+    ['+ no-lead callers', w=>vv(w,'no_lead')[0], null, 'ind'],
+    ['= Unique callers', w=>W.TW[w][0], null, 'tot'],
+    ['→ Booked (L2B)', w=>W.TW[w][1], w=>pct(W.TW[w][1],W.TW[w][0]), 'head'],
+  ];
+  let fh='<thead><tr><th>Stage</th>'+cols.map(w=>`<th>${wlab(w)}${w===partial?' ◑':''}</th>`).join('')+'</tr></thead><tbody>';
+  rows.forEach(([lab,val,rate,kind])=>{ const ind=kind==='ind';
+    fh+=`<tr class="${kind==='tot'?'tot':''}"><td class="lab" style="${ind?'padding-left:22px':''}">${ind?lab:'<b>'+lab+'</b>'}</td>`+
+      cols.map(w=>{const v=val(w)||0;const rt=rate?` <span class="bk">${rate(w).toFixed(0)}%</span>`:'';return `<td>${ind?fmt(v):'<b>'+fmt(v)+'</b>'}${rt}</td>`;}).join('')+'</tr>';});
+  document.getElementById('funtab').innerHTML=fh+'</tbody>'+
+    `<caption>Callers = this-week-lead + aged + no-lead (lead-after-call folded in). Window: <b>${dayspan}</b>. ◑ = in-progress week.</caption>`;
+
+  // ② provenance
+  const P=[['system','① system-classified (correct)',cvar('--green')],
+           ['corrected','② corrected (we fixed)',cvar('--gold')],
+           ['confirmed','③ confirmed (override=system)',cvar('--slate')],
+           ['unclassified','④ UNCLASSIFIED (no source)',cvar('--red')]];
+  let ph='<thead><tr><th>Provenance</th>'+cols.map(w=>`<th>${wlab(w)}${w===partial?' ◑':''}</th>`).join('')+'</tr></thead><tbody>';
+  P.forEach(([k,lab,c])=>{ ph+=`<tr class="pillrow"><td style="border-left-color:${c};color:${c};font-weight:600">${lab}</td>`+
+    cols.map(w=>{const d=W.PV[w][k]||[0,0];return `<td>${cb(d[0],d[1])}</td>`;}).join('')+'</tr>';});
+  ph+=`<tr class="tot"><td>= all callers</td>`+cols.map(w=>`<td>${cb(W.TW[w][0],W.TW[w][1])}</td>`).join('')+'</tr>';
+  document.getElementById('provtab').innerHTML=ph+'</tbody>';
+  const lw=cols[cols.length-1],tp=W.TW[lw],up=W.PV[lw].unclassified||[0,0],co=W.PV[lw].corrected||[0,0];
+  document.getElementById('prov-note').innerHTML=`${wlab(lw)} (${dayspan}): <b>${co[0]?fmt(co[0]):0}</b> corrected by our number map · <b style="color:var(--red)">${fmt(up[0])} (${pct(up[0],tp[0]).toFixed(1)}%)</b> still unclassified.`;
+
+  // ② system source (raw utm, optionally merge GMB+Google)
+  const SYm={}; cols.forEach(w=>SYm[w]=mergeGG(W.SY[w]));
+  const sorder=(MG?['GMB + Google']:['GMB','Google Ads']).concat(['Organic','Meta','Practo','JustDial','Other','Direct / Call (blank)']);
+  const sextra=[]; cols.forEach(w=>{for(const k in SYm[w]) if(!sorder.includes(k)&&!sextra.includes(k)) sextra.push(k);});
+  const spresent=sorder.concat(sextra).filter(ch=>cols.some(w=>SYm[w][ch]));
+  let sh='<thead><tr><th>Channel</th>'+cols.map(w=>`<th>${wlab(w)}${w===partial?' ◑':''}</th>`).join('')+'</tr></thead><tbody>';
+  spresent.forEach(c=>{ sh+=`<tr><td class="lab"><b>${c}</b></td>`+cols.map(w=>`<td>${cb((SYm[w][c]||[0,0])[0],(SYm[w][c]||[0,0])[1])}</td>`).join('')+'</tr>';});
+  sh+=`<tr class="tot"><td>= total</td>`+cols.map(w=>`<td>${cb(W.TW[w][0],W.TW[w][1])}</td>`).join('')+'</tr>';
+  document.getElementById('systab').innerHTML=sh+'</tbody>';
+
+  // ②b system source — this-week leads only
+  const SYTm={}; cols.forEach(w=>SYTm[w]=mergeGG(W.SYT[w]));
+  const stwTot=w=>{let a=0,b=0;for(const k in SYTm[w]){a+=SYTm[w][k][0];b+=SYTm[w][k][1];}return[a,b];};
+  const t2order=(MG?['GMB + Google']:['GMB','Google Ads']).concat(['Organic','Meta','Practo','JustDial','Other','Direct / Call (blank)']);
+  const t2extra=[]; cols.forEach(w=>{for(const k in SYTm[w]) if(!t2order.includes(k)&&!t2extra.includes(k)) t2extra.push(k);});
+  const t2present=t2order.concat(t2extra).filter(ch=>cols.some(w=>SYTm[w][ch]));
+  let sh2='<thead><tr><th>Channel</th>'+cols.map(w=>`<th>${wlab(w)}${w===partial?' ◑':''}</th>`).join('')+'</tr></thead><tbody>';
+  t2present.forEach(c=>{ sh2+=`<tr><td class="lab"><b>${c}</b></td>`+cols.map(w=>`<td>${cb((SYTm[w][c]||[0,0])[0],(SYTm[w][c]||[0,0])[1])}</td>`).join('')+'</tr>';});
+  sh2+=`<tr class="tot"><td>= this-week leads</td>`+cols.map(w=>{const t=stwTot(w);return `<td>${cb(t[0],t[1])}</td>`;}).join('')+'</tr>';
+  document.getElementById('systab_tw').innerHTML=sh2+'</tbody>';
+
+  // ④ final source  (optionally merge GMB+Google)
+  const CHm={}; cols.forEach(w=>CHm[w]=mergeGG(W.CH[w]));
+  const order=(MG?['GMB + Google']:['GMB','Google Ads']).concat(['Brand','Organic','Meta','JustDial','Practo','Offline','Other','Undetermined']);
+  const present=order.filter(ch=>cols.some(w=>CHm[w][ch]));
+  let ch='<thead><tr><th>Channel</th>'+cols.map(w=>`<th>${wlab(w)}${w===partial?' ◑':''}</th>`).join('')+'</tr></thead><tbody>';
+  present.forEach(c=>{ ch+=`<tr><td class="lab"${c==='Undetermined'?' style="color:var(--red)"':''}><b>${c}</b></td>`+
+    cols.map(w=>`<td>${cb((CHm[w][c]||[0,0])[0],(CHm[w][c]||[0,0])[1])}</td>`).join('')+'</tr>';});
+  ch+=`<tr class="tot"><td>= total</td>`+cols.map(w=>`<td>${cb(W.TW[w][0],W.TW[w][1])}</td>`).join('')+'</tr>';
+  document.getElementById('chtab').innerHTML=ch+'</tbody>';
+
+  document.getElementById('foot').innerHTML=`<b style="color:var(--ink)">Method:</b> source = exotel line dialed → audited override map (32 numbers) → else CRM <code>utm_source</code> → else undetermined. <b>Week-to-date</b> sums days Mon→cutoff (callers by call-day, booked by booking-day) so a partial week compares like-for-like against prior weeks' same window.`;
+}
+
+fetch('data_l2b_final.json').then(r=>r.json()).then(d=>{
+  D=d;
+  // default WTD cutoff = last day-of-week that actually has call data in the in-progress week
+  const pw=d.weeks[d.weeks.length-1], dsum=[0,0,0,0,0,0,0];
+  for(const ch in (d.chan[pw]||{})) for(let x=0;x<7;x++) dsum[x]+=d.chan[pw][ch].cal[x]||0;
+  CUT=0; for(let x=6;x>=0;x--){ if(dsum[x]>0){CUT=x;break;} }
+  const sel=document.getElementById('cut');
+  DAYS.forEach((nm,i)=>{const o=document.createElement('option');o.value=i;o.textContent='Mon–'+nm;sel.appendChild(o);});
+  sel.value=CUT;
+  render();
+}).catch(e=>{document.body.innerHTML='<div class="wrap"><p style="color:#B4453E">Could not load data_l2b_final.json — run <code>python3 scripts/build_l2b_final.py</code>.</p></div>';});
+</script>
+</body>
+</html>

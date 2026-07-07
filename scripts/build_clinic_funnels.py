@@ -27,9 +27,9 @@ def diag_category(descr):
     if any(k in d for k in _DX_SH): return 'SH'
     if any(k in d for k in _DX_MH): return 'MH'
     return 'Other'   # incl. 'No Symptomatic Sexual Disorder' (screened, no disorder)
-# 14 IST-Monday weeks back to the AI call-audit coverage start (~23 Mar); UI defaults to the recent 10, "all" shows these.
-WEEKS=['2026-03-23','2026-03-30','2026-04-06','2026-04-13','2026-04-20','2026-04-27','2026-05-04','2026-05-11','2026-05-18','2026-05-25','2026-06-01','2026-06-08','2026-06-15','2026-06-22']
-idx={w:i for i,w in enumerate(WEEKS)}; NW=len(WEEKS); LO=WEEKS[0]; HI='2026-06-29'
+# 15 IST-Monday weeks back to the AI call-audit coverage start (~23 Mar); UI defaults to the recent 10, "all" shows these.
+WEEKS=['2026-03-23','2026-03-30','2026-04-06','2026-04-13','2026-04-20','2026-04-27','2026-05-04','2026-05-11','2026-05-18','2026-05-25','2026-06-01','2026-06-08','2026-06-15','2026-06-22','2026-06-29']
+idx={w:i for i,w in enumerate(WEEKS)}; NW=len(WEEKS); LO=WEEKS[0]; HI='2026-07-06'
 DEFAULT_VIEW_WEEKS=10   # UI shows the last N by default
 def Z(): return [0]*NW
 MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
@@ -339,6 +339,19 @@ def clinic_funnel(cfg, booked_at=None):
         if ph in bk: e['booked']+=1
         e['reasons'][odisp.get(ph,'(not yet dispositioned)')]+=1
     leads['other_call_breakdown']={k:{'total':v['total'],'booked':v['booked'],'reasons':[[r,n] for r,n in v['reasons'].most_common(6)]} for k,v in ob.items()}
+    # ---- WEEKLY version: each non-book caller placed in their earliest non-book call-week, split by agent-disposition reason ----
+    other_wk={}
+    for (channel,ph,w),prim in callraw.items():
+        if prim not in REL_SET:
+            wi=idx[w]
+            if ph not in other_wk or wi<other_wk[ph][0]: other_wk[ph]=(wi,prim)
+    reason_wkO=defaultdict(Z); booked_wkO=Z(); total_wkO=Z()
+    for ph,(wi,prim) in other_wk.items():
+        r=odisp.get(ph,'(not yet dispositioned)')
+        reason_wkO[r][wi]+=1; total_wkO[wi]+=1
+        if ph in bk: booked_wkO[wi]+=1
+    ordO=sorted(reason_wkO, key=lambda r:-sum(reason_wkO[r]))
+    leads['other_call_weekly']={'reasons':[[r,reason_wkO[r]] for r in ordO],'booked':booked_wkO,'total':total_wkO}
     FLOW={'thisweek':{},'prior':{},'other':{},'returning':{}}; ft={k:Z() for k in FLOW}
     bookings={'total':Z(),'done':Z()}
     for ph,(bw,done) in bk.items():

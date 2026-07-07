@@ -63,6 +63,14 @@ rpt_daily AS (
       AND ((rs.is_booked=1 AND rs.overlaps_other_booked_type=0) OR (rs.available_for_booking=1 AND rs.in_repeat_boundary=1))
       AND abtm.offline_location_id IS NOT NULL AND rs.location_id != {TELE1}
   ) GROUP BY 1,2,3),
+attend_daily AS (   -- clinic-days actually WORKED = ≥1 completed offline consult (SC or FU) that day
+  SELECT DISTINCT DATE(apt.start_time + INTERVAL '5.5 hours') AS dt, l.city, l.locality
+  FROM allo_consultations.appointments apt
+  JOIN allo_health.locations l ON apt.location_id=l.id AND l.deleted_at IS NULL
+  WHERE apt.deleted_at IS NULL AND apt.status IN ('COMPLETED','RECONSULTED')
+    AND lower(l.name) NOT LIKE '%online%'
+    AND DATE(apt.start_time + INTERVAL '5.5 hours') >= DATEADD(month,-4,CURRENT_DATE)
+    AND DATE(apt.start_time + INTERVAL '5.5 hours') <= CURRENT_DATE-1),
 per_doc AS (
   SELECT r.city, r.locality, r.dt, r.pro_name,
     r.opened_mins,
@@ -71,10 +79,13 @@ per_doc AS (
   FROM roster_daily r
   LEFT JOIN sc_daily sc ON r.dt=sc.dt AND r.pro_name=sc.doctor_name AND r.block_location=sc.block_location
   LEFT JOIN rpt_daily rpt ON r.dt=rpt.dt AND r.pro_name=rpt.doctor_name AND r.block_location=rpt.block_location)
-SELECT city, locality, date_trunc('week', dt)::date AS week_start, EXTRACT(dow FROM dt) AS dow, dt,
-  SUM(opened_mins) AS opened_mins, SUM(net_sc_mins) AS net_sc_mins,
-  SUM(net_sc_slots) AS net_sc_slots, SUM(net_rpt_slots) AS net_rpt_slots
-FROM per_doc GROUP BY 1,2,3,4,5 ORDER BY 1,2,3;
+SELECT p.city, p.locality, date_trunc('week', p.dt)::date AS week_start, EXTRACT(dow FROM p.dt) AS dow, p.dt,
+  SUM(p.opened_mins) AS opened_mins, SUM(p.net_sc_mins) AS net_sc_mins,
+  SUM(p.net_sc_slots) AS net_sc_slots, SUM(p.net_rpt_slots) AS net_rpt_slots,
+  MAX(CASE WHEN ad.dt IS NOT NULL THEN 1 ELSE 0 END) AS attended
+FROM per_doc p
+LEFT JOIN attend_daily ad ON p.city=ad.city AND COALESCE(p.locality,'')=COALESCE(ad.locality,'') AND p.dt=ad.dt
+GROUP BY 1,2,3,4,5 ORDER BY 1,2,3;
 """
 
 
@@ -90,12 +101,14 @@ def main():
     weeks = sorted({r[2] for r in rows})
     widx = {w: i for i, w in enumerate(weeks)}
     NW = len(weeks)
-    FIELDS = ["opened_hrs", "net_sc_hrs", "net_sc_slots", "net_rpt_slots", "active_days", "wkday_days", "wkend_days"]
+    FIELDS = ["opened_hrs", "net_sc_hrs", "net_sc_slots", "net_rpt_slots", "active_days", "wkday_days", "wkend_days",
+              "attend_days", "attend_wkday", "attend_wkend"]
 
     clinics = {}
     for r in rows:
         city, loc, wk, dow = r[0], r[1], r[2], int(float(r[3]))
         opened_mins, sc_mins, sc_slots, rpt_slots = (float(r[5]), float(r[6]), float(r[7]), float(r[8]))
+        attended = int(float(r[9])) if len(r) > 9 and r[9] != "" else 0
         key = f"{city}|{loc}"
         o = clinics.setdefault(key, {f: [0.0]*NW for f in FIELDS})
         i = widx[wk]
@@ -106,18 +119,23 @@ def main():
         o["active_days"][i] += 1
         if dow in (0, 6):   # Redshift EXTRACT(dow): 0=Sun,6=Sat
             o["wkend_days"][i] += 1
+            o["attend_wkend"][i] += attended
         else:
             o["wkday_days"][i] += 1
+            o["attend_wkday"][i] += attended
+        o["attend_days"][i] += attended   # days actually WORKED (≥1 completed consult) — attendance-based
 
     # round for compactness
     for o in clinics.values():
         for f in ("opened_hrs", "net_sc_hrs"):
             o[f] = [round(x, 1) for x in o[f]]
-        for f in ("net_sc_slots", "net_rpt_slots", "active_days", "wkday_days", "wkend_days"):
+        for f in ("net_sc_slots", "net_rpt_slots", "active_days", "wkday_days", "wkend_days",
+                  "attend_days", "attend_wkday", "attend_wkend"):
             o[f] = [int(round(x)) for x in o[f]]
 
     out = {"_meta": {"weeks": weeks, "source": "L2 Roster & Slots · realized SC/RPT capacity + roster days",
-                     "note": "net_sc_slots = utilisation denominator (done/slots). active_days = velocity denominator (booked/day).",
+                     "note": "net_sc_slots = utilisation denominator (done/slots). active_days = ROSTERED days (opened). "
+                             "attend_days = days actually WORKED (≥1 completed offline consult) — matches city-head attendance view; wkend/wkday split too.",
                      "fields": FIELDS}, "clinics": clinics}
     json.dump(out, open(os.path.join(ROOT, "data_availability.json"), "w"), separators=(",", ":"))
     vwk = "2026-06-22"
@@ -127,7 +145,12 @@ def main():
     print(f"data_availability.json · {len(clinics)} clinics · {NW} weeks ({weeks[0]}→{weeks[-1]})")
     print(f"\n── verify {vwk} (L2 roster targets: BLR opened 445 netSC 267hr / MUM 263,141 / CHN 155,95) ──")
     for c in ["Bangalore", "Mumbai", "Hyderabad", "Chennai", "Pune"]:
-        print(f"  {c:11} opened {cs(c,'opened_hrs'):7.0f}  net_sc_hr {cs(c,'net_sc_hrs'):7.1f}  sc_slots {cs(c,'net_sc_slots'):5}  active_days {cs(c,'active_days'):3}")
+        print(f"  {c:11} opened {cs(c,'opened_hrs'):7.0f}  net_sc_hr {cs(c,'net_sc_hrs'):7.1f}  sc_slots {cs(c,'net_sc_slots'):5}  rostered_days {cs(c,'active_days'):3}  attended_days {cs(c,'attend_days'):3}")
+    bkey = next((k for k in clinics if k.split("|")[0] == "Pune" and "aner" in k), None)
+    if bkey and vwk in widx:
+        j = widx[vwk]; o = clinics[bkey]
+        print(f"\n── Baner {vwk}: rostered {o['active_days'][j]}d (wd {o['wkday_days'][j]}/we {o['wkend_days'][j]})  "
+              f"ATTENDED {o['attend_days'][j]}d (wd {o['attend_wkday'][j]}/we {o['attend_wkend'][j]})  [sheet weekend expect 0] ──")
 
 
 if __name__ == "__main__":

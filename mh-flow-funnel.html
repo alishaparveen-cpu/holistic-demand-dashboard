@@ -88,6 +88,8 @@ let CALLNUM={};
 function isConvOnly(m){return m==='Meta'||m==='Google web'||m==='WhatsApp'||m.indexOf('Organic web')===0;}
 let SELINT=null;   // selected AI intents (default = clinic's intent_order = book-intent set)
 function toggleIntent(it){if(!SELINT)return;if(SELINT.has(it))SELINT.delete(it);else SELINT.add(it);render();}
+let SELCAT=null;   // selected AI call-categories for the by-category breakdown (default = all)
+function toggleCat(ct){if(!SELCAT)return;if(SELCAT.has(ct))SELCAT.delete(ct);else SELCAT.add(ct);render();}
 let WSTART=0;                       // first visible week index (week-range option)
 function sl(a){return (a||[]).slice(WSTART);}
 function cells(arr,cls){arr=sl(arr);let h='';const L=arr.length;arr.forEach((v,i)=>{const last=i===L-1?' last':'';h+='<td class="'+(cls||'')+last+'">'+(v?v:'<span class="zero">·</span>')+'</td>';});return h;}
@@ -104,9 +106,21 @@ function lrP(series,t){const nw=t.length,out=series.map(()=>new Array(nw).fill(0
 function pgc(arr,pa){arr=sl(arr);pa=sl(pa);let h='';const L=arr.length;arr.forEach((v,i)=>{const last=i===L-1?' last':'';h+='<td class="sub2'+last+'">'+(v?'<div>'+v+'</div><div class="mut" style="font-size:9.5px;line-height:1.05">'+pa[i]+'%</div>':'<span class="zero">·</span>')+'</td>';});return h;}
 function thead(labels){labels=sl(labels);let h='<thead><tr><th class="lab"></th>';labels.forEach((l,i)=>{h+='<th class="'+(i===labels.length-1?'last':'')+'">'+esc(l)+'</th>';});return h+'</tr></thead>';}
 
-let D=null;
+let D=null, PF=null;   // PF = data_practo_flow.json (real Practo transactions: leads/book/call per City|Locality)
+// current clinic's Practo split, remapped onto the funnel's week grid (D.weeks). Returns {leads,book,call} or null.
+function practoSplit(c){
+  if(!PF||!c) return null;
+  const disp=c.disp||'', p=disp.split(' · '); if(p.length<2) return null;
+  const key=p[p.length-1].trim()+'|'+p.slice(0,-1).join(' · ').trim();
+  const rec=PF.clinics[key]; if(!rec) return null;
+  const pw=PF._meta.weeks, W=D.weeks, mk=f=>{const o=W.map(()=>0);pw.forEach((w,i)=>{const gi=W.indexOf(w);if(gi>=0)o[gi]=(rec[f]||[])[i]||0;});return o;};
+  return {leads:mk('leads'), book:mk('book'), call:mk('call'), key};
+}
 fetch('data_clinic_funnels.json?_='+Date.now()).then(r=>r.json()).then(d=>{D=d;
+  fetch('data_practo_flow.json?_='+Date.now()).then(r=>r.ok?r.json():null).then(pf=>{PF=pf;}).catch(()=>{}).finally(()=>{if(typeof render==='function'&&D)render();});
   const sel=document.getElementById('clinic');
+  const wsel=document.getElementById('weeks'),allOpt=wsel&&wsel.querySelector('option[value="all"]');   // keep the "All (N)" count in sync with the data (was hardcoded)
+  if(allOpt)allOpt.textContent='All ('+d.week_labels.length+')';
   Object.keys(d.clinics).forEach(s=>{const o=document.createElement('option');o.value=s;o.textContent=d.clinics[s].disp;sel.appendChild(o);});
   sel.onchange=render; document.getElementById('view').onchange=render; document.getElementById('weeks').onchange=render;
   document.getElementById('clubgg').onchange=()=>{CLUBGG=document.getElementById('clubgg').checked;render();}; render();
@@ -121,6 +135,7 @@ function render(){
   const WEBSRC2=['Practo','Meta','Google web','GMB web','Organic web · clinic','Organic web · blog','Organic web · sexologist','Organic web · STI-test','Organic web · doctors','Organic web · home','Organic web · other','WhatsApp','Direct / no-utm','Walk-in (no lead)'];
   CALLNUM={'GMB call':(c.numbers['GMB call']||'').split(',')[0],'Google call':c.numbers['Google call'],'Organic call':(c.numbers['Organic call']||'').split(',')[0]};
   const W=D.week_labels,L=c.leads,B=c.bookings,F=B.flow; UNDET=L.undet_booked||{};
+  {const _ps=practoSplit(c); if(_ps)L.by_source=Object.assign({},L.by_source,{Practo:_ps.leads});}   // overlay real Practo leads (transactions export · current, incl. latest week) across all views
   document.getElementById('nums').innerHTML='GMB #'+esc(c.numbers['GMB call'])+' · Google #'+esc(c.numbers['Google call'])+' · Organic #'+esc(c.numbers['Organic call'])+(c.google_shared?' <span class="tag">google # shared→locality-split</span>':'');
   document.getElementById('note').innerHTML='Unique-patient new-acquisition funnel. Only <code>lead_to_call</code> calls attribute (b2p excluded). Web/ad channels converted-only (dated at lead creation). Returning shown at booking level (④). <b>Category filter applies to call leads</b> (SH/STI/MH/Other, AI call audit = <b>intent at call, not diagnosis</b> — see ⑤ Done by diagnosis for the clinical category).';
   let html='';
@@ -185,15 +200,31 @@ function render(){
           +'<div class="sub2" style="padding-left:22px;font-family:ui-monospace,Menlo,monospace;font-size:10.5px">'+samp.slice(0,12).map(s=>esc(s[0])+' '+esc(s[1])+' → '+esc(s[2])).join('<br>')+'</div></details></td></tr>';}
       gtot=gtot.map((x,i)=>x+arr[i]);});
     html+='<tr class="tot"><td class="lab">All call leads (selected intents)</td>'+cells(gtot)+'</tr></tbody></table>';
-    // ---- breakdown of "Other" (non-book-intent) calls: missed leads? ----
-    const ob=L.other_call_breakdown||{};
-    if(Object.keys(ob).length){
-      const obooked=Object.values(ob).reduce((a,v)=>a+v.booked,0), ototal=Object.values(ob).reduce((a,v)=>a+v.total,0);
-      html+='<details style="margin-top:10px"><summary style="cursor:pointer;color:var(--gmb);font-size:12px;font-weight:600">▸ Breakdown of "Other" / non-book-intent calls — '+ototal+' callers, '+obooked+' booked ('+pct(obooked,ototal)+'%) — missed leads?</summary>';
-      html+='<table class="f" style="min-width:auto;margin-top:6px"><thead><tr><th class="lab">AI intent</th><th>callers</th><th>booked</th><th>book%</th><th class="lab">top agent dispositions</th></tr></thead><tbody>';
-      Object.keys(ob).sort((a,b)=>ob[b].total-ob[a].total).forEach(it=>{const v=ob[it];
-        html+='<tr class="src"><td class="lab" style="min-width:auto">'+esc(it)+'</td><td>'+v.total+'</td><td class="good">'+v.booked+'</td><td class="sub2">'+pct(v.booked,v.total)+'%</td><td class="lab sub2" style="min-width:240px;white-space:normal">'+(v.reasons||[]).map(r=>esc(r[0])+' ('+r[1]+')').join(' · ')+'</td></tr>';});
-      html+='</tbody></table><div class="sub2" style="margin-top:4px">Callers here who <b>booked</b> are now auto-counted as leads (proven demand the AI relevance filter under-captured). The non-booked rest stay excluded — tick an intent above to include them too. Blank / Spam / Outbound-not-connected = genuine noise.</div></details>';
+    // ---- break down by AI call category (SH/STI/MH/Other) — self-consistent callcat partition ----
+    if(!SELCAT) SELCAT=new Set(D.cats);
+    html+='<div class="legend" style="margin:16px 0 8px"><b>Break down by category</b> (AI call category · relevant callers): ';
+    D.cats.forEach(ct=>{const on=SELCAT.has(ct);html+='<label style="margin-right:12px;cursor:pointer;'+(on?'':'opacity:.45')+'"><input type="checkbox" '+(on?'checked':'')+' onclick="toggleCat(\''+ct+'\')"> <span class="dot" style="background:'+CATCOL[ct]+'"></span> '+esc(ct)+'</label>';});
+    html+='</div>';
+    html+='<table class="f">'+thead(W)+'<tbody>'; let catG=Array(W.length).fill(0);
+    D.cats.forEach(ct=>{ if(!SELCAT.has(ct))return; const cc=L.callcat[ct]||{};
+      const arr=Array(W.length).fill(0); ['GMB call','Google call','Organic call'].forEach(src=>{(cc[src]||[]).forEach((v,i)=>arr[i]+=(v||0));});
+      if(sum(arr)===0)return;
+      html+='<tr class="src"><td class="lab"><span class="dot" style="background:'+CATCOL[ct]+'"></span><b>'+esc(ct)+'</b> <span class="sub2" style="font-weight:400">= '+sum(arr)+'</span></td>'+cells(arr)+'</tr>';
+      catG=catG.map((x,i)=>x+arr[i]);});
+    html+='<tr class="tot"><td class="lab">Selected categories (across GMB/Google/Organic call)</td>'+cells(catG)+'</tr></tbody></table>';
+    html+='<div class="callout">Call leads by <b>AI call category</b> (SH/STI/MH/Other), summed across all call numbers · tick categories above to include/exclude. This is the <b>categorised relevant-caller</b> split (intent at call, <b>not</b> diagnosis) — it may differ slightly from the intent-selected total above (a different lens; see ⑤ Done by diagnosis for the clinical category).</div>';
+    // ---- breakdown of "Other" (non-book-intent) calls — WEEK BY WEEK, by agent reason ----
+    const ow=L.other_call_weekly, ob=L.other_call_breakdown||{};
+    if(ow&&ow.reasons&&ow.reasons.length){
+      const ototal=sum(ow.total), obooked=sum(ow.booked);
+      html+='<details style="margin-top:10px" open><summary style="cursor:pointer;color:var(--gmb);font-size:12px;font-weight:600">▾ Breakdown of "Other" / non-book-intent calls — week by week — '+ototal+' callers, '+obooked+' booked ('+pct(obooked,ototal)+'%) — missed leads?</summary>';
+      html+='<table class="f" style="margin-top:6px">'+thead(W)+'<tbody>';
+      ow.reasons.forEach(rr=>{ if(sum(rr[1])===0)return; const dim=/not connected|spam|blank|not yet|no tag|\(no tag\)/i.test(rr[0]);
+        html+='<tr class="src"><td class="lab"'+(dim?' style="color:var(--other)"':'')+'>'+esc(rr[0])+'</td>'+cells(rr[1])+'</tr>';});
+      html+='<tr><td class="lab arrow good">↳ of these, booked</td>'+cells(ow.booked,'sub2')+'</tr>';
+      html+='<tr class="tot"><td class="lab">Total non-book-intent callers</td>'+cells(ow.total)+'</tr>';
+      html+='</tbody></table>';
+      html+='<div class="sub2" style="margin-top:4px">Each non-book-intent caller placed in their <b>call week</b>, split by latest <b>agent disposition</b>. <b>Booked</b> = proven demand the AI relevance filter under-captured (auto-counted as leads). <b>Outbound-not-connected / Spam / Blank / (no tag)</b> = genuine noise.'+(Object.keys(ob).length?' &nbsp;·&nbsp; By AI-intent bucket: '+Object.keys(ob).sort((a,b)=>ob[b].total-ob[a].total).map(it=>'<b>'+esc(it)+'</b> '+ob[it].total+' ('+ob[it].booked+' bk)').join(' · '):'')+'</div></details>';
     }
     html+='<div class="callout"><b>All call leads</b> = unique relevant callers per channel (patient_id required), <b>NOT deduped across channels</b> — matches your colleague\'s per-channel cut. The <b>funnel</b> sub-line is the deduped (one-channel-per-patient) number; expand <b>bucketed elsewhere</b> to see the patient_ids credited to another channel (their earlier touch) or excluded as returning. Toggle the AI intents above to see exactly what the audit includes.</div>';
   } else if(mode==='call'){
@@ -201,9 +232,18 @@ function render(){
     html+=h+'<tr class="tot"><td class="lab">'+cat+' call leads (total)</td>'+cells(tot)+'</tr></tbody></table>';
     html+='<div class="callout"><b>'+cat+' call leads</b> = unique patients whose relevant call was AI-categorised <b>'+cat+'</b>, on this clinic\'s own numbers.</div>';
   } else { // web
-    const {h,tot}=flatRows(s=>L.by_source[s],WEBSRC2);
+    const ps=practoSplit(c);                                    // real Practo from the transactions export (leads/book/call)
+    let h='<table class="f">'+thead(W)+'<tbody>'; let tot=Array(W.length).fill(0);
+    if(ps){   // Practo first — total + in-clinic/teleconsult split
+      h+='<tr class="src"><td class="lab"><span class="dot" style="background:var(--practo)"></span><b>Practo</b> <span class="tag" title="from the Practo transactions export">total · from Practo export</span></td>'+cells(ps.leads)+'</tr>';
+      h+='<tr><td class="lab arrow sub2" style="padding-left:30px">↳ in-clinic (Book)</td>'+cells(ps.book,'sub2')+'</tr>';
+      h+='<tr><td class="lab arrow sub2" style="padding-left:30px">↳ teleconsult (Call)</td>'+cells(ps.call,'sub2')+'</tr>';
+      tot=tot.map((x,i)=>x+ps.leads[i]);
+    } else { const a=L.by_source['Practo']||Array(W.length).fill(0); if(sum(a)>0){h+='<tr class="src"><td class="lab"><span class="dot" style="background:var(--practo)"></span>Practo</td>'+cells(a)+'</tr>';tot=tot.map((x,i)=>x+(a[i]||0));} }
+    WEBSRC2.filter(s=>s!=='Practo').forEach(s=>{const a=L.by_source[s]||Array(W.length).fill(0);if(sum(a)===0)return;
+      h+='<tr class="src"><td class="lab"><span class="dot" style="background:'+colorOf(s)+'"></span>'+esc(s)+'</td>'+cells(a)+'</tr>';tot=tot.map((x,i)=>x+(a[i]||0));});
     html+=h+'<tr class="tot"><td class="lab">All web / marketplace leads (total)</td>'+cells(tot)+'</tr></tbody></table>';
-    html+='<div class="callout"><b>Web / marketplace leads</b> (Practo, Meta, Google-web, GMB-web, Organic-web, WhatsApp, Direct). These are <b>converted-only</b> for ad channels (only knowable once they book), dated at lead-creation. No AI call-category here.</div>';
+    html+='<div class="callout"><b>Web / marketplace leads</b> (Practo, Meta, Google-web, GMB-web, Organic-web, WhatsApp, Direct). Converted-only for ad channels, dated at lead-creation.'+(ps?' <b>Practo</b> is from the transactions export (real leads incl. the latest week), split into <b>in-clinic</b> (Book) + <b>teleconsult</b> (Call) — these sum to the Practo total.':'')+'</div>';
   }
   html+='</div>';
   html+='<div class="box"><div class="boxhd"><span class="step">④</span><h2>Bookings — clean breakdown</h2><span class="meta">all SC booked this week · every booking counted once</span></div>';

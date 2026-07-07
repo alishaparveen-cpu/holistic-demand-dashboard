@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>L2B Demand Funnel</title>
+<style>
+  :root{
+    --bg:#EDF3F9; --card:#fff; --ink:#1f2d3d; --muted:#5b6b7d; --faint:#8a94a0; --line:#e2e8ef;
+    --accent:#2C6CAE; --accent-bg:#EAF1FB; --green:#2E7D5B; --green-bg:#E9F3EE;
+    --teal:#1F6F5C; --teal-bg:#E7F1EC; --gold:#C2691F; --gold-bg:#F9F1E5;
+    --slate:#3E6F8E; --slate-bg:#E9F1F6; --violet:#6b4fa0; --red:#B4453E; --red-bg:#FBEDED;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:'Inter',system-ui,-apple-system,sans-serif;font-size:13px;line-height:1.4;padding:24px}
+  .wrap{max-width:920px;margin:0 auto}
+  h1{font-family:'Fraunces',Georgia,serif;font-size:24px;font-weight:600;letter-spacing:-.3px;margin:0}
+  .top{display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid var(--accent);padding-bottom:12px;margin-bottom:18px;flex-wrap:wrap;gap:10px}
+  .sub{font-size:12px;color:var(--muted)}
+  select{font-family:inherit;font-size:14px;font-weight:600;color:var(--accent);background:var(--accent-bg);border:1px solid #cfe0f2;border-radius:8px;padding:7px 12px;cursor:pointer}
+  .sec-h{font-weight:700;font-size:10px;letter-spacing:.6px;color:var(--faint);margin:22px 0 8px}
+  .card{background:var(--card);border-radius:10px;padding:14px 16px;box-shadow:0 1px 2px rgba(31,45,61,.05)}
+  /* spine */
+  .spine{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+  .snode{border-radius:8px;padding:9px 15px;min-width:96px}
+  .snode b{font-size:17px;display:block}
+  .snode span{font-size:11px;color:var(--muted)}
+  .sarrow{color:var(--faint);font-size:11px;text-align:center;line-height:1.2}
+  /* rows */
+  .grid{display:grid;grid-template-columns:1fr 84px 84px 60px;gap:6px}
+  .ch{font-size:10px;letter-spacing:.4px;color:var(--faint);font-weight:700;padding:0 10px 4px;border-bottom:1px solid var(--line)}
+  .r{padding:7px 10px;border-radius:6px}
+  .r .n{text-align:right}
+  .rlab b{font-weight:600}
+  .sub-r{font-size:12px;color:var(--muted);padding:3px 10px 3px 26px}
+  .pill{display:inline-block;padding:1px 7px;border-radius:20px;font-size:11px;font-weight:600}
+  .up{color:var(--green)} .dn{color:var(--red)}
+  .note{background:#f7f9fb;border:1px solid var(--line);border-radius:8px;padding:10px 14px;font-size:12px;color:var(--muted);margin-top:12px}
+  table{width:100%;border-collapse:collapse;font-size:12px}
+  th,td{padding:7px 8px;text-align:right}
+  th:first-child,td:first-child{text-align:left}
+  thead th{font-size:10px;letter-spacing:.4px;color:var(--faint);border-bottom:1px solid var(--line)}
+  tbody td .bk{color:var(--faint);font-size:11px}
+  tr.tot td{border-top:2px solid #d5e0ec;font-weight:700;padding-top:9px}
+  .cellhi{background:var(--accent-bg);border-radius:5px}
+  td.subc{color:var(--muted);font-size:11.5px}
+  td.subc:first-child{padding-left:22px}
+  tr.tier td{font-weight:600}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <div><h1>Lead → Book Demand Funnel</h1><div class="sub" id="subtitle">inbound new-patient · reconciled to leads on phone</div></div>
+    <div><label class="sub" style="margin-right:6px">Week</label><select id="wk"></select></div>
+  </div>
+
+  <div class="sec-h">① THE FUNNEL — leads → called → callers → booked</div>
+  <div class="card"><div class="spine" id="spine"></div>
+    <div class="sub" id="spine-note" style="margin-top:8px"></div>
+  </div>
+
+  <div class="sec-h">①b TOP FUNNEL — week on week</div>
+  <div class="card"><div style="overflow-x:auto"><table id="wowtab"></table></div>
+    <div class="sub" id="wow-note" style="margin-top:8px"></div>
+  </div>
+
+  <div class="sec-h">② CALLERS BY LEAD VINTAGE — 4-week compare · each cell = callers · booked · L2B%</div>
+  <div class="card"><div style="overflow-x:auto"><table id="vintab"></table></div></div>
+
+  <div class="sec-h">③ SOURCE — how each caller's source is determined (4-week compare)</div>
+  <div class="card">
+    <div class="note" style="margin-bottom:12px;background:var(--slate-bg);border-color:#cfe0ec">
+      <b style="color:var(--ink)">This table determines each caller's source — checked top-down, in order:</b><br>
+      <b style="color:var(--slate)">① UTM tag</b> — did a UTM source <i>already exist</i> on the lead (an ad / form click <i>before</i> the call)? If yes, that's the source.<br>
+      <b style="color:var(--accent)">② Dialed number</b> — no UTM: the lead was <i>created by the call itself</i>, so source = which tracked line they rang (a clinic's GMB number or a Google-Ads number).<br>
+      <b style="color:var(--red)">③ Undetermined</b> — no UTM <i>and</i> an untracked number → source cannot be determined.
+    </div>
+    <div style="overflow-x:auto"><table id="srctab"></table></div>
+    <div class="note" id="src-note" style="margin-top:10px"></div>
+  </div>
+
+  <div class="sec-h">④ CHANNEL × RECENT WEEKS — callers · booked · L2B%</div>
+  <div class="card"><div style="overflow-x:auto"><table id="chtab"></table></div></div>
+
+  <div class="note" id="recon" style="margin-top:16px"></div>
+</div>
+
+<script>
+const fmt=n=>n.toLocaleString('en-IN');
+const pct=(a,b)=>b? (100*a/b):0;
+const VLAB={this_wk:['Lead created THIS week','fresh demand',cvar('--green')],
+            earlier:['Lead EARLIER, recalled this week','re-engaged, colder',cvar('--gold')],
+            no_lead:['No lead in system','unlogged',cvar('--faint')],
+            after:['Lead after call','artifact',cvar('--faint')]};
+const TLAB={tag:['① UTM TAG — lead pre-existed the call','we know the real source',cvar('--slate')],
+            dialed:['② DIALED NUMBER — call-born, no UTM','source = which line rang',cvar('--accent')],
+            undet:['③ UNDETERMINED — no UTM + untracked #','',cvar('--red')]};
+const CH_ORDER=['GMB','Google Ads','Meta','Organic/Web','Practo','Newspaper','YouTube','Undetermined'];
+function cvar(v){return getComputedStyle(document.documentElement).getPropertyValue(v).trim()||'#888';}
+
+let DATA=null, WK=null;
+
+function agg(rows,key){const m={};rows.forEach(r=>{const k=r[key];m[k]=m[k]||{callers:0,booked:0};m[k].callers+=r.callers;m[k].booked+=r.booked;});return m;}
+function tot(rows){return rows.reduce((a,r)=>({callers:a.callers+r.callers,booked:a.booked+r.booked}),{callers:0,booked:0});}
+
+function render(){
+  const rows=DATA.caller[WK]||[]; const T=tot(rows); const ld=DATA.leads[WK]||{new_leads:0,called:0};
+  const idx=DATA.weeks.indexOf(WK); const isPartial=(idx===DATA.weeks.length-1);
+  document.getElementById('subtitle').innerHTML='inbound new-patient · reconciled to leads on phone'+(isPartial?' · <b style="color:var(--red)">◑ week in progress</b>':'');
+
+  // ① spine
+  const VA=vintAgg(WK); const tw=(VA.this_wk||{callers:0}), ea=(VA.earlier||{callers:0}), nl=(VA.no_lead||{callers:0});
+  const notCalled=Math.max(0,ld.new_leads-ld.called);
+  document.getElementById('spine').innerHTML=
+    node('--accent-bg','--accent',ld.new_leads,'new leads this week')
+    +arrow(ld.new_leads?Math.round(100*tw.callers/ld.new_leads)+'% call':'')
+    +node('--teal-bg','--teal',tw.callers,'this-wk-lead callers')
+    +arrow('+ earlier '+fmt(ea.callers)+'<br>+ no-lead '+fmt(nl.callers))
+    +node('--teal-bg','--teal',T.callers,'unique callers')
+    +arrow(pct(T.booked,T.callers).toFixed(0)+'% book')
+    +node('--gold-bg','--gold',T.booked,'booked · L2B '+pct(T.booked,T.callers).toFixed(1)+'%');
+  document.getElementById('spine-note').innerHTML=
+    `Callers ${fmt(T.callers)} = this-wk-lead ${fmt(tw.callers)} + earlier ${fmt(ea.callers)} + no-lead ${fmt(nl.callers)} `+
+    `(the tiny 'lead-after-call' artifact is folded into this-week). `+
+    `${fmt(notCalled)} of this week's ${fmt(ld.new_leads)} new leads never placed an inbound call.`;
+
+  // ①b top funnel week-on-week
+  renderWoW();
+
+  // ② vintage — 4-week compare
+  renderVintage();
+
+  // ③ source — 4-week compare
+  renderSource();
+  const undet=tot(rows.filter(r=>r.tier==='undet'));
+  document.getElementById('src-note').innerHTML=`<b style="color:var(--ink)">Undetermined = no UTM on the lead AND an untracked dialed number.</b> ${fmt(undet.callers)} callers (${pct(undet.callers,T.callers).toFixed(0)}%), booking just ${pct(undet.booked,undet.callers).toFixed(0)}% — the standing attribution gap.`;
+
+  // ④ channel × recent weeks
+  const recent=DATA.weeks.slice(-5);
+  let head='<thead><tr><th>Channel</th>'+recent.map(w=>`<th>${wlab(w)}${w===WK?' •':''}</th>`).join('')+'</tr></thead>';
+  const perWkCh={}; recent.forEach(w=>perWkCh[w]=agg(DATA.caller[w]||[],'channel'));
+  let bodyR=''; CH_ORDER.forEach(c=>{ if(!recent.some(w=>perWkCh[w][c]))return;
+    bodyR+=`<tr><td>${c==='Undetermined'?'<span style="color:var(--red)">⚠ '+c+'</span>':c}</td>`+
+      recent.map(w=>{const x=perWkCh[w][c];if(!x)return '<td>—</td>';
+        return `<td class="${w===WK?'cellhi':''}"><b>${fmt(x.callers)}</b><br><span class="bk">${fmt(x.booked)} · ${pct(x.booked,x.callers).toFixed(0)}%</span></td>`;}).join('')+'</tr>';});
+  let totR='<tr class="tot"><td>TOTAL</td>'+recent.map(w=>{const t=tot(DATA.caller[w]||[]);
+    return `<td class="${w===WK?'cellhi':''}"><b>${fmt(t.callers)}</b><br><span class="bk">${fmt(t.booked)} · ${pct(t.booked,t.callers).toFixed(1)}%</span></td>`;}).join('')+'</tr>';
+  document.getElementById('chtab').innerHTML=head+'<tbody>'+bodyR+totR+'</tbody>';
+
+  // reconcile
+  const byV=Object.values(agg(rows,'vintage')).reduce((a,d)=>a+d.callers,0);
+  const byT=Object.values(agg(rows,'tier')).reduce((a,d)=>a+d.callers,0);
+  document.getElementById('recon').innerHTML=`<b style="color:var(--ink)">Reconciles:</b> callers by vintage ${fmt(byV)} = by source ${fmt(byT)} = ${fmt(T.callers)} ✓ · booked sums to ${fmt(T.booked)} ✓. Base = exotel <i>lead_to_call</i> inbound (colleague's L2C); booking = appointments; source = leads UTM → dialed number.`;
+}
+function cols(){ const i=DATA.weeks.indexOf(WK); return DATA.weeks.slice(Math.max(0,i-3), i+1); }
+function cellCB(c,b){ return c? `<b>${fmt(c)}</b><br><span class="bk">${fmt(b)} · ${pct(b,c).toFixed(0)}%</span>` : '—'; }
+function tierTot(w,ti){ return tot((DATA.caller[w]||[]).filter(r=>r.tier===ti)); }
+function chTot(w,ti,ch){ return tot((DATA.caller[w]||[]).filter(r=>r.tier===ti&&r.channel===ch)); }
+
+function vintAgg(w){ const m=agg(DATA.caller[w]||[],'vintage');   // fold 'lead after call' artifact into this-week
+  if(m.after){ m.this_wk=m.this_wk||{callers:0,booked:0}; m.this_wk.callers+=m.after.callers; m.this_wk.booked+=m.after.booked; delete m.after; }
+  return m; }
+function renderVintage(){
+  const cs=cols();
+  let head='<thead><tr><th>Vintage</th>'+cs.map(w=>`<th class="${w===WK?'cellhi':''}">${wlab(w)}${w===WK?' •':''}</th>`).join('')+'</tr></thead>';
+  const R=[['this_wk','Lead THIS week',cvar('--green')],['earlier','Lead earlier · recalled',cvar('--gold')],
+           ['no_lead','No lead',cvar('--faint')]];
+  let body='';
+  R.forEach(([v,lab,c])=>{ body+=`<tr><td style="color:${c};font-weight:600">${lab}</td>`+
+    cs.map(w=>{const m=vintAgg(w);const d=m[v]||{callers:0,booked:0};return `<td class="${w===WK?'cellhi':''}">${cellCB(d.callers,d.booked)}</td>`;}).join('')+'</tr>';});
+  body+=`<tr class="tot"><td>= all callers</td>`+cs.map(w=>{const t=tot(DATA.caller[w]||[]);return `<td class="${w===WK?'cellhi':''}">${cellCB(t.callers,t.booked)}</td>`;}).join('')+'</tr>';
+  document.getElementById('vintab').innerHTML=head+'<tbody>'+body+'</tbody>';
+}
+
+function renderSource(){
+  const cs=cols();
+  let head='<thead><tr><th>Tier / channel</th>'+cs.map(w=>`<th class="${w===WK?'cellhi':''}">${wlab(w)}${w===WK?' •':''}</th>`).join('')+'</tr></thead>';
+  const TI=[['tag','① UTM tag',cvar('--slate')],['dialed','② Dialed number',cvar('--accent')],['undet','③ Undetermined',cvar('--red')]];
+  let body='';
+  TI.forEach(([ti,lab,c])=>{
+    body+=`<tr class="tier" style="background:${bg(c)}"><td style="color:${c}">${lab}</td>`+
+      cs.map(w=>`<td class="${w===WK?'cellhi':''}">${cellCB(tierTot(w,ti).callers,tierTot(w,ti).booked)}</td>`).join('')+'</tr>';
+    if(ti!=='undet'){
+      const chans=[...new Set(cs.flatMap(w=>(DATA.caller[w]||[]).filter(r=>r.tier===ti).map(r=>r.channel)))];
+      chans.sort((a,b)=>cs.reduce((s,w)=>s+chTot(w,ti,b).callers,0)-cs.reduce((s,w)=>s+chTot(w,ti,a).callers,0));
+      chans.forEach(ch=>{ body+=`<tr><td class="subc">· ${ch}${ti==='dialed'?' (dialed)':''}</td>`+
+        cs.map(w=>{const d=chTot(w,ti,ch);return `<td class="subc ${w===WK?'cellhi':''}">${cellCB(d.callers,d.booked)}</td>`;}).join('')+'</tr>';});
+    }
+  });
+  document.getElementById('srctab').innerHTML=head+'<tbody>'+body+'</tbody>';
+}
+
+function renderWoW(){
+  const weeks=DATA.weeks.slice().reverse(); const partial=DATA.weeks[DATA.weeks.length-1];
+  let head='<thead><tr><th>Week</th><th>New leads</th><th>Called</th><th>L2C%</th><th>Callers</th><th>Booked</th><th>L2B%</th><th>WoW</th></tr></thead>';
+  let body=''; let prevL2B=null;
+  weeks.forEach(w=>{ const ld=DATA.leads[w]||{new_leads:0,called:0}; const t=tot(DATA.caller[w]||[]);
+    const l2c=pct(ld.called,ld.new_leads), l2b=pct(t.booked,t.callers);
+    const hi=w===WK?'cellhi':''; const part=(w===partial);
+    // WoW vs the chronologically-previous week (older = next in this reversed loop)
+    const iAll=DATA.weeks.indexOf(w); const pw=DATA.weeks[iAll-1];
+    let wow='—'; if(pw){ const pt=tot(DATA.caller[pw]||[]); const pl2b=pct(pt.booked,pt.callers); const d=l2b-pl2b;
+      wow=`<span class="${d>=0?'up':'dn'}">${d>=0?'▲':'▼'}${Math.abs(d).toFixed(1)}</span>`; }
+    body+=`<tr><td class="${hi}">${wlab(w)}${part?' ◑':''}</td>`+
+      `<td>${fmt(ld.new_leads)}</td><td>${fmt(ld.called)}</td><td style="color:var(--muted)">${l2c.toFixed(0)}%</td>`+
+      `<td>${fmt(t.callers)}</td><td>${fmt(t.booked)}</td>`+
+      `<td class="${hi}" style="font-weight:700">${l2b.toFixed(1)}%</td><td>${wow}</td></tr>`;
+  });
+  document.getElementById('wowtab').innerHTML=head+'<tbody>'+body+'</tbody>';
+  document.getElementById('wow-note').innerHTML='<b>Called</b> = of that week\'s new leads, how many placed an inbound call (L2C). <b>Callers</b> = all unique callers that week (incl. aged + no-lead). <b>L2B</b> = booked ÷ callers. ◑ = week still in progress.';
+}
+function node(bgv,inkv,val,lab){return `<div class="snode" style="background:var(${bgv});border-left:4px solid var(${inkv})"><b>${fmt(val)}</b><span>${lab}</span></div>`;}
+function arrow(t){return `<div class="sarrow">─ ${t} ─▸</div>`;}
+function bg(hex){ // light tint from a hex accent
+  const m={[cvar('--green')]:'var(--green-bg)',[cvar('--gold')]:'var(--gold-bg)',[cvar('--slate')]:'var(--slate-bg)',[cvar('--accent')]:'var(--accent-bg)',[cvar('--red')]:'var(--red-bg)',[cvar('--faint')]:'#eef1f4'};
+  return m[hex]||'#f3f6f9';}
+function wlab(w){const s=new Date(w+'T00:00:00'),e=new Date(s);e.setDate(e.getDate()+6);
+  const sm=s.toLocaleString('en',{month:'short'}),em=e.toLocaleString('en',{month:'short'});
+  return sm===em?`${s.getDate()}–${e.getDate()} ${sm}`:`${s.getDate()} ${sm}–${e.getDate()} ${em}`;}
+
+fetch('data_l2b.json').then(r=>r.json()).then(d=>{
+  DATA=d; const sel=document.getElementById('wk');
+  // default to the latest COMPLETE week (second-to-last)
+  const def=d.weeks[d.weeks.length-2]||d.weeks[d.weeks.length-1];
+  d.weeks.slice().reverse().forEach(w=>{const o=document.createElement('option');o.value=w;o.textContent=wlab(w)+' — '+w;sel.appendChild(o);});
+  sel.value=def; WK=def; render();
+  sel.onchange=()=>{WK=sel.value;render();};
+}).catch(e=>{document.body.innerHTML='<div class="wrap"><p style="color:#B4453E">Could not load data_l2b.json — run <code>python3 scripts/build_l2b.py</code> first.</p></div>';});
+</script>
+</body>
+</html>
