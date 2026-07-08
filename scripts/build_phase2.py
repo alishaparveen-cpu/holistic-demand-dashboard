@@ -8,7 +8,7 @@ Run: python3 scripts/build_phase2.py   (AWS SSO; cluster 'warehouse')"""
 import os, sys, subprocess, json
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RUNNER = os.path.join(ROOT,"scripts","redshift_query.py")
-WEEKS=["2026-06-22","2026-06-15","2026-06-08","2026-06-01","2026-05-25","2026-05-18","2026-05-11","2026-05-04","2026-04-27","2026-04-20","2026-04-13","2026-04-06","2026-03-30"]
+WEEKS=["2026-07-06","2026-06-29","2026-06-22","2026-06-15","2026-06-08","2026-06-01","2026-05-25","2026-05-18","2026-05-11","2026-05-04","2026-04-27","2026-04-20","2026-04-13","2026-04-06","2026-03-30"]
 WI = {w:i for i,w in enumerate(WEEKS)}
 
 def q(f):
@@ -184,10 +184,10 @@ def build_leadage_channel():
 
 def build_l2c():
     # data_l2c.json: NETWORK weekly funnel (in/out split) + by-source + by-city + TAT
-    NF=["leads","out_reached","out_conn","in_reached","in_conn","any_reached","any_conn","booked"]
+    NF=["leads","out_reached","out_conn","in_reached","in_conn","any_reached","any_conn","booked","booked_conn"]
     net={f:[0]*len(WEEKS) for f in NF}
     for c in q("fetch_l2c.sql"):
-        if len(c) < 9: continue
+        if len(c) < 10: continue
         if c[0] not in WI: continue
         for j,f in enumerate(NF): net[f][WI[c[0]]]=num(c[1+j])
     by_source=[{"src":c[0],"leads":num(c[1]),"reached":num(c[2]),"connected":num(c[3]),"booked":num(c[4])}

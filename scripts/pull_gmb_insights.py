@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import time
 """Pull GMB profile Insights (Searches + Interactions) per clinic via the Google Business Profile
 Performance API, weekly, aligned to the diagnostic's 12 Monday-weeks. Writes data_gmb_insights.json
 keyed "City|Clinic". Auth: GBP_CLIENT_ID/SECRET/REFRESH_TOKEN in env (business.manage scope).
@@ -14,7 +15,7 @@ IMPR = ["BUSINESS_IMPRESSIONS_MOBILE_SEARCH","BUSINESS_IMPRESSIONS_DESKTOP_SEARC
         "BUSINESS_IMPRESSIONS_MOBILE_MAPS","BUSINESS_IMPRESSIONS_DESKTOP_MAPS"]
 INTER = ["CALL_CLICKS","WEBSITE_CLICKS","BUSINESS_DIRECTION_REQUESTS"]
 # 12 Monday-weeks, newest first (must match diagnostic WEEKS)
-WEEKS=["2026-06-22","2026-06-15","2026-06-08","2026-06-01","2026-05-25","2026-05-18","2026-05-11","2026-05-04","2026-04-27","2026-04-20","2026-04-13","2026-04-06","2026-03-30"]
+WEEKS=["2026-07-06","2026-06-29","2026-06-22","2026-06-15","2026-06-08","2026-06-01","2026-05-25","2026-05-18","2026-05-11","2026-05-04","2026-04-27","2026-04-20","2026-04-13","2026-04-06","2026-03-30"]
 # derive the GBP pull window from WEEKS so it never drifts out of sync on a window shift
 WK_START = datetime.date.fromisoformat(WEEKS[-1])                                  # oldest Monday
 WK_END   = datetime.date.fromisoformat(WEEKS[0]) + datetime.timedelta(days=6)      # newest week's Sunday (GBP lag means recent days may be empty)
@@ -28,8 +29,18 @@ def token():
 
 def get(url, at):
     req = urllib.request.Request(url, headers={"Authorization":"Bearer "+at})
-    with urllib.request.urlopen(req, timeout=60) as r:
-        return json.load(r)
+    last = None
+    for attempt in range(6):   # GBP Business-Information/Performance APIs 503/429 intermittently → backoff
+        try:
+            with urllib.request.urlopen(req, timeout=60) as r:
+                return json.load(r)
+        except urllib.error.HTTPError as e:
+            last = e
+            if e.code in (429, 500, 502, 503, 504):
+                time.sleep(2 * (attempt + 1))
+                continue
+            raise
+    raise last
 
 def list_locations(at):
     out, page = [], None

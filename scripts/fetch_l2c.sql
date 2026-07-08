@@ -6,7 +6,7 @@ WITH ld AS (
     TO_CHAR(DATE_TRUNC('week', created_at),'YYYY-MM-DD') AS wk
   FROM allo_persons.lead
   WHERE phone_no IS NOT NULL AND LEN(phone_no) >= 10
-    AND created_at >= '2026-03-23' AND created_at < '2026-06-29'
+    AND created_at >= '2026-03-23' AND created_at < '2026-07-13'
 ),
 calls AS (
   SELECT RIGHT(CASE WHEN direction='inbound' THEN "from" ELSE "to" END,10) AS ph,
@@ -29,7 +29,8 @@ SELECT ld.wk,
   COUNT(DISTINCT CASE WHEN c.dir='in' AND c.st='completed' THEN ld.ph END) AS in_conn,
   COUNT(DISTINCT CASE WHEN c.ph IS NOT NULL THEN ld.ph END) AS any_reached,
   COUNT(DISTINCT CASE WHEN c.st='completed' THEN ld.ph END) AS any_conn,
-  COUNT(DISTINCT CASE WHEN b.ph IS NOT NULL THEN ld.ph END) AS booked
+  COUNT(DISTINCT CASE WHEN b.ph IS NOT NULL THEN ld.ph END) AS booked,
+  COUNT(DISTINCT CASE WHEN b.ph IS NOT NULL AND c.st='completed' THEN ld.ph END) AS booked_conn   -- booked AND call-connected = call-path booking (web-path = booked - booked_conn)
 FROM ld
 LEFT JOIN calls c ON c.ph=ld.ph AND c.cdate>=ld.ld_date AND c.cdate<=DATEADD(day,14,ld.ld_date)
 LEFT JOIN bk b ON b.ph=ld.ph AND b.bdate>=ld.ld_date AND b.bdate<=DATEADD(day,14,ld.ld_date)

@@ -247,6 +247,7 @@
       <div class="seg"><button class="segbtn on" id="segOff" onclick="setSeg('offline')">🏥 Offline</button><button class="segbtn" id="segOn" onclick="setSeg('online')">🌐 Online</button><button class="segbtn" id="segAll" onclick="setSeg('all')">Σ All</button></div>
       <span class="ctlsep"></span>
       <div class="seg"><button class="segbtn on" id="grainW" onclick="setGrain('weekly')">Weekly</button><button class="segbtn" id="grainM" onclick="setGrain('monthly')">Monthly</button><button class="segbtn" id="grainD" onclick="setGrain('daily')">Daily</button></div>
+      <span class="chelp" id="clubLbl" style="display:none;margin:0 1px 0 4px">block</span><div class="seg" id="clubSeg" style="display:none"><button class="segbtn" id="club2" onclick="setClubN(2)" title="2-week blocks">2w</button><button class="segbtn" id="club3" onclick="setClubN(3)" title="3-week blocks">3w</button><button class="segbtn on" id="club4" onclick="setClubN(4)" title="4-week blocks">4w</button></div>
       <span class="ctlsep"></span>
       <select id="curn" onchange="setCurN(this.value)"></select>
       <span class="chelp" style="margin-left:2px">vs</span>
@@ -285,6 +286,7 @@
         <span style="display:inline-flex;gap:6px;align-items:center;flex-wrap:wrap">
           <button class="tbtn" data-t="capacity" onclick="setTier('capacity')" title="select the whole Capacity tier at once">② Capacity</button>
           <button class="mbtn" data-m="availability" onclick="setMet('availability')">Availability</button>
+          <button class="mbtn" data-m="roster" onclick="setMet('roster')">Roster · hrs</button>
         </span>
         <span style="display:inline-flex;gap:6px;align-items:center;flex-wrap:wrap">
           <button class="tbtn" data-t="fulfilment" onclick="setTier('fulfilment')" title="select the whole Fulfilment tier at once">③ Fulfilment</button>
@@ -318,7 +320,7 @@
 </div>
 <div class="modal" id="modal" onclick="if(event.target===this)closeZ()"><div class="mbox"><div class="mhd"><span id="mTitle"></span><button onclick="closeZ()" title="close">✕</button></div><div id="pickBar" class="pickbar"></div><div id="mBody"></div></div></div>
 <script>
-let D=null, AGE={}, CURN=1, BASEN=1, MODE='ov', C=null, OPEN={}, QF='any', CITYF=new Set(), CLINF=new Set(), TIERF=new Set(), MATF=new Set(), DOCF=new Set(), CATF=new Set(), SEG='offline', DENSITY='compact', MET='', OVMODE='cockpit', METSEL=[], MCOND={}, MSUB={}, GRP='city', CLUB=1, GRAIN='weekly', SHOWSHARE=false, CATPCT=false, FCATDETAIL=false, FGCOLLAPSE=new Set(), FSCOLLAPSE=new Set(), CLUBAGG='sum', METFRESH=false, WEND=0, FPCT=false, SCOPE_ORDER=[];   // SCOPE_ORDER: dimensions in the order the user activated them → chips reorder so the active scope reads left-to-right   // FPCT: funnel "% of total" — show each breakdown row as its share of the stage headline   // WEND: weeks trimmed off the newest end → rebase "now" to an earlier week (0 = the true latest week)   // METFRESH: selection is still the untouched default → next pick replaces it (kills the "pinned bookings" feel)
+let D=null, AGE={}, CURN=1, BASEN=4, MODE='ov', C=null, OPEN={}, QF='any', CITYF=new Set(), CLINF=new Set(), TIERF=new Set(), MATF=new Set(), DOCF=new Set(), CATF=new Set(), SEG='offline', DENSITY='compact', MET='', OVMODE='cockpit', METSEL=[], MCOND={}, MSUB={}, GRP='city', CLUB=1, GRAIN='weekly', SHOWSHARE=false, CATPCT=false, FCATDETAIL=false, FGCOLLAPSE=new Set(), FSCOLLAPSE=new Set(), CLUBAGG='sum', METFRESH=false, WEND=0, FPCT=false, SCOPE_ORDER=[];   // BASEN=4: marketing compares the latest week vs the prior 4-week AVERAGE (smoother than city-head's 1-week) → graduated red/orange/yellow verdicts   // SCOPE_ORDER: dimensions in the order the user activated them → chips reorder so the active scope reads left-to-right   // FPCT: funnel "% of total" — show each breakdown row as its share of the stage headline   // WEND: weeks trimmed off the newest end → rebase "now" to an earlier week (0 = the true latest week)   // METFRESH: selection is still the untouched default → next pick replaces it (kills the "pinned bookings" feel)
 let QD=null, FUNNEL2='sc';   // SC/FU/Combined — data sourced from master demand (data_quick_diag.json)
 function setFunnel2(v){FUNNEL2=v;['sc','fu','all'].forEach(x=>{const b=$('fn2'+x);if(b)b.classList.toggle('on',x===v);});applyVariant();if(MODE==='cl'&&C){const s=C._slug;C=D.clinics[s]||C;}render();}
 function applyVariant(){   // overlay the matched SC/FU/Combined numbers onto each clinic (remapped to D.weeks)
@@ -508,10 +510,10 @@ const FUNNEL_ORDER=[4,1,0,2,3];   // Leads → Bookings → Availability → B2D
 // funnel grouped into the marketing tiers
 const FUNNEL_GROUPS=[
   {name:'① Demand',tier:'demand',keys:['demand','bookings']},
-  {name:'② Capacity',tier:'capacity',keys:['availability']},
+  {name:'② Capacity',tier:'capacity',keys:['availability','roster']},
   {name:'③ Fulfilment',tier:'fulfilment',keys:['conversion','done']}];
 // metric-selector tiers (the ①–③ buttons) — same marketing tiers
-const METRIC_TIERS={demand:['demand','bookings'],capacity:['availability'],fulfilment:['conversion','done']};
+const METRIC_TIERS={demand:['demand','bookings'],capacity:['availability','roster'],fulfilment:['conversion','done']};
 // club weeks into CLUB-sized buckets (averaged, from the newest week back) so long-term trends are legible.
 // averaging keeps a consistent scale and preserves the trend shape + %change; the zoom still shows raw weeks.
 // rates (%, per-day) must always average when clubbing; counts follow CLUBAGG (Σ Sum default / x̄ Avg)
@@ -520,7 +522,7 @@ function clubArr(arr,rate){if(arr&&WEND>0)arr=arr.slice(0,Math.max(1,arr.length-
   if(CLUB<=1||!arr)return arr;const N=arr.length,out=[],useAvg=rate||CLUBAGG==='avg';
   for(let end=N;end>0;end-=CLUB){const st=Math.max(0,end-CLUB),v=arr.slice(st,end).filter(x=>x!=null),s=v.reduce((a,b)=>a+b,0);out.unshift(v.length?(useAvg?s/v.length:s):null);}
   return out;}
-function clubLabels(){if(CLUB<=1)return D.week_labels;const wl=D.week_labels,N=wl.length,out=[];
+function clubLabels(){if(CLUB<=1)return D.week_labels;let wl=D.week_labels;if(WEND>0)wl=wl.slice(0,Math.max(1,wl.length-WEND));const N=wl.length,out=[];
   for(let end=N;end>0;end-=CLUB){const st=Math.max(0,end-CLUB);out.unshift(st===end-1?wl[st]:wl[st].split('–')[0].split('—')[0].trim()+'…'+wl[end-1]);}
   return out;}
 let REDT=0.15,AMBT=0.05;   // drop thresholds: 🔴 red at ≥REDT drop, 🟡 amber at ≥AMBT — user-editable (different metrics need different sensitivity)
@@ -655,23 +657,27 @@ function promptBaseN(){const maxb=(D?D.weeks.length:26)-CURN,n=parseInt(prompt('
 // club-aware compare presets: values are BLOCK counts; labels show the week span (4-wk club → "last 8 wks" = 2 blocks)
 function curPresetsC(){return CLUB<=1?CUR_PRESETS:[[1,'last '+CLUB+' wks'],[2,'last '+(2*CLUB)+' wks'],[3,'last '+(3*CLUB)+' wks'],[6,'last '+(6*CLUB)+' wks']];}
 // ---- Rebase: choose which week is treated as the "latest" (WEND = weeks trimmed off the newest end) ----
-function fillWkEnd(){const sel=$('wkend');if(!sel||!D)return;const wl=D.week_labels,NW=wl.length,maxOff=Math.max(0,NW-CURN-BASEN);
-  if(WEND>maxOff)WEND=maxOff;
-  let h='';for(let i=0;i<=maxOff;i++){h+='<option value="'+i+'"'+(i===WEND?' selected':'')+'>'+wl[NW-1-i]+(i===0?' · latest':'')+'</option>';}
+function fillWkEnd(){const sel=$('wkend');if(!sel||!D)return;const wl=D.week_labels,NW=wl.length,step=(CLUB>1?CLUB:1),maxOff=Math.max(0,NW-(CURN+BASEN)*step);
+  WEND=Math.round(WEND/step)*step;if(WEND>maxOff)WEND=maxOff;   // snap the endpoint to a block boundary in monthly
+  const dstart=L=>(L||'').split('–')[0].split('—')[0].trim(),dend=L=>{const p=(L||'').split(/[–—]/);return p[p.length-1].trim();};
+  let h='';for(let i=0;i<=maxOff;i+=step){const end=NW-1-i,st=Math.max(0,end-(step-1)),lab=step===1?wl[end]:(dstart(wl[st])+' – '+dend(wl[end]));h+='<option value="'+i+'"'+(i===WEND?' selected':'')+'>'+lab+(i===0?' · latest':'')+'</option>';}
   sel.innerHTML=h;
   const wp=$('wkPrev'),wn=$('wkNext');if(wp)wp.disabled=(WEND>=maxOff);if(wn)wn.disabled=(WEND<=0);}
-function setWEnd(v){const NW=D?D.weeks.length:26;WEND=Math.max(0,Math.min(+v,NW-CURN-BASEN));fillWkEnd();render();}
-function stepWEnd(d){const NW=D?D.weeks.length:26;WEND=Math.max(0,Math.min(WEND+d,NW-CURN-BASEN));fillWkEnd();render();}
+function setWEnd(v){const step=(CLUB>1?CLUB:1),NW=D?D.weeks.length:26,maxOff=Math.max(0,NW-(CURN+BASEN)*step);WEND=Math.max(0,Math.min(+v,maxOff));fillWkEnd();render();}
+function stepWEnd(d){const step=(CLUB>1?CLUB:1),NW=D?D.weeks.length:26,maxOff=Math.max(0,NW-(CURN+BASEN)*step);WEND=Math.max(0,Math.min(WEND+d*step,maxOff));fillWkEnd();render();}   // ◀▶ steps one week (weekly) or one 4-wk block (monthly)
 function basePresetsC(){return CLUB<=1?BASE_PRESETS:[[1,'prior '+CLUB+' wks'],[2,'prior '+(2*CLUB)+' wks'],[3,'prior '+(3*CLUB)+' wks'],[4,'prior '+(4*CLUB)+' wks'],[6,'prior '+(6*CLUB)+' wks']];}
 // Period: Daily / Weekly / Monthly. Weekly = weekly grain; Monthly = 4-week blocks (4w vs 4/8/12…); Daily needs a daily feed.
 function setGrain(g){GRAIN=g;['grainD','grainW','grainM'].forEach(id=>{const b=$(id);if(b)b.classList.toggle('on',id==='grain'+g[0].toUpperCase());});
-  if(g==='monthly'){CLUB=4;CURN=1;BASEN=1;}else{CLUB=1;CURN=1;BASEN=1;}
+  if(g==='monthly'){CLUB=4;CURN=1;BASEN=1;}else{CLUB=1;CURN=1;BASEN=4;}   // weekly marketing default = latest week vs prior 4-wk avg
   const dis=(g==='daily');if($('curn'))$('curn').disabled=dis;if($('basen'))$('basen').disabled=dis;
   const showAgg=(g==='monthly')?'inline-flex':'none';if($('aggSeg'))$('aggSeg').style.display=showAgg;if($('aggSep'))$('aggSep').style.display=(g==='monthly')?'inline-block':'none';
-  const wkOn=(g==='weekly');if(!wkOn)WEND=0;['wkendSep','wkendLbl','wkPrev','wkend','wkNext'].forEach(id=>{const e=$(id);if(e)e.style.display=wkOn?'':'none';});   // rebase is weekly-only
+  if($('clubSeg'))$('clubSeg').style.display=showAgg;if($('clubLbl'))$('clubLbl').style.display=(g==='monthly')?'inline':'none';   // block-size (2/3/4-wk) selector — monthly only
+  if(g==='monthly')['club2','club3','club4'].forEach(id=>{const b=$(id);if(b)b.classList.toggle('on',id==='club'+CLUB);});
+  const wkOn=(g!=='daily');if(g==='daily')WEND=0;['wkendSep','wkendLbl','wkPrev','wkend','wkNext'].forEach(id=>{const e=$(id);if(e)e.style.display=wkOn?'':'none';});   // rebase: weekly (per week) + monthly (per 4-wk block); off for daily
   if(!dis){fillSel('curn',curPresetsC(),CURN,'weeks');updateBasenLbl();}
   fillWkEnd();render();}
 function setClubAgg(m){CLUBAGG=m;['aggSum','aggAvg'].forEach(id=>{const b=$(id);if(b)b.classList.toggle('on',id==='agg'+(m==='sum'?'Sum':'Avg'));});render();}
+function setClubN(n){CLUB=n;['club2','club3','club4'].forEach(id=>{const b=$(id);if(b)b.classList.toggle('on',id==='club'+n);});fillSel('curn',curPresetsC(),CURN,'weeks');updateBasenLbl();fillWkEnd();render();}   // customize the monthly block size (2/3/4 weeks); nav + presets follow CLUB
 
 // ---------- OVERVIEW (portfolio scan) ----------
 function whyChips(s,fb){
@@ -967,7 +973,7 @@ function pctPill(ev){const arw=(ev.d==null)?'':(ev.d<0?'↓ ':ev.d>0?'↑ ':'→
 function segWord(){return SEG==='online'?'online':SEG==='all'?'all consults':'offline';}
 function funnelWord(){return FUNNEL2==='fu'?'Follow-up':FUNNEL2==='all'?'SC + FU':'SC';}   // SC·demand / FU·ops / All funnel variant
 function metricNameFull(key){const fw=funnelWord();switch(key){   // outcome metrics carry the SC/FU/All variant; leads is demand-side (variant-agnostic)
-  case 'availability':return 'Availability · active days'+(FUNNEL2==='sc'?'':' ('+fw+')');
+  case 'availability':return 'Availability · days attended'+(FUNNEL2==='sc'?'':' ('+fw+')');
   case 'demand':return 'Leads';
   case 'bookings':return fw+' bookings';
   case 'conversion':return fw+' book → done %';
@@ -1007,7 +1013,7 @@ function metricRow(c,key,disp,subLabel){const st=STAGES.find(x=>x.key===key);
   const zi=ZREG.length;ZREG.push({label:disp+' · '+metricLabelText(key,subLabel),arr:raw,col:COL[ev.st]||'var(--ink2)',pct:pct,noPrefix:true});   // zoom shows raw weekly
   const subCore=subLabel?subLabel.replace(/^category · /,''):'';   // a category CHILD row ("SH · ED+") nests one level deeper than its parent ("SH"), so sub-cats read as sitting under it
   const deep=subLabel&&subCore.indexOf(' · ')>=0&&CAT_CORES.has(subCore),pad=subLabel?(deep?32:16):0;
-  return '<div class="crow" title="click to drill in"><span class="clab"'+(pad?' style="padding-left:'+pad+'px"':'')+'>'+(subLabel?'<span style="color:var(--faint)">'+(deep?'· ':'↳ ')+'</span>':'')+metricLabelHTML(key,subLabel)+pctSuf+'</span>'+pctPill(ev)+trendHTML(arr,pct,ev)+'<span class="zoomico" onclick="event.stopPropagation();zoomReg('+zi+')" title="zoom — full weekly trend" style="cursor:zoom-in;margin-left:10px;color:var(--faint);font-size:13px">🔍</span></div>';}
+  return '<div class="crow" onclick="frowClick(event,'+zi+')" title="click a number to chart · label to drill"><span class="clab"'+(pad?' style="padding-left:'+pad+'px"':'')+'>'+(subLabel?'<span style="color:var(--faint)">'+(deep?'· ':'↳ ')+'</span>':'')+metricLabelHTML(key,subLabel)+pctSuf+'</span>'+pctPill(ev)+trendHTML(arr,pct,ev)+'<span class="zoomico" onclick="event.stopPropagation();zoomReg('+zi+')" title="zoom — full weekly trend" style="cursor:zoom-in;margin-left:10px;color:var(--faint);font-size:13px">🔍</span></div>';}
 function metricStack(c,disp){return METSEL.map(k=>{const subs=MSUB[k]||[];return metricRow(c,k,disp,null)+subs.map(sb=>metricRow(c,k,disp,sb)).join('');}).join('');}
 function toggleShare(){SHOWSHARE=!SHOWSHARE;render();}
 function toggleCatPct(){CATPCT=!CATPCT;render();}
@@ -1105,6 +1111,13 @@ function buildBdControl(){
       +(bdN?'<a onclick="clearSub(\''+bdKey+'\')" style="font-size:11.5px;color:var(--accent);cursor:pointer;font-weight:700">clear '+bdN+'</a>':'')+'</div>'
     +'<div style="display:flex;flex-direction:column;gap:2px">'+bdPicker+'</div></div>';
 }
+// source-upstream (GMB/Google) strip — reused at the top of Full funnel + Individual metric views (same data as Quick scan, via cockEval)
+function upstreamStripHTML(o,slugs){
+  const ups=srcUpstreamVitals();if(!ups.length||!o)return '';
+  const card=vt=>{const naUp=naUpstream(vt.key,slugs),ev=naUp?{cur:null,d:null,st:'green'}:cockEval(o,vt.key,slugs).ev,val=naUp?'—':fmtVital(vt.key,ev.cur),
+    pc=ev.d==null?'':'<span style="font-size:11px;font-weight:700;color:'+(ev.d<0?stTx(ev.st):'var(--good)')+'">'+(ev.d<0?'↓':ev.d>0?'↑':'→')+Math.abs(Math.round(ev.d*100))+'%</span>';
+    return '<div onclick="setOvMode(\'cockpit\');setCockMet(\''+vt.key+'\')" title="open in Quick scan" style="cursor:pointer;flex:none;min-width:112px;background:var(--inset);border:1px solid var(--line);border-left:3px solid '+(COL[ev.st]||'var(--good)')+';border-radius:8px;padding:7px 10px"><div style="font-size:10.5px;color:var(--muted);white-space:nowrap">'+vt.lab+'</div><div style="display:flex;align-items:baseline;gap:6px"><b style="font-size:15px;color:var(--ink)">'+val+'</b>'+pc+'</div></div>';};
+  return '<div style="margin:0 0 14px"><div style="font-size:11px;color:var(--faint);text-transform:uppercase;letter-spacing:.04em;margin-bottom:5px">'+SRCF+' · acquisition (upstream)</div><div style="display:flex;gap:7px;overflow-x:auto;padding-bottom:4px">'+ups.map(card).join('')+'</div></div>';}
 function renderMetric(){
   ZREG=[];CURZ=null;
   const bdc=$('bdcontrol');if(bdc)bdc.innerHTML=buildBdControl();   // always render the breakdown control (works with nothing selected)
@@ -1143,6 +1156,7 @@ function renderMetric(){
     +'<span style="display:inline-flex;gap:6px;flex-wrap:wrap;margin-left:4px">'+metrics.map(s=>cc(s.key)).join('')+'</span>'
     +catDetailBtn
     +'<button class="fbtn" style="padding:5px 13px;font-size:12px;font-weight:700;margin-left:auto" onclick="clearMet()">✕ clear all</button></div>';
+  h+=upstreamStripHTML(scopeSlugs.length===1?CL(scopeSlugs[0]):aggregate(scopeSlugs,'scope'),scopeSlugs);   // GMB/Google acquisition strip when a source is picked
   const lbl=curLabel();
   const clubbed=CLUB>1,wl=clubbed?clubLabels():D.week_labels,NWl=wl.length-(clubbed?0:WEND),winLabels=wl.slice(Math.max(0,NWl-(CURN+BASEN)),NWl),shortWk=L=>(L||'').split('–')[0].split(' → ')[0].trim();
   const colHead='<div class="crow chead"><span class="clab">metric</span><span class="mc">change</span>'
@@ -1184,7 +1198,7 @@ function stageParts(s,o){   // breakdown series per stage: lineS = coloured comp
     const sn=FSRC?99:0;   // when the channel cross is on, expand the group so every sub-bucket + its channels show
     groups=[
       {label:'new patients'+(FSRC?' · × channel':''),arr:ad(B.new_tw,B.new_old),color:BPAL[0],coll:1,showN:sn,children:
-        subWithSrc('fresh — lead this week',B.new_tw,BPAL[0],fSrc).concat(subWithSrc('older-week lead (carry-in)',B.new_old,BPAL[1],oSrc))},
+        subWithSrc('fresh — lead this week',B.new_tw,BPAL[0],fSrc).concat(subWithSrc('older-week lead (carry-in)',B.new_old,BPAL[1],oSrc)).concat(FSRC?[]:[{label:'↳ 1 wk old lead',arr:B.no1w,color:BPAL[1],depth:3},{label:'↳ 2–4 wk old',arr:B.no2_4w,color:BPAL[1],depth:3},{label:'↳ 1–3 mo old',arr:B.no1_3mo,color:BPAL[1],depth:3},{label:'↳ 3 mo+ old',arr:B.no3mo,color:BPAL[1],depth:3}])},   // older-lead bookings by lead age (nested under carry-in; hidden when the channel cross is on)
       {label:'repeat patients'+(FSRC?' · × channel':''),arr:ad(B.rebook,B.relapse),color:BPAL[2],coll:1,showN:sn,children:
         subWithSrc('never done before',B.rebook,BPAL[2],nSrc).concat(subWithSrc('relapse — done before, booked again',B.relapse,BPAL[3],rSrc))}
     ];
@@ -1356,16 +1370,30 @@ function cockUp(){   // pop one scope level: doctor → clinic → clinic-filter
   if(COCKDOC){COCKDOC=null;DOCF=new Set();syncDrillScope();render();}
   else if(COCKCLIN){COCKCLIN=null;CLINF=new Set();syncDrillScope();render();}
   else if(CLINF.size){CLINF=new Set();COCKMET='';syncDrillScope();render();}
-  else if(CITYF.size){CITYF=new Set();COCKMET='';COCKCLIN=null;COCKDOC=null;if(typeof cityChanged==='function')cityChanged();else render();}}
-function cockToNational(){CITYF=new Set();CLINF=new Set();COCKCLIN=null;COCKDOC=null;COCKMET='';if(typeof cityChanged==='function')cityChanged();else render();}   // crumb root → jump all the way back to national
+  else if(CITYF.size){CITYF=new Set();COCKMET='';COCKCLIN=null;COCKDOC=null;if(typeof cityChanged==='function')cityChanged();else render();}
+  else if(TIERF.size||MATF.size){TIERF=new Set();MATF=new Set();COCKMET='';if(typeof cityChanged==='function')cityChanged();else render();}}   // back out of a whole-tier / maturity scope → national
+function cockToNational(){CITYF=new Set();CLINF=new Set();TIERF=new Set();MATF=new Set();COCKCLIN=null;COCKDOC=null;COCKMET='';if(typeof cityChanged==='function')cityChanged();else render();}   // crumb root → jump all the way back to national (clears tier/maturity scope too)
 function fmtVital(key,v){if(v==null||isNaN(v))return '—';
   if(key==='rpc'||key==='aov'||key==='presaov'||key==='revenue'||/^__aov(meds|test|ther)$/.test(key)||/^__pres(meds|test|ther)$/.test(key))return '₹'+Math.round(v).toLocaleString('en-IN');
   if(['conversion','d2p','__fu','p2p','__p2pmeds','__p2ptest','__p2pther','slotb2d','__prescribe','__l2b'].includes(key)||/^__prs(meds|test|ther)$/.test(key))return Math.round(v)+'%';
+  if(key==='__gmb_ctr'||key==='__gp_ctr'||/^__(l2call|callconn|l2btot|call2book|l2bcall|l2web|web2book|l2bweb)$/.test(key)||key==='__gp_is'||key==='__gp_util'||key==='__gp_locpct')return (Math.round(v*10)/10)+'%';   // source-upstream CTRs / shares / lead→call rates
+  if(key==='__gp_spend'||key==='__gp_eplc')return '₹'+Math.round(v).toLocaleString('en-IN');
   return Math.round(v).toLocaleString('en-IN');}
 function fuB2D(slugs){const N=D.weeks.length,bk=new Array(N).fill(0),dn=new Array(N).fill(0);   // Follow-up book→done %, from the FU variant in QD (variant-independent of the current toggle)
   slugs.forEach(s=>{const v=QD&&QD.clinics[s]&&QD.clinics[s].fu;if(!v||!v.done)return;const b=v.done.booked||[],d=v.done.done||[];for(let i=0;i<N;i++){bk[i]+=b[i]||0;dn[i]+=d[i]||0;}});
   return bk.map((b,i)=>b?Math.round(100*dn[i]/b):null);}
 const COCK_VITALS=[{key:'demand',lab:'Leads'},{key:'__l2b',lab:'Lead → Book %'},{key:'bookings',lab:'Bookings'},{key:'availability',lab:'Availability · days attended'},{key:'conversion',lab:'B2D %'},{key:'done',lab:'Done · consults'}];   // MARKETING funnel: Leads → Lead→Book% → Bookings → Availability → B2D% → Done (no revenue/economics/products)
+// upstream acquisition vitals prepended to the funnel when a SOURCE is picked (SRCF). GMB = per-clinic; Google paid = city/category-level (metros only, greys out at clinic/doctor)
+function srcUpstreamVitals(){
+  if(SRCF==='Organic'||SRCF==='GMB')return [{key:'__gmb_search',lab:'GMB searches'},{key:'__gmb_calls',lab:'GMB call clicks'},{key:'__gmb_web',lab:'GMB website clicks'},{key:'__gmb_dir',lab:'GMB directions'},{key:'__gmb_ctr',lab:'GMB CTR %'},{key:'__gmb_rev',lab:'Reviews · new'},{key:'__gmb_neg',lab:'Negative reviews'}];   // GMB is the organic/local engine → surface its reach under Organic
+  if(SRCF==='Google')return [{key:'__gp_impr',lab:'Google impressions'},{key:'__gp_is',lab:'Impression share %'},{key:'__gp_clicks',lab:'Google clicks'},{key:'__gp_ctr',lab:'Google CTR %'},{key:'__gp_locclicks',lab:'Location clicks'},{key:'__gp_locpct',lab:'Loc-click %'}];   // reach/click funnel only — cost metrics (util/ePCLC/spend) live in the Efficiency view
+  return [];}
+function callVitals(){return (L2C&&!CITYF.size&&!CLINF.size&&!TIERF.size&&!DOCF.size&&!COCKCLIN&&!COCKDOC)?[{key:'__l2call',lab:'Lead → our call %'},{key:'__callconn',lab:'Call → connected %'}]:[];}   // network-level lead→call (our-side reach) — national scope only
+function activeVitals(){return srcUpstreamVitals().concat(COCK_VITALS);}   // lead→call metrics now live as sub-buttons under the Lead→Book chip, not standalone cards
+const UPSTREAM_KEYS=new Set(['__gmb_search','__gmb_int','__gmb_calls','__gmb_web','__gmb_dir','__gmb_ctr','__gmb_rev','__gp_impr','__gp_clicks','__gp_ctr','__gp_spend']);
+function naUpstream(key,slugs){if(!/^__gp_/.test(key))return false;   // Google paid is city-level → n/a at a single-clinic / doctor drill or when no metro city is in scope
+  if(COCKCLIN||COCKDOC||CLINF.size===1)return true;
+  return !scopeCities(slugs).some(c=>GAPA[c]);}
 // ── ONE category-mix chip (done %) at the end of the vital strip; pick the category via a filter row (like RPC). SH default. ──
 let CATSEL='SH';function setCatSel(n){CATSEL=n;render();}
 const CAT_SEL_OPTS=[['SH',SH_SUBS],['MH',MH_SUBS],['STI',['STI']],['ED+',['ED+']],['ED+PE+',['ED+PE+']],['PE+',['PE+']],['other',['Oth']],['NOS',['NOS']]];
@@ -1430,8 +1458,37 @@ function fulfilmentTable(o){   // clean Done · Meds · Tests · Therapy × Pres
   const hdr='<tr style="color:var(--faint);font-size:10.5px;text-transform:uppercase;letter-spacing:.03em"><th style="text-align:left;padding:2px 12px 5px;font-weight:600">Fulfilment</th><th style="text-align:right;padding:2px 12px 5px;font-weight:600">Prescribed</th><th style="text-align:right;padding:2px 12px 5px;font-weight:600">Purchased</th><th style="text-align:right;padding:2px 12px 5px;font-weight:600">Conversion</th></tr>';
   const rows=line('Any (D2P)',cw(dn)+' done',cw(pu),rev(pu,dn))+line('Meds',cw(r.meds_pres),cw(r.meds_purch),rev(r.meds_purch,r.meds_pres))+line('Tests',cw(r.test_pres),cw(r.test_purch),rev(r.test_purch,r.test_pres))+line('Therapy',cw(r.ther_pres),cw(r.ther_purch),rev(r.ther_purch,r.ther_pres));
   return '<div style="background:var(--card);border:1px solid var(--line);border-radius:10px;padding:8px 4px;margin-bottom:12px;overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead>'+hdr+'</thead><tbody>'+rows+'</tbody></table></div>';}
-function cockEval(o,key,slugs){if(key==='demand'&&SRCF!=='All'){const arr=clubArr((chanConsol(o.demand&&o.demand.by_channel)[SRCF])||[],false);return {ev:evalMetric(arr),arr};}   // Leads vital follows the Source scope filter
-if(key==='__fu'){const arr=fuB2D(slugs);return {ev:evalMetric(arr),arr};}if(key==='rpc'){const arr=clubArr(rpcBasisArr(o),true);return {ev:evalMetric(arr),arr};}if(key==='__cat'){const arr=clubArr(catDoneArr(o,catSelCats()),false);return {ev:evalMetric(arr),arr};}if(key==='__new'){const arr=clubArr(newPatArr(o),false);return {ev:evalMetric(arr),arr};}if(key==='__newtw'){const arr=clubArr((o.bookings&&o.bookings.new_tw)||[],false);return {ev:evalMetric(arr),arr};}if(key==='__newold'){const arr=clubArr((o.bookings&&o.bookings.new_old)||[],false);return {ev:evalMetric(arr),arr};}if(/^__no(1w|2_4w|1_3mo|3mo)$/.test(key)){const arr=clubArr((o.bookings&&o.bookings[key.slice(2)])||[],false);return {ev:evalMetric(arr),arr};}   // older-lead bookings by lead ageif(key==='__rost'){const arr=clubArr((o.availability&&o.availability.active_days)||[],false);return {ev:evalMetric(arr),arr};}if(key==='conversion'&&B2DBASIS==='s'){const arr=clubArr(slotB2dArr(o),true);return {ev:evalMetric(arr),arr};}
+function cockEval(o,key,slugs){
+  // --- source-upstream metrics: sum the aligned GMB / Google-paid cubes over the scope's clinic slugs ---
+  if(key==='__gmb_search'){const a=gtr(sumSlugs(slugs,s=>GMBA[s]&&GMBA[s].searches));return {ev:evalMetric(clubArr(a,false)),arr:a};}
+  if(key==='__gmb_int'){const a=gtr(sumSlugs(slugs,s=>GMBA[s]&&GMBA[s].interactions));return {ev:evalMetric(clubArr(a,false)),arr:a};}
+  if(key==='__gmb_calls'){const a=gtr(sumSlugs(slugs,s=>GMBA[s]&&GMBA[s].calls));return {ev:evalMetric(clubArr(a,false)),arr:a};}
+  if(key==='__gmb_web'){const a=gtr(sumSlugs(slugs,s=>GMBA[s]&&GMBA[s].website));return {ev:evalMetric(clubArr(a,false)),arr:a};}
+  if(key==='__gmb_dir'){const a=gtr(sumSlugs(slugs,s=>GMBA[s]&&GMBA[s].directions));return {ev:evalMetric(clubArr(a,false)),arr:a};}
+  if(key==='__gmb_ctr'){const a=gtr(ratioArr(sumSlugs(slugs,s=>GMBA[s]&&GMBA[s].interactions),sumSlugs(slugs,s=>GMBA[s]&&GMBA[s].searches),100));return {ev:evalMetric(clubArr(a,true)),arr:a};}
+  if(key==='__gmb_rev'){const a=rtr(sumSlugs(slugs,s=>REVA[s]&&REVA[s].n));return {ev:evalMetric(clubArr(a,false)),arr:a};}
+  if(key==='__gmb_neg'){const a=rtr(sumSlugs(slugs,s=>REVA[s]&&REVA[s].neg));return {ev:evalMetric(clubArr(a,false)),arr:a};}   // negative reviews = data_reviews `neg` = rating ≤3★ (INCLUDES neutral 3★; to count only 1–2★, re-pull build_reviews.py with a ≤2 threshold)
+  if(/^__(l2btot|l2call|call2book|l2bcall|l2web|web2book|l2bweb)$/.test(key)){   // lead→book split into call-path & web-path (network-level, from data_l2c). call = call-connected then booked; web = booked without a connected call
+    if(!L2C)return {ev:evalMetric([]),arr:[]};
+    const leads=L2C.leads||[],conn=L2C.any_conn||[],bk=L2C.booked||[],bkc=L2C.booked_conn||[];
+    const web=leads.map((v,i)=>(v||0)-(conn[i]||0)),bkw=bk.map((v,i)=>(v||0)-(bkc[i]||0)),R=(num,den)=>ltr(ratioArr(num,den,100));
+    const a=key==='__l2btot'?R(bk,leads):key==='__l2call'?R(conn,leads):key==='__call2book'?R(bkc,conn):key==='__l2bcall'?R(bkc,leads):key==='__l2web'?R(web,leads):key==='__web2book'?R(bkw,web):R(bkw,leads);
+    return {ev:evalMetric(clubArr(a,true)),arr:a};}
+  if(/^__gp_/.test(key)){const cities=scopeCities(slugs).filter(c=>GAPA[c]),cats=CATF.size?[...CATF]:null;
+    const pull=f=>{const o2=Z();cities.forEach(ct=>{const g=GAPA[ct],arrs=cats?cats.map(c=>(g.by_cat[c]||{})[f]).filter(Boolean):[g[f]];arrs.forEach(a=>{if(a)for(let i=0;i<o2.length;i++)o2[i]=(o2[i]||0)+(a[i]||0);});});return o2;};   // category-sliceable counts
+    const pullCity=f=>{const o2=Z();cities.forEach(ct=>{const a=GAPA[ct][f];if(a)for(let i=0;i<o2.length;i++)o2[i]=(o2[i]||0)+(a[i]||0);});return o2;};   // account-level fields (budget) — not category-split
+    const pullW=(f,wf)=>{const num=Z(),den=Z();cities.forEach(ct=>{const g=GAPA[ct],r=g[f],w=g[wf];if(r&&w)for(let i=0;i<num.length;i++){num[i]+=(r[i]||0)*(w[i]||0);den[i]+=(w[i]||0);}});return ratioArr(num,den,1);};   // impression-weighted rate (IS%)
+    if(key==='__gp_impr'){const a=atr(pull('impr'));return {ev:evalMetric(clubArr(a,false)),arr:a};}
+    if(key==='__gp_clicks'){const a=atr(pull('clicks'));return {ev:evalMetric(clubArr(a,false)),arr:a};}
+    if(key==='__gp_locclicks'){const a=atr(pull('loc_clicks'));return {ev:evalMetric(clubArr(a,false)),arr:a};}
+    if(key==='__gp_spend'){const a=atr(pull('spend'));return {ev:evalMetric(clubArr(a,false)),arr:a};}
+    if(key==='__gp_ctr'){const a=atr(ratioArr(pull('clicks'),pull('impr'),100));return {ev:evalMetric(clubArr(a,true)),arr:a};}
+    if(key==='__gp_locpct'){const a=atr(ratioArr(pull('loc_clicks'),pull('clicks'),100));return {ev:evalMetric(clubArr(a,true)),arr:a};}
+    if(key==='__gp_eplc'){const a=atr(ratioArr(pull('spend'),pull('loc_clicks'),1));return {ev:evalMetric(clubArr(a,true)),arr:a};}   // ₹ per location-click
+    if(key==='__gp_util'){const a=atr(ratioArr(pullCity('spend'),pullCity('budget').map(b=>(b||0)*7),100));return {ev:evalMetric(clubArr(a,true)),arr:a};}   // budget is DAILY → ×7 for the weekly denominator (matches the cube's stored util)
+    if(key==='__gp_is'){const a=atr(pullW('is_pct','impr'));return {ev:evalMetric(clubArr(a,true)),arr:a};}}
+  if(key==='demand'&&SRCF!=='All'){const arr=clubArr((chanConsol(o.demand&&o.demand.by_channel)[SRCF])||[],false);return {ev:evalMetric(arr),arr};}   // Leads vital follows the Source scope filter
+if(key==='__fu'){const arr=fuB2D(slugs);return {ev:evalMetric(arr),arr};}if(key==='rpc'){const arr=clubArr(rpcBasisArr(o),true);return {ev:evalMetric(arr),arr};}if(key==='__cat'){const arr=clubArr(catDoneArr(o,catSelCats()),false);return {ev:evalMetric(arr),arr};}if(key==='__new'){const arr=clubArr(newPatArr(o),false);return {ev:evalMetric(arr),arr};}if(key==='__newtw'){const arr=clubArr((o.bookings&&o.bookings.new_tw)||[],false);return {ev:evalMetric(arr),arr};}if(key==='__newold'){const arr=clubArr((o.bookings&&o.bookings.new_old)||[],false);return {ev:evalMetric(arr),arr};}if(/^__no(1w|2_4w|1_3mo|3mo)$/.test(key)){const arr=clubArr((o.bookings&&o.bookings[key.slice(2)])||[],false);return {ev:evalMetric(arr),arr};}   // older-lead bookings by lead ageif(/^__bksrc/.test(key)){const sr=key.slice(7),arr=clubArr(((o.bookings&&o.bookings.by_source&&o.bookings.by_source[sr])||{}).booked||[],false);return {ev:evalMetric(arr),arr};}   // bookings by lead sourceif(key==='__rost'){const arr=clubArr((o.availability&&o.availability.active_days)||[],false);return {ev:evalMetric(arr),arr};}if(key==='conversion'&&B2DBASIS==='s'){const arr=clubArr(slotB2dArr(o),true);return {ev:evalMetric(arr),arr};}
   if(key==='__slots'){const arr=clubArr((o.slots&&o.slots.total_slots)||[],false);return {ev:evalMetric(arr),arr};}
   if(key==='__resched'){const s=o.slots||{},arr=clubArr((s.resched_doc||[]).map((v,i)=>(v||0)+((s.resched_pat||[])[i]||0)),false);return {ev:evalMetric(arr),arr};}
   if(key==='__noshow'){const arr=clubArr((o.slots&&o.slots.no_show)||[],false);return {ev:evalMetric(arr),arr};}
@@ -1467,7 +1524,7 @@ function cockScopeObj(){   // the object the vitals describe, honoring the drill
 }
 function cockHealth(o,base){let score=0;const drops=[];   // composite health: count red(2)/amber(1) fallen vitals + the drop list (skip no-data drops-to-zero)
   COCK_VITALS.forEach(vt=>{const isEcon=['rpc','aov','__prescribe','p2p'].includes(vt.key),k=isEcon?prodKey(vt.key):vt.key;if(k==null)return;   // economics vitals scored for the selected Product line
-    const ev=cockEval(o,k,base).ev,rate=['rpc','aov','presaov','d2p','conversion','__fu','__l2b','__prescribe','p2p'].includes(k)||/^__(prs|aov|pres|p2p)/.test(k);
+    const ev=cockEval(o,k,base).ev,rate=['rpc','aov','presaov','d2p','conversion','__fu','__l2b','__prescribe','p2p','__gmb_ctr','__gp_ctr','__gp_is','__gp_util','__gp_locpct','__gp_eplc','__l2call','__callconn','__l2btot','__call2book','__l2bcall','__l2web','__web2book','__l2bweb'].includes(k)||/^__(prs|aov|pres|p2p)/.test(k);
     if(ev.d!=null&&ev.d<0&&(ev.st==='red'||ev.st==='amber')&&(ev.base==null||ev.base>0)&&(!rate||ev.cur>0)){score+=(ev.st==='red'?2:1);drops.push({key:k,lab:vt.lab.split(' · ')[0]+(isEcon?PRODLAB[PRODF]:''),ev});}});
   drops.sort((a,b)=>a.ev.d-b.ev.d);return {score,drops};}
 function cockTopMover(o,key){if(key==='__fu')return null;const sd=(subDims(key)||[]).filter(x=>!x.naCat&&!/^all /.test(x.label));let w=null;
@@ -1485,13 +1542,20 @@ function renderCockpit(){
   const levelName=sc.level==='doctor'?'doctor':sc.level==='clinic'?'clinic':'city';
   // 1 · vitals strip — click a card to focus that metric; ↩ returns to the overview
   let cards='';
-  COCK_VITALS.forEach(vt=>{const isEcon=['rpc','aov','__prescribe','p2p'].includes(vt.key),ek=isEcon?prodKey(vt.key):vt.key,naProd=isEcon&&ek==null;   // economics chips follow the Product scope filter → clean single-value cards
+  activeVitals().forEach(vt=>{const isEcon=['rpc','aov','__prescribe','p2p'].includes(vt.key),ek=isEcon?prodKey(vt.key):vt.key,naUp=naUpstream(vt.key,sc.base),naProd=(isEcon&&ek==null)||naUp;   // economics chips follow Product; Google-paid greys out below city level
     const ev=naProd?{cur:null,base:null,d:null,st:'green'}:evOf(ek),st=ev.st||'green',sel=!naProd&&COCKMET===ek;
-    let sub=naProd?'n/a for consult':'was '+fmtVital(ek,ev.base);
+    let sub=naUp?'city-level · n/a here':naProd?'n/a for consult':'was '+fmtVital(ek,ev.base);
     if(vt.key==='availability')sub='was '+Math.round(ev.base||0)+' attended';   // rostered + shrinkage move to sub-chips below
     const labTxt=vt.key==='rpc'?'RPC ₹'+PRODLAB[PRODF]:vt.key==='conversion'?'B2D % ('+B2DBASIS+')':isEcon?vt.lab.split(' · ')[0]+PRODLAB[PRODF]:vt.lab;
     let extra='';   // RPC chip carries its own basis filter (incl fee / ex-fee / meds / tests / therapy / consult)
     if(vt.key==='rpc')extra='<div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:3px" onclick="event.stopPropagation()">'+RPC_OPTS.map(op=>'<span onclick="setRpcBasis(\''+op[0]+'\')" title="RPC basis" style="cursor:pointer;font-size:9.5px;padding:1px 5px;border-radius:4px;'+(RPCBASIS===op[0]?'background:var(--accent);color:#fff':'background:var(--card);color:var(--muted);border:1px solid var(--line)')+'">'+op[1]+'</span>').join('')+'</div>';
+    if(vt.key==='__l2b'&&callVitals().length){   // lead→call funnel (our-side reach) as sub-buttons under Lead→Book — network-level, national scope only
+      const cm=(mk,lbl)=>{const e=evOf(mk),on=COCKMET===mk,pc=e.d==null?'':(e.d<0?'↓':e.d>0?'↑':'→')+Math.abs(Math.round(e.d*100))+'%',pcCol=e.d==null?'var(--faint)':e.d<0?'#99304F':'#1f7a4d';
+        return '<span onclick="setCockMet(\''+mk+'\')" title="focus '+lbl+' (network-level)" style="cursor:pointer;font-size:12px;padding:4px 9px;border-radius:5px;background:'+(on?'var(--accent)':'var(--card)')+';border:1px solid var(--line);color:'+(on?'#fff':'var(--muted)')+'">'+lbl+' <b style="color:'+(on?'#fff':'var(--ink)')+'">'+fmtVital(mk,e.cur)+'</b>'+(pc?' <span style="color:'+(on?'#fff':pcCol)+'">'+pc+'</span>':'')+'</span>';};
+      const lb=(cap,tag,btns)=>'<div style="margin-top:'+(tag==='total'?6:4)+'px;display:flex;flex-wrap:wrap;gap:4px;align-items:center" onclick="event.stopPropagation()"><span style="font-size:9.5px;color:var(--faint);min-width:30px">'+cap+'</span>'+btns+'</div>';
+      extra=lb('total','total',cm('__l2btot','lead→book'))
+        +lb('call','call',cm('__l2call','lead→call')+cm('__call2book','call→book')+cm('__l2bcall','→book'))
+        +lb('web','web',cm('__l2web','lead→web')+cm('__web2book','web→book')+cm('__l2bweb','→book'));}   // network lead→book split: total · call-path · web-path (data_l2c booked_conn)
     if(vt.key==='d2p'){   // D2P chip: done · purchased · D2P each as a button showing its value + drop, click to focus
       const mini=(mk,lbl,fmt)=>{const e=evOf(mk),pc=e.d==null?'':(e.d<0?'↓':e.d>0?'↑':'→')+Math.abs(Math.round(e.d*100))+'%',pcCol=e.d==null?'var(--faint)':e.d<0?'#99304F':'#1f7a4d';
         return '<span onclick="setCockMet(\''+mk+'\')" title="focus '+lbl+'" style="cursor:pointer;font-size:12px;padding:4px 9px;border-radius:5px;background:'+(COCKMET===mk?'var(--accent)':'var(--card)')+';border:1px solid var(--line);color:'+(COCKMET===mk?'#fff':'var(--muted)')+'">'+lbl+' <b style="color:'+(COCKMET===mk?'#fff':'var(--ink)')+'">'+fmt(e.cur)+'</b>'+(pc?' <span style="color:'+(COCKMET===mk?'#fff':pcCol)+'">'+pc+'</span>':'')+'</span>';};
@@ -1542,7 +1606,8 @@ function renderCockpit(){
         return '<span onclick="setCockMet(\''+mk+'\')" title="'+lbl+' — click to drill" style="cursor:pointer;font-size:12px;padding:4px 9px;border-radius:5px;background:'+(on?'var(--accent)':'var(--card)')+';border:1px solid var(--line);color:'+(on?'#fff':'var(--muted)')+'">'+lbl+' <b style="color:'+(on?'#fff':'var(--ink)')+'">'+Math.round(e.cur||0)+'</b>'+(pc?' <span style="color:'+(on?'#fff':pcCol)+'">'+pc+'</span>':'')+'</span>';};
       const B=o.bookings||{};
       extra='<div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:6px" onclick="event.stopPropagation()">'+mini('__new','new pts',newPatArr(o))+mini('__newtw','this wk',B.new_tw)+mini('__newold','older',B.new_old)+'</div>'
-        +'<div style="margin-top:4px;display:flex;flex-wrap:wrap;gap:4px;align-items:center" onclick="event.stopPropagation()"><span style="font-size:9.5px;color:var(--faint);margin-right:1px">older-lead age:</span>'+mini('__no1w','1 wk',B.no1w)+mini('__no2_4w','2–4 wk',B.no2_4w)+mini('__no1_3mo','1–3 mo',B.no1_3mo)+mini('__no3mo','3 mo+',B.no3mo)+'</div>';}
+        +'<div style="margin-top:4px;display:flex;flex-wrap:wrap;gap:4px;align-items:center" onclick="event.stopPropagation()"><span style="font-size:9.5px;color:var(--faint);margin-right:1px">older-lead age:</span>'+mini('__no1w','1 wk',B.no1w)+mini('__no2_4w','2–4 wk',B.no2_4w)+mini('__no1_3mo','1–3 mo',B.no1_3mo)+mini('__no3mo','3 mo+',B.no3mo)+'</div>'
+        +(()=>{const bs=B.by_source||{},order=['GMB','Google','Meta','Practo','Organic','Others'].filter(sr=>bs[sr]&&sum(bs[sr].booked||[]));return order.length?'<div style="margin-top:4px;display:flex;flex-wrap:wrap;gap:4px;align-items:center" onclick="event.stopPropagation()"><span style="font-size:9.5px;color:var(--faint);margin-right:1px">by source:</span>'+order.map(sr=>mini('__bksrc'+sr,sr==='Meta'?'Fb':sr,bs[sr].booked)).join('')+'</div>':'';})();}
     if(isEcon)extra='';   // Product scope filter drives these chips → no per-line button rows (clean single-value cards)
     cards+='<div '+(naProd?'':'onclick="setCockMet(\''+ek+'\')" ')+'title="'+(naProd?'not applicable for consult':'click to focus this metric')+'" style="cursor:'+(naProd?'default':'pointer')+';opacity:'+(naProd?'.5':'1')+';background:'+(sel?'var(--card)':'var(--inset)')+';border:'+(sel?'2px':'1px')+' solid '+(sel?stC[st]:'var(--line)')+';border-left:3px solid '+(naProd?'var(--line)':stC[st])+';border-radius:9px;padding:12px 14px">'
       +'<div style="font-size:13px;color:var(--muted)">'+labTxt+'</div>'
@@ -1567,11 +1632,11 @@ function renderCockpit(){
     };
     body='<div style="font-size:13.5px;color:var(--muted);padding:4px 2px">👆 Click a metric above (e.g. <b>Leads</b>) to see the drop <b>by city, clinic &amp; source</b>.</div>';
   }else{   // ── METRIC FOCUS: clinics that dropped it → then doctors → then the metric's internal movers ──
-    const picked=COCK_VITALS.find(v=>v.key===COCKMET)||COCK_VITALS[0],pev=evOf(COCKMET),pname=COCKMET==='__cat'?CATSEL+' done':COCKMET==='__new'?'new patients':COCKMET==='__newtw'?'this-week-lead bookings':COCKMET==='__newold'?'older-lead bookings':COCKMET==='__no1w'?'1-wk-old-lead bookings':COCKMET==='__no2_4w'?'2–4-wk-old-lead bookings':COCKMET==='__no1_3mo'?'1–3-mo-old-lead bookings':COCKMET==='__no3mo'?'3mo+-old-lead bookings':COCKMET==='__rost'?'rostered days':COCKMET==='__slots'?'total slots':COCKMET==='__resched'?'reschedules':COCKMET==='__noshow'?'no-shows':COCKMET==='__cancel'?'cancellations':COCKMET==='__completed'?'completed slots':COCKMET==='__leadch'?LEADCH+' leads':COCKMET==='__l2b'?'lead→book %':COCKMET==='done'?'done consults':COCKMET==='purchased'?'converted':COCKMET==='aov'?'AOV':COCKMET==='presaov'?'Pres AOV':COCKMET==='__prescribe'?'prescribe rate':/^__prs(meds|test|ther)$/.test(COCKMET)?COCKMET.slice(5)+' prescribe %':/^__aov(meds|test|ther)$/.test(COCKMET)?COCKMET.slice(5)+' AOV':/^__pres(meds|test|ther)$/.test(COCKMET)?COCKMET.slice(6)+' Pres AOV':COCKMET==='p2p'?'Rx→purchase':COCKMET==='__p2ppresc'?'prescribed':COCKMET==='__p2ppurch'?'purchased':COCKMET==='__p2pmeds'?'meds Rx→purchase':COCKMET==='__p2ptest'?'tests Rx→purchase':COCKMET==='__p2pther'?'therapy Rx→purchase':picked.lab.split(' · ')[0];
+    const picked=activeVitals().find(v=>v.key===COCKMET)||COCK_VITALS[0],pev=evOf(COCKMET),pname=/^__bksrc/.test(COCKMET)?(COCKMET.slice(7)==='Meta'?'Fb':COCKMET.slice(7))+' bookings':COCKMET==='__l2btot'?'lead → book % (total)':COCKMET==='__l2call'?'lead → call %':COCKMET==='__call2book'?'call → book %':COCKMET==='__l2bcall'?'lead → book % (via call)':COCKMET==='__l2web'?'lead → web %':COCKMET==='__web2book'?'web → book %':COCKMET==='__l2bweb'?'lead → book % (via web)':COCKMET==='__callconn'?'call → connected %':COCKMET==='__gmb_search'?'GMB searches':COCKMET==='__gmb_int'?'GMB interactions':COCKMET==='__gmb_ctr'?'GMB CTR':COCKMET==='__gmb_rev'?'new reviews':COCKMET==='__gmb_neg'?'negative reviews':COCKMET==='__gp_impr'?'Google impressions':COCKMET==='__gp_clicks'?'Google clicks':COCKMET==='__gp_ctr'?'Google CTR':COCKMET==='__gp_spend'?'Google spend':COCKMET==='__cat'?CATSEL+' done':COCKMET==='__new'?'new patients':COCKMET==='__newtw'?'this-week-lead bookings':COCKMET==='__newold'?'older-lead bookings':COCKMET==='__no1w'?'1-wk-old-lead bookings':COCKMET==='__no2_4w'?'2–4-wk-old-lead bookings':COCKMET==='__no1_3mo'?'1–3-mo-old-lead bookings':COCKMET==='__no3mo'?'3mo+-old-lead bookings':COCKMET==='__rost'?'rostered days':COCKMET==='__slots'?'total slots':COCKMET==='__resched'?'reschedules':COCKMET==='__noshow'?'no-shows':COCKMET==='__cancel'?'cancellations':COCKMET==='__completed'?'completed slots':COCKMET==='__leadch'?LEADCH+' leads':COCKMET==='__l2b'?'lead→book %':COCKMET==='done'?'done consults':COCKMET==='purchased'?'converted':COCKMET==='aov'?'AOV':COCKMET==='presaov'?'Pres AOV':COCKMET==='__prescribe'?'prescribe rate':/^__prs(meds|test|ther)$/.test(COCKMET)?COCKMET.slice(5)+' prescribe %':/^__aov(meds|test|ther)$/.test(COCKMET)?COCKMET.slice(5)+' AOV':/^__pres(meds|test|ther)$/.test(COCKMET)?COCKMET.slice(6)+' Pres AOV':COCKMET==='p2p'?'Rx→purchase':COCKMET==='__p2ppresc'?'prescribed':COCKMET==='__p2ppurch'?'purchased':COCKMET==='__p2pmeds'?'meds Rx→purchase':COCKMET==='__p2ptest'?'tests Rx→purchase':COCKMET==='__p2pther'?'therapy Rx→purchase':picked.lab.split(' · ')[0];
     const why=(COCKMET==='__fu')?'<div style="font-size:12.5px;color:var(--muted)">Drill a clinic / doctor to see follow-up conversion.</div>':(cockWhyRows(o,COCKMET)||'<div style="font-size:12.5px;color:var(--muted)">No sub-breakdown here.</div>');
     const stg=STAGES.find(x=>x.key===(COCKMET==='__fu'?'conversion':COCKMET)),down=pev.d!=null&&pev.d<0;
     const fixHTML=(stg&&down)?'<div style="margin:8px 0 0;font-size:12.5px;background:var(--abg);border-radius:7px;padding:7px 10px"><b style="color:#8a6412">↳ likely cause:</b> '+stg.diag+' &nbsp;<b style="color:#8a6412">fix:</b> '+stg.fix+'</div>':'';
-    const rate=['rpc','aov','presaov','d2p','conversion','__fu','__prescribe','__l2b'].includes(COCKMET)||/^__(prs|aov|pres|p2p)/.test(COCKMET),dkey=(COCKMET==='__fu')?'conversion':COCKMET;
+    const rate=['rpc','aov','presaov','d2p','conversion','__fu','__prescribe','__l2b','__gmb_ctr','__gp_ctr','__gp_is','__gp_util','__gp_locpct','__gp_eplc','__l2call','__callconn','__l2btot','__call2book','__l2bcall','__l2web','__web2book','__l2bweb'].includes(COCKMET)||/^__(prs|aov|pres|p2p)/.test(COCKMET),dkey=(COCKMET==='__fu')?'conversion':COCKMET;
     const isAvail=COCKMET==='availability'||COCKMET==='__rost';   // both use rostered-days volume filter + drop no-roster doctors
     const docAttributable=false;   // marketing = clinic/city-level only → never build the doctor column
     const catSuffix=(o)=>{if(COCKMET!=='__cat')return '';const sh=catShareEval(o,catSelCats()).cur;return ' <span style="color:rgba(0,0,0,.5);font-weight:400">· '+(sh==null?'—':Math.round(sh)+'% of done')+'</span>';};   // category as a share of THIS entity's done
@@ -1582,9 +1647,9 @@ function renderCockpit(){
     const subLine=(cnt,ev,fk)=>{const s=[cnt,ev.base!=null?'was '+fmtVital(fk,ev.base):''].filter(Boolean).join('  ·  ');return s?'<div style="font-size:11px;color:rgba(0,0,0,.42);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+s+'</div>':'';};
     const rowH=(x,fk)=>'<div onclick="'+x.act+'" title="drill in" style="cursor:pointer;padding:7px 11px;border-radius:8px;margin-bottom:3px;background:'+stBg(x.ev.st)+'"><div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px"><span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#22150f;font-weight:600;font-size:13px">'+x.disp+'</span><span style="flex:none;display:flex;align-items:center;gap:8px"><b style="font-size:15px;color:#22150f">'+fmtVital(fk,x.ev.cur)+'</b>'+pctPill(x.ev)+'</span></div>'+subLine(x.cnt,x.ev,fk)+'</div>';
     const totalRow=(fk)=>'<div style="margin-top:8px;padding-top:8px;border-top:1.5px solid var(--line)"><div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px"><span style="font-weight:800;color:var(--ink);font-size:13px">Total</span><span style="flex:none;display:flex;align-items:center;gap:8px"><b style="font-size:15px;color:#22150f">'+fmtVital(fk,pev.cur)+'</b>'+pctPill(pev)+'</span></div>'+subLine(cockCounts(o,COCKMET),pev,fk)+'</div>';
-    const card=(title,pool,fk)=>{const worst=pool.filter(x=>x.ev.d!=null&&x.ev.d<0).slice(0,12),others=pool.filter(x=>!(x.ev.d!=null&&x.ev.d<0));return '<div style="min-width:0"><div style="font-size:12px;color:var(--faint);text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px">'+title+' <span style="text-transform:none;color:var(--muted)">· click to drill</span></div><div style="background:var(--card);border:1px solid var(--line);border-radius:10px;padding:11px 13px">'+(worst.length?worst.map(x=>rowH(x,fk)).join(''):'<div style="font-size:12px;color:var(--faint)">— none dropped —</div>')+(others.length?'<div onclick="setCockOthers()" style="cursor:pointer;font-size:11.5px;color:var(--accent);font-weight:600;margin-top:8px">'+(COCKOTHERS?'▾ hide':'▸ show')+' '+others.length+' doing fine ✓</div>'+(COCKOTHERS?others.map(x=>rowH(x,fk)).join(''):''):'')+totalRow(fk)+'</div></div>';};
+    const card=(title,pool,fk)=>{const worst=pool.filter(x=>x.ev.d!=null&&x.ev.d<0),others=pool.filter(x=>!(x.ev.d!=null&&x.ev.d<0));return '<div style="min-width:0"><div style="font-size:12px;color:var(--faint);text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px">'+title+' <span style="text-transform:none;color:var(--muted)">· click to drill</span></div><div style="background:var(--card);border:1px solid var(--line);border-radius:10px;padding:11px 13px">'+(worst.length?worst.map(x=>rowH(x,fk)).join(''):'<div style="font-size:12px;color:var(--faint)">— none dropped —</div>')+(others.length?'<div onclick="setCockOthers()" style="cursor:pointer;font-size:11.5px;color:var(--accent);font-weight:600;margin-top:8px">'+(COCKOTHERS?'▾ hide':'▸ show')+' '+others.length+' doing fine ✓</div>'+(COCKOTHERS?others.map(x=>rowH(x,fk)).join(''):''):'')+totalRow(fk)+'</div></div>';};
     let clinicsHTML='',doctorsHTML='';
-    if(sc.level==='scope'){
+    if(sc.level==='scope'&&!NETONLY.has(COCKMET)){   // network-level metrics (lead→call) have no city/clinic split — skip the geo cards
       if(CITYF.size){   // a city is scoped → clinics that dropped this metric (click → clinic)
         const cl=sc.base.map(s=>{const c=CL(s);return {act:'setCockClin(\''+s+'\')',disp:D.clinics[s].loc||D.clinics[s].disp,ev:cockEval(c,COCKMET,[s]).ev,cnt:cockCounts(c,COCKMET),vol:sum((c.bookings.total||[]).slice(-(CURN+BASEN)))};});
         clinicsHTML=card('clinics — '+pname,poolOf(cl,3),COCKMET);
@@ -1602,7 +1667,7 @@ function renderCockpit(){
     const moversHTML='<div style="min-width:0"><div style="font-size:12px;color:var(--faint);text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px">movers within '+pname+'</div><div style="background:var(--card);border:1px solid var(--line);border-radius:10px;padding:11px 13px"><div style="display:flex;flex-direction:column;gap:3px">'+why+'</div>'+fixHTML+'</div></div>';
     body=(function(){var parts=[clinicsHTML,doctorsHTML].filter(Boolean);if(!parts.length)parts=[moversHTML];return '<div style="display:grid;grid-template-columns:repeat('+parts.length+',minmax(0,1fr));gap:14px;align-items:start">'+parts.join('')+'</div>';})();
   }
-  $('root').innerHTML=((COCKCLIN||COCKDOC||CITYF.size||CLINF.size)?'<div style="margin-bottom:8px;font-size:13px;display:flex;align-items:center;gap:10px"><span onclick="cockUp()" title="up one level" style="cursor:pointer;font-weight:700;color:var(--accent);background:var(--card);border:1px solid var(--line);border-radius:7px;padding:4px 12px">← back</span>'+crumb+'</div>':'')
+  $('root').innerHTML=((COCKCLIN||COCKDOC||CITYF.size||CLINF.size||TIERF.size||MATF.size)?'<div style="margin-bottom:8px;font-size:13px;display:flex;align-items:center;gap:10px"><span onclick="cockUp()" title="up one level" style="cursor:pointer;font-weight:700;color:var(--accent);background:var(--card);border:1px solid var(--line);border-radius:7px;padding:4px 12px">← back</span>'+crumb+'</div>':'')
     +'<div style="display:grid;grid-auto-flow:column;grid-auto-columns:minmax(162px,1fr);gap:8px;margin-bottom:12px;overflow-x:auto;padding-bottom:5px;align-items:start">'+cards+'</div>'
     +body;
   const rootEl=$('root');rootEl.onclick=function(e){if((COCKMET||COCKCLIN||COCKDOC)&&!e.target.closest('[onclick]')){COCKMET='';cockReset();}};   // click any non-interactive space (gaps/padding/background) → back to the main overview
@@ -1616,6 +1681,7 @@ function renderScopeFunnel(){
   if(SEG==='online')o._online=true;   // whole scope is online → skip the n/a stages in the funnel
   $('cmpnote').innerHTML='';   // the scope banner already states the compare window + legend — no separate line needed
   let h='<div style="margin-bottom:12px"><span class="lab" style="text-transform:none;font-weight:700;font-size:17px;color:var(--ink)">'+label+'</span> <span style="font-size:12px;color:var(--muted);margin-left:6px">pick a <b>City</b> in Scope to narrow · click a <b>clinic row</b> (in By metric) for its own funnel</span></div>';
+  h+=upstreamStripHTML(o,slugs);   // GMB/Google acquisition strip when a source is picked
   h+=funnelStagesHTML(o);
   $('root').innerHTML=h;
 }
@@ -1682,7 +1748,7 @@ function render(){const sc=$('scopeCount');if(sc)sc.textContent=scopeCountHTML()
   if(GRAIN==='daily'){const cn=$('cmpnote');if(cn)cn.innerHTML='';$('root').innerHTML='<div style="background:#fff;border:1px solid var(--line);border-radius:12px;padding:34px;text-align:center;color:var(--ink2);font-size:14px">📅 <b>Daily view needs a daily data feed.</b><br><span style="color:var(--muted);font-size:12.5px">The Quick Diagnostic currently holds weekly data (the Master sheet has daily). This tab lights up once daily data is wired in.</span></div>';return;}
   MODE==='ov'?renderOverview():renderClinic();}
 let ALLCITIES=[];
-function cityBtnLabel(){return (CITYF.size?(CITYF.size<=2?[...CITYF].join(', '):CITYF.size+' cities'):'All cities')+' ▾';}
+function cityBtnLabel(){if(TIERF.size&&!CITYF.size)return [...TIERF].map(t=>t==='T1'?'Tier 1':'Tier 2').join(' + ')+' ▾';return (CITYF.size?(CITYF.size<=2?[...CITYF].join(', '):CITYF.size+' cities'):'All cities')+' ▾';}
 function clinBtnLabel(){return (CLINF.size?(CLINF.size===1?D.clinics[[...CLINF][0]].loc:CLINF.size+' clinics'):'All clinics')+' ▾';}
 function closePanels(){document.querySelectorAll('.mspanel').forEach(x=>x.classList.remove('on'));}
 function openCityMs(e){e.stopPropagation();const p=$('cityPanel'),show=!p.classList.contains('on');closePanels();if(show){renderCityPanel('');p.classList.add('on');const q=$('cityQ');if(q)q.focus();}}
@@ -1691,7 +1757,7 @@ function renderCityPanel(q){   // grouped by Tier 1 / Tier 2, each with a per-ti
   const exact=set=>set.length&&CITYF.size===set.length&&set.every(c=>CITYF.has(c));
   const tp=(t,l,on)=>'<span onclick="event.stopPropagation();cityTierPick(\''+t+'\')" style="cursor:pointer;font-size:10.5px;padding:2px 8px;border-radius:6px;background:'+(on?'var(--accent)':'var(--card)')+';color:'+(on?'#fff':'var(--muted)')+';border:1px solid var(--line)">'+l+'</span>';
   let h='<input id="cityQ" class="msq" placeholder="search city…" oninput="filterCity(this.value)" onclick="event.stopPropagation()">'
-    +'<div style="display:flex;flex-wrap:wrap;gap:4px;align-items:center;padding:5px 9px 7px;border-bottom:1px solid var(--line);margin-bottom:3px"><span style="font-size:10px;color:var(--faint);text-transform:uppercase;letter-spacing:.03em;margin-right:2px">tier</span>'+tp('all','All',!CITYF.size)+tp('T1','Tier 1',exact(t1set))+tp('T2','Tier 2',exact(t2set))+'</div>'
+    +'<div style="display:flex;flex-wrap:wrap;gap:4px;align-items:center;padding:5px 9px 7px;border-bottom:1px solid var(--line);margin-bottom:3px"><span style="font-size:10px;color:var(--faint);text-transform:uppercase;letter-spacing:.03em;margin-right:2px">tier</span>'+tp('all','All',!CITYF.size&&!TIERF.size)+tp('T1','Tier 1',TIERF.has('T1')||exact(t1set))+tp('T2','Tier 2',TIERF.has('T2')||exact(t2set))+'</div>'
     +'<div class="msact"><a onclick="allCity(1)">select all</a><a onclick="allCity(0)">clear</a></div>';
   [['T1','Tier 1'],['T2','Tier 2']].forEach(pair=>{const tier=pair[0],lab=pair[1],cities=ALLCITIES.filter(c=>tierOf(c)===tier);if(!cities.length)return;
     const nsel=cities.filter(c=>CITYF.has(c)).length;
@@ -1699,7 +1765,7 @@ function renderCityPanel(q){   // grouped by Tier 1 / Tier 2, each with a per-ti
     cities.forEach(c=>{const n=Object.values(D.clinics).filter(x=>x.city===c).length;h+='<label class="msi" data-s="'+c.toLowerCase()+'" data-tier="'+tier+'" onclick="event.stopPropagation()"><input type="checkbox" '+(CITYF.has(c)?'checked':'')+' onchange="togCity(\''+c.replace(/'/g,"\\'")+'\')">'+c+'<span class="c">'+n+'</span></label>';});});
   $('cityPanel').innerHTML=h;const iq=(q||'');if(iq&&$('cityQ')){$('cityQ').value=iq;filterCity(iq);}}
 function addTierCities(t){ALLCITIES.filter(c=>tierOf(c)===t).forEach(c=>CITYF.add(c));TIERF=new Set();renderCityPanel($('cityQ')?$('cityQ').value:'');cityChanged();}   // "select all Tier X" → add that tier's cities
-function pickCitiesByTier(t){CITYF=new Set(ALLCITIES.filter(c=>tierOf(c)===t));TIERF=new Set();if($('cityPanel'))renderCityPanel('');cityChanged();}   // toolbar shortcut → scope to exactly one tier
+function pickCitiesByTier(t){TIERF=new Set([t]);CITYF=new Set();if($('cityPanel'))renderCityPanel('');cityChanged();}   // scope to a whole tier via TIERF (not CITYF) → the metric drill lists that tier's CITIES, not clinics
 function cityTierPick(t){if(t==='all'){CITYF=new Set();TIERF=new Set();cityChanged();if($('cityPanel'))renderCityPanel($('cityQ')?$('cityQ').value:'');}else pickCitiesByTier(t);}   // cities dropdown top filter: All / Tier 1 / Tier 2
 function clinMatPick(b){if(b==='all')MATF=new Set();else{MATF.has(b)?MATF.delete(b):MATF.add(b);}applyMatF();syncScopeBtns();if($('clinPanel'))renderClinPanel($('clinQ')?$('clinQ').value:'');render();}   // clinics dropdown top filter: All / age bucket → derive clinic set by maturity
 function filterCity(q){q=(q||'').toLowerCase().trim();document.querySelectorAll('#cityPanel label.msi').forEach(l=>{l.style.display=(l.getAttribute('data-s')||'').includes(q)?'':'none';});
@@ -1711,7 +1777,7 @@ function cityChanged(){$('cityBtn').textContent=cityBtnLabel();$('cityBtn').clas
   $('clinBtn').textContent=clinBtnLabel();$('clinBtn').classList.toggle('on',!!CLINF.size);
   syncDocBtn();render();}
 function syncDocBtn(){if(!$('docBtn'))return;const avail=new Set(docNames());[...DOCF].forEach(dr=>{if(!avail.has(dr))DOCF.delete(dr);});$('docBtn').textContent=docBtnLabel();$('docBtn').classList.toggle('on',!!DOCF.size);}
-function togCity(c){CITYF.has(c)?CITYF.delete(c):CITYF.add(c);cityChanged();}
+function togCity(c){if(TIERF.size){TIERF=new Set();CITYF=new Set();}CITYF.has(c)?CITYF.delete(c):CITYF.add(c);cityChanged();}   // picking an individual city drops any whole-tier scope
 function setSeg(v){SEG=v;const ids={offline:'segOff',online:'segOn',all:'segAll'};for(const k in ids){const b=$(ids[k]);if(b)b.classList.toggle('on',k===v);}
   if(MODE==='cl'&&C&&C._online&&SEG==='offline'){backToList();return;}   // leave an online funnel when switching to offline
   syncDocBtn();render();}
@@ -1741,7 +1807,7 @@ function scopeCountHTML(){let n=0;const cities=new Set();
     if(CLINF.size?!CLINF.has(s):!inCity(c.city))return;
     n++;cities.add(c.city);});
   return n+' clinic'+(n===1?'':'s')+' · '+cities.size+' cit'+(cities.size===1?'y':'ies');}
-function allCity(on){const inT=c=>!TIERF.size||TIERF.has(tierOf(c));CITYF=on?new Set(ALLCITIES.filter(inT)):new Set();renderCityPanel($('cityQ')?$('cityQ').value:'');cityChanged();}
+function allCity(on){const inT=c=>!TIERF.size||TIERF.has(tierOf(c));const set=on?new Set(ALLCITIES.filter(inT)):new Set();TIERF=new Set();CITYF=set;renderCityPanel($('cityQ')?$('cityQ').value:'');cityChanged();}
 function openClinMs(e){e.stopPropagation();const p=$('clinPanel'),show=!p.classList.contains('on');closePanels();if(show){renderClinPanel('');p.classList.add('on');const q=$('clinQ');if(q)q.focus();}}
 function renderClinPanel(q){   // render the full (tier/city/doctor-scoped) list once; text search filters IN PLACE (keeps input focus)
   const ks=Object.keys(D.clinics).filter(s=>{const c=D.clinics[s];return !c._online&&(!TIERF.size||TIERF.has(tierOf(c.city)))&&inCity(c.city)
@@ -1882,6 +1948,25 @@ async function loadRx(){
     for(const dr in (c.by_doctor||{})){const dd={};RX_F.forEach(f=>dd[f]=rm(c.by_doctor[dr][f]));s.by_doctor[dr]=dd;}
     D.clinics[slug].rx=s;}
 }
+// ---- source-upstream cubes: GMB insights · reviews · Google paid — aligned to the D.weeks grid ----
+let GMBA={},REVA={},GAPA={},L2C=null,GMB_LAST=-1,REV_LAST=-1,GA_LAST=-1,L2C_LAST=-1;   // GMBA/REVA keyed by clinic slug; GAPA keyed by city (Google paid is city-level, metros only). L2C = network-level lead→call funnel. *_LAST = newest grid-week each cube actually covers (they lag the SC grid differently)
+const NETONLY=new Set(['__l2call','__callconn','__l2btot','__call2book','__l2bcall','__l2web','__web2book','__l2bweb']);   // network-level metrics with no city/clinic breakdown
+function utr(a,cut){return (cut>=0&&cut<a.length-1)?a.slice(0,cut+1):a;}   // trim a series to its CUBE's newest covered week (not trailing zeros) — keeps a genuine reported 0 (e.g. 0 negative reviews this week)
+const gtr=a=>utr(a,GMB_LAST),rtr=a=>utr(a,REV_LAST),atr=a=>utr(a,GA_LAST),ltr=a=>utr(a,L2C_LAST);   // per-cube trim wrappers (GMB insights · reviews · Google-ads · lead→call)
+function alignCube(arr,cw){const o=Array(D.weeks.length).fill(null);(cw||[]).forEach((w,j)=>{const gi=D.weeks.indexOf(w);if(gi>=0)o[gi]=(arr||[])[j];});return o;}
+function sumSlugs(slugs,get){const o=Z();(slugs||[]).forEach(s=>{const a=get(s);if(a)for(let i=0;i<o.length;i++)o[i]=(o[i]||0)+(a[i]||0);});return o;}
+function scopeCities(slugs){return [...new Set((slugs||[]).map(s=>D.clinics[s]&&D.clinics[s].city).filter(Boolean))];}
+async function loadUpstream(){
+  const g=async u=>{try{return await fetch(u+'?v='+Date.now()).then(r=>r.ok?r.json():null);}catch(e){return null;}};
+  const [gmb,rev,gap,l2c]=await Promise.all([g('data_gmb_insights.json'),g('data_reviews.json'),g('data_ga_city_paid.json'),g('data_l2c.json')]);
+  GMBA={};REVA={};GAPA={};L2C=null;
+  if(l2c&&l2c.net){const cw=l2c._meta.weeks,n=l2c.net;L2C={};['leads','out_reached','out_conn','in_conn','any_conn','booked','booked_conn'].forEach(f=>L2C[f]=alignCube(n[f],cw));}
+  if(gmb){const cw=gmb._meta.weeks;for(const s in D.clinics){const c=D.clinics[s];if(c._online)continue;const e=gmb[c.city+'|'+c.loc];if(e)GMBA[s]={searches:alignCube(e.searches,cw),calls:alignCube(e.calls,cw),website:alignCube(e.website,cw),directions:alignCube(e.directions,cw),interactions:alignCube(e.interactions,cw)};}}
+  if(rev){const cw=rev._meta.weeks;for(const s in D.clinics){const c=D.clinics[s];if(c._online)continue;const e=rev[c.city+'|'+c.loc];if(e)REVA[s]={n:alignCube(e.n,cw),neg:alignCube(e.neg,cw)};}}
+  if(gap){const cw=gap._meta.weeks;for(const city in gap){if(city==='_meta')continue;const e=gap[city],al=f=>alignCube(e[f],cw);GAPA[city]={impr:al('impr'),clicks:al('clicks'),loc_clicks:al('loc_clicks'),spend:al('spend'),conv:al('conv'),budget:al('budget'),is_pct:al('is_pct'),by_cat:{}};const bc=e.by_cat||{};for(const ct in bc)GAPA[city].by_cat[ct]={impr:alignCube(bc[ct].impr,cw),clicks:alignCube(bc[ct].clicks,cw),loc_clicks:alignCube(bc[ct].loc_clicks,cw),spend:alignCube(bc[ct].spend,cw)};}}
+  const lastIn=cw=>{if(!cw)return -1;for(const w of cw){const gi=D.weeks.indexOf(w);if(gi>=0)return gi;}return -1;};   // newest cube week that's in the SC grid (cube weeks are newest-first; the freshest may be beyond the grid)
+  GMB_LAST=lastIn(gmb&&gmb._meta.weeks);REV_LAST=lastIn(rev&&rev._meta.weeks);GA_LAST=lastIn(gap&&gap._meta.weeks);L2C_LAST=lastIn(l2c&&l2c._meta.weeks);
+}
 async function boot(){
   try{D=await fetch('data_weekly_diag.json?v='+Date.now()).then(r=>r.json());}
   catch(e){$('root').innerHTML='<div class="err">Failed to load data_weekly_diag.json</div>';return;}
@@ -1892,6 +1977,7 @@ async function boot(){
   await loadOnlineDoc();
   await loadSlots();   // attach SC-offline slot-level data (total_slots/completed/no_show/reschedule) to each clinic + by_doctor
   await loadRx();   // attach prescribed→purchase per line (meds/tests/therapy) to each clinic + by_doctor
+  await loadUpstream();   // GMB insights · reviews · Google-paid cubes for the source-upstream funnel chips
   buildOnlineClinics();   // now that per-provider online data is loaded, build the per-clinic online buckets
   ALLCITIES=[...new Set(Object.values(D.clinics).filter(c=>!c._online&&c.city!=='Online').map(c=>c.city))].sort((a,b)=>{const ta=tierOf(a)==='T1',tb=tierOf(b)==='T1';return ta!==tb?(ta?-1:1):a.localeCompare(b);});   // exclude the Online pseudo-city; Tier-1 cities first so heads click fast
   try{const saved=JSON.parse(localStorage.getItem('wd_city')||'[]');if(Array.isArray(saved))saved.forEach(c=>{if(ALLCITIES.includes(c))CITYF.add(c);});}catch(e){}
