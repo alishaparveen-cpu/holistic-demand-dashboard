@@ -305,7 +305,7 @@
     </div>
     <div id="selwrap" style="flex:0 1 300px;min-width:250px"><div class="ctltag">2 · Selection <span style="text-transform:none;font-weight:500;color:var(--faint)">· focus one exact cut of the metric</span></div><div id="selcontrol"></div></div>
     <div id="bdwrap" style="flex:1 1 380px;min-width:340px"><div class="ctltag">3 · Breakdown <span style="text-transform:none;font-weight:500;color:var(--faint)">· cross by city / category / source — nests & drills</span></div>
-      <div class="seg" id="grpseg" style="margin-bottom:7px"><span class="ctltag" style="margin:0 4px 0 0;min-width:auto;flex:none;align-self:center">Rows by</span><button class="segbtn on" id="grpCity" onclick="setGrp('city')">🏙 City</button><button class="segbtn" id="grpClinic" onclick="setGrp('clinic')">🏥 Clinic</button><button class="segbtn" id="grpDoctor" onclick="setGrp('doctor')">👤 Doctor</button><button class="segbtn" id="grpCat" onclick="setGrp('category')">🏷 Category</button></div>
+      <div class="seg" id="grpseg" style="margin-bottom:7px"><span class="ctltag" style="margin:0 4px 0 0;min-width:auto;flex:none;align-self:center">Rows by</span><button class="segbtn on" id="grpCity" onclick="setGrp('city')">🏙 City</button><button class="segbtn" id="grpClinic" onclick="setGrp('clinic')">🏥 Clinic</button><button class="segbtn" id="grpDoctor" onclick="setGrp('doctor')">👤 Doctor</button><button class="segbtn" id="grpCat" onclick="setGrp('category')">🏷 Category</button><button class="segbtn" id="grpSrc" onclick="setGrp('source')">📣 Source</button></div>
       <div id="bdcontrol"></div></div>
     <div id="infobox" style="flex:1 1 200px;min-width:180px;margin-left:auto;display:flex;flex-direction:column;gap:8px;align-items:flex-end">
       <div id="scopebanner"></div>
@@ -335,7 +335,7 @@ function applyVariant(){   // overlay the matched SC/FU/Combined numbers onto ea
   buildOnlineClinics();   // rebuild the national 🌐 Online pseudo-clinic for this variant (SC/FU/All)
 }
 // availability / leads / bookings-per-active-day don't exist for online (national telehealth, no clinics/roster)
-function naMetric(c,key){return (!!(c&&c._online)&&(key==='availability'||key==='demand'||key==='velocity'||key==='donevel'||key==='roster'))||(!!(c&&c._doctor)&&(key==='availability'||key==='demand'||key==='roster'))||(!!(c&&c._catrow)&&!CAT_OK.has(key))||(FUNNEL2==='fu'&&key==='demand');}   // category rows: only diagnosis-stage metrics have values   // doctor rows: leads/availability/roster are clinic-level; velocity (her bookings ÷ clinic active-days) IS shown   // doctor rows: leads/availability/velocity/roster are clinic-level, not per-doctor. follow-ups have no new-lead concept. NB: under a category filter, pre-diagnosis metrics (availability/leads/bookings/velocity/B2D) stay VISIBLE at full clinic level (tagged "all cats") rather than n/a — only the diagnosis metrics (CAT_OK) get sliced
+function naMetric(c,key){return (!!(c&&c._online)&&(key==='availability'||key==='demand'||key==='velocity'||key==='donevel'||key==='roster'))||(!!(c&&c._doctor)&&(key==='availability'||key==='demand'||key==='roster'))||(!!(c&&c._catrow)&&!CAT_OK.has(key))||(!!(c&&c._source)&&!/^(demand|bookings|conversion|done)$/.test(key))||(FUNNEL2==='fu'&&key==='demand');}   // source rows: only Leads·Bookings·B2D·Done are source-attributable   // category rows: only diagnosis-stage metrics have values   // doctor rows: leads/availability/roster are clinic-level; velocity (her bookings ÷ clinic active-days) IS shown   // doctor rows: leads/availability/velocity/roster are clinic-level, not per-doctor. follow-ups have no new-lead concept. NB: under a category filter, pre-diagnosis metrics (availability/leads/bookings/velocity/B2D) stay VISIBLE at full clinic level (tagged "all cats") rather than n/a — only the diagnosis metrics (CAT_OK) get sliced
 const T1CITIES=new Set(['Bangalore','Mumbai','Navi Mumbai','Pune','Hyderabad','Chennai']);
 function tierOf(city){return T1CITIES.has(city)?'T1':'T2';}
 function clinMonths(slug){const d=AGE[D.clinics[slug].loc];if(!d)return null;const t=Date.parse(d);return isNaN(t)?null:(Date.now()-t)/(1000*60*60*24*30.44);}
@@ -899,7 +899,7 @@ function metricEval(c,key){const st=STAGES.find(x=>x.key===key),m=st.metrics(c)[
   if(CATPCT&&CATF.size&&CATPCT_OK[key]){   // contribution = category slice ÷ all-category total (matches the city-head "Contribution %")
     const num=metricArr(c,key),den=(c[CATPCT_OK[key]]||{})._all,arr=clubArr(num.map((v,i)=>(den&&den[i])?Math.round(100*v/den[i]):null),false);
     return {ev:evalMetric(arr),arr:arr,pct:1};}
-  const fx=MFOCUS[key],sdf=fx&&(subDims(key)||[]).find(x=>x.label===fx);   // Part 2 · Selection: a focused sub-parent variant replaces the headline metric
+  const fx=(MFOCUS[key]&&MFOCUS[key][0])||null,sdf=fx&&(subDims(key)||[]).find(x=>x.label===fx);   // Part 2 · Selection multiselect: sort/filter on the FIRST focused cut
   const arr=clubArr(metricArr(c,key,fx||null),fx?!!(sdf&&sdf.rate):isRate(key,m.pct));return {ev:evalMetric(arr),arr:arr,pct:fx?!!(sdf&&sdf.rate):m.pct};}
 function setCond(key,v){   // multi-select: toggle a status in/out of this metric's required set; 'any' clears it
   if(v==='any'){delete MCOND[key];render();return;}
@@ -911,17 +911,18 @@ function clearMet(){METSEL=[];MET='';MCOND={};MSUB={};MFOCUS={};METFRESH=false;C
 // Part 2 · Selection — the metric's own component variants (sub-parents) that can BE focused as the headline metric.
 // Excludes the breakdown dimensions (source·, by category·) and n/a rows — those live in Part 3 · Breakdown.
 function focusDims(key){return (subDims(key)||[]).filter(d=>!d.naCat && !/^source · /.test(d.label) && !/^by category · /.test(d.label));}
-function setFocus(k,label){const fd=focusDims(k),base=fd[0];
-  if(!label||(base&&label===base.label))delete MFOCUS[k]; else MFOCUS[k]=label;
+function setFocus(k,label){const fd=focusDims(k),base=fd[0];   // MULTISELECT: toggle the cut in/out; 'all X' base clears everything
+  if(!label||(base&&label===base.label)){delete MFOCUS[k];}
+  else{const a=(MFOCUS[k]||[]).slice(),i=a.indexOf(label);if(i<0)a.push(label);else a.splice(i,1);if(a.length)MFOCUS[k]=a;else delete MFOCUS[k];}
   if(!METSEL.includes(k)){METSEL.push(k);MET=METSEL[0];METFRESH=false;}
   updateModeUI();render();}
 function clearFocus(k){delete MFOCUS[k];render();}
 function buildSelControl(){
   if(!METSEL.length)return '<div style="padding:8px 4px;color:var(--faint);font-size:12px">pick a metric in <b>1 · Metric</b> — then choose which exact cut to focus on (e.g. Bookings → new patients only).</div>';
   let h='<div class="seg" style="display:flex;flex-direction:column;gap:9px;align-items:stretch;padding:9px 12px;width:100%;box-sizing:border-box">';
-  METSEL.forEach(k=>{const fd=focusDims(k),cur=MFOCUS[k]||(fd[0]&&fd[0].label),st=STAGES.find(x=>x.key===k);   // show EVERY selected metric — even rate metrics (B2D/D2P) that have no sub-cuts
-    h+='<div style="display:flex;flex-direction:column;gap:4px"><span style="font-size:11.5px;font-weight:800;color:var(--accent)">'+st.name+(MFOCUS[k]?' <span style="color:#C2691F">→ '+MFOCUS[k].replace(/^—\s*/,'')+'</span>':'')+'</span>';
-    if(fd.length>1)h+='<div style="display:flex;gap:5px;flex-wrap:wrap">'+fd.map(d=>{const on=cur===d.label,leaf=/^—\s/.test(d.label);
+  METSEL.forEach(k=>{const fd=focusDims(k),sel=MFOCUS[k]||[],st=STAGES.find(x=>x.key===k);   // MULTISELECT — tick any number of cuts; each shows as its own row
+    h+='<div style="display:flex;flex-direction:column;gap:4px"><span style="font-size:11.5px;font-weight:800;color:var(--accent)">'+st.name+(sel.length?' <span style="color:#C2691F">→ '+sel.map(s=>s.replace(/^—\s*/,'')).join(' + ')+'</span>':'')+'</span>';
+    if(fd.length>1)h+='<div style="display:flex;gap:5px;flex-wrap:wrap">'+fd.map((d,di)=>{const isBase=di===0,on=isBase?!sel.length:sel.includes(d.label),leaf=/^—\s/.test(d.label);
         return '<button class="fbtn'+(on?' on':'')+'" style="padding:4px 10px;font-size:11px;font-weight:700'+(leaf?';opacity:.9;font-weight:600':'')+'" onclick="setFocus(\''+k+'\',\''+d.label.replace(/'/g,"\\'")+'\')">'+d.label.replace(/^—\s*/,'↳ ')+'</button>';}).join('')+'</div>';
     else h+='<div style="font-size:11px;color:var(--faint);padding:2px 2px">whole metric — no sub-cuts to focus <span style="color:var(--muted)">(it’s a rate/ratio)</span></div>';
     h+='</div>';});
@@ -943,7 +944,7 @@ function syncOv(){const om=$('ovMetric'),of=$('ovFunnel'),oc=$('ovCockpit'),bw=$
   if(oc)oc.classList.toggle('on',OVMODE==='cockpit');   // City-scan keeps the full metric picker usable (nothing removed)
   if(om)om.classList.toggle('on',OVMODE==='metric');if(of)of.classList.toggle('on',OVMODE==='funnel');
   if(mt)mt.innerHTML=OVMODE==='funnel'?'1 · Jump to <span style="text-transform:none;font-weight:500;color:var(--faint)">· click a metric to scroll to its funnel card</span>':'1 · Metric <span style="text-transform:none;font-weight:500;color:var(--faint)">· click a tier to pick the whole group</span>';
-  const gc=$('grpCity'),gk=$('grpClinic'),gd=$('grpDoctor'),gt=$('grpCat');if(gc)gc.classList.toggle('on',GRP==='city');if(gk)gk.classList.toggle('on',GRP==='clinic');if(gd)gd.classList.toggle('on',GRP==='doctor');if(gt)gt.classList.toggle('on',GRP==='category');}
+  const gc=$('grpCity'),gk=$('grpClinic'),gd=$('grpDoctor'),gt=$('grpCat'),gsr=$('grpSrc');if(gc)gc.classList.toggle('on',GRP==='city');if(gk)gk.classList.toggle('on',GRP==='clinic');if(gd)gd.classList.toggle('on',GRP==='doctor');if(gt)gt.classList.toggle('on',GRP==='category');if(gsr)gsr.classList.toggle('on',GRP==='source');}
 function setOvMode(m){OVMODE=m;MODE='ov';syncOv();render();}
 function setGrp(g){GRP=g;syncOv();render();}
 function drillCity(ct){CITYF=new Set([ct]);GRP='clinic';cityChanged();syncOv();}   // click a city → its clinics
@@ -985,6 +986,19 @@ function aggregateCategory(name,cats,agg){const N=D.weeks.length,Z=()=>new Array
     revenue:Object.assign({rev:rev,_all:agg.revenue.rev,by_cat:keep(agg.revenue.by_cat)},Object.fromEntries(['meds','test','ther','cons'].map(nm=>[nm,line(nm)]))),
     availability:{active_days:Z(),wday_days:Z(),wend_days:Z()},demand:{leads:Z(),by_channel:{}},
     velocity:{bookings:Z(),per_active_day:Z(),per_weekday:Z(),per_weekend:Z(),bk_wday:Z(),bk_wend:Z()},doctors:{count:Z()},by_doctor:{}};}
+// one row per lead SOURCE (Rows-by = Source). Source-attributable metrics only — Leads·Bookings·B2D·Done have values; the rest stay n/a (_source, like _catrow).
+const SOURCE_ORDER=['Organic','Google','Fb','Practo','Others'];   // GMB folded into Organic
+function bucketSources(fn,c){const s=fn(c)||{},out={};for(const raw in s){const b=chanKey(raw);out[b]=out[b]?out[b].map((v,i)=>(v||0)+((s[raw]||[])[i]||0)):(s[raw]||[]).slice();}return out;}   // re-bucket display-source rows into chanKey buckets
+function aggregateSource(src,agg){const N=D.weeks.length,Z=()=>new Array(N).fill(0),ZC=()=>Object.fromEntries(CATS.map(c=>[c,Z()])),pct=(n,d)=>n.map((x,i)=>d[i]?Math.round(100*x/d[i]):null);
+  const leads=chanConsol(agg.demand.by_channel)[src]||Z();
+  const booked=bucketSources(bookingSources,agg)[src]||Z(),done=bucketSources(doneSources,agg)[src]||Z();
+  return {disp:src,_source:true,
+    demand:{leads:leads,by_channel:{},lead_book_pct:pct(booked,leads),has_leads:sum(leads)>0},
+    bookings:{total:booked,new_tw:booked,new_old:Z(),rebook:Z(),relapse:Z()},
+    done:{booked:booked,done:done,book_done_pct:pct(done,booked),by_cat:ZC()},
+    purchased:{total:Z(),by_cat:ZC()},revenue:{rev:Z(),by_cat:ZC(),meds:{tot:Z(),by_cat:ZC()},test:{tot:Z(),by_cat:ZC()},ther:{tot:Z(),by_cat:ZC()},cons:{tot:Z(),by_cat:ZC()}},
+    availability:{active_days:Z(),wday_days:Z(),wend_days:Z(),attend_days:Z(),attend_wday:Z(),attend_wend:Z()},
+    velocity:{bookings:booked,per_active_day:Z(),per_weekday:Z(),per_weekend:Z(),bk_wday:Z(),bk_wend:Z()},doctors:{count:Z()},by_doctor:{}};}
 function metricChips(c,stageKey){
   const st=STAGES.find(x=>x.key===stageKey),m=st.metrics(c)[0],ev=evalMetric(m.arr),a=m.arr.slice(-(CURN+BASEN));
   return {ev,chips:trendHTML(m.arr,m.pct,ev),nm:m.nm,pct:m.pct,a,arr:m.arr};
@@ -1021,22 +1035,24 @@ function docTag(key){if(!DOCF.size||CATF.size)return '';   // a category slice i
 function metricLabelHTML(key,subLabel){const sl=subLabel?subLabel.replace(/^—\s*/,''):'';
   return '<span class="mnm">'+metricNameFull(key)+'</span><span class="mseg"> · '+segWord()+'</span>'+catTag(key)+docTag(key)+(sl?'<span class="msub"> · '+sl+'</span>':'');}
 function metricLabelText(key,subLabel){return metricNameFull(key)+' · '+segWord()+(CATF.size&&CAT_OK.has(key)?' · '+catWord():'')+(subLabel?' · '+subLabel.replace(/^—\s*/,''):'');}
-function metricRow(c,key,disp,subLabel){const st=STAGES.find(x=>x.key===key);
+function metricRow(c,key,disp,subLabel,opts){opts=opts||{};const isChild=!!subLabel&&!opts.focusHead;const st=STAGES.find(x=>x.key===key);   // opts.focusHead → subLabel is a Part-2 focused cut, rendered as a headline row (not an indented child)
   if(naMetric(c,key)){const why=(c&&c._catrow&&!CAT_OK.has(key))?'a category (diagnosis-stage only)':(CATF.size&&!CAT_OK.has(key))?'a category slice (diagnosis-stage only)':((FUNNEL2==='fu'&&key==='demand')?'follow-ups':'online');return '<div class="crow" style="cursor:default;opacity:.45"><span class="clab">'+metricLabelHTML(key,subLabel)+'</span><span class="flat">—</span><span style="font-size:11px;color:var(--faint);margin-left:6px">n/a for '+why+'</span></div>';}
   if(subLabel){const sdE=(subDims(key)||[]).find(x=>x.label===subLabel);   // a "by category" row on a pre-diagnosis metric → honest n/a (like Leads under a doctor)
     if(sdE&&sdE.naCat)return '<div class="crow" style="cursor:default;opacity:.45"><span class="clab" style="padding-left:16px"><span style="color:var(--faint)">↳ </span>'+metricLabelHTML(key,subLabel)+'</span><span class="flat">—</span><span style="font-size:11px;color:var(--faint);margin-left:6px">n/a — '+metricNameFull(key).replace(/·.*/,'').trim().toLowerCase()+' isn’t split by diagnosis (pre-diagnosis stage)</span></div>';}
-  const m=st.metrics(c)[0];const variant=subLabel||MFOCUS[key]||null;let pct=variant?false:!!m.pct,raw=metricArr(c,key,variant),arr,contrib=false;   // variant = a child breakdown row (subLabel) OR a Part-2 focused sub-parent (MFOCUS)
+  const m=st.metrics(c)[0];const variant=subLabel||null;let pct=variant?false:!!m.pct,raw=metricArr(c,key,variant),arr,contrib=false;   // variant = an MSUB breakdown child OR a Part-2 focused cut (opts.focusHead)
   if(!variant&&CATPCT&&CATPCT_OK[key]&&(CATF.size||(c&&c._catrow))){const den=(c[CATPCT_OK[key]]||{})._all;raw=raw.map((v,i)=>(den&&den[i])?Math.round(100*v/den[i]):null);pct=true;contrib=true;arr=clubArr(raw,false);}   // category-slice OR a category-grouped row → contribution %
   else{const sdf=variant&&(subDims(key)||[]).find(x=>x.label===variant);
-    if(subLabel&&CATPCT&&!(sdf&&sdf.rate)){const base=metricArr(c,key,MFOCUS[key]||null);raw=raw.map((v,i)=>base[i]?Math.round(100*(v||0)/base[i]):null);pct=true;contrib=true;arr=clubArr(raw,false);}   // breakdown child as % of the (focused) metric total
+    if(isChild&&CATPCT&&!(sdf&&sdf.rate)){const base=metricArr(c,key,null);raw=raw.map((v,i)=>base[i]?Math.round(100*(v||0)/base[i]):null);pct=true;contrib=true;arr=clubArr(raw,false);}   // breakdown child as % of the metric total
     else arr=clubArr(raw,variant?!!(sdf&&sdf.rate):isRate(key,m.pct));}
   const ev=evalMetric(arr),a=arr.slice(-(CURN+BASEN));
   const pctSuf=contrib?'<span class="msub" style="color:#C2691F;font-weight:700"> · % of all '+metricNoun(key)+'</span>':'';   // make the denominator explicit: "STI · % of all done"
   const zi=ZREG.length;ZREG.push({label:disp+' · '+metricLabelText(key,variant),arr:raw,col:COL[ev.st]||'var(--ink2)',pct:pct,noPrefix:true});   // zoom shows raw weekly
-  const subCore=subLabel?subLabel.replace(/^category · /,''):'';   // a category CHILD row ("SH · ED+") nests one level deeper than its parent ("SH"), so sub-cats read as sitting under it
-  const deep=subLabel&&subCore.indexOf(' · ')>=0&&CAT_CORES.has(subCore),pad=subLabel?(deep?32:16):0;
-  return '<div class="crow" onclick="frowClick(event,'+zi+')" title="click a number to chart · label to drill"><span class="clab"'+(pad?' style="padding-left:'+pad+'px"':'')+'>'+(subLabel?'<span style="color:var(--faint)">'+(deep?'· ':'↳ ')+'</span>':'')+metricLabelHTML(key,variant)+pctSuf+'</span>'+pctPill(ev)+trendHTML(arr,pct,ev)+'<span class="zoomico" onclick="event.stopPropagation();zoomReg('+zi+')" title="zoom — full weekly trend" style="cursor:zoom-in;margin-left:10px;color:var(--faint);font-size:13px">🔍</span></div>';}
-function metricStack(c,disp){return METSEL.map(k=>{const subs=MSUB[k]||[];return metricRow(c,k,disp,null)+subs.map(sb=>metricRow(c,k,disp,sb)).join('');}).join('');}
+  const subCore=isChild?subLabel.replace(/^category · /,''):'';   // a category CHILD row ("SH · ED+") nests one level deeper than its parent ("SH"), so sub-cats read as sitting under it
+  const deep=isChild&&subCore.indexOf(' · ')>=0&&CAT_CORES.has(subCore),pad=isChild?(deep?32:16):0;
+  return '<div class="crow" onclick="frowClick(event,'+zi+')" title="click a number to chart · label to drill"><span class="clab"'+(pad?' style="padding-left:'+pad+'px"':'')+'>'+(isChild?'<span style="color:var(--faint)">'+(deep?'· ':'↳ ')+'</span>':'')+metricLabelHTML(key,variant)+pctSuf+'</span>'+pctPill(ev)+trendHTML(arr,pct,ev)+'<span class="zoomico" onclick="event.stopPropagation();zoomReg('+zi+')" title="zoom — full weekly trend" style="cursor:zoom-in;margin-left:10px;color:var(--faint);font-size:13px">🔍</span></div>';}
+function metricStack(c,disp){return METSEL.map(k=>{const focus=MFOCUS[k]||[],subs=MSUB[k]||[];   // each focused cut → its own headline row (multiselect); MSUB breakdowns indent below
+  const heads=focus.length?focus.map(f=>metricRow(c,k,disp,f,{focusHead:true})).join(''):metricRow(c,k,disp,null);
+  return heads+subs.map(sb=>metricRow(c,k,disp,sb)).join('');}).join('');}
 function toggleShare(){SHOWSHARE=!SHOWSHARE;render();}
 function toggleCatPct(){CATPCT=!CATPCT;render();}
 // ── ⑥ Category %: filter chips (MH/STI/SH) + a full category-contribution tree, on whatever value metric is picked ──
@@ -1149,9 +1165,12 @@ function renderMetric(){
   const primary=metrics[0];
   const scopeSlugs=Object.keys(D.clinics).filter(inScope);
   const passCond=c=>METSEL.every(k=>{const req=MCOND[k];return !req||!req.length||(!naMetric(c,k)&&req.includes(metricEval(c,k).ev.st));});   // AND across metrics; within a metric, OR across the selected statuses
-  const byCity=GRP==='city',byDoctor=GRP==='doctor',byCategory=GRP==='category',unit=byCity?'city':(byDoctor?'doctor':byCategory?'category':'clinic');
+  const byCity=GRP==='city',byDoctor=GRP==='doctor',byCategory=GRP==='category',bySource=GRP==='source',unit=byCity?'city':(byDoctor?'doctor':byCategory?'category':bySource?'source':'clinic');
   let rows;
-  if(byCategory){   // one row per diagnosis category (MH·STI·SH, + sub-cats when "category detail" is on); only diagnosis metrics have values
+  if(bySource){   // one row per lead source (Organic+GMB · Google · Fb · Practo · Others) — Leads·Bookings·B2D·Done have values; other metrics n/a
+    const agg=aggregate(scopeSlugs,'all');
+    rows=SOURCE_ORDER.map(src=>({label:src,n:0,c:aggregateSource(src,agg),click:''})).filter(r=>(sum(r.c.demand.leads)||sum(r.c.bookings.total))&&passCond(r.c));
+  }else if(byCategory){   // one row per diagnosis category (MH·STI·SH, + sub-cats when "category detail" is on); only diagnosis metrics have values
     const agg=aggregate(scopeSlugs,'all'),groups=[];
     CAT_TREE.forEach(g=>{groups.push({name:g.name,cats:g.cats});if(FCATDETAIL&&g.children&&!metricNoSub())g.children.forEach(ch=>groups.push({name:g.name+' · '+ch.name,cats:ch.cats}));});
     rows=groups.map(g=>({label:g.name,n:0,c:aggregateCategory(g.name,g.cats,agg),click:''})).filter(r=>sum(r.c.done.done)&&passCond(r.c));
@@ -1164,13 +1183,13 @@ function renderMetric(){
     rows=scopeSlugs.filter(s=>passCond(CL(s))).map(s=>{const c=CL(s);return{label:c.disp,n:0,c:c,click:"goClinic('"+s+"')"};});
   }
   rows.forEach(r=>{r.pe=metricEval(r.c,primary.key).ev;});
-  if(!byCategory)rows.sort((a,b)=>(a.pe.d==null?9:a.pe.d)-(b.pe.d==null?9:b.pe.d));   // worst on the primary metric first; category rows keep MH·STI·SH order
+  if(!byCategory&&!bySource)rows.sort((a,b)=>(a.pe.d==null?9:a.pe.d)-(b.pe.d==null?9:b.pe.d));   // worst on the primary metric first; category / source rows keep their fixed order
   const cc=(k)=>{const st=STAGES.find(x=>x.key===k),sel=MCOND[k]||[];
     const opt=(v,lab,on)=>'<button class="cseg'+(on?' on':'')+'" onclick="setCond(\''+k+'\',\''+v+'\')">'+lab+'</button>';
     return '<span class="condgrp"><span class="condlab">'+st.short+'</span><span class="cseg-wrap">'+opt('any','any',!sel.length)+opt('red','🔴',sel.includes('red'))+opt('lred','🟠',sel.includes('lred'))+opt('amber','🟡',sel.includes('amber'))+opt('green','🟢',sel.includes('green'))+'</span></span>';};
   const backBtn=(!byCity&&CITYF.size===1)?'<button class="fbtn" style="padding:5px 12px;font-size:12px;font-weight:700;border-color:var(--accent);color:var(--accent)" onclick="backToCities()">← all cities</button> ':'';
-  const unitLbl=byCity?(rows.length+' '+(rows.length===1?'city':'cities')):byDoctor?(rows.length+' '+(rows.length===1?'doctor':'doctors')):byCategory?(rows.length+' categories'):pcLabel(rows.map(r=>r.c),true);
-  const rowNoun=byCity?'city':byDoctor?'doctor':byCategory?'category':'clinic';
+  const unitLbl=byCity?(rows.length+' '+(rows.length===1?'city':'cities')):byDoctor?(rows.length+' '+(rows.length===1?'doctor':'doctors')):byCategory?(rows.length+' categories'):bySource?(rows.length+' sources'):pcLabel(rows.map(r=>r.c),true);
+  const rowNoun=byCity?'city':byDoctor?'doctor':byCategory?'category':bySource?'source':'clinic';
   const scopeHdr='<span class="lab" style="text-transform:none;font-weight:600;color:var(--ink2)">📍 <b style="color:var(--accent)">'+levelKind()+'-level</b> · '+cityStr()+' · '+unitLbl+' · each row = one '+rowNoun+' · sorted by <b>'+primary.name+'</b>'
     +(byDoctor?' <span style="color:var(--faint)">· per-doctor: bookings·B2D·done·purchased·revenue·RPC·AOV·D2P — leads·availability·roster are clinic-level (n/a)</span>':'')
     +(byCategory?' <span style="color:var(--faint)">· per-category: done·purchased·revenue·RPC·AOV·D2P — leads·bookings·availability etc are pre-diagnosis (n/a). Add ▸ category detail for sub-cats.</span>':'')+'</span>';
@@ -1185,11 +1204,11 @@ function renderMetric(){
   const colHead='<div class="crow chead"><span class="clab">metric</span><span class="mc">change</span>'
     +winLabels.map(L=>'<span class="mc">'+shortWk(L)+'</span>').join('')
     +'<span class="avgmk avgbefore">before '+(CMPMODE==='peak'?'peak':'avg')+'</span><span class="avgmk avgnow">now</span></div>';
-  h+='<div class="fmwrap"><table class="fm" style="min-width:640px"><thead><tr><th style="white-space:nowrap;vertical-align:bottom">'+(byCity?'City':byDoctor?'Doctor':byCategory?'Category':'Clinic')+'</th><th style="text-align:left;padding:8px 12px 0">'+colHead+'<div style="font-size:9.5px;color:var(--faint);text-transform:none;font-weight:500;padding:0 0 4px 6px">recent '+(CURN+BASEN)+(clubbed?' × '+CLUB+'-wk blocks':' wks')+' · now <b style="color:var(--ink)">'+lbl.c+'</b> vs prior '+BASEN+'-wk '+(CMPMODE==='peak'?'peak':'avg')+' ('+lbl.b+')</div></th></tr></thead><tbody>';
+  h+='<div class="fmwrap"><table class="fm" style="min-width:640px"><thead><tr><th style="white-space:nowrap;vertical-align:bottom">'+(byCity?'City':byDoctor?'Doctor':byCategory?'Category':bySource?'Source':'Clinic')+'</th><th style="text-align:left;padding:8px 12px 0">'+colHead+'<div style="font-size:9.5px;color:var(--faint);text-transform:none;font-weight:500;padding:0 0 4px 6px">recent '+(CURN+BASEN)+(clubbed?' × '+CLUB+'-wk blocks':' wks')+' · now <b style="color:var(--ink)">'+lbl.c+'</b> vs prior '+BASEN+'-wk '+(CMPMODE==='peak'?'peak':'avg')+' ('+lbl.b+')</div></th></tr></thead><tbody>';
   if(scopeSlugs.length>1){const agg=aggregate(scopeSlugs,'Total');
     h+='<tr class="totalrow" onclick="setOvMode(\'funnel\')" title="open the combined funnel"><td style="white-space:nowrap;width:1%">Σ Total · '+pcLabel(scopeSlugs.map(s=>D.clinics[s]),true)+'</td><td class="why">'+metricStack(agg,'Total')+'</td></tr>';}
   if(!rows.length)h+='<tr><td colspan="2" style="color:var(--muted);padding:16px;text-align:left">No '+unit+'s match these conditions.</td></tr>';
-  rows.forEach(r=>{h+='<tr'+(r.click?' onclick="'+r.click+'"':' style="cursor:default"')+' title="'+(byCity?'drill into '+r.label+' clinics':byDoctor?'open '+r.label+'’s funnel':byCategory?r.label+' diagnosis category':'open funnel')+'"><td style="white-space:nowrap;width:1%">'+(byCity?'🏙 '+r.label+' · '+r.n:byDoctor?'👤 '+r.label:byCategory?'🏷 '+r.label:r.label)+'</td><td class="why">'+metricStack(r.c,r.label)+'</td></tr>';});
+  rows.forEach(r=>{h+='<tr'+(r.click?' onclick="'+r.click+'"':' style="cursor:default"')+' title="'+(byCity?'drill into '+r.label+' clinics':byDoctor?'open '+r.label+'’s funnel':byCategory?r.label+' diagnosis category':bySource?r.label+' lead source':'open funnel')+'"><td style="white-space:nowrap;width:1%">'+(byCity?'🏙 '+r.label+' · '+r.n:byDoctor?'👤 '+r.label:byCategory?'🏷 '+r.label:bySource?'📣 '+r.label:r.label)+'</td><td class="why">'+metricStack(r.c,r.label)+'</td></tr>';});
   h+='</tbody></table></div>';
   $('root').innerHTML=h;
 }
