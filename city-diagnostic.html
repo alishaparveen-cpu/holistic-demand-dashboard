@@ -368,6 +368,7 @@ function inCity(city){return !CITYF.size||CITYF.has(city);}
 // gate online by the cities implied by the current scope: explicit city filter, else the cities of the selected offline clinics, else all.
 function effCityOK(city){if(CITYF.size)return CITYF.has(city);if(CLINF.size){for(const s of CLINF){const c=D.clinics[s];if(c&&!c._online&&c.city===city)return true;}return false;}return true;}
 function inScope(slug){const c=D.clinics[slug];
+  if(c._unattr_city)return !CLINF.size&&!DOCF.size&&(!CITYF.size||CITYF.has(c.city))&&(!TIERF.size||TIERF.has(tierOf(c.city)));   // demand-tracker city-level leads (no clinic) — show at that city's scope, hidden in clinic/doctor drills
   const on=!!c._online;
   if(SEG==='offline'&&on)return false;
   if(SEG==='online'&&!on)return false;
@@ -792,7 +793,7 @@ function jumpToStage(key){const grp=FUNNEL_GROUPS.find(g=>g.keys.includes(key));
 let _CHU=null;
 function chanUnion(){if(_CHU)return _CHU;const s=new Set();Object.values(D.clinics).forEach(c=>{if(c.demand&&c.demand.by_channel)Object.keys(c.demand.by_channel).forEach(ch=>s.add(ch));});_CHU=[...s].sort();return _CHU;}
 const KEEP_CHAN=['GMB','Google','Fb','Practo','Organic'],CHAN_ORDER=['GMB','Google','Fb','Practo','Organic','Others'];   // only these leads channels matter; everything else → Others
-function chanKey(n){const l=(n||'').toLowerCase();if(l.indexOf('gmb')>=0)return 'GMB';if(l.indexOf('google')>=0)return 'Google';if(l==='fb'||l.indexOf('facebook')>=0||l.indexOf('meta')>=0||l.indexOf('insta')>=0)return 'Fb';if(l.indexOf('practo')>=0)return 'Practo';if(l.indexOf('organic')>=0)return 'Organic';return 'Others';}
+function chanKey(n){const l=(n||'').toLowerCase();if(l.indexOf('google')>=0)return 'Google';if(l==='fb'||l.indexOf('facebook')>=0||l.indexOf('meta')>=0||l.indexOf('insta')>=0)return 'Fb';if(l.indexOf('practo')>=0)return 'Practo';if(l.indexOf('gmb')>=0||l.indexOf('organic')>=0)return 'Organic';return 'Others';}   // GMB folded into Organic (match marketing)
 function chanConsol(bc){const out={};for(const ch in (bc||{})){const k=chanKey(ch),a=bc[ch]||[];out[k]=(out[k]||Z()).map((v,i)=>v+(a[i]||0));}return out;}
 // map our raw source buckets → the city-head sheet's labels (Meta→fb; Direct/none folded into Others)
 const SRC_DISP={'Meta':'fb'};   // Meta→fb; 'Direct / none' kept as its OWN bucket (city-head sheet leaves direct/walk-in unclassified, not in Others)
@@ -1084,7 +1085,7 @@ function shareLine(metricKey){
 }
 // clinic-count that treats Online telehealth as a channel, not a physical location:
 // count real clinics, and append a "+ online" tag when the online pseudo-clinic is in scope.
-function pcCount(arr){let phys=0,onl=false;arr.forEach(c=>{if(c&&c._online)onl=true;else phys++;});return{phys,onl};}
+function pcCount(arr){let phys=0,onl=false;arr.forEach(c=>{if(c&&c._unattr_city)return;if(c&&c._online)onl=true;else phys++;});return{phys,onl};}
 function pcLabel(arr,word){const{phys,onl}=pcCount(arr);const tag=' <span style="font-weight:600;color:#7A5CC2;font-size:.85em">+ online</span>';
   if(phys===0)return onl?(word?'online only':'online'):(phys+(word?' clinics':''));
   return phys+(word?(' clinic'+(phys===1?'':'s')):'')+(onl?tag:'');}
@@ -1910,6 +1911,22 @@ async function loadRx(){
     for(const dr in (c.by_doctor||{})){const dd={};RX_F.forEach(f=>dd[f]=rm(c.by_doctor[dr][f]));s.by_doctor[dr]=dd;}
     D.clinics[slug].rx=s;}
 }
+// demand-tracker leads overlay (clinic + city-level; NO national line, per Alisha) — ported from marketing-diagnostic
+let NATUN=null;
+function injectUnattr(){
+  Object.keys(D.clinics).forEach(k=>{if(k.indexOf('__cityunattr_')===0)delete D.clinics[k];});
+  if(!NATUN||!NATUN._city_unattr)return;
+  const N=D.weeks.length,Z=()=>new Array(N).fill(0),NA=()=>new Array(N).fill(null),ZC=()=>Object.fromEntries(CATS.map(c=>[c,Z()]));
+  const cw=NATUN._meta.weeks,align=a=>{const o=Z();(a||[]).forEach((v,i)=>{const gi=D.weeks.indexOf(cw[i]);if(gi>=0)o[gi]=v||0;});return o;};
+  Object.keys(NATUN._city_unattr).forEach(city=>{const u=NATUN._city_unattr[city],bc={},bs={};Object.keys(u.by_channel||{}).forEach(b=>bc[b]=align(u.by_channel[b]));Object.keys(u.by_src||{}).forEach(s=>bs[s]=align(u.by_src[s]));
+    D.clinics['__cityunattr_'+city.toLowerCase().replace(/ /g,'_')]={disp:'🏙 '+city+' · city-level (no clinic)',city:city,loc:city+' · city-level',_unattr_city:true,_slug:'__cityunattr_'+city,
+      availability:{active_days:NA(),wday_days:NA(),wend_days:NA(),attend_days:NA(),attend_wday:NA(),attend_wend:NA(),hours:NA(),avail_hours:NA()},
+      demand:{leads:align(u.leads),by_channel:bc,by_src:bs,lead_book_pct:NA(),has_leads:true},
+      bookings:{total:Z(),new_tw:Z(),new_old:Z(),rebook:Z(),relapse:Z(),by_source:{}},
+      done:{booked:Z(),done:Z(),book_done_pct:NA(),by_cat:ZC()},purchased:{total:Z(),by_cat:ZC()},
+      revenue:{rev:Z(),by_cat:ZC(),meds:{tot:Z(),by_cat:ZC()},test:{tot:Z(),by_cat:ZC()},ther:{tot:Z(),by_cat:ZC()},cons:{tot:Z(),by_cat:ZC()}},
+      velocity:{bookings:Z(),per_active_day:NA(),per_weekday:NA(),per_weekend:NA(),bk_wday:Z(),bk_wend:Z()},doctors:{count:Z()},by_doctor:{}};});
+}
 async function boot(){
   try{D=await fetch('data_weekly_diag.json?v='+Date.now()).then(r=>r.json());}
   catch(e){$('root').innerHTML='<div class="err">Failed to load data_weekly_diag.json</div>';return;}
@@ -1921,7 +1938,9 @@ async function boot(){
   await loadSlots();   // attach SC-offline slot-level data (total_slots/completed/no_show/reschedule) to each clinic + by_doctor
   await loadRx();   // attach prescribed→purchase per line (meds/tests/therapy) to each clinic + by_doctor
   buildOnlineClinics();   // now that per-provider online data is loaded, build the per-clinic online buckets
-  ALLCITIES=[...new Set(Object.values(D.clinics).filter(c=>!c._online&&c.city!=='Online').map(c=>c.city))].sort((a,b)=>{const ta=tierOf(a)==='T1',tb=tierOf(b)==='T1';return ta!==tb?(ta?-1:1):a.localeCompare(b);});   // exclude the Online pseudo-city; Tier-1 cities first so heads click fast
+  try{NATUN=await fetch('data_demand_leads.json?v='+Date.now()).then(r=>r.ok?r.json():null);}catch(e){NATUN=null;}
+  injectUnattr();   // add the per-city city-level (unattributed-to-clinic) leads lines from the demand tracker
+  ALLCITIES=[...new Set(Object.values(D.clinics).filter(c=>!c._online&&!c._unattr_city&&c.city!=='Online').map(c=>c.city))].sort((a,b)=>{const ta=tierOf(a)==='T1',tb=tierOf(b)==='T1';return ta!==tb?(ta?-1:1):a.localeCompare(b);});   // exclude the Online pseudo-city; Tier-1 cities first so heads click fast
   try{const saved=JSON.parse(localStorage.getItem('wd_city')||'[]');if(Array.isArray(saved))saved.forEach(c=>{if(ALLCITIES.includes(c))CITYF.add(c);});}catch(e){}
   $('cityBtn').textContent=cityBtnLabel();$('cityBtn').classList.toggle('on',!!CITYF.size);
   $('clinBtn').textContent=clinBtnLabel();
