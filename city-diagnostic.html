@@ -1155,6 +1155,18 @@ function toggleFSrc(){FSRC=!FSRC;render();}
 let FCOMB=[];   // ⊕ funnel combine: labels of ticked breakdown rows → summed into a combined bar at the foot of the funnel
 function fcombToggle(label){const i=FCOMB.indexOf(label);if(i<0)FCOMB.push(label);else FCOMB.splice(i,1);render();}
 function fcombClear(){FCOMB=[];render();}
+// ⊕ combine bar for ONE funnel group — sums only the ticked rows rendered since `fromIdx` (that group's ZREG range)
+function funnelCombineBar(fromIdx){
+  if(!FCOMB.length)return '';
+  const groupZ=ZREG.slice(fromIdx);
+  const found=FCOMB.map(lb=>{const z=groupZ.find(x=>x.label===lb);return z?{lb,arr:z.arr}:null;}).filter(Boolean);
+  if(!found.length)return '';
+  const N=D.weeks.length,sumArr=found.reduce((acc,f)=>acc.map((v,i)=>(v||0)+((f.arr&&f.arr[i])||0)),new Array(N).fill(0));
+  const names=found.map(f=>f.lb.replace(/^↳\s*/,'').replace(/^—\s*/,'')).join(' + ');
+  return '<div style="margin:6px 0 2px;border:1.5px solid #7A3FA0;border-radius:10px;padding:8px 10px;background:rgba(122,63,160,.05)">'
+    +'<div class="densrow" style="gap:8px;margin:0 0 4px"><span style="font-size:12px;font-weight:800;color:#7A3FA0">⊕ Combine</span><span style="font-size:11px;color:var(--ink2)">'+names+'</span><button class="fbtn" style="padding:2px 9px;font-size:10.5px;margin-left:auto" onclick="event.stopPropagation();fcombClear()">✕ clear</button></div>'
+    +(found.length>=2?miniRow('⊕ combined · '+names,sumArr,0,'#7A3FA0',0,true,false):'<div style="font-size:11px;color:var(--faint);padding:2px 6px">tick one more row in this section (click its label) to see the combined total</div>')
+    +'</div>';}
 let CMPMODE='avg';   // baseline for "before"/Δ: 'avg' (mean of the prior-window weeks, default) or 'peak' (best week in that window)
 function setCmp(v){CMPMODE=v;render();}
 function toggleFG(n){FGCOLLAPSE.has(n)?FGCOLLAPSE.delete(n):FGCOLLAPSE.add(n);render();}
@@ -1402,6 +1414,7 @@ function funnelStagesHTML(o){
       +'<span style="font-size:13px">'+(collapsed?'▸':'▾')+'</span>'+grp.name
       +(collapsed?' <span style="font-weight:500;color:var(--faint);text-transform:none;letter-spacing:0">— '+names+'</span>':'')+'</div>';
     if(collapsed){di+=stages.length;return;}
+    const zStart=ZREG.length;   // remember where this group's breakdown rows begin (for its own ⊕ combine bar)
     stages.forEach((s,idx)=>{
       const e=evalStage(s,o),hm=e.hm,col=COL[e.status];
       let {lineS,chipOnly,groups,tree}=stageParts(s,o);
@@ -1441,15 +1454,8 @@ function funnelStagesHTML(o){
           +'<div class="fbody">'+head+(scol?'':(parBtn+srcBtn+bd))+'</div>'
         +'</div></div></div>';
       if(idx<stages.length-1)h+='<div class="conn"></div>';});
+    h+=funnelCombineBar(zStart);   // ⊕ combine bar at the END OF THIS TAB, summing only the rows ticked within it
   });
-  // ⊕ COMBINE bar — sum every ticked breakdown row (re-resolved by label against this render, so numbers stay live)
-  if(FCOMB.length){const found=FCOMB.map(lb=>{const z=ZREG.find(x=>x.label===lb);return z?{lb,arr:z.arr}:null;}).filter(Boolean);
-    if(found.length){const N=D.weeks.length,sumArr=found.reduce((acc,f)=>acc.map((v,i)=>(v||0)+((f.arr&&f.arr[i])||0)),new Array(N).fill(0));
-      const names=found.map(f=>f.lb.replace(/^↳\s*/,'').replace(/^—\s*/,'')).join(' + ');
-      h+='<div style="margin:16px 0 4px;border:1.5px solid #7A3FA0;border-radius:10px;padding:8px 10px;background:rgba(122,63,160,.05)">'
-        +'<div class="densrow" style="gap:8px;margin:0 0 4px"><span style="font-size:12px;font-weight:800;color:#7A3FA0">⊕ Combine</span><span style="font-size:11px;color:var(--ink2)">'+names+'</span><button class="fbtn" style="padding:2px 9px;font-size:10.5px;margin-left:auto" onclick="event.stopPropagation();fcombClear()">✕ clear</button></div>'
-        +(found.length>=2?miniRow('⊕ combined · '+names,sumArr,0,'#7A3FA0',0,true,false):'<div style="font-size:11px;color:var(--faint);padding:2px 6px">tick one more breakdown row (click its label) to see the combined total</div>')
-        +'</div>';}}
   return h;
 }
 // sum all in-scope clinics into one clinic-shaped object for a city-level (or any-scope) funnel
