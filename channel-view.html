@@ -36,6 +36,7 @@ tr.sub td:first-child{padding-left:22px;color:var(--ink2)}
 tr.pct td{font-style:italic;color:var(--vio)}
 tr.pct td:first-child{color:var(--vio)}
 td.av{background:var(--inset);font-weight:600}
+td.dpc,th.dpc{text-align:center;padding:0 10px;white-space:nowrap}
 .spark{display:inline-block;vertical-align:middle}
 .chan-hd td{background:linear-gradient(90deg,rgba(31,111,92,.06),transparent);font-weight:700;font-size:13px;border-top:2px solid var(--line)}
 .lbl{font-size:10px;font-weight:700;letter-spacing:.05em;color:var(--muted);text-transform:uppercase}
@@ -70,6 +71,12 @@ td.av{background:var(--inset);font-weight:600}
     <div class="shead" style="font-size:20px">🔵 Google Ads · paid-acquisition funnel <span class="lblmuted">(live from the Google Ads API, per city + category — spend → impressions → clicks → location clicks → conversions. Filter by category / city, break down by city or category. Current to the latest reported week.)</span></div>
     <div id="gdCtl" style="margin:8px 0 14px"></div>
     <div id="gdetail"></div>
+  </div>
+</div>
+<div id="gzModal" onclick="if(event.target===this)gzClose()" style="display:none;position:fixed;inset:0;background:rgba(20,20,25,.55);z-index:9000;align-items:center;justify-content:center;padding:24px">
+  <div style="background:var(--card);border-radius:14px;box-shadow:0 20px 60px rgba(0,0,0,.3);max-width:94vw;max-height:90vh;overflow:auto;padding:18px 22px">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:20px;margin-bottom:8px"><b id="gzTitle" style="font-size:15px"></b><button onclick="gzClose()" style="cursor:pointer;border:1px solid var(--line);background:var(--inset);border-radius:6px;width:28px;height:28px;font-size:15px">✕</button></div>
+    <div id="gzBody"></div>
   </div>
 </div>
 <script>
@@ -108,15 +115,37 @@ function heatBg(v,lo,hi){if(v==null||hi<=lo)return'';const t=(v-lo)/(hi-lo);// l
   const k=(0.5-t)/.5;return'rgba(178,58,46,'+(0.05+0.22*k).toFixed(3)+')';}
 function spark(arr,idx,color){const vs=idx.map(i=>arr[i]||0);const mx=Math.max(...vs,1),mn=Math.min(...vs,0);const W=88,H=22;const pts=vs.map((v,i)=>{const x=idx.length<2?0:i/(idx.length-1)*W;const y=H-2-((v-mn)/((mx-mn)||1))*(H-4);return x.toFixed(1)+','+y.toFixed(1);}).join(' ');
   return'<svg class="spark" width="'+W+'" height="'+H+'"><polyline points="'+pts+'" fill="none" stroke="'+(color||'#1F6F5C')+'" stroke-width="1.6"/><circle cx="'+W+'" cy="'+(H-2-((vs[vs.length-1]-mn)/((mx-mn)||1))*(H-4)).toFixed(1)+'" r="2.4" fill="'+(color||'#1F6F5C')+'"/></svg>';}
+let GZ=[];   // append-only zoom registry — indices stay valid across re-renders (never reset)
+function gzKey(label,arr,fmt,color){GZ.push({label:label.replace(/<[^>]+>/g,''),arr:arr||[],fmt:fmt||N,color:color||'#1F6F5C'});return GZ.length-1;}
 function row(label,arr,cls,fmt,o){o=o||{};fmt=fmt||N;const idx=visIdx();const vals=idx.map(i=>(arr||[])[i]);
   let lo=Infinity,hi=-Infinity;if(!o.noheat)vals.forEach(v=>{if(v!=null&&!isNaN(v)){lo=Math.min(lo,v);hi=Math.max(hi,v);}});
   let tds='<td'+(o.color?' style="color:'+o.color+'"':'')+'>'+label+'</td>';
   vals.forEach(v=>{const bg=o.noheat?'':heatBg(v,lo,hi);tds+='<td style="'+(bg?'background:'+bg:'')+'">'+fmt(v)+'</td>';});
   const nums=vals.filter(v=>v!=null&&!isNaN(v));const avg=nums.length?nums.reduce((a,b)=>a+b,0)/nums.length:null;
   tds+='<td class="av">'+fmt(avg)+'</td>';
-  tds+='<td>'+(o.noheat?'':spark(arr,idx,o.color))+'</td>';
+  // Δ% — latest visible week vs the average of the prior visible weeks (comparison against average)
+  const last=vals[vals.length-1],prior=vals.slice(0,-1).filter(v=>v!=null&&!isNaN(v)),pbase=prior.length?prior.reduce((a,b)=>a+b,0)/prior.length:null;
+  const dlt=(last!=null&&pbase)?(last-pbase)/pbase:null;
+  const dpc=dlt==null?'<span style="color:var(--faint)">—</span>':'<span style="font-weight:800;font-size:12px;color:'+(dlt>=0?'#1F6F5C':dlt<=-0.15?'#B23A2E':dlt<=-0.05?'#B8862E':'#8a6412')+'">'+(dlt<0?'↓':dlt>0?'↑':'→')+Math.abs(Math.round(dlt*100))+'%</span>';
+  tds+='<td class="dpc" title="latest vs avg of the earlier weeks shown">'+dpc+'</td>';
+  const zi=gzKey(label,arr,fmt,o.color);
+  tds+='<td><span onclick="gzoom('+zi+')" title="click to zoom — full weekly trend" style="cursor:zoom-in">'+(o.noheat?'':spark(arr,idx,o.color))+'</span></td>';
   return'<tr class="'+(cls||'')+'">'+tds+'</tr>';}
-function head(lbl){const idx=visIdx();let h='<tr><th>'+lbl+'</th>';idx.forEach((i,k)=>h+='<th'+(k===idx.length-1?' class="lastcol"':'')+'>'+wlab(D._meta.weeks[i])+'</th>');h+='<th class="av">avg</th><th>trend</th></tr>';return h;}
+function head(lbl){const idx=visIdx();let h='<tr><th>'+lbl+'</th>';idx.forEach((i,k)=>h+='<th'+(k===idx.length-1?' class="lastcol"':'')+'>'+wlab(D._meta.weeks[i])+'</th>');h+='<th class="av">avg</th><th class="dpc">Δ%</th><th>trend</th></tr>';return h;}
+// ─── zoom modal: full weekly line chart for one row ───
+function gzoom(zi){const r=GZ[zi];if(!r)return;const wk=D._meta.weeks||[],n=Math.min(wk.length,r.arr.length);
+  const pts=[];for(let i=n-1;i>=0;i--)pts.push({w:wk[i],v:r.arr[i]});   // oldest→newest
+  const vals=pts.map(p=>p.v).filter(v=>v!=null&&!isNaN(v)),mx=Math.max(...vals,1),mn=Math.min(...vals,0);
+  const W=Math.max(560,pts.length*62),H=300,PL=64,PR=20,PT=24,PB=54,iw=W-PL-PR,ih=H-PT-PB;
+  const X=i=>PL+(pts.length<2?iw/2:i/(pts.length-1)*iw),Y=v=>PT+ih-((v-mn)/((mx-mn)||1))*ih;
+  let poly='',dots='',lbls='';
+  pts.forEach((p,i)=>{if(p.v==null||isNaN(p.v))return;poly+=X(i).toFixed(1)+','+Y(p.v).toFixed(1)+' ';
+    dots+='<circle cx="'+X(i).toFixed(1)+'" cy="'+Y(p.v).toFixed(1)+'" r="3.2" fill="'+r.color+'"/><text x="'+X(i).toFixed(1)+'" y="'+(Y(p.v)-9).toFixed(1)+'" text-anchor="middle" font-size="11" font-weight="700" fill="var(--ink)">'+r.fmt(p.v)+'</text>';});
+  pts.forEach((p,i)=>{lbls+='<text x="'+X(i).toFixed(1)+'" y="'+(H-32)+'" text-anchor="middle" font-size="10" fill="var(--muted)" transform="rotate(30 '+X(i).toFixed(1)+' '+(H-32)+')">'+wlab(p.w)+'</text>';});
+  const gl=[0,.25,.5,.75,1].map(t=>{const yv=mn+(mx-mn)*t,y=Y(yv);return '<line x1="'+PL+'" y1="'+y.toFixed(1)+'" x2="'+(W-PR)+'" y2="'+y.toFixed(1)+'" stroke="var(--line)" stroke-width="1"/><text x="'+(PL-8)+'" y="'+(y+3).toFixed(1)+'" text-anchor="end" font-size="10" fill="var(--faint)">'+r.fmt(yv)+'</text>';}).join('');
+  const svg='<svg width="'+W+'" height="'+H+'" style="max-width:100%">'+gl+'<polyline points="'+poly+'" fill="none" stroke="'+r.color+'" stroke-width="2.4"/>'+dots+lbls+'</svg>';
+  $('gzTitle').textContent=r.label;$('gzBody').innerHTML=svg;$('gzModal').style.display='flex';}
+function gzClose(){$('gzModal').style.display='none';}
 function tbl(inner){return'<div class="fmwrap"><table class="fm">'+inner+'</table></div>';}
 function ratio(a,b){return a.map((v,i)=>b[i]?Math.round(v/b[i]*100):null);}
 
@@ -178,8 +207,11 @@ function paint(){
 // ═══ Google Ads · detail master view ═══
 const GVIO='#7B5EA7',GBLU='#2b5cad',GGRN='#1F6F5C',GAMB='#b0752a';
 const GDCATS=['all','STI','SH','MH','Other'];
-let GDCAT='all',GDBRK='none',GDMET='spend',GDCITY=new Set();
+const T1CITIES=new Set(['Bangalore','Mumbai','Navi Mumbai','Pune','Hyderabad','Chennai']);   // Tier-1 metros (same split as the marketing view)
+const cityTier=c=>T1CITIES.has(c)?'T1':'T2';
+let GDCAT='all',GDBRK='category',GDMET='spend',GDCITY=new Set();   // category breakdown visible by default (Alisha: "keep this breakdown visible")
 function setGDCAT(v){GDCAT=v;paintGD();}
+function setGDTier(t){const cs=gapCities().filter(c=>cityTier(c)===t);const allOn=cs.length&&cs.every(c=>GDCITY.has(c));if(allOn)cs.forEach(c=>GDCITY.delete(c));else cs.forEach(c=>GDCITY.add(c));paintGD();}   // Tier 1/2 → select those cities in the multiselect
 function setGDBRK(v){GDBRK=v;paintGD();}
 function setGDMET(v){GDMET=v;paintGD();}
 function togGDCity(c){GDCITY.has(c)?GDCITY.delete(c):GDCITY.add(c);paintGD();}
@@ -200,6 +232,8 @@ function paintGD(){
   const chip=(fn,val,cur,lab)=>'<button onclick="'+fn+'(\''+val+'\')" class="chip'+(cur===val?' on':'')+'">'+lab+'</button>';
   let bar='<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px">';
   bar+='<span class="lbl">Category</span>'+GDCATS.map(v=>chip('setGDCAT',v,GDCAT,v==='all'?'All':v)).join('');
+  const tierOn=t=>{const cs=gapCities().filter(c=>cityTier(c)===t);return cs.length&&cs.every(c=>GDCITY.has(c));};
+  bar+='<span class="lbl" style="margin-left:10px">Tier</span><button onclick="setGDTier(\'T1\')" class="chip'+(tierOn('T1')?' on':'')+'">Tier 1</button><button onclick="setGDTier(\'T2\')" class="chip'+(tierOn('T2')?' on':'')+'">Tier 2</button>';
   bar+='<span class="lbl" style="margin-left:10px">City</span><span class="gdms"><button class="chip" onclick="this.nextElementSibling.classList.toggle(\'open\');event.stopPropagation()">'+(GDCITY.size?GDCITY.size+' cities':'All cities')+' ▾</button><div class="gdpanel">'+gapCities().sort().map(c=>'<label><input type="checkbox" '+(GDCITY.has(c)?'checked':'')+' onchange="togGDCity(this.value)" value="'+c+'"> '+c+'</label>').join('')+(GDCITY.size?'<a onclick="clrGDCity()">clear</a>':'')+'</div></span>';
   bar+='<span style="margin-left:auto;font-size:11px;color:var(--muted);font-family:JetBrains Mono">'+cities.length+' cities · ₹'+Math.round((spend||[]).reduce((a,b)=>a+(b||0),0)/1000)+'k</span></div>';
   $('gdCtl').innerHTML=bar;
