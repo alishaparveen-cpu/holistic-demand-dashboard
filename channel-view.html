@@ -173,12 +173,38 @@ function paint(){
     const tl=chs.reduce((a,c)=>addv(a,leadF(c,'new_leads')),[]);
     const tb=chs.reduce((a,c)=>addv(a,bookedBy(c)),[]);
     const td=chs.reduce((a,c)=>addv(a,doneBy(c)),[]);
+    const tbOff=chs.reduce((a,c)=>addv(a,scSum(SCB,c.sc,'booked')),[]),tbOn=chs.reduce((a,c)=>addv(a,scOnline(c,'booked')),[]);
+    const tdOff=chs.reduce((a,c)=>addv(a,scSum(SCB,c.sc,'done')),[]),tdOn=chs.reduce((a,c)=>addv(a,scOnline(c,'done')),[]);
     let O=head('Overview · 4 channels');
     O+=row('New leads · all channels',tl,'tot',N,{color:'#2b5cad'});
     O+=row('SC bookings · all channels',tb,'grp',N,{color:'#1F6F5C'});
+    O+=row('· of which offline',tbOff,'sub',N,{color:'#1F6F5C'});
+    O+=row('· · offline % of bookings',ratio(tbOff,tb),'pct',PCT,{noheat:true});
+    O+=row('· of which online',tbOn,'sub',N,{color:'#7B5EA7'});
+    O+=row('· · online % of bookings',ratio(tbOn,tb),'pct',PCT,{noheat:true});
     O+=row('Done · all channels',td,'grp',N,{color:'#1F6F5C'});
+    O+=row('· of which offline',tdOff,'sub',N,{color:'#1F6F5C'});
+    O+=row('· · offline % of done',ratio(tdOff,td),'pct',PCT,{noheat:true});
+    O+=row('· of which online',tdOn,'sub',N,{color:'#7B5EA7'});
+    O+=row('· · online % of done',ratio(tdOn,td),'pct',PCT,{noheat:true});
     O+=row('· book → done %',ratio(td,tb),'pct',PCT,{noheat:true});
     H+='<div class="shead">Σ Overview <span class="lblmuted">(New leads national · SC bookings + done = offline network + online, service-week)</span></div>'+tbl(O);
+    // ── GMB + Google combined (then split into the individual funnels below) ──
+    const gm=CH.find(c=>c.key==='gmb'),gg=CH.find(c=>c.key==='google');
+    const cnl=addv(leadF(gm,'new_leads'),leadF(gg,'new_leads'));
+    const clbk=addv(addv(leadF(gm,'booked_same'),leadF(gm,'booked_later')),addv(leadF(gg,'booked_same'),leadF(gg,'booked_later')));
+    const cbk=addv(bookedBy(gm),bookedBy(gg)),cdn=addv(doneBy(gm),doneBy(gg));
+    const cbkOff=addv(scSum(SCB,'GMB','booked'),scSum(SCB,'Google','booked')),cbkOn=addv(scOnline(gm,'booked'),scOnline(gg,'booked'));
+    let C=head('GMB + Google · combined');
+    C+=row('🔵📍 New leads (national)',cnl,'tot',N,{color:'#2b5cad'});
+    C+=row('· leads booked (eventually)',clbk,'sub',N,{color:'#2b5cad'});
+    C+=row('· lead → book %',ratio(clbk,cnl),'pct',PCT,{noheat:true});
+    C+=row('SC bookings (offline + online)',cbk,'grp',N,{color:'#1F6F5C'});
+    C+=row('· of which offline',cbkOff,'sub',N,{color:'#1F6F5C'});
+    C+=row('· of which online',cbkOn,'sub',N,{color:'#7B5EA7'});
+    C+=row('Done (completed)',cdn,'grp',N,{color:'#1F6F5C'});
+    C+=row('· book → done %',ratio(cdn,cbk),'pct',PCT,{noheat:true});
+    H+='<div class="shead">🔵📍 GMB + Google (combined) <span class="lblmuted">(then split into GMB and Google below)</span></div>'+tbl(C);
   }
   // per channel
   chs.forEach(ch=>{
