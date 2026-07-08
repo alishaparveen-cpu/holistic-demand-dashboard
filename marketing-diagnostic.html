@@ -306,7 +306,7 @@
     <div id="selwrap" style="flex:0 1 300px;min-width:250px"><div class="ctltag">2 · Selection <span style="text-transform:none;font-weight:500;color:var(--faint)">· focus one exact cut of the metric</span></div><div id="selcontrol"></div></div>
     <div id="bdwrap" style="flex:1 1 380px;min-width:340px"><div class="ctltag">3 · Breakdown <span style="text-transform:none;font-weight:500;color:var(--faint)">· cross by city / category / source — nests & drills</span></div>
       <div class="seg" id="grpseg" style="margin-bottom:7px"><span class="ctltag" style="margin:0 4px 0 0;min-width:auto;flex:none;align-self:center">Rows by</span><button class="segbtn on" id="grpCity" onclick="setGrp('city')">🏙 City</button><button class="segbtn" id="grpClinic" onclick="setGrp('clinic')">🏥 Clinic</button><button class="segbtn" id="grpDoctor" onclick="setGrp('doctor')">👤 Doctor</button><button class="segbtn" id="grpCat" onclick="setGrp('category')">🏷 Category</button><button class="segbtn" id="grpSrc" onclick="setGrp('source')">📣 Source</button></div><span id="nestchain"></span>
-      <div id="bdcontrol"></div></div>
+</div>
     <div id="infobox" style="flex:1 1 200px;min-width:180px;margin-left:auto;display:flex;flex-direction:column;gap:8px;align-items:flex-end">
       <div id="scopebanner"></div>
       <div class="cmpnote" id="cmpnote"></div>
@@ -1178,7 +1178,7 @@ function renderMetric(){
   ZREG=[];CURZ=null;
   const nc=$('nestchain');if(nc)nc.innerHTML=buildNestChain();   // nesting chain selectors (City → Clinic → …)
   const selc=$('selcontrol');if(selc)selc.innerHTML=buildSelControl();   // Part 2 · Selection (focus a sub-parent)
-  const bdc=$('bdcontrol');if(bdc)bdc.innerHTML=buildBdControl();   // Part 3 · Breakdown (split into rows) — works with nothing selected
+  // Part 3 · Breakdown MSUB picker removed (per Alisha) — Selection (Part 2) + Rows-by nesting cover it
   const metrics=METSEL.map(k=>STAGES.find(x=>x.key===k)).filter(Boolean);
   if(!metrics.length){$('root').innerHTML='<div style="padding:44px 20px;text-align:center;color:var(--muted);font-size:14px">👆 Pick a metric in <b>1 · Metric</b>, focus an exact cut in <b>2 · Selection</b>, then cross it in <b>3 · Breakdown</b>.</div>';return;}
   const primary=metrics[0];
@@ -1974,7 +1974,7 @@ function buildOnlineClinics(){
   const mk=(g,disp,city,loc)=>({disp,city,loc,_online:true,
     availability:{active_days:NA(),wday_days:NA(),wend_days:NA(),attend_days:NA(),attend_wday:NA(),attend_wend:NA(),hours:NA(),avail_hours:NA()},
     demand:{leads:NA(),by_channel:{},lead_book_pct:NA(),has_leads:false},
-    bookings:{total:g.booked,nat:g.booked,city:g.booked,new_tw:Z(),new_old:Z(),rebook:Z(),relapse:Z(),by_source:g.by_source||{}},
+    bookings:{total:g.booked,nat:g.booked,city:g.booked,new_tw:g.ft_same||Z(),new_old:g.ft_prev||Z(),rebook:g.repeat||Z(),relapse:Z(),by_source:g.by_source||{}},   // online new patients = ft_same (fresh) + ft_prev (older-week lead)
     done:{booked:g.booked,done:g.done,book_done_pct:pct(g.done,g.booked),by_cat:ZC()},
     purchased:{total:g.purchased,by_cat:ZC()},
     revenue:{rev:g.rev,by_cat:ZC(),meds:{tot:Z(),by_cat:ZC()},test:{tot:Z(),by_cat:ZC()},ther:{tot:Z(),by_cat:ZC()},cons:{tot:Z(),by_cat:ZC()}},
@@ -1996,7 +1996,7 @@ async function loadOnlineDoc(){
   function variant(bk,ec){const out={},bw=bk&&bk._meta.weeks,ew=ec&&ec._meta.weeks;
     const keys=new Set([...(bk?Object.keys(bk.clinics):[]),...(ec?Object.keys(ec.clinics):[])]);
     keys.forEach(k=>{const bc=(bk&&bk.clinics[k])||{},ecl=(ec&&ec.clinics[k])||{};
-      const gg=out[k]={booked:rm(bc.booked,bw),done:rm(bc.done,bw),purchased:rm(ecl.purchased,ew),rev:rev4(ecl,ew),by_doctor:{},by_source:{}};
+      const gg=out[k]={booked:rm(bc.booked,bw),done:rm(bc.done,bw),purchased:rm(ecl.purchased,ew),rev:rev4(ecl,ew),ft_same:rm(bc.ft_same,bw),ft_prev:rm(bc.ft_prev,bw),repeat:rm(bc.repeat,bw),by_doctor:{},by_source:{}};   // carry lead-maturity cohort so online bookings split by new/older patient
       const bsrc=bc.by_source||{};for(const sr in bsrc){const rec=bsrc[sr]||{};gg.by_source[sr]={booked:rm(Array.isArray(rec)?rec:rec.booked,bw),done:rm(rec.done,bw)};}   // carry online bookings-by-source (GMB/Meta) to the grid
       const bd=bc.by_doctor||{},ed=ecl.by_doctor||{};
       new Set([...Object.keys(bd),...Object.keys(ed)]).forEach(dr=>{gg.by_doctor[dr]={booked:rm((bd[dr]||{}).booked,bw),done:rm((bd[dr]||{}).done,bw),purchased:rm((ed[dr]||{}).purchased,ew),rev:rev4(ed[dr],ew)};});});
