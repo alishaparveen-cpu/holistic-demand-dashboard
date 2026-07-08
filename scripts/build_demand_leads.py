@@ -48,10 +48,14 @@ def main():
     if p.returncode != 0 or "FAIL" in p.stderr:
         sys.stderr.write("query failed: " + (p.stderr or "")[:300] + "\n"); sys.exit(1)
 
+    wd_cities = {c["city"] for c in wd["clinics"].values()}   # cities the marketing view knows (for the city-level tier)
+    city_lc = {c.lower(): c for c in wd_cities}
     Z = lambda: [0]*N
     def blank(): return {"leads": Z(), "by_channel": {b: Z() for b in BUCKETS}, "by_src": {}}
-    acc = {}; unmapped = {}
-    unattr = {"leads": Z(), "by_channel": {b: Z() for b in BUCKETS}, "by_src": {}}   # national / online, no clinic
+    def add(o, i, fs, n): o["leads"][i] += n; o["by_channel"][bucket(fs)][i] += n; o["by_src"].setdefault(fs, Z())[i] += n
+    acc = {}                       # clinic-level  (City|Clinic)
+    by_city = {}                   # city-level    (City|NA — a real city, no clinic)
+    national = blank()             # national      (NA|NA — no city at all)
     for line in p.stdout.splitlines():
         f = line.split("\t")
         if len(f) < 5: continue
@@ -64,33 +68,35 @@ def main():
         if mon not in widx: continue
         i = widx[mon]
         slug = key2slug.get((city.strip().lower(), (loc or "").strip().lower()))
-        if not slug:                                          # no clinic → national / online unattributed
-            unmapped[(city, loc)] = unmapped.get((city, loc), 0) + n
-            unattr["leads"][i] += n
-            unattr["by_channel"][bucket(fs)][i] += n
-            unattr["by_src"].setdefault(fs, Z())[i] += n
-            continue
-        o = acc.setdefault(slug, blank())
-        o["leads"][i] += n
-        o["by_channel"][bucket(fs)][i] += n
-        o["by_src"].setdefault(fs, Z())[i] += n
+        if slug:                                              # clinic-level
+            add(acc.setdefault(slug, blank()), i, fs, n)
+        elif city.strip().lower() in city_lc:                 # city-level (real city, unattributed to a clinic)
+            cn = city_lc[city.strip().lower()]
+            add(by_city.setdefault(cn, blank()), i, fs, n)
+        else:                                                 # truly national (no city)
+            add(national, i, fs, n)
 
-    for slug, o in acc.items():
+    def prune(o):
         o["by_src"] = {s: a for s, a in o["by_src"].items() if sum(a) > 0}
-    unattr["by_src"] = {s: a for s, a in unattr["by_src"].items() if sum(a) > 0}
-    unattr["by_channel"] = {b: a for b, a in unattr["by_channel"].items() if sum(a) > 0}
+        o["by_channel"] = {b: a for b, a in o["by_channel"].items() if sum(a) > 0}
+        return o
+    for o in acc.values(): o["by_src"] = {s: a for s, a in o["by_src"].items() if sum(a) > 0}
+    for o in by_city.values(): prune(o)
+    prune(national)
 
     out = {"_meta": {"source": "demand_data_week_superset (demand tracker) → marketing leads overlay",
                      "weeks": WEEKS, "pulled": datetime.date.fromisoformat(WEEKS[-1]).isoformat(),
                      "buckets": BUCKETS,
-                     "note": "per weekly_diag slug. leads=total; by_channel=marketing buckets; by_src=fine tracker sources. _unattributed_national = tracker leads with no clinic locality (national/online: WhatsApp/FB/Google). MARKETING view only."},
-           "slugs": acc, "_unattributed_national": unattr}
+                     "note": "3-tier leads: slugs=clinic-level (City|Clinic); _city_unattr[city]=city-level (City|NA, real city no clinic); _national=NA|NA (no city). by_channel=marketing buckets, by_src=fine sources. MARKETING view only."},
+           "slugs": acc, "_city_unattr": by_city, "_national": national,
+           "_unattributed_national": national}   # back-compat alias
     json.dump(out, open(os.path.join(ROOT, "data_demand_leads.json"), "w"), separators=(",", ":"))
-    natN = [sum(acc[s]["leads"][i] for s in acc) for i in range(N)]
-    print(f"wrote data_demand_leads.json · {len(acc)} slugs mapped")
-    print(f"  clinic-attributed national (recent 4 wks): {natN[-4:]}")
-    print(f"  national UNATTRIBUTED (recent 4 wks): {unattr['leads'][-4:]}")
-    print(f"  unattributed by source (latest wk): { {s:a[-1] for s,a in sorted(unattr['by_src'].items(), key=lambda x:-x[1][-1])[:6]} }")
+    cl = [sum(acc[s]["leads"][i] for s in acc) for i in range(N)]
+    ci = [sum(by_city[c]["leads"][i] for c in by_city) for i in range(N)]
+    print(f"wrote data_demand_leads.json · {len(acc)} clinics · {len(by_city)} cities")
+    print(f"  CLINIC-level leads (recent 4 wks): {cl[-4:]}")
+    print(f"  CITY-level leads   (recent 4 wks): {ci[-4:]}   cities: {sorted(by_city)[:8]}")
+    print(f"  NATIONAL leads     (recent 4 wks): {national['leads'][-4:]}")
 
 
 if __name__ == "__main__":

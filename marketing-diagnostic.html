@@ -346,6 +346,7 @@ function inCity(city){return !CITYF.size||CITYF.has(city);}
 function effCityOK(city){if(CITYF.size)return CITYF.has(city);if(CLINF.size){for(const s of CLINF){const c=D.clinics[s];if(c&&!c._online&&c.city===city)return true;}return false;}return true;}
 function inScope(slug){const c=D.clinics[slug];
   if(c._unattr)return !CITYF.size&&!CLINF.size&&!TIERF.size&&!DOCF.size;   // national/online unattributed leads — Pan-India scope only, any funnel/segment
+  if(c._unattr_city)return !CLINF.size&&!DOCF.size&&(!CITYF.size||CITYF.has(c.city))&&(!TIERF.size||TIERF.has(tierOf(c.city)));   // city-level (no clinic) leads — show at that city's scope (or Pan-India), not in clinic/doctor drills
   const on=!!c._online;
   if(SEG==='offline'&&on)return false;
   if(SEG==='online'&&!on)return false;
@@ -1088,7 +1089,7 @@ function shareLine(metricKey){
 }
 // clinic-count that treats Online telehealth as a channel, not a physical location:
 // count real clinics, and append a "+ online" tag when the online pseudo-clinic is in scope.
-function pcCount(arr){let phys=0,onl=false;arr.forEach(c=>{if(c&&c._unattr)return;if(c&&c._online)onl=true;else phys++;});return{phys,onl};}
+function pcCount(arr){let phys=0,onl=false;arr.forEach(c=>{if(c&&(c._unattr||c._unattr_city))return;if(c&&c._online)onl=true;else phys++;});return{phys,onl};}
 function pcLabel(arr,word){const{phys,onl}=pcCount(arr);const tag=' <span style="font-weight:600;color:#7A5CC2;font-size:.85em">+ online</span>';
   if(phys===0)return onl?(word?'online only':'online'):(phys+(word?' clinics':''));
   return phys+(word?(' clinic'+(phys===1?'':'s')):'')+(onl?tag:'');}
@@ -1991,24 +1992,27 @@ async function loadUpstream(){
   const lastIn=cw=>{if(!cw)return -1;for(const w of cw){const gi=D.weeks.indexOf(w);if(gi>=0)return gi;}return -1;};   // newest cube week that's in the SC grid (cube weeks are newest-first; the freshest may be beyond the grid)
   GMB_LAST=lastIn(gmb&&gmb._meta.weeks);REV_LAST=lastIn(rev&&rev._meta.weeks);GA_LAST=lastIn(gap&&gap._meta.weeks);L2C_LAST=lastIn(l2c&&l2c._meta.weeks);
 }
-// national / online demand that the tracker can't attribute to a clinic (WhatsApp/FB/Google) — a Pan-India-only pseudo-clinic
+// 3-tier demand-tracker leads the funnel can't fully attribute: a Pan-India NATIONAL line + one CITY-level
+// line per city (leads tied to a city but no clinic). Clinic-level leads stay on the real clinics.
 let NATUN=null;
-function injectNatUnattr(){
-  delete D.clinics['__nat_unattr'];
-  if(!NATUN||!NATUN._unattributed_national)return;
+function injectUnattr(){
+  Object.keys(D.clinics).forEach(k=>{if(k==='__nat_unattr'||k.indexOf('__cityunattr_')===0)delete D.clinics[k];});
+  if(!NATUN)return;
   const N=D.weeks.length,Z=()=>new Array(N).fill(0),NA=()=>new Array(N).fill(null),ZC=()=>Object.fromEntries(CATS.map(c=>[c,Z()]));
-  const cw=NATUN._meta.weeks,u=NATUN._unattributed_national,align=a=>{const o=Z();(a||[]).forEach((v,i)=>{const gi=D.weeks.indexOf(cw[i]);if(gi>=0)o[gi]=v||0;});return o;};
-  const bc={};Object.keys(u.by_channel||{}).forEach(b=>bc[b]=align(u.by_channel[b]));
-  const bs={};Object.keys(u.by_src||{}).forEach(s=>bs[s]=align(u.by_src[s]));
-  D.clinics['__nat_unattr']={disp:'🌐 National / online (unattributed)',city:'National',loc:'National / online',_unattr:true,_slug:'__nat_unattr',
-    availability:{active_days:NA(),wday_days:NA(),wend_days:NA(),attend_days:NA(),attend_wday:NA(),attend_wend:NA(),hours:NA(),avail_hours:NA()},
-    demand:{leads:align(u.leads),by_channel:bc,by_src:bs,lead_book_pct:NA(),has_leads:true},
-    bookings:{total:Z(),new_tw:Z(),new_old:Z(),rebook:Z(),relapse:Z(),by_source:{}},
-    done:{booked:Z(),done:Z(),book_done_pct:NA(),by_cat:ZC()},
-    purchased:{total:Z(),by_cat:ZC()},
-    revenue:{rev:Z(),by_cat:ZC(),meds:{tot:Z(),by_cat:ZC()},test:{tot:Z(),by_cat:ZC()},ther:{tot:Z(),by_cat:ZC()},cons:{tot:Z(),by_cat:ZC()}},
-    velocity:{bookings:Z(),per_active_day:NA(),per_weekday:NA(),per_weekend:NA(),bk_wday:Z(),bk_wend:Z()},
-    doctors:{count:Z()},by_doctor:{}};
+  const cw=NATUN._meta.weeks,align=a=>{const o=Z();(a||[]).forEach((v,i)=>{const gi=D.weeks.indexOf(cw[i]);if(gi>=0)o[gi]=v||0;});return o;};
+  const mk=(key,disp,city,u,flag)=>{const bc={};Object.keys(u.by_channel||{}).forEach(b=>bc[b]=align(u.by_channel[b]));const bs={};Object.keys(u.by_src||{}).forEach(s=>bs[s]=align(u.by_src[s]));
+    D.clinics[key]={disp,city,loc:disp,[flag]:true,_slug:key,
+      availability:{active_days:NA(),wday_days:NA(),wend_days:NA(),attend_days:NA(),attend_wday:NA(),attend_wend:NA(),hours:NA(),avail_hours:NA()},
+      demand:{leads:align(u.leads),by_channel:bc,by_src:bs,lead_book_pct:NA(),has_leads:true},
+      bookings:{total:Z(),new_tw:Z(),new_old:Z(),rebook:Z(),relapse:Z(),by_source:{}},
+      done:{booked:Z(),done:Z(),book_done_pct:NA(),by_cat:ZC()},purchased:{total:Z(),by_cat:ZC()},
+      revenue:{rev:Z(),by_cat:ZC(),meds:{tot:Z(),by_cat:ZC()},test:{tot:Z(),by_cat:ZC()},ther:{tot:Z(),by_cat:ZC()},cons:{tot:Z(),by_cat:ZC()}},
+      velocity:{bookings:Z(),per_active_day:NA(),per_weekday:NA(),per_weekend:NA(),bk_wday:Z(),bk_wend:Z()},
+      doctors:{count:Z()},by_doctor:{}};};
+  const nat=NATUN._national||NATUN._unattributed_national;
+  if(nat)mk('__nat_unattr','🌐 National / online (unattributed)','National',nat,'_unattr');
+  const bycity=NATUN._city_unattr||{};
+  Object.keys(bycity).forEach(city=>mk('__cityunattr_'+city.toLowerCase().replace(/ /g,'_'),'🏙 '+city+' · city-level (no clinic)',city,bycity[city],'_unattr_city'));
 }
 async function boot(){
   try{D=await fetch('data_weekly_diag.json?v='+Date.now()).then(r=>r.json());}
@@ -2023,8 +2027,8 @@ async function boot(){
   await loadUpstream();   // GMB insights · reviews · Google-paid cubes for the source-upstream funnel chips
   buildOnlineClinics();   // now that per-provider online data is loaded, build the per-clinic online buckets
   try{NATUN=await fetch('data_demand_leads.json?v='+Date.now()).then(r=>r.ok?r.json():null);}catch(e){NATUN=null;}
-  injectNatUnattr();   // add the Pan-India national/online unattributed-demand line (demand tracker)
-  ALLCITIES=[...new Set(Object.values(D.clinics).filter(c=>!c._online&&!c._unattr&&c.city!=='Online').map(c=>c.city))].sort((a,b)=>{const ta=tierOf(a)==='T1',tb=tierOf(b)==='T1';return ta!==tb?(ta?-1:1):a.localeCompare(b);});   // exclude the Online pseudo-city; Tier-1 cities first so heads click fast
+  injectUnattr();   // add the national + per-city unattributed-demand lines (demand tracker, 3-tier leads)
+  ALLCITIES=[...new Set(Object.values(D.clinics).filter(c=>!c._online&&!c._unattr&&!c._unattr_city&&c.city!=='Online').map(c=>c.city))].sort((a,b)=>{const ta=tierOf(a)==='T1',tb=tierOf(b)==='T1';return ta!==tb?(ta?-1:1):a.localeCompare(b);});   // exclude the Online pseudo-city; Tier-1 cities first so heads click fast
   try{const saved=JSON.parse(localStorage.getItem('wd_city')||'[]');if(Array.isArray(saved))saved.forEach(c=>{if(ALLCITIES.includes(c))CITYF.add(c);});}catch(e){}
   $('cityBtn').textContent=cityBtnLabel();$('cityBtn').classList.toggle('on',!!CITYF.size||!!TIERF.size);
   $('clinBtn').textContent=clinBtnLabel();
