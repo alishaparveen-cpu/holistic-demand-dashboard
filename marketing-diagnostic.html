@@ -199,7 +199,7 @@
   .bchip b{color:var(--ink);font-family:'JetBrains Mono';font-weight:700}
   .bchip .dd{font-family:'JetBrains Mono';font-size:11px;font-weight:700;margin-left:1px}
   .trend-cap{font-size:10px;color:var(--faint);text-align:right;margin-top:3px;letter-spacing:.02em}
-  .frow{display:flex;flex-direction:row;align-items:center;gap:0;padding:4px 6px;cursor:default;border-radius:7px;overflow-x:auto} .frow .mc,.frow .avgmk{cursor:zoom-in}
+  .frow{display:flex;flex-direction:row;align-items:center;gap:0;padding:4px 6px;cursor:default;border-radius:7px;overflow-x:auto} .frow .mc,.frow .avgmk{cursor:zoom-in} .frow.ticked{background:rgba(122,63,160,.09);box-shadow:inset 3px 0 0 #7A3FA0}
   .frow:hover{background:var(--hover)}
   .fbody{margin-top:6px}
   .flab{width:290px;flex:none;font-size:12.5px;font-weight:600;color:var(--ink2);display:inline-flex;align-items:center;gap:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -636,15 +636,16 @@ function trendHTML(arr,pct,ev,parArr){const a=arr.slice(-(CURN+BASEN)),nb=a.leng
 function miniRow(label,arr,pct,color,depth,head,rate,parArr){const raw=arr;arr=clubArr(arr,rate||!!pct);const ev=evalMetric(arr),a=arr.slice(-(CURN+BASEN));
   const lc=(color&&color!=='var(--faint)')?color:null;
   const zi=ZREG.length;ZREG.push({label,arr:raw,col:lc||'var(--ink2)',pct:!!pct});   // zoom shows raw weekly
-  const pad=6+(depth||0)*20;
+  const pad=6+(depth||0)*20,tick=FCOMB.includes(label);
   // "% of total" (per-stage): a % chip under each value = this row ÷ the stage total (parArr passed only when the stage toggle is on; skip rate/% rows)
   const sub=(parArr&&!rate&&!pct)?clubArr(parArr,false):null;
-  return '<div class="frow'+(head?' head':'')+'" onclick="frowClick(event,'+zi+')">'
-    +'<span class="flab" style="padding-left:'+pad+'px'+(lc?';color:'+lc:'')+'">'+(color?'<span class="dot" style="background:'+color+'"></span>':'')+label+'</span>'
+  return '<div class="frow'+(head?' head':'')+(tick?' ticked':'')+'" onclick="frowClick(event,'+zi+')">'
+    +'<span class="flab" style="cursor:pointer;padding-left:'+pad+'px'+(lc?';color:'+lc:'')+'" title="click the label to tick this row for ⊕ combine">'+(tick?'<span style="color:#7A3FA0;font-weight:800">☑ </span>':'')+(color?'<span class="dot" style="background:'+color+'"></span>':'')+label+'</span>'
     +'<span class="fchange">'+pctPill(ev)+'</span>'
     +trendHTML(arr,pct,ev,sub)+'</div>';}
 // zoom ONLY when the click lands on a number chip / before-now value — labels, carets, pills stay normally clickable
-function frowClick(e,zi){if(e.target.closest('.mc,.avgmk')){e.stopPropagation();zoomReg(zi);}}
+function frowClick(e,zi){if(e.target.closest('.mc,.avgmk')){e.stopPropagation();zoomReg(zi);return;}
+  if(OVMODE==='funnel'&&e.target.closest('.flab')){e.stopPropagation();const z=ZREG[zi];if(z&&z.label&&z.label[0]!=='⊕')fcombToggle(z.label);}}   // in the funnel, click a row label to tick it for ⊕ combine
 // ---- time-window selectors (presets + custom) ----
 const CUR_PRESETS=[[1,'this week'],[2,'last 2 weeks'],[3,'last 3 weeks'],[4,'last 4 weeks'],[6,'last 6 weeks'],[8,'last 8 weeks']];
 const BASE_PRESETS=[[1,'prior 1 wk'],[4,'prior 4 wks'],[6,'prior 6 wks'],[8,'prior 8 wks'],[12,'prior 12 wks'],[26,'prior 26 wks']];
@@ -1121,6 +1122,9 @@ let FPARSET=new Set();   // funnel "% of parent" is per-STAGE: stage keys for wh
 function toggleFPar(k){FPARSET.has(k)?FPARSET.delete(k):FPARSET.add(k);render();}
 let FSRC=false;   // funnel "⊞ by source": when on, each patient-type breakdown group (new/repeat) is split BY SOURCE instead of by sub-type
 function toggleFSrc(){FSRC=!FSRC;render();}
+let FCOMB=[];   // ⊕ funnel combine: labels of ticked breakdown rows → summed into a combined bar at the foot of the funnel
+function fcombToggle(label){const i=FCOMB.indexOf(label);if(i<0)FCOMB.push(label);else FCOMB.splice(i,1);render();}
+function fcombClear(){FCOMB=[];render();}
 let CMPMODE='avg';   // baseline for "before"/Δ: 'avg' (mean of the prior-window weeks, default) or 'peak' (best week in that window)
 function setCmp(v){CMPMODE=v;render();}
 function toggleFG(n){FGCOLLAPSE.has(n)?FGCOLLAPSE.delete(n):FGCOLLAPSE.add(n);render();}
@@ -1403,6 +1407,14 @@ function funnelStagesHTML(o){
         +'</div></div></div>';
       if(idx<stages.length-1)h+='<div class="conn"></div>';});
   });
+  // ⊕ COMBINE bar — sum every ticked breakdown row (re-resolved by label against this render, so numbers stay live)
+  if(FCOMB.length){const found=FCOMB.map(lb=>{const z=ZREG.find(x=>x.label===lb);return z?{lb,arr:z.arr}:null;}).filter(Boolean);
+    if(found.length){const N=D.weeks.length,sumArr=found.reduce((acc,f)=>acc.map((v,i)=>(v||0)+((f.arr&&f.arr[i])||0)),new Array(N).fill(0));
+      const names=found.map(f=>f.lb.replace(/^↳\s*/,'').replace(/^—\s*/,'')).join(' + ');
+      h+='<div style="margin:16px 0 4px;border:1.5px solid #7A3FA0;border-radius:10px;padding:8px 10px;background:rgba(122,63,160,.05)">'
+        +'<div class="densrow" style="gap:8px;margin:0 0 4px"><span style="font-size:12px;font-weight:800;color:#7A3FA0">⊕ Combine</span><span style="font-size:11px;color:var(--ink2)">'+names+'</span><button class="fbtn" style="padding:2px 9px;font-size:10.5px;margin-left:auto" onclick="event.stopPropagation();fcombClear()">✕ clear</button></div>'
+        +(found.length>=2?miniRow('⊕ combined · '+names,sumArr,0,'#7A3FA0',0,true,false):'<div style="font-size:11px;color:var(--faint);padding:2px 6px">tick one more breakdown row (click its label) to see the combined total</div>')
+        +'</div>';}}
   return h;
 }
 // sum all in-scope clinics into one clinic-shaped object for a city-level (or any-scope) funnel
