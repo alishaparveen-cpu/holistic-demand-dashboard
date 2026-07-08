@@ -67,7 +67,7 @@ td.av{background:var(--inset);font-weight:600}
 
   <!-- ═══ Google Ads · detail master view ═══ -->
   <div id="gdSection" style="margin-top:34px;border-top:3px solid var(--line);padding-top:20px">
-    <div class="shead" style="font-size:20px">🔵 Google Ads · detail funnel <span class="lblmuted">(per-campaign export — filter by category / placement / city / campaign, then the full funnel: spend → impressions → clicks → leads → book → done. Break down by campaign, city or category. 5-wk snapshot.)</span></div>
+    <div class="shead" style="font-size:20px">🔵 Google Ads · paid-acquisition funnel <span class="lblmuted">(live from the Google Ads API, per city + category — spend → impressions → clicks → location clicks → conversions. Filter by category / city, break down by city or category. Current to the latest reported week.)</span></div>
     <div id="gdCtl" style="margin:8px 0 14px"></div>
     <div id="gdetail"></div>
   </div>
@@ -85,16 +85,20 @@ function sumKeys(obj,keys){return keys.reduce((a,k)=>addv(a,z((obj||{})[k])),[])
 
 // channel definitions — lead source name (master_leads) + booking/done source keys (by_source)
 const CH=[
-  {key:'google',name:'Google Ads',icon:'🔵',color:'#2b5cad',lead:'Google Ads',keys:['gpaid_call','gpaid_web']},
-  {key:'gmb',   name:'GMB',        icon:'📍',color:'#1F6F5C',lead:'GMB',       keys:['gmb_call','gmb_web','gmb_wa']},
-  {key:'meta',  name:'Facebook / Meta',icon:'📘',color:'#3b5998',lead:'Meta',  keys:['meta']},
-  {key:'practo',name:'Practo',     icon:'🩺',color:'#7B5EA7',lead:'Practo',    keys:['practo']},
+  {key:'google',name:'Google Ads',icon:'🔵',color:'#2b5cad',lead:'Google Ads',keys:['gpaid_call','gpaid_web'],sc:'Google'},
+  {key:'gmb',   name:'GMB',        icon:'📍',color:'#1F6F5C',lead:'GMB',       keys:['gmb_call','gmb_web','gmb_wa'],sc:'GMB'},
+  {key:'meta',  name:'Facebook / Meta',icon:'📘',color:'#3b5998',lead:'Meta',  keys:['meta'],sc:'Meta'},
+  {key:'practo',name:'Practo',     icon:'🩺',color:'#7B5EA7',lead:'Practo',    keys:['practo'],sc:'Practo'},
 ];
+let SCB=null,GAP=null;   // data_sc_bookings.json (offline SC cube, current) — bookings/done by source, aligned to the channel-view week grid
+function scAligned(src,field){if(!SCB||!src)return [];const dw=D._meta.weeks,sw=SCB._meta.weeks,out=new Array(dw.length).fill(0),sidx=dw.map(w=>sw.indexOf(w));
+  for(const k in SCB.clinics){const rec=(SCB.clinics[k].by_source||{})[src];if(!rec)continue;const a=rec[field]||[];dw.forEach((w,di)=>{const si=sidx[di];if(si>=0)out[di]+=(a[si]||0);});}
+  return out;}
 
 // ---- data accessors (network) ----
 function leadF(ch,field){const ml=(D._meta.master_leads||{}).by_source||{};return z((ml[ch.lead]||{})[field]);}
-function bookedBy(ch){return (D._meta.clinics||[]).reduce((a,s)=>addv(a,sumKeys((D.clinics[s]||{}).booked_by_source,ch.keys)),[]);}
-function doneBy(ch){return (D._meta.clinics||[]).reduce((a,s)=>addv(a,sumKeys((D.clinics[s]||{}).done_by_source,ch.keys)),[]);}
+function bookedBy(ch){return SCB?scAligned(ch.sc,'booked'):(D._meta.clinics||[]).reduce((a,s)=>addv(a,sumKeys((D.clinics[s]||{}).booked_by_source,ch.keys)),[]);}   // prefer the fresh SC cube (current to latest week); fall back to source_recon
+function doneBy(ch){return SCB?scAligned(ch.sc,'done'):(D._meta.clinics||[]).reduce((a,s)=>addv(a,sumKeys((D.clinics[s]||{}).done_by_source,ch.keys)),[]);}
 
 // ---- rendering ----
 function visIdx(){const n=Math.min(NSHOW,(D._meta.weeks||[]).length);const a=[];for(let i=n-1;i>=0;i--)a.push(i);return a;}
@@ -116,11 +120,15 @@ function head(lbl){const idx=visIdx();let h='<tr><th>'+lbl+'</th>';idx.forEach((
 function tbl(inner){return'<div class="fmwrap"><table class="fm">'+inner+'</table></div>';}
 function ratio(a,b){return a.map((v,i)=>b[i]?Math.round(v/b[i]*100):null);}
 
-function gafGrid(){ // aggregate the Google campaign funnel into the master week grid
-  if(!GAF||!GAF.campaigns)return null;
-  const gidx=(GAF._meta.weeks||[]).map(w=>(D._meta.weeks||[]).indexOf(w));
-  const toGrid=key=>{const o=Array((D._meta.weeks||[]).length).fill(null);const sums=[0,0,0,0,0];GAF.campaigns.forEach(c=>{const a=(c.rows||{})[key]||[];for(let k=0;k<5;k++)sums[k]+=(a[k]||0);});gidx.forEach((gi,k)=>{if(gi>=0)o[gi]=sums[k];});return o;};
-  return{spend:toGrid('spend'),impr:toGrid('impression'),click:toGrid('click'),loc:toGrid('loc_click'),webl:toGrid('web_leads')};
+// ═══ Google Ads paid (data_ga_city_paid.json) — per-city + by_cat, current, newest-first ═══
+function gapCities(){return GAP?Object.keys(GAP).filter(k=>k!=='_meta'&&k!=='_national_online'):[];}
+function gapField(rec,cat,field){if(cat&&cat!=='all'){const bc=(rec.by_cat||{})[cat];return bc?bc[field]:null;}return rec[field];}
+// sum one field over the given cities (+ category) onto the D week grid, aligning by week string (both newest-first)
+function gapSum(cities,cat,field){if(!GAP)return null;const dw=D._meta.weeks,gw=GAP._meta.weeks,gidx=dw.map(w=>gw.indexOf(w));const o=Array(dw.length).fill(null);cities.forEach(cn=>{const rec=GAP[cn];if(!rec)return;const a=gapField(rec,cat,field);if(!a)return;dw.forEach((w,di)=>{const gi=gidx[di];if(gi>=0&&a[gi]!=null)o[di]=(o[di]||0)+a[gi];});});return o;}
+function gapGrid(){ // whole-account paid funnel (all cities incl. national/online) onto the master grid
+  if(!GAP)return null;
+  const all=Object.keys(GAP).filter(k=>k!=='_meta');
+  return{spend:gapSum(all,'all','spend'),impr:gapSum(all,'all','impr'),click:gapSum(all,'all','clicks'),loc:gapSum(all,'all','loc_clicks'),conv:gapSum(all,'all','conv')};
 }
 
 function paint(){
@@ -149,13 +157,13 @@ function paint(){
     T+=row('· leads booked (eventually)',lbk,'sub',N,{color:ch.color});
     T+=row('· lead → book %',ratio(lbk,nl),'pct',PCT,{noheat:true});
     // Google paid campaign funnel
-    if(ch.key==='google'){const g=gafGrid();if(g){
+    if(ch.key==='google'){const g=gapGrid();if(g){
       T+=row('Paid campaign · spend (₹)',g.spend,'grp',RUP,{color:'#B8862E'});
       T+=row('· impressions',g.impr,'sub',N,{color:ch.color});
       T+=row('· clicks',g.click,'sub',N,{color:ch.color});
       T+=row('· · CTR %',ratio(g.click,g.impr),'pct',PCT,{noheat:true});
       T+=row('· location clicks',g.loc,'sub',N,{color:ch.color});
-      T+=row('· web leads (UTM)',g.webl,'sub',N,{color:ch.color});
+      T+=row('· conversions (GA)',g.conv.map(v=>v==null?null:Math.round(v)),'sub',N,{color:ch.color});
     }}
     T+=row('SC bookings (offline network)',bk,'grp',N,{color:'#1F6F5C'});
     T+=row('Done (completed)',dn,'grp',N,{color:'#1F6F5C'});
@@ -169,97 +177,63 @@ function paint(){
 
 // ═══ Google Ads · detail master view ═══
 const GVIO='#7B5EA7',GBLU='#2b5cad',GGRN='#1F6F5C',GAMB='#b0752a';
-let GDCAT='all',GDPLACE='all',GDBRK='none',GDMET='spend',GDCITY=new Set(),GDCAMP=new Set();
-function placeOf(c){if(String(c.category)==='Brand')return'brand';if(c.type==='Online'||c.city==='Online / National')return'online';if(c.city&&c.city!=='Brand'&&c.city!=='Online / National')return'citymapped';return'other';}
-function gafwk(){return (GAF._meta.weeks||[]).map(w=>(D._meta.weeks||[]).indexOf(w));}
-function gdAll(){return (GAF&&GAF.campaigns)?GAF.campaigns:[];}
-function gdCamps(){return gdAll().filter(c=>{if(GDCAT!=='all'&&c.category!==GDCAT)return false;if(GDPLACE!=='all'&&placeOf(c)!==GDPLACE)return false;if(GDCITY.size&&!GDCITY.has(c.city))return false;if(GDCAMP.size&&!GDCAMP.has(c.slug))return false;return true;});}
-function gdSum(camps,key){const s=[0,0,0,0,0];camps.forEach(c=>{const a=(c.rows||{})[key]||[];for(let k=0;k<5;k++)s[k]+=(a[k]||0);});const o=Array((D._meta.weeks||[]).length).fill(null);gafwk().forEach((gi,k)=>{if(gi>=0)o[gi]=s[k];});return o;}
-function setGDCAT(v){GDCAT=v;GDCAMP=new Set();paintGD();}
-function setGDPLACE(v){GDPLACE=v;GDCITY=new Set();GDCAMP=new Set();paintGD();}
+const GDCATS=['all','STI','SH','MH','Other'];
+let GDCAT='all',GDBRK='none',GDMET='spend',GDCITY=new Set();
+function setGDCAT(v){GDCAT=v;paintGD();}
 function setGDBRK(v){GDBRK=v;paintGD();}
 function setGDMET(v){GDMET=v;paintGD();}
-function togGDCity(c){GDCITY.has(c)?GDCITY.delete(c):GDCITY.add(c);GDCAMP=new Set();paintGD();}
+function togGDCity(c){GDCITY.has(c)?GDCITY.delete(c):GDCITY.add(c);paintGD();}
 function clrGDCity(){GDCITY=new Set();paintGD();}
-function togGDCamp(s){GDCAMP.has(s)?GDCAMP.delete(s):GDCAMP.add(s);paintGD();}
-function clrGDCamp(){GDCAMP=new Set();paintGD();}
-const GDMETS=[['spend','Spend ₹','rup'],['impression','Impressions','n'],['click','Clicks','n'],['loc_click','Loc clicks','n'],['cat_leads','Category leads','n'],['book','Book','n'],['done','Done','n'],['revenue','Revenue ₹','rup'],['cpl','CPL ₹/lead','rup'],['cpb','CPB ₹/book','rup'],['l2b','Cat-lead→Book %','pct'],['b2d','Book→Done %','pct'],['roas','ROAS','x']];
+const GDMETS=[['spend','Spend ₹','rup'],['impr','Impressions','n'],['clicks','Clicks','n'],['loc_clicks','Loc clicks','n'],['conv','Conversions','n'],['ctr','CTR %','pct'],['cpa','CPA ₹/conv','rup'],['eplc','ePCLC ₹/loc-click','rup']];
 function paintGD(){
   const _gd=$('gdetail');if(!_gd)return;
-  if(!GAF||!GAF.campaigns){_gd.innerHTML='<div style="color:var(--muted);padding:16px">No Google campaign data (data_ga_funnel.json).</div>';return;}
-  const camps=gdCamps(),S=k=>gdSum(camps,k);
-  const spend=S('spend'),impr=S('impression'),imprSh=S('impr_share'),budUt=S('budget_util'),locImp=S('loc_impr'),click=S('click'),locC=S('loc_click'),cityCall=S('city_calls'),gmbCall=S('gmb_calls'),webL=S('web_leads'),catL=S('cat_leads'),book=S('book'),done=S('done'),purch=S('purchased'),rev=S('revenue');
-  const rat=(a,b)=>a.map((v,i)=>b[i]?Math.round(v/b[i]*100):null);
-  const cpX=(sp,x)=>sp.map((v,i)=>x[i]?Math.round(v/x[i]):null);
+  if(!GAP){_gd.innerHTML='<div style="color:var(--muted);padding:16px">No Google city-paid data (data_ga_city_paid.json).</div>';return;}
+  const cities=GDCITY.size?[...GDCITY]:gapCities();
+  const S=f=>gapSum(cities,GDCAT,f);
+  const spend=S('spend'),impr=S('impr'),click=S('clicks'),locC=S('loc_clicks');
+  const conv=(S('conv')||[]).map(v=>v==null?null:Math.round(v));
+  const rat=(a,b)=>(a||[]).map((v,i)=>(b&&b[i])?Math.round(v/b[i]*100):null);
+  const cpX=(sp,x)=>(sp||[]).map((v,i)=>(x&&x[i])?Math.round(v/x[i]):null);
+  // impression share — impression-weighted across cities; only meaningful at all-category (is_pct is a city total)
+  let isSh=Array(spend.length).fill(null);
+  if(GDCAT==='all'){const dw=D._meta.weeks,gw=GAP._meta.weeks,gidx=dw.map(w=>gw.indexOf(w));const num=Array(dw.length).fill(0),den=Array(dw.length).fill(0);cities.forEach(cn=>{const rec=GAP[cn];if(!rec||!rec.is_pct||!rec.impr)return;dw.forEach((w,di)=>{const gi=gidx[di];if(gi>=0&&rec.is_pct[gi]!=null&&rec.impr[gi]!=null){num[di]+=rec.is_pct[gi]*rec.impr[gi];den[di]+=rec.impr[gi];}});});isSh=num.map((v,i)=>den[i]?Math.round(v/den[i]):null);}
   const chip=(fn,val,cur,lab)=>'<button onclick="'+fn+'(\''+val+'\')" class="chip'+(cur===val?' on':'')+'">'+lab+'</button>';
   let bar='<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px">';
-  bar+='<span class="lbl">Category</span>'+['all','MH','SH','STD','Brand'].map(v=>chip('setGDCAT',v,GDCAT,v==='all'?'All':v)).join('');
-  bar+='<span class="lbl" style="margin-left:10px">Placement</span>'+[['all','All'],['citymapped','City-mapped'],['online','Online'],['brand','Brand']].map(o=>chip('setGDPLACE',o[0],GDPLACE,o[1])).join('');
-  bar+='</div><div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">';
-  const cityList=[...new Set(gdAll().filter(c=>placeOf(c)==='citymapped').map(c=>c.city))].sort();
-  bar+='<span class="lbl">City</span><span class="gdms"><button class="chip" onclick="this.nextElementSibling.classList.toggle(\'open\');event.stopPropagation()">'+(GDCITY.size?GDCITY.size+' cities':'All cities')+' ▾</button><div class="gdpanel">'+cityList.map(c=>'<label><input type="checkbox" '+(GDCITY.has(c)?'checked':'')+' onchange="togGDCity(this.value)" value="'+c+'"> '+c+'</label>').join('')+(GDCITY.size?'<a onclick="clrGDCity()">clear</a>':'')+'</div></span>';
-  bar+='<span class="lbl" style="margin-left:8px">Campaign</span><span class="gdms"><button class="chip" onclick="this.nextElementSibling.classList.toggle(\'open\');event.stopPropagation()">'+(GDCAMP.size?GDCAMP.size+' campaigns':'All ('+camps.length+')')+' ▾</button><div class="gdpanel" style="min-width:300px"><input class="gdsearch" placeholder="🔍 search campaign…" oninput="var q=this.value.toLowerCase();[...this.parentNode.querySelectorAll(String.fromCharCode(108,97,98,101,108))].forEach(function(l){l.style.display=l.textContent.toLowerCase().indexOf(q)>=0?\'\':\'none\'})" onclick="event.stopPropagation()">'+camps.map(c=>'<label><input type="checkbox" '+(GDCAMP.has(c.slug)?'checked':'')+' onchange="togGDCamp(this.value)" value="'+c.slug+'"> '+c.name+'</label>').join('')+(GDCAMP.size?'<a onclick="clrGDCamp()">clear</a>':'')+'</div></span>';
-  bar+='<span style="margin-left:auto;font-size:11px;color:var(--muted);font-family:JetBrains Mono">'+camps.length+' of '+gdAll().length+' campaigns · ₹'+Math.round(spend.reduce((a,b)=>a+(b||0),0)/1000)+'k / 5wk</span></div>';
+  bar+='<span class="lbl">Category</span>'+GDCATS.map(v=>chip('setGDCAT',v,GDCAT,v==='all'?'All':v)).join('');
+  bar+='<span class="lbl" style="margin-left:10px">City</span><span class="gdms"><button class="chip" onclick="this.nextElementSibling.classList.toggle(\'open\');event.stopPropagation()">'+(GDCITY.size?GDCITY.size+' cities':'All cities')+' ▾</button><div class="gdpanel">'+gapCities().sort().map(c=>'<label><input type="checkbox" '+(GDCITY.has(c)?'checked':'')+' onchange="togGDCity(this.value)" value="'+c+'"> '+c+'</label>').join('')+(GDCITY.size?'<a onclick="clrGDCity()">clear</a>':'')+'</div></span>';
+  bar+='<span style="margin-left:auto;font-size:11px;color:var(--muted);font-family:JetBrains Mono">'+cities.length+' cities · ₹'+Math.round((spend||[]).reduce((a,b)=>a+(b||0),0)/1000)+'k</span></div>';
   $('gdCtl').innerHTML=bar;
-  // ── manager's funnel definitions (consolidated export) ──────────────────
-  //  Lead  = City paid calls + GMB organic calls + Web(UTM) leads   (GMB counted in the total)
-  //  C2L / CPL use the PAID denominator only (city + web) — you don't pay for organic GMB
-  //  Category-specific lead = the vertical-matched subset of Lead
-  //  L2B (lead→book) is measured on Category-specific leads, NOT total Lead   [book / cat_leads]
-  const paidL=cityCall.map((v,i)=>(v==null&&webL[i]==null)?null:((v||0)+(webL[i]||0)));           // paid leads = city + web
-  const lead =cityCall.map((v,i)=>(v==null&&gmbCall[i]==null&&webL[i]==null)?null:((v||0)+(gmbCall[i]||0)+(webL[i]||0))); // Lead = city + GMB + web
-  const roas =spend.map((s,i)=>(s&&rev[i]!=null)?rev[i]/s:null);
-  const Xf=v=>v==null||isNaN(v)?'—':v.toFixed(2)+'×';
-  let T=head('Google Ads · funnel (manager definition)');
+  // ── paid-acquisition funnel (Google Ads API, per city + category) ──────────
+  //  Downstream (book/done/revenue) is NOT in the city-paid cube — those live on the
+  //  channel table above (SC service-week cube). Here it's the paid top-of-funnel.
+  let T=head('Google Ads · paid acquisition ('+(GDCAT==='all'?'all categories':GDCAT)+')');
   T+=row('Spend (₹)',spend,'tot',RUP,{color:GAMB});
   T+=row('Impressions',impr,'grp',N,{color:GBLU});
-  T+=row('· impression share (IS)',imprSh,'sub',PCT,{noheat:true});
-  T+=row('· budget utilisation',budUt,'sub',PCT,{noheat:true});
-  T+=row('· location impressions',locImp,'sub',N,{color:GBLU});
-  T+=row('· loc-impr %',rat(locImp,impr),'pct',PCT,{noheat:true});
+  T+=row('· impression share (IS)',isSh,'sub',PCT,{noheat:true});
   T+=row('Clicks',click,'grp',N,{color:GGRN});
   T+=row('· CTR %',rat(click,impr),'pct',PCT,{noheat:true});
   T+=row('· location clicks',locC,'sub',N,{color:GGRN});
   T+=row('· loc-click % (Loc%)',rat(locC,click),'pct',PCT,{noheat:true});
   T+=row('· ePCLC — ₹ per loc-click',cpX(spend,locC),'sub',RUP,{color:GAMB});
-  T+=row('Lead',lead,'grp',N,{color:GGRN});
-  T+=row('· City phone calls (Google paid)',cityCall,'sub',N,{color:GGRN});
-  T+=row('· GMB phone calls (organic)',gmbCall,'sub',N,{color:GGRN});
-  T+=row('· Web leads (UTM campaign)',webL,'sub',N,{color:GGRN});
-  T+=row('· C2L — loc-click → lead % (paid)',rat(paidL,locC),'pct',PCT,{noheat:true});
-  T+=row('· CPL — ₹ per lead (paid: city+web)',cpX(spend,paidL),'sub',RUP,{color:GAMB});
-  T+=row('Category-specific leads',catL,'grp',N,{color:GBLU});
-  T+=row('· loc-click → cat-lead %',rat(catL,locC),'pct',PCT,{noheat:true});
-  T+=row('· L2RL — lead → cat-lead %',rat(catL,lead),'pct',PCT,{noheat:true});
-  T+=row('· CPRL — ₹ per cat-lead',cpX(spend,catL),'sub',RUP,{color:GAMB});
-  T+=row('Book',book,'grp',N,{color:GBLU});
-  T+=row('· L2B — cat-lead → book %',rat(book,catL),'pct',PCT,{noheat:true});
-  T+=row('· CPB — ₹ per book',cpX(spend,book),'sub',RUP,{color:GAMB});
-  T+=row('Done',done,'grp',N,{color:GGRN});
-  T+=row('· B2D — book → done %',rat(done,book),'pct',PCT,{noheat:true});
-  T+=row('· CPD — ₹ per done',cpX(spend,done),'sub',RUP,{color:GAMB});
-  T+=row('Purchased',purch,'grp',N,{color:GBLU});
-  T+=row('· D2P — done → purchased %',rat(purch,done),'pct',PCT,{noheat:true});
-  T+=row('Revenue (₹)',rev,'tot',RUP,{color:GAMB});
-  T+=row('· ROAS',roas,'pct',Xf,{noheat:true});
+  T+=row('Conversions (GA)',conv,'grp',N,{color:GBLU});
+  T+=row('· loc-click → conv %',rat(conv,locC),'pct',PCT,{noheat:true});
+  T+=row('· CPA — ₹ per conversion',cpX(spend,conv),'sub',RUP,{color:GAMB});
   let html=tbl(T);
   const bsel=(fn,cur,list)=>'<select class="sel" onchange="'+fn+'(this.value)">'+list.map(o=>'<option value="'+o[0]+'"'+(cur===o[0]?' selected':'')+'>'+o[1]+'</option>').join('')+'</select>';
-  html+='<div style="display:flex;gap:8px;align-items:center;margin:18px 0 8px"><span class="lbl">Break down by</span>'+bsel('setGDBRK',GDBRK,[['none','— none —'],['campaign','Campaign'],['city','City'],['category','Category']])+(GDBRK!=='none'?'<span class="lbl" style="margin-left:8px">Metric</span>'+bsel('setGDMET',GDMET,GDMETS.map(m=>[m[0],m[1]])):'')+'</div>';
+  html+='<div style="display:flex;gap:8px;align-items:center;margin:18px 0 8px"><span class="lbl">Break down by</span>'+bsel('setGDBRK',GDBRK,[['none','— none —'],['city','City'],['category','Category']])+(GDBRK!=='none'?'<span class="lbl" style="margin-left:8px">Metric</span>'+bsel('setGDMET',GDMET,GDMETS.map(m=>[m[0],m[1]])):'')+'</div>';
   if(GDBRK!=='none'){
     let members=[];
-    if(GDBRK==='campaign')members=camps.map(c=>({nm:c.name,camps:[c]}));
-    else{const key=GDBRK==='city'?'city':'category';const g={};camps.forEach(c=>{(g[c[key]]=g[c[key]]||[]).push(c);});members=Object.keys(g).sort().map(k=>({nm:k,camps:g[k]}));}
+    if(GDBRK==='city')members=cities.map(c=>({nm:c,cities:[c],cat:GDCAT}));
+    else members=['STI','SH','MH','Other'].map(c=>({nm:c,cities:cities,cat:c}));   // category break-by overrides the category filter
     const met=GDMETS.find(m=>m[0]===GDMET)||GDMETS[0];
-    const fmt=met[2]==='rup'?RUP:met[2]==='pct'?PCT:met[2]==='x'?(v=>v==null||isNaN(v)?'—':v.toFixed(2)+'×'):N;
-    const memArr=cs=>{const sp=gdSum(cs,'spend');
-      if(GDMET==='cpl'){const pl=addv(gdSum(cs,'city_calls'),gdSum(cs,'web_leads'));return cpX(sp,pl);}   // paid leads: city+web
-      if(GDMET==='cpb')return cpX(sp,gdSum(cs,'book'));
-      if(GDMET==='l2b')return rat(gdSum(cs,'book'),gdSum(cs,'cat_leads'));
-      if(GDMET==='b2d')return rat(gdSum(cs,'done'),gdSum(cs,'book'));
-      if(GDMET==='roas'){const rv=gdSum(cs,'revenue');return sp.map((s,i)=>s?rv[i]/s:null);}
-      return gdSum(cs,GDMET);};
+    const fmt=met[2]==='rup'?RUP:met[2]==='pct'?PCT:N;
+    const memArr=m=>{const sp=gapSum(m.cities,m.cat,'spend');
+      if(GDMET==='ctr')return rat(gapSum(m.cities,m.cat,'clicks'),gapSum(m.cities,m.cat,'impr'));
+      if(GDMET==='cpa')return cpX(sp,gapSum(m.cities,m.cat,'conv'));
+      if(GDMET==='eplc')return cpX(sp,gapSum(m.cities,m.cat,'loc_clicks'));
+      return gapSum(m.cities,m.cat,GDMET);};
     let B=head(met[1]+' · by '+GDBRK);
-    members.map(m=>({nm:m.nm,a:memArr(m.camps)})).filter(m=>m.a.some(v=>v!=null&&v!==0)).sort((x,y)=>{const lx=x.a.filter(v=>v!=null).pop()||0,ly=y.a.filter(v=>v!=null).pop()||0;return ly-lx;}).forEach(m=>{B+=row('· '+m.nm,m.a,'sub',fmt,{noheat:met[2]==='pct'||met[2]==='rup'||met[2]==='x'});});
+    members.map(m=>({nm:m.nm,a:memArr(m)})).filter(m=>m.a&&m.a.some(v=>v!=null&&v!==0)).sort((x,y)=>{const lx=x.a.filter(v=>v!=null).pop()||0,ly=y.a.filter(v=>v!=null).pop()||0;return ly-lx;}).forEach(m=>{B+=row('· '+m.nm,m.a,'sub',fmt,{noheat:met[2]==='pct'||met[2]==='rup'});});
     html+=tbl(B);
   }
   _gd.innerHTML=html;
@@ -268,8 +242,10 @@ document.addEventListener('click',function(e){if(!e.target.closest('.gdms'))docu
 
 Promise.all([
   fetch('data_source_recon.json?v='+Date.now()).then(r=>r.json()),
-  fetch('data_ga_funnel.json?v='+Date.now()).then(r=>r.ok?r.json():null).catch(()=>null)
-]).then(([j,gf])=>{D=j;GAF=gf;paint();paintGD();}).catch(e=>{$('tables').innerHTML='<div style="color:#B23A2E;padding:20px">Could not load data: '+e.message+'</div>';});
+  fetch('data_ga_funnel.json?v='+Date.now()).then(r=>r.ok?r.json():null).catch(()=>null),
+  fetch('data_sc_bookings.json?v='+Date.now()).then(r=>r.ok?r.json():null).catch(()=>null),
+  fetch('data_ga_city_paid.json?v='+Date.now()).then(r=>r.ok?r.json():null).catch(()=>null)
+]).then(([j,gf,scb,gap])=>{D=j;GAF=gf;SCB=scb;GAP=gap;paint();paintGD();}).catch(e=>{$('tables').innerHTML='<div style="color:#B23A2E;padding:20px">Could not load data: '+e.message+'</div>';});
 </script>
 </body>
 </html>
