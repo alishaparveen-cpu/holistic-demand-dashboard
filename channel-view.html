@@ -74,7 +74,7 @@ td.dpc,th.dpc{text-align:center;padding:0 10px;white-space:nowrap}
   </div>
 </div>
 <div id="gzModal" onclick="if(event.target===this)gzClose()" style="display:none;position:fixed;inset:0;background:rgba(20,20,25,.55);z-index:9000;align-items:center;justify-content:center;padding:24px">
-  <div style="background:var(--card);border-radius:14px;box-shadow:0 20px 60px rgba(0,0,0,.3);max-width:94vw;max-height:90vh;overflow:auto;padding:18px 22px">
+  <div style="background:var(--sheet);border-radius:14px;box-shadow:0 20px 60px rgba(0,0,0,.3);max-width:94vw;max-height:90vh;overflow:auto;padding:18px 22px">
     <div style="display:flex;align-items:center;justify-content:space-between;gap:20px;margin-bottom:8px"><b id="gzTitle" style="font-size:15px"></b><button onclick="gzClose()" style="cursor:pointer;border:1px solid var(--line);background:var(--inset);border-radius:6px;width:28px;height:28px;font-size:15px">✕</button></div>
     <div id="gzBody"></div>
   </div>
@@ -97,7 +97,8 @@ const CH=[
   {key:'meta',  name:'Facebook / Meta',icon:'📘',color:'#3b5998',lead:'Meta',  keys:['meta'],sc:'Meta'},
   {key:'practo',name:'Practo',     icon:'🩺',color:'#7B5EA7',lead:'Practo',    keys:['practo'],sc:'Practo'},
 ];
-let SCB=null,GAP=null,GCMP=null;   // SCB=data_sc_bookings; GAP=data_ga_city_paid; GCMP=data_ga_camp_layer (per-campaign paid, filter dims)
+let SCB=null,GAP=null,GCMP=null,PRB=null;   // SCB=data_sc_bookings; GAP=data_ga_city_paid; GCMP=data_ga_camp_layer; PRB=data_practo_booked (Practo Flow direct bookings)
+function prAlign(cube,field){if(!cube||!cube._meta)return null;const dw=D._meta.weeks,cw=cube._meta.weeks,gidx=dw.map(w=>cw.indexOf(w));const o=Array(dw.length).fill(null);for(const k in cube){if(k==='_meta'||k==='True|True')continue;const a=field?(cube[k]&&cube[k][field]):cube[k];if(!Array.isArray(a))continue;dw.forEach((w,di)=>{const gi=gidx[di];if(gi>=0&&a[gi]!=null)o[di]=(o[di]||0)+a[gi];});}return o;}
 function scAligned(src,field){if(!SCB||!src)return [];const dw=D._meta.weeks,sw=SCB._meta.weeks,out=new Array(dw.length).fill(0),sidx=dw.map(w=>sw.indexOf(w));
   for(const k in SCB.clinics){const rec=(SCB.clinics[k].by_source||{})[src];if(!rec)continue;const a=rec[field]||[];dw.forEach((w,di)=>{const si=sidx[di];if(si>=0)out[di]+=(a[si]||0);});}
   return out;}
@@ -133,10 +134,10 @@ function row(label,arr,cls,fmt,o){o=o||{};fmt=fmt||N;const idx=visIdx();const va
   return'<tr class="'+(cls||'')+'">'+tds+'</tr>';}
 function head(lbl){const idx=visIdx();let h='<tr><th>'+lbl+'</th>';idx.forEach((i,k)=>h+='<th'+(k===idx.length-1?' class="lastcol"':'')+'>'+wlab(D._meta.weeks[i])+'</th>');h+='<th class="av">avg</th><th class="dpc">Δ%</th><th>trend</th></tr>';return h;}
 // ─── zoom modal: full weekly line chart for one row ───
-function gzoom(zi){const r=GZ[zi];if(!r)return;const wk=D._meta.weeks||[],n=Math.min(wk.length,r.arr.length);
-  const pts=[];for(let i=n-1;i>=0;i--)pts.push({w:wk[i],v:r.arr[i]});   // oldest→newest
+function gzoom(zi){const r=GZ[zi];if(!r)return;const wk=D._meta.weeks||[];
+  const idx=visIdx();const pts=idx.map(i=>({w:wk[i],v:(r.arr||[])[i]}));   // the visible window, oldest→newest (same weeks as the table)
   const vals=pts.map(p=>p.v).filter(v=>v!=null&&!isNaN(v)),mx=Math.max(...vals,1),mn=Math.min(...vals,0);
-  const W=Math.max(560,pts.length*62),H=300,PL=64,PR=20,PT=24,PB=54,iw=W-PL-PR,ih=H-PT-PB;
+  const W=Math.max(560,Math.min(1100,pts.length*74)),H=320,PL=70,PR=24,PT=28,PB=58,iw=W-PL-PR,ih=H-PT-PB;
   const X=i=>PL+(pts.length<2?iw/2:i/(pts.length-1)*iw),Y=v=>PT+ih-((v-mn)/((mx-mn)||1))*ih;
   let poly='',dots='',lbls='';
   pts.forEach((p,i)=>{if(p.v==null||isNaN(p.v))return;poly+=X(i).toFixed(1)+','+Y(p.v).toFixed(1)+' ';
@@ -197,7 +198,13 @@ function paint(){
     T+=row('SC bookings (offline network)',bk,'grp',N,{color:'#1F6F5C'});
     T+=row('Done (completed)',dn,'grp',N,{color:'#1F6F5C'});
     T+=row('· book → done %',ratio(dn,bk),'pct',PCT,{noheat:true});
-    H+='<div class="shead">'+ch.icon+' '+ch.name+'</div>'+tbl(T);
+    // Practo has a SECOND flow — patients who book an appointment directly on Practo (Flow Dashboard), separate from enquiry leads
+    if(ch.key==='practo'){const db=prAlign(PRB);if(db&&db.some(v=>v)){
+      T+=row('📅 Books directly (Practo Flow)',db,'grp',N,{color:'#7B5EA7'});
+      T+=row('· direct-book ÷ enquiry leads',ratio(db,nl),'pct',PCT,{noheat:true});
+    }}
+    let sub=ch.key==='practo'?' <span class="lblmuted" style="font-size:11px">· two flows: enquiry leads (→ booked) + books-directly (Practo Flow, refreshes from the Flow-Dashboard export)</span>':'';
+    H+='<div class="shead">'+ch.icon+' '+ch.name+sub+'</div>'+tbl(T);
   });
   $('tables').innerHTML=H;
   // chips
@@ -209,7 +216,7 @@ const GVIO='#7B5EA7',GBLU='#2b5cad',GGRN='#1F6F5C',GAMB='#b0752a';
 const GDCATS=['all','STI','SH','MH','Other'];
 const T1CITIES=new Set(['Bangalore','Mumbai','Navi Mumbai','Pune','Hyderabad','Chennai']);   // Tier-1 metros (same split as the marketing view)
 const cityTier=c=>T1CITIES.has(c)?'T1':'T2';
-let GDCAT='all',GDBRK='category',GDMET='spend',GDCITY=new Set(),GDMATCH='all',GDPLACE='all',GDCAMP=new Set();   // category breakdown visible by default (Alisha)
+let GDCAT='all',GDBRK='category',GDMET='spend',GDCITY=new Set(),GDMATCH='all',GDPLACE='all',GDCAMP=new Set(),GDCITYOPEN=false,GDCAMPOPEN=false;   // category breakdown visible by default (Alisha)
 function setGDCAT(v){GDCAT=v;paintGD();}
 function setGDMatch(v){GDMATCH=v;paintGD();}
 function setGDPlace(v){GDPLACE=v;paintGD();}
@@ -246,16 +253,20 @@ function paintGD(){
   else{isSh=Array(spend.length).fill(null);if(GDCAT==='all'){const cities=GDCITY.size?[...GDCITY]:gapCities();const dw=D._meta.weeks,gw=GAP._meta.weeks,gidx=dw.map(w=>gw.indexOf(w));const num=Array(dw.length).fill(0),den=Array(dw.length).fill(0);cities.forEach(cn=>{const rec=GAP[cn];if(!rec||!rec.is_pct||!rec.impr)return;dw.forEach((w,di)=>{const gi=gidx[di];if(gi>=0&&rec.is_pct[gi]!=null&&rec.impr[gi]!=null){num[di]+=rec.is_pct[gi]*rec.impr[gi];den[di]+=rec.impr[gi];}});});isSh=num.map((v,i)=>den[i]?Math.round(v/den[i]):null);}}
   const chip=(fn,val,cur,lab)=>'<button onclick="'+fn+'(\''+val+'\')" class="chip'+(cur===val?' on':'')+'">'+lab+'</button>';
   const cityList=gdTierCities().sort(),nCamp=GCMP?GCMP.campaigns.length:0;
+  const mchip=(fn,val,cur,lab)=>'<button onclick="'+fn+'(\''+val+'\')" class="chip'+(cur===val?' on':'')+'" style="font-size:10.5px;padding:2px 8px">'+lab+'</button>';
+  const tierOn=t=>{const cs=cityList.filter(c=>cityTier(c)===t);return cs.length&&cs.every(c=>GDCITY.has(c));};
   let bar='<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px">';
   bar+='<span class="lbl">Category</span>'+GDCATS.map(v=>chip('setGDCAT',v,GDCAT,v==='all'?'All':v)).join('');
-  const tierOn=t=>{const cs=cityList.filter(c=>cityTier(c)===t);return cs.length&&cs.every(c=>GDCITY.has(c));};
-  bar+='<span class="lbl" style="margin-left:10px">Tier</span><button onclick="setGDTier(\'T1\')" class="chip'+(tierOn('T1')?' on':'')+'">Tier 1</button><button onclick="setGDTier(\'T2\')" class="chip'+(tierOn('T2')?' on':'')+'">Tier 2</button>';
-  bar+='<span class="lbl" style="margin-left:10px">City</span><span class="gdms"><button class="chip" onclick="this.nextElementSibling.classList.toggle(\'open\');event.stopPropagation()">'+(GDCITY.size?GDCITY.size+' cities':'All cities')+' ▾</button><div class="gdpanel">'+cityList.map(c=>'<label><input type="checkbox" '+(GDCITY.has(c)?'checked':'')+' onchange="togGDCity(this.value)" value="'+c+'"> '+c+'</label>').join('')+(GDCITY.size?'<a onclick="clrGDCity()">clear</a>':'')+'</div></span>';
+  // City dropdown — Tier 1 / Tier 2 quick-select live at the top of the panel
+  bar+='<span class="lbl" style="margin-left:10px">City</span><span class="gdms"><button class="chip" onclick="GDCITYOPEN=!GDCITYOPEN;GDCAMPOPEN=false;paintGD();event.stopPropagation()">'+(GDCITY.size?GDCITY.size+' cities':'All cities')+' ▾</button><div class="gdpanel'+(GDCITYOPEN?' open':'')+'" onclick="event.stopPropagation()"><div style="display:flex;gap:5px;align-items:center;margin-bottom:6px;border-bottom:1px solid var(--inset);padding-bottom:6px"><span class="lbl">Tier</span>'+mchip('setGDTier','T1',tierOn('T1')?'T1':'',(tierOn('T1')?'✓ ':'')+'Tier 1')+mchip('setGDTier','T2',tierOn('T2')?'T2':'',(tierOn('T2')?'✓ ':'')+'Tier 2')+(GDCITY.size?'<a onclick="clrGDCity()" style="margin-left:auto">clear</a>':'')+'</div>'+cityList.map(c=>'<label><input type="checkbox" '+(GDCITY.has(c)?'checked':'')+' onchange="togGDCity(this.value)" value="'+c+'"> '+c+'</label>').join('')+'</div></span>';
   if(GCMP){
-    bar+='<span class="lbl" style="margin-left:10px">Match</span>'+[['all','All'],['Exact','Exact'],['Phrase','Phrase'],['Broad','Broad']].map(o=>chip('setGDMatch',o[0],GDMATCH,o[1])).join('');
-    bar+='<span class="lbl" style="margin-left:10px">Type</span>'+[['all','All'],['Local','Local'],['Online','Online'],['Brand','Brand']].map(o=>chip('setGDPlace',o[0],GDPLACE,o[1])).join('');
     const cf=campFilter();
-    bar+='<span class="lbl" style="margin-left:10px">Campaign</span><span class="gdms"><button class="chip" onclick="this.nextElementSibling.classList.toggle(\'open\');event.stopPropagation()">'+(GDCAMP.size?GDCAMP.size+' campaigns':'All ('+cf.length+')')+' ▾</button><div class="gdpanel" style="min-width:320px"><input placeholder="🔍 search campaign…" oninput="var q=this.value.toLowerCase();[...this.parentNode.querySelectorAll(String.fromCharCode(108,97,98,101,108))].forEach(function(l){l.style.display=l.textContent.toLowerCase().indexOf(q)>=0?\'\':\'none\'})" onclick="event.stopPropagation()" style="width:100%;box-sizing:border-box;margin-bottom:6px;padding:5px 8px;border:1px solid var(--line);border-radius:6px">'+cf.map(c=>'<label><input type="checkbox" '+(GDCAMP.has(c.name)?'checked':'')+' onchange="togGDCamp(this.value)" value="'+c.name.replace(/"/g,'&quot;')+'"> '+c.name+'</label>').join('')+(GDCAMP.size?'<a onclick="clrGDCamp()">clear</a>':'')+'</div></span>';
+    // Campaign dropdown — Match + Type filters live at the top of the panel (narrow the list, then pick campaigns)
+    bar+='<span class="lbl" style="margin-left:10px">Campaign</span><span class="gdms"><button class="chip" onclick="GDCAMPOPEN=!GDCAMPOPEN;GDCITYOPEN=false;paintGD();event.stopPropagation()">'+(GDCAMP.size?GDCAMP.size+' campaigns':(GDMATCH!=='all'||GDPLACE!=='all'?cf.length+' campaigns':'All ('+cf.length+')'))+' ▾</button><div class="gdpanel'+(GDCAMPOPEN?' open':'')+'" style="min-width:340px" onclick="event.stopPropagation()">'
+      +'<div style="display:flex;flex-wrap:wrap;gap:4px;align-items:center;margin-bottom:5px"><span class="lbl">Match</span>'+[['all','All'],['Exact','Exact'],['Phrase','Phrase'],['Broad','Broad']].map(o=>mchip('setGDMatch',o[0],GDMATCH,o[1])).join('')+'</div>'
+      +'<div style="display:flex;flex-wrap:wrap;gap:4px;align-items:center;margin-bottom:6px;border-bottom:1px solid var(--inset);padding-bottom:6px"><span class="lbl">Type</span>'+[['all','All'],['Local','Local'],['Online','Online'],['Brand','Brand']].map(o=>mchip('setGDPlace',o[0],GDPLACE,o[1])).join('')+'</div>'
+      +'<input placeholder="🔍 search campaign…" oninput="var q=this.value.toLowerCase();[...this.parentNode.querySelectorAll(String.fromCharCode(108,97,98,101,108))].forEach(function(l){l.style.display=l.textContent.toLowerCase().indexOf(q)>=0?\'\':\'none\'})" style="width:100%;box-sizing:border-box;margin-bottom:6px;padding:5px 8px;border:1px solid var(--line);border-radius:6px">'
+      +cf.map(c=>'<label><input type="checkbox" '+(GDCAMP.has(c.name)?'checked':'')+' onchange="togGDCamp(this.value)" value="'+c.name.replace(/"/g,'&quot;')+'"> '+c.name+'</label>').join('')+(GDCAMP.size?'<a onclick="clrGDCamp()">clear</a>':'')+'</div></span>';
   }
   bar+='<span style="margin-left:auto;font-size:11px;color:var(--muted);font-family:JetBrains Mono">'+(GCMP?clist.length+' of '+nCamp+' campaigns':(GDCITY.size||gapCities().length)+' cities')+' · ₹'+Math.round((spend||[]).reduce((a,b)=>a+(b||0),0)/1000)+'k</span></div>';
   $('gdCtl').innerHTML=bar;
@@ -271,6 +282,9 @@ function paintGD(){
   T+=row('Conversions (GA)',conv,'grp',N,{color:GBLU});
   T+=row('· loc-click → conv %',rat(conv,locC),'pct',PCT,{noheat:true});
   T+=row('· CPA — ₹ per conversion',cpX(spend,conv),'sub',RUP,{color:GAMB});
+  // business outcome — actual Google-attributed leads (national · from source-recon; not campaign/city-filterable, so shown as the account total)
+  const gch=(typeof CH!=='undefined')&&CH.find(c=>c.key==='google'),gLeads=gch?leadF(gch,'new_leads'):null;
+  if(gLeads&&gLeads.some(v=>v)){T+=row('→ Leads · Google (national)',gLeads,'grp',N,{color:'#2b5cad'});T+=row('· CPL — ₹ per lead (national)',cpX(spend,gLeads),'sub',RUP,{color:GAMB,noheat:true});}
   let html=tbl(T);
   const bsel=(fn,cur,list)=>'<select class="sel" onchange="'+fn+'(this.value)">'+list.map(o=>'<option value="'+o[0]+'"'+(cur===o[0]?' selected':'')+'>'+o[1]+'</option>').join('')+'</select>';
   const brkOpts=GCMP?[['none','— none —'],['city','City'],['category','Category'],['campaign','Campaign'],['placement','Type (Local/Online/Brand)'],['tier','Tier'],['match','Match type']]:[['none','— none —'],['city','City'],['category','Category']];
@@ -303,15 +317,16 @@ function paintGD(){
   }
   _gd.innerHTML=html;
 }
-document.addEventListener('click',function(e){if(!e.target.closest('.gdms'))document.querySelectorAll('.gdpanel.open').forEach(function(p){p.classList.remove('open');});});
+document.addEventListener('click',function(e){if(!e.target.closest('.gdms')&&(GDCITYOPEN||GDCAMPOPEN)){GDCITYOPEN=false;GDCAMPOPEN=false;if(typeof paintGD==='function')paintGD();}});
 
 Promise.all([
   fetch('data_source_recon.json?v='+Date.now()).then(r=>r.json()),
   fetch('data_ga_funnel.json?v='+Date.now()).then(r=>r.ok?r.json():null).catch(()=>null),
   fetch('data_sc_bookings.json?v='+Date.now()).then(r=>r.ok?r.json():null).catch(()=>null),
   fetch('data_ga_city_paid.json?v='+Date.now()).then(r=>r.ok?r.json():null).catch(()=>null),
-  fetch('data_ga_camp_layer.json?v='+Date.now()).then(r=>r.ok?r.json():null).catch(()=>null)
-]).then(([j,gf,scb,gap,gcmp])=>{D=j;GAF=gf;SCB=scb;GAP=gap;GCMP=gcmp;paint();paintGD();}).catch(e=>{$('tables').innerHTML='<div style="color:#B23A2E;padding:20px">Could not load data: '+e.message+'</div>';});
+  fetch('data_ga_camp_layer.json?v='+Date.now()).then(r=>r.ok?r.json():null).catch(()=>null),
+  fetch('data_practo_booked.json?v='+Date.now()).then(r=>r.ok?r.json():null).catch(()=>null)
+]).then(([j,gf,scb,gap,gcmp,prb])=>{D=j;GAF=gf;SCB=scb;GAP=gap;GCMP=gcmp;PRB=prb;paint();paintGD();}).catch(e=>{$('tables').innerHTML='<div style="color:#B23A2E;padding:20px">Could not load data: '+e.message+'</div>';});
 </script>
 </body>
 </html>

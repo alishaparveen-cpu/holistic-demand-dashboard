@@ -266,7 +266,7 @@
       <div class="ms" id="msClin"><button class="fbtn" id="clinBtn" onclick="openClinMs(event)">All clinics ▾</button><div class="mspanel" id="clinPanel"></div></div>
       <div class="ms" id="msDoc"><button class="fbtn" id="docBtn" onclick="openDocMs(event)">All doctors ▾</button><div class="mspanel" id="docPanel"></div></div>
       <div class="ms" id="msCat"><button class="fbtn" id="catBtn" onclick="openCatMs(event)" title="filter diagnosis-stage metrics (Done · Purchased · Revenue · D2P · RPC) to one or more clinical categories">All categories ▾</button><div class="mspanel" id="catPanel"></div></div>
-      <span class="ctltag" style="margin:0 3px 0 6px;min-width:auto;flex:none" title="lead source (channel) — filters the Leads vital + drill to one channel">Source</span><div class="seg" id="srcSeg"><button class="segbtn on" data-src="All" onclick="setSrc('All')">All</button><button class="segbtn" data-src="Organic" onclick="setSrc('Organic')">Organic</button><button class="segbtn" data-src="Google" onclick="setSrc('Google')">Google</button><button class="segbtn" data-src="Fb" onclick="setSrc('Fb')">Fb</button><button class="segbtn" data-src="Practo" onclick="setSrc('Practo')">Practo</button><button class="segbtn" data-src="Others" onclick="setSrc('Others')">Others</button></div>
+      <span class="ctltag" style="margin:0 3px 0 6px;min-width:auto;flex:none" title="lead source (channel) — filters the Leads vital + drill to one channel">Source</span><div class="seg" id="srcSeg"><button class="segbtn on" data-src="All" onclick="setSrc('All')">All</button><button class="segbtn" data-src="GMB" onclick="setSrc('GMB')">GMB</button><button class="segbtn" data-src="Organic" onclick="setSrc('Organic')">Organic</button><button class="segbtn" data-src="Google" onclick="setSrc('Google')">Google</button><button class="segbtn" data-src="Fb" onclick="setSrc('Fb')">Fb</button><button class="segbtn" data-src="Practo" onclick="setSrc('Practo')">Practo</button><button class="segbtn" data-src="Others" onclick="setSrc('Others')">Others</button></div>
       <!-- maturity chips moved into the clinics dropdown (AGE quick-filter) -->
       <span class="ctlsep"></span><span class="ctltag" style="margin:0 3px 0 0;min-width:auto;flex:none">View</span><div class="seg"><button class="segbtn" id="ovCockpit" onclick="setOvMode('cockpit')">⚡ Quick scan</button><button class="segbtn on" id="ovFunnel" onclick="setOvMode('funnel')">🩺 Full funnel</button><button class="segbtn" id="ovMetric" onclick="setOvMode('metric')">📊 Individual metric</button></div>
       <span class="scopecount" id="scopeCount"></span>
@@ -588,11 +588,12 @@ const BPAL=['#C2691F','#5B8DB8','#9B6BB0','#B0894E','#4E9A8A','#8A8A80','#C25B7A
 const CATS=['MH','PA','CM','ED+','ED+PE+','PE+','STI','Oth','NOS'];   // leaf buckets (MH split into concern·PA·CM)
 // clinical hierarchy: top level MH · STI · SH · NOS. MH sub = concern·porn-addiction·compulsive-M; SH sub = ED+·ED+PE+·PE+·other
 const MH_SUBS=['MH','PA','CM'], SH_SUBS=['ED+','ED+PE+','PE+','Oth','NOS'];   // NOS folded into SH (unspecified → treated as sexual-health) but kept as its own sub-row
-// sub-categories removed per Alisha — marketing view stays at the top level MH · STI · SH only (no ED+/PE+/concern/NOS children)
+// sub-categories: shown in the funnel / all-categories scope; hidden in the Individual-metric view (per Alisha, via metricNoSub())
 const CAT_TREE=[
-  {name:'MH',cats:MH_SUBS},
+  {name:'MH',cats:MH_SUBS,children:[{name:'concern',cats:['MH']},{name:'porn addiction',cats:['PA']},{name:'compulsive M',cats:['CM']}]},
   {name:'STI',cats:['STI']},
-  {name:'SH',cats:SH_SUBS}];
+  {name:'SH',cats:SH_SUBS,children:[{name:'ED+',cats:['ED+']},{name:'ED+PE+',cats:['ED+PE+']},{name:'PE+',cats:['PE+']},{name:'other',cats:['Oth']},{name:'NOS',cats:['NOS']}]}];
+function metricNoSub(){return OVMODE==='metric';}   // in the Individual-metric view, category breakdowns stay at MH/STI/SH (no sub-cats)
 const CAT_OK=new Set(['done','purchased','revenue','d2p','rpc','aov']);   // metrics a category slice is valid for (RPC breakdowns inherit via subDims)
 const DOC_OK=new Set(['bookings','conversion','done','purchased','revenue','velocity','d2p','rpc','aov']);   // doctor-attributable metrics (leads / availability / roster are clinic-level)
 // online telehealth is only pre-rolled to SH/STI/MH/Other → map to the 7-space best-effort (SH can't sub-split)
@@ -819,7 +820,7 @@ function catRateTree(numBc,denBc,mult,prefix){const Z=()=>new Array(D.weeks.leng
 function catBreakdown(allLabel,byCatFn,totalFn){const Z=()=>new Array(D.weeks.length).fill(0);
   const S=cats=>c=>{const bc=byCatFn(c)||{},o=Z();cats.forEach(ct=>{const a=bc[ct];if(a)for(let i=0;i<a.length;i++)o[i]+=(a[i]||0);});return o;};
   const out=[{label:allLabel,get:totalFn}];
-  CAT_TREE.forEach(g=>{out.push({label:g.name,get:S(g.cats)});if(g.children)g.children.forEach(ch=>out.push({label:g.name+' · '+ch.name,get:S(ch.cats)}));});
+  CAT_TREE.forEach(g=>{out.push({label:g.name,get:S(g.cats)});if(g.children&&!metricNoSub())g.children.forEach(ch=>out.push({label:g.name+' · '+ch.name,get:S(ch.cats)}));});
   return out;}
 // category breakdown for a RATE metric (RPC/AOV/D2P): each category row = its own rate (cat numerator ÷ cat denominator).
 // rate:1 tells the % toggle to leave these alone — a "share of a ratio" is meaningless, so they keep their real value.
@@ -827,7 +828,7 @@ function catRateBreakdown(baseLabel,baseGet,numByCatFn,denByCatFn,mult){const Z=
   const S=(byCatFn,cats)=>c=>{const bc=byCatFn(c)||{},o=Z();cats.forEach(ct=>{const a=bc[ct];if(a)for(let i=0;i<a.length;i++)o[i]+=(a[i]||0);});return o;};
   const R=cats=>c=>ratioArr(S(numByCatFn,cats)(c),S(denByCatFn,cats)(c),mult);
   const out=[{label:baseLabel,get:baseGet,rate:1}];
-  CAT_TREE.forEach(g=>{out.push({label:g.name,get:R(g.cats),rate:1});if(g.children)g.children.forEach(ch=>out.push({label:g.name+' · '+ch.name,get:R(ch.cats),rate:1}));});
+  CAT_TREE.forEach(g=>{out.push({label:g.name,get:R(g.cats),rate:1});if(g.children&&!metricNoSub())g.children.forEach(ch=>out.push({label:g.name+' · '+ch.name,get:R(ch.cats),rate:1}));});
   return out;}
 // category rows for a metric that CAN'T be split by diagnosis (leads·bookings·availability·velocity·roster·B2D are pre-diagnosis).
 // Offered everywhere for consistency, but each renders "n/a" when ticked (naCat flag), like Leads shows n/a under a doctor.
@@ -1148,7 +1149,7 @@ function renderMetric(){
   let rows;
   if(byCategory){   // one row per diagnosis category (MH·STI·SH, + sub-cats when "category detail" is on); only diagnosis metrics have values
     const agg=aggregate(scopeSlugs,'all'),groups=[];
-    CAT_TREE.forEach(g=>{groups.push({name:g.name,cats:g.cats});if(FCATDETAIL&&g.children)g.children.forEach(ch=>groups.push({name:g.name+' · '+ch.name,cats:ch.cats}));});
+    CAT_TREE.forEach(g=>{groups.push({name:g.name,cats:g.cats});if(FCATDETAIL&&g.children&&!metricNoSub())g.children.forEach(ch=>groups.push({name:g.name+' · '+ch.name,cats:ch.cats}));});
     rows=groups.map(g=>({label:g.name,n:0,c:aggregateCategory(g.name,g.cats,agg),click:''})).filter(r=>sum(r.c.done.done)&&passCond(r.c));
   }else if(byDoctor){   // one row per doctor, summing their slice across in-scope clinics; click a doctor → their funnel
     rows=docNames().map(dr=>({label:docShort(dr),n:0,c:aggregateDoctor(dr,scopeSlugs),click:"drillDoctor('"+dr.replace(/'/g,"\\'")+"')"})).filter(r=>sum(r.c.bookings.total)&&passCond(r.c));
@@ -1169,7 +1170,7 @@ function renderMetric(){
   const scopeHdr='<span class="lab" style="text-transform:none;font-weight:600;color:var(--ink2)">📍 <b style="color:var(--accent)">'+levelKind()+'-level</b> · '+cityStr()+' · '+unitLbl+' · each row = one '+rowNoun+' · sorted by <b>'+primary.name+'</b>'
     +(byDoctor?' <span style="color:var(--faint)">· per-doctor: bookings·B2D·done·purchased·revenue·RPC·AOV·D2P — leads·availability·roster are clinic-level (n/a)</span>':'')
     +(byCategory?' <span style="color:var(--faint)">· per-category: done·purchased·revenue·RPC·AOV·D2P — leads·bookings·availability etc are pre-diagnosis (n/a). Add ▸ category detail for sub-cats.</span>':'')+'</span>';
-  const catDetailBtn=(byCategory&&CAT_TREE.some(g=>g.children&&g.children.length))?'<button class="fbtn'+(FCATDETAIL?' on':'')+'" style="padding:5px 12px;font-size:12px;font-weight:700" onclick="toggleFCat()">'+(FCATDETAIL?'▾ sub-categories (on)':'▸ sub-categories')+'</button>':'';   // hidden — sub-categories removed from the marketing view
+  const catDetailBtn='';   // Individual-metric view stays at MH/STI/SH — sub-categories are a funnel-only breakdown (per Alisha)
   let h='<div class="densrow" style="gap:8px;flex-wrap:wrap">'+backBtn+scopeHdr
     +'<span style="display:inline-flex;gap:6px;flex-wrap:wrap;margin-left:4px">'+metrics.map(s=>cc(s.key)).join('')+'</span>'
     +catDetailBtn
@@ -1403,7 +1404,7 @@ function fuB2D(slugs){const N=D.weeks.length,bk=new Array(N).fill(0),dn=new Arra
 const COCK_VITALS=[{key:'demand',lab:'Leads'},{key:'__l2b',lab:'Lead → Book %'},{key:'bookings',lab:'Bookings'},{key:'availability',lab:'Availability · days attended'},{key:'conversion',lab:'B2D %'},{key:'done',lab:'Done · consults'}];   // MARKETING funnel: Leads → Lead→Book% → Bookings → Availability → B2D% → Done (no revenue/economics/products)
 // upstream acquisition vitals prepended to the funnel when a SOURCE is picked (SRCF). GMB = per-clinic; Google paid = city/category-level (metros only, greys out at clinic/doctor)
 function srcUpstreamVitals(){
-  if(SRCF==='Organic'||SRCF==='GMB')return [{key:'__gmb_search',lab:'GMB searches'},{key:'__gmb_calls',lab:'GMB call clicks'},{key:'__gmb_web',lab:'GMB website clicks'},{key:'__gmb_dir',lab:'GMB directions'},{key:'__gmb_ctr',lab:'GMB CTR %'},{key:'__gmb_rev',lab:'Reviews · new'},{key:'__gmb_neg',lab:'Negative reviews'}];   // GMB is the organic/local engine → surface its reach under Organic
+  if(SRCF==='GMB')return [{key:'__gmb_search',lab:'GMB searches'},{key:'__gmb_calls',lab:'GMB call clicks'},{key:'__gmb_web',lab:'GMB website clicks'},{key:'__gmb_dir',lab:'GMB directions'},{key:'__gmb_ctr',lab:'GMB CTR %'},{key:'__gmb_rev',lab:'Reviews · new'},{key:'__gmb_neg',lab:'Negative reviews'}];   // GMB reach/reputation funnel — now its own SOURCE (was under Organic before the GMB button existed)
   if(SRCF==='Google')return [{key:'__gp_impr',lab:'Google impressions'},{key:'__gp_is',lab:'Impression share %'},{key:'__gp_clicks',lab:'Google clicks'},{key:'__gp_ctr',lab:'Google CTR %'},{key:'__gp_locclicks',lab:'Location clicks'},{key:'__gp_locpct',lab:'Loc-click %'}];   // reach/click funnel only — cost metrics (util/ePCLC/spend) live in the Efficiency view
   return [];}
 function callVitals(){return (L2C&&!CITYF.size&&!CLINF.size&&!TIERF.size&&!DOCF.size&&!COCKCLIN&&!COCKDOC)?[{key:'__l2call',lab:'Lead → our call %'},{key:'__callconn',lab:'Call → connected %'}]:[];}   // network-level lead→call (our-side reach) — national scope only
