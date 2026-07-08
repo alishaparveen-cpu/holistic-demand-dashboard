@@ -795,6 +795,10 @@ function chanUnion(){if(_CHU)return _CHU;const s=new Set();Object.values(D.clini
 const KEEP_CHAN=['GMB','Google','Fb','Practo','Organic'],CHAN_ORDER=['GMB','Google','Fb','Practo','Organic','Others'];   // only these leads channels matter; everything else → Others
 function chanKey(n){const l=(n||'').toLowerCase();if(l.indexOf('google')>=0)return 'Google';if(l==='fb'||l.indexOf('facebook')>=0||l.indexOf('meta')>=0||l.indexOf('insta')>=0)return 'Fb';if(l.indexOf('practo')>=0)return 'Practo';if(l.indexOf('gmb')>=0||l.indexOf('organic')>=0)return 'Organic';return 'Others';}   // GMB folded into Organic (match marketing)
 function chanConsol(bc){const out={};for(const ch in (bc||{})){const k=chanKey(ch),a=bc[ch]||[];out[k]=(out[k]||Z()).map((v,i)=>v+(a[i]||0));}return out;}
+function srcLabel(src){return src==='Organic'?'Organic +GMB':src;}   // Organic bucket includes GMB (folded)
+function normalizeChannels(){Object.values(D.clinics).forEach(c=>{const dm=c&&c.demand;if(!dm||!dm.by_channel)return;const bc=dm.by_channel,leads=dm.leads||[],N=leads.length,tot=new Array(N).fill(0);
+  Object.values(bc).forEach(a=>{if(a)for(let i=0;i<N;i++)tot[i]+=a[i]||0;});
+  Object.keys(bc).forEach(ch=>{bc[ch]=(bc[ch]||[]).map((v,i)=>tot[i]?Math.round((v||0)*(leads[i]||0)/tot[i]):0);});});}   // rescale by_channel to the deduped leads total so sources reconcile
 // map our raw source buckets → the city-head sheet's labels (Meta→fb; Direct/none folded into Others)
 const SRC_DISP={'Meta':'fb'};   // Meta→fb; 'Direct / none' kept as its OWN bucket (city-head sheet leaves direct/walk-in unclassified, not in Others)
 function srcDisp(raw){return SRC_DISP[raw]||raw;}
@@ -1222,7 +1226,7 @@ function stageParts(s,o){   // breakdown series per stage: lineS = coloured comp
     const ds=doneSources(o),dsr=srcUnion().filter(sr=>sum(ds[sr]||[])>0);   // + done split by lead source (SC only) — a fully-collapsible group of its own
     if(dsr.length){tree.push({label:'by source',arr:o.done.done,color:'var(--faint)',depth:1,grp:'src',ck:'src'});
       dsr.forEach((sr,k)=>tree.push({label:'source · '+sr,arr:ds[sr],color:BPAL[k%BPAL.length],depth:2,grp:'src',par:'src'}));}}
-  else if(s.key==='demand'){const bc=chanConsol(o.demand.by_channel);CHAN_ORDER.filter(ch=>bc[ch]&&sum(bc[ch])>0).slice(0,5).forEach((ch,k)=>lineS.push({label:ch,arr:bc[ch],color:BPAL[k]}));chipOnly=[{label:'lead→book%',arr:o.demand.lead_book_pct,pct:1}];}
+  else if(s.key==='demand'){const bc=chanConsol(o.demand.by_channel);CHAN_ORDER.filter(ch=>bc[ch]&&sum(bc[ch])>0).slice(0,5).forEach((ch,k)=>lineS.push({label:srcLabel(ch),arr:bc[ch],color:BPAL[k]}));chipOnly=[{label:'lead→book%',arr:o.demand.lead_book_pct,pct:1}];}
   else if(s.key==='velocity'){const v=o.velocity,A=o.availability||{};tree=[   // days open, then the per-weekday / per-weekend booking rate that rolls up to bookings/active-day
       {label:'weekday days available',arr:A.wday_days,color:BPAL[0],depth:1},
       {label:'weekend days available',arr:A.wend_days,color:BPAL[1],depth:1},
@@ -1940,6 +1944,7 @@ async function boot(){
   buildOnlineClinics();   // now that per-provider online data is loaded, build the per-clinic online buckets
   try{NATUN=await fetch('data_demand_leads.json?v='+Date.now()).then(r=>r.ok?r.json():null);}catch(e){NATUN=null;}
   injectUnattr();   // add the per-city city-level (unattributed-to-clinic) leads lines from the demand tracker
+  normalizeChannels();   // rescale by_channel to sum to the deduped leads total (sources reconcile)
   ALLCITIES=[...new Set(Object.values(D.clinics).filter(c=>!c._online&&!c._unattr_city&&c.city!=='Online').map(c=>c.city))].sort((a,b)=>{const ta=tierOf(a)==='T1',tb=tierOf(b)==='T1';return ta!==tb?(ta?-1:1):a.localeCompare(b);});   // exclude the Online pseudo-city; Tier-1 cities first so heads click fast
   try{const saved=JSON.parse(localStorage.getItem('wd_city')||'[]');if(Array.isArray(saved))saved.forEach(c=>{if(ALLCITIES.includes(c))CITYF.add(c);});}catch(e){}
   $('cityBtn').textContent=cityBtnLabel();$('cityBtn').classList.toggle('on',!!CITYF.size);
