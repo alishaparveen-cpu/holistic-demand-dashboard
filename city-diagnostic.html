@@ -905,6 +905,21 @@ function subDims(key){const Z=()=>new Array(D.weeks.length).fill(0);
     {label:'weekday days available',get:c=>(c.velocity&&c.velocity.wday_days)||Z()},{label:'weekend days available',get:c=>(c.velocity&&c.velocity.wend_days)||Z()},
     {label:'done / active weekday',get:c=>(c.velocity&&c.velocity.done_per_weekday)||Z(),rate:1},{label:'— weekday done',get:c=>(c.velocity&&c.velocity.done_wday)||Z()},
     {label:'done / active weekend',get:c=>(c.velocity&&c.velocity.done_per_weekend)||Z(),rate:1},{label:'— weekend done',get:c=>(c.velocity&&c.velocity.done_wend)||Z()}];
+  if(key==='slots'){const S=c=>c.slots||{},ad=(x,y)=>((x||[]).map((v,i)=>(v||0)+(((y||[])[i])||0)));return [   // SC-offline slot outcomes: total = completed + rescheduled + no-show + cancelled
+    {label:'total slots',get:c=>S(c).total_slots||Z()},
+    {label:'— completed',get:c=>S(c).completed||Z()},
+    {label:'— rescheduled (all)',get:c=>ad(S(c).resched_doc,S(c).resched_pat)},
+    {label:'— resched · by doctor',get:c=>S(c).resched_doc||Z()},
+    {label:'— resched · by patient',get:c=>S(c).resched_pat||Z()},
+    {label:'— no-show',get:c=>S(c).no_show||Z()},
+    {label:'— cancelled',get:c=>S(c).cancelled||Z()}].concat(catNaRows());}
+  if(key==='reschedule'){const S=c=>c.slots||{},ad=(x,y)=>((x||[]).map((v,i)=>(v||0)+(((y||[])[i])||0)));return [
+    {label:'rescheduled (all)',get:c=>ad(S(c).resched_doc,S(c).resched_pat)},
+    {label:'— by doctor (shrinkage)',get:c=>S(c).resched_doc||Z()},
+    {label:'— by patient',get:c=>S(c).resched_pat||Z()}].concat(catNaRows());}
+  if(key==='noshow'){const S=c=>c.slots||{};return [
+    {label:'no-show',get:c=>S(c).no_show||Z()},
+    {label:'— cancelled',get:c=>S(c).cancelled||Z()}].concat(catNaRows());}
   if(key==='conversion')return catNaRows();   // B2D can't split by diagnosis (booked/days are pre-diagnosis) → category rows show n/a
   return null;}
 function metricArr(c,key,subLabel){if(subLabel){const sd=subDims(key),f=sd&&sd.find(x=>x.label===subLabel);if(f){const a=f.get(c);return (a&&a.length)?a:new Array(D.weeks.length).fill(0);}}return STAGES.find(x=>x.key===key).metrics(c)[0].arr;}
@@ -1362,6 +1377,18 @@ function stageParts(s,o){   // breakdown series per stage: lineS = coloured comp
     tree=catRateTree(prodRevCat(o),o.purchased&&o.purchased.by_cat,1,'AOV · ');}   // per-category products ₹/purchase (excl consult)
   else if(s.key==='d2p'){chipOnly=[{label:'purchased',arr:(o.purchased&&o.purchased.total)},{label:'done',arr:(o.done&&o.done.done)}];
     tree=catRateTree(o.purchased&&o.purchased.by_cat,o.done&&o.done.by_cat,100,'D2P · ');}   // per-category done→purchased %
+  else if(s.key==='slots'){const S=o.slots||{},ad=(x,y)=>((x||[]).map((v,i)=>(v||0)+(((y||[])[i])||0)));tree=[   // total slots → completed / rescheduled (doc·patient) / no-show / cancelled
+    {label:'completed',arr:S.completed||Z(),color:BPAL[0],depth:1},
+    {label:'rescheduled',arr:ad(S.resched_doc,S.resched_pat),color:BPAL[1],depth:1},
+    {label:'↳ by doctor (shrinkage)',arr:S.resched_doc||Z(),color:BPAL[1],depth:2},
+    {label:'↳ by patient',arr:S.resched_pat||Z(),color:BPAL[2],depth:2},
+    {label:'no-show',arr:S.no_show||Z(),color:BPAL[3],depth:1},
+    {label:'cancelled',arr:S.cancelled||Z(),color:BPAL[4],depth:1}];}
+  else if(s.key==='reschedule'){const S=o.slots||{};tree=[   // rescheduled → doctor (shrinkage) vs patient
+    {label:'by doctor (shrinkage)',arr:S.resched_doc||Z(),color:BPAL[1],depth:1},
+    {label:'by patient',arr:S.resched_pat||Z(),color:BPAL[2],depth:1}];}
+  else if(s.key==='noshow'){const S=o.slots||{};tree=[{label:'cancelled',arr:S.cancelled||Z(),color:BPAL[4],depth:1}];}   // no-show headline + cancelled
+  else if(s.key==='slotb2d'){const S=o.slots||{};chipOnly=[{label:'completed',arr:S.completed||[]},{label:'total slots',arr:S.total_slots||[]}];}   // slot B2D % = completed ÷ total slots
   return {lineS,chipOnly,groups,tree};
 }
 // funnel body (stage rows + breakdown trend rows) for ANY clinic-shaped object (single clinic OR city aggregate)
