@@ -103,7 +103,8 @@ function scSum(cube,src,field){if(!cube||!src)return new Array((D._meta.weeks||[
   for(const k in cube.clinics){const rec=(cube.clinics[k].by_source||{})[src];if(!rec)continue;const a=rec[field]||[];dw.forEach((w,di)=>{const si=sidx[di];if(si>=0)out[di]+=(a[si]||0);});}
   return out;}
 function scAligned(src,field){return scSum(SCB,src,field);}   // offline SC (kept for back-compat)
-function scOnline(ch,field){return scSum(SCO,ch.sc,field);}   // online SC by source (GMB/Meta only)
+function scOnline(ch,field){return scSum(SCO,ch.sc,field);}   // online SC by source
+function scField(ch,field){return addv(scSum(SCB,ch.sc,field),scSum(SCO,ch.sc,field));}   // offline + online SC cohort field (online contributes 0 for the age-bucket fields it lacks)
 
 // ---- data accessors (network) — SC bookings/done are OFFLINE + ONLINE, service-week ----
 function leadF(ch,field){const ml=(D._meta.master_leads||{}).by_source||{};return z((ml[ch.lead]||{})[field]);}
@@ -175,8 +176,13 @@ function paint(){
     const td=chs.reduce((a,c)=>addv(a,doneBy(c)),[]);
     const tbOff=chs.reduce((a,c)=>addv(a,scSum(SCB,c.sc,'booked')),[]),tbOn=chs.reduce((a,c)=>addv(a,scOnline(c,'booked')),[]);
     const tdOff=chs.reduce((a,c)=>addv(a,scSum(SCB,c.sc,'done')),[]),tdOn=chs.reduce((a,c)=>addv(a,scOnline(c,'done')),[]);
+    const tsame=chs.reduce((a,c)=>addv(a,leadF(c,'booked_same')),[]);
+    const tevent=chs.reduce((a,c)=>addv(a,addv(leadF(c,'booked_same'),leadF(c,'booked_later'))),[]);
     let O=head('Overview · 4 channels');
     O+=row('New leads · all channels',tl,'tot',N,{color:'#2b5cad'});
+    O+=row('· booked this week (same-wk leads)',tsame,'sub',N,{color:'#2b5cad'});
+    O+=row('· booked eventually (same + later)',tevent,'sub',N,{color:'#2b5cad'});
+    O+=row('· lead → book % (eventually)',ratio(tevent,tl),'pct',PCT,{noheat:true});
     O+=row('SC bookings · all channels',tb,'grp',N,{color:'#1F6F5C'});
     O+=row('· of which offline',tbOff,'sub',N,{color:'#1F6F5C'});
     O+=row('· · offline % of bookings',ratio(tbOff,tb),'pct',PCT,{noheat:true});
@@ -211,9 +217,11 @@ function paint(){
     let T=head(ch.name+' · funnel');
     const nl=leadF(ch,'new_leads'), lbk=addv(leadF(ch,'booked_same'),leadF(ch,'booked_later'));
     const bk=bookedBy(ch), dn=doneBy(ch);
+    const bsame=leadF(ch,'booked_same');
     T+=row(ch.icon+' New leads (national)',nl,'tot',N,{color:ch.color});
-    T+=row('· leads booked (eventually)',lbk,'sub',N,{color:ch.color});
-    T+=row('· lead → book %',ratio(lbk,nl),'pct',PCT,{noheat:true});
+    T+=row('· booked this week (same-wk leads)',bsame,'sub',N,{color:ch.color});
+    T+=row('· booked eventually (same + later)',lbk,'sub',N,{color:ch.color});
+    T+=row('· lead → book % (eventually)',ratio(lbk,nl),'pct',PCT,{noheat:true});
     // Google paid campaign funnel
     if(ch.key==='google'){const g=gapGrid();if(g){
       T+=row('Paid campaign · spend (₹)',g.spend,'grp',RUP,{color:'#B8862E'});
@@ -231,6 +239,24 @@ function paint(){
       T+=row('· · offline % of bookings',ratio(bkOff,bk),'pct',PCT,{noheat:true});
       T+=row('· of which online',bkOn,'sub',N,{color:'#7B5EA7'});
       T+=row('· · online % of bookings',ratio(bkOn,bk),'pct',PCT,{noheat:true});
+    }
+    // Lead-maturity cohort — of THIS week's SC bookings, what age was the lead? (match bookings back to the leads that produced them)
+    const ftS=scField(ch,'ft_same'),ftP=scField(ch,'ft_prev'),ftN=scField(ch,'ft_nolead'),
+          rep=scField(ch,'repeat'),   // booked = ft_same + ft_prev + ft_nolead + repeat (exact partition); repeat already = ret_return + ret_rebook
+          p1=scField(ch,'ft_prev_1w'),p24=scField(ch,'ft_prev_2_4w'),p13=scField(ch,'ft_prev_1_3mo'),p3=scField(ch,'ft_prev_3mo');
+    if(ftS.some(v=>v)||ftP.some(v=>v)){
+      T+=row('Lead maturity · of SC bookings',ZA(),'grp',N,{noheat:true,color:'#8A8A80'});
+      T+=row('· from this-week lead',ftS,'sub',N,{color:ch.color});
+      T+=row('· · % of bookings',ratio(ftS,bk),'pct',PCT,{noheat:true});
+      T+=row('· from older lead (matured)',ftP,'sub',N,{color:'#B8862E'});
+      if(p1.some(v=>v)||p24.some(v=>v)||p13.some(v=>v)||p3.some(v=>v)){
+        T+=row('· · 1 wk old',p1,'sub',N,{color:'#B8862E'});
+        T+=row('· · 2–4 wk old',p24,'sub',N,{color:'#B8862E'});
+        T+=row('· · 1–3 mo old',p13,'sub',N,{color:'#B8862E'});
+        T+=row('· · 3 mo+ old',p3,'sub',N,{color:'#B8862E'});
+      }
+      if(ftN.some(v=>v))T+=row('· no lead / walk-in',ftN,'sub',N,{color:'#8A8A80'});
+      if(rep.some(v=>v))T+=row('· repeat / returning patient',rep,'sub',N,{color:'#7B5EA7'});
     }
     T+=row('Done (completed)',dn,'grp',N,{color:'#1F6F5C'});
     if(dnOff.some(v=>v)||dnOn.some(v=>v)){
