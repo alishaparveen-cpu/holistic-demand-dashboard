@@ -305,7 +305,7 @@
     </div>
     <div id="selwrap" style="flex:0 1 300px;min-width:250px"><div class="ctltag">2 · Selection <span style="text-transform:none;font-weight:500;color:var(--faint)">· focus one exact cut of the metric</span></div><div id="selcontrol"></div></div>
     <div id="bdwrap" style="flex:1 1 380px;min-width:340px"><div class="ctltag">3 · Breakdown <span style="text-transform:none;font-weight:500;color:var(--faint)">· cross by city / category / source — nests & drills</span></div>
-      <div class="seg" id="grpseg" style="margin-bottom:7px"><span class="ctltag" style="margin:0 4px 0 0;min-width:auto;flex:none;align-self:center">Rows by</span><button class="segbtn on" id="grpCity" onclick="setGrp('city')">🏙 City</button><button class="segbtn" id="grpClinic" onclick="setGrp('clinic')">🏥 Clinic</button><button class="segbtn" id="grpDoctor" onclick="setGrp('doctor')">👤 Doctor</button><button class="segbtn" id="grpCat" onclick="setGrp('category')">🏷 Category</button><button class="segbtn" id="grpSrc" onclick="setGrp('source')">📣 Source</button></div><select id="grp2sel" class="fbtn" onchange="setGrp2(this.value)" title="nest each City row into a second dimension" style="margin-left:6px;font-size:12px;padding:5px 8px;font-weight:700;color:var(--accent);cursor:pointer"><option value="none">no nesting</option><option value="clinic">→ then Clinic</option><option value="doctor">→ then Doctor</option><option value="source">→ then Source</option><option value="category">→ then Category</option></select>
+      <div class="seg" id="grpseg" style="margin-bottom:7px"><span class="ctltag" style="margin:0 4px 0 0;min-width:auto;flex:none;align-self:center">Rows by</span><button class="segbtn on" id="grpCity" onclick="setGrp('city')">🏙 City</button><button class="segbtn" id="grpClinic" onclick="setGrp('clinic')">🏥 Clinic</button><button class="segbtn" id="grpDoctor" onclick="setGrp('doctor')">👤 Doctor</button><button class="segbtn" id="grpCat" onclick="setGrp('category')">🏷 Category</button><button class="segbtn" id="grpSrc" onclick="setGrp('source')">📣 Source</button></div><span id="nestchain"></span>
       <div id="bdcontrol"></div></div>
     <div id="infobox" style="flex:1 1 200px;min-width:180px;margin-left:auto;display:flex;flex-direction:column;gap:8px;align-items:flex-end">
       <div id="scopebanner"></div>
@@ -316,7 +316,7 @@
 </div>
 <div class="modal" id="modal" onclick="if(event.target===this)closeZ()"><div class="mbox"><div class="mhd"><span id="mTitle"></span><button onclick="closeZ()" title="close">✕</button></div><div id="pickBar" class="pickbar"></div><div id="mBody"></div></div></div>
 <script>
-let D=null, AGE={}, CURN=1, BASEN=4, MODE='ov', C=null, OPEN={}, QF='any', CITYF=new Set(), CLINF=new Set(), TIERF=new Set(), MATF=new Set(), DOCF=new Set(), CATF=new Set(), SEG='offline', DENSITY='compact', MET='', OVMODE='cockpit', METSEL=[], MCOND={}, MSUB={}, MFOCUS={}, GRP='city', GRP2='none', CLUB=1, GRAIN='weekly', SHOWSHARE=false, CATPCT=false, FCATDETAIL=false, FGCOLLAPSE=new Set(), FSCOLLAPSE=new Set(), CLUBAGG='sum', METFRESH=false, WEND=0, FPCT=false, SCOPE_ORDER=[];   // BASEN=4: marketing compares the latest week vs the prior 4-week AVERAGE (smoother than city-head's 1-week) → graduated red/orange/yellow verdicts   // SCOPE_ORDER: dimensions in the order the user activated them → chips reorder so the active scope reads left-to-right   // FPCT: funnel "% of total" — show each breakdown row as its share of the stage headline   // WEND: weeks trimmed off the newest end → rebase "now" to an earlier week (0 = the true latest week)   // METFRESH: selection is still the untouched default → next pick replaces it (kills the "pinned bookings" feel)
+let D=null, AGE={}, CURN=1, BASEN=4, MODE='ov', C=null, OPEN={}, QF='any', CITYF=new Set(), CLINF=new Set(), TIERF=new Set(), MATF=new Set(), DOCF=new Set(), CATF=new Set(), SEG='offline', DENSITY='compact', MET='', OVMODE='cockpit', METSEL=[], MCOND={}, MSUB={}, MFOCUS={}, GRP='city', GRP2='none', GRP3='none', GRP4='none', CLUB=1, GRAIN='weekly', SHOWSHARE=false, CATPCT=false, FCATDETAIL=false, FGCOLLAPSE=new Set(), FSCOLLAPSE=new Set(), CLUBAGG='sum', METFRESH=false, WEND=0, FPCT=false, SCOPE_ORDER=[];   // BASEN=4: marketing compares the latest week vs the prior 4-week AVERAGE (smoother than city-head's 1-week) → graduated red/orange/yellow verdicts   // SCOPE_ORDER: dimensions in the order the user activated them → chips reorder so the active scope reads left-to-right   // FPCT: funnel "% of total" — show each breakdown row as its share of the stage headline   // WEND: weeks trimmed off the newest end → rebase "now" to an earlier week (0 = the true latest week)   // METFRESH: selection is still the untouched default → next pick replaces it (kills the "pinned bookings" feel)
 let QD=null, FUNNEL2='sc';   // SC/FU/Combined — data sourced from master demand (data_quick_diag.json)
 function setFunnel2(v){FUNNEL2=v;['sc','fu','all'].forEach(x=>{const b=$('fn2'+x);if(b)b.classList.toggle('on',x===v);});applyVariant();if(MODE==='cl'&&C){const s=C._slug;C=D.clinics[s]||C;}render();}
 function applyVariant(){   // overlay the matched SC/FU/Combined numbers onto each clinic (remapped to D.weeks)
@@ -777,6 +777,12 @@ function chanUnion(){if(_CHU)return _CHU;const s=new Set();Object.values(D.clini
 const KEEP_CHAN=['Google','Fb','Practo','Organic'],CHAN_ORDER=['Google','Fb','Practo','Organic','Others'];   // GMB is folded into Organic (per Alisha — reduce confusion); everything else → Others
 function chanKey(n){const l=(n||'').toLowerCase();if(l.indexOf('google')>=0)return 'Google';if(l==='fb'||l.indexOf('facebook')>=0||l.indexOf('meta')>=0||l.indexOf('insta')>=0)return 'Fb';if(l.indexOf('practo')>=0)return 'Practo';if(l.indexOf('gmb')>=0||l.indexOf('organic')>=0)return 'Organic';return 'Others';}   // GMB folded into Organic
 function chanConsol(bc){const out={};for(const ch in (bc||{})){const k=chanKey(ch),a=bc[ch]||[];out[k]=(out[k]||Z()).map((v,i)=>v+(a[i]||0));}return out;}
+function srcLabel(src){return src==='Organic'?'Organic +GMB':src;}   // Organic bucket includes GMB (folded) — label it so
+// weekly_diag by_channel is NOT deduped (a lead tagged to >1 source is counted in each), so it sums ABOVE the deduped
+// demand.leads total. Rescale each clinic's by_channel to sum to its leads → source rows reconcile to the total everywhere.
+function normalizeChannels(){Object.values(D.clinics).forEach(c=>{const dm=c&&c.demand;if(!dm||!dm.by_channel)return;const bc=dm.by_channel,leads=dm.leads||[],N=leads.length,tot=new Array(N).fill(0);
+  Object.values(bc).forEach(a=>{if(a)for(let i=0;i<N;i++)tot[i]+=a[i]||0;});
+  Object.keys(bc).forEach(ch=>{bc[ch]=(bc[ch]||[]).map((v,i)=>tot[i]?Math.round((v||0)*(leads[i]||0)/tot[i]):0);});});}
 // map our raw source buckets → the city-head sheet's labels (Meta→fb; Direct/none folded into Others)
 const SRC_DISP={'Meta':'fb'};   // Meta→fb; 'Direct / none' kept as its OWN bucket (city-head sheet leaves direct/walk-in unclassified, not in Others)
 function srcDisp(raw){return SRC_DISP[raw]||raw;}
@@ -945,10 +951,20 @@ function syncOv(){const om=$('ovMetric'),of=$('ovFunnel'),oc=$('ovCockpit'),bw=$
   if(om)om.classList.toggle('on',OVMODE==='metric');if(of)of.classList.toggle('on',OVMODE==='funnel');
   if(mt)mt.innerHTML=OVMODE==='funnel'?'1 · Jump to <span style="text-transform:none;font-weight:500;color:var(--faint)">· click a metric to scroll to its funnel card</span>':'1 · Metric <span style="text-transform:none;font-weight:500;color:var(--faint)">· click a tier to pick the whole group</span>';
   const gc=$('grpCity'),gk=$('grpClinic'),gd=$('grpDoctor'),gt=$('grpCat'),gsr=$('grpSrc');if(gc)gc.classList.toggle('on',GRP==='city');if(gk)gk.classList.toggle('on',GRP==='clinic');if(gd)gd.classList.toggle('on',GRP==='doctor');if(gt)gt.classList.toggle('on',GRP==='category');if(gsr)gsr.classList.toggle('on',GRP==='source');
-  const g2=$('grp2sel');if(g2){g2.style.display=GRP==='city'?'':'none';g2.value=GRP2;}}   // nesting selector only applies to City rows
+  const nc=$('nestchain');if(nc)nc.innerHTML=buildNestChain();}   // nesting chain selectors reflect the current Rows-by
 function setOvMode(m){OVMODE=m;MODE='ov';syncOv();render();}
-function setGrp(g){GRP=g;if(g===GRP2)GRP2='none';syncOv();render();}
-function setGrp2(v){GRP2=v;render();}
+function setGrp(g){GRP=g;GRP2=GRP3=GRP4='none';syncOv();render();}
+function setGrp2(v){GRP2=v;if(v!=='clinic'&&v!=='doctor'){GRP3='none';GRP4='none';}render();}
+function setGrp3(v){GRP3=v;if(v!=='clinic'&&v!=='doctor')GRP4='none';render();}
+function setGrp4(v){GRP4=v;render();}
+// nesting chain UI (Rows-by City → then Clinic → then Doctor …). Only structural dims (clinic/doctor) allow a further level; source/category are terminal.
+const NEST_OPTS=[['clinic','Clinic'],['doctor','Doctor'],['source','Source'],['category','Category']];
+function nestSel(val,setter,used){return '<select class="fbtn" onchange="'+setter+'(this.value)" style="margin-left:6px;font-size:12px;padding:5px 8px;font-weight:700;color:var(--accent);cursor:pointer"><option value="none"'+(val==='none'?' selected':'')+'>no nesting</option>'+NEST_OPTS.filter(o=>!used.has(o[0])).map(o=>'<option value="'+o[0]+'"'+(val===o[0]?' selected':'')+'>→ then '+o[1]+'</option>').join('')+'</select>';}
+function buildNestChain(){if(!['city','clinic','doctor'].includes(GRP))return '';
+  const used=new Set([GRP]);let h=nestSel(GRP2,'setGrp2',used);
+  if(GRP2==='clinic'||GRP2==='doctor'){used.add(GRP2);h+=nestSel(GRP3,'setGrp3',used);
+    if(GRP3==='clinic'||GRP3==='doctor'){used.add(GRP3);h+=nestSel(GRP4,'setGrp4',used);}}
+  return h;}
 function drillCity(ct){CITYF=new Set([ct]);GRP='clinic';cityChanged();syncOv();}   // click a city → its clinics
 function backToCities(){CITYF=new Set();GRP='city';cityChanged();syncOv();}
 // build a clinic-shaped object for ONE doctor by summing their by_doctor slice across the scoped clinics
@@ -1160,6 +1176,7 @@ function upstreamStripHTML(o,slugs){
   return '<div style="margin:0 0 14px"><div style="font-size:11px;color:var(--faint);text-transform:uppercase;letter-spacing:.04em;margin-bottom:5px">'+SRCF+' · acquisition (upstream)</div><div style="display:flex;gap:7px;overflow-x:auto;padding-bottom:4px">'+ups.map(card).join('')+'</div></div>';}
 function renderMetric(){
   ZREG=[];CURZ=null;
+  const nc=$('nestchain');if(nc)nc.innerHTML=buildNestChain();   // nesting chain selectors (City → Clinic → …)
   const selc=$('selcontrol');if(selc)selc.innerHTML=buildSelControl();   // Part 2 · Selection (focus a sub-parent)
   const bdc=$('bdcontrol');if(bdc)bdc.innerHTML=buildBdControl();   // Part 3 · Breakdown (split into rows) — works with nothing selected
   const metrics=METSEL.map(k=>STAGES.find(x=>x.key===k)).filter(Boolean);
@@ -1184,22 +1201,22 @@ function renderMetric(){
   }else{
     rows=scopeSlugs.filter(s=>passCond(CL(s))).map(s=>{const c=CL(s);return{label:c.disp,n:0,c:c,click:"goClinic('"+s+"')"};});
   }
-  // ─── NESTED Rows-by: each primary group expands into its secondary rows (e.g. City → Clinic) ───
-  const nested=byCity&&GRP2&&GRP2!=='none';
+  // ─── NESTED Rows-by: recursive, arbitrary depth (e.g. City → Clinic → Doctor). Structural dims (city/clinic/doctor)
+  //     partition slugs and can nest further; data dims (source/category) are terminal leaf splits. ───
+  const STRUCT=new Set(['city','clinic','doctor']),DIMS=[GRP,GRP2,GRP3,GRP4].filter(d=>d&&d!=='none');
+  const nested=DIMS.length>1&&STRUCT.has(GRP);
   if(nested){
-    const grp={};scopeSlugs.forEach(s=>{const ct=D.clinics[s].city;(grp[ct]=grp[ct]||[]).push(s);});
-    const out=[];
-    Object.keys(grp).sort().forEach(ct=>{const cslugs=grp[ct],cagg=aggregate(cslugs,ct);if(SEG==='online'&&cslugs.every(s=>D.clinics[s]._online))cagg._online=true;
-      if(!passCond(cagg))return;
-      out.push({label:ct,n:pcLabel(cslugs.map(s=>D.clinics[s])),c:cagg,depth:0,click:"drillCity('"+ct.replace(/'/g,"\\'")+"')"});
-      let kids=[];
-      if(GRP2==='clinic')kids=cslugs.filter(s=>passCond(CL(s))).map(s=>({label:(D.clinics[s].loc||D.clinics[s].disp),c:CL(s),depth:1,click:"goClinic('"+s+"')"}));
-      else if(GRP2==='doctor')kids=docNames().map(dr=>({label:docShort(dr),c:aggregateDoctor(dr,cslugs),depth:1,click:"drillDoctor('"+dr.replace(/'/g,"\\'")+"')"})).filter(r=>sum(r.c.bookings.total)&&passCond(r.c));
-      else if(GRP2==='source')kids=SOURCE_ORDER.map(src=>({label:src,c:aggregateSource(src,cagg),depth:1,click:''})).filter(r=>(sum(r.c.demand.leads)||sum(r.c.bookings.total))&&passCond(r.c));
-      else if(GRP2==='category')kids=CAT_TREE.map(g=>({label:g.name,c:aggregateCategory(g.name,g.cats,cagg),depth:1,click:''})).filter(r=>sum(r.c.done.done)&&passCond(r.c));
-      kids.forEach(k=>k.pe=metricEval(k.c,primary.key).ev);
-      if(GRP2==='clinic'||GRP2==='doctor')kids.sort((a,b)=>(a.pe.d==null?9:a.pe.d)-(b.pe.d==null?9:b.pe.d));   // worst child first
-      out.push(...kids);});
+    const out=[],wsort=a=>a.sort((x,y)=>{const dx=metricEval(x.c,primary.key).ev.d,dy=metricEval(y.c,primary.key).ev.d;return (dx==null?9:dx)-(dy==null?9:dy);});
+    const build=(slugs,depth)=>{const dim=DIMS[depth],last=depth===DIMS.length-1;
+      if(dim==='city'){const grp={};slugs.forEach(s=>{(grp[D.clinics[s].city]=grp[D.clinics[s].city]||[]).push(s);});
+        Object.keys(grp).sort().forEach(ct=>{const cs=grp[ct],ag=aggregate(cs,ct);if(SEG==='online'&&cs.every(s=>D.clinics[s]._online))ag._online=true;if(!passCond(ag))return;
+          out.push({label:ct,n:pcLabel(cs.map(s=>D.clinics[s])),c:ag,depth,dim:'city',click:"drillCity('"+ct.replace(/'/g,"\\'")+"')"});if(!last)build(cs,depth+1);});}
+      else if(dim==='clinic'){wsort(cs2rows(slugs)).forEach(o=>{out.push({label:D.clinics[o.s].loc||D.clinics[o.s].disp,c:o.c,depth,dim:'clinic',click:"goClinic('"+o.s+"')"});if(!last)build([o.s],depth+1);});}
+      else if(dim==='doctor'){wsort(docNames().map(dr=>({dr,c:aggregateDoctor(dr,slugs)})).filter(o=>sum(o.c.bookings.total)&&passCond(o.c))).forEach(o=>{out.push({label:docShort(o.dr),c:o.c,depth,dim:'doctor',click:"drillDoctor('"+o.dr.replace(/'/g,"\\'")+"')"});});}
+      else if(dim==='source'){const ag=aggregate(slugs,'s');SOURCE_ORDER.map(src=>({src,c:aggregateSource(src,ag)})).filter(o=>(sum(o.c.demand.leads)||sum(o.c.bookings.total))&&passCond(o.c)).forEach(o=>out.push({label:o.src,c:o.c,depth,dim:'source',click:''}));}
+      else if(dim==='category'){const ag=aggregate(slugs,'c');CAT_TREE.map(g=>({g,c:aggregateCategory(g.name,g.cats,ag)})).filter(o=>sum(o.c.done.done)&&passCond(o.c)).forEach(o=>out.push({label:o.g.name,c:o.c,depth,dim:'category',click:''}));}};
+    const cs2rows=slugs=>slugs.filter(s=>!D.clinics[s]._unattr_city&&passCond(CL(s))).map(s=>({s,c:CL(s)}));
+    build(scopeSlugs,0);
     rows=out;
   }
   rows.forEach(r=>{if(!r.pe)r.pe=metricEval(r.c,primary.key).ev;});
@@ -1231,8 +1248,8 @@ function renderMetric(){
   const k2ic={clinic:'🏥 ',doctor:'👤 ',source:'📣 ',category:'🏷 '};
   rows.forEach(r=>{const dep=r.depth||0;
     const lbl=dep>0
-      ? '<span style="padding-left:'+(dep*20)+'px;color:var(--faint)">↳ </span>'+(k2ic[GRP2]||'')+r.label
-      : (byCity?'🏙 '+r.label+(r.n?' · '+r.n:''):byDoctor?'👤 '+r.label:byCategory?'🏷 '+r.label:bySource?'📣 '+r.label:r.label);
+      ? '<span style="padding-left:'+(dep*20)+'px;color:var(--faint)">↳ </span>'+(k2ic[r.dim]||'')+(r.dim==='source'?srcLabel(r.label):r.label)
+      : (byCity?'🏙 '+r.label+(r.n?' · '+r.n:''):byDoctor?'👤 '+r.label:byCategory?'🏷 '+r.label:bySource?'📣 '+srcLabel(r.label):r.label);
     h+='<tr'+(r.click?' onclick="'+r.click+'"':' style="cursor:default"')+(dep>0?' style="background:var(--inset)"':'')+' title="'+(dep>0?r.label:byCity?'drill into '+r.label+' clinics':byDoctor?'open '+r.label+'’s funnel':byCategory?r.label+' diagnosis category':bySource?r.label+' lead source':'open funnel')+'"><td style="white-space:nowrap;width:1%">'+lbl+'</td><td class="why">'+metricStack(r.c,r.label)+'</td></tr>';});
   h+='</tbody></table></div>';
   $('root').innerHTML=h;
@@ -1728,7 +1745,7 @@ function renderCockpit(){
     }
     if(COCKMET==='demand'||COCKMET==='__leadch'){   // leads → also a SOURCES column (click a source → filter to it)
       const N=D.weeks.length,chanAcc={};sc.base.forEach(s=>{const bc=chanConsol(CL(s).demand&&CL(s).demand.by_channel);for(const ch in bc){chanAcc[ch]=(chanAcc[ch]||new Array(N).fill(0)).map((v,i)=>v+((bc[ch]||[])[i]||0));}});
-      const sr=CHAN_ORDER.filter(ch=>chanAcc[ch]&&sum(chanAcc[ch])>0).map(ch=>({act:'setSrc(\''+ch+'\')',disp:ch+(SRCF===ch?' ✓':''),ev:evalMetric(clubArr(chanAcc[ch],false)),cnt:'',vol:1e9}));
+      const sr=CHAN_ORDER.filter(ch=>chanAcc[ch]&&sum(chanAcc[ch])>0).map(ch=>({act:'setSrc(\''+ch+'\')',disp:srcLabel(ch)+(SRCF===ch?' ✓':''),ev:evalMetric(clubArr(chanAcc[ch],false)),cnt:'',vol:1e9}));
       doctorsHTML=card('sources — leads fell',poolOf(sr,0),'demand');
     }
     const moversHTML='<div style="min-width:0"><div style="font-size:12px;color:var(--faint);text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px">movers within '+pname+'</div><div style="background:var(--card);border:1px solid var(--line);border-radius:10px;padding:11px 13px"><div style="display:flex;flex-direction:column;gap:3px">'+why+'</div>'+fixHTML+'</div></div>';
@@ -2071,6 +2088,7 @@ async function boot(){
   buildOnlineClinics();   // now that per-provider online data is loaded, build the per-clinic online buckets
   try{NATUN=await fetch('data_demand_leads.json?v='+Date.now()).then(r=>r.ok?r.json():null);}catch(e){NATUN=null;}
   injectUnattr();   // add the national + per-city unattributed-demand lines (demand tracker, 3-tier leads)
+  normalizeChannels();   // rescale by_channel to sum to the deduped leads total (source rows reconcile)
   ALLCITIES=[...new Set(Object.values(D.clinics).filter(c=>!c._online&&!c._unattr&&!c._unattr_city&&c.city!=='Online').map(c=>c.city))].sort((a,b)=>{const ta=tierOf(a)==='T1',tb=tierOf(b)==='T1';return ta!==tb?(ta?-1:1):a.localeCompare(b);});   // exclude the Online pseudo-city; Tier-1 cities first so heads click fast
   try{const saved=JSON.parse(localStorage.getItem('wd_city')||'[]');if(Array.isArray(saved))saved.forEach(c=>{if(ALLCITIES.includes(c))CITYF.add(c);});}catch(e){}
   $('cityBtn').textContent=cityBtnLabel();$('cityBtn').classList.toggle('on',!!CITYF.size||!!TIERF.size);
