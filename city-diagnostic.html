@@ -341,7 +341,7 @@
 </div>
 <div class="modal" id="modal" onclick="if(event.target===this)closeZ()"><div class="mbox"><div class="mhd"><span id="mTitle"></span><button onclick="closeZ()" title="close">✕</button></div><div id="pickBar" class="pickbar"></div><div id="mBody"></div></div></div>
 <script>
-let D=null, AGE={}, CURN=1, BASEN=1, MODE='ov', C=null, OPEN={}, QF='any', CITYF=new Set(), CLINF=new Set(), TIERF=new Set(), MATF=new Set(), DOCF=new Set(), CATF=new Set(), SEG='offline', DENSITY='compact', MET='', OVMODE='cockpit', METSEL=[], MCOND={}, MSUB={}, MFOCUS={}, GRP='city', GRP2='none', GRP3='none', GRP4='none', CLUB=1, GRAIN='weekly', SHOWSHARE=false, CATPCT=false, FCATDETAIL=false, FGCOLLAPSE=new Set(), FSCOLLAPSE=new Set(), CLUBAGG='sum', METFRESH=false, WEND=0, FPCT=false, SCOPE_ORDER=[];   // SCOPE_ORDER: dimensions in the order the user activated them → chips reorder so the active scope reads left-to-right   // FPCT: funnel "% of total" — show each breakdown row as its share of the stage headline   // WEND: weeks trimmed off the newest end → rebase "now" to an earlier week (0 = the true latest week)   // METFRESH: selection is still the untouched default → next pick replaces it (kills the "pinned bookings" feel)
+let D=null, AGE={}, CURN=1, BASEN=1, MODE='ov', C=null, OPEN={}, QF='any', CITYF=new Set(), CLINF=new Set(), TIERF=new Set(), MATF=new Set(), DOCF=new Set(), CATF=new Set(), SEG='offline', DENSITY='compact', MET='', OVMODE='cockpit', METSEL=[], MCOND={}, MSUB={}, MFOCUS={}, MCOMB={}, GRP='city', GRP2='none', GRP3='none', GRP4='none', CLUB=1, GRAIN='weekly', SHOWSHARE=false, CATPCT=false, FCATDETAIL=false, FGCOLLAPSE=new Set(), FSCOLLAPSE=new Set(), CLUBAGG='sum', METFRESH=false, WEND=0, FPCT=false, SCOPE_ORDER=[];   // SCOPE_ORDER: dimensions in the order the user activated them → chips reorder so the active scope reads left-to-right   // FPCT: funnel "% of total" — show each breakdown row as its share of the stage headline   // WEND: weeks trimmed off the newest end → rebase "now" to an earlier week (0 = the true latest week)   // METFRESH: selection is still the untouched default → next pick replaces it (kills the "pinned bookings" feel)
 let QD=null, FUNNEL2='sc';   // SC/FU/Combined — data sourced from master demand (data_quick_diag.json)
 function setFunnel2(v){FUNNEL2=v;['sc','fu','all'].forEach(x=>{const b=$('fn2'+x);if(b)b.classList.toggle('on',x===v);});applyVariant();if(MODE==='cl'&&C){const s=C._slug;C=D.clinics[s]||C;}render();}
 function applyVariant(){   // overlay the matched SC/FU/Combined numbers onto each clinic (remapped to D.weeks)
@@ -462,7 +462,7 @@ const $=id=>document.getElementById(id);
 function Z(){return new Array(D&&D.weeks?D.weeks.length:0).fill(0);}   // global zero-array — STAGES metric closures (availability fallbacks) resolve Z here
 // editable drop-threshold legend — user tunes 🔴/🟡 cutoffs per metric sensitivity, comparison is vs the prior BASEN-wk avg/peak
 function threshCtl(){const inp=(kind,val)=>'<input type="number" min="0" max="99" step="1" value="'+Math.round(val*100)+'" onclick="event.stopPropagation()" onchange="setThresh(\''+kind+'\',this.value)" style="width:34px;padding:0 2px;font-size:10.5px;text-align:right;border:1px solid var(--line);border-radius:4px;background:#fff;color:var(--ink)"/>';
-  return '🟥 ≥'+inp('red',REDT)+'% dark · 🔴 ≥'+inp('amber',AMBT)+'% light · 🟡 smaller drops · 🟢 up · vs prior '+BASEN+'-wk '+(CMPMODE==='peak'?'peak':'average');}
+  return '🔴 ≥'+inp('red',REDT)+'% drop · 🟠 ≥'+inp('amber',AMBT)+'% drop · 🟡 smaller drop · 🟢 up/flat · vs prior '+BASEN+'-wk '+(CMPMODE==='peak'?'peak':'average');}
 const mean=a=>{const b=a.filter(x=>x!=null);return b.length?b.reduce((x,y)=>x+y,0)/b.length:null;};
 const sum=a=>a.reduce((x,y)=>x+(y||0),0);
 function fmt(v,d){return v==null?'—':(d?(Math.round(v*10)/10):Math.round(v)).toLocaleString('en-IN');}
@@ -869,7 +869,7 @@ function subDims(key){const Z=()=>new Array(D.weeks.length).fill(0);
     const sfx=FUNNEL2==='sc'?'':' · new-consult';
     const out=[{label:'all bookings',get:c=>c.bookings.total}];
     if(FUNNEL2!=='fu')out.push(
-      {label:'new patients'+sfx,get:c=>ad(c.bookings.new_tw,c.bookings.new_old)},{label:'— fresh (lead this week)',get:c=>c.bookings.new_tw},{label:'— older-week lead',get:c=>c.bookings.new_old},
+      {label:'new patients'+sfx,get:c=>ad(c.bookings.new_tw,c.bookings.new_old)},{label:'— fresh (lead this week)',get:c=>c.bookings.new_tw},{label:'— older-week lead (carry-in)',get:c=>c.bookings.new_old},{label:'— 1 wk-old lead',get:c=>c.bookings.no1w||Z()},{label:'— 2–4 wk-old lead',get:c=>c.bookings.no2_4w||Z()},{label:'— 1–3 mo-old lead',get:c=>c.bookings.no1_3mo||Z()},{label:'— 3 mo+-old lead',get:c=>c.bookings.no3mo||Z()},
       {label:'repeat patients'+sfx,get:c=>ad(c.bookings.rebook,c.bookings.relapse)},{label:'— never done before',get:c=>c.bookings.rebook},{label:'— relapse (done before)',get:c=>c.bookings.relapse});
     if(FUNNEL2==='all')out.push({label:'follow-up bookings (no split)',get:c=>{const s=ad(ad(c.bookings.new_tw,c.bookings.new_old),ad(c.bookings.rebook,c.bookings.relapse));return c.bookings.total.map((v,i)=>(v||0)-(s[i]||0));}});
     srcUnion().forEach(sr=>out.push({label:'source · '+sr,get:c=>bookingSources(c)[sr]||Z()}));   // bookings by lead source, sheet labels (SC only; FU has no source → 0)
@@ -960,6 +960,14 @@ function setFocus(k,label){const fd=focusDims(k),base=fd[0];   // MULTISELECT: t
   if(!METSEL.includes(k)){METSEL.push(k);MET=METSEL[0];METFRESH=false;}
   updateModeUI();render();}
 function clearFocus(k){delete MFOCUS[k];render();}
+function toggleComb(k){MCOMB[k]=!MCOMB[k];render();}   // combine the picked Selection cuts into one summed row
+// ⊕ COMBINE: sum the metricArr of every picked cut into a single row ("fresh + 1 wk-old", etc.) — additive count cuts only
+function metricRowComb(c,key,disp,labels){const Z=()=>new Array(D.weeks.length).fill(0);
+  const raw=labels.reduce((acc,lb)=>{const a=metricArr(c,key,lb)||[];return acc.map((v,i)=>(v||0)+((a[i])||0));},Z());
+  const arr=clubArr(raw,false),ev=evalMetric(arr);
+  const combLbl=labels.map(l=>srcLabel(l.replace(/^—\s*/,''))).join(' + ');
+  const zi=ZREG.length;ZREG.push({label:disp+' · '+metricNameFull(key)+' · '+combLbl,arr:raw,col:COL[ev.st]||'var(--ink2)',pct:false,noPrefix:true});
+  return '<div class="crow" onclick="frowClick(event,'+zi+')" title="combined — the picked sub-cuts summed"><span class="clab"><span style="color:#7A3FA0;font-weight:800">⊕ </span><span class="mnm">'+metricNameFull(key)+'</span><span class="mseg"> · '+segWord()+'</span><span class="msub" style="color:#7A3FA0;font-weight:700"> · '+combLbl+'</span></span>'+pctPill(ev)+trendHTML(arr,false,ev)+'<span class="zoomico" onclick="event.stopPropagation();zoomReg('+zi+')" title="zoom — full weekly trend" style="cursor:zoom-in;margin-left:10px;color:var(--faint);font-size:13px">🔍</span></div>';}
 function buildSelControl(){
   if(!METSEL.length)return '<div style="padding:8px 4px;color:var(--faint);font-size:12px">pick a metric in <b>1 · Metric</b> — then choose which exact cut to focus on (e.g. Bookings → new patients only).</div>';
   let h='<div class="seg" style="display:flex;flex-direction:column;gap:9px;align-items:stretch;padding:9px 12px;width:100%;box-sizing:border-box">';
@@ -968,6 +976,9 @@ function buildSelControl(){
     if(fd.length>1)h+='<div style="display:flex;gap:5px;flex-wrap:wrap">'+fd.map((d,di)=>{const isBase=di===0,on=isBase?!sel.length:sel.includes(d.label),leaf=/^—\s/.test(d.label);
         return '<button class="fbtn'+(on?' on':'')+'" style="padding:4px 10px;font-size:11px;font-weight:700'+(leaf?';opacity:.9;font-weight:600':'')+'" onclick="setFocus(\''+k+'\',\''+d.label.replace(/'/g,"\\'")+'\')">'+srcLabel(d.label.replace(/^—\s*/,'↳ '))+'</button>';}).join('')+'</div>';
     else h+='<div style="font-size:11px;color:var(--faint);padding:2px 2px">whole metric — no sub-cuts to focus <span style="color:var(--muted)">(it’s a rate/ratio)</span></div>';
+    if(sel.length>=2){const selRate=sel.some(lb=>{const e=fd.find(x=>x.label===lb);return e&&e.rate;}),on=!!MCOMB[k];   // ⊕ combine toggle — only for additive count cuts
+      h+=selRate?'<div style="font-size:10.5px;color:var(--faint);padding:1px 2px">↳ can’t combine rate cuts (only counts add up)</div>'
+        :'<div style="margin-top:1px"><button class="fbtn'+(on?' on':'')+'" style="padding:3px 11px;font-size:10.5px;font-weight:800;border-color:#7A3FA0;color:'+(on?'#fff':'#7A3FA0')+(on?';background:#7A3FA0':'')+'" onclick="toggleComb(\''+k+'\')" title="sum the '+sel.length+' picked cuts into one combined row, shown on top">'+(on?'⊕ combined (on) — click to split':'⊕ combine the '+sel.length+' into one')+'</button></div>';}
     h+='</div>';});
   h+='</div>';return h;}
 function metricNoSub(){return OVMODE==='metric';}   // in the Individual-metric view, category breakdowns stay at MH/STI/SH (no sub-cats)
@@ -1085,9 +1096,10 @@ function metricRow(c,key,disp,subLabel,opts){opts=opts||{};const isChild=!!subLa
   const subCore=isChild?subLabel.replace(/^category · /,''):'';   // a category CHILD row ("SH · ED+") nests one level deeper than its parent ("SH"), so sub-cats read as sitting under it
   const deep=isChild&&subCore.indexOf(' · ')>=0&&CAT_CORES.has(subCore),pad=isChild?(deep?32:16):0;
   return '<div class="crow" onclick="frowClick(event,'+zi+')" title="click a number to chart · label to drill"><span class="clab"'+(pad?' style="padding-left:'+pad+'px"':'')+'>'+(isChild?'<span style="color:var(--faint)">'+(deep?'· ':'↳ ')+'</span>':'')+metricLabelHTML(key,variant)+pctSuf+'</span>'+pctPill(ev)+trendHTML(arr,pct,ev)+'<span class="zoomico" onclick="event.stopPropagation();zoomReg('+zi+')" title="zoom — full weekly trend" style="cursor:zoom-in;margin-left:10px;color:var(--faint);font-size:13px">🔍</span></div>';}
-function metricStack(c,disp){return METSEL.map(k=>{const focus=MFOCUS[k]||[],subs=MSUB[k]||[];   // each focused cut → its own headline row (multiselect); MSUB breakdowns indent below
+function metricStack(c,disp){return METSEL.map(k=>{const focus=MFOCUS[k]||[],subs=MSUB[k]||[],comb=MCOMB[k]&&focus.length>=2;   // each focused cut → its own headline row (multiselect); ⊕ combine → one summed row on top; MSUB breakdowns indent below
+  const combRow=comb?metricRowComb(c,k,disp,focus):'';
   const heads=focus.length?focus.map(f=>metricRow(c,k,disp,f,{focusHead:true})).join(''):metricRow(c,k,disp,null);
-  return heads+subs.map(sb=>metricRow(c,k,disp,sb)).join('');}).join('');}
+  return combRow+heads+subs.map(sb=>metricRow(c,k,disp,sb)).join('');}).join('');}
 function toggleShare(){SHOWSHARE=!SHOWSHARE;render();}
 function toggleCatPct(){CATPCT=!CATPCT;render();}
 // ── ⑥ Category %: filter chips (MH/STI/SH) + a full category-contribution tree, on whatever value metric is picked ──
@@ -1781,7 +1793,7 @@ function filterbarHTML(){
   if(CATF.size)chips.push(P('Category','<b>'+catFriendly().join(' · ')+'</b>'));
   if(MODE==='cl'&&C)chips.push(P('Clinic','<b>'+C.disp+'</b>'));
   if(OVMODE==='metric'&&MODE==='ov')chips.push(P('Rows','<b>'+(GRP==='city'?'by city':'by clinic')+'</b>'));
-  if(OVMODE==='metric'&&MODE==='ov')chips.push(P('Metric','<b>'+METSEL.map(k=>metricNameFull(k)+(MSUB[k]&&MSUB[k].length?' · '+MSUB[k].join('+'):'')+(MCOND[k]&&MCOND[k].length?' ('+MCOND[k].map(s=>s==='red'?'🔴':s==='amber'?'🟡':'🟢').join('')+')':'')).join('  •  ')+'</b>'));
+  if(OVMODE==='metric'&&MODE==='ov')chips.push(P('Metric','<b>'+METSEL.map(k=>metricNameFull(k)+(MSUB[k]&&MSUB[k].length?' · '+MSUB[k].join('+'):'')+(MCOND[k]&&MCOND[k].length?' ('+MCOND[k].map(s=>s==='red'?'🔴':s==='lred'?'🟠':s==='amber'?'🟡':'🟢').join('')+')':'')).join('  •  ')+'</b>'));
   const lbl=curLabel(),dw=dataWindowInfo();
   chips.push(P('Compare','<b>'+(CURN===1?'this week':'last '+CURN+' wks')+'</b> ('+lbl.c+') vs <b>prior '+BASEN+' wks</b> avg'));
   const win='<span class="fwin"><span class="fk">📅 Data</span><b>'+dw.n+' wks</b> · '+dw.first+' → '+dw.last+'<span class="fstale">'+dw.stale+'</span></span>';
