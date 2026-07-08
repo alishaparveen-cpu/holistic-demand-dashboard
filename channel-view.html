@@ -53,7 +53,7 @@ td.dpc,th.dpc{text-align:center;padding:0 10px;white-space:nowrap}
 <div class="wrap">
   <a class="back" href="index.html">← Dashboard</a>
   <h1>Channel View</h1>
-  <div class="sub">Demand by acquisition channel — <b>Google Ads · GMB · Facebook/Meta · Practo</b>. New leads (national) → SC bookings → done, per channel, week over week. Google adds the paid-campaign funnel (spend → impressions → clicks). Bookings/done are the offline clinic network on the service-week basis.</div>
+  <div class="sub">Demand by acquisition channel — <b>Google Ads · GMB · Facebook/Meta · Practo</b>. New leads (national) → SC bookings → done, per channel, week over week. Google adds the paid-campaign funnel (spend → impressions → clicks). Bookings/done are the offline clinic network + online, on the service-week basis.</div>
 
   <div class="ctl">
     <span class="lbl">Weeks</span>
@@ -97,16 +97,18 @@ const CH=[
   {key:'meta',  name:'Facebook / Meta',icon:'📘',color:'#3b5998',lead:'Meta',  keys:['meta'],sc:'Meta'},
   {key:'practo',name:'Practo',     icon:'🩺',color:'#7B5EA7',lead:'Practo',    keys:['practo'],sc:'Practo'},
 ];
-let SCB=null,GAP=null,GCMP=null,PRB=null;   // SCB=data_sc_bookings; GAP=data_ga_city_paid; GCMP=data_ga_camp_layer; PRB=data_practo_booked (Practo Flow direct bookings)
+let SCB=null,SCO=null,GAP=null,GCMP=null,PRB=null;   // SCB=data_sc_bookings (offline); SCO=data_sc_bookings_online; GAP=data_ga_city_paid; GCMP=data_ga_camp_layer; PRB=Practo Flow
 function prAlign(cube,field){if(!cube||!cube._meta)return null;const dw=D._meta.weeks,cw=cube._meta.weeks,gidx=dw.map(w=>cw.indexOf(w));const o=Array(dw.length).fill(null);for(const k in cube){if(k==='_meta'||k==='True|True')continue;const a=field?(cube[k]&&cube[k][field]):cube[k];if(!Array.isArray(a))continue;dw.forEach((w,di)=>{const gi=gidx[di];if(gi>=0&&a[gi]!=null)o[di]=(o[di]||0)+a[gi];});}return o;}
-function scAligned(src,field){if(!SCB||!src)return [];const dw=D._meta.weeks,sw=SCB._meta.weeks,out=new Array(dw.length).fill(0),sidx=dw.map(w=>sw.indexOf(w));
-  for(const k in SCB.clinics){const rec=(SCB.clinics[k].by_source||{})[src];if(!rec)continue;const a=rec[field]||[];dw.forEach((w,di)=>{const si=sidx[di];if(si>=0)out[di]+=(a[si]||0);});}
+function scSum(cube,src,field){if(!cube||!src)return new Array((D._meta.weeks||[]).length).fill(0);const dw=D._meta.weeks,sw=cube._meta.weeks,out=new Array(dw.length).fill(0),sidx=dw.map(w=>sw.indexOf(w));
+  for(const k in cube.clinics){const rec=(cube.clinics[k].by_source||{})[src];if(!rec)continue;const a=rec[field]||[];dw.forEach((w,di)=>{const si=sidx[di];if(si>=0)out[di]+=(a[si]||0);});}
   return out;}
+function scAligned(src,field){return scSum(SCB,src,field);}   // offline SC (kept for back-compat)
+function scOnline(ch,field){return scSum(SCO,ch.sc,field);}   // online SC by source (GMB/Meta only)
 
-// ---- data accessors (network) ----
+// ---- data accessors (network) — SC bookings/done are OFFLINE + ONLINE, service-week ----
 function leadF(ch,field){const ml=(D._meta.master_leads||{}).by_source||{};return z((ml[ch.lead]||{})[field]);}
-function bookedBy(ch){return SCB?scAligned(ch.sc,'booked'):(D._meta.clinics||[]).reduce((a,s)=>addv(a,sumKeys((D.clinics[s]||{}).booked_by_source,ch.keys)),[]);}   // prefer the fresh SC cube (current to latest week); fall back to source_recon
-function doneBy(ch){return SCB?scAligned(ch.sc,'done'):(D._meta.clinics||[]).reduce((a,s)=>addv(a,sumKeys((D.clinics[s]||{}).done_by_source,ch.keys)),[]);}
+function bookedBy(ch){return SCB?addv(scSum(SCB,ch.sc,'booked'),scSum(SCO,ch.sc,'booked')):(D._meta.clinics||[]).reduce((a,s)=>addv(a,sumKeys((D.clinics[s]||{}).booked_by_source,ch.keys)),[]);}   // offline + online SC (prefer the fresh cubes)
+function doneBy(ch){return SCB?addv(scSum(SCB,ch.sc,'done'),scSum(SCO,ch.sc,'done')):(D._meta.clinics||[]).reduce((a,s)=>addv(a,sumKeys((D.clinics[s]||{}).done_by_source,ch.keys)),[]);}
 
 // ---- rendering ----
 function visIdx(){const n=Math.min(NSHOW,(D._meta.weeks||[]).length);const a=[];for(let i=n-1;i>=0;i--)a.push(i);return a;}
@@ -176,7 +178,7 @@ function paint(){
     O+=row('SC bookings · all channels',tb,'grp',N,{color:'#1F6F5C'});
     O+=row('Done · all channels',td,'grp',N,{color:'#1F6F5C'});
     O+=row('· book → done %',ratio(td,tb),'pct',PCT,{noheat:true});
-    H+='<div class="shead">Σ Overview <span class="lblmuted">(New leads national · SC bookings + done are the offline network, service-week)</span></div>'+tbl(O);
+    H+='<div class="shead">Σ Overview <span class="lblmuted">(New leads national · SC bookings + done = offline network + online, service-week)</span></div>'+tbl(O);
   }
   // per channel
   chs.forEach(ch=>{
@@ -195,8 +197,11 @@ function paint(){
       T+=row('· location clicks',g.loc,'sub',N,{color:ch.color});
       T+=row('· conversions (GA)',g.conv.map(v=>v==null?null:Math.round(v)),'sub',N,{color:ch.color});
     }}
-    T+=row('SC bookings (offline network)',bk,'grp',N,{color:'#1F6F5C'});
+    const bkOn=scOnline(ch,'booked'),dnOn=scOnline(ch,'done');
+    T+=row('SC bookings (offline + online)',bk,'grp',N,{color:'#1F6F5C'});
+    if(bkOn.some(v=>v))T+=row('· of which online',bkOn,'sub',N,{color:'#7B5EA7'});
     T+=row('Done (completed)',dn,'grp',N,{color:'#1F6F5C'});
+    if(dnOn.some(v=>v))T+=row('· of which online',dnOn,'sub',N,{color:'#7B5EA7'});
     T+=row('· book → done %',ratio(dn,bk),'pct',PCT,{noheat:true});
     // Practo has a SECOND flow — patients who book an appointment directly on Practo (Flow Dashboard), separate from enquiry leads
     if(ch.key==='practo'){const db=prAlign(PRB);if(db&&db.some(v=>v)){
@@ -323,10 +328,11 @@ Promise.all([
   fetch('data_source_recon.json?v='+Date.now()).then(r=>r.json()),
   fetch('data_ga_funnel.json?v='+Date.now()).then(r=>r.ok?r.json():null).catch(()=>null),
   fetch('data_sc_bookings.json?v='+Date.now()).then(r=>r.ok?r.json():null).catch(()=>null),
+  fetch('data_sc_bookings_online.json?v='+Date.now()).then(r=>r.ok?r.json():null).catch(()=>null),
   fetch('data_ga_city_paid.json?v='+Date.now()).then(r=>r.ok?r.json():null).catch(()=>null),
   fetch('data_ga_camp_layer.json?v='+Date.now()).then(r=>r.ok?r.json():null).catch(()=>null),
   fetch('data_practo_flow_booked.json?v='+Date.now()).then(r=>r.ok?r.json():null).catch(()=>null)
-]).then(([j,gf,scb,gap,gcmp,prb])=>{D=j;GAF=gf;SCB=scb;GAP=gap;GCMP=gcmp;PRB=prb;paint();paintGD();}).catch(e=>{$('tables').innerHTML='<div style="color:#B23A2E;padding:20px">Could not load data: '+e.message+'</div>';});
+]).then(([j,gf,scb,sco,gap,gcmp,prb])=>{D=j;GAF=gf;SCB=scb;SCO=sco;GAP=gap;GCMP=gcmp;PRB=prb;paint();paintGD();}).catch(e=>{$('tables').innerHTML='<div style="color:#B23A2E;padding:20px">Could not load data: '+e.message+'</div>';});
 </script>
 </body>
 </html>
