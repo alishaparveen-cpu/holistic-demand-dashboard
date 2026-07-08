@@ -909,6 +909,8 @@ function metricEval(c,key){const st=STAGES.find(x=>x.key===key),m=st.metrics(c)[
     return {ev:evalMetric(arr),arr:arr,pct:1};}
   const fx=(MFOCUS[key]&&MFOCUS[key][0])||null,sdf=fx&&(subDims(key)||[]).find(x=>x.label===fx);   // Part 2 · Selection multiselect: sort/filter on the FIRST focused cut
   const arr=clubArr(metricArr(c,key,fx||null),fx?!!(sdf&&sdf.rate):isRate(key,m.pct));return {ev:evalMetric(arr),arr:arr,pct:fx?!!(sdf&&sdf.rate):m.pct};}
+function cutStatus(c,key,cut){const st=STAGES.find(x=>x.key===key),m=st.metrics(c)[0],sdf=cut&&(subDims(key)||[]).find(x=>x.label===cut);   // red/amber/green status of ONE focused Selection cut (for the status filter)
+  const arr=clubArr(metricArr(c,key,cut||null),cut?!!(sdf&&sdf.rate):isRate(key,m.pct));return evalMetric(arr).st;}
 function setCond(key,v){   // multi-select: toggle a status in/out of this metric's required set; 'any' clears it
   if(v==='any'){delete MCOND[key];render();return;}
   const cur=MCOND[key]?MCOND[key].slice():[],i=cur.indexOf(v);
@@ -1203,7 +1205,7 @@ function renderMetric(){
   if(!metrics.length){$('root').innerHTML='<div style="padding:44px 20px;text-align:center;color:var(--muted);font-size:14px">👆 Pick a metric in <b>1 · Metric</b>, focus an exact cut in <b>2 · Selection</b>, then cross it in <b>3 · Breakdown</b>.</div>';return;}
   const primary=metrics[0];
   const scopeSlugs=Object.keys(D.clinics).filter(inScope);
-  const passCond=c=>METSEL.every(k=>{const req=MCOND[k];return !req||!req.length||(!naMetric(c,k)&&req.includes(metricEval(c,k).ev.st));});   // AND across metrics; within a metric, OR across the selected statuses
+  const passCond=c=>METSEL.every(k=>{const req=MCOND[k];if(!req||!req.length)return true;if(naMetric(c,k))return false;const fc=MFOCUS[k]||[];return fc.length?fc.some(cut=>req.includes(cutStatus(c,k,cut))):req.includes(metricEval(c,k).ev.st);});   // AND across metrics; within a metric OR across statuses; with focused cuts → row passes if ANY focused cut matches
   const byCity=GRP==='city',byDoctor=GRP==='doctor',byCategory=GRP==='category',bySource=GRP==='source',unit=byCity?'city':(byDoctor?'doctor':byCategory?'category':bySource?'source':'clinic');
   let rows;
   if(bySource){   // one row per lead source (Organic+GMB · Google · Fb · Practo · Others) — Leads·Bookings·B2D·Done have values; other metrics n/a
@@ -1244,7 +1246,8 @@ function renderMetric(){
   const cc=(k)=>{const st=STAGES.find(x=>x.key===k),sel=MCOND[k]||[],fc=MFOCUS[k]||[];
     const nm=fc.length?(srcLabel(fc[0].replace(/^—\s*/,''))+(fc.length>1?' +'+(fc.length-1):'')):st.short;   // the colour filter runs on the FIRST focused cut (see metricEval) → name the bar after that cut, not the parent metric
     const opt=(v,lab,on)=>'<button class="cseg'+(on?' on':'')+'" onclick="setCond(\''+k+'\',\''+v+'\')">'+lab+'</button>';
-    return '<span class="condgrp"><span class="condlab" title="'+st.name+' — colour-filters rows on «'+nm+'»'+(fc.length>1?' (the first of '+fc.length+' focused cuts)':'')+'">'+nm+'</span><span class="cseg-wrap">'+opt('any','any',!sel.length)+opt('red','🔴',sel.includes('red'))+opt('lred','🟠',sel.includes('lred'))+opt('amber','🟡',sel.includes('amber'))+opt('green','🟢',sel.includes('green'))+'</span></span>';};
+    const tip=st.name+' — colour-filters rows where '+(fc.length>1?'ANY of the '+fc.length+' focused cuts matches ('+fc.map(x=>srcLabel(x.replace(/^—\s*/,''))).join(', ')+')':'«'+nm+'»');
+    return '<span class="condgrp"><span class="condlab" title="'+tip+'">'+nm+(fc.length>1?' <span style="font-weight:600;color:var(--faint)">(any)</span>':'')+'</span><span class="cseg-wrap">'+opt('any','any',!sel.length)+opt('red','🔴',sel.includes('red'))+opt('lred','🟠',sel.includes('lred'))+opt('amber','🟡',sel.includes('amber'))+opt('green','🟢',sel.includes('green'))+'</span></span>';};
   const backBtn=(!byCity&&CITYF.size===1)?'<button class="fbtn" style="padding:5px 12px;font-size:12px;font-weight:700;border-color:var(--accent);color:var(--accent)" onclick="backToCities()">← all cities</button> ':'';
   const unitLbl=byCity?(rows.length+' '+(rows.length===1?'city':'cities')):byDoctor?(rows.length+' '+(rows.length===1?'doctor':'doctors')):byCategory?(rows.length+' categories'):bySource?(rows.length+' sources'):pcLabel(rows.map(r=>r.c),true);
   const rowNoun=byCity?'city':byDoctor?'doctor':byCategory?'category':bySource?'source':'clinic';
