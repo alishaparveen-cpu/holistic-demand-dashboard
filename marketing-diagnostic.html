@@ -1770,7 +1770,7 @@ function cityTierPick(t){if(t==='all'){CITYF=new Set();TIERF=new Set();cityChang
 function clinMatPick(b){if(b==='all')MATF=new Set();else{MATF.has(b)?MATF.delete(b):MATF.add(b);}applyMatF();syncScopeBtns();if($('clinPanel'))renderClinPanel($('clinQ')?$('clinQ').value:'');render();}   // clinics dropdown top filter: All / age bucket → derive clinic set by maturity
 function filterCity(q){q=(q||'').toLowerCase().trim();document.querySelectorAll('#cityPanel label.msi').forEach(l=>{l.style.display=(l.getAttribute('data-s')||'').includes(q)?'':'none';});
   document.querySelectorAll('#cityPanel .mstierhd').forEach(hd=>{const t=hd.getAttribute('data-tier'),any=[...document.querySelectorAll('#cityPanel label.msi[data-tier="'+t+'"]')].some(l=>l.style.display!=='none');hd.style.display=any?'':'none';});}
-function cityChanged(){$('cityBtn').textContent=cityBtnLabel();$('cityBtn').classList.toggle('on',!!CITYF.size);COCKCLIN=null;COCKDOC=null;
+function cityChanged(){$('cityBtn').textContent=cityBtnLabel();$('cityBtn').classList.toggle('on',!!CITYF.size||!!TIERF.size);COCKCLIN=null;COCKDOC=null;
   try{localStorage.setItem('wd_city',JSON.stringify([...CITYF]));}catch(e){}
   if(MATF.size)applyMatF();   // maturity selection re-derives the clinic set for the new city scope
   else if(CLINF.size)[...CLINF].forEach(s=>{if(!inCity(D.clinics[s].city))CLINF.delete(s);});
@@ -1890,7 +1890,7 @@ function buildOnlineClinics(){
   const mk=(g,disp,city,loc)=>({disp,city,loc,_online:true,
     availability:{active_days:NA(),wday_days:NA(),wend_days:NA(),attend_days:NA(),attend_wday:NA(),attend_wend:NA(),hours:NA(),avail_hours:NA()},
     demand:{leads:NA(),by_channel:{},lead_book_pct:NA(),has_leads:false},
-    bookings:{total:g.booked,nat:g.booked,city:g.booked,new_tw:Z(),new_old:Z(),rebook:Z(),relapse:Z()},
+    bookings:{total:g.booked,nat:g.booked,city:g.booked,new_tw:Z(),new_old:Z(),rebook:Z(),relapse:Z(),by_source:g.by_source||{}},
     done:{booked:g.booked,done:g.done,book_done_pct:pct(g.done,g.booked),by_cat:ZC()},
     purchased:{total:g.purchased,by_cat:ZC()},
     revenue:{rev:g.rev,by_cat:ZC(),meds:{tot:Z(),by_cat:ZC()},test:{tot:Z(),by_cat:ZC()},ther:{tot:Z(),by_cat:ZC()},cons:{tot:Z(),by_cat:ZC()}},
@@ -1912,13 +1912,15 @@ async function loadOnlineDoc(){
   function variant(bk,ec){const out={},bw=bk&&bk._meta.weeks,ew=ec&&ec._meta.weeks;
     const keys=new Set([...(bk?Object.keys(bk.clinics):[]),...(ec?Object.keys(ec.clinics):[])]);
     keys.forEach(k=>{const bc=(bk&&bk.clinics[k])||{},ecl=(ec&&ec.clinics[k])||{};
-      const gg=out[k]={booked:rm(bc.booked,bw),done:rm(bc.done,bw),purchased:rm(ecl.purchased,ew),rev:rev4(ecl,ew),by_doctor:{}};
+      const gg=out[k]={booked:rm(bc.booked,bw),done:rm(bc.done,bw),purchased:rm(ecl.purchased,ew),rev:rev4(ecl,ew),by_doctor:{},by_source:{}};
+      const bsrc=bc.by_source||{};for(const sr in bsrc){const rec=bsrc[sr]||{};gg.by_source[sr]={booked:rm(Array.isArray(rec)?rec:rec.booked,bw),done:rm(rec.done,bw)};}   // carry online bookings-by-source (GMB/Meta) to the grid
       const bd=bc.by_doctor||{},ed=ecl.by_doctor||{};
       new Set([...Object.keys(bd),...Object.keys(ed)]).forEach(dr=>{gg.by_doctor[dr]={booked:rm((bd[dr]||{}).booked,bw),done:rm((bd[dr]||{}).done,bw),purchased:rm((ed[dr]||{}).purchased,ew),rev:rev4(ed[dr],ew)};});});
     return out;}
   ONLINE_CLIN.sc=variant(scb,sce);ONLINE_CLIN.fu=variant(fub,fue);
-  const all={};[ONLINE_CLIN.sc,ONLINE_CLIN.fu].forEach(v=>{for(const k in v){const s=v[k],gk=all[k]=all[k]||{booked:Zz(),done:Zz(),purchased:Zz(),rev:Zz(),by_doctor:{}};
+  const all={};[ONLINE_CLIN.sc,ONLINE_CLIN.fu].forEach(v=>{for(const k in v){const s=v[k],gk=all[k]=all[k]||{booked:Zz(),done:Zz(),purchased:Zz(),rev:Zz(),by_doctor:{},by_source:{}};
     ['booked','done','purchased','rev'].forEach(f=>gk[f]=gk[f].map((x,i)=>x+s[f][i]));
+    for(const sr in (s.by_source||{})){const ss=s.by_source[sr],gs=gk.by_source[sr]=gk.by_source[sr]||{booked:Zz(),done:Zz()};['booked','done'].forEach(f=>gs[f]=gs[f].map((x,i)=>x+((ss[f]||[])[i]||0)));}
     for(const dr in s.by_doctor){const sd=s.by_doctor[dr],gd=gk.by_doctor[dr]=gk.by_doctor[dr]||{booked:Zz(),done:Zz(),purchased:Zz(),rev:Zz()};['booked','done','purchased','rev'].forEach(f=>gd[f]=gd[f].map((x,i)=>x+sd[f][i]));}}});
   ONLINE_CLIN.all=all;
 }
@@ -1981,7 +1983,7 @@ async function boot(){
   buildOnlineClinics();   // now that per-provider online data is loaded, build the per-clinic online buckets
   ALLCITIES=[...new Set(Object.values(D.clinics).filter(c=>!c._online&&c.city!=='Online').map(c=>c.city))].sort((a,b)=>{const ta=tierOf(a)==='T1',tb=tierOf(b)==='T1';return ta!==tb?(ta?-1:1):a.localeCompare(b);});   // exclude the Online pseudo-city; Tier-1 cities first so heads click fast
   try{const saved=JSON.parse(localStorage.getItem('wd_city')||'[]');if(Array.isArray(saved))saved.forEach(c=>{if(ALLCITIES.includes(c))CITYF.add(c);});}catch(e){}
-  $('cityBtn').textContent=cityBtnLabel();$('cityBtn').classList.toggle('on',!!CITYF.size);
+  $('cityBtn').textContent=cityBtnLabel();$('cityBtn').classList.toggle('on',!!CITYF.size||!!TIERF.size);
   $('clinBtn').textContent=clinBtnLabel();
   document.addEventListener('click',e=>{if(!e.target.closest('.ms'))closePanels();});
   fillSel('curn',curPresetsC(),CURN,'weeks');updateBasenLbl();fillWkEnd();
