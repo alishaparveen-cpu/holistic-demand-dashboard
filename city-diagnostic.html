@@ -341,7 +341,7 @@
 </div>
 <div class="modal" id="modal" onclick="if(event.target===this)closeZ()"><div class="mbox"><div class="mhd"><span id="mTitle"></span><button onclick="closeZ()" title="close">✕</button></div><div id="pickBar" class="pickbar"></div><div id="mBody"></div></div></div>
 <script>
-let D=null, AGE={}, CURN=1, BASEN=1, MODE='ov', C=null, OPEN={}, QF='any', CITYF=new Set(), CLINF=new Set(), TIERF=new Set(), MATF=new Set(), DOCF=new Set(), CATF=new Set(), SEG='offline', DENSITY='compact', MET='', OVMODE='cockpit', METSEL=[], MCOND={}, MSUB={}, MFOCUS={}, MCOMB={}, VIEWONLY=false, TOTONLY=false, GRP='city', GRP2='none', GRP3='none', GRP4='none', CLUB=1, GRAIN='weekly', SHOWSHARE=false, CATPCT=false, FCATDETAIL=false, FGCOLLAPSE=new Set(), FSCOLLAPSE=new Set(), CLUBAGG='sum', METFRESH=false, WEND=0, FPCT=false, SCOPE_ORDER=[];   // SCOPE_ORDER: dimensions in the order the user activated them → chips reorder so the active scope reads left-to-right   // FPCT: funnel "% of total" — show each breakdown row as its share of the stage headline   // WEND: weeks trimmed off the newest end → rebase "now" to an earlier week (0 = the true latest week)   // METFRESH: selection is still the untouched default → next pick replaces it (kills the "pinned bookings" feel)
+let D=null, AGE={}, CURN=1, BASEN=1, MODE='ov', C=null, OPEN={}, QF='any', CITYF=new Set(), CLINF=new Set(), TIERF=new Set(), MATF=new Set(), DOCF=new Set(), CATF=new Set(), SEG='offline', DENSITY='compact', MET='', OVMODE='cockpit', METSEL=[], MCOND={}, MSUB={}, MFOCUS={}, MCOMB={}, VIEWONLY=false, GRP='city', GRP2='none', GRP3='none', GRP4='none', CLUB=1, GRAIN='weekly', SHOWSHARE=false, CATPCT=false, FCATDETAIL=false, FGCOLLAPSE=new Set(), FSCOLLAPSE=new Set(), CLUBAGG='sum', METFRESH=false, WEND=0, FPCT=false, SCOPE_ORDER=[];   // SCOPE_ORDER: dimensions in the order the user activated them → chips reorder so the active scope reads left-to-right   // FPCT: funnel "% of total" — show each breakdown row as its share of the stage headline   // WEND: weeks trimmed off the newest end → rebase "now" to an earlier week (0 = the true latest week)   // METFRESH: selection is still the untouched default → next pick replaces it (kills the "pinned bookings" feel)
 let QD=null, FUNNEL2='sc';   // SC/FU/Combined — data sourced from master demand (data_quick_diag.json)
 function setFunnel2(v){FUNNEL2=v;['sc','fu','all'].forEach(x=>{const b=$('fn2'+x);if(b)b.classList.toggle('on',x===v);});applyVariant();if(MODE==='cl'&&C){const s=C._slug;C=D.clinics[s]||C;}render();}
 function applyVariant(){   // overlay the matched SC/FU/Combined numbers onto each clinic (remapped to D.weeks)
@@ -947,7 +947,6 @@ function setCond(key,v){   // multi-select: toggle a status in/out of this metri
   render();}
 function clearMet(){METSEL=[];MET='';MCOND={};MSUB={};MFOCUS={};MCOMB={};METFRESH=false;CATTREE=false;CATCHIP=null;CATPCT=false;updateModeUI();render();}
 function toggleViewOnly(){VIEWONLY=!VIEWONLY;render();}   // display-only: show every row in a stable A–Z order, ignore the colour filter + worst-first sort
-function toggleTotOnly(){TOTONLY=!TOTONLY;render();}   // 📋 totals-only: collapse the per-row table to a single stack of exactly the metrics/cuts/combines you picked, for the whole scope
 function updateModeUI(){const cmp=(MET!=='break');
   const vi=$('vIssues'),vc=$('vCompare');if(vi)vi.classList.toggle('on',!cmp&&MODE==='ov');if(vc)vc.classList.toggle('on',cmp&&MODE==='ov');
   const mb=$('metricbar');if(mb)mb.style.display=cmp?'flex':'none';
@@ -998,7 +997,7 @@ function buildSelControl(){
     else h+='<div style="font-size:11px;color:var(--faint);padding:2px 2px">whole metric — no sub-cuts to focus <span style="color:var(--muted)">(it’s a rate/ratio)</span></div>';
     if(sel.length>=2){const selRate=sel.some(lb=>{const e=fd.find(x=>x.label===lb);return e&&e.rate;}),on=!!MCOMB[k];   // ⊕ combine toggle — only for additive count cuts
       h+=selRate?'<div style="font-size:10.5px;color:var(--faint);padding:1px 2px">↳ can’t combine rate cuts (only counts add up)</div>'
-        :'<div style="margin-top:1px"><button class="fbtn'+(on?' on':'')+'" style="padding:3px 11px;font-size:10.5px;font-weight:800;border-color:#7A3FA0;color:'+(on?'#fff':'#7A3FA0')+(on?';background:#7A3FA0':'')+'" onclick="toggleComb(\''+k+'\')" title="sum the '+sel.length+' picked cuts into one combined row, shown on top">'+(on?'⊕ combined (on) — click to split':'⊕ combine the '+sel.length+' into one')+'</button></div>';}
+        :'<div style="margin-top:1px"><button class="fbtn'+(on?' on':'')+'" style="padding:3px 11px;font-size:10.5px;font-weight:800;border-color:#7A3FA0;color:'+(on?'#fff':'#7A3FA0')+(on?';background:#7A3FA0':'')+'" onclick="toggleComb(\''+k+'\')" title="'+(on?'showing only the combined total — click to split back into the '+sel.length+' separate rows':'sum the '+sel.length+' picked cuts into ONE combined total (the separate rows hide); click again to split')+'">'+(on?'⊕ combined (on) — click to split':'⊕ combine the '+sel.length+' into one')+'</button></div>';}
     h+='</div>';});
   h+='</div>';return h;}
 function metricNoSub(){return OVMODE==='metric';}   // in the Individual-metric view, category breakdowns stay at MH/STI/SH (no sub-cats)
@@ -1118,7 +1117,7 @@ function metricRow(c,key,disp,subLabel,opts){opts=opts||{};const isChild=!!subLa
   return '<div class="crow" onclick="frowClick(event,'+zi+')" title="click a number to chart · label to drill"><span class="clab"'+(pad?' style="padding-left:'+pad+'px"':'')+'>'+(isChild?'<span style="color:var(--faint)">'+(deep?'· ':'↳ ')+'</span>':'')+metricLabelHTML(key,variant)+pctSuf+'</span>'+pctPill(ev)+trendHTML(arr,pct,ev)+'<span class="zoomico" onclick="event.stopPropagation();zoomReg('+zi+')" title="zoom — full weekly trend" style="cursor:zoom-in;margin-left:10px;color:var(--faint);font-size:13px">🔍</span></div>';}
 function metricStack(c,disp){return METSEL.map(k=>{const focus=MFOCUS[k]||[],subs=MSUB[k]||[],comb=MCOMB[k]&&focus.length>=2;   // each focused cut → its own headline row (multiselect); ⊕ combine → one summed row on top; MSUB breakdowns indent below
   const combRow=comb?metricRowComb(c,k,disp,focus):'';
-  const heads=(comb&&TOTONLY)?'':(focus.length?focus.map(f=>metricRow(c,k,disp,f,{focusHead:true})).join(''):metricRow(c,k,disp,null));   // totals-only + combined → show just the combined total (hide the parts)
+  const heads=comb?'':(focus.length?focus.map(f=>metricRow(c,k,disp,f,{focusHead:true})).join(''):metricRow(c,k,disp,null));   // combined ON → show ONLY the combined total (click 'split' to see the individual rows)
   return combRow+heads+subs.map(sb=>metricRow(c,k,disp,sb)).join('');}).join('');}
 function toggleShare(){SHOWSHARE=!SHOWSHARE;render();}
 function toggleCatPct(){CATPCT=!CATPCT;render();}
@@ -1280,8 +1279,7 @@ function renderMetric(){
   let h='<div class="densrow" style="gap:8px;flex-wrap:wrap">'+backBtn+scopeHdr
     +(VIEWONLY?'<span style="font-size:11px;font-weight:700;color:#2C6CAE;margin-left:4px">👁 view-only · every row shown, A–Z · colour filter &amp; worst-first sort paused</span>':'<span style="display:inline-flex;gap:6px;flex-wrap:wrap;margin-left:4px">'+metrics.map(s=>cc(s.key)).join('')+'</span>')
     +catDetailBtn
-    +'<button class="fbtn'+(TOTONLY?' on':'')+'" style="padding:5px 12px;font-size:12px;font-weight:800;margin-left:auto;border-color:#7A3FA0'+(TOTONLY?';background:#7A3FA0;color:#fff':';color:#7A3FA0')+'" onclick="toggleTotOnly()" title="Totals only: collapse the table to a single stack of exactly the metrics/cuts/combines you picked, for the whole scope — see just your picks, nothing else">📋 totals only'+(TOTONLY?' ✓':'')+'</button>'
-    +'<button class="fbtn'+(VIEWONLY?' on':'')+'" style="padding:5px 12px;font-size:12px;font-weight:700;border-color:#2C6CAE'+(VIEWONLY?';background:#2C6CAE;color:#fff':';color:#2C6CAE')+'" onclick="toggleViewOnly()" title="View-only: display exactly the metrics/cuts you tick, for every row in a fixed A–Z order — no rows hidden by the colour filter, no worst-first reordering">👁 view-only'+(VIEWONLY?' ✓':'')+'</button>'
+    +'<button class="fbtn'+(VIEWONLY?' on':'')+'" style="padding:5px 12px;font-size:12px;font-weight:700;margin-left:auto;border-color:#2C6CAE'+(VIEWONLY?';background:#2C6CAE;color:#fff':';color:#2C6CAE')+'" onclick="toggleViewOnly()" title="View-only: display exactly the metrics/cuts you tick, for every row in a fixed A–Z order — no rows hidden by the colour filter, no worst-first reordering">👁 view-only'+(VIEWONLY?' ✓':'')+'</button>'
     +'<button class="fbtn" style="padding:5px 13px;font-size:12px;font-weight:700" onclick="clearMet()">✕ clear all</button></div>';
   const lbl=curLabel();
   const clubbed=CLUB>1,wl=clubbed?clubLabels():D.week_labels,NWl=wl.length-(clubbed?0:WEND),winLabels=wl.slice(Math.max(0,NWl-(CURN+BASEN)),NWl),shortWk=L=>(L||'').split('–')[0].split(' → ')[0].trim();
@@ -1289,9 +1287,6 @@ function renderMetric(){
     +winLabels.map(L=>'<span class="mc">'+shortWk(L)+'</span>').join('')
     +'<span class="avgmk avgbefore">before '+(CMPMODE==='peak'?'peak':'avg')+'</span><span class="avgmk avgnow">now</span></div>';
   h+='<div class="fmwrap"><table class="fm" style="min-width:640px"><thead><tr><th style="white-space:nowrap;vertical-align:bottom">'+(byCity?'City':byDoctor?'Doctor':byCategory?'Category':bySource?'Source':'Clinic')+'</th><th style="text-align:left;padding:8px 12px 0">'+colHead+'<div style="font-size:9.5px;color:var(--faint);text-transform:none;font-weight:500;padding:0 0 4px 6px">recent '+(CURN+BASEN)+(clubbed?' × '+CLUB+'-wk blocks':' wks')+' · now <b style="color:var(--ink)">'+lbl.c+'</b> vs prior '+BASEN+'-wk '+(CMPMODE==='peak'?'peak':'avg')+' ('+lbl.b+')</div></th></tr></thead><tbody>';
-  if(TOTONLY){const agg=aggregate(scopeSlugs,'Total');   // 📋 totals-only: one stack of exactly the picked metrics/cuts/combines, for the whole scope — no per-row breakdown
-    h+='<tr class="totalrow"><td style="white-space:nowrap;width:1%">📋 '+cityStr()+' · your picks</td><td class="why">'+metricStack(agg,'picks')+'</td></tr>';}
-  else{
   if(scopeSlugs.length>1){const agg=aggregate(scopeSlugs,'Total');
     h+='<tr class="totalrow" onclick="setOvMode(\'funnel\')" title="open the combined funnel"><td style="white-space:nowrap;width:1%">Σ Total · '+pcLabel(scopeSlugs.map(s=>D.clinics[s]),true)+'</td><td class="why">'+metricStack(agg,'Total')+'</td></tr>';}
   if(!rows.length)h+='<tr><td colspan="2" style="color:var(--muted);padding:16px;text-align:left">No '+unit+'s match these conditions.</td></tr>';
@@ -1301,7 +1296,6 @@ function renderMetric(){
       ? '<span style="padding-left:'+(dep*20)+'px;color:var(--faint)">↳ </span>'+(k2ic[r.dim]||'')+(r.dim==='source'?srcLabel(r.label):r.label)
       : (byCity?'🏙 '+r.label+(r.n?' · '+r.n:''):byDoctor?'👤 '+r.label:byCategory?'🏷 '+r.label:bySource?'📣 '+srcLabel(r.label):r.label);
     h+='<tr'+(r.click?' onclick="'+r.click+'"':' style="cursor:default"')+(dep>0?' style="background:var(--inset)"':'')+' title="'+(dep>0?r.label:byCity?'drill into '+r.label+' clinics':byDoctor?'open '+r.label+'’s funnel':byCategory?r.label+' diagnosis category':bySource?r.label+' lead source':'open funnel')+'"><td style="white-space:nowrap;width:1%">'+lbl2+'</td><td class="why">'+metricStack(r.c,r.label)+'</td></tr>';});
-  }
   h+='</tbody></table></div>';
   $('root').innerHTML=h;
 }
