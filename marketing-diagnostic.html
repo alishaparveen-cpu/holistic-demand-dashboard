@@ -955,16 +955,19 @@ function syncOv(){const om=$('ovMetric'),of=$('ovFunnel'),oc=$('ovCockpit'),bw=$
   const nc=$('nestchain');if(nc)nc.innerHTML=buildNestChain();}   // nesting chain selectors reflect the current Rows-by
 function setOvMode(m){OVMODE=m;MODE='ov';syncOv();render();}
 function setGrp(g){GRP=g;GRP2=GRP3=GRP4='none';syncOv();render();}
-function setGrp2(v){GRP2=v;if(v!=='clinic'&&v!=='doctor'){GRP3='none';GRP4='none';}render();}
-function setGrp3(v){GRP3=v;if(v!=='clinic'&&v!=='doctor')GRP4='none';render();}
+function setGrp2(v){GRP2=v;if(['none','category'].includes(v)){GRP3='none';GRP4='none';}render();}   // category is terminal → clear deeper levels
+function setGrp3(v){GRP3=v;if(['none','category'].includes(v))GRP4='none';render();}
 function setGrp4(v){GRP4=v;render();}
 // nesting chain UI (Rows-by City → then Clinic → then Doctor …). Only structural dims (clinic/doctor) allow a further level; source/category are terminal.
-const NEST_OPTS=[['clinic','Clinic'],['doctor','Doctor'],['source','Source'],['category','Category']];
-function nestSel(val,setter,used){return '<select class="fbtn" onchange="'+setter+'(this.value)" style="margin-left:6px;font-size:12px;padding:5px 8px;font-weight:700;color:var(--accent);cursor:pointer"><option value="none"'+(val==='none'?' selected':'')+'>no nesting</option>'+NEST_OPTS.filter(o=>!used.has(o[0])).map(o=>'<option value="'+o[0]+'"'+(val===o[0]?' selected':'')+'>→ then '+o[1]+'</option>').join('')+'</select>';}
-function buildNestChain(){if(!['city','clinic','doctor'].includes(GRP))return '';
-  const used=new Set([GRP]);let h=nestSel(GRP2,'setGrp2',used);
-  if(GRP2==='clinic'||GRP2==='doctor'){used.add(GRP2);h+=nestSel(GRP3,'setGrp3',used);
-    if(GRP3==='clinic'||GRP3==='doctor'){used.add(GRP3);h+=nestSel(GRP4,'setGrp4',used);}}
+const NEST_OPTS=[['city','City'],['clinic','Clinic'],['doctor','Doctor'],['source','Source'],['category','Category']];
+const STRUCTD=['city','clinic','doctor'],DATAD=['source','category'];
+function nestSel(val,setter,opts){return '<select class="fbtn" onchange="'+setter+'(this.value)" style="margin-left:6px;font-size:12px;padding:5px 8px;font-weight:700;color:var(--accent);cursor:pointer"><option value="none"'+(val==='none'?' selected':'')+'>no nesting</option>'+opts.map(o=>'<option value="'+o[0]+'"'+(val===o[0]?' selected':'')+'>→ then '+o[1]+'</option>').join('')+'</select>';}
+function buildNestChain(){if(![...STRUCTD,...DATAD].includes(GRP))return '';
+  const used=new Set([GRP]),deeper=d=>d&&!['none','category'].includes(d),   // category is terminal; source + structural can nest deeper
+    optsAfter=prev=>{let b=NEST_OPTS.filter(o=>!used.has(o[0]));return DATAD.includes(prev)?b.filter(o=>STRUCTD.includes(o[0])):b;};   // after a data dim (source/category) → only structural levels
+  let h=nestSel(GRP2,'setGrp2',optsAfter(GRP));
+  if(deeper(GRP2)){used.add(GRP2);h+=nestSel(GRP3,'setGrp3',optsAfter(GRP2));
+    if(deeper(GRP3)){used.add(GRP3);h+=nestSel(GRP4,'setGrp4',optsAfter(GRP3));}}
   return h;}
 function drillCity(ct){CITYF=new Set([ct]);GRP='clinic';cityChanged();syncOv();}   // click a city → its clinics
 function backToCities(){CITYF=new Set();GRP='city';cityChanged();syncOv();}
@@ -1204,20 +1207,20 @@ function renderMetric(){
   }
   // ─── NESTED Rows-by: recursive, arbitrary depth (e.g. City → Clinic → Doctor). Structural dims (city/clinic/doctor)
   //     partition slugs and can nest further; data dims (source/category) are terminal leaf splits. ───
-  const STRUCT=new Set(['city','clinic','doctor']),DIMS=[GRP,GRP2,GRP3,GRP4].filter(d=>d&&d!=='none');
-  const nested=DIMS.length>1&&STRUCT.has(GRP);
+  const DIMS=[GRP,GRP2,GRP3,GRP4].filter(d=>d&&d!=='none');
+  const nested=DIMS.length>1;
   if(nested){
     const out=[],wsort=a=>a.sort((x,y)=>{const dx=metricEval(x.c,primary.key).ev.d,dy=metricEval(y.c,primary.key).ev.d;return (dx==null?9:dx)-(dy==null?9:dy);});
-    const build=(slugs,depth)=>{const dim=DIMS[depth],last=depth===DIMS.length-1;
+    const filt=(ag,sf)=>sf?aggregateSource(sf,ag):ag;   // sf = a source chosen at an outer level → filter every deeper structural node to that source
+    const build=(slugs,depth,sf)=>{const dim=DIMS[depth],last=depth===DIMS.length-1;
       if(dim==='city'){const grp={};slugs.forEach(s=>{(grp[D.clinics[s].city]=grp[D.clinics[s].city]||[]).push(s);});
-        Object.keys(grp).sort().forEach(ct=>{const cs=grp[ct],ag=aggregate(cs,ct);if(SEG==='online'&&cs.every(s=>D.clinics[s]._online))ag._online=true;if(!passCond(ag))return;
-          out.push({label:ct,n:pcLabel(cs.map(s=>D.clinics[s])),c:ag,depth,dim:'city',click:"drillCity('"+ct.replace(/'/g,"\\'")+"')"});if(!last)build(cs,depth+1);});}
-      else if(dim==='clinic'){wsort(cs2rows(slugs)).forEach(o=>{out.push({label:D.clinics[o.s].loc||D.clinics[o.s].disp,c:o.c,depth,dim:'clinic',click:"goClinic('"+o.s+"')"});if(!last)build([o.s],depth+1);});}
-      else if(dim==='doctor'){wsort(docNames().map(dr=>({dr,c:aggregateDoctor(dr,slugs)})).filter(o=>sum(o.c.bookings.total)&&passCond(o.c))).forEach(o=>{out.push({label:docShort(o.dr),c:o.c,depth,dim:'doctor',click:"drillDoctor('"+o.dr.replace(/'/g,"\\'")+"')"});});}
-      else if(dim==='source'){const ag=aggregate(slugs,'s');SOURCE_ORDER.map(src=>({src,c:aggregateSource(src,ag)})).filter(o=>(sum(o.c.demand.leads)||sum(o.c.bookings.total))&&passCond(o.c)).forEach(o=>out.push({label:o.src,c:o.c,depth,dim:'source',click:''}));}
+        Object.keys(grp).sort().forEach(ct=>{const cs=grp[ct],ag=filt(aggregate(cs,ct),sf);if(!sf&&SEG==='online'&&cs.every(s=>D.clinics[s]._online))ag._online=true;if(!passCond(ag))return;
+          out.push({label:ct,n:pcLabel(cs.map(s=>D.clinics[s])),c:ag,depth,dim:'city',click:sf?'':"drillCity('"+ct.replace(/'/g,"\\'")+"')"});if(!last)build(cs,depth+1,sf);});}
+      else if(dim==='clinic'){wsort(slugs.filter(s=>!D.clinics[s]._unattr_city&&passCond(filt(CL(s),sf))).map(s=>({s,c:filt(CL(s),sf)}))).forEach(o=>{out.push({label:D.clinics[o.s].loc||D.clinics[o.s].disp,c:o.c,depth,dim:'clinic',click:sf?'':"goClinic('"+o.s+"')"});if(!last)build([o.s],depth+1,sf);});}
+      else if(dim==='doctor'){wsort(docNames().map(dr=>({dr,c:filt(aggregateDoctor(dr,slugs),sf)})).filter(o=>sum(o.c.bookings.total)&&passCond(o.c))).forEach(o=>{out.push({label:docShort(o.dr),c:o.c,depth,dim:'doctor',click:sf?'':"drillDoctor('"+o.dr.replace(/'/g,"\\'")+"')"});});}
+      else if(dim==='source'){const ag=aggregate(slugs,'s');SOURCE_ORDER.map(src=>({src,c:aggregateSource(src,ag)})).filter(o=>(sum(o.c.demand.leads)||sum(o.c.bookings.total))&&passCond(o.c)).forEach(o=>{out.push({label:o.src,c:o.c,depth,dim:'source',click:''});if(!last)build(slugs,depth+1,o.src);});}   // source can be an outer level → filter deeper structural nodes to that source
       else if(dim==='category'){const ag=aggregate(slugs,'c');CAT_TREE.map(g=>({g,c:aggregateCategory(g.name,g.cats,ag)})).filter(o=>sum(o.c.done.done)&&passCond(o.c)).forEach(o=>out.push({label:o.g.name,c:o.c,depth,dim:'category',click:''}));}};
-    const cs2rows=slugs=>slugs.filter(s=>!D.clinics[s]._unattr_city&&passCond(CL(s))).map(s=>({s,c:CL(s)}));
-    build(scopeSlugs,0);
+    build(scopeSlugs,0,'');
     rows=out;
   }
   rows.forEach(r=>{if(!r.pe)r.pe=metricEval(r.c,primary.key).ev;});
