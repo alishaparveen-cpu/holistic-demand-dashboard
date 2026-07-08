@@ -341,7 +341,7 @@
 </div>
 <div class="modal" id="modal" onclick="if(event.target===this)closeZ()"><div class="mbox"><div class="mhd"><span id="mTitle"></span><button onclick="closeZ()" title="close">✕</button></div><div id="pickBar" class="pickbar"></div><div id="mBody"></div></div></div>
 <script>
-let D=null, AGE={}, CURN=1, BASEN=1, MODE='ov', C=null, OPEN={}, QF='any', CITYF=new Set(), CLINF=new Set(), TIERF=new Set(), MATF=new Set(), DOCF=new Set(), CATF=new Set(), SEG='offline', DENSITY='compact', MET='', OVMODE='cockpit', METSEL=[], MCOND={}, MSUB={}, MFOCUS={}, MCOMB={}, GRP='city', GRP2='none', GRP3='none', GRP4='none', CLUB=1, GRAIN='weekly', SHOWSHARE=false, CATPCT=false, FCATDETAIL=false, FGCOLLAPSE=new Set(), FSCOLLAPSE=new Set(), CLUBAGG='sum', METFRESH=false, WEND=0, FPCT=false, SCOPE_ORDER=[];   // SCOPE_ORDER: dimensions in the order the user activated them → chips reorder so the active scope reads left-to-right   // FPCT: funnel "% of total" — show each breakdown row as its share of the stage headline   // WEND: weeks trimmed off the newest end → rebase "now" to an earlier week (0 = the true latest week)   // METFRESH: selection is still the untouched default → next pick replaces it (kills the "pinned bookings" feel)
+let D=null, AGE={}, CURN=1, BASEN=1, MODE='ov', C=null, OPEN={}, QF='any', CITYF=new Set(), CLINF=new Set(), TIERF=new Set(), MATF=new Set(), DOCF=new Set(), CATF=new Set(), SEG='offline', DENSITY='compact', MET='', OVMODE='cockpit', METSEL=[], MCOND={}, MSUB={}, MFOCUS={}, MCOMB={}, VIEWONLY=false, GRP='city', GRP2='none', GRP3='none', GRP4='none', CLUB=1, GRAIN='weekly', SHOWSHARE=false, CATPCT=false, FCATDETAIL=false, FGCOLLAPSE=new Set(), FSCOLLAPSE=new Set(), CLUBAGG='sum', METFRESH=false, WEND=0, FPCT=false, SCOPE_ORDER=[];   // SCOPE_ORDER: dimensions in the order the user activated them → chips reorder so the active scope reads left-to-right   // FPCT: funnel "% of total" — show each breakdown row as its share of the stage headline   // WEND: weeks trimmed off the newest end → rebase "now" to an earlier week (0 = the true latest week)   // METFRESH: selection is still the untouched default → next pick replaces it (kills the "pinned bookings" feel)
 let QD=null, FUNNEL2='sc';   // SC/FU/Combined — data sourced from master demand (data_quick_diag.json)
 function setFunnel2(v){FUNNEL2=v;['sc','fu','all'].forEach(x=>{const b=$('fn2'+x);if(b)b.classList.toggle('on',x===v);});applyVariant();if(MODE==='cl'&&C){const s=C._slug;C=D.clinics[s]||C;}render();}
 function applyVariant(){   // overlay the matched SC/FU/Combined numbers onto each clinic (remapped to D.weeks)
@@ -930,7 +930,8 @@ function setCond(key,v){   // multi-select: toggle a status in/out of this metri
   if(i<0)cur.push(v);else cur.splice(i,1);
   if(cur.length)MCOND[key]=cur;else delete MCOND[key];
   render();}
-function clearMet(){METSEL=[];MET='';MCOND={};MSUB={};METFRESH=false;CATTREE=false;CATCHIP=null;CATPCT=false;updateModeUI();render();}
+function clearMet(){METSEL=[];MET='';MCOND={};MSUB={};MFOCUS={};MCOMB={};METFRESH=false;CATTREE=false;CATCHIP=null;CATPCT=false;updateModeUI();render();}
+function toggleViewOnly(){VIEWONLY=!VIEWONLY;render();}   // display-only: show every row in a stable A–Z order, ignore the colour filter + worst-first sort
 function updateModeUI(){const cmp=(MET!=='break');
   const vi=$('vIssues'),vc=$('vCompare');if(vi)vi.classList.toggle('on',!cmp&&MODE==='ov');if(vc)vc.classList.toggle('on',cmp&&MODE==='ov');
   const mb=$('metricbar');if(mb)mb.style.display=cmp?'flex':'none';
@@ -1210,7 +1211,7 @@ function renderMetric(){
   if(!metrics.length){$('root').innerHTML='<div style="padding:44px 20px;text-align:center;color:var(--muted);font-size:14px">👆 Pick a metric in <b>1 · Metric</b>, focus an exact cut in <b>2 · Selection</b>, then cross it in <b>3 · Breakdown</b>.</div>';return;}
   const primary=metrics[0];
   const scopeSlugs=Object.keys(D.clinics).filter(inScope);
-  const passCond=c=>METSEL.every(k=>{const req=MCOND[k];if(!req||!req.length)return true;if(naMetric(c,k))return false;const fc=MFOCUS[k]||[];return fc.length?fc.some(cut=>req.includes(cutStatus(c,k,cut))):req.includes(metricEval(c,k).ev.st);});   // AND across metrics; within a metric OR across statuses; with focused cuts → row passes if ANY focused cut matches
+  const passCond=c=>VIEWONLY||METSEL.every(k=>{const req=MCOND[k];if(!req||!req.length)return true;if(naMetric(c,k))return false;const fc=MFOCUS[k]||[];return fc.length?fc.some(cut=>req.includes(cutStatus(c,k,cut))):req.includes(metricEval(c,k).ev.st);});   // VIEWONLY → never hide a row; else AND across metrics, within a metric OR across statuses; focused cuts → row passes if ANY cut matches
   const byCity=GRP==='city',byDoctor=GRP==='doctor',byCategory=GRP==='category',bySource=GRP==='source',unit=byCity?'city':(byDoctor?'doctor':byCategory?'category':bySource?'source':'clinic');
   let rows;
   if(bySource){   // one row per lead source (Organic+GMB · Google · Fb · Practo · Others) — Leads·Bookings·B2D·Done have values; other metrics n/a
@@ -1247,7 +1248,7 @@ function renderMetric(){
     rows=out;
   }
   rows.forEach(r=>{if(!r.pe)r.pe=metricEval(r.c,primary.key).ev;});
-  if(!byCategory&&!bySource&&!nested)rows.sort((a,b)=>(a.pe.d==null?9:a.pe.d)-(b.pe.d==null?9:b.pe.d));   // worst on the primary metric first; category / source / nested keep their order
+  if(!byCategory&&!bySource&&!nested){if(VIEWONLY)rows.sort((a,b)=>String(a.label).localeCompare(String(b.label)));else rows.sort((a,b)=>(a.pe.d==null?9:a.pe.d)-(b.pe.d==null?9:b.pe.d));}   // VIEWONLY → stable A–Z; else worst on the primary metric first; category / source / nested keep their order
   const cc=(k)=>{const st=STAGES.find(x=>x.key===k),sel=MCOND[k]||[],fc=MFOCUS[k]||[];
     const nm=fc.length?(srcLabel(fc[0].replace(/^—\s*/,''))+(fc.length>1?' +'+(fc.length-1):'')):st.short;   // the colour filter runs on the FIRST focused cut (see metricEval) → name the bar after that cut, not the parent metric
     const opt=(v,lab,on)=>'<button class="cseg'+(on?' on':'')+'" onclick="setCond(\''+k+'\',\''+v+'\')">'+lab+'</button>';
@@ -1261,9 +1262,10 @@ function renderMetric(){
     +(byCategory?' <span style="color:var(--faint)">· per-category: done·purchased·revenue·RPC·AOV·D2P — leads·bookings·availability etc are pre-diagnosis (n/a). Add ▸ category detail for sub-cats.</span>':'')+'</span>';
   const catDetailBtn=byCategory?'<button class="fbtn'+(FCATDETAIL?' on':'')+'" style="padding:5px 12px;font-size:12px;font-weight:700" onclick="toggleFCat()" title="expand MH/STI/SH into their sub-categories (concern·porn·compulsive / ED+·ED+PE+·PE+·Others·NOS)">'+(FCATDETAIL?'▾ sub-categories (on)':'▸ sub-categories')+'</button>':'';
   let h='<div class="densrow" style="gap:8px;flex-wrap:wrap">'+backBtn+scopeHdr
-    +'<span style="display:inline-flex;gap:6px;flex-wrap:wrap;margin-left:4px">'+metrics.map(s=>cc(s.key)).join('')+'</span>'
+    +(VIEWONLY?'<span style="font-size:11px;font-weight:700;color:#2C6CAE;margin-left:4px">👁 view-only · every row shown, A–Z · colour filter &amp; worst-first sort paused</span>':'<span style="display:inline-flex;gap:6px;flex-wrap:wrap;margin-left:4px">'+metrics.map(s=>cc(s.key)).join('')+'</span>')
     +catDetailBtn
-    +'<button class="fbtn" style="padding:5px 13px;font-size:12px;font-weight:700;margin-left:auto" onclick="clearMet()">✕ clear all</button></div>';
+    +'<button class="fbtn'+(VIEWONLY?' on':'')+'" style="padding:5px 12px;font-size:12px;font-weight:700;margin-left:auto;border-color:#2C6CAE'+(VIEWONLY?';background:#2C6CAE;color:#fff':';color:#2C6CAE')+'" onclick="toggleViewOnly()" title="View-only: display exactly the metrics/cuts you tick, for every row in a fixed A–Z order — no rows hidden by the colour filter, no worst-first reordering">👁 view-only'+(VIEWONLY?' ✓':'')+'</button>'
+    +'<button class="fbtn" style="padding:5px 13px;font-size:12px;font-weight:700" onclick="clearMet()">✕ clear all</button></div>';
   const lbl=curLabel();
   const clubbed=CLUB>1,wl=clubbed?clubLabels():D.week_labels,NWl=wl.length-(clubbed?0:WEND),winLabels=wl.slice(Math.max(0,NWl-(CURN+BASEN)),NWl),shortWk=L=>(L||'').split('–')[0].split(' → ')[0].trim();
   const colHead='<div class="crow chead"><span class="clab">metric</span><span class="mc">change</span>'
