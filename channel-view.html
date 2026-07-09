@@ -98,7 +98,7 @@ const CH=[
   {key:'meta',  name:'Facebook / Meta',icon:'📘',color:'#3b5998',lead:'Meta',  keys:['meta'],sc:'Meta'},
   {key:'practo',name:'Practo',     icon:'🩺',color:'#7B5EA7',lead:'Practo',    keys:['practo'],sc:'Practo'},
 ];
-let SCB=null,SCO=null,GAP=null,GCMP=null,PRB=null;   // SCB=data_sc_bookings (offline); SCO=data_sc_bookings_online; GAP=data_ga_city_paid; GCMP=data_ga_camp_layer; PRB=Practo Flow
+let SCB=null,SCO=null,GAP=null,GCMP=null,PRB=null,PRL=null;   // SCB=data_sc_bookings (offline); SCO=data_sc_bookings_online; GAP=data_ga_city_paid; GCMP=data_ga_camp_layer; PRB=Practo Flow (books, type=Book); PRL=Practo Flow leads (Book+Call, fee-paid)
 function prAlign(cube,field){if(!cube||!cube._meta)return null;const dw=D._meta.weeks,cw=cube._meta.weeks,gidx=dw.map(w=>cw.indexOf(w));const o=Array(dw.length).fill(null);for(const k in cube){if(k==='_meta'||k==='True|True')continue;const a=field?(cube[k]&&cube[k][field]):cube[k];if(!Array.isArray(a))continue;dw.forEach((w,di)=>{const gi=gidx[di];if(gi>=0&&a[gi]!=null)o[di]=(o[di]||0)+a[gi];});}return o;}
 function scSum(cube,src,field){if(!cube||!src)return new Array((D._meta.weeks||[]).length).fill(0);const dw=D._meta.weeks,sw=cube._meta.weeks,out=new Array(dw.length).fill(0),sidx=dw.map(w=>sw.indexOf(w));
   for(const k in cube.clinics){const rec=(cube.clinics[k].by_source||{})[src];if(!rec)continue;const a=rec[field]||[];dw.forEach((w,di)=>{const si=sidx[di];if(si>=0)out[di]+=(a[si]||0);});}
@@ -268,11 +268,15 @@ function paint(){
     }
     T+=row('· book → done %',ratio(dn,bk),'pct',PCT,{noheat:true});
     // Practo has a SECOND flow — patients who book an appointment directly on Practo (Flow Dashboard), separate from enquiry leads
-    if(ch.key==='practo'){const db=prAlign(PRB);if(db&&db.some(v=>v)){
-      T+=row('📅 Books directly (Practo Flow)',db,'grp',N,{color:'#7B5EA7'});
-      T+=row('· direct-book ÷ enquiry leads',ratio(db,nl),'pct',PCT,{noheat:true});
-    }}
-    let sub=ch.key==='practo'?' <span class="lblmuted" style="font-size:11px">· two flows: enquiry leads (→ booked) + books-directly (Practo Flow, refreshes from the Flow-Dashboard export)</span>':'';
+    if(ch.key==='practo'){const pl=prAlign(PRL),db=prAlign(PRB);
+      if(pl&&pl.some(v=>v)){
+        T+=row('📞 Practo leads · Flow (fee-paid)',pl,'grp',N,{color:'#7B5EA7'});   // net_amount>0 rows, both Book & Call = leads
+        if(db&&db.some(v=>v))T+=row('· of which book-type',db,'sub',N,{color:'#7B5EA7'});
+      } else if(db&&db.some(v=>v)){
+        T+=row('📅 Books directly (Practo Flow)',db,'grp',N,{color:'#7B5EA7'});
+        T+=row('· direct-book ÷ enquiry leads',ratio(db,nl),'pct',PCT,{noheat:true});
+      }}
+    let sub=ch.key==='practo'?' <span class="lblmuted" style="font-size:11px">· two flows: enquiry leads (→ booked) + Practo-Flow leads (Book+Call rows with a paid platform fee, from the Flow-Dashboard export)</span>':'';
     H+='<div class="shead">'+ch.icon+' '+ch.name+sub+'</div>'+tbl(T);
   });
   $('tables').innerHTML=H;
@@ -395,8 +399,9 @@ Promise.all([
   fetch('data_sc_bookings_online.json?v='+Date.now()).then(r=>r.ok?r.json():null).catch(()=>null),
   fetch('data_ga_city_paid.json?v='+Date.now()).then(r=>r.ok?r.json():null).catch(()=>null),
   fetch('data_ga_camp_layer.json?v='+Date.now()).then(r=>r.ok?r.json():null).catch(()=>null),
-  fetch('data_practo_flow_booked.json?v='+Date.now()).then(r=>r.ok?r.json():null).catch(()=>null)
-]).then(([j,gf,scb,sco,gap,gcmp,prb])=>{D=j;GAF=gf;SCB=scb;SCO=sco;GAP=gap;GCMP=gcmp;PRB=prb;paint();paintGD();}).catch(e=>{$('tables').innerHTML='<div style="color:#B23A2E;padding:20px">Could not load data: '+e.message+'</div>';});
+  fetch('data_practo_flow_booked.json?v='+Date.now()).then(r=>r.ok?r.json():null).catch(()=>null),
+  fetch('data_practo_flow_leads.json?v='+Date.now()).then(r=>r.ok?r.json():null).catch(()=>null)
+]).then(([j,gf,scb,sco,gap,gcmp,prb,prl])=>{D=j;GAF=gf;SCB=scb;SCO=sco;GAP=gap;GCMP=gcmp;PRB=prb;PRL=prl;paint();paintGD();}).catch(e=>{$('tables').innerHTML='<div style="color:#B23A2E;padding:20px">Could not load data: '+e.message+'</div>';});
 </script>
 </body>
 </html>
