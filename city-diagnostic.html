@@ -581,11 +581,12 @@ function pickPt(i){if(PICKA===null)PICKA=i;else if(PICKB===null){if(i===PICKA)PI
 function clearPick(){PICKA=null;PICKB=null;if(CURZ)openZoom(CURZ);}
 function closeZ(){$('modal').classList.remove('on');PICKA=null;PICKB=null;CURZ=null;}
 function openZoom(z){if(!z)return;if(z!==CURZ){PICKA=null;PICKB=null;}CURZ=z;
-  const zend=z.arr.length-WEND,WIN=Math.min(ZWIN||zend,zend);   // zoom shows the FULL weekly trend (all weeks up to the selected "latest week"); ZWIN optionally caps it
-  const F=v=>fmtZ(v,z.pct),labels=D.week_labels.slice(Math.max(0,zend-WIN),zend),col=z.col;
+  const A=CLUB>1?clubArr(z.arr,!!z.pct):z.arr, LBL=CLUB>1?clubLabels():D.week_labels, wend=CLUB>1?Math.round(WEND/CLUB):WEND;   // match the table: in monthly, club the trend into the same blocks
+  const zend=A.length-wend,WIN=Math.min(ZWIN||zend,zend);   // zoom shows the FULL trend (weekly, or clubbed blocks in monthly) up to the selected "latest"
+  const F=v=>fmtZ(v,z.pct),labels=LBL.slice(Math.max(0,zend-WIN),zend),col=z.col;
   $('mTitle').textContent=(z.noPrefix?'':((MODE==='cl'&&C)?C.disp+' · ':cityStr()+' · '))+z.label;
   const W=700,H=300,pad=40,padT=26;
-  const v=z.arr.slice(Math.max(0,zend-WIN),zend).map(x=>x==null||isNaN(x)?null:x),n=v.length;
+  const v=A.slice(Math.max(0,zend-WIN),zend).map(x=>x==null||isNaN(x)?null:x),n=v.length;
   const valid=v.filter(x=>x!=null);const vmn=valid.length?Math.min(...valid):0,vmx=valid.length?Math.max(...valid):1,rng=(vmx-vmn)||Math.abs(vmx)||1;
   const lo=Math.max(0,vmn-rng*0.18),hi=vmx+rng*0.18;
   const x=i=>pad+i*(W-2*pad)/((n-1)||1),y=val=>{let yy=H-pad-((val-lo)/((hi-lo)||1))*(H-pad-padT);return yy<padT?padT:(yy>H-pad?H-pad:yy);};
@@ -601,7 +602,7 @@ function openZoom(z){if(!z)return;if(z!==CURZ){PICKA=null;PICKB=null;}CURZ=z;
   let connector='';if(PICKA!=null&&PICKB!=null&&v[PICKA]!=null&&v[PICKB]!=null)connector='<line x1="'+x(PICKA).toFixed(1)+'" y1="'+y(v[PICKA]).toFixed(1)+'" x2="'+x(PICKB).toFixed(1)+'" y2="'+y(v[PICKB]).toFixed(1)+'" stroke="#C2691F" stroke-width="1.6" stroke-dasharray="5 3"/>';
   const zbtn=(lbl,val)=>'<button onclick="event.stopPropagation();setZWin('+val+')" style="border:1px solid '+((ZWIN===val)?'var(--accent);background:var(--accent);color:#fff':'var(--line);background:#fff;color:var(--muted)')+';border-radius:6px;padding:1px 8px;font-size:10.5px;font-weight:700;cursor:pointer;margin-left:4px">'+lbl+'</button>';
   const zwinctl='<span style="margin-left:10px;color:var(--faint)">window:</span>'+zbtn('full',0)+zbtn('12w',12)+zbtn(''+(CURN+BASEN)+'w',CURN+BASEN);
-  $('mBody').innerHTML='<svg width="100%" viewBox="0 0 '+W+' '+Hv+'">'+gl+avgLine+connector+p+pts+lbls+xl+'</svg><div class="lgd">oldest→newest · '+n+' weeks · dashed = average'+(avg!=null?' ('+F(avg)+')':'')+zwinctl+'</div>';
+  $('mBody').innerHTML='<svg width="100%" viewBox="0 0 '+W+' '+Hv+'">'+gl+avgLine+connector+p+pts+lbls+xl+'</svg><div class="lgd">oldest→newest · '+n+(CLUB>1?' × '+CLUB+'-wk blocks':' weeks')+' · dashed = average'+(avg!=null?' ('+F(avg)+')':'')+zwinctl+'</div>';
   const pb=$('pickBar');
   if(PICKA!=null&&PICKB!=null&&v[PICKA]!=null&&v[PICKB]!=null){const a=v[PICKA],b=v[PICKB],pc=a?Math.round((b-a)/Math.abs(a)*100):0,c=pc>0?'#1F6F5C':pc<0?'#B23A2E':'#52605A';pb.innerHTML='<b style="color:#1F6F5C">'+labels[PICKA]+'</b> '+F(a)+' → <b style="color:#C2691F">'+labels[PICKB]+'</b> '+F(b)+' &nbsp;<span style="color:'+c+';font-weight:700;font-size:14px">'+(pc>0?'+':'')+pc+'%</span> <span class="pclear" onclick="clearPick()">✕ clear</span>';}
   else if(PICKA!=null)pb.innerHTML='Selected <b style="color:#1F6F5C">'+labels[PICKA]+'</b> '+F(v[PICKA])+' — click another point to compare <span class="pclear" onclick="clearPick()">✕</span>';
@@ -803,9 +804,15 @@ const KEEP_CHAN=['GMB','Google','Fb','Practo','Organic'],CHAN_ORDER=['GMB','Goog
 function chanKey(n){const l=(n||'').toLowerCase();if(l.indexOf('google')>=0)return 'Google';if(l==='fb'||l.indexOf('facebook')>=0||l.indexOf('meta')>=0||l.indexOf('insta')>=0)return 'Fb';if(l.indexOf('practo')>=0)return 'Practo';if(l.indexOf('gmb')>=0||l.indexOf('organic')>=0)return 'Organic';return 'Others';}   // GMB folded into Organic (match marketing)
 function chanConsol(bc){const out={};for(const ch in (bc||{})){const k=chanKey(ch),a=bc[ch]||[];out[k]=(out[k]||Z()).map((v,i)=>v+(a[i]||0));}return out;}
 function srcLabel(src){return src==='Organic'?'Organic +GMB':src;}   // Organic bucket includes GMB (folded)
-function normalizeChannels(){Object.values(D.clinics).forEach(c=>{const dm=c&&c.demand;if(!dm||!dm.by_channel)return;const bc=dm.by_channel,leads=dm.leads||[],N=leads.length,tot=new Array(N).fill(0);
+function normalizeChannels(){Object.values(D.clinics).forEach(c=>{const dm=c&&c.demand;if(!dm||!dm.by_channel)return;const bc=dm.by_channel,leads=dm.leads||[],N=leads.length,tot=new Array(N).fill(0),chs=Object.keys(bc);
+  chs.forEach(ch=>{bc[ch]=(bc[ch]||[]).slice();});
   Object.values(bc).forEach(a=>{if(a)for(let i=0;i<N;i++)tot[i]+=a[i]||0;});
-  Object.keys(bc).forEach(ch=>{bc[ch]=(bc[ch]||[]).map((v,i)=>tot[i]?Math.round((v||0)*(leads[i]||0)/tot[i]):0);});});}   // rescale by_channel to the deduped leads total so sources reconcile
+  for(let i=0;i<N;i++){const L=leads[i]||0,T=tot[i]||0;
+    if(!T){chs.forEach(ch=>bc[ch][i]=0);continue;}
+    const raw=chs.map(ch=>(bc[ch][i]||0)*L/T),fl=raw.map(x=>Math.floor(x));   // exact-sum rescale: floor + largest-remainder so the channels add up to leads exactly (no rounding drift)
+    let short=L-fl.reduce((a,b)=>a+b,0);
+    raw.map((x,j)=>[x-fl[j],j]).sort((a,b)=>b[0]-a[0]).forEach(([,j])=>{if(short>0){fl[j]++;short--;}});
+    chs.forEach((ch,j)=>bc[ch][i]=fl[j]);}});}
 // map our raw source buckets → the city-head sheet's labels (Meta→fb; Direct/none folded into Others)
 const SRC_DISP={'Meta':'fb'};   // Meta→fb; 'Direct / none' kept as its OWN bucket (city-head sheet leaves direct/walk-in unclassified, not in Others)
 function srcDisp(raw){return SRC_DISP[raw]||raw;}
@@ -1926,7 +1933,7 @@ function scopeCountHTML(){let n=0;const cities=new Set();
 function allCity(on){const inT=c=>!TIERF.size||TIERF.has(tierOf(c));CITYF=on?new Set(ALLCITIES.filter(inT)):new Set();renderCityPanel($('cityQ')?$('cityQ').value:'');cityChanged();}
 function openClinMs(e){e.stopPropagation();const p=$('clinPanel'),show=!p.classList.contains('on');closePanels();if(show){renderClinPanel('');p.classList.add('on');const q=$('clinQ');if(q)q.focus();}}
 function renderClinPanel(q){   // render the full (tier/city/doctor-scoped) list once; text search filters IN PLACE (keeps input focus)
-  const ks=Object.keys(D.clinics).filter(s=>{const c=D.clinics[s];return !c._online&&(!TIERF.size||TIERF.has(tierOf(c.city)))&&inCity(c.city)
+  const ks=Object.keys(D.clinics).filter(s=>{const c=D.clinics[s];return !c._online&&!c._unattr&&!c._unattr_city&&(!TIERF.size||TIERF.has(tierOf(c.city)))&&inCity(c.city)
     &&(!DOCF.size||(c.by_doctor&&[...DOCF].some(dr=>c.by_doctor[dr]&&sum(c.by_doctor[dr].booked))));}).sort((a,b)=>D.clinics[a].disp.localeCompare(D.clinics[b].disp));   // with a doctor selected, only that doctor's clinics
   const esc=s=>s.replace('<','&lt;').replace('>','&gt;');   // top maturity quick-filter: All or an age bucket → selects all clinics of that maturity
   const mp=(b,l)=>{const on=(b==='all'?!MATF.size:MATF.has(b));return '<span onclick="event.stopPropagation();clinMatPick(\''+esc(b)+'\')" style="cursor:pointer;font-size:10.5px;padding:2px 8px;border-radius:6px;background:'+(on?'var(--accent)':'var(--card)')+';color:'+(on?'#fff':'var(--muted)')+';border:1px solid var(--line)">'+esc(l)+'</span>';};
@@ -1945,7 +1952,7 @@ function clinChanged(){$('clinBtn').textContent=clinBtnLabel();$('clinBtn').clas
   syncDocBtn();updateModeUI();render();}
 function backToList(){CLINF=new Set();$('clinBtn').textContent=clinBtnLabel();$('clinBtn').classList.remove('on');MODE='ov';updateModeUI();render();}
 function togClin(s){CLINF.has(s)?CLINF.delete(s):CLINF.add(s);clinChanged();}
-function allClin(on){const q=$('clinQ')?$('clinQ').value.toLowerCase():'';const ks=Object.keys(D.clinics).filter(s=>{const c=D.clinics[s];return !c._online&&(!TIERF.size||TIERF.has(tierOf(c.city)))&&inCity(c.city)&&c.disp.toLowerCase().includes(q);});if(on)ks.forEach(s=>CLINF.add(s));else ks.forEach(s=>CLINF.delete(s));renderClinPanel($('clinQ')?$('clinQ').value:'');clinChanged();}
+function allClin(on){const q=$('clinQ')?$('clinQ').value.toLowerCase():'';const ks=Object.keys(D.clinics).filter(s=>{const c=D.clinics[s];return !c._online&&!c._unattr&&!c._unattr_city&&(!TIERF.size||TIERF.has(tierOf(c.city)))&&inCity(c.city)&&c.disp.toLowerCase().includes(q);});if(on)ks.forEach(s=>CLINF.add(s));else ks.forEach(s=>CLINF.delete(s));renderClinPanel($('clinQ')?$('clinQ').value:'');clinChanged();}
 // ---- Doctors scope (after clinics): pick doctor(s) → metrics rescale to their slices via CL() ----
 function docShort(dr){return (dr||'').replace(/^Dr\.?\s*/i,'');}
 function docNames(){const s=new Set();Object.keys(D.clinics).forEach(sl=>{const c=D.clinics[sl];if(CLINF.size?!CLINF.has(sl):!inCity(c.city))return;if(c.by_doctor)Object.keys(c.by_doctor).forEach(dr=>s.add(dr));});return [...s].sort((a,b)=>docShort(a).localeCompare(docShort(b)));}
