@@ -499,7 +499,7 @@ const STAGES=[
   {key:'done',num:4,name:'Done',short:'Done',sub:'completed · by category (SH/STI/MH)',diag:'Done dropped',fix:'Clinic / PCC',
    metrics:c=>[{nm:'done',arr:c.done.done,fmtd:0}],headline:0,doneCat:c=>c.done.by_cat},
   {key:'demand',num:5,name:'Leads',short:'Leads',sub:'leads · lead→book %',diag:'Channel break — GMB / Ads / Practo',fix:'Marketing',
-   metrics:c=>[{nm:'leads',arr:c.demand.leads,fmtd:0},{nm:'lead → book % · fresh (same-wk)',arr:c.demand.lead_book_pct,pct:1}],headline:0,byChannel:c=>c.demand.by_channel},
+   metrics:c=>[{nm:'leads',arr:c.demand.leads,fmtd:0},{nm:'lead → book % · fresh (same-wk)',arr:lbFreshArr(c),pct:1}],headline:0,byChannel:c=>c.demand.by_channel},
   {key:'velocity',num:8,name:'Booking velocity / active day',short:'Bk vel/day',sub:'weekday·weekend weighted ⓘ',diag:'Capacity limit — scheduling / staffing',fix:'Ops · staffing',
    metrics:c=>[{nm:'booking velocity / active day',arr:c.velocity.per_active_day,fmtd:1}],headline:0,velMath:true},
   {key:'purchased',num:6,name:'Purchased',short:'Purch',sub:'paid after SC · by category',diag:'Fewer purchases',fix:'Clinic · sales',
@@ -804,6 +804,8 @@ const KEEP_CHAN=['GMB','Google','Fb','Practo','Organic'],CHAN_ORDER=['GMB','Goog
 function chanKey(n){const l=(n||'').toLowerCase();if(l.indexOf('google')>=0)return 'Google';if(l==='fb'||l.indexOf('facebook')>=0||l.indexOf('meta')>=0||l.indexOf('insta')>=0)return 'Fb';if(l.indexOf('practo')>=0)return 'Practo';if(l.indexOf('gmb')>=0||l.indexOf('organic')>=0)return 'Organic';return 'Others';}   // GMB folded into Organic (match marketing)
 function chanConsol(bc){const out={};for(const ch in (bc||{})){const k=chanKey(ch),a=bc[ch]||[];out[k]=(out[k]||Z()).map((v,i)=>v+(a[i]||0));}return out;}
 function srcLabel(src){return src==='Organic'?'Organic +GMB':src;}   // Organic bucket includes GMB (folded)
+// same-week lead → book %: fresh (this-week-lead) SC bookings ÷ this week's leads (≤100%). Works at any scope (clinic or aggregate) since both fields are on the object.
+function lbFreshArr(o){return ((o.demand&&o.demand.leads)||[]).map((L,i)=>L?Math.round(100*(((o.bookings&&o.bookings.new_tw)||[])[i]||0)/L):null);}
 function normalizeChannels(){Object.values(D.clinics).forEach(c=>{const dm=c&&c.demand;if(!dm||!dm.by_channel)return;const bc=dm.by_channel,leads=dm.leads||[],N=leads.length,tot=new Array(N).fill(0),chs=Object.keys(bc);
   chs.forEach(ch=>{bc[ch]=(bc[ch]||[]).slice();});
   Object.values(bc).forEach(a=>{if(a)for(let i=0;i<N;i++)tot[i]+=a[i]||0;});
@@ -1346,11 +1348,9 @@ function stageParts(s,o){   // breakdown series per stage: lineS = coloured comp
     const fSrc=fieldSources(o,'fresh'),oSrc=fieldSources(o,'older'),nSrc=fieldSources(o,'never'),rSrc=fieldSources(o,'relapse');   // per-sub-bucket source splits (from the cube)
     const subWithSrc=(label,arr,color,srcMap)=>[{label,arr,color,depth:2}].concat(FSRC?chX(srcMap):[]);   // a sub-bucket row (+ its channel split when the cross is on)
     const sn=FSRC?99:0;   // when the channel cross is on, expand the group so every sub-bucket + its channels show
-    const lbFresh=(o.demand.leads||[]).map((L,i)=>L?Math.round(100*((B.new_tw&&B.new_tw[i])||0)/L):null);   // this-week leads → fresh SC bookings (same-week lead→book %)
     groups=[
       {label:'new patients'+(FSRC?' · × channel':''),arr:ad(B.new_tw,B.new_old),color:BPAL[0],coll:1,showN:sn,children:
         subWithSrc('fresh — lead this week',B.new_tw,BPAL[0],fSrc).concat(subWithSrc('older-week lead (carry-in)',B.new_old,BPAL[1],oSrc))},
-      {label:'★ lead → book % · fresh (this-wk lead → booked)',arr:lbFresh,color:'#7A3FA0',coll:0,showN:0,children:[],rate:1,pct:1,hl:1},   // highlighted same-week conversion, right after new patients
       {label:'repeat patients'+(FSRC?' · × channel':''),arr:ad(B.rebook,B.relapse),color:BPAL[2],coll:1,showN:sn,children:
         subWithSrc('never done before',B.rebook,BPAL[2],nSrc).concat(subWithSrc('relapse — done before, booked again',B.relapse,BPAL[3],rSrc))}
     ];
@@ -1364,7 +1364,7 @@ function stageParts(s,o){   // breakdown series per stage: lineS = coloured comp
     const ds=doneSources(o),dsr=srcUnion().filter(sr=>sum(ds[sr]||[])>0);   // + done split by lead source (SC only) — a fully-collapsible group of its own
     if(dsr.length){tree.push({label:'by source',arr:o.done.done,color:'var(--faint)',depth:1,grp:'src',ck:'src'});
       dsr.forEach((sr,k)=>tree.push({label:'source · '+sr,arr:ds[sr],color:BPAL[k%BPAL.length],depth:2,grp:'src',par:'src'}));}}
-  else if(s.key==='demand'){const bc=chanConsol(o.demand.by_channel);CHAN_ORDER.filter(ch=>bc[ch]&&sum(bc[ch])>0).slice(0,5).forEach((ch,k)=>lineS.push({label:srcLabel(ch),arr:bc[ch],color:BPAL[k]}));chipOnly=[{label:'lead → book % · fresh (same-wk)',arr:o.demand.lead_book_pct,pct:1}];}
+  else if(s.key==='demand'){const bc=chanConsol(o.demand.by_channel);CHAN_ORDER.filter(ch=>bc[ch]&&sum(bc[ch])>0).slice(0,5).forEach((ch,k)=>lineS.push({label:srcLabel(ch),arr:bc[ch],color:BPAL[k]}));chipOnly=[{label:'lead → book % · fresh (same-wk)',arr:lbFreshArr(o),pct:1}];}
   else if(s.key==='velocity'){const v=o.velocity,A=o.availability||{};tree=[   // days open, then the per-weekday / per-weekend booking rate that rolls up to bookings/active-day
       {label:'weekday days available',arr:A.wday_days,color:BPAL[0],depth:1},
       {label:'weekend days available',arr:A.wend_days,color:BPAL[1],depth:1},
