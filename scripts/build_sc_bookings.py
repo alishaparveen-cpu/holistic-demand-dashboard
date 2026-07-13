@@ -30,6 +30,13 @@ WITH sc_offline AS (
   SELECT apt.patient_id,
     date_trunc('week', apt.start_time + interval '5.5 hours')::date AS week_start,
     apt.status,
+    CASE   -- slot outcome (city-head "RD - 1st Bookings" appt_final_status logic): where the booked slot ended up
+      WHEN apt.status IN ('SCHEDULED','PATIENT_JOINED','IN_PROGRESS','PROVIDER_JOINED') THEN 'SCHEDULED'
+      WHEN lower(apt.status)='cancelled' THEN 'CANCELLED'
+      WHEN apt.status IN ('RECONSULTED','COMPLETED') THEN 'COMPLETED'
+      WHEN apt.updated_at > apt.start_time THEN 'No Show'
+      WHEN apt.updated_at <= apt.start_time THEN 'Reschedule'
+      ELSE 'Others' END AS slot_status,
     loc.city, loc.locality AS clinic, COALESCE(pro.name,'—') AS doctor,
     EXTRACT(dow FROM apt.start_time + interval '5.5 hours') AS dow,   -- 0=Sun … 6=Sat, IST (appt day for velocity split)
     row_number() over (partition by apt.patient_id order by apt.created_at asc) AS attempt_rnk
@@ -67,7 +74,7 @@ patient_comp AS (   -- earliest week the patient ever COMPLETED an offline SC (f
   FROM sc_offline WHERE status IN ('COMPLETED','RECONSULTED') GROUP BY patient_id
 ),
 base AS (
-  SELECT b.patient_id, b.city, b.clinic, b.doctor, b.week_start, b.attempt_rnk, b.dow,
+  SELECT b.patient_id, b.city, b.clinic, b.doctor, b.week_start, b.attempt_rnk, b.dow, b.slot_status,
     lf.lead_week, COALESCE(lf.source_bucket,'Direct / none') AS source_bucket, pc.first_comp_wk,
     CASE WHEN b.status IN ('COMPLETED','RECONSULTED') THEN 1 ELSE 0 END AS done_flag
   FROM sc_offline b
@@ -90,7 +97,22 @@ bpwf AS (   -- add grain-primary flags so national/city rollups can de-dup a pat
     MAX(done_any) OVER (PARTITION BY patient_id, week_start) AS done_glob,       -- completed at ANY clinic that week
     MAX(done_any) OVER (PARTITION BY patient_id, week_start, city) AS done_cty   -- completed at any clinic in that city
   FROM bpw
+),
+slots AS (   -- SLOT level (appointment rows, NOT distinct patient): booked slots + done slots + outcome breakdown, per clinic×source×doctor×week
+  SELECT city, clinic, doctor, COALESCE(source_bucket,'Direct / none') AS source_bucket, week_start,
+    count(*) AS booked_slots, sum(done_flag) AS done_slots,
+    sum(case when slot_status='COMPLETED'  then 1 else 0 end) AS st_completed,
+    sum(case when slot_status='SCHEDULED'  then 1 else 0 end) AS st_scheduled,
+    sum(case when slot_status='No Show'    then 1 else 0 end) AS st_noshow,
+    sum(case when slot_status='Reschedule' then 1 else 0 end) AS st_reschedule,
+    sum(case when slot_status='CANCELLED'  then 1 else 0 end) AS st_cancelled,
+    sum(case when slot_status='Others'     then 1 else 0 end) AS st_others
+  FROM base GROUP BY 1,2,3,4,5
 )
+SELECT p.*, COALESCE(s.booked_slots,0) AS booked_slots, COALESCE(s.done_slots,0) AS done_slots,
+  COALESCE(s.st_completed,0) AS st_completed, COALESCE(s.st_scheduled,0) AS st_scheduled,
+  COALESCE(s.st_noshow,0) AS st_noshow, COALESCE(s.st_reschedule,0) AS st_reschedule,
+  COALESCE(s.st_cancelled,0) AS st_cancelled, COALESCE(s.st_others,0) AS st_others FROM (
 SELECT city, clinic, doctor, source_bucket, week_start,
   count(distinct patient_id) AS booked,
   count(distinct case when nat_rnk=1 then patient_id end) AS booked_nat,          -- national-distinct (sum over clinics = patient-level national)
@@ -112,7 +134,9 @@ SELECT city, clinic, doctor, source_bucket, week_start,
   count(distinct case when attempt_rnk=1 and DATEDIFF('week',lead_week,week_start) between 2 and 4 then patient_id end) AS ft_prev_2_4w,
   count(distinct case when attempt_rnk=1 and DATEDIFF('week',lead_week,week_start) between 5 and 13 then patient_id end) AS ft_prev_1_3mo,
   count(distinct case when attempt_rnk=1 and DATEDIFF('week',lead_week,week_start)>13 then patient_id end) AS ft_prev_3mo
-FROM bpwf GROUP BY 1,2,3,4,5 ORDER BY 1,2,3,4,5;
+FROM bpwf GROUP BY 1,2,3,4,5
+) p LEFT JOIN slots s ON s.city=p.city AND s.clinic=p.clinic AND s.doctor=p.doctor AND s.source_bucket=p.source_bucket AND s.week_start=p.week_start
+ORDER BY 1,2,3,4,5;
 """
 
 
@@ -130,7 +154,9 @@ def main():
     NW = len(weeks)
     FIELDS = ["booked", "booked_nat", "booked_city", "done", "done_nat", "done_city",
               "ft_same", "ft_prev", "ft_nolead", "repeat", "ret_return", "ret_rebook", "bkwd", "bkwe", "done_wkday", "done_wkend",
-              "ft_prev_1w", "ft_prev_2_4w", "ft_prev_1_3mo", "ft_prev_3mo"]
+              "ft_prev_1w", "ft_prev_2_4w", "ft_prev_1_3mo", "ft_prev_3mo",
+              "booked_slots", "done_slots",   # SLOT level = appointment rows (patient-level = distinct-patient counts above)
+              "st_completed", "st_scheduled", "st_noshow", "st_reschedule", "st_cancelled", "st_others"]   # slot outcome breakdown (sums to booked_slots)
 
     def blank():
         return {f: [0]*NW for f in FIELDS}
@@ -140,7 +166,7 @@ def main():
         city, clinic, doctor, source, wk = r[0], r[1], r[2], r[3], r[4]
         key = f"{city}|{clinic}"
         i = widx[wk]
-        vals = [int(v) for v in r[5:25]]
+        vals = [int(v) for v in r[5:33]]
         o = clinics.setdefault(key, blank())
         dd = o.setdefault("by_doctor", {}).setdefault(doctor, blank())
         ss = o.setdefault("by_source", {}).setdefault(source, blank())

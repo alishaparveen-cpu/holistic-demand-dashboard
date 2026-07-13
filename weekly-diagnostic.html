@@ -308,7 +308,14 @@
           <button class="mbtn" data-m="aov" onclick="setMet('aov')">AOV</button>
         </span>
         <span style="display:inline-flex;gap:6px;align-items:center;flex-wrap:wrap">
-          <button class="tbtn" data-t="category" id="catTreeBtn" onclick="showCatTree()" title="break the picked value metric(s) into MH · STI · SH + sub-categories, each shown as its % of the total (clinical-mix contribution)">⑥ Category %</button>
+          <button class="tbtn" data-t="collected" onclick="setTier('collected')" title="paid-only, same done-week grain — how much of each week's invoiced ₹ was actually collected (billing-leakage view)">⑥ Collected</button>
+          <button class="mbtn" data-m="revenue_paid" onclick="setMet('revenue_paid')">Revenue ✓</button>
+          <button class="mbtn" data-m="collpct" onclick="setMet('collpct')">Collected %</button>
+          <button class="mbtn" data-m="rpc_paid" onclick="setMet('rpc_paid')">RPC ✓</button>
+          <button class="mbtn" data-m="aov_paid" onclick="setMet('aov_paid')">AOV ✓</button>
+        </span>
+        <span style="display:inline-flex;gap:6px;align-items:center;flex-wrap:wrap">
+          <button class="tbtn" data-t="category" id="catTreeBtn" onclick="showCatTree()" title="break the picked value metric(s) into MH · STI · SH + sub-categories, each shown as its % of the total (clinical-mix contribution)">⑦ Category %</button>
           <button class="mbtn" data-cat="MH" onclick="pickCatChip('MH')" title="slice the picked value metric(s) to Mental-Health (concern · porn · compulsive) + its % of the total">MH</button>
           <button class="mbtn" data-cat="STI" onclick="pickCatChip('STI')" title="slice the picked value metric(s) to STI + its % of the total">STI</button>
           <button class="mbtn" data-cat="SH" onclick="pickCatChip('SH')" title="slice the picked value metric(s) to Sexual-Health (ED+ · ED+PE+ · PE+ · other · NOS) + its % of the total">SH</button>
@@ -471,6 +478,7 @@ const SLOPE_LEG='<span class="slope down">↘</span>sliding · <span class="slop
 function ratioArr(num,den,mult){num=num||[];den=den||[];const n=Math.max(num.length,den.length);const o=[];for(let i=0;i<n;i++){const d=den[i]||0;o.push(d?((num[i]||0)/d*mult):0);}return o;}
 // AOV = ORDER value = products/prescription revenue ÷ purchases — EXCLUDES the consultation fee (matches city-head 'AOV - Overall')
 function prodRev(c){const rev=(c.revenue&&c.revenue.rev)||[],cons=(c.revenue&&c.revenue.cons&&c.revenue.cons.tot)||[];return rev.map((v,i)=>(v||0)-((cons[i])||0));}
+function prodRevPaid(c){const rev=(c.revenue&&c.revenue.rev_paid)||[],cons=(c.revenue&&c.revenue.cons_paid)||[];return rev.map((v,i)=>(v||0)-((cons[i])||0));}   // collected products ₹ (excl consult) for AOV-collected
 function prodRevCat(c){const bc=(c.revenue&&c.revenue.by_cat)||{},cc=(c.revenue&&c.revenue.cons&&c.revenue.cons.by_cat)||{},o={};for(const k in bc)o[k]=(bc[k]||[]).map((v,i)=>(v||0)-((cc[k]&&cc[k][i])||0));return o;}
 const STAGES=[
   {key:'availability',num:1,name:'Availability',short:'Avail',sub:'attended vs rostered days · available hours',diag:'Clinic closed / fewer days',fix:'Ops · roster',
@@ -502,6 +510,15 @@ const STAGES=[
    metrics:c=>[{nm:'rostered hrs',arr:(c.availability&&c.availability.rostered_hrs)||[],fmtd:0}],headline:0},
   {key:'donevel',num:14,name:'Done velocity / active day',short:'Dn vel/day',sub:'completed consults per active clinic-day',diag:'Fewer done per active day',fix:'Ops · staffing',
    metrics:c=>[{nm:'done velocity / active day',arr:ratioArr((c.done&&c.done.done)||[],(c.availability&&c.availability.active_days)||[],1),fmtd:1}],headline:0},
+  // ⑥ Collected — same done-week grain as ⑤ Value, but only invoices actually PAID (collection / billing-leakage view)
+  {key:'revenue_paid',num:15,name:'Revenue (collected)',short:'Rev✓',sub:'done-week ₹ actually COLLECTED (invoice status = paid) — same grain as Revenue · by category',diag:'Collected revenue dropped',fix:'Clinic · billing',
+   metrics:c=>[{nm:'collected ₹',arr:(c.revenue&&c.revenue.rev_paid)||[],fmtd:0}],headline:0,catCube:c=>c.revenue&&c.revenue.by_cat_paid},
+  {key:'collpct',num:16,name:'Collected %',short:'Coll %',sub:'share of done-week invoiced ₹ actually collected (paid ÷ invoiced) — flags billing leakage',diag:'Collection rate dropped',fix:'Clinic · billing',
+   metrics:c=>[{nm:'collected %',arr:ratioArr((c.revenue&&c.revenue.rev_paid)||[],(c.revenue&&c.revenue.rev)||[],100),pct:1}],headline:0},
+  {key:'rpc_paid',num:17,name:'RPC (collected)',short:'RPC✓',sub:'₹ collected per consult (done-week)',diag:'Collected per consult dropped',fix:'Clinic · billing',
+   metrics:c=>[{nm:'₹ collected / consult',arr:ratioArr((c.revenue&&c.revenue.rev_paid)||[],c.done&&c.done.done,1),fmtd:0}],headline:0},
+  {key:'aov_paid',num:18,name:'AOV (collected)',short:'AOV✓',sub:'₹ collected products (excl consult) per paying purchase (done-week)',diag:'Collected order value dropped',fix:'Clinic · billing',
+   metrics:c=>[{nm:'₹ collected / purchase · excl consult',arr:ratioArr(prodRevPaid(c),(c.purchased&&c.purchased.paid)||[],1),fmtd:0}],headline:0},
 ];
 const ISSUE_STAGES=[0,4,1,2,3,6,7,5];   // availability, leads, bookings, book→done, done, purchased, revenue, bk/day
 const FUNNEL_ORDER=[0,4,1,2,3,6,7,9,10,11,5,8,12]; // availability·leads·bookings·B2D·done·purchased·revenue·D2P·RPC·AOV·velocity·doctors·roster(capacity, at end)
@@ -511,13 +528,14 @@ const FUNNEL_GROUPS=[
   {name:'② Capacity',tier:'capacity',keys:['availability','roster']},   // 'doctors' dropped from the funnel — use the By-doctor grouping instead
   {name:'③ Fulfilment',tier:'fulfilment',keys:['conversion','done','purchased','d2p']},
   {name:'④ Velocity',tier:'velocity',keys:['velocity','donevel']},   // per-active-day rates: bookings/day + done/day
-  {name:'⑤ Value',tier:'value',keys:['revenue','rpc','aov']}];
-// metric-selector tiers (the ①–⑤ buttons) — same tiers, but only the metrics that have a By-metric column (no 'doctors')
-const METRIC_TIERS={demand:['demand','bookings'],capacity:['availability','roster'],fulfilment:['conversion','done','purchased','d2p'],velocity:['velocity','donevel'],value:['revenue','rpc','aov']};
+  {name:'⑤ Value',tier:'value',keys:['revenue','rpc','aov']},
+  {name:'⑥ Collected',tier:'collected',keys:['revenue_paid','collpct','rpc_paid','aov_paid']}];   // paid-only, same done-week grain (collection / leakage view)
+// metric-selector tiers (the ①–⑥ buttons) — same tiers, but only the metrics that have a By-metric column (no 'doctors')
+const METRIC_TIERS={demand:['demand','bookings'],capacity:['availability','roster'],fulfilment:['conversion','done','purchased','d2p'],velocity:['velocity','donevel'],value:['revenue','rpc','aov'],collected:['revenue_paid','collpct','rpc_paid','aov_paid']};
 // club weeks into CLUB-sized buckets (averaged, from the newest week back) so long-term trends are legible.
 // averaging keeps a consistent scale and preserves the trend shape + %change; the zoom still shows raw weeks.
 // rates (%, per-day) must always average when clubbing; counts follow CLUBAGG (Σ Sum default / x̄ Avg)
-function isRate(key,pct){return !!pct||key==='conversion'||key==='velocity'||key==='donevel'||['rpc','aov','d2p'].includes(key);}
+function isRate(key,pct){return !!pct||key==='conversion'||key==='velocity'||key==='donevel'||['rpc','aov','d2p','collpct','rpc_paid','aov_paid'].includes(key);}
 function clubArr(arr,rate){if(arr&&WEND>0)arr=arr.slice(0,Math.max(1,arr.length-WEND));   // rebase: drop weeks newer than the selected "latest week"
   if(CLUB<=1||!arr)return arr;const N=arr.length,out=[],useAvg=rate||CLUBAGG==='avg';
   for(let end=N;end>0;end-=CLUB){const st=Math.max(0,end-CLUB),v=arr.slice(st,end).filter(x=>x!=null),s=v.reduce((a,b)=>a+b,0);out.unshift(v.length?(useAvg?s/v.length:s):null);}
@@ -555,7 +573,7 @@ function fmtZ(v,pct){return v==null?'·':(pct?Math.round(v)+'%':(Math.round(v*10
 function pickPt(i){if(PICKA===null)PICKA=i;else if(PICKB===null){if(i===PICKA)PICKA=null;else PICKB=i;}else{PICKA=i;PICKB=null;}if(CURZ)openZoom(CURZ);}
 function clearPick(){PICKA=null;PICKB=null;if(CURZ)openZoom(CURZ);}
 function closeZ(){$('modal').classList.remove('on');PICKA=null;PICKB=null;CURZ=null;}
-function openZoom(z){if(!z)return;if(z!==CURZ){PICKA=null;PICKB=null;}CURZ=z;
+function openZoom(z){if(!z)return;if(z!==CURZ){PICKA=null;PICKB=null;ZWIN=CURN+BASEN;}CURZ=z;
   const zend=z.arr.length-WEND,WIN=Math.min(ZWIN||zend,zend);   // zoom shows the FULL weekly trend (all weeks up to the selected "latest week"); ZWIN optionally caps it
   const F=v=>fmtZ(v,z.pct),labels=D.week_labels.slice(Math.max(0,zend-WIN),zend),col=z.col;
   $('mTitle').textContent=(z.noPrefix?'':((MODE==='cl'&&C)?C.disp+' · ':cityStr()+' · '))+z.label;
@@ -595,7 +613,7 @@ const CAT_TREE=[
   {name:'MH',cats:MH_SUBS,children:[{name:'concern',cats:['MH']},{name:'porn addiction',cats:['PA']},{name:'compulsive M',cats:['CM']}]},
   {name:'STI',cats:['STI']},
   {name:'SH',cats:SH_SUBS,children:[{name:'ED+',cats:['ED+']},{name:'ED+PE+',cats:['ED+PE+']},{name:'PE+',cats:['PE+']},{name:'other',cats:['Oth']},{name:'NOS',cats:['NOS']}]}];
-const CAT_OK=new Set(['done','purchased','revenue','d2p','rpc','aov']);   // metrics a category slice is valid for (RPC breakdowns inherit via subDims)
+const CAT_OK=new Set(['done','purchased','revenue','d2p','rpc','aov','revenue_paid','rpc_paid','collpct']);   // metrics a category slice is valid for (RPC breakdowns inherit via subDims)
 const DOC_OK=new Set(['bookings','conversion','done','purchased','revenue','velocity','d2p','rpc','aov']);   // doctor-attributable metrics (leads / availability / roster are clinic-level)
 // online telehealth is only pre-rolled to SH/STI/MH/Other → map to the 7-space best-effort (SH can't sub-split)
 const ONL_CATMAP={MH:'MH',STI:'STI',Other:'Oth'};
@@ -767,8 +785,8 @@ function jumpToStage(key){const grp=FUNNEL_GROUPS.find(g=>g.keys.includes(key));
 // ---- fifth level: per-metric sub-dimension (Leads→channel, Done/Purch/Rev→category, Bookings/Availability→split) ----
 let _CHU=null;
 function chanUnion(){if(_CHU)return _CHU;const s=new Set();Object.values(D.clinics).forEach(c=>{if(c.demand&&c.demand.by_channel)Object.keys(c.demand.by_channel).forEach(ch=>s.add(ch));});_CHU=[...s].sort();return _CHU;}
-const KEEP_CHAN=['GMB','Google','Fb','Practo','Organic'],CHAN_ORDER=['GMB','Google','Fb','Practo','Organic','Others'];   // only these leads channels matter; everything else → Others
-function chanKey(n){const l=(n||'').toLowerCase();if(l.indexOf('gmb')>=0)return 'GMB';if(l.indexOf('google')>=0)return 'Google';if(l==='fb'||l.indexOf('facebook')>=0||l.indexOf('meta')>=0||l.indexOf('insta')>=0)return 'Fb';if(l.indexOf('practo')>=0)return 'Practo';if(l.indexOf('organic')>=0)return 'Organic';return 'Others';}
+const KEEP_CHAN=['GMB','Google','Meta','Practo','Organic'],CHAN_ORDER=['GMB','Google','Meta','Practo','Organic','Others'];   // only these leads channels matter; everything else → Others
+function chanKey(n){const l=(n||'').toLowerCase();if(l.indexOf('gmb')>=0)return 'GMB';if(l.indexOf('google')>=0)return 'Google';if(l==='fb'||l.indexOf('facebook')>=0||l.indexOf('meta')>=0||l.indexOf('insta')>=0)return 'Meta';if(l.indexOf('practo')>=0)return 'Practo';if(l.indexOf('organic')>=0)return 'Organic';return 'Others';}
 function chanConsol(bc){const out={};for(const ch in (bc||{})){const k=chanKey(ch),a=bc[ch]||[];out[k]=(out[k]||Z()).map((v,i)=>v+(a[i]||0));}return out;}
 // map our raw source buckets → the city-head sheet's labels (Meta→fb; Direct/none folded into Others)
 const SRC_DISP={'Meta':'fb'};   // Meta→fb; 'Direct / none' kept as its OWN bucket (city-head sheet leaves direct/walk-in unclassified, not in Others)
@@ -834,6 +852,10 @@ function subDims(key){const Z=()=>new Array(D.weeks.length).fill(0);
     return base;}
   if(key==='purchased')return catBreakdown('all purchased',c=>c.purchased&&c.purchased.by_cat,c=>(c.purchased&&c.purchased.total)||Z());
   if(key==='revenue')return catBreakdown('all revenue',c=>c.revenue&&c.revenue.by_cat,c=>(c.revenue&&c.revenue.rev)||Z());
+  if(key==='revenue_paid')return catBreakdown('all collected',c=>c.revenue&&c.revenue.by_cat_paid,c=>(c.revenue&&c.revenue.rev_paid)||Z());   // ⑥ collected ₹ by category
+  if(key==='collpct')return catRateBreakdown('all collected %',c=>ratioArr((c.revenue&&c.revenue.rev_paid)||[],(c.revenue&&c.revenue.rev)||[],100),c=>c.revenue&&c.revenue.by_cat_paid,c=>c.revenue&&c.revenue.by_cat,100);
+  if(key==='rpc_paid')return catRateBreakdown('₹ collected / consult',c=>ratioArr((c.revenue&&c.revenue.rev_paid)||[],c.done&&c.done.done,1),c=>c.revenue&&c.revenue.by_cat_paid,c=>c.done&&c.done.by_cat,1);
+  if(key==='aov_paid')return catRateBreakdown('₹ collected / purchase',c=>ratioArr(prodRevPaid(c),(c.purchased&&c.purchased.paid)||[],1),c=>c.revenue&&c.revenue.by_cat_paid,c=>c.purchased&&c.purchased.by_cat_paid,1);
   if(key==='bookings'){const ad=(x,y)=>x.map((v,i)=>(v||0)+((y&&y[i])||0));   // the new/repeat patient split exists for SC (new-consult) bookings only; FU bookings have no such split
     const sfx=FUNNEL2==='sc'?'':' · new-consult';
     const out=[{label:'all bookings',get:c=>c.bookings.total}];
@@ -970,6 +992,10 @@ function metricNameFull(key){const fw=funnelWord();switch(key){   // outcome met
   case 'd2p':return fw+' done → purchased %';
   case 'rpc':return fw+' RPC · incl consult';
   case 'aov':return fw+' AOV (₹ / purchase)';
+  case 'revenue_paid':return fw+' revenue collected (₹)';
+  case 'collpct':return fw+' collected % (paid ÷ invoiced)';
+  case 'rpc_paid':return fw+' RPC collected · ₹/consult';
+  case 'aov_paid':return fw+' AOV collected (₹ / purchase)';
   case 'roster':return 'Roster · capacity hrs';
   default:return key;}}
 function catWord(){return CATF.size?catFriendly().join('+'):'';}
@@ -1289,8 +1315,8 @@ function aggregate(slugs,label){
     demand:{leads:Z(),by_channel:{},lead_book_pct:Z()},
     bookings:{total:Z(),new_tw:Z(),new_old:Z(),rebook:Z(),relapse:Z(),by_source:{}},
     done:{booked:Z(),done:Z(),book_done_pct:Z(),by_cat:Object.fromEntries(CATS.map(c=>[c,Z()]))},
-    purchased:{total:Z(),by_cat:Object.fromEntries(CATS.map(c=>[c,Z()]))},
-    revenue:Object.assign({rev:Z(),by_cat:Object.fromEntries(CATS.map(c=>[c,Z()]))},Object.fromEntries(['meds','test','ther','cons'].map(nm=>[nm,{tot:Z(),by_cat:Object.fromEntries(CATS.map(c=>[c,Z()]))}]))),
+    purchased:{total:Z(),by_cat:Object.fromEntries(CATS.map(c=>[c,Z()])),paid:Z(),by_cat_paid:Object.fromEntries(CATS.map(c=>[c,Z()]))},
+    revenue:Object.assign({rev:Z(),by_cat:Object.fromEntries(CATS.map(c=>[c,Z()])),rev_paid:Z(),cons_paid:Z(),by_cat_paid:Object.fromEntries(CATS.map(c=>[c,Z()]))},Object.fromEntries(['meds','test','ther','cons'].map(nm=>[nm,{tot:Z(),by_cat:Object.fromEntries(CATS.map(c=>[c,Z()]))}]))),
     doctors:{count:Z()},by_doctor:{},
     velocity:{bookings:Z(),wday_days:Z(),wend_days:Z(),bk_wday:Z(),bk_wend:Z(),done_wday:Z(),done_wend:Z(),per_active_day:Z(),per_weekday:Z(),per_weekend:Z(),done_per_weekday:Z(),done_per_weekend:Z()}};
   // grain for distinct roll-up: one city → city-distinct, else national-distinct (dedups a patient who booked at >1 clinic that week)
@@ -1307,8 +1333,10 @@ function aggregate(slugs,label){
     a.done.booked=add(a.done.booked,(c.done['booked_'+GR]||c.done.booked));a.done.done=add(a.done.done,(c.done['done_'+GR]||c.done.done));
     if(c.done._all!=null)a.done._all=add(a.done._all||Z(),c.done._all);   // carry the all-category total for contribution %
     CATS.forEach(ct=>a.done.by_cat[ct]=add(a.done.by_cat[ct],(c.done.by_cat||{})[ct]));
-    if(c.purchased){a.purchased.total=add(a.purchased.total,c.purchased.total);if(c.purchased._all!=null)a.purchased._all=add(a.purchased._all||Z(),c.purchased._all);CATS.forEach(ct=>a.purchased.by_cat[ct]=add(a.purchased.by_cat[ct],(c.purchased.by_cat||{})[ct]));}
+    if(c.purchased){a.purchased.total=add(a.purchased.total,c.purchased.total);if(c.purchased._all!=null)a.purchased._all=add(a.purchased._all||Z(),c.purchased._all);CATS.forEach(ct=>a.purchased.by_cat[ct]=add(a.purchased.by_cat[ct],(c.purchased.by_cat||{})[ct]));
+      a.purchased.paid=add(a.purchased.paid,c.purchased.paid);CATS.forEach(ct=>a.purchased.by_cat_paid[ct]=add(a.purchased.by_cat_paid[ct],(c.purchased.by_cat_paid||{})[ct]));}
     if(c.revenue){a.revenue.rev=add(a.revenue.rev,c.revenue.rev);if(c.revenue._all!=null)a.revenue._all=add(a.revenue._all||Z(),c.revenue._all);CATS.forEach(ct=>a.revenue.by_cat[ct]=add(a.revenue.by_cat[ct],(c.revenue.by_cat||{})[ct]));
+      a.revenue.rev_paid=add(a.revenue.rev_paid,c.revenue.rev_paid);a.revenue.cons_paid=add(a.revenue.cons_paid,c.revenue.cons_paid);CATS.forEach(ct=>a.revenue.by_cat_paid[ct]=add(a.revenue.by_cat_paid[ct],(c.revenue.by_cat_paid||{})[ct]));
       ['meds','test','ther','cons'].forEach(nm=>{const L=c.revenue[nm];if(L){a.revenue[nm].tot=add(a.revenue[nm].tot,L.tot);if(L._all!=null)a.revenue[nm]._all=add(a.revenue[nm]._all||Z(),L._all);CATS.forEach(ct=>a.revenue[nm].by_cat[ct]=add(a.revenue[nm].by_cat[ct],(L.by_cat||{})[ct]));}});}
     if(c.by_doctor)for(const dr in c.by_doctor){const bd=a.by_doctor[dr]=a.by_doctor[dr]||{booked:Z(),done:Z(),purchased:Z(),rev:Z()};['booked','done','purchased','rev'].forEach(k=>bd[k]=add(bd[k],c.by_doctor[dr][k]));}
     ['bk_wday','bk_wend','done_wday','done_wend'].forEach(k=>a.velocity[k]=add(a.velocity[k],c.velocity[k]));});
@@ -1624,13 +1652,53 @@ async function loadOnlineDoc(){
   const all={};[ONLINE_DOC.sc,ONLINE_DOC.fu].forEach(v=>{for(const dr in v){all[dr]=all[dr]||{booked:Zz(),done:Zz(),purchased:Zz(),rev:Zz()};['booked','done','purchased','rev'].forEach(k=>all[dr][k]=all[dr][k].map((x,i)=>x+v[dr][k][i]));}});
   ONLINE_DOC.all=all;
 }
+// ---- LEADS ATTRIBUTION CUBE (data_leads_city.json) grafted onto each clinic's demand stage ----
+// The old demand came from main_source_wise_leads (source-only). We replace it with the recovered attribution cube:
+// per (city|locality) for offline clinics, and the no-city bucket for the Online pseudo-clinic. Raw cells kept on
+// demand._cells so the funnel/metric views can drill channel→medium→number→intent→category→booked (Phases 2-3).
+let LEADWMAP=null;   // cube week index (newest-first) -> diag week index (oldest-first)
+const LEAD_BOOKED=new Set(['w0','w1','later','prior','booked']);   // "booked ever" (default window)
+function attachLeadCube(D,LCITY){
+  if(!LCITY||!LCITY._meta||!D||!D.weeks)return;
+  const cw=LCITY._meta.weeks, dw=D.weeks, N=dw.length;
+  LEADWMAP=cw.map(w=>dw.indexOf(w));
+  const zeros=()=>new Array(N).fill(0);
+  const mkAcc=()=>({by_channel:{},leads:zeros(),booked:zeros(),cells:[]});
+  function addCell(acc,cell){
+    const arr=acc.by_channel[cell.ch]||(acc.by_channel[cell.ch]=zeros());
+    const bkd=LEAD_BOOKED.has(cell.bk),w=cell.w||[];
+    for(let i=0;i<cw.length;i++){const di=LEADWMAP[i];if(di<0)continue;const v=w[i]||0;if(!v)continue;arr[di]+=v;acc.leads[di]+=v;if(bkd)acc.booked[di]+=v;}
+    acc.cells.push(cell);
+  }
+  const byClinic={},online=mkAcc();
+  for(const key in LCITY){if(key==='_meta')continue;
+    const isNo=(''+key).indexOf('— no city')===0;
+    (LCITY[key].cells||[]).forEach(cell=>{
+      if(isNo){addCell(online,cell);return;}
+      if(cell.loc){const ck=key+'|'+cell.loc;const a=byClinic[ck]||(byClinic[ck]=mkAcc());addCell(a,cell);}
+    });
+  }
+  const graft=(c,acc)=>{c.demand.by_channel=acc.by_channel;c.demand.leads=acc.leads;
+    c.demand.booked=acc.booked;c.demand._cells=acc.cells;c.demand._cube=true;
+    c.demand.lead_book_pct=acc.leads.map((v,i)=>v?100*acc.booked[i]/v:0);};   // 0-100 scale (matches the old field); cube rate is a true ≤100% (booked leads ÷ leads)
+  let matched=0,fallback=0;
+  for(const slug in D.clinics){const c=D.clinics[slug];if(!c.demand)continue;
+    if(c._online||c.city==='Online'){graft(c,online);matched++;continue;}
+    const acc=c.loc&&byClinic[c.city+'|'+c.loc];
+    if(acc){graft(c,acc);matched++;}else fallback++;
+  }
+  _CHU=null;   // reset channel-union cache
+  console.log('[leads cube] grafted '+matched+' clinics · '+fallback+' kept old (no cube match)');
+}
 async function boot(){
   try{D=await fetch('data_weekly_diag.json?v='+Date.now()).then(r=>r.json());}
   catch(e){$('root').innerHTML='<div class="err">Failed to load data_weekly_diag.json</div>';return;}
+  let LCITY=null;try{LCITY=await fetch('data_leads_city.json?v='+Date.now()).then(r=>r.ok?r.json():null);}catch(e){LCITY=null;}
   try{AGE=await fetch('data_clinic_age.json?v='+Date.now()).then(r=>r.ok?r.json():{open:{}}).then(a=>(a&&a.open)||{});}catch(e){AGE={};}
   try{QD=await fetch('data_quick_diag.json?v='+Date.now()).then(r=>r.ok?r.json():null);}catch(e){QD=null;}
   if(QD)applyVariant();   // master-demand matched numbers become the source of truth (SC default)
   buildOnlineClinics();
+  attachLeadCube(D,LCITY);   // swap the demand/leads stage to the recovered attribution cube (+ stash cells for deep drill)
   await loadOnlineDoc();
   ALLCITIES=[...new Set(Object.values(D.clinics).filter(c=>!c._online&&c.city!=='Online').map(c=>c.city))].sort((a,b)=>{const ta=tierOf(a)==='T1',tb=tierOf(b)==='T1';return ta!==tb?(ta?-1:1):a.localeCompare(b);});   // exclude the Online pseudo-city; Tier-1 cities first so heads click fast
   try{const saved=JSON.parse(localStorage.getItem('wd_city')||'[]');if(Array.isArray(saved))saved.forEach(c=>{if(ALLCITIES.includes(c))CITYF.add(c);});}catch(e){}

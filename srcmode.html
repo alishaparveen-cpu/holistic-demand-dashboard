@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SC bookings · source × via-medium</title>
+<style>
+  :root{--accent:#2C6CAE;--fg:#1a2230;--fg2:#5a6472;--fg3:#8a94a3;--bg:#f0f2f6;--card:#ffffff;--line:#e6e9ef;--inset:#f4f6f9;
+    --call:#2c6cae;--web:#1f9e8f;--wa:#4caf50;--book:#8257c4;--walk:#9aa3b0;--ai:#e0952a;--other:#c2c8d2;}
+  @media (prefers-color-scheme:dark){:root{--fg:#e8ecf2;--fg2:#a3adbd;--fg3:#727d8e;--bg:#0f1216;--card:#161a21;--line:#2a3038;--inset:#1e232b;}}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:14px;line-height:1.4}
+  .wrap{max-width:840px;margin:0 auto;padding:22px 18px 60px}
+  h1{font-size:19px;font-weight:800;margin:0 0 3px;letter-spacing:-.01em}
+  .sub{font-size:12px;color:var(--fg2);margin:0 0 16px}
+  .ctrls{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:16px}
+  select{font:inherit;padding:7px 10px;border-radius:9px;border:1px solid var(--line);background:var(--card);color:var(--fg);font-weight:600}
+  .seg{display:inline-flex;border:1px solid var(--line);border-radius:9px;overflow:hidden}
+  .seg button{font:inherit;font-weight:600;font-size:12.5px;padding:7px 12px;border:0;background:var(--card);color:var(--fg2);cursor:pointer}
+  .seg button.on{background:var(--accent);color:#fff}
+  .legend{display:flex;flex-wrap:wrap;gap:7px 15px;font-size:11px;color:var(--fg2);margin:2px 0 16px}
+  .li{display:inline-flex;align-items:center;gap:5px}
+  .dot{width:9px;height:9px;border-radius:2px;display:inline-block;flex:none}
+  .sec{background:var(--card);border:1px solid var(--line);border-radius:13px;padding:15px 17px;margin-bottom:13px}
+  .sechd{display:flex;align-items:baseline;gap:8px;margin-bottom:13px}
+  .secti{font-size:14px;font-weight:800}
+  .secto{font-size:12.5px;color:var(--fg2);font-variant-numeric:tabular-nums;margin-left:auto}
+  .row{margin-bottom:12px}
+  .rtop{display:flex;align-items:baseline;gap:8px;margin-bottom:4px}
+  .snm{font-size:13px;font-weight:700;min-width:96px}
+  .stot{font-size:13px;font-weight:800;font-variant-numeric:tabular-nums}
+  .stag{font-size:9.5px;font-weight:700;padding:1px 5px;border-radius:5px;background:var(--inset);color:var(--fg3);letter-spacing:.03em}
+  .bar{height:16px;border-radius:4px;overflow:hidden;display:flex;background:var(--inset)}
+  .barseg{height:100%}
+  .kids{font-size:11.5px;color:var(--fg2);margin-top:4px;display:flex;flex-wrap:wrap;gap:4px 13px}
+  .kid{font-variant-numeric:tabular-nums;display:inline-flex;align-items:center;gap:4px}
+  .note{font-size:11px;color:var(--fg3);line-height:1.6;margin-top:8px}
+  .note b{color:var(--fg2)}
+  .empty{color:var(--fg3);font-size:12.5px;padding:6px 0}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>SC bookings · source × via-medium</h1>
+  <p class="sub" id="sub">loading…</p>
+
+  <div class="ctrls">
+    <label>Clinic &nbsp;<select id="clinic"></select></label>
+    <div class="seg" id="winseg">
+      <button data-w="8" class="on">last 8 wks</button>
+      <button data-w="4">last 4 wks</button>
+      <button data-w="12">all 12 wks</button>
+    </div>
+  </div>
+
+  <div class="legend">
+    <span class="li"><span class="dot" style="background:var(--call)"></span>call</span>
+    <span class="li"><span class="dot" style="background:var(--web)"></span>web</span>
+    <span class="li"><span class="dot" style="background:var(--wa)"></span>whatsapp</span>
+    <span class="li"><span class="dot" style="background:var(--book)"></span>book (Practo)</span>
+    <span class="li"><span class="dot" style="background:var(--walk)"></span>walk-in</span>
+    <span class="li"><span class="dot" style="background:var(--ai)"></span>AI-intent</span>
+  </div>
+
+  <div class="sec">
+    <div class="sechd"><span class="secti">✅ Leads booked → SC bookings</span><span class="secto" id="bktot"></span></div>
+    <div id="booked"></div>
+  </div>
+
+  <div class="sec">
+    <div class="sechd"><span class="secti">⛔ Leads not booked</span><span class="secto" id="nbtot"></span></div>
+    <div id="notbooked"></div>
+  </div>
+
+  <div class="note">
+    <b>Real:</b> every source subtotal + the not-booked group totals. &nbsp;<b>·est:</b> the call/web/whatsapp split is provisional (from the clinic's global mode margin) until the phone→Exotel-number pull overwrites it.<br>
+    <b>Source map = tracker-corrected:</b> the real pull attributes calls via <b>number_source_overrides.csv</b> (the demand tracker's own map), which will also surface <b>Brand</b> (website), <b>Blogs</b>, <b>JustDial</b> and <b>Offline-hoarding</b> as their own rows — currently folded inside Organic / Other.
+  </div>
+</div>
+
+<script>
+const C={call:'var(--call)',web:'var(--web)',whatsapp:'var(--wa)',book:'var(--book)',walkin:'var(--walk)',ai_intent:'var(--ai)',other:'var(--other)'};
+const BK_ORDER=['GMB','Google Ads','Practo','Meta','Organic','Walk-in','Other'];
+const NB_ORDER=['GMB','Google','Practo'];
+let DATA=null, WIN=8;
+
+function sum(arr,n){let s=0;for(let i=0;i<Math.min(n,(arr||[]).length);i++)s+=arr[i]||0;return s;}
+function modeKeys(node){return Object.keys(node).filter(k=>!k.startsWith('_'));}
+
+function renderRows(node, order, elid, mx){
+  const el=document.getElementById(elid); let h=''; let any=false;
+  order.forEach(src=>{
+    const nd=node&&node[src]; if(!nd)return;
+    const t=sum(nd._total,WIN); if(!t&&src!=='Walk-in')return; any=true;
+    const modes=modeKeys(nd).map(k=>[k,sum(nd[k],WIN)]).filter(p=>p[1]>0 || (nd._flat&&p[0]==='other'));
+    const flatOnly = nd._flat;
+    const disp = flatOnly ? [['other',t]] : modes;
+    const segs=disp.map(p=>{const pct=t?100*p[1]/t:0;return `<div class="barseg" style="width:${pct}%;background:${C[p[0]]||C.other}"></div>`;}).join('');
+    const kids=disp.filter(p=>p[0]!=='other').map(p=>`<span class="kid"><span class="dot" style="background:${C[p[0]]||C.other}"></span>${p[0].replace('_',' ')} ${p[1]}</span>`).join('');
+    const tag = nd._est?'<span class="stag">·est</span>':(nd._flat?'<span class="stag">flat</span>':(nd._note?`<span class="stag">${src==='Google'?'AI-intent':''}</span>`:''));
+    const w=Math.max(6,Math.round(100*t/mx));
+    h+=`<div class="row"><div class="rtop"><span class="snm">${src}</span><span class="stot">${t}</span>${tag}</div>`
+      +`<div class="bar" style="width:${w}%">${segs}</div>`+(kids?`<div class="kids">${kids}</div>`:'')+`</div>`;
+  });
+  el.innerHTML = any?h:'<div class="empty">no data for this clinic / window</div>';
+}
+
+function maxTotal(node,order){let m=1;order.forEach(s=>{if(node&&node[s])m=Math.max(m,sum(node[s]._total,WIN));});return m;}
+
+function render(){
+  const cl=document.getElementById('clinic').value; const node=DATA[cl]||{};
+  const nb=node._not_booked||null;
+  const mx=Math.max(maxTotal(node,BK_ORDER), nb?maxTotal(nb,NB_ORDER):1);
+  renderRows(node,BK_ORDER,'booked',mx);
+  document.getElementById('booked')._n=node;
+  let bkt=0;BK_ORDER.forEach(s=>{if(node[s])bkt+=sum(node[s]._total,WIN);});
+  document.getElementById('bktot').textContent=bkt+' bookings';
+  if(nb){renderRows(nb,NB_ORDER,'notbooked',mx);
+    let n=0;NB_ORDER.forEach(s=>{if(nb[s])n+=sum(nb[s]._total,WIN);});
+    document.getElementById('nbtot').textContent=n+' · leakage';
+  }else{document.getElementById('notbooked').innerHTML='<div class="empty">not-booked not available for this clinic</div>';document.getElementById('nbtot').textContent='';}
+}
+
+fetch('data_srcmode.json').then(r=>r.json()).then(d=>{
+  DATA=d; const wk=d._meta.weeks;
+  document.getElementById('sub').innerHTML=`weekly · newest ${wk[0]} → oldest ${wk[wk.length-1]} · ${d._meta.provisional?'<b>PROVISIONAL</b> splits (real subtotals)':'REAL'} build`;
+  const sel=document.getElementById('clinic');
+  const clinics=Object.keys(d).filter(k=>k!=='_meta').sort();
+  clinics.forEach(c=>{const o=document.createElement('option');o.value=c;o.textContent=c.replace('|',' · ');sel.appendChild(o);});
+  sel.value = clinics.includes('Bangalore|Indiranagar')?'Bangalore|Indiranagar':clinics[0];
+  sel.onchange=render;
+  document.querySelectorAll('#winseg button').forEach(b=>b.onclick=()=>{
+    document.querySelectorAll('#winseg button').forEach(x=>x.classList.remove('on'));
+    b.classList.add('on'); WIN=+b.dataset.w; render();
+  });
+  render();
+}).catch(e=>{document.getElementById('sub').textContent='failed to load data_srcmode.json — '+e;});
+</script>
+</body>
+</html>

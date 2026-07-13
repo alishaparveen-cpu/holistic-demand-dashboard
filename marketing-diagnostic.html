@@ -235,6 +235,9 @@
   .crumb .cur{color:var(--accent)}
   .legend{display:inline-flex;gap:12px;align-items:center;font-size:11.5px;color:var(--ink2);background:var(--inset);border-radius:8px;padding:4px 11px}
 </style>
+<script src="leads-cube.js"></script>
+<script src="bookings-cube.js"></script>
+<script src="leads-pivot.js"></script>
 </head>
 <body>
 <div class="wrap">
@@ -267,7 +270,7 @@
       <div class="ms" id="msClin"><button class="fbtn" id="clinBtn" onclick="openClinMs(event)">All clinics ▾</button><div class="mspanel" id="clinPanel"></div></div>
       <div class="ms" id="msDoc"><button class="fbtn" id="docBtn" onclick="openDocMs(event)">All doctors ▾</button><div class="mspanel" id="docPanel"></div></div>
       <div class="ms" id="msCat"><button class="fbtn" id="catBtn" onclick="openCatMs(event)" title="filter diagnosis-stage metrics (Done · Purchased · Revenue · D2P · RPC) to one or more clinical categories">All categories ▾</button><div class="mspanel" id="catPanel"></div></div>
-      <span class="ctltag" style="margin:0 3px 0 6px;min-width:auto;flex:none" title="lead source (channel) — filters the Leads vital + drill to one channel">Source</span><div class="seg" id="srcSeg"><button class="segbtn on" data-src="All" onclick="setSrc('All')">All</button><button class="segbtn" data-src="Organic" onclick="setSrc('Organic')" title="Organic + GMB combined">Organic +GMB</button><button class="segbtn" data-src="Google" onclick="setSrc('Google')">Google</button><button class="segbtn" data-src="Fb" onclick="setSrc('Fb')">Fb</button><button class="segbtn" data-src="Practo" onclick="setSrc('Practo')">Practo</button><button class="segbtn" data-src="Others" onclick="setSrc('Others')">Others</button></div>
+      <!-- Source segmented control + ① Leads breakdown dropdowns removed — the leads pivot (channel·medium·intent·strength·booked layers) now covers all of this -->
       <!-- maturity chips moved into the clinics dropdown (AGE quick-filter) -->
       <span class="ctlsep"></span><span class="ctltag" style="margin:0 3px 0 0;min-width:auto;flex:none">View</span><div class="seg"><button class="segbtn" id="ovCockpit" onclick="setOvMode('cockpit')">⚡ Quick scan</button><button class="segbtn on" id="ovFunnel" onclick="setOvMode('funnel')">🩺 Full funnel</button><button class="segbtn" id="ovMetric" onclick="setOvMode('metric')">📊 Individual metric</button></div>
       <span class="scopecount" id="scopeCount"></span>
@@ -306,7 +309,7 @@
     </div>
     <div id="selwrap" style="flex:0 1 300px;min-width:250px"><div class="ctltag">2 · Selection <span style="text-transform:none;font-weight:500;color:var(--faint)">· focus one exact cut of the metric</span></div><div id="selcontrol"></div></div>
     <div id="bdwrap" style="flex:1 1 380px;min-width:340px"><div class="ctltag">3 · Breakdown <span style="text-transform:none;font-weight:500;color:var(--faint)">· cross by city / category / source — nests & drills</span></div>
-      <div class="seg" id="grpseg" style="margin-bottom:7px"><span class="ctltag" style="margin:0 4px 0 0;min-width:auto;flex:none;align-self:center">Rows by</span><button class="segbtn on" id="grpCity" onclick="setGrp('city')">🏙 City</button><button class="segbtn" id="grpClinic" onclick="setGrp('clinic')">🏥 Clinic</button><button class="segbtn" id="grpCat" onclick="setGrp('category')">🏷 Category</button><button class="segbtn" id="grpSrc" onclick="setGrp('source')">📣 Source</button></div><span id="nestchain"></span>
+      <div class="seg" id="grpseg" style="margin-bottom:7px"><span class="ctltag" style="margin:0 4px 0 0;min-width:auto;flex:none;align-self:center">Rows by</span><button class="segbtn on" id="grpCity" onclick="setGrp('city')">🏙 City</button><button class="segbtn" id="grpClinic" onclick="setGrp('clinic')">🏥 Clinic</button><button class="segbtn" id="grpCat" onclick="setGrp('category')">🏷 Category</button><button class="segbtn" id="grpLchan" onclick="setGrp('lchan')" title="leads by channel (GMB · Google · Meta · Practo · Organic) — leads + L2B">📣 Channel</button><button class="segbtn" id="grpLmed" onclick="setGrp('lmed')" title="leads by contact medium (call · web · WhatsApp · Practo book) — leads + L2B">📞 Medium</button><button class="segbtn" id="grpSrc" onclick="setGrp('source')">📣 Source</button><button class="segbtn" id="grpAttr" onclick="setGrp('attribution')" title="attributed to a city vs no-city (online / untracked) — leads only">✓ Attribution</button></div><span id="nestchain"></span>
 </div>
     <div id="infobox" style="flex:1 1 200px;min-width:180px;margin-left:auto;display:flex;flex-direction:column;gap:8px;align-items:flex-end">
       <div id="scopebanner"></div>
@@ -334,9 +337,10 @@ function applyVariant(){   // overlay the matched SC/FU/Combined numbers onto ea
     if(!hasSplit&&FUNNEL2==='sc'&&c._velSplit)c.velocity=Object.assign({},c.velocity,c._velSplit);   // stale-data fallback: base SC split
     if(v.revenue)c.revenue=rmObj(v.revenue); if(v.purchased)c.purchased=rmObj(v.purchased);}
   buildOnlineClinics();   // rebuild the national 🌐 Online pseudo-clinic for this variant (SC/FU/All)
+  if(BKCUBE)attachBookingsCube(D,BKCUBE);   // re-graft the funnel-cube new-SC attribution (applyVariant just rebuilt c.bookings, wiping sc_*)
 }
 // availability / leads / bookings-per-active-day don't exist for online (national telehealth, no clinics/roster)
-function naMetric(c,key){return (!!(c&&c._online)&&(key==='availability'||key==='demand'||key==='velocity'||key==='donevel'||key==='roster'))||(!!(c&&c._doctor)&&(key==='availability'||key==='demand'||key==='roster'))||(!!(c&&c._catrow)&&!CAT_OK.has(key))||(!!(c&&c._source)&&!/^(demand|bookings|conversion|done)$/.test(key))||(FUNNEL2==='fu'&&key==='demand');}   // source rows: only Leads·Bookings·B2D·Done are source-attributable   // category rows: only diagnosis-stage metrics have values   // doctor rows: leads/availability/roster are clinic-level; velocity (her bookings ÷ clinic active-days) IS shown   // doctor rows: leads/availability/velocity/roster are clinic-level, not per-doctor. follow-ups have no new-lead concept. NB: under a category filter, pre-diagnosis metrics (availability/leads/bookings/velocity/B2D) stay VISIBLE at full clinic level (tagged "all cats") rather than n/a — only the diagnosis metrics (CAT_OK) get sliced
+function naMetric(c,key){return (!!(c&&c._online)&&(key==='availability'||key==='demand'||key==='velocity'||key==='donevel'||key==='roster'))||(!!(c&&c._doctor)&&(key==='availability'||key==='demand'||key==='roster'))||(!!(c&&c._catrow)&&!CAT_OK.has(key))||(!!(c&&c._source)&&!/^(demand|bookings|conversion|done)$/.test(key))||(!!(c&&c._leaddim)&&key!=='demand')||(FUNNEL2==='fu'&&key==='demand');}   // leaddim (channel/medium of leads): only the Leads metric (incl. its L2B) has values   // source rows: only Leads·Bookings·B2D·Done are source-attributable   // category rows: only diagnosis-stage metrics have values   // doctor rows: leads/availability/roster are clinic-level; velocity (her bookings ÷ clinic active-days) IS shown   // doctor rows: leads/availability/velocity/roster are clinic-level, not per-doctor. follow-ups have no new-lead concept. NB: under a category filter, pre-diagnosis metrics (availability/leads/bookings/velocity/B2D) stay VISIBLE at full clinic level (tagged "all cats") rather than n/a — only the diagnosis metrics (CAT_OK) get sliced
 const T1CITIES=new Set(['Bangalore','Mumbai','Navi Mumbai','Pune','Hyderabad','Chennai']);
 function tierOf(city){return T1CITIES.has(city)?'T1':'T2';}
 function clinMonths(slug){const d=AGE[D.clinics[slug].loc];if(!d)return null;const t=Date.parse(d);return isNaN(t)?null:(Date.now()-t)/(1000*60*60*24*30.44);}
@@ -346,8 +350,8 @@ function inCity(city){return !CITYF.size||CITYF.has(city);}
 // gate online by the cities implied by the current scope: explicit city filter, else the cities of the selected offline clinics, else all.
 function effCityOK(city){if(CITYF.size)return CITYF.has(city);if(CLINF.size){for(const s of CLINF){const c=D.clinics[s];if(c&&!c._online&&c.city===city)return true;}return false;}return true;}
 function inScope(slug){const c=D.clinics[slug];
-  if(c._unattr)return !CITYF.size&&!CLINF.size&&!TIERF.size&&!DOCF.size;   // national/online unattributed leads — Pan-India scope only, any funnel/segment
-  if(c._unattr_city)return !CLINF.size&&!DOCF.size&&(!CITYF.size||CITYF.has(c.city))&&(!TIERF.size||TIERF.has(tierOf(c.city)));   // city-level (no clinic) leads — show at that city's scope (or Pan-India), not in clinic/doctor drills
+  if(c._unattr)return !CITYF.size&&!CLINF.size&&!TIERF.size&&!DOCF.size;   // national no-city leads (incl. FB→WhatsApp Meta) — always shown at Pan-India (leads carry no offline/online split); contributes 0 bookings so it never distorts other stages
+  if(c._unattr_city)return !CLINF.size&&!DOCF.size&&(!CITYF.size||CITYF.has(c.city))&&(!TIERF.size||TIERF.has(tierOf(c.city)));   // city-level (no clinic) — shown at that city's scope (or Pan-India), any segment
   const on=!!c._online;
   if(SEG==='offline'&&on)return false;
   if(SEG==='online'&&!on)return false;
@@ -475,7 +479,7 @@ const STAGES=[
   {key:'done',num:4,name:'Done',short:'Done',sub:'completed · by category (SH/STI/MH)',diag:'Done dropped',fix:'Clinic / PCC',
    metrics:c=>[{nm:'done',arr:c.done.done,fmtd:0}],headline:0,doneCat:c=>c.done.by_cat},
   {key:'demand',num:5,name:'Leads',short:'Leads',sub:'leads · lead→book %',diag:'Channel break — GMB / Ads / Practo',fix:'Marketing',
-   metrics:c=>[{nm:'leads',arr:c.demand.leads,fmtd:0},{nm:'lead → book % · fresh (same-wk)',arr:lbFreshArr(c),pct:1}],headline:0,byChannel:c=>c.demand.by_channel},
+   metrics:c=>[{nm:'leads'+(CATF.size?' · all categories (leads use call-intent, not diagnosis — not category-sliced)':''),arr:c.demand.leads,fmtd:0},{nm:'lead → book % (booked ÷ leads · '+FBKW+')',arr:(c.demand.lead_book_pct||Z()),pct:1}],headline:0,byChannel:c=>c.demand.by_channel},   // L2B = funnel definition (shared leads-cube module), driven by the Booked window. CATF (clinical diagnosis) ≠ lead cube cat (call-intent) → leads deliberately NOT category-sliced; flagged inline.
   {key:'velocity',num:8,name:'Booking velocity / active day',short:'Bk vel/day',sub:'weekday·weekend weighted ⓘ',diag:'Capacity limit — scheduling / staffing',fix:'Ops · staffing',
    metrics:c=>[{nm:'booking velocity / active day',arr:c.velocity.per_active_day,fmtd:1}],headline:0,velMath:true},
   {key:'purchased',num:6,name:'Purchased',short:'Purch',sub:'paid after SC · by category',diag:'Fewer purchases',fix:'Clinic · sales',
@@ -554,7 +558,7 @@ function fmtZ(v,pct){return v==null?'·':(pct?Math.round(v)+'%':(Math.round(v*10
 function pickPt(i){if(PICKA===null)PICKA=i;else if(PICKB===null){if(i===PICKA)PICKA=null;else PICKB=i;}else{PICKA=i;PICKB=null;}if(CURZ)openZoom(CURZ);}
 function clearPick(){PICKA=null;PICKB=null;if(CURZ)openZoom(CURZ);}
 function closeZ(){$('modal').classList.remove('on');PICKA=null;PICKB=null;CURZ=null;}
-function openZoom(z){if(!z)return;if(z!==CURZ){PICKA=null;PICKB=null;}CURZ=z;
+function openZoom(z){if(!z)return;if(z!==CURZ){PICKA=null;PICKB=null;ZWIN=CURN+BASEN;}CURZ=z;
   const A=CLUB>1?clubArr(z.arr,!!z.pct):z.arr, LBL=CLUB>1?clubLabels():D.week_labels, wend=CLUB>1?Math.round(WEND/CLUB):WEND;   // match the table: in monthly, club the trend into the same blocks
   const zend=A.length-wend,WIN=Math.min(ZWIN||zend,zend);   // zoom shows the FULL trend (weekly, or clubbed blocks in monthly) up to the selected "latest"
   const F=v=>fmtZ(v,z.pct),labels=LBL.slice(Math.max(0,zend-WIN),zend),col=z.col;
@@ -777,10 +781,118 @@ function jumpToStage(key){const grp=FUNNEL_GROUPS.find(g=>g.keys.includes(key));
 // ---- fifth level: per-metric sub-dimension (Leads→channel, Done/Purch/Rev→category, Bookings/Availability→split) ----
 let _CHU=null;
 function chanUnion(){if(_CHU)return _CHU;const s=new Set();Object.values(D.clinics).forEach(c=>{if(c.demand&&c.demand.by_channel)Object.keys(c.demand.by_channel).forEach(ch=>s.add(ch));});_CHU=[...s].sort();return _CHU;}
-const KEEP_CHAN=['Google','Fb','Practo','Organic'],CHAN_ORDER=['Google','Fb','Practo','Organic','Others'];   // GMB is folded into Organic (per Alisha — reduce confusion); everything else → Others
-function chanKey(n){const l=(n||'').toLowerCase();if(l.indexOf('google')>=0)return 'Google';if(l==='fb'||l.indexOf('facebook')>=0||l.indexOf('meta')>=0||l.indexOf('insta')>=0)return 'Fb';if(l.indexOf('practo')>=0)return 'Practo';if(l.indexOf('gmb')>=0||l.indexOf('organic')>=0)return 'Organic';return 'Others';}   // GMB folded into Organic
+// ---- LEADS ATTRIBUTION CUBE (data_leads_city.json): recovered attribution replaces the source-only demand on real clinics ----
+// ---- LEADS: single source of truth = leads-cube.js (shared with bookings-funnel). We collect the cube's cells per
+//      real-clinic / city-level / national bucket, then compute every clinic's demand via LeadsCube.aggregate() and
+//      remap onto the diagnostic's (oldest-first) week axis. Breakdown filters + booked window flow through the module. ----
+let LEADWMAP=null;
+let FMED='All',FINT='All',FSTR='All',FBKW='ever';
+function leadFiltersOn(){return FMED!=='All'||FINT!=='All'||FSTR!=='All'||FBKW!=='ever';}
+function recomputeDemand(c){   // re-derive c.demand + full breakdowns from its stashed cube cells via the shared module
+  if(!c||!c.demand||!c.demand._cells||!window.LeadsCube||!LEADWMAP)return;
+  const LC=window.LeadsCube, N=D.weeks.length;
+  const agg=LC.aggregate(c.demand._cells,{bookwin:FBKW,filters:{md:FMED,int:FINT,istr:FSTR}});
+  const rm=a=>LC.remap(a,LEADWMAP,N), rmMap=m=>{const o={};for(const k in(m||{}))o[k]=rm(m[k]);return o;};
+  c.demand.by_channel=rmMap(agg.by.channel);   // same breakdown dimensions the bookings-funnel leads pivot exposes
+  c.demand.by_medium=rmMap(agg.by.medium);c.demand.by_intent=rmMap(agg.by.intent);
+  c.demand.by_strength=rmMap(agg.by.strength);c.demand.by_category=rmMap(agg.by.category);
+  c.demand.by_status=rmMap(agg.by.status);c.demand.by_number=rmMap(agg.by.number);
+  c.demand.bk_by_channel=rmMap(agg.bookedBy.channel);c.demand.bk_by_medium=rmMap(agg.bookedBy.medium);   // BOOKED per dim → L2B by channel / medium
+  c.demand.bk_by_intent=rmMap(agg.bookedBy.intent);c.demand.bk_by_strength=rmMap(agg.bookedBy.strength);
+  c.demand.leads=rm(agg.leads);c.demand.booked=rm(agg.booked);
+  c.demand.lead_book_pct=c.demand.leads.map((v,i)=>v?Math.round(100*c.demand.booked[i]/v):0);   // funnel L2B: booked ÷ leads (the chosen window)
+}
+function attachLeadCube(D,LCITY){
+  if(!LCITY||!LCITY._meta||!D||!D.weeks||!window.LeadsCube){console.warn('[leads cube] LeadsCube module or cube missing');return;}
+  const LC=window.LeadsCube;
+  LEADWMAP=LC.weekMap(LCITY._meta.weeks,D.weeks);   // cube week idx (newest-first) -> diagnostic week idx (oldest-first)
+  LEAD_CUBE_WEEKS=LCITY._meta.weeks;   // newest-first week labels, aligned to cell.w — fed to the leads pivot
+  const byClinic={},byCityUnattr={},online=[];
+  // operational cities + locality→city map (from real offline clinics) — used to reject AI-mis-tagged non-operational cities (Delhi etc)
+  LEAD_LOC2CITY={};Object.values(D.clinics).forEach(c=>{if(c.loc&&c.city&&!c._online&&!c._unattr&&!c._unattr_city&&c.city!=='Online')LEAD_LOC2CITY[c.loc]=c.city;});
+  LEAD_OPCITY=new Set(Object.values(LEAD_LOC2CITY));
+  for(const key in LCITY){if(key==='_meta')continue;
+    const isNo=LC.isNoCity(key);
+    (LCITY[key].cells||[]).forEach(cell=>{
+      if(isNo){online.push(cell);return;}
+      if(LEAD_OPCITY.has(key)){   // operational city → original behaviour
+        if(cell.loc){const ck=key+'|'+cell.loc;(byClinic[ck]||(byClinic[ck]=[])).push(cell);}
+        else (byCityUnattr[key]||(byCityUnattr[key]=[])).push(cell);
+        return;
+      }
+      // non-operational city: a lead whose locality is a real clinic elsewhere = AI mis-tag → re-route there.
+      // otherwise: a newly-launched city (Indore/Rajkot — no clinic data yet) keeps its own city-level row; a truly non-operational one (Delhi) folds into no-city.
+      if(cell.loc&&LEAD_LOC2CITY[cell.loc]){const ck=LEAD_LOC2CITY[cell.loc]+'|'+cell.loc;(byClinic[ck]||(byClinic[ck]=[])).push(cell);}
+      else if(LEAD_NEWCITY.has(key)){(byCityUnattr[key]||(byCityUnattr[key]=[])).push(cell);}
+      else online.push(cell);
+    });
+  }
+  let matched=0,fallback=0;
+  for(const slug in D.clinics){const c=D.clinics[slug];if(!c.demand)continue;
+    if(c._online||c.city==='Online')continue;   // online booking pseudo-clinics: online LEADS live in the national bucket below
+    const cells=c.loc&&byClinic[c.city+'|'+c.loc];
+    if(cells){c.demand._cells=cells;c.demand._cube=true;recomputeDemand(c);matched++;}else fallback++;
+  }
+  const N=D.weeks.length,Z=()=>new Array(N).fill(0),NA=()=>new Array(N).fill(null);
+  const ZC=()=>Object.fromEntries((typeof CATS!=='undefined'?CATS:[]).map(c=>[c,Z()]));
+  Object.keys(D.clinics).forEach(k=>{if(k==='__nat_unattr'||k.indexOf('__cityunattr_')===0)delete D.clinics[k];});
+  const mkPseudo=(key,disp,city,cells,flag)=>{const c={disp,city,loc:disp,[flag]:true,_slug:key,
+    availability:{active_days:NA(),wday_days:NA(),wend_days:NA(),attend_days:NA(),attend_wday:NA(),attend_wend:NA(),hours:NA(),avail_hours:NA()},
+    demand:{leads:Z(),by_channel:{},by_src:{},lead_book_pct:Z(),has_leads:true,booked:Z(),_cells:cells,_cube:true},
+    bookings:{total:Z(),new_tw:Z(),new_old:Z(),rebook:Z(),relapse:Z(),by_source:{}},
+    done:{booked:Z(),done:Z(),book_done_pct:NA(),by_cat:ZC()},purchased:{total:Z(),by_cat:ZC()},
+    revenue:{rev:Z(),by_cat:ZC(),meds:{tot:Z(),by_cat:ZC()},test:{tot:Z(),by_cat:ZC()},ther:{tot:Z(),by_cat:ZC()},cons:{tot:Z(),by_cat:ZC()}},
+    velocity:{bookings:Z(),per_active_day:NA(),per_weekday:NA(),per_weekend:NA(),bk_wday:Z(),bk_wend:Z()},
+    doctors:{count:Z()},by_doctor:{}};D.clinics[key]=c;recomputeDemand(c);};
+  mkPseudo('__nat_unattr','🌐 National · online / untracked','',online,'_unattr');
+  Object.keys(byCityUnattr).forEach(city=>mkPseudo('__cityunattr_'+city.toLowerCase().replace(/ /g,'_'),'🏙 '+city+' · city-level (no clinic)',city,byCityUnattr[city],'_unattr_city'));
+  _CHU=null;
+  console.log('[leads cube · module v'+LC.VERSION+'] grafted '+matched+' clinics · '+fallback+' kept old · +national +'+Object.keys(byCityUnattr).length+' city-level rows');
+}
+function applyLeadFilters(){Object.values(D.clinics).forEach(recomputeDemand);_CHU=null;}   // filter/window change → recompute all via the module
+
+// ---- SC-BOOKINGS ATTRIBUTION CUBE (data_bookings_funnel.json via bookings-cube.js) ----
+// DECISION (Alisha): from SC bookings onward the numbers reconcile with OPS (bookings.total, incl. returning-
+// patient rebookings) so they tie out to the city-head sheet. bookings.total / new_tw / new_old / rebook /
+// relapse and the whole B2D/done/revenue chain are UNCHANGED. The funnel cube only adds BREAKDOWN texture:
+// we take the ops NEW-patients count (new_tw+new_old) and split it across the funnel cube's channel /
+// category / maturity MIX — scaled so every breakdown row sums EXACTLY to the ops number (a '(no lead match)'
+// residual absorbs clinic-weeks the cube couldn't attribute). So drilling in always reconciles to ops.
+let BKWMAP=null, BKCUBE=null;   // BKCUBE stashed so applyVariant() (SC/FU/All toggle) can re-graft after it rebuilds c.bookings
+function attachBookingsCube(D,BCUBE){
+  if(!BCUBE||!BCUBE._meta||!D||!D.weeks||!window.BookingsCube){console.warn('[bookings cube] BookingsCube module or cube missing');return;}
+  const BC=window.BookingsCube, N=D.weeks.length, add=(a,b)=>a.map((v,i)=>(v||0)+((b&&b[i])||0));
+  BKWMAP=BC.weekMap(BCUBE._meta.weeks,D.weeks);
+  const rm=a=>BC.remap(a,BKWMAP,N);
+  let matched=0,fallback=0,opsNewSum=0,unattrSum=0;
+  for(const slug in D.clinics){const c=D.clinics[slug];if(!c.bookings)continue;
+    if(c._online||c.city==='Online'||c._unattr||c._unattr_city)continue;   // offline real clinics only (this cube is offline-attributed)
+    const opsNew=add(c.bookings.new_tw||[],c.bookings.new_old||[]);        // OPS new-patients count = the number we slice (reconciles with sheet)
+    c.bookings.sc_new=opsNew;
+    const node=BCUBE[c.city+'|'+c.loc];
+    const funNew=node&&node.cells?rm(BC.aggregate(node.cells,{filters:{ptype:'new'}}).total):new Array(N).fill(0);
+    // scale a funnel MIX map onto opsNew: row[ch][i] = opsNew[i] × funMix[ch][i] / funNew[i]; residual → '(no lead match)'
+    const scale=srcMap=>{const out={};for(const k in srcMap){const fk=rm(srcMap[k]);out[k]=opsNew.map((on,i)=>funNew[i]>0?on*fk[i]/funNew[i]:0);}
+      const un=opsNew.map((on,i)=>funNew[i]>0?0:on);if(un.some(v=>v>0))out['(no lead match)']=un;return out;};
+    if(node&&node.cells){const a=BC.aggregate(node.cells,{filters:{ptype:'new'}});
+      c.bookings.sc_by_channel=scale(a.by_channel);c.bookings.sc_by_category=scale(a.by_category);c.bookings.sc_by_maturity=scale(a.by_maturity);
+      c.bookings._scube=true;matched++;
+    }else{   // no cube node → all new-patients are unattributed (still sums to ops)
+      const un={'(no lead match)':opsNew.slice()};c.bookings.sc_by_channel=un;c.bookings.sc_by_category={'(no lead match)':opsNew.slice()};c.bookings.sc_by_maturity={'(no lead match)':opsNew.slice()};fallback++;
+    }
+    opsNewSum+=opsNew.reduce((a,b)=>a+b,0);unattrSum+=((c.bookings.sc_by_channel['(no lead match)']||[]).reduce((a,b)=>a+b,0));
+  }
+  _CHU=null;
+  console.log('[bookings cube · module v'+BC.VERSION+'] sliced ops new-patients by funnel mix on '+matched+' clinics · '+fallback+' unmatched · ops new '+Math.round(opsNewSum)+' · '+Math.round(unattrSum)+' unattributed');
+}
+function setFMed(v){FMED=v;applyLeadFilters();render();}
+function setFInt(v){FINT=v;applyLeadFilters();render();}
+function setFStr(v){FSTR=v;applyLeadFilters();render();}
+function setFBkw(v){FBKW=v;applyLeadFilters();render();}
+const KEEP_CHAN=['GMB','Google','Meta','Practo','Organic'],CHAN_ORDER=['GMB','Google','Meta','Practo','Organic','Others'];   // GMB + Meta broken out to match the recovered cube (fbclid-attributed Meta)
+function chanKey(n){const l=(n||'').toLowerCase();if(l.indexOf('gmb')>=0)return 'GMB';if(l.indexOf('google')>=0)return 'Google';if(l==='fb'||l.indexOf('facebook')>=0||l.indexOf('meta')>=0||l.indexOf('insta')>=0)return 'Meta';if(l.indexOf('practo')>=0)return 'Practo';if(l.indexOf('organic')>=0)return 'Organic';return 'Others';}
 function chanConsol(bc){const out={};for(const ch in (bc||{})){const k=chanKey(ch),a=bc[ch]||[];out[k]=(out[k]||Z()).map((v,i)=>v+(a[i]||0));}return out;}
-function srcLabel(src){return src==='Organic'?'Organic +GMB':src;}   // Organic bucket includes GMB (folded) — label it so
+function srcLabel(src){return src;}   // GMB + Meta are their own channels now (recovered cube)
 // weekly_diag by_channel is NOT deduped (a lead tagged to >1 source is counted in each), so it sums ABOVE the deduped
 // demand.leads total. Rescale each clinic's by_channel to sum to its leads → source rows reconcile to the total everywhere.
 // same-week lead → book %: fresh (this-week-lead) SC bookings ÷ this week's leads (≤100%). Works at any scope (clinic or aggregate) since both fields are on the object.
@@ -974,20 +1086,26 @@ function syncOv(){const om=$('ovMetric'),of=$('ovFunnel'),oc=$('ovCockpit'),bw=$
   if(oc)oc.classList.toggle('on',OVMODE==='cockpit');   // City-scan keeps the full metric picker usable (nothing removed)
   if(om)om.classList.toggle('on',OVMODE==='metric');if(of)of.classList.toggle('on',OVMODE==='funnel');
   if(mt)mt.innerHTML=OVMODE==='funnel'?'1 · Jump to <span style="text-transform:none;font-weight:500;color:var(--faint)">· click a metric to scroll to its funnel card</span>':'1 · Metric <span style="text-transform:none;font-weight:500;color:var(--faint)">· click a tier to pick the whole group</span>';
-  const gc=$('grpCity'),gk=$('grpClinic'),gd=$('grpDoctor'),gt=$('grpCat'),gsr=$('grpSrc');if(gc)gc.classList.toggle('on',GRP==='city');if(gk)gk.classList.toggle('on',GRP==='clinic');if(gd)gd.classList.toggle('on',GRP==='doctor');if(gt)gt.classList.toggle('on',GRP==='category');if(gsr)gsr.classList.toggle('on',GRP==='source');
+  syncGrpButtons();
   const nc=$('nestchain');if(nc)nc.innerHTML=buildNestChain();}   // nesting chain selectors reflect the current Rows-by
+// a Rows-by dimension is only offered for the metrics it's meaningful on: channel/medium/attribution → Leads only; source → lead-attributable; category → diagnosis metrics
+function dimApplies(dim,key){if(dim==='city'||dim==='clinic')return true;if(dim==='lchan'||dim==='lmed'||dim==='attribution')return key==='demand';if(dim==='source')return /^(demand|bookings|conversion|done)$/.test(key);if(dim==='category')return CAT_OK.has(key);return true;}
+function syncGrpButtons(){const key=METSEL[0]||MET||'bookings',map={grpCity:'city',grpClinic:'clinic',grpLchan:'lchan',grpLmed:'lmed',grpCat:'category',grpSrc:'source',grpAttr:'attribution'};
+  if(!dimApplies(GRP,key)){GRP='city';GRP2=GRP3=GRP4='none';}   // current Rows-by not valid for this metric → fall back to City
+  for(const id in map){const b=$(id);if(!b)continue;const dim=map[id];b.style.display=dimApplies(dim,key)?'':'none';b.classList.toggle('on',GRP===dim);}}
 function setOvMode(m){OVMODE=m;MODE='ov';syncOv();render();}
 function setGrp(g){GRP=g;GRP2=GRP3=GRP4='none';syncOv();render();}
 function setGrp2(v){GRP2=v;if(['none','category'].includes(v)){GRP3='none';GRP4='none';}render();}   // category is terminal → clear deeper levels
 function setGrp3(v){GRP3=v;if(['none','category'].includes(v))GRP4='none';render();}
 function setGrp4(v){GRP4=v;render();}
 // nesting chain UI (Rows-by City → then Clinic → then Doctor …). Only structural dims (clinic/doctor) allow a further level; source/category are terminal.
-const NEST_OPTS=[['city','City'],['clinic','Clinic'],['source','Source'],['category','Category']];   // Doctor removed from breakdown (per Alisha — wasn't loading)
-const STRUCTD=['city','clinic','doctor'],DATAD=['source','category'];
+const NEST_OPTS=[['lchan','Channel'],['lmed','Medium'],['attribution','Attribution'],['city','City'],['clinic','Clinic'],['source','Source'],['category','Category']];   // Channel/Medium = leads-cube dims (leads + L2B); Doctor removed
+const STRUCTD=['city','clinic','doctor','attribution'],DATAD=['lchan','lmed','source','category'];   // data dims split leads/bookings within a scope; lchan/lmed carry a leads filter into deeper structural levels
 function nestSel(val,setter,opts){return '<select class="fbtn" onchange="'+setter+'(this.value)" style="margin-left:6px;font-size:12px;padding:5px 8px;font-weight:700;color:var(--accent);cursor:pointer"><option value="none"'+(val==='none'?' selected':'')+'>no nesting</option>'+opts.map(o=>'<option value="'+o[0]+'"'+(val===o[0]?' selected':'')+'>→ then '+o[1]+'</option>').join('')+'</select>';}
 function buildNestChain(){if(![...STRUCTD,...DATAD].includes(GRP))return '';
+  const mk=METSEL[0]||MET||'bookings';   // only offer deeper dims that are meaningful for the current metric
   const used=new Set([GRP]),deeper=d=>d&&!['none','category'].includes(d),   // category is terminal; source + structural can nest deeper
-    optsAfter=prev=>{let b=NEST_OPTS.filter(o=>!used.has(o[0]));return DATAD.includes(prev)?b.filter(o=>STRUCTD.includes(o[0])):b;};   // after a data dim (source/category) → only structural levels
+    optsAfter=prev=>{let b=NEST_OPTS.filter(o=>!used.has(o[0])&&dimApplies(o[0],mk));return DATAD.includes(prev)?b.filter(o=>STRUCTD.includes(o[0])):b;};   // after a data dim (source/category/channel/medium) → only structural levels
   let h=nestSel(GRP2,'setGrp2',optsAfter(GRP));
   if(deeper(GRP2)){used.add(GRP2);h+=nestSel(GRP3,'setGrp3',optsAfter(GRP2));
     if(deeper(GRP3)){used.add(GRP3);h+=nestSel(GRP4,'setGrp4',optsAfter(GRP3));}}
@@ -1044,6 +1162,24 @@ function aggregateSource(src,agg){const N=D.weeks.length,Z=()=>new Array(N).fill
     purchased:{total:Z(),by_cat:ZC()},revenue:{rev:Z(),by_cat:ZC(),meds:{tot:Z(),by_cat:ZC()},test:{tot:Z(),by_cat:ZC()},ther:{tot:Z(),by_cat:ZC()},cons:{tot:Z(),by_cat:ZC()}},
     availability:{active_days:Z(),wday_days:Z(),wend_days:Z(),attend_days:Z(),attend_wday:Z(),attend_wend:Z()},
     velocity:{bookings:booked,per_active_day:Z(),per_weekday:Z(),per_weekend:Z(),bk_wday:Z(),bk_wend:Z()},doctors:{count:Z()},by_doctor:{}};}
+// ── LEADS cube dimensions as Rows-by nest levels (Channel / Medium) — leads + L2B from the cube; other metrics n/a ──
+const MEDL=[['call','call'],['web','web'],['wa_gmb','WhatsApp · GMB'],['wa_org','WhatsApp · organic'],['whatsapp','WhatsApp · other'],['book','Practo book'],['walkin','walk-in'],['outbound','outbound'],['other','other / untagged']];
+function aggregateLeadDim(label,leads,booked){const N=D.weeks.length,Z=()=>new Array(N).fill(0),ZC=()=>Object.fromEntries(CATS.map(c=>[c,Z()])),pct=(n,d)=>n.map((x,i)=>d[i]?Math.round(100*x/d[i]):null);
+  return {disp:label,_leaddim:true,
+    demand:{leads:leads,by_channel:{},lead_book_pct:pct(booked,leads),booked:booked,has_leads:sum(leads)>0},
+    bookings:{total:Z(),new_tw:Z(),new_old:Z(),rebook:Z(),relapse:Z()},done:{booked:Z(),done:Z(),book_done_pct:Z(),by_cat:ZC()},
+    purchased:{total:Z(),by_cat:ZC()},revenue:{rev:Z(),by_cat:ZC(),meds:{tot:Z(),by_cat:ZC()},test:{tot:Z(),by_cat:ZC()},ther:{tot:Z(),by_cat:ZC()},cons:{tot:Z(),by_cat:ZC()}},
+    availability:{active_days:Z(),wday_days:Z(),wend_days:Z(),attend_days:Z(),attend_wday:Z(),attend_wend:Z()},
+    velocity:{bookings:Z(),per_active_day:Z(),per_weekday:Z(),per_weekend:Z(),bk_wday:Z(),bk_wend:Z()},doctors:{count:Z()},by_doctor:{}};}
+function leadDimRows(ld,agg){const Z=()=>new Array(D.weeks.length).fill(0);   // one {label,val,c} per channel or medium value, each with leads + L2B
+  if(ld==='lchan'){const m=chanConsol(agg.demand.by_channel||{}),bk=chanConsol(agg.demand.bk_by_channel||{});
+    return CHAN_ORDER.map(ch=>({label:ch,val:ch,c:aggregateLeadDim(ch,m[ch]||Z(),bk[ch]||Z())}));}
+  const m=agg.demand.by_medium||{},bk=agg.demand.bk_by_medium||{};
+  return MEDL.map(p=>({label:p[1],val:p[0],c:aggregateLeadDim(p[1],m[p[0]]||Z(),bk[p[0]]||Z())}));}
+function leadDimFilter(ag,ld,val){const Z=()=>new Array(D.weeks.length).fill(0);   // filter a scope object to ONE channel/medium value (for deeper nesting under it)
+  const m=ld==='lchan'?chanConsol(ag.demand.by_channel||{}):(ag.demand.by_medium||{});
+  const bk=ld==='lchan'?chanConsol(ag.demand.bk_by_channel||{}):(ag.demand.bk_by_medium||{});
+  return aggregateLeadDim(val,m[val]||Z(),bk[val]||Z());}
 function metricChips(c,stageKey){
   const st=STAGES.find(x=>x.key===stageKey),m=st.metrics(c)[0],ev=evalMetric(m.arr),a=m.arr.slice(-(CURN+BASEN));
   return {ev,chips:trendHTML(m.arr,m.pct,ev),nm:m.nm,pct:m.pct,a,arr:m.arr};
@@ -1218,7 +1354,7 @@ function upstreamStripHTML(o,slugs){
     return '<div onclick="setOvMode(\'cockpit\');setCockMet(\''+vt.key+'\')" title="open in Quick scan" style="cursor:pointer;flex:none;min-width:112px;background:var(--inset);border:1px solid var(--line);border-left:3px solid '+(COL[ev.st]||'var(--good)')+';border-radius:8px;padding:7px 10px"><div style="font-size:10.5px;color:var(--muted);white-space:nowrap">'+vt.lab+'</div><div style="display:flex;align-items:baseline;gap:6px"><b style="font-size:15px;color:var(--ink)">'+val+'</b>'+pc+'</div></div>';};
   return '<div style="margin:0 0 14px"><div style="font-size:11px;color:var(--faint);text-transform:uppercase;letter-spacing:.04em;margin-bottom:5px">'+SRCF+' · acquisition (upstream)</div><div style="display:flex;gap:7px;overflow-x:auto;padding-bottom:4px">'+ups.map(card).join('')+'</div></div>';}
 function renderMetric(){
-  ZREG=[];CURZ=null;
+  ZREG=[];CURZ=null;syncGrpButtons();   // hide Rows-by dims that don't apply to the current metric + fall back off an invalid one
   const nc=$('nestchain');if(nc)nc.innerHTML=buildNestChain();   // nesting chain selectors (City → Clinic → …)
   const selc=$('selcontrol');if(selc)selc.innerHTML=buildSelControl();   // Part 2 · Selection (focus a sub-parent)
   // Part 3 · Breakdown MSUB picker removed (per Alisha) — Selection (Part 2) + Rows-by nesting cover it
@@ -1227,9 +1363,12 @@ function renderMetric(){
   const primary=metrics[0];
   const scopeSlugs=Object.keys(D.clinics).filter(inScope);
   const passCond=c=>METSEL.every(k=>{const req=MCOND[k];if(!req||!req.length)return true;if(naMetric(c,k))return false;const fc=MFOCUS[k]||[];return fc.length?fc.some(cut=>req.includes(cutStatus(c,k,cut))):req.includes(metricEval(c,k).ev.st);});   // AND across metrics; within a metric OR across statuses; focused cuts → row passes if ANY cut matches
-  const byCity=GRP==='city',byDoctor=GRP==='doctor',byCategory=GRP==='category',bySource=GRP==='source',unit=byCity?'city':(byDoctor?'doctor':byCategory?'category':bySource?'source':'clinic');
+  const byLead=GRP==='lchan'||GRP==='lmed',byCity=GRP==='city',byDoctor=GRP==='doctor',byCategory=GRP==='category',bySource=GRP==='source',byAttribution=GRP==='attribution',unit=byLead?'lead':byCity?'city':(byDoctor?'doctor':byCategory?'category':bySource?'source':byAttribution?'attribution':'clinic');
   let rows;
-  if(bySource){   // one row per lead source (Organic+GMB · Google · Fb · Practo · Others) — Leads·Bookings·B2D·Done have values; other metrics n/a
+  if(byLead){   // one row per lead CHANNEL or MEDIUM — leads + L2B (cube); other metrics n/a
+    const agg=aggregate(scopeSlugs,'all');
+    rows=leadDimRows(GRP,agg).map(o=>({label:o.label,n:0,c:o.c,click:''})).filter(r=>sum(r.c.demand.leads)&&passCond(r.c));
+  }else if(bySource){   // one row per lead source (Organic+GMB · Google · Fb · Practo · Others) — Leads·Bookings·B2D·Done have values; other metrics n/a
     const agg=aggregate(scopeSlugs,'all');
     rows=SOURCE_ORDER.map(src=>({label:src,n:0,c:aggregateSource(src,agg),click:''})).filter(r=>(sum(r.c.demand.leads)||sum(r.c.bookings.total))&&passCond(r.c));
   }else if(byCategory){   // one row per diagnosis category (MH·STI·SH, + sub-cats when "category detail" is on); only diagnosis metrics have values
@@ -1238,6 +1377,9 @@ function renderMetric(){
     rows=groups.map(g=>({label:g.name,n:0,c:aggregateCategory(g.name,g.cats,agg),click:''})).filter(r=>sum(r.c.done.done)&&passCond(r.c));
   }else if(byDoctor){   // one row per doctor, summing their slice across in-scope clinics; click a doctor → their funnel
     rows=docNames().map(dr=>({label:docShort(dr),n:0,c:aggregateDoctor(dr,scopeSlugs),click:"drillDoctor('"+dr.replace(/'/g,"\\'")+"')"})).filter(r=>sum(r.c.bookings.total)&&passCond(r.c));
+  }else if(byAttribution){   // two rows: leads attributed to a city vs the no-city (online / untracked) bucket
+    const parts=[['✓ attributed to a city',scopeSlugs.filter(s=>!D.clinics[s]._unattr)],['— no city · online / untracked',scopeSlugs.filter(s=>D.clinics[s]._unattr)]];
+    rows=parts.filter(p=>p[1].length).map(([lab,cs])=>({label:lab,n:pcLabel(cs.map(s=>D.clinics[s])),c:aggregate(cs,lab),click:''})).filter(r=>passCond(r.c));
   }else if(byCity){   // one row per city, aggregating its in-scope clinics; click a city to drill into its clinics
     const grp={};scopeSlugs.forEach(s=>{const ct=D.clinics[s].city;(grp[ct]=grp[ct]||[]).push(s);});
     rows=Object.keys(grp).map(ct=>{const agg=aggregate(grp[ct],ct);if(SEG==='online'&&grp[ct].every(s=>D.clinics[s]._online))agg._online=true;return{label:ct,n:pcLabel(grp[ct].map(s=>D.clinics[s])),c:agg,click:"drillCity('"+ct.replace(/'/g,"\\'")+"')"};}).filter(r=>passCond(r.c));
@@ -1250,7 +1392,7 @@ function renderMetric(){
   const nested=DIMS.length>1;
   if(nested){
     const out=[],wsort=a=>a.sort((x,y)=>{const dx=metricEval(x.c,primary.key).ev.d,dy=metricEval(y.c,primary.key).ev.d;return (dx==null?9:dx)-(dy==null?9:dy);});
-    const filt=(ag,sf)=>sf?aggregateSource(sf,ag):ag;   // sf = a source chosen at an outer level → filter every deeper structural node to that source
+    const filt=(ag,sf)=>{if(!sf)return ag;if(sf.ld)return leadDimFilter(ag,sf.ld,sf.val);return aggregateSource(sf,ag);};   // sf = a source OR a {ld,val} channel/medium chosen at an outer level → filter every deeper node to it
     const build=(slugs,depth,sf)=>{const dim=DIMS[depth],last=depth===DIMS.length-1;
       if(dim==='city'){const grp={};slugs.forEach(s=>{(grp[D.clinics[s].city]=grp[D.clinics[s].city]||[]).push(s);});
         Object.keys(grp).sort().forEach(ct=>{const cs=grp[ct],ag=filt(aggregate(cs,ct),sf);if(!sf&&SEG==='online'&&cs.every(s=>D.clinics[s]._online))ag._online=true;if(!passCond(ag))return;
@@ -1258,12 +1400,14 @@ function renderMetric(){
       else if(dim==='clinic'){wsort(slugs.filter(s=>!D.clinics[s]._unattr_city&&passCond(filt(CL(s),sf))).map(s=>({s,c:filt(CL(s),sf)}))).forEach(o=>{out.push({label:D.clinics[o.s].loc||D.clinics[o.s].disp,c:o.c,depth,dim:'clinic',click:sf?'':"goClinic('"+o.s+"')"});if(!last)build([o.s],depth+1,sf);});}
       else if(dim==='doctor'){wsort(docNames().map(dr=>({dr,c:filt(aggregateDoctor(dr,slugs),sf)})).filter(o=>sum(o.c.bookings.total)&&passCond(o.c))).forEach(o=>{out.push({label:docShort(o.dr),c:o.c,depth,dim:'doctor',click:sf?'':"drillDoctor('"+o.dr.replace(/'/g,"\\'")+"')"});});}
       else if(dim==='source'){const ag=aggregate(slugs,'s');SOURCE_ORDER.map(src=>({src,c:aggregateSource(src,ag)})).filter(o=>(sum(o.c.demand.leads)||sum(o.c.bookings.total))&&passCond(o.c)).forEach(o=>{out.push({label:o.src,c:o.c,depth,dim:'source',click:''});if(!last)build(slugs,depth+1,o.src);});}   // source can be an outer level → filter deeper structural nodes to that source
-      else if(dim==='category'){const ag=aggregate(slugs,'c');CAT_TREE.map(g=>({g,c:aggregateCategory(g.name,g.cats,ag)})).filter(o=>sum(o.c.done.done)&&passCond(o.c)).forEach(o=>out.push({label:o.g.name,c:o.c,depth,dim:'category',click:''}));}};
+      else if(dim==='lchan'||dim==='lmed'){const ag=filt(aggregate(slugs,'l'),sf);leadDimRows(dim,ag).filter(o=>sum(o.c.demand.leads)&&passCond(o.c)).forEach(o=>{out.push({label:o.label,c:o.c,depth,dim,click:''});if(!last)build(slugs,depth+1,{ld:dim,val:o.val});});}   // channel/medium: split leads+L2B; carry the value into deeper structural levels
+      else if(dim==='category'){const ag=aggregate(slugs,'c');CAT_TREE.map(g=>({g,c:aggregateCategory(g.name,g.cats,ag)})).filter(o=>sum(o.c.done.done)&&passCond(o.c)).forEach(o=>out.push({label:o.g.name,c:o.c,depth,dim:'category',click:''}));}
+      else if(dim==='attribution'){[['✓ attributed to a city',slugs.filter(s=>!D.clinics[s]._unattr)],['— no city · online / untracked',slugs.filter(s=>D.clinics[s]._unattr)]].forEach(([lab,cs])=>{if(!cs.length)return;const ag=filt(aggregate(cs,lab),sf);if(!passCond(ag))return;out.push({label:lab,c:ag,depth,dim:'attribution',click:''});if(!last)build(cs,depth+1,sf);});}};
     build(scopeSlugs,0,'');
     rows=out;
   }
   rows.forEach(r=>{if(!r.pe)r.pe=metricEval(r.c,primary.key).ev;});
-  if(!byCategory&&!bySource&&!nested)rows.sort((a,b)=>(a.pe.d==null?9:a.pe.d)-(b.pe.d==null?9:b.pe.d));   // worst on the primary metric first; category / source / nested keep their order
+  if(!byCategory&&!bySource&&!byAttribution&&!nested)rows.sort((a,b)=>(a.pe.d==null?9:a.pe.d)-(b.pe.d==null?9:b.pe.d));   // worst on the primary metric first; category / source / attribution / nested keep their order
   const cc=(k)=>{const st=STAGES.find(x=>x.key===k),sel=MCOND[k]||[],fc=MFOCUS[k]||[];
     const nm=fc.length?(srcLabel(fc[0].replace(/^—\s*/,''))+(fc.length>1?' +'+(fc.length-1):'')):st.short;   // the colour filter runs on the FIRST focused cut (see metricEval) → name the bar after that cut, not the parent metric
     const opt=(v,lab,on)=>'<button class="cseg'+(on?' on':'')+'" onclick="setCond(\''+k+'\',\''+v+'\')">'+lab+'</button>';
@@ -1332,7 +1476,15 @@ function stageParts(s,o){   // breakdown series per stage: lineS = coloured comp
         subWithSrc('never done before',B.rebook,BPAL[2],nSrc).concat(subWithSrc('relapse — done before, booked again',B.relapse,BPAL[3],rSrc))}
     ];
     // standalone all-bookings source group (always) — the total channel mix across new + repeat
-    if(ordr(bs).length)groups.push({label:'by channel (all bookings)',arr:B.total,color:'var(--faint)',coll:1,showN:3,children:srcKids(bs)});
+    if(ordr(bs).length)groups.push({label:'by channel (all bookings · ops source)',arr:B.total,color:'var(--faint)',coll:1,showN:3,children:srcKids(bs)});
+    // NEW piece — the OPS new-patients count (new_tw+new_old, reconciles with the sheet) sliced by the funnel cube's
+    // channel/category/maturity MIX. Rows sum EXACTLY to the ops number ('(no lead match)' = residual the cube couldn't attribute).
+    if(B.sc_new&&sum(B.sc_new)>0){
+      const mkKids=m=>Object.keys(m||{}).filter(k=>sum(m[k])>0).sort((x,y)=>sum(m[y])-sum(m[x])).map((k,i)=>({label:'↳ '+k,arr:m[k],color:k==='(no lead match)'?'var(--faint)':BPAL[i%BPAL.length],depth:2}));
+      groups.push({label:'new patients · by channel (funnel attribution)',arr:B.sc_new,color:'#2C6CAE',coll:1,showN:4,children:mkKids(B.sc_by_channel)});
+      groups.push({label:'new patients · by category (call-intent)',arr:B.sc_new,color:'#2C6CAE',coll:1,showN:3,children:mkKids(B.sc_by_category)});
+      groups.push({label:'new patients · by lead maturity',arr:B.sc_new,color:'#2C6CAE',coll:1,showN:3,children:mkKids(B.sc_by_maturity)});
+    }
     // drop empty components so a variant without this split (e.g. FU·ops follow-ups) shows no phantom zero breakdown
     groups=groups.map(g=>({label:g.label,arr:g.arr,color:g.color,coll:g.coll,showN:g.showN,rate:g.rate,pct:g.pct,hl:g.hl,children:g.children.filter(ch=>sum(ch.arr)>0)})).filter(g=>g.hl||sum(g.arr)>0);
     if(!groups.length)groups=null;}
@@ -1341,7 +1493,19 @@ function stageParts(s,o){   // breakdown series per stage: lineS = coloured comp
     const ds=doneSources(o),dsr=srcUnion().filter(sr=>sum(ds[sr]||[])>0);   // + done split by lead source (SC only) — a fully-collapsible group of its own
     if(dsr.length){tree.push({label:'by source',arr:o.done.done,color:'var(--faint)',depth:1,grp:'src',ck:'src'});
       dsr.forEach((sr,k)=>tree.push({label:'source · '+sr,arr:ds[sr],color:BPAL[k%BPAL.length],depth:2,grp:'src',par:'src'}));}}
-  else if(s.key==='demand'){const bc=chanConsol(o.demand.by_channel);CHAN_ORDER.filter(ch=>bc[ch]&&sum(bc[ch])>0).slice(0,5).forEach((ch,k)=>lineS.push({label:ch,arr:bc[ch],color:BPAL[k]}));chipOnly=[{label:'lead → book % · fresh (same-wk)',arr:lbFreshArr(o),pct:1}];}
+  else if(s.key==='demand'){const B=o.demand;   // LEADS breakdowns — same dimensions as the bookings-funnel leads pivot (channel·medium·intent·strength·category·booked-status), from the shared cube
+    const MEDLAB={call:'call',web:'web',wa_gmb:'WhatsApp · GMB',wa_org:'WhatsApp · organic',whatsapp:'WhatsApp',book:'online booking',walkin:'walk-in',outbound:'outbound (L2C called)',na:'(no medium)',other:'other'};
+    const kids=(m,lab)=>Object.keys(m||{}).filter(k=>sum(m[k])>0).sort((x,y)=>sum(m[y])-sum(m[x])).map((k,i)=>({label:'↳ '+((lab&&lab[k])||k),arr:m[k],color:k==='(no lead match)'||k==='na'?'var(--faint)':BPAL[i%BPAL.length],depth:2}));
+    groups=[
+      {label:'by channel',arr:B.leads,color:'#2C6CAE',coll:1,showN:6,children:kids(chanConsol(B.by_channel))},
+      {label:'by contact medium',arr:B.leads,color:'#2C6CAE',coll:1,showN:5,children:kids(B.by_medium,MEDLAB)},
+      {label:'by intent',arr:B.leads,color:'#2C6CAE',coll:1,showN:4,children:kids(B.by_intent)},
+      {label:'by intent strength',arr:B.leads,color:'#2C6CAE',coll:1,showN:3,children:kids(B.by_strength)},
+      {label:'by category · call-intent',arr:B.leads,color:'#2C6CAE',coll:1,showN:3,children:kids(B.by_category)},
+      {label:'by booked status · '+FBKW+' window',arr:B.leads,color:'#2C6CAE',coll:1,showN:2,children:kids(B.by_status)}
+    ].map(g=>({label:g.label,arr:g.arr,color:g.color,coll:g.coll,showN:g.showN,children:g.children})).filter(g=>g.children.length);
+    if(!groups.length)groups=null;
+    chipOnly=[{label:'lead → book % (booked ÷ leads · '+FBKW+')',arr:(B.lead_book_pct||Z()),pct:1}];}   // funnel L2B (shared module)
   else if(s.key==='velocity'){const v=o.velocity,A=o.availability||{};tree=[   // days open, then the per-weekday / per-weekend booking rate that rolls up to bookings/active-day
       {label:'weekday days available',arr:A.wday_days,color:BPAL[0],depth:1},
       {label:'weekend days available',arr:A.wend_days,color:BPAL[1],depth:1},
@@ -1404,7 +1568,7 @@ function funnelStagesHTML(o){
       const showPct=FPARSET.has(s.key),pb=(showPct&&HDnz)?HD:null;   // per-stage "% of total": every breakdown chip gets a % of the STAGE TOTAL (not the sub-group)
       const mr=(label,arr,color,depth,rate,origPct)=>{if(FPCT&&!rate&&!origPct&&HDnz){const p=arr.map((v,i)=>HD[i]?Math.round(100*(v||0)/HD[i]):null);return miniRow(label,p,1,color,depth,false,false);}return miniRow(label,arr,origPct||0,color,depth,false,rate||origPct,pb);};
       const car=(key,exp,tail)=>'<span onclick="event.stopPropagation();toggleFBG(\''+key.replace(/'/g,'')+'\')" style="cursor:pointer;color:var(--accent);font-weight:800" title="'+(exp?'collapse':'expand')+'">'+(exp?'▾':'▸')+'</span> '+(tail||'');
-      const bd=tree
+      let bd=tree
         ? tree.map(t=>{const d=t.depth||1;
               if(t.par){const forceOpen=t.grp==='cat'&&FCATDETAIL,pk=s.key+'|'+t.grp+'|'+t.par;if(!(forceOpen||FBGEXP.has(pk)))return '';return mr(t.label,t.arr,t.color,d,t.rate,t.pct);}
               if(t.ck){const forceOpen=t.grp==='cat'&&FCATDETAIL,key=s.key+'|'+t.grp+'|'+t.ck,exp=forceOpen||FBGEXP.has(key);return mr(car(key,exp)+t.label,t.arr,t.color,d,t.rate,t.pct);}
@@ -1419,11 +1583,12 @@ function funnelStagesHTML(o){
             }).join('')
           : lineS.map(l=>mr(l.label,l.arr,l.color,1,l.rate,l.pct)).join('')
         )+chipOnly.map(c=>mr(c.label,c.arr,'var(--faint)',1,c.rate,c.pct)).join('');
+      if(s.key==='demand')bd='<div id="leadPivotSlot" style="margin:6px 0 2px"></div>';   // LEADS breakdown = the ported bookings-funnel layer-bar pivot (mounted after render)
       const scol=FSCOLLAPSE.has(s.key),hasBd=!!bd;
       // per-stage "% of total" toggle — lives right on this stage so you never scroll to the top
       // "% of total" only where a share of a summable total is meaningful — leads·bookings·done·purchased·revenue. Rates (B2D·D2P·RPC·AOV·velocity) + capacity (availability·roster) don't sum to a total.
       const PCT_OK=new Set(['demand','bookings','done','purchased','revenue']);
-      const parBtn=(hasBd&&PCT_OK.has(s.key))?'<button class="fbtn'+(showPct?' on':'')+'" style="padding:2px 9px;font-size:10.5px;font-weight:700;margin:0 0 6px;border-color:#2C6CAE;color:'+(showPct?'#fff':'#2C6CAE')+(showPct?';background:#2C6CAE':'')+'" onclick="event.stopPropagation();toggleFPar(\''+s.key+'\')" title="show each breakdown row’s % of this stage’s total, week by week, as a chip under each value">⊞ % of total</button>':'';
+      const parBtn=(hasBd&&PCT_OK.has(s.key)&&s.key!=='demand')?'<button class="fbtn'+(showPct?' on':'')+'" style="padding:2px 9px;font-size:10.5px;font-weight:700;margin:0 0 6px;border-color:#2C6CAE;color:'+(showPct?'#fff':'#2C6CAE')+(showPct?';background:#2C6CAE':'')+'" onclick="event.stopPropagation();toggleFPar(\''+s.key+'\')" title="show each breakdown row’s % of this stage’s total, week by week, as a chip under each value">⊞ % of total</button>':'';
       // per-stage "× by channel" cross-cut toggle — lives right on the SC bookings stage (where the new/repeat × channel split applies)
       const srcBtn=(s.key==='bookings')?'<button class="fbtn'+(FSRC?' on':'')+'" style="padding:2px 9px;font-size:10.5px;font-weight:700;margin:0 0 6px 6px;border-color:#6B4FA0;color:'+(FSRC?'#fff':'#6B4FA0')+(FSRC?';background:#6B4FA0':'')+'" onclick="event.stopPropagation();toggleFSrc()" title="cross-cut: keep the sub-type rows AND nest the lead-channel split (GMB · fb · Google …) inside new & repeat patients">⊞ × by channel</button>':'';
       h+='<div class="stagerow" id="stage-'+s.key+'"><div class="stage '+e.status+'"><div class="snum">'+(++di)+'</div>'
@@ -1441,8 +1606,8 @@ function aggregate(slugs,label){
   const N=D.weeks.length,Z=()=>new Array(N).fill(0),add=(a,b)=>a.map((v,i)=>(v||0)+(b?(b[i]||0):0));
   const a={disp:label,
     availability:{active_days:Z(),wday_days:Z(),wend_days:Z(),attend_days:Z(),attend_wday:Z(),attend_wend:Z(),hours:Z(),avail_hours:Z(),sc_slots:Z(),rpt_slots:Z(),rostered_hrs:Z(),shrink_hrs:Z(),opened_ash:Z(),net_sc_hrs_r:Z(),net_rpt_hrs:Z(),net_avail_hrs:Z(),dead_hrs:Z()},
-    demand:{leads:Z(),by_channel:{},lead_book_pct:Z()},
-    bookings:{total:Z(),new_tw:Z(),new_old:Z(),no1w:Z(),no2_4w:Z(),no1_3mo:Z(),no3mo:Z(),rebook:Z(),relapse:Z(),by_source:{}},
+    demand:{leads:Z(),booked:Z(),by_channel:{},by_medium:{},by_intent:{},by_strength:{},by_category:{},by_status:{},by_number:{},bk_by_channel:{},bk_by_medium:{},bk_by_intent:{},bk_by_strength:{},lead_book_pct:Z()},
+    bookings:{total:Z(),new_tw:Z(),new_old:Z(),no1w:Z(),no2_4w:Z(),no1_3mo:Z(),no3mo:Z(),rebook:Z(),relapse:Z(),by_source:{},sc_new:Z(),sc_all:Z(),sc_by_channel:{},sc_by_category:{},sc_by_maturity:{}},
     done:{booked:Z(),done:Z(),book_done_pct:Z(),by_cat:Object.fromEntries(CATS.map(c=>[c,Z()]))},
     purchased:{total:Z(),by_cat:Object.fromEntries(CATS.map(c=>[c,Z()]))},
     revenue:Object.assign({rev:Z(),by_cat:Object.fromEntries(CATS.map(c=>[c,Z()]))},Object.fromEntries(['meds','test','ther','cons'].map(nm=>[nm,{tot:Z(),by_cat:Object.fromEntries(CATS.map(c=>[c,Z()]))}]))),
@@ -1453,11 +1618,14 @@ function aggregate(slugs,label){
   const GR=_agCities.size<=1?'city':'nat';
   slugs.forEach(sl=>{const c=CL(sl);
     ['active_days','wday_days','wend_days','attend_days','attend_wday','attend_wend','hours','avail_hours','sc_slots','rpt_slots','rostered_hrs','shrink_hrs','opened_ash','net_sc_hrs_r','net_rpt_hrs','net_avail_hrs','dead_hrs'].forEach(k=>a.availability[k]=add(a.availability[k],c.availability[k]));
-    a.demand.leads=add(a.demand.leads,c.demand.leads);
-    for(const ch in c.demand.by_channel)a.demand.by_channel[ch]=add(a.demand.by_channel[ch]||Z(),c.demand.by_channel[ch]);
+    a.demand.leads=add(a.demand.leads,c.demand.leads);a.demand.booked=add(a.demand.booked,c.demand.booked);
+    ['by_channel','by_medium','by_intent','by_strength','by_category','by_status','by_number','bk_by_channel','bk_by_medium','bk_by_intent','bk_by_strength'].forEach(mk=>{const m=c.demand[mk];if(m)for(const k in m)a.demand[mk][k]=add(a.demand[mk][k]||Z(),m[k]);});
     // headline 'total' uses the grain-distinct count; new/repeat sub-splits stay per-clinic (1st-time already distinct; only cross-clinic repeats slightly over-count)
     a.bookings.total=add(a.bookings.total,(c.bookings[GR]||c.bookings.total));
     ['new_tw','new_old','no1w','no2_4w','no1_3mo','no3mo','rebook','relapse'].forEach(k=>a.bookings[k]=add(a.bookings[k],c.bookings[k]));
+    // shared-cube NEW-SC attribution (funnel single-source): sum totals + merge the by-channel/category/maturity maps
+    a.bookings.sc_new=add(a.bookings.sc_new,c.bookings.sc_new);a.bookings.sc_all=add(a.bookings.sc_all,c.bookings.sc_all);
+    ['sc_by_channel','sc_by_category','sc_by_maturity'].forEach(mk=>{const m=c.bookings[mk];if(m)for(const key in m)a.bookings[mk][key]=add(a.bookings[mk][key]||Z(),m[key]);});
     if(c.bookings.by_source)for(const sr in c.bookings.by_source){const rec=c.bookings.by_source[sr]||{};const bk=Array.isArray(rec)?rec:(rec['booked_'+GR]||rec.booked||Z());const dn=Array.isArray(rec)?Z():(rec['done_'+GR]||rec.done||Z());const nw=Array.isArray(rec)?Z():(rec.new||Z());const rp=Array.isArray(rec)?Z():(rec.repeat||Z());const t=a.bookings.by_source[sr]=a.bookings.by_source[sr]||{booked:Z(),done:Z(),new:Z(),repeat:Z(),fresh:Z(),older:Z(),never:Z(),relapse:Z()};t.booked=add(t.booked,bk);t.done=add(t.done,dn);t.new=add(t.new,nw);t.repeat=add(t.repeat,rp);['fresh','older','never','relapse'].forEach(f=>{t[f]=add(t[f],Array.isArray(rec)?Z():(rec[f]||Z()));});}   // carry the per-source sub-bucket splits (fresh/older/never/relapse × channel)
     a.done.booked=add(a.done.booked,(c.done['booked_'+GR]||c.done.booked));a.done.done=add(a.done.done,(c.done['done_'+GR]||c.done.done));
     if(c.done._all!=null)a.done._all=add(a.done._all||Z(),c.done._all);   // carry the all-category total for contribution %
@@ -1477,7 +1645,7 @@ function aggregate(slugs,label){
     a.bookings.rebook=a.bookings.rebook.map((v,i)=>{const tgt=Math.max(0,(a.bookings.total[i]||0)-(ns[i]||0));return rr[i]>0?Math.round((v||0)*tgt/rr[i]):(rr[i]===0&&tgt>0?0:(v||0));});
     a.bookings.relapse=a.bookings.relapse.map((v,i)=>Math.max(0,Math.max(0,(a.bookings.total[i]||0)-(ns[i]||0))-(a.bookings.rebook[i]||0)));})();
   const newp=add(a.bookings.new_tw,a.bookings.new_old),rate=(num,den)=>num.map((v,i)=>den[i]?Math.round(v/den[i]*10)/10:null);
-  a.demand.lead_book_pct=a.demand.leads.map((L,i)=>L?Math.round(100*((a.bookings.new_tw&&a.bookings.new_tw[i])||0)/L):null);   // FRESH (this-week-lead) SC bookings ÷ this week's leads = true same-week lead→book % (≤100%); older-week/no-lead bookings excluded (they came from past leads)
+  a.demand.lead_book_pct=a.demand.leads.map((L,i)=>L?Math.round(100*((a.demand.booked&&a.demand.booked[i])||0)/L):null);   // funnel L2B = booked ÷ leads (chosen window), rolled up from the cube — matches the single-clinic definition
   a.done.book_done_pct=a.done.booked.map((B,i)=>B?Math.round(100*(((a.done._all&&a.done._all[i])||a.done.done[i])||0)/B):null);   // B2D uses full done (_all) so a category slice doesn't deflate the conversion
   a.velocity.bookings=a.bookings.total;a.velocity.wday_days=a.availability.wday_days;a.velocity.wend_days=a.availability.wend_days;
   a.velocity.per_active_day=rate(a.bookings.total,a.availability.active_days);
@@ -1809,6 +1977,50 @@ function renderCockpit(){
     +body;
   const rootEl=$('root');rootEl.onclick=function(e){if((COCKMET||COCKCLIN||COCKDOC)&&!e.target.closest('[onclick]')){COCKMET='';cockReset();}};   // click any non-interactive space (gaps/padding/background) → back to the main overview
 }
+// ---- LEADS PIVOT (ported bookings-funnel layer bar) — mounted into the demand stage's #leadPivotSlot ----
+let LEAD_CUBE_WEEKS=null, LPVI=null, LPV_WRAP=null, LPV_SIG='', LEAD_OPCITY=new Set(), LEAD_LOC2CITY={};
+const LEAD_NEWCITY=new Set(['Indore','Rajkot']);   // launched cities not yet in the clinic/bookings data → keep as city-level rows (extend as more launch)
+function gatherLeadCells(slugs){   // in-scope raw cube cells, tagged with city+loc for the pivot's citygroup/city/clinic layers
+  const out=[];
+  slugs.forEach(slug=>{const c=D.clinics[slug];const cells=c&&c.demand&&c.demand._cells;if(!cells)return;
+    const city=c._unattr?'— no city':(c.city||'');
+    cells.forEach(cell=>out.push({ch:cell.ch,md:cell.md,num:cell.num,url:cell.url,rel:cell.rel,int:cell.int,istr:cell.istr,cat:cell.cat,bk:cell.bk,w:cell.w,city:city,loc:cell.loc||''}));
+  });
+  return out;
+}
+function initialPivotOrder(slugs){const cities=new Set(),clinics=new Set();slugs.forEach(s=>{const c=D.clinics[s];if(!c)return;if(c.city)cities.add(c.city);if(c.loc)clinics.add(c.city+'|'+c.loc);});
+  // diagnosis flow: which CHANNEL → which MEDIUM → then within CITY / CLINIC
+  if(cities.size>1)return ['channel','medium','city'];if(clinics.size>1)return ['channel','medium','clinic'];return ['channel','medium'];}
+function pivRangeLbl(a,b){const s=(''+a).split(/[–—-]/)[0].trim(),ep=(''+b).split(/[–—-]/);return s+' – '+ep[ep.length-1].trim();}
+// translate the page's current window/grain (CLUB·CURN·BASEN·WEND) into the pivot's display columns, mapped to cube-week indices
+function pivotCols(){
+  if(!D||!D.weeks||!LEAD_CUBE_WEEKS)return {cols:[],ncur:1,club:1};
+  const NW=D.weeks.length,club=(CLUB>1?CLUB:1),wend=(typeof WEND==='number'?WEND:0),ncols=CURN+BASEN,nf=[];
+  for(let b=0;b<ncols;b++){const dIdxs=[];
+    for(let k=0;k<club;k++){const di=(NW-1-wend)-(b*club+k);if(di>=0)dIdxs.push(di);}
+    if(!dIdxs.length)break;
+    const cubeIdxs=dIdxs.map(di=>LEAD_CUBE_WEEKS.indexOf(D.weeks[di])).filter(i=>i>=0);
+    const nd=dIdxs[0],od=dIdxs[dIdxs.length-1];
+    nf.push({cubeIdxs,label:club>1?pivRangeLbl(D.week_labels[od],D.week_labels[nd]):D.week_labels[nd]});
+  }
+  return {cols:nf.reverse(),ncur:CURN,club};   // cols oldest→newest; ncur = current-window column count
+}
+function pivotScopePins(){   // the active page scope shown as locked leading chips in the pivot bar (unified breadcrumb)
+  const p=[];
+  if(TIERF&&TIERF.size)p.push([...TIERF].map(t=>t==='T1'?'Tier 1':'Tier 2').join(' + '));
+  if(CITYF&&CITYF.size)p.push('🏙 '+(CITYF.size<=2?[...CITYF].join(' · '):CITYF.size+' cities'));
+  if(CLINF&&CLINF.size)p.push('📍 '+(CLINF.size===1?([...CLINF][0].split('|')[1]||[...CLINF][0]):CLINF.size+' clinics'));
+  return p;
+}
+function mountLeadPivot(slugs){
+  const slot=$('leadPivotSlot');if(!slot||!window.LeadsPivot||!LEAD_CUBE_WEEKS)return;
+  const sig=slugs.slice().sort().join(','), view=pivotCols(), pins=pivotScopePins();   // view follows grain/window; pins = active scope
+  if(!LPVI){LPV_WRAP=document.createElement('div');
+    LPVI=LeadsPivot.create({mount:LPV_WRAP,cells:gatherLeadCells(slugs),weeks:LEAD_CUBE_WEEKS,view:view,pins:pins,order:initialPivotOrder(slugs)});LPV_SIG=sig;}
+  else if(sig!==LPV_SIG){LPVI.view=view;LPVI.pins=pins;LPVI.order=initialPivotOrder(slugs);LPVI.setCells(gatherLeadCells(slugs));LPV_SIG=sig;}
+  else LPVI.setView(view);   // scope unchanged but window/grain may have → re-render with new columns (pins unchanged)
+  slot.appendChild(LPV_WRAP);   // move the persistent pivot DOM into the freshly-rendered slot (keeps its state across re-renders)
+}
 function renderScopeFunnel(){
   ZREG=[];CURZ=null;
   const slugs=Object.keys(D.clinics).filter(inScope);
@@ -1821,6 +2033,7 @@ function renderScopeFunnel(){
   h+=upstreamStripHTML(o,slugs);   // GMB/Google acquisition strip when a source is picked
   h+=funnelStagesHTML(o);
   $('root').innerHTML=h;
+  mountLeadPivot(slugs);   // mount/refresh the leads layer-bar pivot into the demand stage
 }
 function renderClinic(){
   if(!C){$('root').innerHTML='';return;}
@@ -2140,9 +2353,13 @@ async function boot(){
   await loadUpstream();   // GMB insights · reviews · Google-paid cubes for the source-upstream funnel chips
   buildOnlineClinics();   // now that per-provider online data is loaded, build the per-clinic online buckets
   try{NATUN=await fetch('data_demand_leads.json?v='+Date.now()).then(r=>r.ok?r.json():null);}catch(e){NATUN=null;}
-  injectUnattr();   // add the national + per-city unattributed-demand lines (demand tracker, 3-tier leads)
-  normalizeChannels();   // rescale by_channel to sum to the deduped leads total (source rows reconcile)
-  ALLCITIES=[...new Set(Object.values(D.clinics).filter(c=>!c._online&&!c._unattr&&!c._unattr_city&&c.city!=='Online').map(c=>c.city))].sort((a,b)=>{const ta=tierOf(a)==='T1',tb=tierOf(b)==='T1';return ta!==tb?(ta?-1:1):a.localeCompare(b);});   // exclude the Online pseudo-city; Tier-1 cities first so heads click fast
+  let LCITY=null;try{LCITY=await fetch('data_leads_city.json?v='+Date.now()).then(r=>r.ok?r.json():null);}catch(e){LCITY=null;}
+  // injectUnattr() retired — attachLeadCube builds the national + per-city no-clinic rows from the recovered cube instead
+  attachLeadCube(D,LCITY);   // real clinics + national + city-level leads now come from the attribution cube (GMB/Meta broken out, fbclid Meta)
+  try{BKCUBE=await fetch('data_bookings_funnel.json?v='+Date.now()).then(r=>r.ok?r.json():null);}catch(e){BKCUBE=null;}
+  attachBookingsCube(D,BKCUBE);   // graft the funnel cube's NEW-SC channel/category/maturity attribution (the reconciling piece) onto real clinics
+  ALLCITIES=[...new Set([...Object.values(D.clinics).filter(c=>!c._online&&!c._unattr&&!c._unattr_city&&c.city!=='Online').map(c=>c.city),
+    ...[...LEAD_NEWCITY].filter(ct=>D.clinics['__cityunattr_'+ct.toLowerCase().replace(/ /g,'_')])])].sort((a,b)=>{const ta=tierOf(a)==='T1',tb=tierOf(b)==='T1';return ta!==tb?(ta?-1:1):a.localeCompare(b);});   // exclude Online pseudo-city; include launched cities (Indore/Rajkot) that only have leads so far; Tier-1 first
   try{const saved=JSON.parse(localStorage.getItem('wd_city')||'[]');if(Array.isArray(saved))saved.forEach(c=>{if(ALLCITIES.includes(c))CITYF.add(c);});}catch(e){}
   $('cityBtn').textContent=cityBtnLabel();$('cityBtn').classList.toggle('on',!!CITYF.size||!!TIERF.size);
   $('clinBtn').textContent=clinBtnLabel();

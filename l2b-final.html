@@ -38,7 +38,11 @@
     <div class="ctrl">
       <button class="btn on" id="mFull" onclick="setMode('full')">Full weeks</button>
       <button class="btn" id="mWtd" onclick="setMode('wtd')">Week-to-date</button>
-      <select id="cut" onchange="render()" style="display:none"></select>
+      <span id="cutrow" style="display:none;align-items:center;gap:4px">
+        <select id="cutFrom" onchange="render()"></select>
+        <span style="font-size:11px;color:var(--faint)">→</span>
+        <select id="cut" onchange="render()"></select>
+      </span>
       <button class="btn" id="mg" onclick="toggleMG()">GMB+Google: split</button>
     </div>
   </div>
@@ -74,18 +78,18 @@ let D=null, MODE='full', CUT=(new Date().getDay()+6)%7, MG=false;   // CUT: 0=Mo
 function toggleMG(){ MG=!MG; document.getElementById('mg').textContent='GMB+Google: '+(MG?'merged':'split'); document.getElementById('mg').classList.toggle('on',MG); render(); }
 function mergeGG(o){ if(!MG) return o; const n=Object.assign({},o); if(n['GMB']||n['Google Ads']){const g=n['GMB']||[0,0],a=n['Google Ads']||[0,0];n['GMB + Google']=[g[0]+a[0],g[1]+a[1]];delete n['GMB'];delete n['Google Ads'];} return n; }
 
-function win(o,N){ if(!o)return[0,0]; let c=0,b=0; for(let d=0;d<=N;d++){c+=o.cal[d]||0;b+=o.bkd[d]||0;} return[c,b]; }
-function winLeads(a,N){ let s=0; for(let d=0;d<=N;d++) s+=(a&&a[d])||0; return s; }
-function build(N){
+function win(o,S,E){ if(!o)return[0,0]; let c=0,b=0; for(let d=S;d<=E;d++){c+=o.cal[d]||0;b+=o.bkd[d]||0;} return[c,b]; }
+function winLeads(a,S,E){ let s=0; for(let d=S;d<=E;d++) s+=(a&&a[d])||0; return s; }
+function build(S,E){
   const TW={},CH={},PV={},VT={},LD={},SY={},SYT={};
   D.weeks.forEach(w=>{ CH[w]={}; let tc=0,tb=0;
-    for(const ch in (D.chan[w]||{})){ const v=win(D.chan[w][ch],N); if(v[0]||v[1]){CH[w][ch]=v;tc+=v[0];tb+=v[1];} }
+    for(const ch in (D.chan[w]||{})){ const v=win(D.chan[w][ch],S,E); if(v[0]||v[1]){CH[w][ch]=v;tc+=v[0];tb+=v[1];} }
     TW[w]=[tc,tb];
-    SY[w]={}; for(const ch in (D.sys[w]||{})){ const v=win(D.sys[w][ch],N); if(v[0]||v[1])SY[w][ch]=v; }
-    SYT[w]={}; for(const ch in (D.sys_tw[w]||{})){ const v=win(D.sys_tw[w][ch],N); if(v[0]||v[1])SYT[w][ch]=v; }
-    PV[w]={}; for(const k in (D.prov[w]||{})) PV[w][k]=win(D.prov[w][k],N);
-    VT[w]={}; for(const k in (D.vint[w]||{})) VT[w][k]=win(D.vint[w][k],N);
-    LD[w]=winLeads(D.leadsnew[w],N);
+    SY[w]={}; for(const ch in (D.sys[w]||{})){ const v=win(D.sys[w][ch],S,E); if(v[0]||v[1])SY[w][ch]=v; }
+    SYT[w]={}; for(const ch in (D.sys_tw[w]||{})){ const v=win(D.sys_tw[w][ch],S,E); if(v[0]||v[1])SYT[w][ch]=v; }
+    PV[w]={}; for(const k in (D.prov[w]||{})) PV[w][k]=win(D.prov[w][k],S,E);
+    VT[w]={}; for(const k in (D.vint[w]||{})) VT[w][k]=win(D.vint[w][k],S,E);
+    LD[w]=winLeads(D.leadsnew[w],S,E);
   });
   return {TW,CH,PV,VT,LD,SY,SYT};
 }
@@ -93,16 +97,24 @@ function build(N){
 function setMode(m){ MODE=m;
   document.getElementById('mFull').classList.toggle('on',m==='full');
   document.getElementById('mWtd').classList.toggle('on',m==='wtd');
-  document.getElementById('cut').style.display = m==='wtd'?'inline-block':'none';
+  document.getElementById('cutrow').style.display = m==='wtd'?'flex':'none';
   render();
 }
 
+function getFromTo(){
+  const S=parseInt(document.getElementById('cutFrom').value);
+  let E=parseInt(document.getElementById('cut').value);
+  if(E<S){ document.getElementById('cut').value=S; E=S; }
+  return [S,E];
+}
+
 function render(){
-  const N = MODE==='full' ? 6 : parseInt(document.getElementById('cut').value);
-  const W = build(N);
+  let S=0, E=6;
+  if(MODE==='wtd'){ [S,E]=getFromTo(); }
+  const W = build(S,E);
   const all=D.weeks, partial=all[all.length-1];
   const cols = MODE==='full' ? all.slice(-5,-1) : all.slice(-5);
-  const dayspan = MODE==='full' ? 'full week (Mon–Sun)' : ('Mon–'+DAYS[N]);
+  const dayspan = MODE==='full' ? 'full week (Mon–Sun)' : (S===E ? DAYS[S] : DAYS[S]+'–'+DAYS[E]);
   document.getElementById('wkspan').innerHTML = MODE==='full'
     ? `last 4 complete weeks · <b>full Mon–Sun</b>`
     : `<b>${dayspan}</b> window · last 5 weeks incl. in-progress — apples-to-apples partial compare`;
@@ -177,9 +189,12 @@ fetch('data_l2b_final.json').then(r=>r.json()).then(d=>{
   const pw=d.weeks[d.weeks.length-1], dsum=[0,0,0,0,0,0,0];
   for(const ch in (d.chan[pw]||{})) for(let x=0;x<7;x++) dsum[x]+=d.chan[pw][ch].cal[x]||0;
   CUT=0; for(let x=6;x>=0;x--){ if(dsum[x]>0){CUT=x;break;} }
-  const sel=document.getElementById('cut');
-  DAYS.forEach((nm,i)=>{const o=document.createElement('option');o.value=i;o.textContent='Mon–'+nm;sel.appendChild(o);});
-  sel.value=CUT;
+  const selFrom=document.getElementById('cutFrom'), selTo=document.getElementById('cut');
+  DAYS.forEach((nm,i)=>{
+    const o1=document.createElement('option'); o1.value=i; o1.textContent=nm; selFrom.appendChild(o1);
+    const o2=document.createElement('option'); o2.value=i; o2.textContent=nm; selTo.appendChild(o2);
+  });
+  selFrom.value=0; selTo.value=CUT;
   render();
 }).catch(e=>{document.body.innerHTML='<div class="wrap"><p style="color:#B4453E">Could not load data_l2b_final.json — run <code>python3 scripts/build_l2b_final.py</code>.</p></div>';});
 </script>

@@ -87,6 +87,20 @@ def econ_tot(cube, key, field):
 def by_cat_block(cube, key, field="done"):
     return {roll: econ_cat(cube, key, codes, field) for roll, codes in ROLL.items()}
 
+def by_cat_source_block(cube, key):   # done × rolled-category × SOURCE — the EXACT cross (done only), from d2p econ by_cat_source
+    c = cube["clinics"].get(key)
+    if not c: return {}
+    wks = cube["_meta"]["weeks"]; bcs = c.get("by_cat_source") or {}
+    out = {}
+    for roll, codes in ROLL.items():
+        srcmap = {}
+        for code in codes:
+            for src, arr in (bcs.get(code) or {}).items():
+                srcmap[src] = add(srcmap.get(src, Z()), remap(arr, wks))
+        keep = {src: a for src, a in srcmap.items() if any(a)}
+        if keep: out[roll] = keep
+    return out
+
 def econ_rev_tot(cube, key):
     o = Z()
     for f in ("meds_val", "test_val", "ther_val", "cons_val"):
@@ -96,6 +110,19 @@ def econ_rev_tot(cube, key):
 def econ_rev_cat(cube, key, codes):
     o = Z()
     for f in ("meds_val", "test_val", "ther_val", "cons_val"):
+        o = add(o, econ_cat(cube, key, codes, f))
+    return o
+
+# collection view (status='paid'): same done-week grain, only invoices actually paid
+def econ_rev_tot_paid(cube, key):
+    o = Z()
+    for f in ("meds_val_paid", "test_val_paid", "ther_val_paid", "cons_val_paid"):
+        o = add(o, econ_tot(cube, key, f))
+    return o
+
+def econ_rev_cat_paid(cube, key, codes):
+    o = Z()
+    for f in ("meds_val_paid", "test_val_paid", "ther_val_paid", "cons_val_paid"):
         o = add(o, econ_cat(cube, key, codes, f))
     return o
 
@@ -109,10 +136,15 @@ def rev_block(cube, key):
     pm, pt, ph = econ_tot(cube, key, "pres_meds_val"), econ_tot(cube, key, "pres_test_val"), econ_tot(cube, key, "pres_ther_val")   # billed value incl unpaid, per line (for per-line Pres AOV / prescribe value)
     b["pres_meds"], b["pres_test"], b["pres_ther"] = pm, pt, ph
     b["pres_val"] = add(add(pm, pt), ph)   # overall billed product value = sum of the three lines (Pres AOV = pres_val / done)
+    # ⑥ collection view (paid-only, same done-week grain): Revenue(paid)/RPC(paid)/AOV(paid) + category drill
+    b["rev_paid"] = econ_rev_tot_paid(cube, key)
+    b["by_cat_paid"] = {roll: econ_rev_cat_paid(cube, key, codes) for roll, codes in ROLL.items()}
+    b["cons_paid"] = econ_tot(cube, key, "cons_val_paid")   # paid consult fee (so AOV-collected = products-only = rev_paid - cons_paid)
     return b
 
 def purch_block(cube, key):
-    return {"total": econ_tot(cube, key, "purchased"), "by_cat": by_cat_block(cube, key, "purchased")}
+    return {"total": econ_tot(cube, key, "purchased"), "by_cat": by_cat_block(cube, key, "purchased"),
+            "paid": econ_tot(cube, key, "purchased_paid"), "by_cat_paid": by_cat_block(cube, key, "purchased_paid")}
 
 # ── national ONLINE telehealth, per SC/FU/All variant (from the online cubes; single 'Online|Online' key) ──
 try:
@@ -136,12 +168,17 @@ def online_all(a, b):
                    "by_cat": {r: add(a["revenue"][nm]["by_cat"][r], b["revenue"][nm]["by_cat"][r]) for r in ROLL}}
     for pk in ("pres_val", "pres_meds", "pres_test", "pres_ther"):
         rev[pk] = add(a["revenue"].get(pk, Z()), b["revenue"].get(pk, Z()))
+    rev["rev_paid"] = add(a["revenue"].get("rev_paid", Z()), b["revenue"].get("rev_paid", Z()))
+    rev["cons_paid"] = add(a["revenue"].get("cons_paid", Z()), b["revenue"].get("cons_paid", Z()))
+    rev["by_cat_paid"] = {r: add(a["revenue"].get("by_cat_paid", {}).get(r, Z()), b["revenue"].get("by_cat_paid", {}).get(r, Z())) for r in ROLL}
     return {"bookings": {"total": bk, "nat": bk, "city": bk, "new_tw": Z(), "new_old": Z(), "rebook": Z(), "relapse": Z(), "by_source": a["bookings"].get("by_source", {})},
             "done": {"booked": bk, "booked_nat": bk, "booked_city": bk, "done": dn, "done_nat": dn, "done_city": dn, "book_done_pct": pct(dn, bk),
                      "by_cat": {r: add(a["done"]["by_cat"][r], b["done"]["by_cat"][r]) for r in ROLL}},
             "revenue": rev,
             "purchased": {"total": add(a["purchased"]["total"], b["purchased"]["total"]),
-                          "by_cat": {r: add(a["purchased"]["by_cat"][r], b["purchased"]["by_cat"][r]) for r in ROLL}}}
+                          "by_cat": {r: add(a["purchased"]["by_cat"][r], b["purchased"]["by_cat"][r]) for r in ROLL},
+                          "paid": add(a["purchased"].get("paid", Z()), b["purchased"].get("paid", Z())),
+                          "by_cat_paid": {r: add(a["purchased"].get("by_cat_paid", {}).get(r, Z()), b["purchased"].get("by_cat_paid", {}).get(r, Z())) for r in ROLL}}}
 def online_block():
     if not SCBO: return None
     osc = online_variant(SCBO, SCEO); ofu = online_variant(FUBO, FUEO)
@@ -273,7 +310,9 @@ def variant_sc(key, slug=None):
                          "no1w": bk_get(SCB, key, "ft_prev_1w"), "no2_4w": bk_get(SCB, key, "ft_prev_2_4w"), "no1_3mo": bk_get(SCB, key, "ft_prev_1_3mo"), "no3mo": bk_get(SCB, key, "ft_prev_3mo"),   # older-lead bookings binned by lead age
                          "rebook": bk_get(SCB, key, "ret_rebook"), "relapse": bk_get(SCB, key, "ret_return"),
                          "by_source": source_block(SCB, key)},
-            "done": {"booked": booked, "booked_nat": b_nat, "booked_city": b_city, "done": done, "done_nat": d_nat, "done_city": d_city, "book_done_pct": pct(done, booked), "by_cat": by_cat_block(SCE, key)},
+            "done": {"booked": booked, "booked_nat": b_nat, "booked_city": b_city, "done": done, "done_nat": d_nat, "done_city": d_city, "book_done_pct": pct(done, booked), "by_cat": by_cat_block(SCE, key), "by_cat_source": by_cat_source_block(SCE, key),
+                     "booked_slots": bk_get(SCB, key, "booked_slots"), "done_slots": bk_get(SCB, key, "done_slots"),   # slot level (appointment rows) alongside the distinct-patient booked/done
+                     "slot_status": {"COMPLETED": bk_get(SCB, key, "st_completed"), "SCHEDULED": bk_get(SCB, key, "st_scheduled"), "No Show": bk_get(SCB, key, "st_noshow"), "Reschedule": bk_get(SCB, key, "st_reschedule"), "CANCELLED": bk_get(SCB, key, "st_cancelled"), "Others": bk_get(SCB, key, "st_others")}},   # slot outcome breakdown (sums to booked_slots)
             "revenue": rev_block(SCE, key), "purchased": purch_block(SCE, key),
             "availability": av, "velocity": velocity_block(booked, av, bk_get(SCB, key, "bkwd"), bk_get(SCB, key, "bkwe"), bk_get(SCB, key, "done_wkday"), bk_get(SCB, key, "done_wkend")),
             "by_doctor": doctors_block(SCB, SCE, key, slug)}
@@ -311,8 +350,13 @@ def merge_variant(a, b):
                    "by_cat": {roll: add(a["revenue"][nm]["by_cat"][roll], b["revenue"][nm]["by_cat"][roll]) for roll in ROLL}}
     for pk in ("pres_val", "pres_meds", "pres_test", "pres_ther"):
         rev[pk] = add(a["revenue"].get(pk, Z()), b["revenue"].get(pk, Z()))
+    rev["rev_paid"] = add(a["revenue"].get("rev_paid", Z()), b["revenue"].get("rev_paid", Z()))
+    rev["cons_paid"] = add(a["revenue"].get("cons_paid", Z()), b["revenue"].get("cons_paid", Z()))
+    rev["by_cat_paid"] = {roll: add(a["revenue"].get("by_cat_paid", {}).get(roll, Z()), b["revenue"].get("by_cat_paid", {}).get(roll, Z())) for roll in ROLL}
     pur = {"total": add(a["purchased"]["total"], b["purchased"]["total"]),
-           "by_cat": {roll: add(a["purchased"]["by_cat"][roll], b["purchased"]["by_cat"][roll]) for roll in ROLL}}
+           "by_cat": {roll: add(a["purchased"]["by_cat"][roll], b["purchased"]["by_cat"][roll]) for roll in ROLL},
+           "paid": add(a["purchased"].get("paid", Z()), b["purchased"].get("paid", Z())),
+           "by_cat_paid": {roll: add(a["purchased"].get("by_cat_paid", {}).get(roll, Z()), b["purchased"].get("by_cat_paid", {}).get(roll, Z())) for roll in ROLL}}
     bkwd = add(a["velocity"]["bk_wday"], b["velocity"]["bk_wday"])   # SC + FU weekday bookings
     bkwe = add(a["velocity"]["bk_wend"], b["velocity"]["bk_wend"])   # SC + FU weekend bookings
     dnwd = add(a["velocity"].get("done_wday", Z()), b["velocity"].get("done_wday", Z()))
