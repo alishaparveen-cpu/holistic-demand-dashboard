@@ -432,12 +432,12 @@ function splitCat(v,cc){   // integer v → {STI,SH,MH,Other} summing exactly to
 }
 function buildCells(node){
   return (node.cells||[]).map(c=>({ptype:c.pt,channel:(window.BookingsCube?window.BookingsCube.channelOf(c.ch):c.ch),age:c.la,medium:(c.md==='whatsapp'?'wa_org':c.md),
-    num:c.num||'',campaign:c.cmp||'na',category:c.cat||'na',loc:c.loc||'',city:c.city||'',citygroup:(c.city&&c.city.indexOf('— no city')!==0)?'attr':'nocity',_on:(!!c.on||c.city==='Online'),seg:((!!c.on||c.city==='Online')?'online':'offline'),arr:c.w}));   // loc/city set on city+national rollups; _on/seg = online (telehealth via merged online SC cube) vs offline (clinic)
+    num:c.num||'',campaign:c.cmp||'na',category:c.cat||'na',bkseg:c.bkseg||'none',loc:c.loc||'',city:c.city||'',citygroup:(c.city&&c.city.indexOf('— no city')!==0)?'attr':'nocity',_on:(!!c.on||c.city==='Online'),seg:((!!c.on||c.city==='Online')?'online':'offline'),arr:c.w}));   // loc/city set on city+national rollups; _on/seg = online (telehealth via merged online SC cube) vs offline (clinic)
 }
 function buildLeadCells(node){   // leads cube: channel x medium x number x url x booked-status
   const bs=BOOKED_SET[BOOKWIN]||BOOKED_SET.ever;   // booked = lag bucket within the chosen window
   return (node.cells||[]).map(c=>({channel:(window.LeadsCube?window.LeadsCube.channelOf(c.ch):(c.ch==='Google'?'Google Ads':c.ch)),medium:(c.md==='whatsapp'?'wa_org':c.md),status:bs.has(c.bk)?'booked':'notbooked',
-    num:c.num||'',url:c.url||'',relevance:c.rel||'unknown',intent:c.int||'',strength:c.istr||'',category:c.cat||'na',verified:c.vf==='y'?'verified':'unverified',loc:c.loc||'',city:c.city||'',citygroup:(c.city&&c.city.indexOf('— no city')!==0)?'attr':'nocity',_on:((c.city||'').indexOf('— no city')===0),campaign:'na',arr:c.w,day:c.d||null}));   // _on = online / untracked (no-city bucket); verified = phone matched an allo_persons.patient (patient_id created); day[] = recent-8wk daily
+    num:c.num||'',url:c.url||'',relevance:c.rel||'unknown',intent:c.int||'',strength:c.istr||'',category:c.cat||'na',verified:c.vf==='y'?'verified':'unverified',bkseg:c.bkseg||'none',loc:c.loc||'',city:c.city||'',citygroup:(c.city&&c.city.indexOf('— no city')!==0)?'attr':'nocity',_on:((c.city||'').indexOf('— no city')===0),campaign:'na',arr:c.w,day:c.d||null}));   // _on = online / untracked (no-city bucket); verified = phone matched an allo_persons.patient (patient_id created); day[] = recent-8wk daily
 }
 function total(cells){return sumT(weekArr(cells));}
 function cellPass(c,P){if(P.mode!=='leads'&&SEG!=='both'&&((SEG==='online')!==!!c._on))return false;return P.dims.every(dk=>{if(dk==='campaign')return !P.sel.campaign.size||P.sel.campaign.has(c.campaign);return P.sel[dk].has(c[DIMS[dk].field]);});}   // leads ignore Offline/Online — a lead can book anywhere
@@ -606,8 +606,8 @@ function sparkline(wk){const ix=wkIdxs(),d=dv(wk),vals=ix.map(i=>d[i]||0),n=vals
 function appendLeadTriplet(container,cells,padPx){
   const gWk=weekArr(cells),bkW0=weekArr(cells.filter(c=>c.status==='booked'));
   const gW=dv(gWk),bkW=dv(bkW0),nbW=gW.map((t,i)=>t-(bkW[i]||0)),rateArr=gW.map((t,i)=>t?Math.round(100*bkW[i]/t):0);   // cumulative-aware (week-to-date)
-  const sub=(lbl,arr,cls,isPct,col)=>{
-    const row=document.createElement('div');row.className='frow wkly subr '+cls;if(padPx)row.style.paddingLeft=padPx+'px';
+  const sub=(lbl,arr,cls,isPct,col,extraPad)=>{
+    const row=document.createElement('div');row.className='frow wkly subr '+cls;const pp=(padPx||0)+(extraPad||0);if(pp)row.style.paddingLeft=pp+'px';
     let rr;
     if(WEEKLY){const ix=wkIdxs();const dp=deltaPct(arr);rr=ix.map((i,j)=>`<span class="wk${j===ix.length-1?' last':''}">${isPct?(gW[i]?arr[i]+'%':'·'):(arr[i]||0)}</span>`).join('')+`<span class="delta ${dp.cls}">${dp.txt}</span>${bnCols(dp,isPct)}`;}
     else rr=`<span class="barwrap"></span><span class="cnt">${isPct?(sumT(gWk)?Math.round(100*sumT(bkW0)/sumT(gWk))+'%':'·'):sumT(arr)}</span><span class="pct"></span>`;
@@ -615,6 +615,8 @@ function appendLeadTriplet(container,cells,padPx){
     container.appendChild(row);{const zb=row.querySelector('.zoom');zb.innerHTML=sparkline(arr);zb.onclick=()=>openChart(lbl,arr,col);}
   };
   sub('↳ booked',bkW,'bkd',false,'#2E7D5B');
+  {const offW=dv(weekArr(cells.filter(c=>c.status==='booked'&&c.bkseg==='offline'))),onlW=dv(weekArr(cells.filter(c=>c.status==='booked'&&c.bkseg==='online')));   // where the booked lead booked (offline clinic vs online telehealth)
+   if(offW.some(x=>x)||onlW.some(x=>x)){sub('↳ Offline · clinic',offW,'bkd bkseg',false,'#2E7D5B',18);sub('↳ Online · telehealth',onlW,'bkd bkseg',false,'#7C5CBF',18);}}
   sub('↳ not booked',nbW,'nbk',false,'#B8503C');
   sub('→ book rate %',rateArr,'rate',true,'#1F6F5C');
 }
