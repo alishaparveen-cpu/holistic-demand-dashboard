@@ -368,7 +368,7 @@ function labOf(dk,k){const v=DIMS[dk].values.find(x=>x.k===k);return v?v.l:k;}
 const NEWCITY=new Set(['Indore','Rajkot']);          // newly launched — keep even if no clinic key yet
 const NONCITY=new Set(['Online','Practo Online']);   // never a physical city → no-city / online bucket
 const NOCITY_LAB='— no city · online / untracked';   // the single no-city / untracked bucket label
-let TRACKED_CITY=new Set(), LOC2CITY={}, OPLOC=new Set();   // TRACKED_CITY: real op cities (+new launches); LOC2CITY: clinic locality → its true city; OPLOC: operational clinic localities (from the bookings cube) — closed clinics with stray leads are excluded from the Clinic layer
+let TRACKED_CITY=new Set(), LOC2CITY={}, OPLOC=new Set(), CITY2CLINICS={}, SINGLE_CLINIC_CITY={};   // TRACKED_CITY: real op cities (+new launches); LOC2CITY: clinic locality → its true city; OPLOC: operational clinic localities (from the bookings cube) — closed clinics with stray leads are excluded from the Clinic layer; SINGLE_CLINIC_CITY: city→its one clinic (roll city-only leads into it)
 function isTracked(city){return TRACKED_CITY.has(city);}
 function displayCity(loc,city){
   const rc=loc&&LOC2CITY[loc];
@@ -1160,6 +1160,7 @@ function loadClinic(){const keys=scopeKeys();CLINIC=keys.join('+')||SCOPE;   // 
   });
   // fold leads pinned to a CLOSED / non-operational clinic into the no-clinic bucket (keep their city) so only real clinics show as rows — the leads still count in the city + total
   if(OPLOC.size)[PL,PB].forEach(P=>P.cells.forEach(c=>{if(c.loc&&!OPLOC.has(c.loc))c.loc='';}));
+  [PL,PB].forEach(P=>P.cells.forEach(c=>{if((!c.loc)&&c.city&&SINGLE_CLINIC_CITY[c.city])c.loc=SINGLE_CLINIC_CITY[c.city];}));   // single-clinic city (e.g. Bhopal): its city-only leads/bookings have exactly one possible clinic → roll them into it (no more "not attributed to a clinic" for these cities)
   // dynamic Clinic + City values (union across leads + bookings), by size — for city/national drill-down
   const locs={},cities={};
   [PL,PB].forEach(P=>P.cells.forEach(c=>{const s=(c.arr||[]).reduce((a,b)=>a+(b||0),0);if(c.loc)locs[c.loc]=(locs[c.loc]||0)+s;if(c.city)cities[c.city]=(cities[c.city]||0)+s;}));
@@ -1290,6 +1291,8 @@ Promise.all([
   LOC2CITY=locCityMap(bk);   // clinic locality → its true city (for the mis-tag re-route)
   TRACKED_CITY=new Set(); Object.keys(bk).filter(k=>k!=='_meta').forEach(k=>{const c=k.split('|')[0];if(c&&!NONCITY.has(c))TRACKED_CITY.add(c);}); NEWCITY.forEach(c=>TRACKED_CITY.add(c));   // real op cities (+ new launches Indore/Rajkot), minus Online/Practo-online
   OPLOC=new Set(); Object.keys(bk).filter(k=>k!=='_meta').forEach(k=>{const i=k.indexOf('|');if(i>=0){const loc=k.slice(i+1);if(loc)OPLOC.add(loc);}});   // operational clinic localities = the bookings cube's clinics (drops closed clinics that only have stray leads)
+  CITY2CLINICS={}; Object.keys(bk).filter(k=>k!=='_meta').forEach(k=>{const i=k.indexOf('|');if(i<0)return;const city=k.slice(0,i),loc=k.slice(i+1);if(!city||!loc)return;(CITY2CLINICS[city]=CITY2CLINICS[city]||new Set()).add(loc);});
+  SINGLE_CLINIC_CITY={}; for(const c in CITY2CLINICS){if(CITY2CLINICS[c].size===1)SINGLE_CLINIC_CITY[c]=[...CITY2CLINICS[c]][0];}   // single-clinic city → its one clinic locality: city-only leads roll into that clinic (e.g. Bhopal → Gulmohar)
   SLUG2LOC={}; Object.keys(bk).filter(k=>k!=='_meta').forEach(k=>{const i=k.indexOf('|');if(i<0)return;const city=k.slice(0,i),loc=k.slice(i+1);SLUG2LOC[qnorm(loc)+'_'+qnorm(city)]=loc;});   // quick_diag slug → clinic locality name (for the ⑤ Done drill)
   mergeOnlineBookings(bk,onlbk);   // add Online SC bookings (tagged on:1) so the Offline/Online toggle has online data
   initDaily((ldc&&ldc._meta)||(ld&&ld._meta));   // day-of-week axis (recent 8 wks incl. current partial week)
