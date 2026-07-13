@@ -141,6 +141,9 @@ def main():
         dd = o.setdefault("by_doctor", {}).setdefault(doctor, blank())
         ss = o.setdefault("by_source", {}).setdefault(source, blank())
         cc = o.setdefault("by_cat", {}).setdefault(cat, blank())   # done split by merged-Rx diagnosis category (for the ⑤ Done drill)
+        csrc = o.setdefault("by_cat_source", {}).setdefault(cat, {})   # EXACT done × category × SOURCE (patient has one cat + one source) → no proportional estimate for online in ⑤
+        if source not in csrc: csrc[source] = [0]*NW
+        csrc[source][i] += vals[1]   # done
         for f, v in zip(FIELDS, vals):
             o[f][i] += v; dd[f][i] += v; ss[f][i] += v; cc[f][i] += v
 

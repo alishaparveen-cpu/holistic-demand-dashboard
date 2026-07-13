@@ -54,9 +54,11 @@ for slug, s in disp.items():
 tier = REC["_meta"].get("city_tier", {})
 
 # category rollup (finer diagnoses -> the 7 city-head buckets: MH·ED+·ED+PE+·PE+·STI·Oth·NOS).
-# ED/PE keep their own buckets (what city heads track); the rarer SH conditions fold into Oth; NOS stands alone.
-ROLL = {"MH": ["MH"], "PA": ["PA"], "CM": ["CM"], "ED+": ["ED+"], "ED+PE+": ["ED+PE+"], "PE+": ["PE+"],
-        "STI": ["STI"], "Oth": ["LSD", "DE", "DYS", "VGS", "FSAD", "AORG", "oth"], "NOS": ["NOS"]}
+# ED/PE keep their own buckets (what city heads track); the other named sexual-health conditions (LSD/DE/DYS/VGS/FSAD/AORG)
+# keep their own sub-cat too so they roll to SH (not Other) in the UI. Only the genuine catch-all 'oth' → Oth; NOS stands alone.
+ROLL = {"MH": ["MH"], "PA": ["PA"], "CM": ["CM"], "ED+": ["ED+"], "ED+PE+": ["ED+PE+"], "PE+": ["PE+"], "STI": ["STI"],
+        "LSD": ["LSD"], "DE": ["DE"], "DYS": ["DYS"], "VGS": ["VGS"], "FSAD": ["FSAD"], "AORG": ["AORG"],
+        "Oth": ["oth"], "NOS": ["NOS"]}
 # MH sub-codes: MH=Mental Health Concern · PA=Porn Addiction · CM=Compulsive Masturbation (grouped as MH in the UI tree)
 
 def bk_get(cube, key, field):

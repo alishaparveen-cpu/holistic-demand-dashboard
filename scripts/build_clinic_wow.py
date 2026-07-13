@@ -149,7 +149,7 @@ def main():
         if slug in out["clinics"]:
             continue
         try:
-            by_src,un_new,un_rep=SR.bookings_by_source(cfg)
+            by_src,un_new,un_rep,done_src=SR.bookings_by_source(cfg)   # source_recon now also returns done-by-source (4th value)
             bkph=SR.get_booking_phones(cfg)
             gmb_lb=SR.call_funnel(cfg,'gmb') if cfg["gmb"] else None
             paid_lb=SR.call_funnel(cfg,'paid') if cfg["paid"] else None
@@ -162,7 +162,7 @@ def main():
             if gmb_lb is not None: gmb_lb["by_cat"]=call_cat(cfg,'gmb')
             if paid_lb is not None: paid_lb["by_cat"]=call_cat(cfg,'paid')
             out["clinics"][slug]={
-                "by_source":by_src,"untagged_new":un_new,"untagged_repeat":un_rep,
+                "by_source":by_src,"done_source":done_src,"untagged_new":un_new,"untagged_repeat":un_rep,
                 "lead_book":{"gmb_call":gmb_lb,
                     "gmb_web":{"leads":web["leads"],"booked":web["booked"],"notbooked":web["notbooked"]},
                     "gpaid_call":paid_lb,"gpaid_web":gpw,"practo":practo},
