@@ -165,7 +165,18 @@
   .imhcap{color:var(--muted);font-weight:700;font-size:10px;letter-spacing:.05em;text-transform:uppercase}
   .imhcell{flex:1 1 0;min-width:66px;display:flex;flex-direction:column;align-items:flex-end;justify-content:center;padding:4px 10px;border-left:1px solid var(--line);font-size:11px;font-weight:700;color:var(--ink);text-align:right}
   .imhcell .imhst{font-size:8.5px;font-weight:600;color:var(--faint)}
-  .head:has(.imhcell){display:flex;align-items:stretch}
+  /* stacked cross-funnel layout (metrics as rows under each breakdown group) */
+  .frow.imghdr{border-top:1px solid var(--line2);background:color-mix(in srgb,var(--accent) 4%,transparent);display:flex;align-items:center;min-height:30px}
+  .frow.imghdr.clk{cursor:pointer}
+  .frow.imghdr .imgl2{font-weight:700;color:var(--ink);font-size:12.5px;display:flex;align-items:center;gap:7px;flex:1 1 auto;min-width:0}
+  .frow.imghdr.imxtot{background:color-mix(in srgb,var(--accent) 9%,transparent);border-top:2px solid var(--line2)}
+  .frow.imghdr .delta{font-size:11.5px;font-weight:700;padding-right:12px}
+  .ragdot{width:8px;height:8px;border-radius:50%;display:inline-block;flex:none}
+  .ragdot.r{background:#C0392B}.ragdot.o{background:#E67E22}.ragdot.y{background:#E4C04A}.ragdot.g{background:#2E7D5B}
+  .imchip .cnt2{background:var(--line2);border-radius:5px;font-size:9px;padding:0 4px;margin-left:3px;color:var(--muted);font-weight:700}
+  .imchip .cv{color:var(--faint);font-size:9px;margin-left:2px}
+  .imchip.rc{position:relative}
+  .frow.imrow .lbl{font-size:12px}
   .dlchip{border:1px solid var(--line);background:var(--sheet);color:var(--muted);border-radius:6px;padding:2px 10px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;margin-right:4px}
   .dlchip.on{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 12%,var(--sheet));color:var(--accent);cursor:grab}
   .dlchip.on.drag{opacity:.4}.dlchip.over{box-shadow:-2px 0 0 var(--accent)}
@@ -977,14 +988,15 @@ function renderValue(units){units=units||opsUnits();const flow=document.getEleme
 let VIEWM='funnel', IM_SEL=['leads','bookings','done','revenue'], IM_ROWS=['city'], IM_OPEN={}, IM_MAT=0, IM_SORT='drop', IM_RAG={r:true,o:true,y:true,g:true}, imRowDrag=null;
 // --- source-data filters by the current breakdown tags {seg,city,loc,cat,src} ---
 function imLeadTop(c){return SUBCAT2TOP[c.category]||({STI:'STI',SH:'SH',MH:'MH'}[c.category])||(c.category&&c.category!=='na'&&c.category!=='unknown'?'Other':null);}   // call-intent category → top (null when unknown, so it doesn't pollute)
-function imUnitsT(t){return opsUnits().filter(u=>(!t.city||u.city===t.city)&&(!t.loc||u.loc===t.loc)&&(!t.seg||((t.seg==='online')===!!u.online)));}
-function imLeadT(t){return (PL.cells||[]).filter(c=>(!t.city||c.city===t.city)&&(!t.loc||c.loc===t.loc)&&(!t.seg||((t.seg==='online')===!!c._on))&&(!t.cat||imLeadTop(c)===t.cat)&&(!t.src||c.channel===t.src));}
+function imMatch(val,tag){return tag==null?true:(Array.isArray(tag)?tag.includes(val):val===tag);}   // tag can be a single value OR an array (a combined group)
+function imUnitsT(t){return opsUnits().filter(u=>imMatch(u.city,t.city)&&imMatch(u.loc,t.loc)&&(t.seg==null?true:imMatch(u.online?'online':'offline',t.seg)));}
+function imLeadT(t){return (PL.cells||[]).filter(c=>imMatch(c.city,t.city)&&imMatch(c.loc,t.loc)&&(t.seg==null?true:imMatch(c._on?'online':'offline',t.seg))&&(t.cat==null?true:imMatch(imLeadTop(c),t.cat))&&(t.src==null?true:imMatch(c.channel,t.src)));}
 function imSumCells(cells){const o=new Array(WEEKS.length).fill(0);cells.forEach(c=>{const a=c.arr||[];for(let i=0;i<o.length;i++)o[i]+=a[i]||0;});return o;}
 function imCount(disp){return {disp:opsDv(disp),size:opsDv(disp)[WKOFF]||0};}
 function imRate(numRaw,denRaw,pct){const N=opsDv(numRaw),D=opsDv(denRaw);return {disp:D.map((d,i)=>d?(pct?100:1)*N[i]/d:null),size:D[WKOFF]||0,pct:!!pct};}
 // ops records filtered by cat (done via opsDoneRecs, value via opsValRecs) — for the Category breakdown
-function imDoneCatRaw(t){let recs=opsDoneRecs(imUnitsT(t));if(t.cat)recs=recs.filter(r=>r.cat===t.cat);if(t.src)recs=recs.filter(r=>r.src===t.src);return sumRecs(recs);}
-function imValCatRaw(t,f){let recs=opsValRecs(imUnitsT(t));if(t.cat)recs=recs.filter(r=>r.cat===t.cat);return sumRecF(recs.map(r=>({v:r[f]})),'v');}
+function imDoneCatRaw(t){let recs=opsDoneRecs(imUnitsT(t));if(t.cat!=null)recs=recs.filter(r=>imMatch(r.cat,t.cat));if(t.src!=null)recs=recs.filter(r=>imMatch(r.src,t.src));return sumRecs(recs);}
+function imValCatRaw(t,f){let recs=opsValRecs(imUnitsT(t));if(t.cat!=null)recs=recs.filter(r=>imMatch(r.cat,t.cat));return sumRecF(recs.map(r=>({v:r[f]})),'v');}
 // each metric: series(tags) → {disp,size,pct,money}; dims = which breakdown dims it supports; null = "—" for that cut
 const IM_METS=[
   {key:'leads',      lab:'Leads',        stage:'① Demand',    dims:['seg','city','clinic','cat','src'],           series:t=>imCount(imSumCells(imLeadT(t)))},
@@ -1013,54 +1025,69 @@ function imGroupValues(dim,tags){const s=new Set(),add=v=>{if(v!=null&&v!=='')s.
   else if(dim==='cat'){['STI','SH','MH','Other'].forEach(add);}
   else if(dim==='src'){imLeadT(tags).forEach(c=>add(c.channel));opsDoneRecs(imUnitsT(tags)).forEach(r=>add(r.src));}
   return [...s];}
-function imFmtCell(m,dp){const now=m.pct?(dp.now!=null?Math.round(dp.now)+'%':'·'):(dp.now!=null?fmtOps(dp.now):'·');return {txt:dp.txt,now,cls:dp.cls};}
-function imMatrixDrill(container,tags,dims,depth,pad,kp){const dim=dims[depth],tk=imTagKey(dim),last=depth===dims.length-1,mets=imSelMets();
-  let rows=imGroupValues(dim,tags).map(v=>{const t=Object.assign({},tags,{[tk]:v});
-    const pathDims=dims.slice(0,depth+1);   // a metric can fill a cell only if it supports EVERY breakdown dim in the current path
-    const cells=mets.map(m=>{if(!pathDims.every(d=>m.dims.includes(d)))return null;const s=m.series(t);const dp=s.disp?deltaPct(s.disp):null;return {m,s,dp,rag:dp?imRag(dp):'g'};});
-    return {v,t,cells};});
-  const pIdx=Math.max(0,mets.findIndex(m=>dims.slice(0,depth+1).every(d=>m.dims.includes(d))));   // primary metric for sort/materiality = first that supports the full path
-  rows=rows.filter(r=>{const c=r.cells[pIdx];return c&&c.s&&(c.s.size||0)>=IM_MAT;});
-  rows=rows.filter(r=>r.cells.some(c=>c&&IM_RAG[c.rag]));   // colour filter: keep if ≥1 cell in an enabled severity
-  if(IM_SORT==='drop')rows.sort((a,b)=>imDropNum((a.cells[pIdx]||{}).dp||{})-imDropNum((b.cells[pIdx]||{}).dp||{}));
-  else if(IM_SORT==='size')rows.sort((a,b)=>((b.cells[pIdx]||{}).s?.size||0)-((a.cells[pIdx]||{}).s?.size||0));
-  else rows.sort((a,b)=>(''+a.v).localeCompare(''+b.v));
-  rows.forEach(r=>{const key=kp+'/'+dim+':'+r.v,op=!!IM_OPEN[key];
-    const row=document.createElement('div');row.className='frow imx';row.style.paddingLeft=pad+'px';
-    const chev=last?'<span class="chev leaf">▶</span>':`<span class="chev">${op?'▾':'▶'}</span>`;
-    const cellsHtml=mets.map((m,ci)=>{const c=r.cells[ci];if(!c||!c.dp)return '<span class="imcell na">—</span>';const f=imFmtCell(m,c.dp);return `<span class="imcell rag-${c.rag}" title="${m.lab}: ${f.now} · Δ ${f.txt}"><b class="imd ${c.dp.cls}">${f.txt}</b><span class="imnow">${f.now}</span></span>`;}).join('');
-    row.innerHTML=chev+`<span class="imlbl">${r.v}</span>`+cellsHtml;container.appendChild(row);
+let IM_COMB={}, IM_OFF={};   // IM_COMB[dim]=[{label,vals}] combined groups · IM_OFF[dim]=Set of de-selected values (the ▾ picker)
+function imMetCol(m){return ({leads:'#3E7CB1',bookedleads:'#2E7D5B',bookrate:'#1F6F5C',bookings:'#2E7D5B',netsc:'#8257C4',b2d:'#1F6F5C',done:'#C87B2E',purchased:'#2E7D5B',d2p:'#1F6F5C',revenue:'#C87B2E',rpc:'#1F6F5C'})[m.key]||'#455';}
+function imGroups(dim,tags){   // ordered groups: combined groups first, then remaining selected singletons (respect IM_OFF de-select)
+  const all=imGroupValues(dim,tags),comb=IM_COMB[dim]||[],off=IM_OFF[dim]||new Set(),inC=new Set();comb.forEach(c=>c.vals.forEach(v=>inC.add(v)));
+  const out=[];comb.forEach(c=>{const vals=c.vals.filter(v=>all.includes(v));if(vals.length)out.push({label:c.label,vals,comb:true});});
+  all.forEach(v=>{if(!inC.has(v)&&!off.has(v))out.push({label:v,vals:[v],comb:false});});return out;}
+function imMetRow(container,m,t,pad){const disp=(m.series(t)||{}).disp||[];const row=opsBuildRow('↳ '+m.lab,disp,{col:imMetCol(m),pad,pct:!!m.pct,rawArr:disp});row.classList.add('imrow','rag-'+imRag(deltaPct(disp)));container.appendChild(row);}
+// STACKED drill (marketing layout): each breakdown group is a header row; the selected metrics stack beneath it with full weekly columns + RAG; drill nests deeper
+function imStackDrill(container,tags,dims,depth,pad,kp){const dim=dims[depth],tk=imTagKey(dim),last=depth===dims.length-1,mets=imSelMets();
+  const pathDims=dims.slice(0,depth+1),supp=mets.filter(m=>pathDims.every(d=>m.dims.includes(d))),prim=supp[0]||mets[0];
+  let groups=imGroups(dim,tags).map(g=>{const t=Object.assign({},tags,{[tk]:g.vals.length>1?g.vals:g.vals[0]});const ps=prim?prim.series(t):null,dp=(ps&&ps.disp)?deltaPct(ps.disp):null;return {g,t,dp,size:ps?ps.size:0,rag:dp?imRag(dp):'g'};});
+  groups=groups.filter(g=>(g.size||0)>=IM_MAT).filter(g=>IM_RAG[g.rag]);
+  if(IM_SORT==='drop')groups.sort((a,b)=>imDropNum(a.dp||{})-imDropNum(b.dp||{}));
+  else if(IM_SORT==='size')groups.sort((a,b)=>(b.size||0)-(a.size||0));
+  else groups.sort((a,b)=>(''+a.g.label).localeCompare(''+b.g.label));
+  groups.forEach(({g,t,dp,rag})=>{const key=kp+'/'+dim+':'+g.label,op=!!IM_OPEN[key];
+    const hdr=document.createElement('div');hdr.className='frow imghdr'+(last?'':' clk');hdr.style.paddingLeft=pad+'px';
+    hdr.innerHTML=(last?'<span class="chev leaf">▶</span>':`<span class="chev">${op?'▾':'▶'}</span>`)+`<span class="lbl imgl2"><span class="ragdot ${rag}"></span>${g.comb?'⊕ ':''}${g.label}</span>`+(dp?`<span class="delta ${dp.cls}" style="margin-left:auto">${dp.txt}</span>`:'');
+    container.appendChild(hdr);
+    supp.forEach(m=>imMetRow(container,m,t,pad+22));   // metric stack
     if(!last){const kb=document.createElement('div');kb.style.display=op?'block':'none';container.appendChild(kb);
-      row.onclick=(e)=>{IM_OPEN[key]=!IM_OPEN[key];imRender();};
-      if(op)imMatrixDrill(kb,r.t,dims,depth+1,pad+18,key);}});}
+      hdr.onclick=(e)=>{if(e.target.closest('.zoom'))return;IM_OPEN[key]=!IM_OPEN[key];imRender();};
+      if(op)imStackDrill(kb,t,dims,depth+1,pad+18,key);}});}
+function imBreakChip(dk,idx,layers,rc){const chip=document.createElement('div');chip.className='imchip rc';chip.draggable=true;chip.dataset.l=dk;
+  const vals=imGroupValues(dk,{}),comb=IM_COMB[dk]||[],off=IM_OFF[dk]||new Set(),nsel=vals.filter(v=>!off.has(v)).length;
+  chip.innerHTML=`<span class="grip">⋮⋮</span><span class="ord">${idx+1}</span>${IM_DIMLAB[dk]}<span class="cnt2">${nsel}/${vals.length}</span><span class="cv">▾</span>`+(layers.length>1?'<span class="rm" title="remove">×</span>':'');
+  const pop=document.createElement('div');pop.className='pop';
+  pop.innerHTML=`<div class="pact"><button data-a="all">All</button><button data-a="none">None</button>${comb.length?'<button data-a="uncomb" title="split back">✕ un-combine</button>':'<button data-a="comb" title="merge the checked values into ONE group; the rest stay as their own rows">⊕ combine checked</button>'}</div>`
+    +(comb.length?`<div class="combnote">combined → <b>${comb.map(c=>c.label).join(' · ')}</b></div>`:'')
+    +vals.map(v=>`<label><input type="checkbox" data-v="${(''+v).replace(/"/g,'&quot;')}" ${!off.has(v)?'checked':''}>${v}</label>`).join('');
+  chip.appendChild(pop);
+  chip.onclick=(e)=>{if(e.target.closest('.pop'))return;if(e.target.classList.contains('rm')){IM_ROWS=IM_ROWS.filter(x=>x!==dk);IM_OPEN={};imRender();return;}const o=pop.classList.contains('show');document.querySelectorAll('#imRows .pop').forEach(p=>p.classList.remove('show'));if(!o)pop.classList.add('show');};
+  pop.querySelectorAll('.pact button').forEach(b=>b.onclick=(e)=>{e.stopPropagation();const a=b.dataset.a;
+    if(a==='all')IM_OFF[dk]=new Set();
+    else if(a==='none')IM_OFF[dk]=new Set(vals);
+    else if(a==='comb'){const picked=vals.filter(v=>!(IM_OFF[dk]||new Set()).has(v));if(picked.length>=2){IM_COMB[dk]=[{label:picked.join(' + '),vals:picked}];IM_OFF[dk]=new Set();}}
+    else if(a==='uncomb')delete IM_COMB[dk];
+    IM_OPEN={};imRender();});
+  pop.querySelectorAll('input').forEach(inp=>inp.onclick=(e)=>{e.stopPropagation();IM_OFF[dk]=IM_OFF[dk]||new Set();const v=inp.dataset.v;if(inp.checked)IM_OFF[dk].delete(v);else IM_OFF[dk].add(v);IM_OPEN={};imRender();});
+  chip.ondragstart=()=>{imRowDrag=dk;chip.classList.add('over');};chip.ondragend=()=>{imRowDrag=null;rc.querySelectorAll('.imchip').forEach(x=>x.classList.remove('over'));};
+  chip.ondragover=(e)=>{e.preventDefault();chip.classList.add('over');};chip.ondragleave=()=>chip.classList.remove('over');
+  chip.ondrop=(e)=>{e.preventDefault();if(!imRowDrag||imRowDrag===dk)return;const arr=IM_ROWS.filter(x=>x!==imRowDrag),at=arr.indexOf(dk);arr.splice(at<0?arr.length:at,0,imRowDrag);IM_ROWS=arr;imRowDrag=null;IM_OPEN={};imRender();};
+  rc.appendChild(chip);}
 function imRender(){const sec=document.getElementById('imSection');if(!sec||sec.style.display==='none')return;
   imSyncRows();const mets=imSelMets();
-  // 1 · METRIC (multi-select, grouped by stage)
+  // 1 · METRICS (multi-select, grouped by stage) — each becomes a stacked row
   const mc=document.getElementById('imMet');const stages=[...new Set(IM_METS.map(m=>m.stage))];
   mc.innerHTML=stages.map(st=>`<div class="imgrp"><span class="imgl">${st}</span>${IM_METS.filter(m=>m.stage===st).map(m=>`<button class="imchip${IM_SEL.includes(m.key)?' on':''}" data-k="${m.key}">${m.lab}</button>`).join('')}</div>`).join('');
   mc.querySelectorAll('.imchip').forEach(b=>b.onclick=()=>{const k=b.dataset.k,i=IM_SEL.indexOf(k);if(i<0)IM_SEL.push(k);else if(IM_SEL.length>1)IM_SEL.splice(i,1);IM_OPEN={};imRender();});
-  // 2 · BREAKDOWN chips (drag-nest) + ＋ ghosts
+  // 2 · BREAKDOWN chips (drag-nest · ▾ combine/pick · ＋ add)
   const rc=document.getElementById('imRows');rc.innerHTML='';const av=imSelDims(),layers=IM_ROWS.filter(d=>av.includes(d));
-  layers.forEach((dk,idx)=>{const chip=document.createElement('div');chip.className='imchip rc';chip.draggable=true;chip.dataset.l=dk;
-    chip.innerHTML=`<span class="grip">⋮⋮</span><span class="ord">${idx+1}</span>${IM_DIMLAB[dk]}`+(layers.length>1?'<span class="rm" title="remove">×</span>':'');
-    chip.onclick=(e)=>{if(e.target.classList.contains('rm')){IM_ROWS=IM_ROWS.filter(x=>x!==dk);IM_OPEN={};imRender();}};
-    chip.ondragstart=()=>{imRowDrag=dk;chip.classList.add('over');};chip.ondragend=()=>{imRowDrag=null;rc.querySelectorAll('.imchip').forEach(x=>x.classList.remove('over'));};
-    chip.ondragover=(e)=>{e.preventDefault();chip.classList.add('over');};chip.ondragleave=()=>chip.classList.remove('over');
-    chip.ondrop=(e)=>{e.preventDefault();if(!imRowDrag||imRowDrag===dk)return;const arr=IM_ROWS.filter(x=>x!==imRowDrag),at=arr.indexOf(dk);arr.splice(at<0?arr.length:at,0,imRowDrag);IM_ROWS=arr;imRowDrag=null;IM_OPEN={};imRender();};
-    rc.appendChild(chip);if(idx<layers.length-1){const a=document.createElement('span');a.className='imarrow';a.textContent='→';rc.appendChild(a);}});
+  layers.forEach((dk,idx)=>{imBreakChip(dk,idx,layers,rc);if(idx<layers.length-1){const a=document.createElement('span');a.className='imarrow';a.textContent='→';rc.appendChild(a);}});
   av.filter(d=>!IM_ROWS.includes(d)).forEach(d=>{const g=document.createElement('div');g.className='imghost';g.textContent='＋ '+IM_DIMLAB[d];g.onclick=()=>{IM_ROWS.push(d);IM_OPEN={};imRender();};rc.appendChild(g);});
-  // 3 · colour filter chips + Δ baseline label
+  // 3 · colour filter chips
   const cf=document.getElementById('imRag');if(cf){const L={r:'≥15% drop',o:'≥5%',y:'small',g:'up/flat'};cf.innerHTML=['r','o','y','g'].map(k=>`<button class="ragchip rag-${k}${IM_RAG[k]?' on':''}" data-k="${k}"><i class="rag ${k}"></i>${L[k]}</button>`).join('');cf.querySelectorAll('.ragchip').forEach(b=>b.onclick=()=>{IM_RAG[b.dataset.k]=!IM_RAG[b.dataset.k];imRender();});}
   const cl=document.getElementById('imCmpLbl');if(cl)cl.textContent=({last:'last wk',first:'first wk',peak:'peak',avg:'prior avg'})[CMP]||CMP;
-  // header: metric columns
-  const head=document.getElementById('imHead');head.innerHTML='<span class="imlbl imhcap">'+IM_ROWS.map(d=>IM_DIMLAB[d]).join(' › ')+'</span>'+mets.map(m=>`<span class="imcell imhcell" title="${m.stage}">${m.lab}<span class="imhst">${m.stage}</span></span>`).join('');
+  const head=document.getElementById('imHead');head.innerHTML=opsHeadHTML(IM_ROWS.map(d=>IM_DIMLAB[d]).join(' › ')+'  ·  '+mets.length+' metric'+(mets.length>1?'s':''));
   const grid=document.getElementById('imGrid');grid.innerHTML='';
   const dims=IM_ROWS.filter(d=>av.includes(d));if(!dims.length){grid.innerHTML='<div class="empty">pick a breakdown above</div>';return;}
-  // total row
-  const trow=document.createElement('div');trow.className='frow imx imxtot';
-  trow.innerHTML='<span class="chev leaf">▶</span><span class="imlbl">▦ Total</span>'+mets.map(m=>{const s=m.series({});const dp=s.disp?deltaPct(s.disp):null;if(!dp)return '<span class="imcell na">—</span>';const f=imFmtCell(m,dp);return `<span class="imcell rag-${imRag(dp)}"><b class="imd ${dp.cls}">${f.txt}</b><span class="imnow">${f.now}</span></span>`;}).join('');
-  grid.appendChild(trow);
-  imMatrixDrill(grid,{},dims,0,15,'im');}
+  // ▦ Total header + metric stack
+  const thdr=document.createElement('div');thdr.className='frow imghdr imxtot';thdr.innerHTML='<span class="chev leaf">▶</span><span class="lbl imgl2">▦ Total · all</span>';grid.appendChild(thdr);
+  mets.forEach(m=>imMetRow(grid,m,{},37));
+  imStackDrill(grid,{},dims,0,15,'im');}
 function setViewMode(m){VIEWM=m;document.querySelectorAll('#viewmode button').forEach(b=>b.classList.toggle('on',b.dataset.m===m));
   const im=m==='im';['leadSection','bkSection','opsSection'].forEach(id=>{const e=document.getElementById(id);if(e)e.style.display=im?'none':'';});
   const s=document.getElementById('imSection');if(s)s.style.display=im?'':'none';
