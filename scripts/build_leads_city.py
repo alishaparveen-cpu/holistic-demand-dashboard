@@ -147,14 +147,11 @@ lead_attr AS (
     CASE WHEN LOWER(COALESCE(l.utm_campaign,''))='inbound_call'
          THEN RIGHT(REGEXP_REPLACE(COALESCE(l.utm_medium,''),'[^0-9]',''),10) ELSE '' END AS number,
     CASE WHEN COALESCE(l.source_url,'')<>'' THEN LEFT(REGEXP_REPLACE(COALESCE(l.source_url,''),'[?#].*$',''),90) ELSE '' END AS url,
-    -- AI-audit fields apply ONLY to CALL leads (inbound_call) — a web/whatsapp lead must not inherit the phone's call audit
-    CASE WHEN LOWER(COALESCE(l.utm_campaign,''))<>'inbound_call' THEN 'unknown'
-         WHEN cai.cat IN ('SEXUAL_HEALTH_GENERAL','STI','MENTAL_HEALTH') THEN 'in-scope'
+    CASE WHEN cai.cat IN ('SEXUAL_HEALTH_GENERAL','STI','MENTAL_HEALTH') THEN 'in-scope'
          WHEN cai.cat='OTHER' THEN 'out-of-scope' ELSE 'unknown' END AS relevance,
-    CASE WHEN LOWER(COALESCE(l.utm_campaign,''))='inbound_call' THEN COALESCE(cai.intent,'') ELSE '' END AS intent,
-    CASE WHEN LOWER(COALESCE(l.utm_campaign,''))='inbound_call' THEN COALESCE(cai.strength,'') ELSE '' END AS strength,
-    CASE WHEN LOWER(COALESCE(l.utm_campaign,''))<>'inbound_call' THEN 'na'
-         WHEN cai.cat='SEXUAL_HEALTH_GENERAL' THEN 'SH' WHEN cai.cat='MENTAL_HEALTH' THEN 'MH'
+    COALESCE(cai.intent,'') AS intent,
+    COALESCE(cai.strength,'') AS strength,
+    CASE WHEN cai.cat='SEXUAL_HEALTH_GENERAL' THEN 'SH' WHEN cai.cat='MENTAL_HEALTH' THEN 'MH'
          WHEN cai.cat='STI' THEN 'STI' WHEN cai.cat='OTHER' THEN 'Other'
          WHEN cai.cat IS NOT NULL THEN 'unknown' ELSE 'na' END AS category
   FROM allo_persons.lead l

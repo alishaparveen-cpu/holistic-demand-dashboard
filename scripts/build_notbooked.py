@@ -105,18 +105,15 @@ lead_attr AS (
          THEN RIGHT(REGEXP_REPLACE(COALESCE(l.utm_medium,''),'[^0-9]',''),10) ELSE '' END AS number,
     CASE WHEN LOWER(COALESCE(l.utm_source,''))='gmb' AND ({CAMPLIKE})   -- GMB-web landing page (exact URL)
          THEN LEFT(REGEXP_REPLACE(COALESCE(l.source_url,''),'[?#].*$',''), 90) ELSE '' END AS url,
-    -- AI-audit fields (relevance / intent / strength / category) apply ONLY to CALL leads (the audit is of an inbound call).
-    -- A web/whatsapp/book lead whose phone ALSO called must NOT inherit that call's audit → gate everything on inbound_call.
-    CASE WHEN LOWER(COALESCE(l.utm_campaign,''))<>'inbound_call' THEN 'unknown'
-         WHEN cc.cat IN ('SEXUAL_HEALTH_GENERAL','STI','MENTAL_HEALTH') THEN 'in-scope'
-         WHEN cc.cat = 'OTHER' THEN 'out-of-scope'
-         ELSE 'unknown' END AS relevance,
-    CASE WHEN LOWER(COALESCE(l.utm_campaign,''))='inbound_call' THEN COALESCE(cc.intent,'') ELSE '' END AS intent,
-    CASE WHEN LOWER(COALESCE(l.utm_campaign,''))='inbound_call' THEN COALESCE(cc.strength,'') ELSE '' END AS strength,
-    CASE WHEN LOWER(COALESCE(l.utm_campaign,''))<>'inbound_call' THEN 'na'
-         WHEN cc.cat='SEXUAL_HEALTH_GENERAL' THEN 'SH' WHEN cc.cat='MENTAL_HEALTH' THEN 'MH'
+    CASE   -- RELEVANCE from the call's AI diagnosis category (per phone — a web lead whose phone also called keeps that audit, by design)
+      WHEN cc.cat IN ('SEXUAL_HEALTH_GENERAL','STI','MENTAL_HEALTH') THEN 'in-scope'
+      WHEN cc.cat = 'OTHER' THEN 'out-of-scope'          -- AI flagged the concern as outside Allo's lines of care
+      ELSE 'unknown' END AS relevance,                   -- web lead / unaudited call / category not-mentioned
+    COALESCE(cc.intent,'') AS intent,                    -- what the caller wanted (AI): TALK_TO_DOCTOR / NEEDS_TESTS / …
+    COALESCE(cc.strength,'') AS strength,                -- AI patient_intent_strength: STRONG / LOW / COULD_NOT_DETERMINE / NOT_A_PATIENT
+    CASE WHEN cc.cat='SEXUAL_HEALTH_GENERAL' THEN 'SH' WHEN cc.cat='MENTAL_HEALTH' THEN 'MH'
          WHEN cc.cat='STI' THEN 'STI' WHEN cc.cat='OTHER' THEN 'Other'
-         WHEN cc.cat IS NOT NULL THEN 'unknown' ELSE 'na' END AS category   -- call-only AI diagnosis category
+         WHEN cc.cat IS NOT NULL THEN 'unknown' ELSE 'na' END AS category   -- AI diagnosis category of the call
   FROM allo_persons.lead l
   LEFT JOIN call_loc cl ON cl.ph = RIGHT(REGEXP_REPLACE(COALESCE(l.phone_no,''),'[^0-9]',''),10)
   LEFT JOIN call_cat cc ON cc.ph = RIGHT(REGEXP_REPLACE(COALESCE(l.phone_no,''),'[^0-9]',''),10)
