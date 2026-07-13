@@ -475,6 +475,24 @@ function renderNumList(container,sub,depth){
     tg.innerHTML=(open?'▾ ':'▸ ')+head()+(open?'':' <span style="opacity:.7">(click to expand)</span>');};
   container.appendChild(nl);
 }
+// exact web URLs under a web node (shown inline when expanded) — the web analogue of renderNumList, so you see WHICH landing pages
+function renderUrlList(container,sub,depth){
+  const urls={};let blank=0;
+  sub.forEach(c=>{const s=sumT(cellArr(c));if(!s)return;if(c.url)urls[c.url]=(urls[c.url]||0)+s;else blank+=s;});
+  const list=Object.entries(urls).sort((a,b)=>b[1]-a[1]);
+  if(!list.length)return;   // nothing to expand if no URL captured
+  const short=u=>{const x=(''+u).replace(/^https?:\/\//,'').replace(/\/$/,'');return x.length>64?x.slice(0,64)+'…':x;};
+  const nl=document.createElement('div');nl.className='numlist';nl.style.paddingLeft=(15+depth*20)+'px';
+  const cnt=list.length+(blank?1:0);
+  const body=list.map(([u,c])=>`<div class="numrow">🌐 <a href="${u.replace(/"/g,'&quot;')}" target="_blank" rel="noopener" style="color:inherit;text-decoration:none" title="${u.replace(/"/g,'&quot;')}">${short(u)}</a> &nbsp;<b>${c}</b></div>`).join('')+(blank?`<div class="numrow out">🌐 no URL captured &nbsp;${blank}</div>`:'');
+  const head=()=>'🌐 '+cnt+' web '+(cnt===1?'link':'links')+' · last '+NWK+' wks';
+  nl.innerHTML='<div class="numtoggle" style="color:var(--faint);margin-bottom:2px;cursor:pointer;user-select:none">▸ '+head()+' <span style="opacity:.7">(click to expand)</span></div>'
+    +'<div class="numbody" style="display:none">'+body+'</div>';
+  const tg=nl.querySelector('.numtoggle'),bd=nl.querySelector('.numbody');
+  tg.onclick=e=>{e.stopPropagation();const open=bd.style.display==='none';bd.style.display=open?'block':'none';
+    tg.innerHTML=(open?'▾ ':'▸ ')+head()+(open?'':' <span style="opacity:.7">(click to expand)</span>');};
+  container.appendChild(nl);
+}
 // ---- recursive pivot render ----
 // render units for a layer = combine-groups (merged values) first, then remaining ungrouped selected values as singletons
 function pivotUnits(dk,P){const dim=DIMS[dk],combs=(P.comb&&P.comb[dk])||[],inC=new Set();
@@ -543,11 +561,13 @@ function renderLevel(container,cells,depth,parentTot,parentWk,path,pathVals,P){
         if(showTrip){   // leads: booked / not-booked / book-rate% rows first, then any deeper layer
           appendLeadTriplet(kidbox,sub,15+(depth+1)*20);
           if(single&&dk==='medium'&&vk==='call'&&P.order[depth+1]!=='number')renderNumList(kidbox,sub,depth+1);
+          if(single&&dk==='medium'&&vk==='web')renderUrlList(kidbox,sub,depth+1);   // web → exact landing-page URLs (like calls → numbers)
           if(!last)renderLevel(kidbox,sub,depth+1,t,wk,key,pv2,P);
         }
         else if(callExp)renderNumbers(kidbox,sub,depth+1,t,P);
         else {
-          if(P.mode==='leads'&&single&&dk==='medium'&&vk==='call'&&P.order[depth+1]!=='number')renderNumList(kidbox,sub,depth+1);
+          if(single&&dk==='medium'&&vk==='call'&&P.order[depth+1]!=='number')renderNumList(kidbox,sub,depth+1);
+          if(single&&dk==='medium'&&vk==='web')renderUrlList(kidbox,sub,depth+1);   // web → exact landing-page URLs (② bookings too)
           renderLevel(kidbox,sub,depth+1,t,wk,key,pv2,P);
         }
       }
