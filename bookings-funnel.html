@@ -721,14 +721,17 @@ function renderB2D(units){units=units||opsUnits();const flow=document.getElement
   ctl.querySelectorAll('.dlchip').forEach(b=>b.onclick=()=>{const g=b.dataset.g,i=B2D_GRAIN.indexOf(g);if(i<0)B2D_GRAIN.push(g);else if(B2D_GRAIN.length>1)B2D_GRAIN.splice(i,1);renderB2D();});
   const off=units.filter(u=>!u.online),onl=units.filter(u=>u.online);   // break every stage into the active segment(s): Both → Offline + Online; Offline/Online toggle → one labelled row
   const segRows=pick=>{if(off.length)opsRow(flow,'Offline · clinic',opsSumU(off,pick),{sub:true,pad:52,col:'#2E7D5B'});if(onl.length)opsRow(flow,'Online · telehealth',opsSumU(onl,pick),{sub:true,pad:52,col:'#7C5CBF'});};
+  const segRate=(numPick,denPick)=>{if(!(off.length&&onl.length))return;   // per-segment Book→Done % (only meaningful with both segments)
+    opsRateRow(flow,'↳ Offline · clinic',opsSumU(off,numPick),opsSumU(off,denPick),{sub:true,pad:52,col:'#2E7D5B'});
+    opsRateRow(flow,'↳ Online · telehealth',opsSumU(onl,numPick),opsSumU(onl,denPick),{sub:true,pad:52,col:'#7C5CBF'});};
   if(B2D_GRAIN.includes('patient')){const bkP=opsSumU(units,u=>u.booked),dnP=opsSumU(units,u=>u.done);
     opsRow(flow,'Booked · SC — patients',bkP,{stage:true,col:'#2E7D5B'});segRows(u=>u.booked);
     opsRow(flow,'Done · completed — patients',dnP,{sub:true,col:'#C87B2E'});segRows(u=>u.done);
-    opsRateRow(flow,'Book → Done % · patient',dnP,bkP,{sub:true});}
+    opsRateRow(flow,'Book → Done % · patient',dnP,bkP,{sub:true});segRate(u=>u.done,u=>u.booked);}
   if(hasSlot&&B2D_GRAIN.includes('slot')){const bkS=opsSumU(units,u=>u.bookedSlots||u.booked),dnS=opsSumU(units,u=>u.doneSlots||u.done);
     opsRow(flow,'Booked · SC — slots',bkS,{stage:true,col:'#3E7CB1'});segRows(u=>u.bookedSlots||u.booked);
     opsRow(flow,'Done · completed — slots',dnS,{sub:true,col:'#C87B2E'});segRows(u=>u.doneSlots||u.done);
-    opsRateRow(flow,'Book → Done % · slot',dnS,bkS,{sub:true});
+    opsRateRow(flow,'Book → Done % · slot',dnS,bkS,{sub:true});segRate(u=>u.doneSlots||u.done,u=>u.bookedSlots||u.booked);
     renderSlotStatus(flow,units);}}
 // ④ slot-outcome breakdown — where every booked slot ended up (Completed / Scheduled / No-show / Rescheduled / Cancelled). Offline clinic only (online cube carries no slot status). Lights up once quick_diag has done.slot_status.
 const SLOT_ST=[['COMPLETED','Completed','#2E7D5B'],['SCHEDULED','Scheduled · upcoming/open','#3E7CB1'],['No Show','No-show','#B8503C'],['Reschedule','Rescheduled','#C87B2E'],['CANCELLED','Cancelled','#9aa3b0'],['Others','Other','#b0b6c0']];
