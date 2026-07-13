@@ -554,6 +554,7 @@ function renderLevel(container,cells,depth,parentTot,parentWk,path,pathVals,P){
     container.appendChild(row);
     {const zb=row.querySelector('.zoom');zb.innerHTML=sparkline(wk);const crumb=Object.entries(pathVals).map(([d2,v2])=>unitLbl(d2,v2,P));crumb.push(u.label);
      zb.onclick=(e)=>{e.stopPropagation();openChart(crumb.join(' › '),wk,col);};}
+    if(PSHARE[P.mode]&&parentWk&&sumT(parentWk))appendShareRow(container,wk,parentWk,15+(depth+1)*20);   // ↳ share of parent % (opt-in)
     if(hasKids){
       const kidbox=document.createElement('div');kidbox.style.display=P.open[key]?'block':'none';container.appendChild(kidbox);
       row.onclick=()=>{P.open[key]=!P.open[key];draw(P);};
@@ -623,6 +624,17 @@ function sparkline(wk){const ix=wkIdxs(),d=dv(wk),vals=ix.map(i=>d[i]||0),n=vals
   const pts=vals.map((v,i)=>x(i).toFixed(1)+','+y(v).toFixed(1)).join(' ');
   return '<svg width="'+W+'" height="'+H+'" viewBox="0 0 '+W+' '+H+'"><polyline points="'+pts+'" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/><circle cx="'+x(n-1).toFixed(1)+'" cy="'+y(vals[n-1]).toFixed(1)+'" r="1.7" fill="currentColor"/></svg>';}
 // leads: ↳ booked / ↳ not booked / → book rate % as weekly rows under a node (booked, notbooked shown even when 0)
+let PSHARE={leads:false,bookings:false};   // per-section '% share of parent' toggle for ① leads / ② bookings (mirrors the ops sections)
+// ↳ share of parent % as a weekly trend row under a drilled node (opt-in via the '% share' button)
+function appendShareRow(container,wk,parentWk,padPx){
+  const gv=dv(wk),pv=dv(parentWk),arr=gv.map((v,i)=>pv[i]?100*v/pv[i]:null);
+  const row=document.createElement('div');row.className='frow wkly subr brate';row.style.paddingLeft=padPx+'px';
+  let rr;
+  if(WEEKLY){const ix=wkIdxs();const dp=deltaPct(arr);rr=ix.map((i,j)=>`<span class="wk${j===ix.length-1?' last':''}">${arr[i]!=null?Math.round(arr[i])+'%':'·'}</span>`).join('')+`<span class="delta ${dp.cls}">${dp.txt}</span>${bnCols(dp,true)}`;}
+  else rr=`<span class="barwrap"></span><span class="cnt">${pv[WKOFF]?Math.round(100*gv[WKOFF]/pv[WKOFF])+'%':'·'}</span><span class="pct"></span>`;
+  row.innerHTML=`<span class="chev leaf">▶</span><span class="lbl">↳ share of parent %</span>`+rr+`<span class="zoom" title="plot trend">${ZSVG}</span>`;
+  container.appendChild(row);{const zb=row.querySelector('.zoom');zb.innerHTML=sparkline(arr);zb.onclick=()=>openChart('share of parent %',arr,'#1F6F5C');}
+}
 function appendLeadTriplet(container,cells,padPx){
   const gWk=weekArr(cells),bkW0=weekArr(cells.filter(c=>c.status==='booked'));
   const gW=dv(gWk),bkW=dv(bkW0),nbW=gW.map((t,i)=>t-(bkW[i]||0)),rateArr=gW.map((t,i)=>t?Math.round(100*bkW[i]/t):0);   // cumulative-aware (week-to-date)
@@ -1032,7 +1044,8 @@ function draw(P){
 let dragIdx=null,dragP=null;
 function renderLayerBar(P){
   const bar=P.els.bar;
-  [...bar.querySelectorAll('.chip,.arrow,.ghost')].forEach(c=>c.remove());   // clear chips, arrows, ghosts
+  [...bar.querySelectorAll('.chip,.arrow,.ghost,.shbtn')].forEach(c=>c.remove());   // clear chips, arrows, ghosts, share toggle
+  {const shb=document.createElement('button');shb.className='dlchip shbtn'+(PSHARE[P.mode]?' on':'');shb.textContent='% share';shb.title='show each row’s share of its parent as a weekly trend (off = decluttered)';shb.style.margin='0 10px 0 4px';shb.onclick=()=>{PSHARE[P.mode]=!PSHARE[P.mode];draw(P);};const lead=bar.querySelector('.lead');lead.after(shb);}
   P.order.forEach((dk,i)=>{
     const dim=DIMS[dk],vals=dim.values.filter(v=>!P.present[dk]||P.present[dk].has(v.k)),ntot=vals.length,nsel=vals.filter(v=>P.sel[dk].has(v.k)).length;
     const chip=document.createElement('div');chip.className='chip';chip.draggable=true;chip.dataset.i=i;
