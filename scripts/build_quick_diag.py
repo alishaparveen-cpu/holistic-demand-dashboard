@@ -205,6 +205,10 @@ def avail_block(key, slug=None):
         for dd in avd["by_doctor"].values():
             oh = add(oh, remap(dd.get("rostered_hrs", []), aw)); sh = add(sh, remap(dd.get("shrink_hrs", []), aw))
         base["rostered_hrs"] = oh; base["shrink_hrs"] = sh
+    # opened / net-SC hours: prefer the ops-roster cube (REC, matches the Macro sheet); fall back to the availability cube (AV, current)
+    # for weeks the ops-roster grid hasn't reached yet — same realized-roster methodology, so no discontinuity. (net-Rpt + dead-time exist only in REC.)
+    if "opened_ash" in base: base["opened_ash"] = [base["opened_ash"][i] or base["avail_hours"][i] for i in range(NW)]
+    if "net_sc_hrs_r" in base: base["net_sc_hrs_r"] = [base["net_sc_hrs_r"][i] or base["hours"][i] for i in range(NW)]
     return base
 
 def avail_doctor_block(slug, dr):
