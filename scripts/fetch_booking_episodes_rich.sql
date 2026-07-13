@@ -46,7 +46,7 @@ joined AS (
       WHEN DATEDIFF(day,l.created_at,s.created_at) < 14  THEN 'wk1'
       WHEN DATEDIFF(day,l.created_at,s.created_at) < 28  THEN 'wk2_4'
       WHEN DATEDIFF(day,l.created_at,s.created_at) < 90  THEN 'mo1_3'
-      ELSE 'mo3' END AS lead_age,   -- NOTE: lead_age is only truly meaningful for ptype='new'; rebook/relapse should be read via the return-gap (rg)
+      ELSE 'mo3' END AS lead_age,   -- INDEPENDENT of ptype: 'fresh' = a genuinely new lead (0-6d) drove THIS booking — valid for any ptype incl. a lapsed patient who re-inquired & rebooked. 'nolead' = no lead drove it. (return gap = rg, a separate axis.)
     CASE
       WHEN l.gclid IS NOT NULL AND l.gclid<>'' THEN 'Google Ads'
       WHEN LOWER(COALESCE(l.utm_source,''))='google' AND LOWER(COALESCE(l.utm_medium,'')) LIKE '%cpc%' THEN 'Google Ads'
