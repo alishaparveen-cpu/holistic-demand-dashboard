@@ -26,7 +26,7 @@ fu AS (
     COALESCE(dl.city,'Online') AS city, COALESCE(dl.locality,'Online') AS locality
   FROM allo_consultations.appointments apt
   JOIN allo_consultations.types t ON apt.type_id=t.id AND t.deleted_at IS NULL AND t.name='Follow Up'
-  JOIN allo_health.locations loc ON apt.location_id=loc.id AND loc.deleted_at IS NULL AND lower(loc.name) LIKE '%online%'
+  JOIN allo_health.locations loc ON apt.location_id=loc.id AND loc.deleted_at IS NULL AND apt.location_id IN ({TELE})   -- ONLINE = 2 telehealth UUIDs (sheet definition; was loc.name LIKE)
   LEFT JOIN allo_persons.providers pro ON apt.provider_id=pro.id AND pro.deleted_at IS NULL
   LEFT JOIN doctor_location dl ON apt.provider_id=dl.provider_id AND DATE(apt.start_time+INTERVAL '5.5 hours')=dl.block_dt AND apt.block_id=dl.block_id
   WHERE apt.deleted_at IS NULL

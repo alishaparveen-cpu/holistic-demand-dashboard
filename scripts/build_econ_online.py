@@ -97,7 +97,7 @@ appt_level AS (
   LEFT JOIN iid ON iid.encounter_id=enc.id LEFT JOIN iil ON iil.encounter_id=enc.id LEFT JOIN iit ON iit.encounter_id=enc.id LEFT JOIN cons_fee cf ON cf.cons_id=ap.consultation_id
   WHERE ap.deleted_at IS NULL AND ap.status IN ('COMPLETED','RECONSULTED')
     AND typ.name IN ('Screening Call','Follow Up') AND ap.consultation_id IS NOT NULL
-    AND lower(aploc.name) LIKE '%online%'
+    AND ap.location_id IN ({TELE})   -- ONLINE = the 2 telehealth location UUIDs (sheet definition; name-match undercounted per city)
     AND ap.start_time+INTERVAL '5.5 hours' >= cr.start_range
   GROUP BY ap.id, date_trunc('week', ap.start_time+INTERVAL '5.5 hours')::date, COALESCE(pro.name,'—'), COALESCE(dl.city,'Online'), COALESCE(dl.locality,'Online'), COALESCE(pf.diag_cat,'oth'), typ.name, aploc.id)
 SELECT segment, city, locality, doctor, week_start, diagnosis,

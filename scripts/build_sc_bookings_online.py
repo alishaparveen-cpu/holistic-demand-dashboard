@@ -14,6 +14,7 @@ import os, sys, subprocess, json
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RQ = os.path.join(ROOT, "scripts", "redshift_query.py")
 START_WK = "2025-07-01"
+TELE = "'c7d8c9d2-f389-4e8f-a260-71110195b83f','ffe8d849-3099-48fe-a2df-e324c4befe56'"   # the 2 telehealth location UUIDs = ONLINE (matches the sheet's RD-Pat-level definition; name-match undercounted)
 
 SQL = f"""
 WITH doctor_location AS (
@@ -55,11 +56,11 @@ sc_online AS (
     row_number() over (partition by apt.patient_id order by apt.created_at asc) AS attempt_rnk
   FROM allo_consultations.appointments apt
   JOIN allo_consultations.types t ON apt.type_id=t.id AND t.deleted_at IS NULL AND t.name='Screening Call'
-  JOIN allo_health.locations loc ON apt.location_id=loc.id AND loc.deleted_at IS NULL AND lower(loc.name) LIKE '%online%'
   LEFT JOIN allo_persons.providers pro ON apt.provider_id=pro.id AND pro.deleted_at IS NULL
   LEFT JOIN doctor_location dl ON apt.provider_id=dl.provider_id AND DATE(apt.start_time+INTERVAL '5.5 hours')=dl.block_dt AND apt.block_id=dl.block_id
   LEFT JOIN paperform_qa pf ON pf.patient_id=apt.patient_id
   WHERE apt.deleted_at IS NULL
+    AND apt.location_id IN ({TELE})   -- ONLINE = the 2 telehealth location UUIDs (sheet definition); city/locality from the doctor's block that day (dl), else 'Online'
 ),
 lead_first AS (
   SELECT patient_id, date_trunc('week', lead_crt)::date AS lead_week,

@@ -2,7 +2,7 @@
 """Build data_sc_bookings.json — SC-offline booking funnel, reconciled to the L2 "Lead to Book funnel".
 
 METHODOLOGY = L2 Lead-to-Book (ADDITIVE):
-  - Screening Call, offline = lower(loc.name) NOT LIKE '%online%'
+  - Screening Call, offline = location_id NOT IN the 2 telehealth UUIDs (matches the sheet's offline_flag)
   - attempt_rnk = row_number over the patient's SC-offline appts by created_at (first SC = first-time)
   - base_patient_week: each patient assigned to ONE (clinic) per service week = their earliest-attempt clinic
     → so clinic totals SUM to city SUM to national (no non-additivity, exact at every grain incl. ad-hoc)
@@ -24,6 +24,7 @@ import os, sys, subprocess, json
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RQ = os.path.join(ROOT, "scripts", "redshift_query.py")
 START_WK = "2025-07-01"
+TELE = "'c7d8c9d2-f389-4e8f-a260-71110195b83f','ffe8d849-3099-48fe-a2df-e324c4befe56'"   # 2 telehealth location UUIDs = ONLINE; OFFLINE = everything else (matches the sheet's offline_flag; must mirror the online cube so the two don't double-count)
 
 SQL = f"""
 WITH sc_offline AS (
@@ -42,9 +43,9 @@ WITH sc_offline AS (
     row_number() over (partition by apt.patient_id order by apt.created_at asc) AS attempt_rnk
   FROM allo_consultations.appointments apt
   JOIN allo_consultations.types t ON apt.type_id=t.id AND t.deleted_at IS NULL AND t.name='Screening Call'
-  JOIN allo_health.locations loc ON apt.location_id=loc.id AND loc.deleted_at IS NULL AND lower(loc.name) NOT LIKE '%online%'
+  JOIN allo_health.locations loc ON apt.location_id=loc.id AND loc.deleted_at IS NULL
   LEFT JOIN allo_persons.providers pro ON apt.provider_id=pro.id AND pro.deleted_at IS NULL
-  WHERE apt.deleted_at IS NULL
+  WHERE apt.deleted_at IS NULL AND apt.location_id NOT IN ({TELE})   -- OFFLINE = not one of the 2 telehealth UUIDs (mirrors the online cube; was loc.name NOT LIKE '%online%' which undercounted online → double-counted here)
 ),
 lead_first AS (   -- patient's first-ever lead: week + source bucket (L2 Lead-to-Book source logic, enriched)
   SELECT patient_id, date_trunc('week', lead_crt)::date AS lead_week,

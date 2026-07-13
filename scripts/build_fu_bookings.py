@@ -13,6 +13,7 @@ import os, sys, subprocess, json
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RQ = os.path.join(ROOT, "scripts", "redshift_query.py")
 START_WK = "2025-07-01"
+TELE = "'c7d8c9d2-f389-4e8f-a260-71110195b83f','ffe8d849-3099-48fe-a2df-e324c4befe56'"   # 2 telehealth UUIDs = ONLINE; OFFLINE = everything else (mirror the online cube; matches sheet offline_flag)
 
 SQL = f"""
 WITH fu AS (
@@ -27,7 +28,7 @@ WITH fu AS (
       order by apt.start_time asc) AS rn
   FROM allo_consultations.appointments apt
   JOIN allo_consultations.types t ON apt.type_id=t.id AND t.deleted_at IS NULL AND t.name='Follow Up'
-  JOIN allo_health.locations loc ON apt.location_id=loc.id AND loc.deleted_at IS NULL AND lower(loc.name) NOT LIKE '%online%'
+  JOIN allo_health.locations loc ON apt.location_id=loc.id AND loc.deleted_at IS NULL AND apt.location_id NOT IN ({TELE})   -- OFFLINE = not the 2 telehealth UUIDs (mirror online cube; was loc.name NOT LIKE)
   LEFT JOIN allo_persons.providers pro ON apt.provider_id=pro.id AND pro.deleted_at IS NULL
   WHERE apt.deleted_at IS NULL
 )

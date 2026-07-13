@@ -188,19 +188,19 @@ booked_any AS (   -- phone -> earliest SC booking ANYWHERE (used for no-city lea
   WHERE a.deleted_at IS NULL
   GROUP BY 1
 ),
-booked_online AS (   -- phone booked an ONLINE (telehealth) SC anywhere
+booked_online AS (   -- phone booked an ONLINE (telehealth) SC anywhere = the 2 telehealth UUIDs (sheet definition)
   SELECT DISTINCT RIGHT(REGEXP_REPLACE(COALESCE(p.phone_no,''),'[^0-9]',''),10) AS ph
   FROM allo_consultations.appointments a
   JOIN allo_consultations.types t ON a.type_id=t.id AND t.name='Screening Call'
-  JOIN allo_health.locations loc ON a.location_id=loc.id AND loc.deleted_at IS NULL AND LOWER(loc.name) LIKE '%online%'
-  JOIN allo_persons.patient p ON p.id=a.patient_id WHERE a.deleted_at IS NULL
+  JOIN allo_persons.patient p ON p.id=a.patient_id
+  WHERE a.deleted_at IS NULL AND a.location_id IN ('c7d8c9d2-f389-4e8f-a260-71110195b83f','ffe8d849-3099-48fe-a2df-e324c4befe56')
 ),
-booked_offline_any AS (   -- phone booked a PHYSICAL (offline) SC anywhere
+booked_offline_any AS (   -- phone booked a PHYSICAL (offline) SC anywhere = NOT the 2 telehealth UUIDs
   SELECT DISTINCT RIGHT(REGEXP_REPLACE(COALESCE(p.phone_no,''),'[^0-9]',''),10) AS ph
   FROM allo_consultations.appointments a
   JOIN allo_consultations.types t ON a.type_id=t.id AND t.name='Screening Call'
-  JOIN allo_health.locations loc ON a.location_id=loc.id AND loc.deleted_at IS NULL AND LOWER(loc.name) NOT LIKE '%online%'
-  JOIN allo_persons.patient p ON p.id=a.patient_id WHERE a.deleted_at IS NULL
+  JOIN allo_persons.patient p ON p.id=a.patient_id
+  WHERE a.deleted_at IS NULL AND a.location_id NOT IN ('c7d8c9d2-f389-4e8f-a260-71110195b83f','ffe8d849-3099-48fe-a2df-e324c4befe56')
 ),
 verified AS (   -- phone that has an Allo patient record (a patient_id was created), regardless of booking → "verified lead"
   SELECT DISTINCT RIGHT(REGEXP_REPLACE(COALESCE(phone_no,''),'[^0-9]',''),10) AS ph
