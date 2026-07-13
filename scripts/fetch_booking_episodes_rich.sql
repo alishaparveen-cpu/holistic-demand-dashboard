@@ -40,12 +40,13 @@ joined AS (
   SELECT s.city, s.locality AS clinic, s.wk,
     CASE WHEN s.wk_seq=1 THEN 'new' WHEN s.prior_done>0 THEN 'relapse' ELSE 'reattempt' END AS ptype,
     CASE
-      WHEN l.id IS NULL OR l.created_at IS NULL THEN 'fresh'
-      WHEN DATEDIFF(day,l.created_at,s.created_at) < 7  THEN 'fresh'
-      WHEN DATEDIFF(day,l.created_at,s.created_at) < 14 THEN 'wk1'
-      WHEN DATEDIFF(day,l.created_at,s.created_at) < 28 THEN 'wk2_4'
-      WHEN DATEDIFF(day,l.created_at,s.created_at) < 90 THEN 'mo1_3'
-      ELSE 'mo3' END AS lead_age,
+      WHEN l.id IS NULL OR l.created_at IS NULL          THEN 'nolead'   -- no attributable lead drove this booking (walk-in / returning / untracked) — NOT 'fresh'
+      WHEN DATEDIFF(day,l.created_at,s.created_at) < 0   THEN 'nolead'   -- the patient's profile lead was created AFTER this booking → it did not drive it
+      WHEN DATEDIFF(day,l.created_at,s.created_at) < 7   THEN 'fresh'
+      WHEN DATEDIFF(day,l.created_at,s.created_at) < 14  THEN 'wk1'
+      WHEN DATEDIFF(day,l.created_at,s.created_at) < 28  THEN 'wk2_4'
+      WHEN DATEDIFF(day,l.created_at,s.created_at) < 90  THEN 'mo1_3'
+      ELSE 'mo3' END AS lead_age,   -- NOTE: lead_age is only truly meaningful for ptype='new'; rebook/relapse should be read via the return-gap (rg)
     CASE
       WHEN l.gclid IS NOT NULL AND l.gclid<>'' THEN 'Google Ads'
       WHEN LOWER(COALESCE(l.utm_source,''))='google' AND LOWER(COALESCE(l.utm_medium,'')) LIKE '%cpc%' THEN 'Google Ads'
