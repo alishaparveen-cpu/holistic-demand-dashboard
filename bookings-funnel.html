@@ -111,6 +111,8 @@
   .frow.opsstage{border-top:1px solid var(--line2)}
   .frow.opsstage .lbl{font-weight:700;color:var(--ink)}
   .frow.opssub .lbl{color:var(--muted);font-size:12.5px}
+  .frow.opsnode{border-top:1px solid var(--line2)}
+  .frow.opsnode .lbl{font-weight:650;color:var(--ink)}
   .dlchip{border:1px solid var(--line);background:var(--sheet);color:var(--muted);border-radius:6px;padding:2px 10px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;margin-right:4px}
   .dlchip.on{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 12%,var(--sheet));color:var(--accent);cursor:grab}
   .dlchip.on.drag{opacity:.4}.dlchip.over{box-shadow:-2px 0 0 var(--accent)}
@@ -235,6 +237,7 @@
 
   <!-- ④ Book → Done -->
   <h2 class="sech" style="margin-top:32px">④ Book → Done <span class="opsbadge">OPS</span></h2>
+  <div class="layerbar" id="b2dLayerLbl" style="margin-top:2px"></div>
   <div class="fmwrap"><div class="head" id="b2dHead"></div><div id="b2dFlow"></div></div>
 
   <!-- ⑤ Done -->
@@ -244,6 +247,7 @@
 
   <!-- ⑥ Value · purchased & revenue -->
   <h2 class="sech" style="margin-top:32px">⑥ Value · purchased & revenue <span class="opsbadge">OPS · done-week invoiced</span></h2>
+  <div class="layerbar" id="valLayerLbl" style="margin-top:2px"></div>
   <div class="fmwrap"><div class="head" id="valHead"></div><div id="valFlow"></div></div>
   </div>
 
@@ -701,11 +705,66 @@ function opsDrill(container,recs,layers,depth,pad,kp,parentDisp){
     const row=opsBuildRow(v,av,{col,pad,expandable:!last&&!single,open:op,rawArr:raw});
     container.appendChild(row);
     // share-of-parent as a WEEKLY % trend row (like leads → book rate %) — shows whether this row's contribution is growing/shrinking week-on-week
-    if(parentDisp&&!single){const shareDisp=av.map((x,i)=>parentDisp[i]?100*x/parentDisp[i]:null);
+    if(OPS_SHARE.done&&parentDisp&&!single){const shareDisp=av.map((x,i)=>parentDisp[i]?100*x/parentDisp[i]:null);
       const srow=opsBuildRow('↳ share of parent %',shareDisp,{col:'#1F6F5C',pad:pad+18,pct:true,rawArr:shareDisp});srow.classList.add('brate');container.appendChild(srow);}
     if(!last){const kb=document.createElement('div');kb.style.display=op?'block':'none';container.appendChild(kb);
       if(!single)row.onclick=(e)=>{if(e.target.closest('.zoom'))return;OPS_OPEN[key]=!OPS_OPEN[key];renderDone();};
       if(op)opsDrill(kb,sub,layers,depth+1,pad+18,key,av);}
+  });}
+// ===== generalized ops funnel-drill (④ Book→Done · ⑥ Value) — layer bar + nested mini-funnel, same engine feel as ⑤ =====
+let OPS_SHARE={done:false,b2d:false,val:false};        // per-section '% share of parent' toggle (default off = decluttered)
+const OPS_ORD={b2d:['seg'], val:['seg','opscat']};     // reorderable layer order per section (geo dims are opt-in via ＋ ghosts)
+const OPS_SEL={b2d:{}, val:{}};                        // OPS_SEL[sec][dim] = Set of de-selected values (▾ pickers)
+let opsDrag=null;
+function sumRecF(recs,f){const o=new Array(WEEKS.length).fill(0);recs.forEach(r=>{const a=r[f]||[];for(let i=0;i<o.length;i++)o[i]+=a[i]||0;});return o;}   // element-wise sum of a pre-aligned record field
+function rollTopCat(map,al){const o={};if(map)for(const k in map){const t=SUBCAT2TOP[k]||k,a=al(map[k]||[]),d=(o[t]=o[t]||new Array(WEEKS.length).fill(0));for(let i=0;i<a.length;i++)d[i]+=(a[i]||0);}return o;}
+function opsB2DRecs(units){return (units||opsUnits()).map(u=>({online:!!u.online,city:u.city,loc:u.loc,doctor:u.doctor||u.label,booked:u.al(u.booked),done:u.al(u.done)}));}   // ④ record per unit (booked has no per-category split → no category layer here)
+function opsValRecs(units){const recs=[];(units||opsUnits()).forEach(u=>{   // ⑥ record per unit×top-category; a '(no category)' remainder keeps Σ = unit totals so the drill ties to the ⑥ headline. Online has no pur/rev by category → its value all lands in '(no category)'.
+  const purA=(u.pur||[]).slice(),revA=(u.rev||[]).slice(),doneA=u.al(u.done);
+  const pc=rollTopCat(u.purByCat,u.al),rc=rollTopCat(u.revByCat,u.al),dc=rollTopCat(u.byCat,u.al);
+  const cats=new Set([...Object.keys(pc),...Object.keys(rc),...Object.keys(dc)]),acc={pur:new Array(WEEKS.length).fill(0),rev:new Array(WEEKS.length).fill(0),done:new Array(WEEKS.length).fill(0)};
+  cats.forEach(cat=>{const pur=(pc[cat]||[]).slice(),rev=(rc[cat]||[]).slice(),done=(dc[cat]||[]).slice();
+    for(let i=0;i<WEEKS.length;i++){acc.pur[i]+=pur[i]||0;acc.rev[i]+=rev[i]||0;acc.done[i]+=done[i]||0;}
+    recs.push({online:!!u.online,city:u.city,loc:u.loc,cat:SUBCAT2TOP[cat]||cat,pur,rev,done});});
+  const rP=purA.map((v,i)=>v-(acc.pur[i]||0)),rR=revA.map((v,i)=>v-(acc.rev[i]||0)),rD=doneA.map((v,i)=>v-(acc.done[i]||0));
+  if([rP,rR,rD].some(a=>a.some(x=>Math.abs(x)>1e-6)))recs.push({online:!!u.online,city:u.city,loc:u.loc,cat:'(no category)',pur:rP,rev:rR,done:rD});});return recs;}
+function opsAvail(sec,l){if(['city','clinic','doctor'].includes(l))return doneGeo().includes(l);if(l==='opscat')return sec==='val';return l==='seg';}
+function opsSecLayers(sec){return OPS_ORD[sec].filter(l=>opsAvail(sec,l));}
+function opsBar(ll,sec,recs,rerender){if(!ll)return;ll.innerHTML='';
+  const shb=document.createElement('button');shb.className='dlchip'+(OPS_SHARE[sec]?' on':'');shb.textContent='% share';shb.title='show each row’s share of its parent as a weekly trend (off = decluttered)';shb.style.marginRight='10px';shb.onclick=()=>{OPS_SHARE[sec]=!OPS_SHARE[sec];rerender();};ll.appendChild(shb);
+  const lead=document.createElement('span');lead.className='lead';lead.textContent='Layers ·';ll.appendChild(lead);
+  const layers=opsSecLayers(sec);
+  layers.forEach((dk,idx)=>{const dim=OPSDIM[dk],isX=layers.length>1,vals=[...new Set(recs.map(r=>dim.get(r)))],off=(OPS_SEL[sec][dk]||new Set()),nsel=vals.filter(v=>!off.has(v)).length;
+    const chip=document.createElement('div');chip.className='chip';chip.draggable=true;chip.dataset.l=dk;
+    chip.innerHTML=`<span class="grip">⋮⋮</span><span class="ord">${idx+1}</span><span class="nm">${dim.lab}</span><span class="cnt">${nsel}/${vals.length}</span><span class="cv">▾</span>`+(isX?'<span class="rm" title="remove layer">×</span>':'');
+    const pop=document.createElement('div');pop.className='pop';
+    pop.innerHTML=`<div class="pact"><button data-a="all">All</button><button data-a="none">None</button></div>`+vals.map(v=>{const rr=recs.find(r=>dim.get(r)===v),col=dim.col?dim.col(rr):'#9aa3b0';return `<label><input type="checkbox" data-v="${(''+v).replace(/"/g,'&quot;')}" ${!off.has(v)?'checked':''}><span class="sw" style="background:${col}"></span>${v}</label>`;}).join('');
+    chip.appendChild(pop);
+    chip.onclick=(e)=>{if(e.target.closest('.pop'))return;if(e.target.classList.contains('rm')){e.stopPropagation();OPS_ORD[sec]=OPS_ORD[sec].filter(x=>x!==dk);rerender();return;}const open=pop.classList.contains('show');document.querySelectorAll('.pop').forEach(p=>p.classList.remove('show'));document.querySelectorAll('.chip').forEach(c=>c.classList.remove('open2'));if(!open){pop.classList.add('show');chip.classList.add('open2');}};
+    pop.querySelectorAll('.pact button').forEach(b=>b.onclick=(e)=>{e.stopPropagation();OPS_SEL[sec][dk]=OPS_SEL[sec][dk]||new Set();if(b.dataset.a==='all')OPS_SEL[sec][dk]=new Set();else vals.forEach(v=>OPS_SEL[sec][dk].add(v));rerender();});
+    pop.querySelectorAll('input').forEach(inp=>inp.onclick=(e)=>{e.stopPropagation();OPS_SEL[sec][dk]=OPS_SEL[sec][dk]||new Set();const v=inp.dataset.v;if(inp.checked)OPS_SEL[sec][dk].delete(v);else OPS_SEL[sec][dk].add(v);rerender();});
+    chip.ondragstart=()=>{opsDrag=dk;chip.classList.add('drag');};chip.ondragend=()=>{opsDrag=null;ll.querySelectorAll('.chip').forEach(x=>x.classList.remove('over','drag'));};
+    chip.ondragover=(e)=>{e.preventDefault();chip.classList.add('over');};chip.ondragleave=()=>chip.classList.remove('over');
+    chip.ondrop=(e)=>{e.preventDefault();if(!opsDrag||opsDrag===dk)return;const arr=OPS_ORD[sec].filter(x=>x!==opsDrag),at=arr.indexOf(dk);arr.splice(at<0?arr.length:at,0,opsDrag);OPS_ORD[sec]=arr;opsDrag=null;rerender();};
+    ll.appendChild(chip);
+    if(idx<layers.length-1){const a=document.createElement('span');a.className='arrow';a.textContent='→';ll.appendChild(a);}});
+  ['seg','opscat','city','clinic','doctor'].filter(l=>opsAvail(sec,l)).filter(l=>!OPS_ORD[sec].includes(l)).forEach(l=>{const g=document.createElement('div');g.className='ghost';g.textContent='＋ '+OPSDIM[l].lab;g.onclick=()=>{OPS_ORD[sec].push(l);rerender();};ll.appendChild(g);});}
+// nested mini-funnel: intermediate node = the primary metric (expand to nest); leaf = the full mini-funnel (primary labelled by the group + the remaining stages)
+function opsFunnelDrill(container,recs,layers,depth,pad,kp,cfg,parentPrim){
+  const dk=layers[depth],dim=OPSDIM[dk],last=depth===layers.length-1,p0=cfg.stages[0],groups={};
+  recs.forEach(r=>{const v=dim.get(r);(groups[v]=groups[v]||[]).push(r);});
+  const only=Object.keys(groups).length===1;
+  Object.keys(groups).sort((a,b)=>sumT(opsDv(sumRecF(groups[b],p0.f)))-sumT(opsDv(sumRecF(groups[a],p0.f)))).forEach(v=>{
+    const sub=groups[v],praw=sumRecF(sub,p0.f),pv=opsDv(praw);if(!sumT(pv))return;
+    const key=kp+'/'+dk+':'+v,col=dim.col?dim.col(sub[0]):'#9aa3b0',op=!!OPS_OPEN[key]||(only&&dk==='seg'&&!last);
+    const row=opsBuildRow(v,pv,{col,pad,expandable:!last&&!(only&&dk==='seg'),open:op,rawArr:praw});row.classList.add('opsnode');container.appendChild(row);
+    if(OPS_SHARE[cfg.sec]&&parentPrim&&!only){const sh=pv.map((x,i)=>parentPrim[i]?100*x/parentPrim[i]:null);const sr=opsBuildRow('↳ share of parent %',sh,{col:'#1F6F5C',pad:pad+18,pct:true,rawArr:sh});sr.classList.add('brate');container.appendChild(sr);}
+    if(last){cfg.stages.slice(1).forEach(s=>{
+      if(s.rate){const N=opsDv(sumRecF(sub,s.rate[0])),D=opsDv(sumRecF(sub,s.rate[1])),r=D.map((d,i)=>d?(s.pct?100:1)*N[i]/d:null);container.appendChild(opsBuildRow(s.lab,r,{col:s.col||'#1F6F5C',pct:!!s.pct,pad:pad+18,rawArr:r}));}
+      else{const raw=sumRecF(sub,s.f);container.appendChild(opsBuildRow(s.lab,opsDv(raw),{col:s.col,pad:pad+18,rawArr:raw}));}});
+    }else{const kb=document.createElement('div');kb.style.display=op?'block':'none';container.appendChild(kb);
+      if(!(only&&dk==='seg'))row.onclick=(e)=>{if(e.target.closest('.zoom'))return;OPS_OPEN[key]=!OPS_OPEN[key];cfg.rerender();};
+      if(op)opsFunnelDrill(kb,sub,layers,depth+1,pad+18,key,cfg,pv);}
   });}
 function renderAvail(units){units=units||opsUnits();const flow=document.getElementById('availFlow'),head=document.getElementById('availHead');flow.innerHTML='';head.innerHTML=opsHeadHTML('Availability · SC');
   if(!units.some(u=>!u.online)){flow.innerHTML='<div class="empty">Online telehealth has no clinic roster / availability — this applies to physical clinics only (switch to Both / Offline to see roster).</div>';return;}
@@ -729,19 +788,21 @@ function renderB2D(units){units=units||opsUnits();const flow=document.getElement
   ctl.innerHTML='grain · '+grains.map(([g,l])=>`<button class="dlchip${B2D_GRAIN.includes(g)?' on':''}" data-g="${g}">${l}</button>`).join('')+(hasSlot?'':' <span style="color:var(--faint);font-size:11px">— slot level isn’t split per doctor</span>');
   flow.appendChild(ctl);
   ctl.querySelectorAll('.dlchip').forEach(b=>b.onclick=()=>{const g=b.dataset.g,i=B2D_GRAIN.indexOf(g);if(i<0)B2D_GRAIN.push(g);else if(B2D_GRAIN.length>1)B2D_GRAIN.splice(i,1);renderB2D();});
-  const off=units.filter(u=>!u.online),onl=units.filter(u=>u.online);   // break every stage into the active segment(s): Both → Offline + Online; Offline/Online toggle → one labelled row
-  const segRows=pick=>{if(off.length)opsRow(flow,'Offline · clinic',opsSumU(off,pick),{sub:true,pad:52,col:'#2E7D5B'});if(onl.length)opsRow(flow,'Online · telehealth',opsSumU(onl,pick),{sub:true,pad:52,col:'#7C5CBF'});};
-  const segRate=(numPick,denPick)=>{if(!(off.length&&onl.length))return;   // per-segment Book→Done % (only meaningful with both segments)
-    opsRateRow(flow,'↳ Offline · clinic',opsSumU(off,numPick),opsSumU(off,denPick),{sub:true,pad:52,col:'#2E7D5B'});
-    opsRateRow(flow,'↳ Online · telehealth',opsSumU(onl,numPick),opsSumU(onl,denPick),{sub:true,pad:52,col:'#7C5CBF'});};
+  const ll=document.getElementById('b2dLayerLbl');
   if(B2D_GRAIN.includes('patient')){const bkP=opsSumU(units,u=>u.booked),dnP=opsSumU(units,u=>u.done);
-    opsRow(flow,'Booked · SC — patients',bkP,{stage:true,col:'#2E7D5B'});segRows(u=>u.booked);
-    opsRow(flow,'Done · completed — patients',dnP,{sub:true,col:'#C87B2E'});segRows(u=>u.done);
-    opsRateRow(flow,'Book → Done % · patient',dnP,bkP,{sub:true});segRate(u=>u.done,u=>u.booked);}
+    opsRow(flow,'Booked · SC — patients',bkP,{stage:true,col:'#2E7D5B'});
+    opsRow(flow,'Done · completed — patients',dnP,{sub:true,col:'#C87B2E'});
+    opsRateRow(flow,'Book → Done % · patient',dnP,bkP,{sub:true});
+    // segment / geo drill (draggable layer bar) — each leaf group shows its own Booked → Done → Book→Done% mini-funnel
+    const recs=opsB2DRecs(units);opsBar(ll,'b2d',recs,renderB2D);
+    const layers=opsSecLayers('b2d'),fr=recs.filter(r=>layers.every(dk=>!(OPS_SEL.b2d[dk]&&OPS_SEL.b2d[dk].has(OPSDIM[dk].get(r)))));
+    const cfg={sec:'b2d',rerender:renderB2D,stages:[{lab:'Booked · SC',f:'booked',col:'#2E7D5B'},{lab:'Done · completed',f:'done',col:'#C87B2E'},{lab:'Book → Done %',rate:['done','booked'],pct:true,col:'#1F6F5C'}]};
+    opsFunnelDrill(flow,fr,layers,0,15,'b2d',cfg,opsDv(bkP));
+  }else if(ll)ll.innerHTML='';
   if(hasSlot&&B2D_GRAIN.includes('slot')){const bkS=opsSumU(units,u=>u.bookedSlots||u.booked),dnS=opsSumU(units,u=>u.doneSlots||u.done);
-    opsRow(flow,'Booked · SC — slots',bkS,{stage:true,col:'#3E7CB1'});segRows(u=>u.bookedSlots||u.booked);
-    opsRow(flow,'Done · completed — slots',dnS,{sub:true,col:'#C87B2E'});segRows(u=>u.doneSlots||u.done);
-    opsRateRow(flow,'Book → Done % · slot',dnS,bkS,{sub:true});segRate(u=>u.doneSlots||u.done,u=>u.bookedSlots||u.booked);
+    opsRow(flow,'Booked · SC — slots',bkS,{stage:true,col:'#3E7CB1'});
+    opsRow(flow,'Done · completed — slots',dnS,{sub:true,col:'#C87B2E'});
+    opsRateRow(flow,'Book → Done % · slot',dnS,bkS,{sub:true});
     renderSlotStatus(flow,units);}}
 // ④ slot-outcome breakdown — where every booked slot ended up (Completed / Scheduled / No-show / Rescheduled / Cancelled). Offline clinic only (online cube carries no slot status). Lights up once quick_diag has done.slot_status.
 const SLOT_ST=[['COMPLETED','Completed','#2E7D5B'],['SCHEDULED','Scheduled · upcoming/open','#3E7CB1'],['No Show','No-show','#B8503C'],['Reschedule','Rescheduled','#C87B2E'],['CANCELLED','Cancelled','#9aa3b0'],['Others','Other','#b0b6c0']];
@@ -758,7 +819,9 @@ let doneDrag=null, DONE_OFF={};   // DONE_OFF[dim] = Set of de-selected values (
 function doneVals(dk,recs){const s=new Set();recs.forEach(r=>s.add(OPSDIM[dk].get(r)));return [...s];}
 // ⑤ Done layer bar — identical .chip structure to ①② (numbered · count · ▾ value-picker · drag-reorder · × remove · → arrows · ＋ ghosts)
 function renderDoneBar(ll,recs,units){
-  ll.innerHTML='';const lead=document.createElement('span');lead.className='lead';lead.textContent='Layers ·';ll.appendChild(lead);
+  ll.innerHTML='';
+  const shb=document.createElement('button');shb.className='dlchip'+(OPS_SHARE.done?' on':'');shb.textContent='% share';shb.title='show each row’s share of its parent as a weekly trend (off = decluttered)';shb.style.marginRight='10px';shb.onclick=()=>{OPS_SHARE.done=!OPS_SHARE.done;renderDone();};ll.appendChild(shb);
+  const lead=document.createElement('span');lead.className='lead';lead.textContent='Layers ·';ll.appendChild(lead);
   const layers=doneLayers();   // every layer (segment · geo · metrics) is drag-reorderable + removable, exactly like ①②
   layers.forEach((dk,idx)=>{
     const isX=layers.length>1,vals=doneVals(dk,recs),off=DONE_OFF[dk]||new Set(),nsel=vals.filter(v=>!off.has(v)).length;
@@ -794,23 +857,19 @@ function renderDone(units){units=units||opsUnits();const flow=document.getElemen
   opsDrill(flow,fr,layers,0,15,'done',opsDv(opsSumU(units,u=>u.done)));}   // parent = Done total → each row shows its % share (and whether it's moving)
 function sumPre(us,pick){const o=new Array(WEEKS.length).fill(0);us.forEach(u=>{const a=pick(u)||[];for(let i=0;i<o.length;i++)o[i]+=a[i]||0;});return o;}   // pur/rev are already WEEKS-aligned → element-wise sum (no re-align)
 // ⑥ Value funnel: Purchased → D2P% · Revenue → RPC, split Offline / Online (done-week invoiced)
-function renderValue(units){units=units||opsUnits();const flow=document.getElementById('valFlow'),head=document.getElementById('valHead');if(!flow)return;flow.innerHTML='';head.innerHTML=opsHeadHTML('Value · SC');
-  if(!QD||!units.length)return;
-  const off=units.filter(u=>!u.online),onl=units.filter(u=>u.online),split=off.length&&onl.length;
+function renderValue(units){units=units||opsUnits();const flow=document.getElementById('valFlow'),head=document.getElementById('valHead'),ll=document.getElementById('valLayerLbl');if(!flow)return;flow.innerHTML='';head.innerHTML=opsHeadHTML('Value · SC');
+  if(!QD||!units.length){if(ll)ll.innerHTML='';return;}
   const dn=opsSumU(units,u=>u.done),pur=sumPre(units,u=>u.pur),rev=sumPre(units,u=>u.rev);
-  const segRows=pick=>{if(off.length)opsRow(flow,'Offline · clinic',sumPre(off,pick),{sub:true,pad:52,col:'#2E7D5B'});if(onl.length)opsRow(flow,'Online · telehealth',sumPre(onl,pick),{sub:true,pad:52,col:'#7C5CBF'});};
-  const segRate=(numPre,denPick,scale,pct)=>{if(!split)return;   // per-segment ratio (D2P % or RPC ₹) — Σnum/Σden, clubbed-aware
-    [['Offline · clinic',off,'#2E7D5B'],['Online · telehealth',onl,'#7C5CBF']].forEach(([lab,us,col])=>{
-      const n=opsDv(sumPre(us,numPre)),d=opsDv(opsSumU(us,denPick)),r=d.map((x,i)=>x?(pct?100:1)*n[i]/x:null);
-      opsRow(flow,'↳ '+lab,r,{sub:true,pad:52,col,pct:!!pct,raw:true});});};
-  // Purchased → D2P%
-  opsRow(flow,'Purchased · SC (bought a plan)',pur,{stage:true,col:'#2E7D5B'});segRows(u=>u.pur);
+  // totals (grand funnel) — then the layer drill breaks each metric down by segment / category / geo
+  opsRow(flow,'Purchased · SC (bought a plan)',pur,{stage:true,col:'#2E7D5B'});
   {const n=opsDv(pur),d=opsDv(dn),r=d.map((x,i)=>x?100*n[i]/x:null);opsRow(flow,'Done → Purchased % (D2P)',r,{sub:true,pct:true,raw:true,col:'#1F6F5C'});}
-  segRate(u=>u.pur,u=>u.done,100,true);
-  // Revenue → RPC
-  opsRow(flow,'Revenue · SC ₹ (done-week invoiced)',rev,{stage:true,col:'#C87B2E'});segRows(u=>u.rev);
+  opsRow(flow,'Revenue · SC ₹ (done-week invoiced)',rev,{stage:true,col:'#C87B2E'});
   {const n=opsDv(rev),d=opsDv(dn),r=d.map((x,i)=>x?n[i]/x:null);opsRow(flow,'RPC · ₹ / consult',r,{sub:true,raw:true,col:'#1F6F5C'});}
-  segRate(u=>u.rev,u=>u.done,1,false);}
+  const recs=opsValRecs(units);opsBar(ll,'val',recs,renderValue);
+  const layers=opsSecLayers('val'),fr=recs.filter(r=>layers.every(dk=>!(OPS_SEL.val[dk]&&OPS_SEL.val[dk].has(OPSDIM[dk].get(r)))));
+  const cfg={sec:'val',rerender:renderValue,stages:[{lab:'Purchased · SC',f:'pur',col:'#2E7D5B'},{lab:'Done → Purchased % (D2P)',rate:['pur','done'],pct:true,col:'#1F6F5C'},{lab:'Revenue · SC ₹',f:'rev',col:'#C87B2E'},{lab:'RPC · ₹ / consult',rate:['rev','done'],col:'#1F6F5C'}]};
+  opsFunnelDrill(flow,fr,layers,0,15,'val',cfg,opsDv(pur));
+  if(layers.includes('opscat')&&units.some(u=>u.online)){const n=document.createElement('div');n.className='frow';n.style.paddingLeft='15px';n.innerHTML='<span class="lbl" style="color:var(--faint);font-size:11px">— online telehealth carries no per-category purchase/revenue → its value sits under “(no category)”</span>';flow.appendChild(n);}}
 function renderOps(){
   const sec=document.getElementById('opsSection');if(!sec||sec.style.display==='none')return;
   const lbl=document.getElementById('opsScopeLbl'),flows=['availFlow','b2dFlow','doneFlow'].map(id=>document.getElementById(id));
@@ -859,7 +918,7 @@ function renderLayerBar(P){
     // popover
     const pop=document.createElement('div');pop.className='pop';
     const hasComb=!!(P.comb&&P.comb[dk]&&P.comb[dk].length);
-    pop.innerHTML=`<div class="pact"><button data-a="all">All</button><button data-a="none">None</button>${dk==='city'?'<button data-a="t1" title="quick-select Tier-1 cities">Tier 1</button><button data-a="t2" title="quick-select Tier-2 cities">Tier 2</button>':''}${hasComb?'<button data-a="uncomb" title="split back into separate rows">✕ un-combine</button>':'<button data-a="comb" title="merge the checked values into ONE drillable group (e.g. GMB + Google)">⊕ combine checked</button>'}</div>`
+    pop.innerHTML=`<div class="pact"><button data-a="all">All</button><button data-a="none">None</button>${dk==='city'?'<button data-a="t1" title="quick-select Tier-1 cities">Tier 1</button><button data-a="t2" title="quick-select Tier-2 cities">Tier 2</button>':''}${hasComb?'<button data-a="uncomb" title="split back into separate rows">✕ un-combine</button>':'<button data-a="comb" title="merge the checked values into ONE drillable group (e.g. GMB + Google); every other value stays visible as its own row">⊕ combine checked</button>'}</div>`
       +(hasComb?`<div class="combnote">combined → <b>${P.comb[dk][0].label}</b></div>`:'')
       +vals.map(v=>`<label><input type="checkbox" data-k="${v.k}" ${P.sel[dk].has(v.k)?'checked':''}><span class="sw" style="background:${dim.color(v.k)}"></span>${v.l}</label>`).join('');
     if(dk==='status'&&P.mode==='leads'){   // show the actual book rate for the current selection, right in the Booked? dropdown
@@ -875,7 +934,7 @@ function renderLayerBar(P){
     const updCnt=()=>{chip.querySelector('.cnt').textContent=vals.filter(v=>P.sel[dk].has(v.k)).length+'/'+ntot;};
     pop.querySelectorAll('.pact button').forEach(b=>b.onclick=(e)=>{e.stopPropagation();const a=b.dataset.a;
       if(a==='comb'){const picked=vals.filter(v=>P.sel[dk].has(v.k)).map(v=>v.k);   // merge the currently-checked values into one drillable group
-        if(picked.length>=2){P.comb=P.comb||{};P.comb[dk]=[{label:picked.map(k=>labOf(dk,k)).join(' + '),vals:picked}];P.open={};renderLayerBar(P);draw(P);}return;}
+        if(picked.length>=2){P.comb=P.comb||{};P.comb[dk]=[{label:picked.map(k=>labOf(dk,k)).join(' + '),vals:picked}];vals.forEach(v=>P.sel[dk].add(v.k));P.open={};renderLayerBar(P);draw(P);}return;}   // re-select every value so the un-checked ones stay visible as their own rows alongside the combined group (combine ≠ hide the rest)
       if(a==='uncomb'){if(P.comb)delete P.comb[dk];P.open={};renderLayerBar(P);draw(P);return;}
       if(a==='all')vals.forEach(v=>P.sel[dk].add(v.k));
       else if(a==='t1'||a==='t2'){const t=a==='t1'?'T1':'T2';vals.forEach(v=>{if(v.k!==NOCITY_LAB&&isTracked(v.k)&&tierOf(v.k)===t)P.sel[dk].add(v.k);else P.sel[dk].delete(v.k);});}   // Tier quick-select: only that tier's tracked cities — no-city bucket is de-selected

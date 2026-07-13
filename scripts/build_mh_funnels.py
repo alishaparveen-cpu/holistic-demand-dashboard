@@ -15,7 +15,7 @@ Run: AWS_PROFILE=redshift-data python3 scripts/build_mh_funnels.py
 import os, sys, subprocess, json
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RQ = os.path.join(ROOT, "scripts", "redshift_query.py")
-WEEKS = ["2026-06-22","2026-06-15","2026-06-08","2026-06-01","2026-05-25","2026-05-18","2026-05-11","2026-05-04","2026-04-27","2026-04-20","2026-04-13","2026-04-06","2026-03-30","2026-03-23","2026-03-16","2026-03-09","2026-03-02","2026-02-23","2026-02-16","2026-02-09","2026-02-02","2026-01-26","2026-01-19","2026-01-12","2026-01-05","2025-12-29","2025-12-22","2025-12-15","2025-12-08","2025-12-01","2025-11-24","2025-11-17","2025-11-10","2025-11-03","2025-10-27","2025-10-20","2025-10-13","2025-10-06","2025-09-29","2025-09-22","2025-09-15","2025-09-08","2025-09-01","2025-08-25","2025-08-18","2025-08-11","2025-08-04","2025-07-28","2025-07-21","2025-07-14","2025-07-07","2025-06-30"]
+WEEKS = ["2026-07-06","2026-06-29","2026-06-22","2026-06-15","2026-06-08","2026-06-01","2026-05-25","2026-05-18","2026-05-11","2026-05-04","2026-04-27","2026-04-20","2026-04-13","2026-04-06","2026-03-30","2026-03-23","2026-03-16","2026-03-09","2026-03-02","2026-02-23","2026-02-16","2026-02-09","2026-02-02","2026-01-26","2026-01-19","2026-01-12","2026-01-05","2025-12-29","2025-12-22","2025-12-15","2025-12-08","2025-12-01","2025-11-24","2025-11-17","2025-11-10","2025-11-03","2025-10-27","2025-10-20","2025-10-13","2025-10-06","2025-09-29","2025-09-22","2025-09-15","2025-09-08","2025-09-01","2025-08-25","2025-08-18","2025-08-11","2025-08-04","2025-07-28","2025-07-21","2025-07-14","2025-07-07","2025-06-30"]
 idx = {w: i for i, w in enumerate(WEEKS)}; NW = len(WEEKS)
 LO = "2025-06-23"   # SQL lower bound (a bit before the oldest week)
 AUDIT_START = "2026-03-23"   # AI call-audit (call_analyses) reaches coverage here; earlier weeks have ~none
@@ -198,7 +198,7 @@ def get_gmbweb(slug, cfg):
         TO_CHAR(DATE_TRUNC('week', l.created_at + INTERVAL '5 hours 30 minutes'),'YYYY-MM-DD') wk
       FROM allo_persons.lead l
       WHERE LOWER(l.utm_source)='gmb' AND LOWER(l.utm_medium)='listing' AND LOWER(l.utm_campaign)='{camp}'
-        AND l.created_at >= '{lo}' AND l.created_at < '2026-06-29'),
+        AND l.created_at >= '{lo}' AND l.created_at < '2026-07-13'),
      bk AS (
       SELECT DISTINCT RIGHT(p.phone_no,10) ph
       FROM allo_consultations.appointments a
@@ -226,7 +226,7 @@ def get_leads_clean(cfg):
     sql = """WITH lds AS (
       SELECT m.phone_no1 ph, TO_CHAR(DATE_TRUNC('week', m.created_on + INTERVAL '5 hours 30 minutes'),'YYYY-MM-DD') wk
       FROM production.public.main_source_wise_leads m
-      WHERE m.call_location='{loc}' AND m.created_on >= '{lo}' AND m.created_on < '2026-06-29'),
+      WHERE m.call_location='{loc}' AND m.created_on >= '{lo}' AND m.created_on < '2026-07-13'),
      u AS (
       SELECT ph, us, um, g, f FROM (
         SELECT RIGHT(phone_no,10) ph, LOWER(COALESCE(utm_source,'')) us, LOWER(COALESCE(utm_medium,'')) um,
@@ -234,7 +234,7 @@ def get_leads_clean(cfg):
           CASE WHEN fbclid IS NOT NULL AND fbclid<>'' THEN 1 ELSE 0 END f,
           ROW_NUMBER() OVER (PARTITION BY RIGHT(phone_no,10) ORDER BY created_at DESC) rn
         FROM allo_persons.lead
-        WHERE created_at >= '2025-06-23' AND created_at < '2026-06-29'
+        WHERE created_at >= '2025-06-23' AND created_at < '2026-07-13'
           AND (utm_source IS NOT NULL OR gclid IS NOT NULL OR fbclid IS NOT NULL)) z WHERE rn=1)
     SELECT lds.wk,
       CASE

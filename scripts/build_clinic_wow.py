@@ -23,7 +23,7 @@ def gmbweb_generic(cfg, bkph):
     inlist="','".join(c.replace("'","''") for c in cands)
     sql=("SELECT TO_CHAR(DATE_TRUNC('week', created_at+INTERVAL '5 hours 30 minutes'),'YYYY-MM-DD') wk, "
          "RIGHT(phone_no,10) ph FROM allo_persons.lead WHERE LOWER(utm_source)='gmb' AND LOWER(utm_medium)='listing' "
-         "AND LOWER(utm_campaign) IN ('%s') AND created_at>='%s' AND created_at<'2026-06-29';"%(inlist,LO))
+         "AND LOWER(utm_campaign) IN ('%s') AND created_at>='%s' AND created_at<'2026-07-13';"%(inlist,LO))
     leads=Z();booked=Z();seen=set()
     for line in run_sql(sql):
         c=line.split('\t')
@@ -46,7 +46,7 @@ def city_google_web():
          "TO_CHAR(DATE_TRUNC('week', l.created_at+INTERVAL '5 hours 30 minutes'),'YYYY-MM-DD') wk, RIGHT(l.phone_no,10) ph "
          "FROM allo_persons.lead l WHERE (l.gclid<>'' OR LOWER(l.utm_source)='google') "
          "AND (LOWER(l.utm_campaign) LIKE 't1_%%' OR LOWER(l.utm_campaign) LIKE 't2_%%') "
-         "AND l.created_at>='%s' AND l.created_at<'2026-06-29' AND LENGTH(RIGHT(l.phone_no,10))=10), "
+         "AND l.created_at>='%s' AND l.created_at<'2026-07-13' AND LENGTH(RIGHT(l.phone_no,10))=10), "
          "bk AS (SELECT DISTINCT RIGHT(p.phone_no,10) ph FROM allo_consultations.appointments a "
          "JOIN allo_persons.patient p ON p.id=a.patient_id JOIN allo_consultations.types t ON t.id=a.type_id AND t.name='Screening Call' "
          "WHERE a.deleted_at IS NULL AND a.created_at>='2025-06-23') "
@@ -83,7 +83,7 @@ def call_cat(cfg, kind):
          "ROW_NUMBER() OVER (PARTITION BY RIGHT(ec.\"from\",10), DATE_TRUNC('week', ec.start_time + INTERVAL '5 hours 30 minutes') ORDER BY ec.start_time DESC) rn "
          "FROM allo_analytics.call_analyses ca "
          "JOIN allo_vendors.exotel_calls ec ON ec.call_id=ca.call_id AND ec.routed_to='lead_to_call' AND ec.direction='inbound' "
-         "WHERE ca.deleted_at IS NULL AND %s %s AND ec.start_time>='%s' AND ec.start_time<'2026-06-29') z "
+         "WHERE ca.deleted_at IS NULL AND %s %s AND ec.start_time>='%s' AND ec.start_time<'2026-07-13') z "
          "WHERE rn=1 GROUP BY 1,2;"
          %(where,locf,LO))
     by={c:Z() for c in B.CATS}
