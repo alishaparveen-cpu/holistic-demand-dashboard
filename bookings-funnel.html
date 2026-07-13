@@ -582,6 +582,7 @@ function onlKeys(){if(!ONL||!ONL.clinics)return [];const ks=Object.keys(ONL.clin
   if(SCOPE==='clinic')return ks.filter(k=>SEL.clinic.has(k));
   return [];}   // doctor scope: online-by-doctor not wired (offline only)
 const SUBCAT2TOP={STI:'STI',MH:'MH','ED+':'SH','ED+PE+':'SH','PE+':'SH','PA':'SH','CM':'SH','Oth':'Other','NOS':'Other'};   // 9 diagnosis sub-cats → 4 top categories
+const ONL_ROLL={LSD:'Oth',DE:'Oth',DYS:'Oth',VGS:'Oth',FSAD:'Oth',AORG:'Oth',oth:'Oth'};   // roll the online cube's raw diag_cat into the same 9 sub-cats offline uses (matches quick_diag ROLL)
 function qdAlign(arr){if(!arr)return new Array(WEEKS.length).fill(0);return WEEKS.map(w=>{const j=QD_IDX[w];return j===undefined?0:(arr[j]||0);});}   // QD arrays are OLDEST-first → re-align to WEEKS (newest-first)
 function slugLoc(s){if(SLUG2LOC[s])return SLUG2LOC[s];const city=(QD.clinics[s]||{}).city||'';let loc=s;const suf='_'+qnorm(city);if(loc.endsWith(suf))loc=loc.slice(0,-suf.length);loc=loc.replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase());return (SLUG2LOC[s]=loc);}
 function opsSlugs(){if(!QD)return [];
@@ -597,7 +598,8 @@ function opsUnitsOffline(){if(!QD)return [];
   const g=(OPS_GRAIN==='distinct')?(SCOPE==='national'?'_nat':SCOPE==='city'?'_city':''):'';   // clinic-attributed ('' = clinic-sum, ties ②) vs patient-distinct (_nat/_city, ties sheet)
   return opsSlugs().map(s=>{const qc=QD.clinics[s],d=qc.sc.done;return {al:qdAlign,key:s,label:slugLoc(s),city:qc.city,loc:slugLoc(s),doctor:null,booked:d['booked'+g]||d.booked,done:d['done'+g]||d.done,bookedSlots:d.booked_slots||null,doneSlots:d.done_slots||null,slotStatus:d.slot_status||null,byCat:d.by_cat||{},byCatSrc:d.by_cat_source||null,avail:qc.sc.availability||{},bySource:(qc.sc.bookings||{}).by_source||null,online:false};});}
 function opsUnitsOnline(){return onlKeys().map(k=>{const n=ONL.clinics[k],i=k.indexOf('|'),loc=k.slice(i+1);
-  return {al:onlAlign,key:'onl:'+k,label:loc,city:displayCity(loc,k.slice(0,i)),loc:loc,doctor:null,booked:n.booked,done:n.done,bookedSlots:n.booked,doneSlots:n.done,byCat:{},byCatSrc:null,avail:{},bySource:n.by_source||null,online:true};});}   // online telehealth: appt-count (slot≈patient); no roster/category
+  const byCat={};if(n.by_cat)for(const c in n.by_cat){const rc=ONL_ROLL[c]||c,dn=n.by_cat[c].done||[],a=(byCat[rc]=byCat[rc]||[]);for(let j=0;j<dn.length;j++)a[j]=(a[j]||0)+(dn[j]||0);}   // online done split by merged-Rx diagnosis, rolled to the same 9 sub-cats as offline (LSD/DE/…/oth → Oth)
+  return {al:onlAlign,key:'onl:'+k,label:loc,city:displayCity(loc,k.slice(0,i)),loc:loc,doctor:null,booked:n.booked,done:n.done,bookedSlots:n.booked,doneSlots:n.done,byCat:byCat,byCatSrc:null,avail:{},bySource:n.by_source||null,online:true};});}   // online telehealth: appt-count (slot≈patient); no roster
 function opsUnits(){if(!QD)return [];
   if(SCOPE==='doctor')return opsUnitsOffline();   // doctors are offline clinicians
   if(SEG==='online')return opsUnitsOnline();
