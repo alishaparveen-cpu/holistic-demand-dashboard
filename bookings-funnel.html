@@ -377,6 +377,7 @@
 
   <!-- ③ Availability -->
   <h2 class="sech" style="margin-top:6px">③ Availability · roster & hours <span class="opsbadge">OPS</span></h2>
+  <div class="layerbar" id="availLayerLbl" style="margin-top:2px"></div>
   <div class="fmwrap"><div class="head" id="availHead"></div><div id="availFlow"></div></div>
 
   <!-- ④ Book → Done -->
@@ -924,14 +925,16 @@ function opsDrill(container,recs,layers,depth,pad,kp,parentDisp){
       if(op)opsDrill(kb,sub,layers,depth+1,pad+18,key,av);}
   });}
 // ===== generalized ops funnel-drill (④ Book→Done · ⑥ Value) — layer bar + nested mini-funnel, same engine feel as ⑤ =====
-let OPS_SHARE={done:false,b2d:false,val:false};        // per-section '% share of parent' toggle (default off = decluttered)
-const OPS_ORD={b2d:['seg'], val:['seg','opscat']};     // reorderable layer order per section (geo dims are opt-in via ＋ ghosts)
-const OPS_SEL={b2d:{}, val:{}};                        // OPS_SEL[sec][dim] = Set of de-selected values (▾ pickers)
+let OPS_SHARE={done:false,b2d:false,val:false,avail:false};        // per-section '% share of parent' toggle (default off = decluttered)
+const OPS_ORD={b2d:['seg'], val:['seg','opscat'], avail:[]};     // reorderable layer order per section (geo dims are opt-in via ＋ ghosts; avail is offline-only so no seg layer)
+const OPS_SEL={b2d:{}, val:{}, avail:{}};                        // OPS_SEL[sec][dim] = Set of de-selected values (▾ pickers)
 let opsDrag=null;
 function sumRecF(recs,f){const o=new Array(WEEKS.length).fill(0);recs.forEach(r=>{const a=r[f]||[];for(let i=0;i<o.length;i++)o[i]+=a[i]||0;});return o;}   // element-wise sum of a pre-aligned record field
 function rollTopCat(map,al){al=al||(a=>a||[]);const o={};if(map)for(const k in map){const t=SUBCAT2TOP[k]||k,a=al(map[k]||[]),d=(o[t]=o[t]||new Array(WEEKS.length).fill(0));for(let i=0;i<a.length;i++)d[i]+=(a[i]||0);}return o;}   // al optional: pre-aligned cat-maps roll with identity
 function alignCatMap(map,al){const o={};if(map)for(const k in map)o[k]=al(map[k]||[]);return o;}   // pre-align every category's array to WEEKS (so pur/rev by-cat can roll without knowing which cube's grid it came from)
 function opsB2DRecs(units){return (units||opsUnits()).map(u=>({online:!!u.online,city:u.city,loc:u.loc,doctor:u.doctor||u.label,booked:u.al(u.booked),done:u.al(u.done)}));}   // ④ record per unit (booked has no per-category split → no category layer here)
+function opsAvailRecs(units){return (units||opsUnits()).filter(u=>!u.online&&u.avail).map(u=>({online:false,city:u.city,loc:u.loc,doctor:u.doctor||u.label,   // ③ record per unit (offline clinics/doctors only — online telehealth has no roster)
+  rostered:u.al(u.avail.rostered_hrs||[]),shrink:u.al(u.avail.shrink_hrs||[]),net_sc:u.al(u.avail.net_sc_hrs_r||[]),attend:u.al(u.avail.attend_days||[])}));}
 function opsValRecs(units){const recs=[];(units||opsUnits()).forEach(u=>{   // ⑥ record per unit×top-category; a '(no category)' remainder keeps Σ = unit totals (≈0 now that offline+online both carry pur/rev by category).
   const purA=(u.pur||[]).slice(),revA=(u.rev||[]).slice(),doneA=u.al(u.done);
   const pc=rollTopCat(u.purByCat),rc=rollTopCat(u.revByCat),dc=rollTopCat(u.byCat,u.al);   // purByCat/revByCat are already WEEKS-aligned (offline qdAlign · online oneAlign) → roll with identity; byCat (done) is still raw → align with u.al
@@ -941,7 +944,7 @@ function opsValRecs(units){const recs=[];(units||opsUnits()).forEach(u=>{   // �
     recs.push({online:!!u.online,city:u.city,loc:u.loc,cat:SUBCAT2TOP[cat]||cat,pur,rev,done});});
   const rP=purA.map((v,i)=>v-(acc.pur[i]||0)),rR=revA.map((v,i)=>v-(acc.rev[i]||0)),rD=doneA.map((v,i)=>v-(acc.done[i]||0));
   if([rP,rR,rD].some(a=>a.some(x=>Math.abs(x)>1e-6)))recs.push({online:!!u.online,city:u.city,loc:u.loc,cat:'(no category)',pur:rP,rev:rR,done:rD});});return recs;}
-function opsAvail(sec,l){if(['city','clinic','doctor'].includes(l))return doneGeo().includes(l);if(l==='opscat')return sec==='val';return l==='seg';}
+function opsAvail(sec,l){if(['city','clinic','doctor'].includes(l))return doneGeo().includes(l);if(l==='opscat')return sec==='val';return l==='seg'&&sec!=='avail';}   // avail is offline-only → no Segment layer
 function opsSecLayers(sec){return OPS_ORD[sec].filter(l=>opsAvail(sec,l));}
 function opsBar(ll,sec,recs,rerender){if(!ll)return;ll.innerHTML='';
   const shb=document.createElement('button');shb.className='dlchip'+(OPS_SHARE[sec]?' on':'');shb.textContent='% share';shb.title='show each row’s share of its parent as a weekly trend (off = decluttered)';shb.style.marginRight='10px';shb.onclick=()=>{OPS_SHARE[sec]=!OPS_SHARE[sec];rerender();};ll.appendChild(shb);
@@ -992,7 +995,15 @@ function renderAvail(units){units=units||opsUnits();const flow=document.getEleme
     opsRow(flow,'net SC hours',A('net_sc_hrs_r'),{sub:true,col:'#2E7D5B'});
     opsRow(flow,'net Rpt hours',A('net_rpt_hrs'),{sub:true,col:'#6FA34C'});
     opsRow(flow,'dead-time hours',A('dead_hrs'),{sub:true,col:'#B8862E'});
-  }else{const n=document.createElement('div');n.className='frow';n.style.paddingLeft='34px';n.innerHTML='<span class="lbl" style="color:var(--faint);font-size:11.5px">— net SC / net Rpt / opened / dead-time hours are clinic-level only (not split per doctor)</span>';flow.appendChild(n);}}
+  }else{const n=document.createElement('div');n.className='frow';n.style.paddingLeft='34px';n.innerHTML='<span class="lbl" style="color:var(--faint);font-size:11.5px">— net SC / net Rpt / opened / dead-time hours are clinic-level only (not split per doctor)</span>';flow.appendChild(n);}
+  // City / Clinic / Doctor breakdown (draggable layer bar) — each leaf group shows Rostered → Shrinkage → Net SC hrs → Attended days
+  const ll=document.getElementById('availLayerLbl'),recs=opsAvailRecs(units);
+  if(ll)opsBar(ll,'avail',recs,renderAvail);
+  const layers=opsSecLayers('avail');
+  if(layers.length){const fr=recs.filter(r=>layers.every(dk=>!(OPS_SEL.avail[dk]&&OPS_SEL.avail[dk].has(OPSDIM[dk].get(r)))));
+    const hd=document.createElement('div');hd.className='opssub2';hd.style.cssText='margin:10px 0 2px;font-weight:700;color:var(--muted)';hd.textContent='▾ '+layers.map(l=>OPSDIM[l].lab).join(' › ')+' breakdown';flow.appendChild(hd);
+    const cfg={sec:'avail',rerender:renderAvail,stages:[{lab:'Rostered hrs',f:'rostered',col:'#8257C4'},{lab:'Shrinkage hrs',f:'shrink',col:'#B8503C'},{lab:'Net SC hrs',f:'net_sc',col:'#2E7D5B'},{lab:'Attended days',f:'attend',col:'#3E7CB1'}]};
+    opsFunnelDrill(flow,fr,layers,0,15,'avail',cfg,opsDv(sumRecF(recs,'rostered')));}}
 let B2D_GRAIN=['patient'];   // which grain layers to show in ④ (toggle chips) — patient by default; slot (+ outcome breakdown) is opt-in
 function renderB2D(units){units=units||opsUnits();const flow=document.getElementById('b2dFlow'),head=document.getElementById('b2dHead');flow.innerHTML='';head.innerHTML=opsHeadHTML('Book → Done · SC');
   const hasSlot=units.some(u=>u.bookedSlots),grains=[['patient','Patient'],['slot','Slot']].filter(([g])=>g==='patient'||hasSlot);
