@@ -250,6 +250,12 @@
   .imchip.cfgreset{padding:3px 9px;font-size:11px;color:var(--muted)}
   .imdgrow .imchev{width:15px;flex:none;color:var(--muted);font-size:9px;align-self:center;text-align:center}
   .imcell.im-inh{opacity:.38}
+  .imcell{position:relative;cursor:pointer;border-radius:5px}
+  .imcell.im-inh{cursor:default}
+  .imcell .imz{position:absolute;top:3px;right:3px;opacity:0;color:var(--muted);transition:opacity .1s}
+  .imdgrow:hover .imcell:not(.im-inh) .imz{opacity:.45}
+  .imcell:not(.im-inh):hover{background:var(--inset)}
+  .imcell:not(.im-inh):hover .imz{opacity:.95}
   .imnestwrap{display:inline-flex;flex-wrap:wrap;align-items:center;gap:5px}
   .imnfix{font-size:11px;font-weight:800;color:var(--muted)}
   .imnarr{color:var(--faint);font-weight:800}
@@ -1287,16 +1293,30 @@ function imCfgLabel(sk){const def=imStageDef(sk),spec=IM_STAGE_CFG[sk],c=IM_CFG[
   let base=def.lab;if(c.v&&spec.variants.length>1){const vl=(spec.variants.find(x=>x[0]===c.v)||[])[1];if(vl)base=num+' '+vl;}
   const cut=c.cut||{},parts=[];for(const d in cut){if(!cut[d]||!cut[d].length)continue;const cd=spec.cuts.find(x=>x.dim===d);if(cd)parts.push(cut[d].map(x=>(cd.vals.find(v=>v[0]===x)||[])[1]||x).join('+'));}
   return base+(parts.length?' · '+parts.join('·'):'');}
-function imStageSeries(sk,cl,extra){const c=IM_CFG[sk]||{},cut=Object.assign({},c.cut||{});
-  if(extra)for(const d in extra)cut[d]=extra[d];   // nest-path filters (from expandable rows) — override the stage's config cut for that field
-  const t={seg:'offline',city:cl.city,loc:cl.loc};
-  if(sk==='bookings'){const dims=Object.keys(cut).filter(d=>cut[d]&&cut[d].length);   // combine maturity + booking-rank + done-rank + channel/medium/category (AND) from the ② episode cube
-    if(dims.length){const o=new Array(WEEKS.length).fill(0);(PB.cells||[]).forEach(cell=>{if(!imMatch(cell.city,cl.city)||!imMatch(cell.loc,cl.loc)||!imMatch(cell.seg,'offline'))return;if(!dims.every(d=>cut[d].includes(cell[d])))return;const a=cell.arr||[];for(let i=0;i<o.length;i++)o[i]+=a[i]||0;});return opsDv(o);}
+// entity grain FOLLOWS the top scope: City → city rows (drill to clinic) · Clinic → clinic rows · Doctor → doctor rows (ops stages only, no leads/bookings/value)
+function imScopeGrain(){return SCOPE==='clinic'?'clinic':SCOPE==='doctor'?'doctor':'city';}   // national + city both lead with City (matches the full funnel)
+function imEntities(){const grain=imScopeGrain();
+  if(grain==='doctor')return opsUnitsOffline().filter(u=>u.doctor).map(u=>({city:u.city,loc:u.loc,doctor:u.doctor,unit:u,key:'D|'+u.city+'|'+u.loc+'|'+u.doctor}));
+  if(grain==='clinic'){const s={},o=[];opsUnitsOffline().forEach(u=>{if(!u.loc)return;const k=u.city+'|'+u.loc;if(!s[k]){s[k]=1;o.push({city:u.city,loc:u.loc,key:k});}});return o;}
+  const s={},o=[];opsUnitsOffline().forEach(u=>{if(!u.city)return;if(!s[u.city]){s[u.city]=1;o.push({city:u.city,key:'C|'+u.city});}});return o;}
+function imClinicsInCity(city){const s={},o=[];opsUnitsOffline().forEach(u=>{if(u.city===city&&u.loc&&!s[u.loc]){s[u.loc]=1;o.push(u.loc);}});return o.sort();}
+function imVisibleStages(){const grain=imScopeGrain();return IM_ORDER.filter(sk=>grain!=='doctor'||['avail','b2d','done'].includes(sk));}   // doctor scope: only the per-doctor ops stages (leads/bookings/value don't split by doctor)
+function imStageSeries(sk,ent,extra){
+  if(ent.doctor){const u=ent.unit;   // per-doctor: ops stages straight from the doctor's quick_diag unit
+    if(sk==='leads'||sk==='bookings'||sk==='value')return [];
+    if(sk==='avail'){const f={netsc:'net_sc_hrs_r',attend:'attend_days',rostered:'rostered_hrs',opened:'opened_ash'}[imCfgVariant('avail')]||'net_sc_hrs_r';return opsDv(u.al((u.avail&&u.avail[f])||[]));}
+    if(sk==='done')return opsDv(u.al(u.done));
+    if(sk==='b2d'){const dn=opsDv(u.al(u.done)),bk=opsDv(u.al(u.booked));return bk.map((b,i)=>b?100*dn[i]/b:null);}
+    return [];}
+  const c=IM_CFG[sk]||{},cut=Object.assign({},c.cut||{});
+  if(extra)for(const d in extra)cut[d]=extra[d];   // nest-path filters (from expandable rows)
+  const t={seg:'offline',city:ent.city,loc:ent.loc};   // ent.loc undefined at CITY grain → aggregates every clinic in the city
+  if(sk==='bookings'){const dims=Object.keys(cut).filter(d=>cut[d]&&cut[d].length);
+    if(dims.length){const o=new Array(WEEKS.length).fill(0);(PB.cells||[]).forEach(cell=>{if(!imMatch(cell.city,ent.city)||!imMatch(cell.loc,ent.loc)||!imMatch(cell.seg,'offline'))return;if(!dims.every(d=>cut[d].includes(cell[d])))return;const a=cell.arr||[];for(let i=0;i<o.length;i++)o[i]+=a[i]||0;});return opsDv(o);}
     return (imMetOf('bookings').series(t)||{}).disp||[];}
   for(const d in cut){if(cut[d]&&cut[d].length)t[d]=cut[d];}
   return (imMetOf(imCfgVariant(sk)).series(t)||{}).disp||[];}
-function imOfflineClinics(){const seen={},out=[];opsUnitsOffline().forEach(u=>{if(!u.loc)return;const k=u.city+'|'+u.loc;if(!seen[k]){seen[k]=1;out.push({city:u.city,loc:u.loc,key:k});}});return out;}
-// nesting dims usable BELOW the clinic level (true expandable drill, like the full funnel). Each maps to the per-STAGE cut field (leads use 'src'/'cat', bookings use 'channel'/'category', …); a stage with no field for the dim inherits the clinic total.
+// nesting dims usable BELOW the entity (true expandable drill, like the full funnel). Each maps to the per-STAGE cut field; a stage with no field for the dim inherits the parent total (muted).
 const IM_NEST_DEFS={
   channel:{lab:'Channel', vals:IM_CH_VALS, field:{leads:'src',bookings:'channel',done:'src'}},
   medium:{lab:'Medium',   vals:IM_MED_VALS, field:{leads:'medium',bookings:'medium'}},
@@ -1304,16 +1324,16 @@ const IM_NEST_DEFS={
   maturity:{lab:'Lead maturity', vals:[['fresh','fresh'],['wk1','1wk'],['wk2_4','2–4wk'],['mo1_3','1–3mo'],['mo3','3mo+'],['nolead','no lead']], field:{bookings:'age'}},
   brank:{lab:'Booking rank', vals:[['1st','1st-ever'],['2nd','2nd'],['3rd','3rd'],['4pl','4th+']], field:{bookings:'brank'}},
 };
-let IM_NEST=[];   // dims to nest each clinic row deeper by, in order (e.g. ['channel','medium'])
-function imNodeCells(cl,path){const cells={};let bkNow=0;   // path = [{dim,val}] accumulated nest filters
+let IM_NEST=[];   // extra dims to nest each row deeper by, in order (e.g. ['channel','medium'])
+function imNodeCells(ent,path){const cells={};let prim=0;   // path = [{dim,val}] accumulated nest filters
   IM_STAGES.forEach(st=>{const extra={};let applies=false;
     path.forEach(pc=>{const f=(IM_NEST_DEFS[pc.dim].field||{})[st.key];if(f){extra[f]=[pc.val];applies=true;}});
-    const ser=imStageSeries(st.key,cl,extra),dp=ser.length?deltaPct(ser):null,mm=imMetOf(st.key==='bookings'?'bookings':imCfgVariant(st.key));
-    cells[st.key]={ser,dp,rag:dp?imRag(dp):'g',pct:!!(mm&&mm.pct),inherited:path.length>0&&!applies};   // inherited = this stage doesn't split by any path dim → shows the clinic total (muted)
-    if(st.key==='bookings')bkNow=dp?(dp.now||0):0;});
-  return {cells,bkNow};}
-function imClinicRow(c){const r=imNodeCells(c,[]);return {c,cells:r.cells,bkNow:r.bkNow};}
-function imPassStages(row){return IM_ORDER.every(sk=>{const S=IM_SRAG[sk];return !S||!S.size||S.has(row.cells[sk].rag);});}
+    const ser=imStageSeries(st.key,ent,extra),dp=ser.length?deltaPct(ser):null,mm=imMetOf(st.key==='bookings'?'bookings':imCfgVariant(st.key));
+    cells[st.key]={ser,dp,rag:dp?imRag(dp):'g',pct:!!(mm&&mm.pct),inherited:path.length>0&&!applies&&!ent.doctor};
+    if(st.key==='bookings'||(ent.doctor&&st.key==='done'))prim=dp?(dp.now||0):prim;});
+  return {cells,prim};}
+function imClinicRow(c){const r=imNodeCells(c,[]);return {c,cells:r.cells,bkNow:r.prim};}
+function imPassStages(row){return imVisibleStages().every(sk=>{const S=IM_SRAG[sk];return !S||!S.size||S.has(row.cells[sk].rag);});}
 // customise-a-stage bar: pick the variant metric + which layers (source / medium / category / maturity / rank) to include for that stage
 function imCfgBar(){const bar=document.getElementById('imCfgBar');if(!bar)return;
   if(!IM_POP||!IM_STAGE_CFG[IM_POP]){bar.style.display='none';bar.innerHTML='';return;}
@@ -1333,52 +1353,55 @@ function imCfgBar(){const bar=document.getElementById('imCfgBar');if(!bar)return
   const rs=bar.querySelector('.cfgreset');if(rs)rs.onclick=()=>{delete IM_CFG[sk];imRender();};}
 function imRender(){const sec=document.getElementById('imSection');if(!sec||sec.style.display==='none')return;
   const cmL=({last:'last wk',first:'first wk',peak:'peak',avg:'avg'})[CMP]||CMP;
-  // entities → rows: offline clinics IN THE CURRENT SCOPE (opsUnitsOffline follows National/City/Clinic/Doctor + top selection), maturity via the top Clinic-age filter, funnel computed, then filtered by the per-stage colour conditions
-  let rows=imOfflineClinics()
-    .filter(c=>matPass(c.loc))
-    .map(imClinicRow)
-    .filter(r=>r.bkNow>=IM_MAT)
-    .filter(imPassStages);
-  rows.sort((a,b)=>((a.cells.bookings.dp?imDropNum(a.cells.bookings.dp):1e9)-(b.cells.bookings.dp?imDropNum(b.cells.bookings.dp):1e9)));   // biggest Bookings drop first
-  const cnt=document.getElementById('imCount');if(cnt)cnt.textContent=rows.length+' clinic'+(rows.length!==1?'s':'')+' match';
+  // entity grain follows scope (opsUnitsOffline already applies scope + top Clinic-age); each entity's funnel is filtered by the per-stage colour conditions
+  const grain=imScopeGrain(),primStage=grain==='doctor'?'done':'bookings',grainLbl={city:'City',clinic:'Clinic',doctor:'Doctor'}[grain];
+  let rows=imEntities().map(e=>{const r=imNodeCells(e,[]);return {c:e,cells:r.cells,prim:r.prim};})
+    .filter(r=>r.prim>=IM_MAT).filter(imPassStages);
+  rows.sort((a,b)=>((a.cells[primStage].dp?imDropNum(a.cells[primStage].dp):1e9)-(b.cells[primStage].dp?imDropNum(b.cells[primStage].dp):1e9)));   // biggest drop first (Bookings, or Done at doctor grain)
+  const cnt=document.getElementById('imCount');if(cnt){const noun=grainLbl.toLowerCase(),plural=rows.length===1?noun:(noun==='city'?'cities':noun+'s');cnt.textContent=rows.length+' '+plural+' match';}
   const anyCond=Object.keys(IM_SRAG).some(k=>IM_SRAG[k]&&IM_SRAG[k].size);
   const clr=document.getElementById('imClrAll');if(clr)clr.style.visibility=anyCond?'visible':'hidden';
-  imCfgBar();   // customise-a-stage bar (variant + layer cuts), shown when a stage's ▾ is open
-  // header: label col + a colour-filter column per stage (in IM_ORDER)
+  imCfgBar();   // customise-a-stage bar
+  const VIS=imVisibleStages();   // stages shown for this grain (doctor scope hides leads/bookings/value)
   const head=document.getElementById('imHead');head.className='imdghdr';
-  head.innerHTML='<span class="lbl">Clinic · Δ vs '+cmL+'</span>'
-    +IM_ORDER.map(sk=>{const S=IM_SRAG[sk]||new Set(),cfgOn=imCfgConfigured(sk),open=IM_POP===sk;
+  head.innerHTML=`<span class="lbl">${grainLbl} · Δ vs ${cmL}</span>`
+    +VIS.map(sk=>{const S=IM_SRAG[sk]||new Set(),cfgOn=imCfgConfigured(sk),open=IM_POP===sk;
       return `<div class="imcolhd${open?' cfgopen':''}" data-sk="${sk}" draggable="true"><span class="cl" title="drag to reorder">${imCfgLabel(sk)} <span class="imcfgtog${cfgOn?' set':''}" data-cfg="${sk}" title="customise this stage (variant + layers)">▾</span></span><div class="imdots">${['r','o','y','g'].map(k=>`<button class="fdot${S.has(k)?' on':''}" data-sk="${sk}" data-k="${k}" title="${{r:'big drop ≥'+IM_RED+'%',o:'drop ≥'+IM_ORANGE+'%',y:'small drop',g:'up / flat'}[k]}"><i class="rag ${k}"></i></button>`).join('')}</div></div>`;}).join('');
   head.querySelectorAll('.imcfgtog').forEach(b=>b.onclick=(e)=>{e.stopPropagation();IM_POP=(IM_POP===b.dataset.cfg)?null:b.dataset.cfg;imRender();});
   head.querySelectorAll('.fdot').forEach(b=>b.onclick=(e)=>{e.stopPropagation();const sk=b.dataset.sk,k=b.dataset.k,S=IM_SRAG[sk]=IM_SRAG[sk]||new Set();if(S.has(k))S.delete(k);else S.add(k);if(!S.size)delete IM_SRAG[sk];imRender();});
   head.querySelectorAll('.imcolhd').forEach(h=>{h.ondragstart=()=>{IM_DRAGS=h.dataset.sk;};
     h.ondragover=(e)=>{e.preventDefault();h.classList.add('over');};h.ondragleave=()=>h.classList.remove('over');
     h.ondrop=(e)=>{e.preventDefault();h.classList.remove('over');const to=h.dataset.sk;if(!IM_DRAGS||IM_DRAGS===to)return;const a=IM_ORDER.filter(x=>x!==IM_DRAGS),at=a.indexOf(to);a.splice(at,0,IM_DRAGS);IM_ORDER=a;IM_DRAGS=null;imRender();};});
-  imNestChain();   // the "break rows deeper by …" control
+  imNestChain();
   const grid=document.getElementById('imGrid');grid.innerHTML='';
-  if(!rows.length){grid.innerHTML='<div class="empty" style="padding:34px;text-align:center;color:var(--muted)">No offline clinics match all conditions — loosen a colour filter, or the top-bar Clinic-age.</div>';return;}
+  if(!rows.length){grid.innerHTML=`<div class="empty" style="padding:34px;text-align:center;color:var(--muted)">No ${grainLbl.toLowerCase()}s in this scope match all conditions — loosen a colour filter or change the scope above.</div>`;return;}
   const STAGECOL={leads:'#3E7CB1',bookings:'#2E7D5B',avail:'#8257C4',b2d:'#1F6F5C',done:'#C87B2E',value:'#C87B2E'};
+  const ZM='<svg class="imz" width="9" height="9" viewBox="0 0 16 16"><circle cx="7" cy="7" r="5" fill="none" stroke="currentColor" stroke-width="2"/><line x1="11" y1="11" x2="15.5" y2="15.5" stroke="currentColor" stroke-width="2"/></svg>';
   const cellHTML=(cell,sk)=>{const dp=cell.dp,cls=cell.inherited?'rx im-inh':({r:'rr',o:'ro',y:'ry',g:'rg'}[cell.rag]||'rx'),now=cell.pct?(dp?Math.round(dp.now)+'%':'·'):fmtOps(dp?(dp.now||0):0);
-    return `<div class="imcell ${cls}" data-sk="${sk}" title="${cell.inherited?'clinic total — this stage doesn’t split by this layer':'click to plot '+imCfgLabel(sk)}">${dp?dp.txt:'—'}<small>${now}</small></div>`;};
-  // recursive tree: clinic → IM_NEST[0] → IM_NEST[1] … each node shows the full 6-stage funnel for its slice
-  function renderNode(cl,path,key){const cells=imNodeCells(cl,path).cells,depth=path.length;
-    if(depth>0&&!cells.leads.ser.some(x=>x)&&!cells.bookings.ser.some(x=>x)&&!cells.done.ser.some(x=>x))return;   // skip empty sub-slices
-    const dim=IM_NEST[depth],hasKids=!!dim,op=!!IM_OPEN[key],lastPc=path[depth-1];
-    const lbl=depth?((IM_NEST_DEFS[lastPc.dim].vals.find(v=>v[0]===lastPc.val)||[])[1]||lastPc.val):cl.loc;
+    return `<div class="imcell ${cls}" data-sk="${sk}" title="${cell.inherited?'total — this stage doesn’t split by this layer':'click to plot '+imCfgLabel(sk)+' over time'}">${dp?dp.txt:'—'}<small>${now}</small>${cell.inherited?'':ZM}</div>`;};
+  // what a node expands into next: City entity → its clinics; then the IM_NEST dims. (Doctor rows don't nest.)
+  function drillNext(ent,cutPath){if(grain==='doctor')return null;if(grain==='city'&&ent.loc===undefined)return {type:'clinic'};const nd=IM_NEST[cutPath.length];return nd?{type:'nest',dim:nd}:null;}
+  function renderNode(ent,cutPath,key,depth,label){const cells=imNodeCells(ent,cutPath).cells;
+    if(depth>0&&!VIS.some(sk=>cells[sk].ser.some(x=>x)))return;   // skip empty children
+    const nx=drillNext(ent,cutPath),hasKids=!!nx,op=!!IM_OPEN[key];
     const row=document.createElement('div');row.className='imdgrow'+(hasKids?' clk':'');row.style.paddingLeft=(10+depth*15)+'px';
-    row.innerHTML=`<span class="imchev">${hasKids?(op?'▾':'▶'):''}</span><span class="lbl"><span class="dot" style="background:${depth?'#9aa3b0':'#7C5CBF'}"></span>${lbl}</span>`+IM_ORDER.map(sk=>cellHTML(cells[sk],sk)).join('');
-    row.onclick=(e)=>{const cell=e.target.closest('.imcell');if(cell){openChart(cl.city+' · '+cl.loc+(depth?' › '+lbl:'')+' — '+imCfgLabel(cell.dataset.sk),cells[cell.dataset.sk].ser,STAGECOL[cell.dataset.sk]||'#2E7D5B');return;}if(hasKids){IM_OPEN[key]=!IM_OPEN[key];imRender();}};
+    row.innerHTML=`<span class="imchev">${hasKids?(op?'▾':'▶'):''}</span><span class="lbl"><span class="dot" style="background:${depth?'#9aa3b0':'#7C5CBF'}"></span>${label}</span>`+VIS.map(sk=>cellHTML(cells[sk],sk)).join('');
+    const title=[ent.city,ent.loc,ent.doctor].filter(Boolean).join(' · ')+(cutPath.length?' › '+cutPath.map(pc=>(IM_NEST_DEFS[pc.dim].vals.find(v=>v[0]===pc.val)||[])[1]||pc.val).join(' › '):'');
+    row.onclick=(e)=>{const cell=e.target.closest('.imcell');if(cell&&!cell.classList.contains('im-inh')){openChart(title+' — '+imCfgLabel(cell.dataset.sk),cells[cell.dataset.sk].ser,STAGECOL[cell.dataset.sk]||'#2E7D5B');return;}if(hasKids){IM_OPEN[key]=!IM_OPEN[key];imRender();}};
     grid.appendChild(row);
-    if(hasKids&&op)IM_NEST_DEFS[dim].vals.forEach(([v])=>renderNode(cl,path.concat([{dim,val:v}]),key+'/'+dim+':'+v));}
-  const byCity={};rows.forEach(r=>{(byCity[r.c.city]=byCity[r.c.city]||[]).push(r);});
-  Object.keys(byCity).sort().forEach(city=>{
-    const ch=document.createElement('div');ch.className='imcityhdr';ch.textContent=city+' · '+byCity[city].length+' clinic'+(byCity[city].length!==1?'s':'');grid.appendChild(ch);
-    byCity[city].forEach(r=>renderNode(r.c,[],r.c.key));});
+    if(hasKids&&op){if(nx.type==='clinic')imClinicsInCity(ent.city).forEach(loc=>renderNode({city:ent.city,loc},cutPath,key+'/cl:'+loc,depth+1,loc));
+      else IM_NEST_DEFS[nx.dim].vals.forEach(([v,l])=>renderNode(ent,cutPath.concat([{dim:nx.dim,val:v}]),key+'/'+nx.dim+':'+v,depth+1,l));}}
+  if(grain==='city'){rows.forEach(r=>renderNode(r.c,[],r.c.key,0,r.c.city));}
+  else{const byG={};rows.forEach(r=>{const g=grain==='doctor'?(r.c.city+' · '+r.c.loc):r.c.city;(byG[g]=byG[g]||[]).push(r);});
+    Object.keys(byG).sort().forEach(g=>{const ch=document.createElement('div');ch.className='imcityhdr';ch.textContent=g+' · '+byG[g].length+' '+grainLbl.toLowerCase()+(byG[g].length!==1?'s':'');grid.appendChild(ch);
+      byG[g].forEach(r=>renderNode(r.c,[],r.c.key,0,grain==='doctor'?r.c.doctor:r.c.loc));});}
 }
 // "break rows deeper by …" — chain of nest dims below the clinic (true expandable drill, like the full funnel)
-function imNestChain(){const el=document.getElementById('imNestChain');if(!el)return;
+function imNestChain(){const el=document.getElementById('imNestChain');if(!el)return;const grain=imScopeGrain();
+  if(grain==='doctor'){el.innerHTML='<span class="imnfix">Doctor</span> <span class="imhint" style="font-weight:400">— doctor rows show the ③④⑤ ops stages; no deeper nesting</span>';return;}
+  const prefix=grain==='city'?'City › Clinic':'Clinic';
   const avail=Object.keys(IM_NEST_DEFS).filter(d=>!IM_NEST.includes(d));
-  el.innerHTML='<span class="imnfix">City › Clinic</span>'+IM_NEST.map((d,i)=>`<span class="imnarr">›</span><button class="imchip imnest on" data-rm="${d}">${IM_NEST_DEFS[d].lab}<span class="imnx">✕</span></button>`).join('')
+  el.innerHTML='<span class="imnfix">'+prefix+'</span>'+IM_NEST.map((d,i)=>`<span class="imnarr">›</span><button class="imchip imnest on" data-rm="${d}">${IM_NEST_DEFS[d].lab}<span class="imnx">✕</span></button>`).join('')
     +avail.map(d=>`<button class="imchip imnest add" data-add="${d}">＋ ${IM_NEST_DEFS[d].lab}</button>`).join('');
   el.querySelectorAll('[data-add]').forEach(b=>b.onclick=()=>{IM_NEST.push(b.dataset.add);IM_OPEN={};imRender();});
   el.querySelectorAll('[data-rm]').forEach(b=>b.onclick=()=>{IM_NEST=IM_NEST.filter(x=>x!==b.dataset.rm);IM_OPEN={};imRender();});}
