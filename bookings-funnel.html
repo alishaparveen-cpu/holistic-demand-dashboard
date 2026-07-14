@@ -200,6 +200,14 @@
   .imchip.scut.sub{font-weight:500;opacity:.92}
   .imchip.mbcut{padding:3px 9px;font-size:11px}
   .imchip.mbcut.on{background:#7A3FA0;border-color:#7A3FA0;color:#fff}
+  .imchip.immain{padding:6px 13px;font-size:13px;font-weight:700}
+  .imchip.immain.on{background:var(--accent);border-color:var(--accent);color:#fff}
+  .imchip.ccut{padding:3px 9px;font-size:11px}
+  .imchip.ccut.on{background:#C2691F;border-color:#C2691F;color:#fff}
+  .imchip.vswitch{padding:3px 9px;font-size:11px;font-weight:600}
+  .imchip.vswitch.on{background:var(--accent);border-color:var(--accent);color:#fff}
+  .imcutlab{font-size:10px;font-weight:800;letter-spacing:.03em;color:var(--muted);text-transform:uppercase;min-width:60px;display:inline-block}
+  .imselcuts{display:flex;flex-wrap:wrap;gap:5px;align-items:center;margin-bottom:3px}
   @media(max-width:1000px){.imhead3{grid-template-columns:1fr}.impanel{border-right:none;border-bottom:1px solid var(--line)}}
   .imfbar{display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin:0 0 8px;padding:8px 12px;background:var(--sheet);border:1px solid var(--line);border-radius:10px}
   .imfctx{font-size:11.5px;color:var(--muted);font-weight:600;margin-right:auto}
@@ -354,11 +362,11 @@
   <div id="imSection" style="display:none">
     <div class="imhead3">
       <div class="impanel">
-        <div class="imcap">1 · Metric <span class="imhint">click a tier for the whole group · or single metrics — each becomes a stacked row</span></div>
+        <div class="imcap">1 · Metric <span class="imhint">the funnel metrics — click to add</span></div>
         <div id="imMet" class="imtiers"></div>
       </div>
       <div class="impanel">
-        <div class="imcap">2 · Selection <span class="imhint">focus one exact cut of a metric</span></div>
+        <div class="imcap">2 · Selection <span class="imhint">build each metric's exact slice — variant + segment · source · medium (multi = OR, combine)</span></div>
         <div id="imSel" class="imselwrap"></div>
       </div>
       <div class="impanel">
@@ -1043,7 +1051,23 @@ const IM_LEADSIDE=new Set(['leads','bookedleads','bookrate']);   // leads-side m
 function imLeadTop(c){return SUBCAT2TOP[c.category]||({STI:'STI',SH:'SH',MH:'MH'}[c.category])||(c.category&&c.category!=='na'&&c.category!=='unknown'?'Other':null);}   // call-intent category → top (null when unknown, so it doesn't pollute)
 function imMatch(val,tag){return tag==null?true:(Array.isArray(tag)?tag.includes(val):val===tag);}   // tag can be a single value OR an array (a combined group)
 function imUnitsT(t){return opsUnits().filter(u=>imMatch(u.city,t.city)&&imMatch(u.loc,t.loc)&&(t.seg==null?true:imMatch(u.online?'online':'offline',t.seg)));}
-function imLeadT(t){return (PL.cells||[]).filter(c=>imMatch(c.city,t.city)&&imMatch(c.loc,t.loc)&&(t.seg==null?true:imMatch(c._on?'online':'offline',t.seg))&&(t.cat==null?true:imMatch(imLeadTop(c),t.cat))&&(t.src==null?true:imMatch(c.channel,t.src)));}
+function imLeadT(t){return (PL.cells||[]).filter(c=>imMatch(c.city,t.city)&&imMatch(c.loc,t.loc)&&(t.seg==null?true:imMatch(c._on?'online':'offline',t.seg))&&(t.cat==null?true:imMatch(imLeadTop(c),t.cat))&&(t.src==null?true:imMatch(c.channel,t.src))&&(t.medium==null?true:imMatch(c.medium,t.medium)));}
+// ===== diagnostic query builder: per-metric CUT (slice) + per-metric COLOUR CONDITION (AND across metrics) =====
+let IM_CUT={};   // IM_CUT[metricKey] = {seg:[...],src:[...],medium:[...],cat:[...]} — the exact slice of that metric
+let IM_COND={};  // IM_COND[metricKey] = Set(['r','o']) — colour condition; a top-level row is shown only if EVERY conditioned metric matches
+let IM_VAR={};   // IM_VAR[mainKey] = chosen variant concrete key (e.g. avail → 'netsc' | 'attend')
+function imCutTags(key){const c=IM_CUT[key],o={};if(c)for(const d in c)if(c[d]&&c[d].length)o[d]=c[d].slice();return o;}
+function imMSeries(m,t){return m.series(Object.assign({},t,imCutTags(m.key)))||{};}   // metric series with its cut applied
+// the 6 main funnel metrics (panel 1) — each maps to a default concrete metric + selectable variants (panel 2)
+const IM_MAINS=[
+  {main:'leads', lab:'Leads',        vars:['leads','bookedleads','bookrate']},
+  {main:'bookings', lab:'Bookings',  vars:['bookings']},
+  {main:'avail', lab:'Availability', vars:['netsc','attend']},
+  {main:'b2d', lab:'Book→Done %',    vars:['b2d']},
+  {main:'done', lab:'Done',          vars:['done']},
+  {main:'value', lab:'Value',        vars:['revenue','purchased','d2p','rpc']},
+];
+function imMainOf(k){return IM_MAINS.find(mn=>mn.vars.includes(k));}   // which main a concrete metric belongs to
 function imSumCells(cells){const o=new Array(WEEKS.length).fill(0);cells.forEach(c=>{const a=c.arr||[];for(let i=0;i<o.length;i++)o[i]+=a[i]||0;});return o;}
 function imCount(disp){return {disp:opsDv(disp),size:opsDv(disp)[WKOFF]||0};}
 function imRate(numRaw,denRaw,pct){const N=opsDv(numRaw),D=opsDv(denRaw);return {disp:D.map((d,i)=>d?(pct?100:1)*N[i]/d:null),size:D[WKOFF]||0,pct:!!pct};}
@@ -1057,6 +1081,7 @@ const IM_METS=[
   {key:'bookrate',   lab:'Book rate %',  stage:'① Leads',    pct:true, dims:['seg','city','clinic','cat','src'], series:t=>{const cs=imLeadT(t);return imRate(imSumCells(cs.filter(c=>c.status==='booked')),imSumCells(cs),true);}},
   {key:'bookings',   lab:'Bookings',     stage:'② Bookings',  dims:['seg','city','clinic'],                       series:t=>imCount(opsSumU(imUnitsT(t),u=>u.booked))},
   {key:'netsc',      lab:'Net SC hrs',   stage:'③ Availability',  off:true, dims:['seg','city','clinic'],             series:t=>imCount(opsSumU(imUnitsT(t).filter(u=>!u.online),u=>(u.avail&&u.avail.net_sc_hrs_r)||[]))},
+  {key:'attend',     lab:'Attended days',stage:'③ Availability',  off:true, dims:['seg','city','clinic'],             series:t=>imCount(opsSumU(imUnitsT(t).filter(u=>!u.online),u=>(u.avail&&u.avail.attend_days)||[]))},
   {key:'b2d',        lab:'Book→Done %',  stage:'④ Book→Done',       pct:true, dims:['seg','city','clinic'],             series:t=>imRate(opsSumU(imUnitsT(t),u=>u.done),opsSumU(imUnitsT(t),u=>u.booked),true)},
   {key:'done',       lab:'Done',         stage:'⑤ Done',      dims:['seg','city','clinic','cat','src'],           series:t=>imCount((t.cat||t.src)?imDoneCatRaw(t):opsSumU(imUnitsT(t),u=>u.done))},
   {key:'purchased',  lab:'Purchased',    stage:'⑥ Value',     dims:['seg','city','clinic','cat'],                 series:t=>imCount(t.cat?imValCatRaw(t,'pur'):sumPre(imUnitsT(t),u=>u.pur))},
@@ -1064,7 +1089,7 @@ const IM_METS=[
   {key:'revenue',    lab:'Revenue ₹',    stage:'⑥ Value',     money:true, dims:['seg','city','clinic','cat'],     series:t=>{const r=imCount(t.cat?imValCatRaw(t,'rev'):sumPre(imUnitsT(t),u=>u.rev));r.money=true;return r;}},
   {key:'rpc',        lab:'RPC ₹',        stage:'⑥ Value',     money:true, dims:['seg','city','clinic','cat'],     series:t=>{const r=imRate(t.cat?imValCatRaw(t,'rev'):sumPre(imUnitsT(t),u=>u.rev), t.cat?imValCatRaw(t,'done'):opsSumU(imUnitsT(t),u=>u.done), false);r.money=true;return r;}},
 ];
-const IM_DIMLAB={seg:'Segment',city:'City',clinic:'Clinic',cat:'Category',src:'Source'};
+const IM_DIMLAB={seg:'Segment',city:'City',clinic:'Clinic',cat:'Category',src:'Source',medium:'Medium'};
 function imSelMets(){return IM_SEL.map(k=>IM_METS.find(m=>m.key===k)).filter(Boolean).sort((a,b)=>IM_METS.indexOf(a)-IM_METS.indexOf(b));}   // always display in funnel order (Leads→Bookings→Availability→B2D→Done→Value), whatever order they were ticked
 function imSelDims(){const mets=imSelMets();return ['seg','city','clinic','cat','src'].filter(d=>{if(['city','clinic'].includes(d)&&!doneGeo().includes(d))return false;return mets.some(m=>m.dims.includes(d));});}   // a dim is offerable if ANY selected metric supports it (+ scope-gated for geo)
 function imSyncRows(){const av=imSelDims();IM_ROWS=IM_ROWS.filter(d=>av.includes(d));if(!IM_ROWS.length)IM_ROWS=[av.includes('city')?'city':av[0]];}
@@ -1084,7 +1109,8 @@ function imGroups(dim,tags){   // ordered groups: combined groups first, then re
   const all=imGroupValues(dim,tags),comb=IM_COMB[dim]||[],off=IM_OFF[dim]||new Set(),inC=new Set();comb.forEach(c=>c.vals.forEach(v=>inC.add(v)));
   const out=[];comb.forEach(c=>{const vals=c.vals.filter(v=>all.includes(v));if(vals.length)out.push({label:c.label,vals,comb:true});});
   all.forEach(v=>{if(!inC.has(v)&&!off.has(v))out.push({label:v,vals:[v],comb:false});});return out;}
-function imMetRow(container,m,t,pad){const disp=(m.series(t)||{}).disp||[];const row=opsBuildRow('↳ '+m.lab,disp,{col:imMetCol(m),pad,pct:!!m.pct,rawArr:disp});row.classList.add('imrow','rag-'+imRag(deltaPct(disp)));container.appendChild(row);}
+function imMetRow(container,m,t,pad){const disp=imMSeries(m,t).disp||[];const cut=imCutLabel(m.key);const row=opsBuildRow('↳ '+m.lab+cut,disp,{col:imMetCol(m),pad,pct:!!m.pct,rawArr:disp});row.classList.add('imrow','rag-'+imRag(deltaPct(disp)));container.appendChild(row);}
+function imCutLabel(mkey){const c=IM_CUT[mkey];if(!c)return '';const parts=[];for(const d in c)if(c[d]&&c[d].length)parts.push(c[d].map(v=>(((IM_CUTVALS[d]||[]).find(x=>x[0]===v)||[])[1])||v).join('+'));return parts.length?' · '+parts.join(' · '):'';}
 // --- 1b · FOCUS: split a metric into exact cuts (Bookings → fresh/1wk maturity or new/rebook ptype), each its own row (or ⊕ combined). Cuts come from the ② episode cube (PB cells: age=maturity, ptype). ---
 let IM_FOCUS={}, IM_FCOMB={};
 const IM_CUTS={
@@ -1100,7 +1126,7 @@ function imFocusRaw(mkey,t,field,vals){return mkey==='bookings'?imBkFocusRaw(t,f
 let IM_MBREAK={};   // per-metric breakdown: IM_MBREAK[metricKey] = [dims] — that metric drills by its OWN dims (Bookings by clinic while Leads stays by source), independent of the shared breakdown
 function imMBreakDims(m,t){return (IM_MBREAK[m.key]||[]).filter(d=>m.dims.includes(d)&&(!['city','clinic'].includes(d)||doneGeo().includes(d))&&t[imTagKey(d)]==null);}   // its own dims, supported + not already fixed by the shared path
 function imMetBreakDrill(container,m,t,dims,depth,pad,kp){const dim=dims[depth],tk=imTagKey(dim),last=depth===dims.length-1;
-  let rows=imGroups(dim,t).map(g=>{const tt=Object.assign({},t,{[tk]:g.vals.length>1?g.vals:g.vals[0]});const s=m.series(tt)||{},disp=s.disp||[],dp=disp.length?deltaPct(disp):null;return {g,tt,disp,dp,size:s.size||0};});
+  let rows=imGroups(dim,t).map(g=>{const tt=Object.assign({},t,{[tk]:g.vals.length>1?g.vals:g.vals[0]});const s=imMSeries(m,tt),disp=s.disp||[],dp=disp.length?deltaPct(disp):null;return {g,tt,disp,dp,size:s.size||0};});
   rows=rows.filter(r=>(r.size||0)>=IM_MAT&&r.disp.some(x=>x!=null&&x!==0));
   if(IM_SORT==='drop')rows.sort((a,b)=>imDropNum(a.dp||{})-imDropNum(b.dp||{}));else if(IM_SORT==='size')rows.sort((a,b)=>(b.size||0)-(a.size||0));else rows.sort((a,b)=>(''+a.g.label).localeCompare(''+b.g.label));
   rows.forEach(r=>{const key=kp+'/'+m.key+'/'+dim+':'+r.g.label,op=!!IM_OPEN[key];
@@ -1118,46 +1144,39 @@ function imMetRows(container,m,t,pad,kp){const foc=IM_FOCUS[m.key],cut=foc&&imCu
   const mb=imMBreakDims(m,t);   // this metric's OWN breakdown (per-metric)
   if(mb.length){const tkey=(kp||'r')+'/'+Object.entries(t).map(([k,v])=>k+':'+(Array.isArray(v)?v.join('+'):v)).join(',');imMetBreakDrill(container,m,t,mb,0,pad,tkey);return;}
   imMetRow(container,m,t,pad);}
-// 2 · SELECTION panel (marketing layout): Leads section + Bookings section; each cut focuses that metric (auto-selects it), ↳ indented sub-cuts, ⊕ combine when ≥2 picked
-function imSelPanel(){const sel=document.getElementById('imSel');if(!sel)return;
-  const SECS=[{k:'leads',name:'Leads',all:'all leads'},{k:'bookings',name:'Bookings',all:'all bookings'}];
-  const cutLab=(k,v)=>{for(const c of imCutsFor(k)){const e=c.vals.find(x=>x[0]===v);if(e)return e[1];}return v;};
-  sel.innerHTML=SECS.map(sec=>{const cuts=imCutsFor(sec.k),foc=IM_FOCUS[sec.k];if(!cuts.length)return '';
-    const focTxt=foc?` <span class="foc">→ ${foc.vals.map(v=>cutLab(sec.k,v)).join(' + ')}${IM_FCOMB[sec.k]&&foc.vals.length>=2?' (⊕)':''}</span>`:'';
-    let h=`<div class="imselsec"><div class="imselh">${sec.name}${focTxt}</div><div class="imselcuts"><button class="imchip scut${!foc?' on':''}" data-m="${sec.k}" data-all="1">${sec.all}</button>`;
-    cuts.forEach(cut=>{h+=cut.vals.map(([v,l])=>{const on=foc&&foc.dim===cut.dim&&foc.vals.includes(v);return `<button class="imchip scut sub${on?' on':''}" data-m="${sec.k}" data-d="${cut.dim}" data-v="${v}">↳ ${l}</button>`;}).join('');});
-    if(foc&&foc.vals.length>=2)h+=`<button class="imchip fcomb${IM_FCOMB[sec.k]?' on':''}" data-mc="${sec.k}" title="sum the ticked cuts into one row">⊕ combine</button>`;
-    h+='</div></div>';return h;}).join('');
-  // per-metric breakdown — each selected metric can be drilled by its OWN dims (Bookings by clinic, Leads by source, independently)
-  const mbDims=m=>['seg','city','clinic','cat','src'].filter(d=>m.dims.includes(d)&&(!['city','clinic'].includes(d)||doneGeo().includes(d)));
-  const mbHtml=imSelMets().filter(m=>mbDims(m).length).map(m=>{const cur=IM_MBREAK[m.key]||[];
-    return `<div class="imselsec"><div class="imselh" style="color:#7A3FA0">${m.lab} <span style="color:var(--faint);font-weight:500">— break by${cur.length?' → '+cur.map(d=>IM_DIMLAB[d]).join(' › '):''}</span></div><div class="imselcuts">${mbDims(m).map(d=>{const i=cur.indexOf(d);return `<button class="imchip mbcut${i>=0?' on':''}" data-mbm="${m.key}" data-mbd="${d}">${i>=0?(i+1)+'· ':''}${IM_DIMLAB[d]}</button>`;}).join('')}${cur.length?`<button class="imchip fclr" data-mbx="${m.key}">✕</button>`:''}</div></div>`;}).join('');
-  if(mbHtml)sel.innerHTML+=`<div style="border-top:1px dashed var(--line2);margin-top:6px;padding-top:7px"><div class="imselh" style="font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.03em;margin-bottom:5px">Per-metric breakdown</div>${mbHtml}</div>`;
-  sel.querySelectorAll('.scut[data-all]').forEach(b=>b.onclick=()=>{delete IM_FOCUS[b.dataset.m];delete IM_FCOMB[b.dataset.m];IM_OPEN={};imRender();});
-  sel.querySelectorAll('.scut[data-v]').forEach(b=>b.onclick=()=>{const mk=b.dataset.m,d=b.dataset.d,v=b.dataset.v;if(!IM_SEL.includes(mk))IM_SEL.push(mk);let f=IM_FOCUS[mk];if(!f||f.dim!==d){f={dim:d,vals:[]};IM_FOCUS[mk]=f;}const i=f.vals.indexOf(v);if(i<0)f.vals.push(v);else f.vals.splice(i,1);if(!f.vals.length){delete IM_FOCUS[mk];delete IM_FCOMB[mk];}IM_OPEN={};imRender();});
-  sel.querySelectorAll('.fcomb').forEach(b=>b.onclick=()=>{IM_FCOMB[b.dataset.mc]=!IM_FCOMB[b.dataset.mc];imRender();});
-  sel.querySelectorAll('.mbcut').forEach(b=>b.onclick=()=>{const mk=b.dataset.mbm,d=b.dataset.mbd,cur=(IM_MBREAK[mk]||[]).slice(),i=cur.indexOf(d);if(i<0)cur.push(d);else cur.splice(i,1);if(cur.length)IM_MBREAK[mk]=cur;else delete IM_MBREAK[mk];IM_OPEN={};imRender();});
-  sel.querySelectorAll('.fclr[data-mbx]').forEach(b=>b.onclick=()=>{delete IM_MBREAK[b.dataset.mbx];IM_OPEN={};imRender();});}
+// 2 · SELECTION panel = per-metric CUT builder: variant (Net SC hrs / Attended days …) + slice chips (Segment · Source · Medium · Category; multi-select within a dim = OR e.g. GMB+Google, across dims = AND e.g. Offline + call) + per-metric break-by
+function imCutDims(mkey){if(['leads','bookedleads','bookrate'].includes(mkey))return ['seg','src','medium'];if(mkey==='done')return ['seg','cat','src'];if(['purchased','d2p','revenue','rpc'].includes(mkey))return ['seg','cat'];return ['seg'];}
+const IM_CUTVALS={seg:[['offline','Offline'],['online','Online']],src:[['GMB','GMB'],['Google Ads','Google'],['Meta','Meta'],['Practo','Practo'],['Organic','Organic'],['Other','Other']],medium:[['call','Call'],['web','Web'],['whatsapp','WhatsApp'],['walkin','Walk-in']],cat:[['STI','STI'],['SH','SH'],['MH','MH'],['Other','Other']]};
+function imSelPanel(){const sel=document.getElementById('imSel');if(!sel)return;const mets=imSelMets();
+  if(!mets.length){sel.innerHTML='<div style="color:var(--faint);font-size:12px;padding:6px 2px">pick a metric on the left →</div>';return;}
+  sel.innerHTML=mets.map(m=>{const main=imMainOf(m.key)||{vars:[m.key]},cut=IM_CUT[m.key]||{},cutd=imCutDims(m.key),mb=IM_MBREAK[m.key]||[];
+    let h=`<div class="imselsec"><div class="imselh">${(imMainOf(m.key)||{}).lab||m.lab}</div>`;
+    if(main.vars.length>1)h+=`<div class="imselcuts">${main.vars.map(vk=>{const vm=IM_METS.find(x=>x.key===vk);return `<button class="imchip vswitch${vk===m.key?' on':''}" data-vk="${vk}" data-old="${m.key}">${vm?vm.lab:vk}</button>`;}).join('')}</div>`;
+    cutd.forEach(d=>{const vals=IM_CUTVALS[d]||[],cur=cut[d]||[];h+=`<div class="imselcuts"><span class="imcutlab">${IM_DIMLAB[d]}</span>${vals.map(([v,l])=>`<button class="imchip ccut${cur.includes(v)?' on':''}" data-cm="${m.key}" data-cd="${d}" data-cv="${v}">${l}</button>`).join('')}</div>`;});
+    const bd=['seg','city','clinic','cat','src'].filter(d=>m.dims.includes(d)&&(!['city','clinic'].includes(d)||doneGeo().includes(d)));
+    if(bd.length)h+=`<div class="imselcuts"><span class="imcutlab" style="color:#7A3FA0">break by</span>${bd.map(d=>{const i=mb.indexOf(d);return `<button class="imchip mbcut${i>=0?' on':''}" data-mbm="${m.key}" data-mbd="${d}">${i>=0?(i+1)+'· ':''}${IM_DIMLAB[d]}</button>`;}).join('')}</div>`;
+    h+='</div>';return h;}).join('');
+  const swap=(old,nv)=>{const i=IM_SEL.indexOf(old);if(i>=0)IM_SEL[i]=nv;['IM_CUT','IM_COND','IM_MBREAK'].forEach(()=>0);if(IM_CUT[old]){IM_CUT[nv]=IM_CUT[old];delete IM_CUT[old];}if(IM_COND[old]){IM_COND[nv]=IM_COND[old];delete IM_COND[old];}if(IM_MBREAK[old]){IM_MBREAK[nv]=IM_MBREAK[old];delete IM_MBREAK[old];}};
+  sel.querySelectorAll('.vswitch').forEach(b=>b.onclick=()=>{if(b.dataset.vk!==b.dataset.old)swap(b.dataset.old,b.dataset.vk);IM_OPEN={};imRender();});
+  sel.querySelectorAll('.ccut').forEach(b=>b.onclick=()=>{const mk=b.dataset.cm,d=b.dataset.cd,v=b.dataset.cv,c=IM_CUT[mk]=IM_CUT[mk]||{},a=c[d]=c[d]||[],i=a.indexOf(v);if(i<0)a.push(v);else a.splice(i,1);if(!a.length)delete c[d];if(!Object.keys(c).length)delete IM_CUT[mk];IM_OPEN={};imRender();});
+  sel.querySelectorAll('.mbcut').forEach(b=>b.onclick=()=>{const mk=b.dataset.mbm,d=b.dataset.mbd,cur=(IM_MBREAK[mk]||[]).slice(),i=cur.indexOf(d);if(i<0)cur.push(d);else cur.splice(i,1);if(cur.length)IM_MBREAK[mk]=cur;else delete IM_MBREAK[mk];IM_OPEN={};imRender();});}
 // separate Leads / Book colour-dot filters (marketing bar below the header): a row passes if its leads-side metric ∈ Leads filter AND its book-side ∈ Book filter
-function imFilterBar(){const bar=document.getElementById('imFilterBar');if(!bar)return;
-  const cap=s=>s.charAt(0).toUpperCase()+s.slice(1),TH={r:'≥15% drop',o:'≥5%',y:'smaller drop',g:'up/flat'};
-  const dot=(side,k)=>`<button class="fdot rag-${k}${(side==='L'?IM_RAG_L:IM_RAG_B)[k]?' on':''}" data-side="${side}" data-k="${k}" title="${TH[k]}"><i class="rag ${k}"></i></button>`;
-  const allL=['r','o','y','g'].every(k=>IM_RAG_L[k]),allB=['r','o','y','g'].every(k=>IM_RAG_B[k]);
-  const hasL=imSelMets().some(m=>IM_LEADSIDE.has(m.key)),hasB=imSelMets().some(m=>!IM_LEADSIDE.has(m.key));
-  bar.innerHTML=`<span class="imfctx">▦ ${SCOPE==='national'?'National · all cities':cap(SCOPE)} · each row = one ${IM_ROWS[0]==='clinic'?'clinic':IM_ROWS[0]==='cat'?'category':IM_ROWS[0]==='src'?'source':IM_ROWS[0]==='seg'?'segment':'city'} · sorted by ${IM_SORT==='drop'?'biggest drop':IM_SORT==='size'?'size':'A–Z'}</span>`
-    +(hasL?`<span class="imfg"><b>Leads</b><button class="fany${allL?' on':''}" data-side="L">any</button>${['r','o','y','g'].map(k=>dot('L',k)).join('')}</span>`:'')
-    +(hasB?`<span class="imfg"><b>Book</b><button class="fany${allB?' on':''}" data-side="B">any</button>${['r','o','y','g'].map(k=>dot('B',k)).join('')}</span>`:'')
-    +`<button class="imclr">✕ clear filters</button>`;
-  bar.querySelectorAll('.fany').forEach(b=>b.onclick=()=>{const S=b.dataset.side==='L'?IM_RAG_L:IM_RAG_B;['r','o','y','g'].forEach(k=>S[k]=true);imRender();});
-  bar.querySelectorAll('.fdot').forEach(b=>b.onclick=()=>{const S=b.dataset.side==='L'?IM_RAG_L:IM_RAG_B,k=b.dataset.k,all=['r','o','y','g'].every(x=>S[x]);if(all){['r','o','y','g'].forEach(x=>S[x]=(x===k));}else{S[k]=!S[k];if(['r','o','y','g'].every(x=>!S[x]))['r','o','y','g'].forEach(x=>S[x]=true);}imRender();});
-  bar.querySelector('.imclr').onclick=()=>{['r','o','y','g'].forEach(k=>{IM_RAG_L[k]=true;IM_RAG_B[k]=true;});imRender();};}
+// 3 · CONDITION bar: per selected metric, click colours it must be (Leads red/orange = dropped, Availability green/yellow = fine). A row (entity) shows only if EVERY conditioned metric matches (AND).
+function imFilterBar(){const bar=document.getElementById('imFilterBar');if(!bar)return;const mets=imSelMets();
+  const dot=(mk,k)=>{const on=IM_COND[mk]&&IM_COND[mk].has(k);return `<button class="fdot rag-${k}${on?' on':''}" data-cm="${mk}" data-ck="${k}" title="${{r:'big drop ≥'+IM_RED+'%',o:'drop ≥'+IM_ORANGE+'%',y:'smaller drop',g:'up/flat / fine'}[k]}"><i class="rag ${k}"></i></button>`;};
+  const anyCond=Object.keys(IM_COND).some(k=>IM_COND[k]&&IM_COND[k].size);
+  bar.innerHTML=`<span class="imfctx">show rows where…</span>`
+    +mets.map(m=>`<span class="imfg"><b>${(imMainOf(m.key)||{}).lab||m.lab}</b> is ${['r','o','y','g'].map(k=>dot(m.key,k)).join('')}</span>`).join('')
+    +(anyCond?`<button class="imclr">✕ clear conditions</button>`:'<span style="color:var(--faint);font-size:11px">— pick colours to filter (else all rows show)</span>');
+  bar.querySelectorAll('.fdot').forEach(b=>b.onclick=()=>{const mk=b.dataset.cm,k=b.dataset.ck;const S=IM_COND[mk]=IM_COND[mk]||new Set();if(S.has(k))S.delete(k);else S.add(k);if(!S.size)delete IM_COND[mk];imRender();});
+  const clr=bar.querySelector('.imclr');if(clr)clr.onclick=()=>{IM_COND={};imRender();};}
+// does an entity's tags satisfy EVERY conditioned metric? (each metric evaluated with its own cut)
+function imEntityPass(t){return imSelMets().every(m=>{const S=IM_COND[m.key];if(!S||!S.size)return true;const s=imMSeries(m,t),dp=s.disp?deltaPct(s.disp):null;return dp?S.has(imRag(dp)):false;});}
 // STACKED drill (marketing layout): each breakdown group is a header row; the selected metrics stack beneath it with full weekly columns + RAG; drill nests deeper
 function imStackDrill(container,tags,dims,depth,pad,kp){const dim=dims[depth],tk=imTagKey(dim),last=depth===dims.length-1,mets=imSelMets();
   const pathDims=dims.slice(0,depth+1),supp=mets.filter(m=>pathDims.every(d=>m.dims.includes(d))),prim=supp[0]||mets[0];
-  const leadM=supp.find(m=>IM_LEADSIDE.has(m.key)),bookM=supp.find(m=>!IM_LEADSIDE.has(m.key));   // side-primary metrics for the Leads/Book colour filter
-  const sideRag=(m,t)=>{if(!m)return null;const s=m.series(t);const dp=s&&s.disp?deltaPct(s.disp):null;return dp?imRag(dp):null;};
-  let groups=imGroups(dim,tags).map(g=>{const t=Object.assign({},tags,{[tk]:g.vals.length>1?g.vals:g.vals[0]});const ps=prim?prim.series(t):null,dp=(ps&&ps.disp)?deltaPct(ps.disp):null;return {g,t,dp,size:ps?ps.size:0,rag:dp?imRag(dp):'g',lrag:sideRag(leadM,t),brag:sideRag(bookM,t)};});
-  groups=groups.filter(g=>(g.size||0)>=IM_MAT).filter(g=>(g.lrag==null||IM_RAG_L[g.lrag])&&(g.brag==null||IM_RAG_B[g.brag]));   // pass if leads-side ∈ Leads filter AND book-side ∈ Book filter
+  let groups=imGroups(dim,tags).map(g=>{const t=Object.assign({},tags,{[tk]:g.vals.length>1?g.vals:g.vals[0]});const ps=prim?imMSeries(prim,t):null,dp=(ps&&ps.disp)?deltaPct(ps.disp):null;return {g,t,dp,size:ps?ps.size:0,rag:dp?imRag(dp):'g'};});
+  groups=groups.filter(g=>(g.size||0)>=IM_MAT).filter(g=>depth>0||imEntityPass(g.t));   // top-level entity must satisfy EVERY metric's colour condition (AND)
   if(IM_SORT==='drop')groups.sort((a,b)=>imDropNum(a.dp||{})-imDropNum(b.dp||{}));
   else if(IM_SORT==='size')groups.sort((a,b)=>(b.size||0)-(a.size||0));
   else groups.sort((a,b)=>(''+a.g.label).localeCompare(''+b.g.label));
@@ -1191,13 +1210,14 @@ function imBreakChip(dk,idx,layers,rc){const chip=document.createElement('div');
   rc.appendChild(chip);}
 function imRender(){const sec=document.getElementById('imSection');if(!sec||sec.style.display==='none')return;
   imSyncRows();const mets=imSelMets();
-  // 1 · METRICS (multi-select, grouped by stage) — each becomes a stacked row
-  const mc=document.getElementById('imMet');const stages=[...new Set(IM_METS.map(m=>m.stage))];
-  mc.innerHTML=stages.map(st=>{const ms=IM_METS.filter(m=>m.stage===st),allOn=ms.every(m=>IM_SEL.includes(m.key));
-    return `<div class="imtier"><span class="imtierlab${allOn?' on':''}" data-tier="${st}" title="click to pick the whole ${st} group">${st}</span>${ms.map(m=>`<button class="imchip${IM_SEL.includes(m.key)?' on':''}" data-k="${m.key}">${m.lab}</button>`).join('')}</div>`;}).join('');
-  mc.querySelectorAll('.imtierlab').forEach(b=>b.onclick=()=>{const ms=IM_METS.filter(m=>m.stage===b.dataset.tier),allOn=ms.every(m=>IM_SEL.includes(m.key));if(allOn){ms.forEach(m=>{const i=IM_SEL.indexOf(m.key);if(i>=0&&IM_SEL.length>1)IM_SEL.splice(i,1);});}else ms.forEach(m=>{if(!IM_SEL.includes(m.key))IM_SEL.push(m.key);});IM_OPEN={};imRender();});
-  mc.querySelectorAll('.imchip').forEach(b=>b.onclick=()=>{const k=b.dataset.k,i=IM_SEL.indexOf(k);if(i<0)IM_SEL.push(k);else if(IM_SEL.length>1)IM_SEL.splice(i,1);IM_OPEN={};imRender();});
-  imSelPanel();   // 2 · Selection (Leads / Bookings cuts)
+  // 1 · METRIC — the 6 main funnel metrics; click to add (variant + slice chosen in Selection)
+  const mc=document.getElementById('imMet');
+  mc.innerHTML='<div class="imtiers">'+IM_MAINS.map((mn,i)=>{const on=mn.vars.some(v=>IM_SEL.includes(v));return `<button class="imchip immain${on?' on':''}" data-main="${mn.main}">${(i+1)+'· '}${mn.lab}</button>`;}).join('')+'</div>';
+  mc.querySelectorAll('.immain').forEach(b=>b.onclick=()=>{const mn=IM_MAINS.find(x=>x.main===b.dataset.main),on=mn.vars.some(v=>IM_SEL.includes(v));
+    if(on){mn.vars.forEach(v=>{const i=IM_SEL.indexOf(v);if(i>=0)IM_SEL.splice(i,1);mn.vars.forEach(vv=>{delete IM_CUT[vv];delete IM_COND[vv];delete IM_MBREAK[vv];});});}
+    else IM_SEL.push(mn.vars[0]);
+    if(!IM_SEL.length)IM_SEL.push('leads');IM_OPEN={};imRender();});
+  imSelPanel();   // 2 · Selection (per-metric CUT builder)
   // 2 · BREAKDOWN chips (drag-nest · ▾ combine/pick · ＋ add)
   const rc=document.getElementById('imRows');rc.innerHTML='';const av=imSelDims(),layers=IM_ROWS.filter(d=>av.includes(d));
   layers.forEach((dk,idx)=>{imBreakChip(dk,idx,layers,rc);if(idx<layers.length-1){const a=document.createElement('span');a.className='imarrow';a.textContent='→';rc.appendChild(a);}});
