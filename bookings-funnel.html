@@ -1118,6 +1118,8 @@ const IM_METS=[
   {key:'bookings',   lab:'Bookings',     stage:'② Bookings',  dims:['seg','city','clinic'],                       series:t=>imCount(opsSumU(imUnitsT(t),u=>u.booked))},
   {key:'netsc',      lab:'Net SC hrs',   stage:'③ Availability',  off:true, dims:['seg','city','clinic'],             series:t=>imCount(opsSumU(imUnitsT(t).filter(u=>!u.online),u=>(u.avail&&u.avail.net_sc_hrs_r)||[]))},
   {key:'attend',     lab:'Attended days',stage:'③ Availability',  off:true, dims:['seg','city','clinic'],             series:t=>imCount(opsSumU(imUnitsT(t).filter(u=>!u.online),u=>(u.avail&&u.avail.attend_days)||[]))},
+  {key:'rostered',   lab:'Rostered hrs', stage:'③ Availability',  off:true, dims:['seg','city','clinic'],             series:t=>imCount(opsSumU(imUnitsT(t).filter(u=>!u.online),u=>(u.avail&&u.avail.rostered_hrs)||[]))},
+  {key:'opened',     lab:'Opened hrs',   stage:'③ Availability',  off:true, dims:['seg','city','clinic'],             series:t=>imCount(opsSumU(imUnitsT(t).filter(u=>!u.online),u=>(u.avail&&u.avail.opened_ash)||[]))},
   {key:'b2d',        lab:'Book→Done %',  stage:'④ Book→Done',       pct:true, dims:['seg','city','clinic'],             series:t=>imRate(opsSumU(imUnitsT(t),u=>u.done),opsSumU(imUnitsT(t),u=>u.booked),true)},
   {key:'done',       lab:'Done',         stage:'⑤ Done',      dims:['seg','city','clinic','cat','src'],           series:t=>imCount((t.cat||t.src)?imDoneCatRaw(t):opsSumU(imUnitsT(t),u=>u.done))},
   {key:'purchased',  lab:'Purchased',    stage:'⑥ Value',     dims:['seg','city','clinic','cat'],                 series:t=>imCount(t.cat?imValCatRaw(t,'pur'):sumPre(imUnitsT(t),u=>u.pur))},
@@ -1249,19 +1251,22 @@ let IM_DRAGS=null;                        // stage key being dragged
 let IM_CFG={};                            // per-stage config: IM_CFG[stageKey]={v:variantMetKey, cut:{dim:[vals]}}
 let IM_POP=null;                          // which stage's config bar is open (null = none)
 // what each stage lets you customise: VARIANT (which metric) + slice CUTS (layers to filter to)
+const IM_CH_VALS=[['GMB','GMB'],['Google Ads','Google'],['Meta','Meta'],['Practo','Practo'],['Organic','Organic'],['Other','Other']];
+const IM_MED_VALS=[['call','Call'],['web','Web'],['wa_org','WhatsApp'],['wa_gmb','WA·GMB'],['walkin','Walk-in'],['book','Practo book']];
+const IM_CAT_VALS=[['STI','STI'],['SH','SH'],['MH','MH'],['Other','Other']];
 const IM_STAGE_CFG={
   leads:{variants:[['leads','Leads'],['bookedleads','Booked leads'],['bookrate','Book-rate %']],
-    cuts:[{dim:'src',lab:'Source',vals:[['GMB','GMB'],['Google Ads','Google'],['Meta','Meta'],['Practo','Practo'],['Organic','Organic'],['Other','Other']]},
-          {dim:'medium',lab:'Medium',vals:[['call','Call'],['web','Web'],['whatsapp','WhatsApp'],['walkin','Walk-in']]},
-          {dim:'cat',lab:'Category',vals:[['STI','STI'],['SH','SH'],['MH','MH'],['Other','Other']]}]},
+    cuts:[{dim:'src',lab:'Source',vals:IM_CH_VALS},{dim:'medium',lab:'Medium',vals:IM_MED_VALS},{dim:'cat',lab:'Category',vals:IM_CAT_VALS}]},
   bookings:{variants:[['bookings','SC bookings']],
     cuts:[{dim:'age',lab:'Lead maturity',vals:[['fresh','fresh'],['wk1','1wk'],['wk2_4','2–4wk'],['mo1_3','1–3mo'],['mo3','3mo+'],['nolead','no lead']]},
           {dim:'brank',lab:'Booking rank',vals:[['1st','1st-ever'],['2nd','2nd'],['3rd','3rd'],['4pl','4th+']]},
-          {dim:'drank',lab:'Done rank (before)',vals:[['d0','never done'],['d1','done 1×'],['d2pl','done 2+']]}]},
-  avail:{variants:[['netsc','Net SC hrs'],['attend','Attended days']], cuts:[]},
+          {dim:'drank',lab:'Done rank (before)',vals:[['d0','never done'],['d1','done 1×'],['d2pl','done 2+']]},
+          {dim:'ptype',lab:'Patient type',vals:[['new','1st-ever'],['reattempt','rebook'],['relapse','relapse']]},
+          {dim:'channel',lab:'Source',vals:IM_CH_VALS},{dim:'medium',lab:'Medium',vals:IM_MED_VALS},{dim:'category',lab:'Category',vals:IM_CAT_VALS}]},
+  avail:{variants:[['netsc','Net SC hrs'],['attend','Attended days'],['rostered','Rostered hrs'],['opened','Opened hrs']], cuts:[]},
   b2d:{variants:[['b2d','Book→Done %']], cuts:[]},
-  done:{variants:[['done','Done']], cuts:[{dim:'cat',lab:'Category',vals:[['STI','STI'],['SH','SH'],['MH','MH'],['Other','Other']]}]},
-  value:{variants:[['revenue','Revenue ₹'],['purchased','Purchased'],['d2p','D2P %'],['rpc','RPC ₹']], cuts:[{dim:'cat',lab:'Category',vals:[['STI','STI'],['SH','SH'],['MH','MH'],['Other','Other']]}]},
+  done:{variants:[['done','Done']], cuts:[{dim:'cat',lab:'Category',vals:IM_CAT_VALS},{dim:'src',lab:'Source',vals:IM_CH_VALS}]},
+  value:{variants:[['revenue','Revenue ₹'],['purchased','Purchased'],['d2p','D2P %'],['rpc','RPC ₹']], cuts:[{dim:'cat',lab:'Category',vals:IM_CAT_VALS}]},
 };
 function imStageDef(k){return IM_STAGES.find(s=>s.key===k);}
 function imMetOf(k){return IM_METS.find(m=>m.key===k);}
@@ -1324,14 +1329,16 @@ function imRender(){const sec=document.getElementById('imSection');if(!sec||sec.
     h.ondrop=(e)=>{e.preventDefault();h.classList.remove('over');const to=h.dataset.sk;if(!IM_DRAGS||IM_DRAGS===to)return;const a=IM_ORDER.filter(x=>x!==IM_DRAGS),at=a.indexOf(to);a.splice(at,0,IM_DRAGS);IM_ORDER=a;IM_DRAGS=null;imRender();};});
   const grid=document.getElementById('imGrid');grid.innerHTML='';
   if(!rows.length){grid.innerHTML='<div class="empty" style="padding:34px;text-align:center;color:var(--muted)">No offline clinics match all conditions — loosen a colour filter, tier, or the top-bar Clinic-age.</div>';return;}
-  const cellHTML=(cell)=>{const dp=cell.dp,cls={r:'rr',o:'ro',y:'ry',g:'rg'}[cell.rag]||'rx',now=cell.pct?(dp?Math.round(dp.now)+'%':'·'):fmtOps(dp?(dp.now||0):0);
-    return `<div class="imcell ${cls}">${dp?dp.txt:'—'}<small>${now}</small></div>`;};
+  const STAGECOL={leads:'#3E7CB1',bookings:'#2E7D5B',avail:'#8257C4',b2d:'#1F6F5C',done:'#C87B2E',value:'#C87B2E'};
+  const cellHTML=(cell,sk)=>{const dp=cell.dp,cls={r:'rr',o:'ro',y:'ry',g:'rg'}[cell.rag]||'rx',now=cell.pct?(dp?Math.round(dp.now)+'%':'·'):fmtOps(dp?(dp.now||0):0);
+    return `<div class="imcell ${cls}" data-sk="${sk}" title="click to plot ${imCfgLabel(sk)}">${dp?dp.txt:'—'}<small>${now}</small></div>`;};
   const byCity={};rows.forEach(r=>{(byCity[r.c.city]=byCity[r.c.city]||[]).push(r);});
   Object.keys(byCity).sort().forEach(city=>{
     const ch=document.createElement('div');ch.className='imcityhdr';ch.textContent=city+' · '+byCity[city].length+' clinic'+(byCity[city].length!==1?'s':'');grid.appendChild(ch);
     byCity[city].forEach(r=>{const row=document.createElement('div');row.className='imdgrow clk';
-      row.innerHTML=`<span class="lbl"><span class="dot" style="background:#7C5CBF"></span>${r.c.loc}</span>`+IM_ORDER.map(sk=>cellHTML(r.cells[sk])).join('');
-      row.onclick=()=>openChart(r.c.city+' · '+r.c.loc+' — ② Bookings',r.cells.bookings.ser,'#2E7D5B');
+      row.innerHTML=`<span class="lbl"><span class="dot" style="background:#7C5CBF"></span>${r.c.loc}</span>`+IM_ORDER.map(sk=>cellHTML(r.cells[sk],sk)).join('');
+      row.onclick=(e)=>{const cell=e.target.closest('.imcell'),sk=cell?cell.dataset.sk:'bookings';   // clicking a cell plots THAT stage's metric + its config, over the current timeline
+        openChart(r.c.city+' · '+r.c.loc+' — '+imCfgLabel(sk),r.cells[sk].ser,STAGECOL[sk]||'#2E7D5B');};
       grid.appendChild(row);});});
 }
 function setViewMode(m){VIEWM=m;document.querySelectorAll('#viewmode button').forEach(b=>b.classList.toggle('on',b.dataset.m===m));
