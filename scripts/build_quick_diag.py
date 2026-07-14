@@ -319,6 +319,8 @@ def variant_sc(key, slug=None):
                          "rebook": bk_get(SCB, key, "ret_rebook"), "relapse": bk_get(SCB, key, "ret_return"),
                          "by_source": source_block(SCB, key)},
             "done": {"booked": booked, "booked_nat": b_nat, "booked_city": b_city, "done": done, "done_nat": d_nat, "done_city": d_city, "book_done_pct": pct(done, booked), "by_cat": by_cat_block(SCE, key), "by_cat_source": by_cat_source_block(SCE, key),
+                     "by_age": {"fresh": bk_get(SCB, key, "done_fresh"), "wk1": bk_get(SCB, key, "done_wk1"), "wk2_4": bk_get(SCB, key, "done_wk2_4"), "mo1_3": bk_get(SCB, key, "done_mo1_3"), "mo3": bk_get(SCB, key, "done_mo3"), "nolead": bk_get(SCB, key, "done_nolead")},   # DONE by lead maturity (done-date pinned, ties to done total)
+                     "by_brank": {"1st": bk_get(SCB, key, "done_r1"), "2nd": bk_get(SCB, key, "done_r2"), "3rd": bk_get(SCB, key, "done_r3"), "4pl": bk_get(SCB, key, "done_r4pl")},   # DONE by booking rank
                      "booked_slots": bk_get(SCB, key, "booked_slots"), "done_slots": bk_get(SCB, key, "done_slots"),   # slot level (appointment rows) alongside the distinct-patient booked/done
                      "slot_status": {"COMPLETED": bk_get(SCB, key, "st_completed"), "SCHEDULED": bk_get(SCB, key, "st_scheduled"), "No Show": bk_get(SCB, key, "st_noshow"), "Reschedule": bk_get(SCB, key, "st_reschedule"), "CANCELLED": bk_get(SCB, key, "st_cancelled"), "Others": bk_get(SCB, key, "st_others")}},   # slot outcome breakdown (sums to booked_slots)
             "revenue": rev_block(SCE, key), "purchased": purch_block(SCE, key),

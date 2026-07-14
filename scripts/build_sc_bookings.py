@@ -134,7 +134,19 @@ SELECT city, clinic, doctor, source_bucket, week_start,
   count(distinct case when attempt_rnk=1 and DATEDIFF('week',lead_week,week_start)=1 then patient_id end) AS ft_prev_1w,          -- older-lead bookings, binned by lead age
   count(distinct case when attempt_rnk=1 and DATEDIFF('week',lead_week,week_start) between 2 and 4 then patient_id end) AS ft_prev_2_4w,
   count(distinct case when attempt_rnk=1 and DATEDIFF('week',lead_week,week_start) between 5 and 13 then patient_id end) AS ft_prev_1_3mo,
-  count(distinct case when attempt_rnk=1 and DATEDIFF('week',lead_week,week_start)>13 then patient_id end) AS ft_prev_3mo
+  count(distinct case when attempt_rnk=1 and DATEDIFF('week',lead_week,week_start)>13 then patient_id end) AS ft_prev_3mo,
+  -- DONE split by lead maturity (how old the lead was when this SC's week landed) — done-date pinned, ties to the done total
+  count(distinct case when done_any=1 and lead_week=week_start then patient_id end) AS done_fresh,
+  count(distinct case when done_any=1 and DATEDIFF('week',lead_week,week_start)=1 then patient_id end) AS done_wk1,
+  count(distinct case when done_any=1 and DATEDIFF('week',lead_week,week_start) between 2 and 4 then patient_id end) AS done_wk2_4,
+  count(distinct case when done_any=1 and DATEDIFF('week',lead_week,week_start) between 5 and 13 then patient_id end) AS done_mo1_3,
+  count(distinct case when done_any=1 and DATEDIFF('week',lead_week,week_start)>13 then patient_id end) AS done_mo3,
+  count(distinct case when done_any=1 and (lead_week is null or lead_week>week_start) then patient_id end) AS done_nolead,   -- no lead OR lead created after the SC (matches episode-cube 'nolead') → maturity buckets sum to done exactly
+  -- DONE split by booking rank (which SC attempt this patient-week is)
+  count(distinct case when done_any=1 and attempt_rnk=1 then patient_id end) AS done_r1,
+  count(distinct case when done_any=1 and attempt_rnk=2 then patient_id end) AS done_r2,
+  count(distinct case when done_any=1 and attempt_rnk=3 then patient_id end) AS done_r3,
+  count(distinct case when done_any=1 and attempt_rnk>=4 then patient_id end) AS done_r4pl
 FROM bpwf GROUP BY 1,2,3,4,5
 ) p LEFT JOIN slots s ON s.city=p.city AND s.clinic=p.clinic AND s.doctor=p.doctor AND s.source_bucket=p.source_bucket AND s.week_start=p.week_start
 ORDER BY 1,2,3,4,5;
@@ -156,6 +168,8 @@ def main():
     FIELDS = ["booked", "booked_nat", "booked_city", "done", "done_nat", "done_city",
               "ft_same", "ft_prev", "ft_nolead", "repeat", "ret_return", "ret_rebook", "bkwd", "bkwe", "done_wkday", "done_wkend",
               "ft_prev_1w", "ft_prev_2_4w", "ft_prev_1_3mo", "ft_prev_3mo",
+              "done_fresh", "done_wk1", "done_wk2_4", "done_mo1_3", "done_mo3", "done_nolead",   # DONE by lead maturity (done-date pinned)
+              "done_r1", "done_r2", "done_r3", "done_r4pl",   # DONE by booking rank
               "booked_slots", "done_slots",   # SLOT level = appointment rows (patient-level = distinct-patient counts above)
               "st_completed", "st_scheduled", "st_noshow", "st_reschedule", "st_cancelled", "st_others"]   # slot outcome breakdown (sums to booked_slots)
 
@@ -167,7 +181,7 @@ def main():
         city, clinic, doctor, source, wk = r[0], r[1], r[2], r[3], r[4]
         key = f"{city}|{clinic}"
         i = widx[wk]
-        vals = [int(v) for v in r[5:33]]
+        vals = [int(v) for v in r[5:5+len(FIELDS)]]
         o = clinics.setdefault(key, blank())
         dd = o.setdefault("by_doctor", {}).setdefault(doctor, blank())
         ss = o.setdefault("by_source", {}).setdefault(source, blank())
