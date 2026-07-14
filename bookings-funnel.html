@@ -199,6 +199,16 @@
   .imchip.scut.on{background:#C2691F;border-color:#C2691F;color:#fff}
   .imchip.scut.sub{font-weight:500;opacity:.92}
   @media(max-width:1000px){.imhead3{grid-template-columns:1fr}.impanel{border-right:none;border-bottom:1px solid var(--line)}}
+  .imfbar{display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin:0 0 8px;padding:8px 12px;background:var(--sheet);border:1px solid var(--line);border-radius:10px}
+  .imfctx{font-size:11.5px;color:var(--muted);font-weight:600;margin-right:auto}
+  .imfg{display:inline-flex;align-items:center;gap:4px;font-size:11.5px}
+  .imfg b{font-size:11px;color:var(--ink);margin-right:2px}
+  .fany{border:1px solid var(--line);background:#fff;border-radius:6px;font-size:10.5px;font-weight:700;padding:2px 8px;cursor:pointer;color:var(--muted);font-family:inherit}
+  .fany.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .fdot{border:1px solid var(--line);background:#fff;border-radius:50%;width:20px;height:20px;padding:0;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;opacity:.35}
+  .fdot.on{opacity:1}
+  .fdot .rag{width:11px;height:11px}
+  .imclr{border:1px solid var(--line);background:#fff;border-radius:7px;font-size:11px;font-weight:700;padding:3px 10px;cursor:pointer;color:var(--muted);font-family:inherit}
   .dlchip{border:1px solid var(--line);background:var(--sheet);color:var(--muted);border-radius:6px;padding:2px 10px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;margin-right:4px}
   .dlchip.on{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 12%,var(--sheet));color:var(--accent);cursor:grab}
   .dlchip.on.drag{opacity:.4}.dlchip.over{box-shadow:-2px 0 0 var(--accent)}
@@ -357,6 +367,7 @@
         <div class="imchips" style="margin-top:7px"><label class="imfilt">materiality ≥ <input id="imMat" type="number" value="0" min="0" step="1"></label><label class="imfilt">sort <select id="imSort"><option value="drop">biggest drop</option><option value="size">size (now)</option><option value="az">A–Z</option></select></label></div>
       </div>
     </div>
+    <div id="imFilterBar" class="imfbar"></div>
     <div class="fmwrap"><div class="head" id="imHead"></div><div id="imGrid"></div></div>
   </div>
 
@@ -1016,7 +1027,8 @@ function renderValue(units){units=units||opsUnits();const flow=document.getEleme
   opsFunnelDrill(flow,fr,layers,0,15,'val',cfg,opsDv(pur));}
 // ===== 📊 Individual-metric RAG diagnostic — metric-first grid over the funnel cubes, recursive breakdown, colour = drop severity vs the Δ baseline =====
 // ===== Individual-metric v2 — CROSS-FUNNEL RAG matrix: many metrics (columns) × one breakdown (rows), so a drop is traceable Leads→Bookings→Done→Value on one screen =====
-let VIEWM='funnel', IM_SEL=['leads','bookings','done','revenue'], IM_ROWS=['city'], IM_OPEN={}, IM_MAT=0, IM_SORT='drop', IM_RAG={r:true,o:true,y:true,g:true}, imRowDrag=null;
+let VIEWM='funnel', IM_SEL=['leads','bookings','done','revenue'], IM_ROWS=['city'], IM_OPEN={}, IM_MAT=0, IM_SORT='drop', IM_RAG_L={r:true,o:true,y:true,g:true}, IM_RAG_B={r:true,o:true,y:true,g:true}, imRowDrag=null;
+const IM_LEADSIDE=new Set(['leads','bookedleads','bookrate']);   // leads-side metrics (for the split Leads/Book colour filter)
 // --- source-data filters by the current breakdown tags {seg,city,loc,cat,src} ---
 function imLeadTop(c){return SUBCAT2TOP[c.category]||({STI:'STI',SH:'SH',MH:'MH'}[c.category])||(c.category&&c.category!=='na'&&c.category!=='unknown'?'Other':null);}   // call-intent category → top (null when unknown, so it doesn't pollute)
 function imMatch(val,tag){return tag==null?true:(Array.isArray(tag)?tag.includes(val):val===tag);}   // tag can be a single value OR an array (a combined group)
@@ -1095,11 +1107,26 @@ function imSelPanel(){const sel=document.getElementById('imSel');if(!sel)return;
   sel.querySelectorAll('.scut[data-all]').forEach(b=>b.onclick=()=>{delete IM_FOCUS[b.dataset.m];delete IM_FCOMB[b.dataset.m];IM_OPEN={};imRender();});
   sel.querySelectorAll('.scut[data-v]').forEach(b=>b.onclick=()=>{const mk=b.dataset.m,d=b.dataset.d,v=b.dataset.v;if(!IM_SEL.includes(mk))IM_SEL.push(mk);let f=IM_FOCUS[mk];if(!f||f.dim!==d){f={dim:d,vals:[]};IM_FOCUS[mk]=f;}const i=f.vals.indexOf(v);if(i<0)f.vals.push(v);else f.vals.splice(i,1);if(!f.vals.length){delete IM_FOCUS[mk];delete IM_FCOMB[mk];}IM_OPEN={};imRender();});
   sel.querySelectorAll('.fcomb').forEach(b=>b.onclick=()=>{IM_FCOMB[b.dataset.mc]=!IM_FCOMB[b.dataset.mc];imRender();});}
+// separate Leads / Book colour-dot filters (marketing bar below the header): a row passes if its leads-side metric ∈ Leads filter AND its book-side ∈ Book filter
+function imFilterBar(){const bar=document.getElementById('imFilterBar');if(!bar)return;
+  const cap=s=>s.charAt(0).toUpperCase()+s.slice(1),TH={r:'≥15% drop',o:'≥5%',y:'smaller drop',g:'up/flat'};
+  const dot=(side,k)=>`<button class="fdot rag-${k}${(side==='L'?IM_RAG_L:IM_RAG_B)[k]?' on':''}" data-side="${side}" data-k="${k}" title="${TH[k]}"><i class="rag ${k}"></i></button>`;
+  const allL=['r','o','y','g'].every(k=>IM_RAG_L[k]),allB=['r','o','y','g'].every(k=>IM_RAG_B[k]);
+  const hasL=imSelMets().some(m=>IM_LEADSIDE.has(m.key)),hasB=imSelMets().some(m=>!IM_LEADSIDE.has(m.key));
+  bar.innerHTML=`<span class="imfctx">▦ ${SCOPE==='national'?'National · all cities':cap(SCOPE)} · each row = one ${IM_ROWS[0]==='clinic'?'clinic':IM_ROWS[0]==='cat'?'category':IM_ROWS[0]==='src'?'source':IM_ROWS[0]==='seg'?'segment':'city'} · sorted by ${IM_SORT==='drop'?'biggest drop':IM_SORT==='size'?'size':'A–Z'}</span>`
+    +(hasL?`<span class="imfg"><b>Leads</b><button class="fany${allL?' on':''}" data-side="L">any</button>${['r','o','y','g'].map(k=>dot('L',k)).join('')}</span>`:'')
+    +(hasB?`<span class="imfg"><b>Book</b><button class="fany${allB?' on':''}" data-side="B">any</button>${['r','o','y','g'].map(k=>dot('B',k)).join('')}</span>`:'')
+    +`<button class="imclr">✕ clear filters</button>`;
+  bar.querySelectorAll('.fany').forEach(b=>b.onclick=()=>{const S=b.dataset.side==='L'?IM_RAG_L:IM_RAG_B;['r','o','y','g'].forEach(k=>S[k]=true);imRender();});
+  bar.querySelectorAll('.fdot').forEach(b=>b.onclick=()=>{const S=b.dataset.side==='L'?IM_RAG_L:IM_RAG_B,k=b.dataset.k,all=['r','o','y','g'].every(x=>S[x]);if(all){['r','o','y','g'].forEach(x=>S[x]=(x===k));}else{S[k]=!S[k];if(['r','o','y','g'].every(x=>!S[x]))['r','o','y','g'].forEach(x=>S[x]=true);}imRender();});
+  bar.querySelector('.imclr').onclick=()=>{['r','o','y','g'].forEach(k=>{IM_RAG_L[k]=true;IM_RAG_B[k]=true;});imRender();};}
 // STACKED drill (marketing layout): each breakdown group is a header row; the selected metrics stack beneath it with full weekly columns + RAG; drill nests deeper
 function imStackDrill(container,tags,dims,depth,pad,kp){const dim=dims[depth],tk=imTagKey(dim),last=depth===dims.length-1,mets=imSelMets();
   const pathDims=dims.slice(0,depth+1),supp=mets.filter(m=>pathDims.every(d=>m.dims.includes(d))),prim=supp[0]||mets[0];
-  let groups=imGroups(dim,tags).map(g=>{const t=Object.assign({},tags,{[tk]:g.vals.length>1?g.vals:g.vals[0]});const ps=prim?prim.series(t):null,dp=(ps&&ps.disp)?deltaPct(ps.disp):null;return {g,t,dp,size:ps?ps.size:0,rag:dp?imRag(dp):'g'};});
-  groups=groups.filter(g=>(g.size||0)>=IM_MAT).filter(g=>IM_RAG[g.rag]);
+  const leadM=supp.find(m=>IM_LEADSIDE.has(m.key)),bookM=supp.find(m=>!IM_LEADSIDE.has(m.key));   // side-primary metrics for the Leads/Book colour filter
+  const sideRag=(m,t)=>{if(!m)return null;const s=m.series(t);const dp=s&&s.disp?deltaPct(s.disp):null;return dp?imRag(dp):null;};
+  let groups=imGroups(dim,tags).map(g=>{const t=Object.assign({},tags,{[tk]:g.vals.length>1?g.vals:g.vals[0]});const ps=prim?prim.series(t):null,dp=(ps&&ps.disp)?deltaPct(ps.disp):null;return {g,t,dp,size:ps?ps.size:0,rag:dp?imRag(dp):'g',lrag:sideRag(leadM,t),brag:sideRag(bookM,t)};});
+  groups=groups.filter(g=>(g.size||0)>=IM_MAT).filter(g=>(g.lrag==null||IM_RAG_L[g.lrag])&&(g.brag==null||IM_RAG_B[g.brag]));   // pass if leads-side ∈ Leads filter AND book-side ∈ Book filter
   if(IM_SORT==='drop')groups.sort((a,b)=>imDropNum(a.dp||{})-imDropNum(b.dp||{}));
   else if(IM_SORT==='size')groups.sort((a,b)=>(b.size||0)-(a.size||0));
   else groups.sort((a,b)=>(''+a.g.label).localeCompare(''+b.g.label));
@@ -1145,7 +1172,8 @@ function imRender(){const sec=document.getElementById('imSection');if(!sec||sec.
   layers.forEach((dk,idx)=>{imBreakChip(dk,idx,layers,rc);if(idx<layers.length-1){const a=document.createElement('span');a.className='imarrow';a.textContent='→';rc.appendChild(a);}});
   av.filter(d=>!IM_ROWS.includes(d)).forEach(d=>{const g=document.createElement('div');g.className='imghost';g.textContent='＋ '+IM_DIMLAB[d];g.onclick=()=>{IM_ROWS.push(d);IM_OPEN={};imRender();};rc.appendChild(g);});
   // 3 · colour filter chips
-  const cf=document.getElementById('imRag');if(cf){const L={r:'≥15% drop',o:'≥5%',y:'small',g:'up/flat'};cf.innerHTML=['r','o','y','g'].map(k=>`<button class="ragchip rag-${k}${IM_RAG[k]?' on':''}" data-k="${k}"><i class="rag ${k}"></i>${L[k]}</button>`).join('');cf.querySelectorAll('.ragchip').forEach(b=>b.onclick=()=>{IM_RAG[b.dataset.k]=!IM_RAG[b.dataset.k];imRender();});}
+  const cf=document.getElementById('imRag');if(cf){const L={r:'≥15% drop',o:'≥5%',y:'smaller drop',g:'up/flat'};cf.innerHTML=['r','o','y','g'].map(k=>`<span class="ragleg"><i class="rag ${k}"></i>${L[k]}</span>`).join('');}   // panel-3 legend (thresholds); the interactive filter is the Leads/Book bar below
+  imFilterBar();
   const cl=document.getElementById('imCmpLbl');if(cl)cl.textContent=({last:'last wk',first:'first wk',peak:'peak',avg:'prior avg'})[CMP]||CMP;
   const head=document.getElementById('imHead');head.innerHTML=opsHeadHTML(IM_ROWS.map(d=>IM_DIMLAB[d]).join(' › ')+'  ·  '+mets.length+' metric'+(mets.length>1?'s':''));
   const grid=document.getElementById('imGrid');grid.innerHTML='';
