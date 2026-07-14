@@ -19,6 +19,8 @@
   h1{font-family:'Fraunces',serif;font-size:29px;font-weight:600;margin:8px 0 2px}
   .sub{color:var(--muted);font-size:12.5px;margin-bottom:14px;max-width:860px;line-height:1.5}
   h2.sech{font-family:'Fraunces',serif;font-size:19px;font-weight:600;margin:8px 0 10px;color:var(--ink)}
+  .lblbookwin{margin-left:12px;vertical-align:middle;font-family:'Inter',system-ui,sans-serif}
+  .lblbookwin select{font-size:11px;padding:3px 6px}
   select{font:inherit;font-weight:600;padding:7px 12px;border:1px solid var(--line);border-radius:9px;background:var(--sheet);color:var(--ink);min-width:210px;cursor:pointer}
   .segw{display:inline-flex;border:1px solid var(--line);border-radius:9px;overflow:hidden}
   .segw button{font:inherit;font-weight:600;font-size:12px;padding:7px 12px;border:0;background:var(--sheet);color:var(--muted);cursor:pointer}
@@ -299,14 +301,12 @@
       </div>
       <div class="segw" id="matseg" title="filter to clinics by how long they've been open (age = weeks since first booking; pick any)"><span class="matlab">Clinic age</span><button data-m="lt3">&lt;3 mo</button><button data-m="m3_6">3–6 mo</button><button data-m="m6_12">6–12 mo</button><button data-m="gt12">&gt;1 yr</button></div>
       <div class="segw" id="segseg" title="offline (clinic-attributed) / online (no-city, telehealth) / both"><button data-g="both" class="on">Both</button><button data-g="offline">Offline</button><button data-g="online">Online</button></div>
-      <div class="segw" id="pctseg" title="show counts or % of parent"><button data-p="n" class="on"># count</button><button data-p="p">% share</button></div>
-      <div class="segw" id="viewseg" title="weekly = each week week-vs-week · week-to-date = pick days (Mon–Thu…) to compare like-for-like across weeks · Σ total = one total over the window"><button data-v="wk" class="on">weekly</button><button data-v="wtd">week-to-date</button><button data-v="agg">Σ total</button></div>
+      <div class="segw" id="viewseg" title="weekly = each week week-vs-week · Σ total = one total over the window"><button data-v="wk" class="on">weekly</button><button data-v="agg">Σ total</button></div>
       <div class="segw" id="dowseg" title="pick the days to compare like-for-like across weeks (e.g. Mon–Thu)" style="display:none"><button data-d="0" class="on">M</button><button data-d="1" class="on">T</button><button data-d="2" class="on">W</button><button data-d="3" class="on">T</button><button data-d="4" class="on">F</button><button data-d="5" class="on">S</button><button data-d="6" class="on">S</button></div>
       <div class="segw" id="wkstep" title="weeks shown (both weekly &amp; total)"><button data-s="-1">−</button><span class="nwk" id="nwkLbl">5 wk</span><button data-s="1">+</button></div>
       <div class="wkend" id="wkendctl" title="slide the window — pick which week is the latest shown"><button data-w="older" title="older">◀</button><select id="wkendsel"></select><button data-w="newer" title="newer">▶</button></div>
       <label class="vsel" title="club N consecutive weeks into each column for a longer-term view">Club <select id="clubsel"><option value="1" selected>weekly</option><option value="2">2 wks</option><option value="3">3 wks</option><option value="4">4 wks · monthly</option><option value="6">6 wks</option><option value="13">13 wks · quarter</option><option value="custom">custom…</option></select></label>
       <label class="vsel">Δ vs <select id="cmpsel"><option value="last">last week</option><option value="first">first week</option><option value="avg" selected>average</option><option value="peak">peak</option></select></label>
-      <label class="vsel" title="which booking window counts as booked (relative to when the lead came in)">Booked <select id="bookwin"><option value="ever" selected>ever</option><option value="2wk">≤ 2 weeks</option><option value="week">same week</option></select></label>
     </div>
   </div>
   <h1>Leads → SC bookings · funnel</h1>
@@ -315,7 +315,7 @@
 
   <!-- ① attributable leads -->
   <div id="leadSection">
-  <h2 class="sech">① Attributable leads → book %</h2>
+  <h2 class="sech">① Attributable leads → book % <label class="vsel lblbookwin" title="which booking window counts a lead as booked (relative to when the lead came in) — applies to this leads table only">Booked <select id="bookwin"><option value="ever" selected>ever</option><option value="2wk">≤ 2 weeks</option><option value="week">same week</option></select></label></h2>
   <div class="layerbar" id="barL"><span class="lead">Layers ·</span></div>
   <div class="hero"><span class="n" id="heroNL">—</span><span class="l" id="heroLL"></span></div>
   <div class="fmwrap">
@@ -840,14 +840,21 @@ function opsSpark(disp){const ix=opsIx(),vals=ix.map(i=>disp[i]||0),n=vals.lengt
   const pts=vals.map((v,i)=>x(i).toFixed(1)+','+y(v).toFixed(1)).join(' ');
   return '<svg width="'+W+'" height="'+H+'" viewBox="0 0 '+W+' '+H+'"><polyline points="'+pts+'" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/><circle cx="'+x(n-1).toFixed(1)+'" cy="'+y(vals[n-1]).toFixed(1)+'" r="1.7" fill="currentColor"/></svg>';}
 let OPS_NOWEEK=false;   // ⑤ Done = summary-only (drop the raw weekly columns; Δ + before/now + share + graph carry the movement)
-function opsHeadHTML(firstLab){const ix=opsIx();return `<span class="h-lbl">${firstLab}</span>`+(OPS_NOWEEK?'':ix.map((i,j)=>`<span class="wk${j===ix.length-1?' last':''}">${blockLabel(WEEKS,i)}</span>`).join(''))+`<span class="delta">Δ ${CMP}</span><span class="avgmk avgbefore"><span class="avglab">before</span></span><span class="avgmk avgnow"><span class="avglab">now</span></span><span class="zoom">graph</span>`;}
+function opsHeadHTML(firstLab){const ix=opsIx();
+  if(!WEEKLY)return `<span class="h-lbl">${firstLab}</span><span class="cnt">Σ total</span><span class="zoom">graph</span>`;   // Σ total: one total column header
+  return `<span class="h-lbl">${firstLab}</span>`+(OPS_NOWEEK?'':ix.map((i,j)=>`<span class="wk${j===ix.length-1?' last':''}">${blockLabel(WEEKS,i)}</span>`).join(''))+`<span class="delta">Δ ${CMP}</span><span class="avgmk avgbefore"><span class="avglab">before</span></span><span class="avgmk avgnow"><span class="avglab">now</span></span><span class="zoom">graph</span>`;}
 // build a row element (display-ready array in, sparkline + before/now + Δ + zoom). opt: {col,pad,stage,sub,pct,expandable,open,rawArr}
 function opsBuildRow(label,disp,opt){opt=opt||{};
   const ix=opsIx(),dp=deltaPct(disp),isPct=!!opt.pct,col=opt.col||'var(--accent)';
-  const row=document.createElement('div');row.className='frow wkly'+(opt.stage?' opsstage':'')+(opt.sub?' opssub':'')+(opt.expandable?' clk':'');row.style.paddingLeft=(opt.pad!=null?opt.pad:15)+'px';
-  const wkc=OPS_NOWEEK?'':ix.map((i,j)=>`<span class="wk${j===ix.length-1?' last':''}">${isPct?(disp[i]!=null?Math.round(disp[i])+'%':'·'):fmtOps(disp[i]||0)}</span>`).join('');
+  const row=document.createElement('div');row.className='frow'+(WEEKLY?' wkly':'')+(opt.stage?' opsstage':'')+(opt.sub?' opssub':'')+(opt.expandable?' clk':'');row.style.paddingLeft=(opt.pad!=null?opt.pad:15)+'px';
   const chev=opt.expandable?`<span class="chev">${opt.open?'▾':'▶'}</span>`:'<span class="chev leaf">▶</span>';
-  row.innerHTML=chev+`<span class="lbl"><span class="dot" style="background:${col}"></span>${label}${opt.share||''}</span>`+wkc+`<span class="delta ${dp.cls}">${dp.txt}</span>${bnCols(dp,isPct)}<span class="zoom" title="plot weekly trend">${ZSVG}</span>`;
+  let right;
+  if(WEEKLY){const wkc=OPS_NOWEEK?'':ix.map((i,j)=>`<span class="wk${j===ix.length-1?' last':''}">${isPct?(disp[i]!=null?Math.round(disp[i])+'%':'·'):fmtOps(disp[i]||0)}</span>`).join('');
+    right=wkc+`<span class="delta ${dp.cls}">${dp.txt}</span>${bnCols(dp,isPct)}<span class="zoom" title="plot weekly trend">${ZSVG}</span>`;}
+  else{   // Σ total: one column = window total (counts sum · rates average over the shown weeks)
+    let tot;if(isPct){const vs=ix.map(i=>disp[i]).filter(v=>v!=null);tot=vs.length?vs.reduce((a,b)=>a+b,0)/vs.length:null;}else tot=ix.reduce((s,i)=>s+(disp[i]||0),0);
+    right=`<span class="cnt">${isPct?(tot!=null?Math.round(tot)+'%':'·'):fmtOps(tot)}</span><span class="zoom" title="plot weekly trend">${ZSVG}</span>`;}
+  row.innerHTML=chev+`<span class="lbl"><span class="dot" style="background:${col}"></span>${label}${opt.share||''}</span>`+right;
   {const zb=row.querySelector('.zoom');zb.innerHTML=opsSpark(disp);zb.onclick=(e)=>{e.stopPropagation();openChart(label,disp,col);};}   // disp is the clubbed display array — matches the block-aware zoom modal
   return row;}
 function opsRow(container,label,arr,opt){opt=opt||{};const av=opt.raw?(arr||[]).slice():opsDv(arr);
@@ -1386,7 +1393,7 @@ function loadClinic(){const keys=scopeKeys();CLINIC=keys.join('+')||SCOPE;   // 
 function weekRange(mon){if(!mon)return '';const d=new Date(mon+'T00:00:00'),e=new Date(d);e.setDate(e.getDate()+6);const iso=e.getFullYear()+'-'+String(e.getMonth()+1).padStart(2,'0')+'-'+String(e.getDate()).padStart(2,'0');return fmtWk(mon)+'–'+fmtWk(iso);}
 function renderWkEnd(){const sel=document.getElementById('wkendsel');if(!sel)return;const ax=AX(),maxOff=Math.max(0,ax.length-NWK);
   if(WKOFF>maxOff)WKOFF=maxOff;if(WKOFF<0)WKOFF=0;
-  const ba=baseAx();let html='';for(let i=0;i<=maxOff;i++)html+='<option value="'+i+'"'+(i===WKOFF?' selected':'')+'>'+blockLabel(ba,i)+(i===0?' · latest':'')+'</option>';
+  const ba=baseAx();let html='';for(let i=0;i<=maxOff;i++)html+='<option value="'+i+'"'+(i===WKOFF?' selected':'')+'>'+blockLabel(ba,i)+'</option>';   // no "· latest" suffix — the greyed ▶ signals newest; keeps the toolbar compact
   sel.innerHTML=html;
   const ctl=document.getElementById('wkendctl');ctl.querySelector('[data-w="newer"]').disabled=(WKOFF<=0);ctl.querySelector('[data-w="older"]').disabled=(WKOFF>=maxOff);}
 function redrawAll(){document.getElementById('nwkLbl').textContent=NWK+(CLUB>1?' × '+CLUB+'w':' wk');renderWkEnd();draw(PL);draw(PB);renderOps();imRender();}
