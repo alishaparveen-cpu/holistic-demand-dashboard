@@ -92,12 +92,12 @@ lead_attr AS (
           WHEN LOWER(COALESCE(l.utm_source,'')) IN ('gmb','googlelisting','google listing','google_listing') THEN 'GMB'
           WHEN (l.fbclid IS NOT NULL AND l.fbclid<>'') OR (l.accumulated_fbclids IS NOT NULL AND l.accumulated_fbclids<>'')
                OR LOWER(COALESCE(l.utm_source,'')) IN ('fb','facebook','meta','ig','instagram') THEN 'Meta'   -- FB click id (click-to-WhatsApp leads re-tagged organic)
+          WHEN LOWER(COALESCE(l.utm_source,'')) IN ('organic','blog','google') AND LOWER(COALESCE(l.source_url,'')) LIKE '%/blog/%' THEN 'Organic · Blog'   -- blog content-marketing = organic-family sub-source (matches city cube)
           WHEN LOWER(COALESCE(l.utm_source,'')) IN ('organic','blog','google') THEN 'Organic'   -- organic-google (no gclid/cpc) lands here
           ELSE 'Other' END                 -- justdial, referral, direct, untracked — folded into Other
     END AS channel,
     CASE   -- medium: blog/wa-outbound first ; GMB call/web ; inbound calls ; Practo book vs web ; else caller
-      WHEN LOWER(COALESCE(l.source_url,'')) LIKE '%/blog/%' THEN 'blog'   -- blog content-marketing (matches city cube)
-      WHEN LOWER(COALESCE(l.utm_medium,''))='whatsapp' AND LOWER(COALESCE(l.utm_campaign,''))='outbound' THEN 'wa_outbound'   -- WhatsApp outbound-template flow (matches city cube)
+      WHEN LOWER(COALESCE(l.utm_medium,''))='whatsapp' AND LOWER(COALESCE(l.utm_campaign,''))='outbound' THEN 'wa_outbound'   -- WhatsApp outbound-template flow (blog now on source axis; matches city cube)
       WHEN LOWER(COALESCE(l.utm_source,''))='gmb'
            AND RIGHT(REGEXP_REPLACE(COALESCE(l.utm_medium,''),'[^0-9]',''),10) IN ({GMBNUMS}) THEN 'call'
       WHEN LOWER(COALESCE(l.utm_source,''))='gmb' AND ({CAMPLIKE}) THEN 'web'
@@ -185,14 +185,14 @@ def run(sql, tries=4):
         return [l.split('\t') for l in p.stdout.splitlines() if l.strip()]
     sys.exit('query failed after %d timeouts' % tries)
 
-CHANNELS = ['GMB', 'Google Ads', 'Meta', 'Practo', 'Organic', 'Other']
+CHANNELS = ['GMB', 'Google Ads', 'Meta', 'Practo', 'Organic', 'Organic · Blog', 'Other']
 def main():
     note = ('GMB=clinic GMB number/campaign (call+web). Everyone else = a caller whose AI-audit named THIS clinic '
             '(is_our_locality), attributed by the lead\'s real source: Google Ads(paid), Organic, Meta, Practo, '
             'or Other (justdial/referral/direct/untracked). Web leads that never call carry only the city → excluded.')
     nb = {'_meta': {'weeks': WEEKS, 'channels': CHANNELS,
                     'note': 'Leads attributed to the clinic that did NOT book an SC. ' + note}}   # aggregated
-    leads = {'_meta': {'weeks': WEEKS, 'days': DAYS, 'channels': CHANNELS, 'mediums': ['call', 'web', 'blog', 'wa_outbound'],
+    leads = {'_meta': {'weeks': WEEKS, 'days': DAYS, 'channels': CHANNELS, 'mediums': ['call', 'web', 'wa_outbound'],
                        'preview': False, 'note': 'Attributable leads cube: channel x medium x booked-status x week. ' + note}}
     # locality -> Practo location code(s), for Practo book/web/call attribution
     loc_codes = defaultdict(list)

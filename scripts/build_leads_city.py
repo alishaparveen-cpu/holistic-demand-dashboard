@@ -27,7 +27,7 @@ DI = {d: i for i, d in enumerate(DAYS)}; ND = len(DAYS)
 def wk_monday(dstr):
     d = datetime.date.fromisoformat(dstr)
     return (d - datetime.timedelta(days=d.weekday())).isoformat()
-CHANNELS = ['GMB', 'Google Ads', 'Meta', 'Practo', 'Organic', 'Other']
+CHANNELS = ['GMB', 'Google Ads', 'Meta', 'Practo', 'Organic', 'Organic · Blog', 'Other']
 
 # number -> canonical city (from the GMB map) ; and URL/AI token -> canonical city
 GMAP = json.load(open(os.path.join(ROOT, 'data_gmb_number_clinic.json')))
@@ -135,13 +135,13 @@ lead_attr AS (
            OR (LOWER(COALESCE(l.utm_source,''))='google' AND LOWER(COALESCE(l.utm_campaign,''))='inbound_call') THEN 'Google Ads'  -- google-source inbound calls (call-ext/call-only ads): no gclid & medium=number (not cpc) → were wrongly falling to Organic. GMB calls are tagged utm_source='gmb', so no risk of pulling GMB in.
       WHEN (l.fbclid IS NOT NULL AND l.fbclid<>'') OR (l.accumulated_fbclids IS NOT NULL AND l.accumulated_fbclids<>'')
            OR LOWER(COALESCE(l.utm_source,'')) IN ('fb','facebook','meta','ig','instagram') THEN 'Meta'   -- FB click id catches click-to-WhatsApp leads re-tagged as organic (mid-Jun UTM change)
+      WHEN LOWER(COALESCE(l.utm_source,'')) IN ('organic','blog','google') AND LOWER(COALESCE(l.source_url,'')) LIKE '%/blog/%' THEN 'Organic · Blog'   -- blog content-marketing = organic-family sub-source; kept in the Organic family so it can be combined back with Organic on demand
       WHEN LOWER(COALESCE(l.utm_source,'')) IN ('organic','blog','google') THEN 'Organic'
       ELSE 'Other' END AS channel,
     CASE
       WHEN LOWER(COALESCE(l.utm_campaign,''))='inbound_call' THEN 'call'
       WHEN LOWER(COALESCE(l.utm_source,''))='practo' THEN 'book'
-      WHEN LOWER(COALESCE(l.source_url,'')) LIKE '%/blog/%' THEN 'blog'   -- blog content = organic content-marketing demand (biggest organic driver); precedes web/wa so blog is visible even when entered via WhatsApp
-      WHEN LOWER(COALESCE(l.utm_medium,''))='whatsapp' AND LOWER(COALESCE(l.utm_campaign,''))='outbound' THEN 'wa_outbound'   -- WhatsApp API outbound-template flow (was hiding in other/web); real demand that entered via WhatsApp
+      WHEN LOWER(COALESCE(l.utm_medium,''))='whatsapp' AND LOWER(COALESCE(l.utm_campaign,''))='outbound' THEN 'wa_outbound'   -- WhatsApp API outbound-template flow (complete: blog is now on the source axis, so blog-driven WhatsApp lands here too)
       WHEN LOWER(COALESCE(l.utm_campaign,'')) LIKE '%gmb_wa' THEN 'wa_gmb'
       WHEN LOWER(COALESCE(l.utm_campaign,'')) LIKE '%organic_wa' THEN 'wa_org'
       WHEN RIGHT(LOWER(COALESCE(l.utm_campaign,'')),3)='_wa' OR LOWER(COALESCE(l.origin,'')) LIKE '%whatsapp%' THEN 'whatsapp'
@@ -295,7 +295,7 @@ def main():
             acc['w'][WI[wkm]] += n
         if created in DI:
             acc['d'][DI[created]] += n
-    out = {'_meta': {'weeks': WEEKS, 'days': DAYS, 'channels': CHANNELS, 'mediums': ['call', 'web', 'blog', 'book', 'whatsapp', 'wa_gmb', 'wa_org', 'wa_outbound'],
+    out = {'_meta': {'weeks': WEEKS, 'days': DAYS, 'channels': CHANNELS, 'mediums': ['call', 'web', 'book', 'whatsapp', 'wa_gmb', 'wa_org', 'wa_outbound'],
                      'preview': False, 'level': 'city',
                      'note': 'Attributable leads by CITY. Each cell has weekly w[] (26 wks, aligned with bookings) + daily d[] '
                              '(recent 8 wks incl. the current partial week, for day-of-week / week-to-date comparison).'}}
