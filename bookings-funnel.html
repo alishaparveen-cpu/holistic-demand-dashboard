@@ -578,7 +578,7 @@ function buildCells(node){
 }
 function buildLeadCells(node){   // leads cube: channel x medium x number x url x booked-status
   const bs=BOOKED_SET[BOOKWIN]||BOOKED_SET.ever;   // booked = lag bucket within the chosen window
-  return (node.cells||[]).map(c=>({channel:(window.LeadsCube?window.LeadsCube.channelOf(c.ch):(c.ch==='Google'?'Google Ads':c.ch)),medium:(c.md==='whatsapp'?'wa_org':c.md),status:bs.has(c.bk)?'booked':'notbooked',
+  return (node.cells||[]).map(c=>({channel:(window.LeadsCube?window.LeadsCube.channelOf(c.ch):(c.ch==='Google'?'Google Ads':c.ch)),medium:(c.md==='whatsapp'?'wa_org':c.md),status:bs.has(c.bk)?'booked':'notbooked',bkw0:BOOKED_SET.week.has(c.bk),
     num:c.num||'',url:c.url||'',relevance:c.rel||'unknown',intent:c.int||'',strength:c.istr||'',category:c.cat||'na',verified:c.vf==='y'?'verified':'unverified',doneq:c.dq==='done'?'done':'notdone',bkseg:c.bkseg||'none',loc:c.loc||'',city:c.city||'',citygroup:(c.city&&c.city.indexOf('— no city')!==0)?'attr':'nocity',_on:((c.city||'').indexOf('— no city')===0),campaign:'na',arr:c.w,day:c.d||null}));   // _on = online / untracked (no-city bucket); verified = phone matched an allo_persons.patient (patient_id created); day[] = recent-8wk daily
 }
 function total(cells){return sumT(weekArr(cells));}
@@ -779,12 +779,13 @@ function appendShareRow(container,wk,parentWk,padPx){
 }
 function appendLeadTriplet(container,cells,padPx){
   const gWk=weekArr(cells),bkW0=weekArr(cells.filter(c=>c.status==='booked'));
-  const gW=dv(gWk),bkW=dv(bkW0),nbW=gW.map((t,i)=>t-(bkW[i]||0)),rateArr=gW.map((t,i)=>t?Math.round(100*bkW[i]/t):0);   // cumulative-aware (week-to-date)
-  const sub=(lbl,arr,cls,isPct,col,extraPad)=>{
+  const swWk=weekArr(cells.filter(c=>c.bkw0));   // booked SAME-WEEK (bk='w0') — maturity-fair, independent of the Booked-window (which the cumulative rows follow)
+  const gW=dv(gWk),bkW=dv(bkW0),swW=dv(swWk),nbW=gW.map((t,i)=>t-(bkW[i]||0)),rateArr=gW.map((t,i)=>t?Math.round(100*bkW[i]/t):0),swRate=gW.map((t,i)=>t?Math.round(100*swW[i]/t):0);   // cumulative-aware (week-to-date)
+  const sub=(lbl,arr,cls,isPct,col,extraPad,numWk)=>{   // numWk = pct numerator for the Σ-total column (defaults to ever-booked)
     const row=document.createElement('div');row.className='frow wkly subr '+cls;const pp=(padPx||0)+(extraPad||0);if(pp)row.style.paddingLeft=pp+'px';
     let rr;
     if(WEEKLY){const ix=wkIdxs();const dp=deltaPct(arr);rr=ix.map((i,j)=>`<span class="wk${j===ix.length-1?' last':''}">${isPct?(gW[i]?arr[i]+'%':'·'):(arr[i]||0)}</span>`).join('')+`<span class="delta ${dp.cls}">${dp.txt}</span>${bnCols(dp,isPct)}`;}
-    else rr=`<span class="barwrap"></span><span class="cnt">${isPct?(sumT(gWk)?Math.round(100*sumT(bkW0)/sumT(gWk))+'%':'·'):sumT(arr)}</span><span class="pct"></span>`;
+    else rr=`<span class="barwrap"></span><span class="cnt">${isPct?(sumT(gWk)?Math.round(100*sumT(numWk||bkW0)/sumT(gWk))+'%':'·'):sumT(arr)}</span><span class="pct"></span>`;
     row.innerHTML=`<span class="chev leaf">▶</span><span class="lbl">${lbl}</span>`+rr+`<span class="zoom" title="plot trend">${ZSVG}</span>`;
     container.appendChild(row);{const zb=row.querySelector('.zoom');zb.innerHTML=sparkline(arr);zb.onclick=()=>openChart(lbl,arr,col);}
   };
@@ -792,7 +793,8 @@ function appendLeadTriplet(container,cells,padPx){
   {const offW=dv(weekArr(cells.filter(c=>c.status==='booked'&&c.bkseg==='offline'))),onlW=dv(weekArr(cells.filter(c=>c.status==='booked'&&c.bkseg==='online')));   // where the booked lead booked (offline clinic vs online telehealth)
    if(offW.some(x=>x)||onlW.some(x=>x)){sub('↳ Offline · clinic',offW,'bkd bkseg',false,'#2E7D5B',18);sub('↳ Online · telehealth',onlW,'bkd bkseg',false,'#7C5CBF',18);}}
   sub('↳ not booked',nbW,'nbk',false,'#B8503C');
-  sub('→ book rate %',rateArr,'rate',true,'#1F6F5C');
+  sub('→ book rate % (ever)',rateArr,'rate',true,'#1F6F5C');
+  sub('→ L→B · same-wk % (WoW-fair)',swRate,'rate',true,'#2C6CAE',0,swWk);   // NEW: maturity-neutral lead→book — every week judged on its own same-week conversion, so it's comparable week-on-week
 }
 
 // ================= OPS SECTIONS (③ Availability · ④ Book→Done · ⑤ Done) — driven by data_quick_diag.json =================
