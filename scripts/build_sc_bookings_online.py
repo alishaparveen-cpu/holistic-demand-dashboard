@@ -100,10 +100,10 @@ base AS (
 bpw AS (
   SELECT patient_id, doctor, city, locality, source_bucket, week_start, attempt_rnk, diagnosis, lead_week, first_comp_wk, done_any FROM (
     SELECT base.*,
-      MAX(done_flag) OVER (PARTITION BY patient_id, week_start) AS done_any,
-      row_number() OVER (PARTITION BY patient_id, week_start ORDER BY attempt_rnk ASC) AS wk_rnk
+      MAX(done_flag) OVER (PARTITION BY patient_id, week_start, city, locality) AS done_any,
+      row_number() OVER (PARTITION BY patient_id, week_start, city, locality ORDER BY attempt_rnk ASC) AS wk_rnk
     FROM base
-  ) WHERE wk_rnk=1
+  ) WHERE wk_rnk=1   -- one row per (patient, clinic-of-doctor's-block, week): counts a patient at EVERY city they had an online SC that week (matches the sheet + the offline cube; the old (patient,week) dedup lost Ranchi when the week-earliest attempt resolved to 'Online')
 )
 SELECT city, locality, doctor, source_bucket, week_start, diagnosis,
   count(distinct patient_id) AS booked,
