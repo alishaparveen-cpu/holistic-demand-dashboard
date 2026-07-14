@@ -54,19 +54,19 @@ def main():
         c = line.split('\t')
         if len(c) < 11:
             continue
-        city, clinic, wk, pt, la, ch, md, num, cmp, cat, n = c
+        city, clinic, wk, pt, la, ch, md, num, cmp, cat, br, dr, n = c
         if wk not in WI:
             continue
         key = f'{city}|{clinic}'
         chs = CH.get(ch, 'Other')
         md2 = md if chs != 'Other' else 'other'   # untaxonomy channels are flat
-        acc[key][(pt, la, chs, md2, num, cmp, cat)][WI[wk]] += int(n)
+        acc[key][(pt, la, chs, md2, num, cmp, cat, br, dr)][WI[wk]] += int(n)
     out = {'_meta': {'weeks': WEEKS, 'basis': 'unique patient-intents (episodes) · REAL per-booking pull',
                      'source': 'fetch_booking_episodes_rich.sql — reschedule/rebook chains ≤14d collapsed; '
                                'pt=new/relapse/reattempt, la=lead-age, rg=return-gap, rt=needed-retry, real medium. '
                                'Category (STI/SH/MH/Other) still a provisional AI-audit prior on call leads (_callcat).'}}
     for key, cells in acc.items():
-        arr = [{'pt': k[0], 'la': k[1], 'ch': k[2], 'md': k[3], 'num': k[4], 'cmp': k[5], 'cat': k[6], 'w': w} for k, w in cells.items()]
+        arr = [{'pt': k[0], 'la': k[1], 'ch': k[2], 'md': k[3], 'num': k[4], 'cmp': k[5], 'cat': k[6], 'br': k[7], 'dr': k[8], 'w': w} for k, w in cells.items()]
         out[key] = {'cells': arr, '_callcat': callcat(clf, key)}
     json.dump(out, open(os.path.join(ROOT, 'data_bookings_funnel.json'), 'w'), separators=(',', ':'))
     K = 'Bangalore|Indiranagar'; n8 = 8

@@ -79,12 +79,15 @@ joined AS (
       THEN CASE cc.cat WHEN 'SEXUAL_HEALTH_GENERAL' THEN 'SH' WHEN 'MENTAL_HEALTH' THEN 'MH'
                        WHEN 'STI' THEN 'STI' WHEN 'OTHER' THEN 'Other' WHEN 'NOT_MENTIONED' THEN 'Other'
                        ELSE 'unknown' END
-      ELSE '' END AS category   -- REAL per-call AI-audit category (call leads only)
+      ELSE '' END AS category,   -- REAL per-call AI-audit category (call leads only)
+    -- rank axes, computed AS-OF BEFORE this booking (all on unique patient-weeks):
+    CASE WHEN s.wk_seq=1 THEN '1st' WHEN s.wk_seq=2 THEN '2nd' WHEN s.wk_seq=3 THEN '3rd' ELSE '4pl' END AS brank,   -- booking rank: 1st-ever / 2nd / 3rd / 4th+ booking week for this patient
+    CASE WHEN COALESCE(s.prior_done,0)=0 THEN 'd0' WHEN s.prior_done=1 THEN 'd1' ELSE 'd2pl' END AS drank   -- done rank: had they COMPLETED an SC before this booking? never / once / 2+ times
   FROM seq s
   LEFT JOIN allo_persons.lead l ON s.lead_id=l.id
   LEFT JOIN callcat cc ON RIGHT(COALESCE(l.phone_no,''),10)=cc.ph
   WHERE s.start_time >= '2026-01-05' AND s.start_time < '2026-07-13'
     AND LOWER(COALESCE(s.locality,'')) <> 'online' AND s.locality IS NOT NULL
 )
-SELECT city, clinic, wk, ptype, lead_age, channel, medium, number, campaign, category, COUNT(*) AS bookings
-FROM joined GROUP BY 1,2,3,4,5,6,7,8,9,10 ORDER BY 1,2,3;
+SELECT city, clinic, wk, ptype, lead_age, channel, medium, number, campaign, category, brank, drank, COUNT(*) AS bookings
+FROM joined GROUP BY 1,2,3,4,5,6,7,8,9,10,11,12 ORDER BY 1,2,3;

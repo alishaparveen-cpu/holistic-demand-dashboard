@@ -440,6 +440,8 @@ const DIMS={
   ptype:{label:'Patient type', field:'ptype', values:[{k:'new',l:'1st-ever booking'},{k:'reattempt',l:'Rebook'},{k:'relapse',l:'Relapse'}], color:v=>PTYPE_C[v]||'#c7ccd4'},   // new = first ever · Rebook = booked before, never completed · Relapse = completed before, booked again
   channel:{label:'Channel', field:'channel', values:[{k:'GMB'},{k:'Google Ads'},{k:'Practo'},{k:'Meta'},{k:'Organic'},{k:'Walk-in'},{k:'Other'}], color:v=>CHAN_C[v]||'var(--accent)'},
   maturity:{label:'Lead maturity', field:'age', values:[{k:'fresh',l:'Fresh · same week'},{k:'wk1',l:'1 week old'},{k:'wk2_4',l:'2–4 weeks old'},{k:'mo1_3',l:'1–3 months old'},{k:'mo3',l:'3 months+ old'},{k:'nolead',l:'No fresh lead (walk-in / return)'},{k:'na',l:'— online (no age)'}], color:v=>BUCKET_C[v]||'#c7ccd4'},   // 'nolead' = booking not driven by a lead (mostly rebooks/returns) — separated from 'fresh' so 'fresh' means a genuine new lead
+  brank:{label:'Booking rank', field:'brank', values:[{k:'1st',l:'1st-ever'},{k:'2nd',l:'2nd booking'},{k:'3rd',l:'3rd booking'},{k:'4pl',l:'4th+ booking'},{k:'na',l:'— online (no rank)'}], color:v=>({'1st':'#2E7D5B','2nd':'#6FA34C','3rd':'#C87B2E','4pl':'#B8503C'})[v]||'#c7ccd4'},   // how many SC bookings this patient had BEFORE this one (as-of-before): 1st-ever vs a rebooking. Offline only — online has no rank.
+  drank:{label:'Done rank (before)', field:'drank', values:[{k:'d0',l:'Never completed before'},{k:'d1',l:'Completed once before'},{k:'d2pl',l:'Completed 2+ before'},{k:'na',l:'— online (no rank)'}], color:v=>({d0:'#7C5CBF',d1:'#C87B2E',d2pl:'#B8503C'})[v]||'#c7ccd4'},   // had this patient COMPLETED an SC before this booking? never = a fresh/retry attempt, ≥1 = a returning (relapse) patient. Offline only.
   medium:{label:'Medium', field:'medium', values:[{k:'call',l:'Call (inbound)'},{k:'outbound',l:'Outbound (L2C called)'},{k:'web',l:'Web'},{k:'wa_gmb',l:'WhatsApp · GMB'},{k:'wa_org',l:'WhatsApp · organic'},{k:'book',l:'Practo book'},{k:'walkin',l:'Walk-in'},{k:'other',l:'Other / untagged'},{k:'na',l:'— online (no medium)'}], color:v=>MODEC[v]||'var(--other)'},   // WhatsApp = GMB or organic only; 'na' = online SC (channel-only)
   category:{label:'Call category (AI audit)', field:'category', values:[{k:'STI'},{k:'SH'},{k:'MH'},{k:'Other'},{k:'unknown',l:'— call · not audited'},{k:'na',l:'— not a call lead'}], color:v=>CAT_C[v]||'var(--other)'},
   campaign:{label:'Campaign (paid)', field:'campaign', values:[], color:v=>v==='na'?CAT_C.na:'#4E73C4'},   // values built per-clinic at load
@@ -532,7 +534,8 @@ function splitCat(v,cc){   // integer v → {STI,SH,MH,Other} summing exactly to
 }
 function buildCells(node){
   return (node.cells||[]).map(c=>({ptype:c.pt,channel:(window.BookingsCube?window.BookingsCube.channelOf(c.ch):c.ch),age:c.la,medium:(c.md==='whatsapp'?'wa_org':c.md),
-    num:c.num||'',campaign:c.cmp||'na',category:c.cat||'na',bkseg:c.bkseg||'none',loc:c.loc||'',city:c.city||'',citygroup:(c.city&&c.city.indexOf('— no city')!==0)?'attr':'nocity',_on:(!!c.on||c.city==='Online'),seg:((!!c.on||c.city==='Online')?'online':'offline'),arr:c.w}));   // loc/city set on city+national rollups; _on/seg = online (telehealth via merged online SC cube) vs offline (clinic)
+    brank:c.br||'na',drank:c.dr||'na',
+    num:c.num||'',campaign:c.cmp||'na',category:c.cat||'na',bkseg:c.bkseg||'none',loc:c.loc||'',city:c.city||'',citygroup:(c.city&&c.city.indexOf('— no city')!==0)?'attr':'nocity',_on:(!!c.on||c.city==='Online'),seg:((!!c.on||c.city==='Online')?'online':'offline'),arr:c.w}));   // brank/drank = booking-rank / done-rank AS-OF BEFORE this booking (unique patient-week). loc/city set on city+national rollups; _on/seg = online (telehealth) vs offline
 }
 function buildLeadCells(node){   // leads cube: channel x medium x number x url x booked-status
   const bs=BOOKED_SET[BOOKWIN]||BOOKED_SET.ever;   // booked = lag bucket within the chosen window
@@ -548,7 +551,7 @@ function makeP(cfg){const P={mode:cfg.mode,dims:cfg.dims,order:[...cfg.order],bu
   P.dims.forEach(dk=>{P.sel[dk]=new Set(DIMS[dk].values.map(v=>v.k));});return P;}
 const PL=makeP({mode:'leads',dims:['citygroup','city','clinic','channel','medium','number','intent','strength','category','status','verified'],order:['channel','medium'],build:buildLeadCells,hero:'attributable leads',
   els:{flow:$('flowL'),bar:$('barL'),heroN:$('heroNL'),heroL:$('heroLL'),hHdr:$('hHdrL'),hRight:$('hRightL')}});
-const PB=makeP({mode:'bookings',dims:['seg','city','clinic','ptype','channel','maturity','medium','category','campaign'],order:['seg','ptype','channel','maturity','medium'],build:buildCells,hero:'SC bookings',
+const PB=makeP({mode:'bookings',dims:['seg','city','clinic','ptype','brank','drank','channel','maturity','medium','category','campaign'],order:['seg','ptype','channel','maturity','medium'],build:buildCells,hero:'SC bookings',
   els:{flow:$('flowB'),bar:$('barB'),heroN:$('heroNB'),heroL:$('heroLB'),hHdr:$('hHdrB'),hRight:$('hRightB')}});
 
 // exact numbers dialed under a call node (shown inline when expanded) — so you see WHICH numbers, incl. organic
@@ -804,7 +807,7 @@ function reconcileBkDisplay(P){if(!QD)return;
   P.cells.forEach(c=>{if(c._on)return;const k=(c.city||'')+'|'+(c.loc||''),a=c.arr||[],o=(epi[k]=epi[k]||new Array(WEEKS.length).fill(0));for(let i=0;i<a.length;i++)o[i]+=a[i]||0;});
   Object.keys(epi).forEach(k=>{const i=k.indexOf('|'),city=k.slice(0,i),loc=k.slice(i+1),slug=qnorm(loc)+'_'+qnorm(city),qc=QD.clinics[slug];if(!qc)return;
     const tgt=qdAlign(qc.sc.done['booked'+g]||qc.sc.done.booked),ep=epi[k],delta=tgt.map((v,j)=>Math.round(v-(ep[j]||0)));
-    if(delta.some(x=>x))P.cells.push({ptype:'reattempt',channel:'Other',age:'mo3',medium:'other',num:'',campaign:'na',category:'na',loc:loc,city:city,citygroup:(city&&city.indexOf('— no city')!==0)?'attr':'nocity',_on:false,seg:'offline',arr:delta});   // the funnel→sheet gap IS undercounted rebook → fold into Rebook (reattempt)
+    if(delta.some(x=>x))P.cells.push({ptype:'reattempt',brank:'2nd',drank:'d0',channel:'Other',age:'mo3',medium:'other',num:'',campaign:'na',category:'na',loc:loc,city:city,citygroup:(city&&city.indexOf('— no city')!==0)?'attr':'nocity',_on:false,seg:'offline',arr:delta});   // the funnel→sheet gap IS undercounted rebook → fold into Rebook (reattempt; booking-rank 2nd, never-done)
   });}
 // ⑤ Done cube: one record per (unit × sub-category × source), tagged city/clinic/doctor/top-cat/sub-cat/source.
 // Category and Source are separate marginals in quick_diag (no true joint), so the cross is a PROPORTIONAL estimate
@@ -1114,6 +1117,8 @@ const IM_CUTS={
   leads:[{dim:'source',lab:'Source',field:'channel',vals:[['GMB','GMB'],['Google Ads','Google'],['Meta','Meta'],['Practo','Practo'],['Organic','Organic'],['Other','Other']]}],
   bookings:[
     {dim:'maturity',lab:'Lead maturity',field:'age',vals:[['fresh','fresh'],['wk1','1wk'],['wk2_4','2–4wk'],['mo1_3','1–3mo'],['mo3','3mo+'],['nolead','no lead'],['na','online']]},
+    {dim:'brank',lab:'Booking rank',field:'brank',vals:[['1st','1st-ever'],['2nd','2nd'],['3rd','3rd'],['4pl','4th+']]},
+    {dim:'drank',lab:'Done rank (before)',field:'drank',vals:[['d0','never done'],['d1','done 1×'],['d2pl','done 2+']]},
     {dim:'ptype',lab:'Patient type',field:'ptype',vals:[['new','1st-ever'],['reattempt','rebook'],['relapse','relapse']]}
   ]};
 function imCutsFor(k){return IM_CUTS[k]||[];}
