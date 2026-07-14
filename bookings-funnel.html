@@ -346,7 +346,7 @@
   </div>
   <h1>Leads → SC bookings · funnel</h1>
   <div class="sub" id="subt"></div>
-  <div class="segw" id="viewmode" title="Full funnel = the whole ①→⑥ funnel · Individual metric = diagnose ONE metric across every breakdown, RAG-coloured vs the comparison baseline"><button data-m="funnel" class="on">🩺 Full funnel</button><button data-m="im">📊 Individual metric</button></div>
+  <div class="segw" id="viewmode" title="Full funnel = the whole ①→⑥ funnel · Quick view = the offline funnel diagnostic — one row per clinic, filter to culprits by colour; follows the scope + Δ-baseline you pick above"><button data-m="funnel" class="on">🩺 Full funnel</button><button data-m="im">📊 Quick view</button></div>
 
   <!-- ① attributable leads -->
   <div id="leadSection">
@@ -399,11 +399,8 @@
   <!-- 📊 Individual-metric RAG diagnostic (metric-first grid, reimagined for the funnel's many layers) -->
   <div id="imSection" style="display:none">
     <div class="imctrl">
-      <span class="imctag"><b>Offline funnel diagnostic</b> <span class="imhint">— each row is a clinic; read it left→right and it IS that clinic's funnel. Click a colour dot under any stage to keep only clinics that are that colour there — stack conditions (e.g. Bookings 🔴 + Availability 🟢) to find culprits.</span></span>
+      <span class="imctag"><b>Offline funnel diagnostic</b> <span class="imhint">— each row is a clinic; read it left→right and it IS that clinic's funnel. Click a colour dot under any stage to keep only clinics that are that colour there — stack conditions (e.g. Bookings 🔴 + Availability 🟢) to find culprits. <b>Follows the scope, clinic-age &amp; Δ-baseline you set in the top bar.</b></span></span>
       <div class="imctlrow">
-        <span class="imclab">Tier</span><div class="segw imtierf" id="imTierF"><button data-t="T1" class="on">T1</button><button data-t="T2" class="on">T2</button></div>
-        <span class="imclab" title="clinic age — set with the ‘Clinic age’ filter in the top bar">Maturity ↑ top bar</span>
-        <label class="imfilt">Δ vs <select id="imCmp"><option value="avg">prior 4-wk avg</option><option value="peak">peak</option><option value="last">last week</option><option value="first">first week</option></select></label>
         <label class="imfilt" title="colour a stage RED when it drops at least this much"><i class="rag r"></i> red ≥ <input id="imRed" type="number" value="15" min="1" max="99" style="width:38px">%</label>
         <label class="imfilt" title="ORANGE at this drop"><i class="rag o"></i> orange ≥ <input id="imOrange" type="number" value="5" min="1" max="98" style="width:38px">%</label>
         <label class="imfilt" title="hide clinics whose Bookings ‘now’ is below this (removes tiny, noisy clinics)">hide &lt; <input id="imMat" type="number" value="0" min="0" step="1" style="width:44px"> bookings</label>
@@ -901,13 +898,16 @@ const OPSDIM={
 };
 const OPS_OPEN={};
 let DONE_OPT=['seg','city','clinic','opscat','opssub'];   // FULL ordered Done layer list (seg · geo · metrics) — every layer is drag-reorderable, like ①②. doneLayers() filters to what's available at the current scope/segment.
-function doneGeo(){return SCOPE==='national'?['city','clinic']:SCOPE==='city'?['clinic']:SCOPE==='doctor'?(SEL.doctor.size>1?['doctor']:[]):[];}   // geo dims available at this scope
+function doneGeo(){return SCOPE==='national'?['city','clinic']:SCOPE==='city'?['city','clinic']:SCOPE==='clinic'?(SEL.clinic.size>1?['clinic']:[]):SCOPE==='doctor'?(SEL.doctor.size>1?['doctor']:[]):[];}   // geo dims available at this scope — the scope's own grain leads (City at city scope, Clinic at clinic, Doctor at doctor)
 function doneAvail(l){if(['city','clinic','doctor'].includes(l))return doneGeo().includes(l);   // geo available only at its scope
   return ['seg','opssrc','opscat','opssub'].includes(l)&&!(SCOPE==='doctor'&&l==='opssrc');}   // seg available in every toggle state; doctor scope has no source
 function doneLayers(){return DONE_OPT.filter(doneAvail);}   // the user's full chosen order, trimmed to available layers
 function syncDoneOrder(){   // on scope change, drop in this scope's geo dims at the default position (after seg, before metrics), keeping the user's metric order
   const kept=DONE_OPT.filter(l=>['seg','opssrc','opscat','opssub'].includes(l));
   DONE_OPT=[...kept.filter(l=>l==='seg'),...doneGeo(),...kept.filter(l=>l!=='seg')];}
+function syncOpsGeo(){   // on scope change, make the scope's grain the FIRST layer of ③ Avail · ④ Book→Done · ⑥ Value (City at city, Clinic at clinic, Doctor at doctor). National stays lean (geo opt-in via ＋ ghosts).
+  const primary=(SCOPE==='national')?null:(doneGeo()[0]||null);
+  ['b2d','val','avail'].forEach(sec=>{const nonGeo=OPS_ORD[sec].filter(l=>!['city','clinic','doctor'].includes(l));OPS_ORD[sec]=primary?[primary,...nonGeo]:nonGeo;});}
 function opsDrill(container,recs,layers,depth,pad,kp,parentDisp){
   const dk=layers[depth],dim=OPSDIM[dk],last=depth===layers.length-1,groups={};
   recs.forEach(r=>{const v=dim.get(r);(groups[v]=groups[v]||[]).push(r);});
@@ -1300,12 +1300,9 @@ function imCfgBar(){const bar=document.getElementById('imCfgBar');if(!bar)return
     if(!Object.keys(ct).length)delete C.cut;imRender();});
   const rs=bar.querySelector('.cfgreset');if(rs)rs.onclick=()=>{delete IM_CFG[sk];imRender();};}
 function imRender(){const sec=document.getElementById('imSection');if(!sec||sec.style.display==='none')return;
-  {const cm=document.getElementById('imCmp');if(cm&&cm.value!==CMP)cm.value=CMP;}
-  document.querySelectorAll('#imTierF button').forEach(b=>b.classList.toggle('on',IM_TIERF.has(b.dataset.t)));
   const cmL=({last:'last wk',first:'first wk',peak:'peak',avg:'avg'})[CMP]||CMP;
-  // entities → rows: offline clinics passing tier + maturity, funnel computed, then filtered by the per-stage colour conditions
+  // entities → rows: offline clinics IN THE CURRENT SCOPE (opsUnitsOffline follows National/City/Clinic/Doctor + top selection), maturity via the top Clinic-age filter, funnel computed, then filtered by the per-stage colour conditions
   let rows=imOfflineClinics()
-    .filter(c=>IM_TIERF.has(tierOf(c.city)))
     .filter(c=>matPass(c.loc))
     .map(imClinicRow)
     .filter(r=>r.bkNow>=IM_MAT)
@@ -1574,19 +1571,21 @@ function renderPickList(){
   if(!PICK_OPTS.length){list.innerHTML='<div class="msempty">no matches</div>';return;}
   list.innerHTML=PICK_OPTS.map((o,i)=>`<label class="msrow"><input type="checkbox" data-i="${i}" ${sel.has(o.k)?'checked':''}><span class="mslab">${o.label}${o.sub?` <span class="mssub">· ${o.sub}</span>`:''}</span>${o.tier?`<span class="mstier">${o.tier}</span>`:''}</label>`).join('');
   list.querySelectorAll('input').forEach(inp=>inp.onchange=()=>{const o=PICK_OPTS[+inp.dataset.i];if(!o)return;if(inp.checked)sel.add(o.k);else sel.delete(o.k);renderPicker();loadClinic();});}
-function syncSegLayer(){   // ② always carries the Segment layer: Both → Offline vs Online; Offline/Online toggle → one labelled group (Offline · clinic / Online · telehealth)
-  if(!PB.order.includes('seg'))PB.order.unshift('seg');}
+function syncSegLayer(){   // ② always carries the Segment layer, placed right AFTER the leading geo dims so the scope's grain (City/Clinic) still leads
+  if(!PB.order.includes('seg')){const geo=['citygroup','city','clinic'];let i=0;while(i<PB.order.length&&geo.includes(PB.order[i]))i++;PB.order.splice(i,0,'seg');}}
 function setScope(s){SCOPE=s;
   document.querySelectorAll('#scopeseg button').forEach(x=>x.classList.toggle('on',x.dataset.s===s));
   const ds=s==='doctor'?'clinic':s;PL.data=DATASETS[ds].leads;PB.data=DATASETS[ds].bk;
   // per-scope default drill layers (National: Attribution→City for leads; City: Clinic split; bookings always attributed → no citygroup)
-  const geoL = s==='national' ? ['citygroup','city','clinic'] : s==='city' ? ['city','clinic'] : [];   // leads default drills Attribution → City → Clinic (city scope leads WITH the city on top, then its clinics)
-  const geoB = s==='national' ? ['city']             : s==='city' ? ['city','clinic'] : [];
-  PL.order = [...geoL,'channel','medium','category'];   // leads default drill: City → Clinic → Channel → Medium → Call category
+  // the scope's own grain leads every funnel section: National → City·Clinic · City → City·Clinic · Clinic → Clinic first
+  const geoL = s==='national' ? ['citygroup','city','clinic'] : s==='city' ? ['city','clinic'] : s==='clinic' ? ['clinic'] : [];
+  const geoB = s==='national' ? ['city']             : s==='city' ? ['city','clinic'] : s==='clinic' ? ['clinic'] : [];
+  PL.order = [...geoL,'channel','medium','category'];   // leads default drill: (Attribution →) City → Clinic → Channel → Medium → Call category
   PB.order = [...geoB,'ptype','channel','maturity','medium'];
   syncSegLayer();   // prepend Segment (Offline/Online) as the top split ONLY in Both view — Offline/Online toggle scopes the whole section instead
-  syncDoneOrder();   // refresh ⑤ Done layer order with this scope's geo dims (all layers stay drag-reorderable)
   ensureDefaultSel(s);
+  syncDoneOrder();   // refresh ⑤ Done layer order with this scope's geo dims (AFTER selection so doctor/clinic count is known)
+  syncOpsGeo();      // make the scope's grain (City / Clinic / Doctor) the FIRST layer of ③ Avail · ④ Book→Done · ⑥ Value too
   const doc=(s==='doctor');
   document.getElementById('leadSection').style.display=doc?'none':'';
   document.getElementById('bkSection').style.display=doc?'none':'';
@@ -1669,9 +1668,7 @@ Promise.all([
   document.getElementById('cmpsel').onchange=e=>{CMP=e.target.value;redrawAll();};
   document.querySelectorAll('#viewmode button').forEach(b=>b.onclick=()=>setViewMode(b.dataset.m));
   document.getElementById('imMat').oninput=e=>{IM_MAT=Math.max(0,+e.target.value||0);imRender();};
-  document.querySelectorAll('#imTierF button').forEach(b=>b.onclick=()=>{const t=b.dataset.t;if(IM_TIERF.has(t)&&IM_TIERF.size>1)IM_TIERF.delete(t);else IM_TIERF.add(t);imRender();});
   document.getElementById('imClrAll').onclick=()=>{IM_SRAG={};imRender();};
-  document.getElementById('imCmp').onchange=e=>{CMP=e.target.value;const cs=document.getElementById('cmpsel');if(cs)cs.value=CMP;redrawAll();};   // vs-baseline (syncs the global compare-vs)
   document.getElementById('imRed').oninput=e=>{IM_RED=Math.max(1,+e.target.value||15);if(IM_ORANGE>=IM_RED)IM_ORANGE=Math.max(1,IM_RED-1);imRender();};
   document.getElementById('imOrange').oninput=e=>{IM_ORANGE=Math.max(1,Math.min(IM_RED-1,+e.target.value||5));imRender();};
   document.getElementById('bookwin').onchange=e=>{BOOKWIN=e.target.value;loadClinic();};   // re-derive booked/notbooked for the chosen window
