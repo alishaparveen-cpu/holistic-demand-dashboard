@@ -159,7 +159,7 @@ lead_attr AS (
   LEFT JOIN loc plc ON plc.code = l.location
   LEFT JOIN gmbnum gn ON gn.num = RIGHT(REGEXP_REPLACE(COALESCE(l.utm_medium,''),'[^0-9]',''),10)
   LEFT JOIN citymap ucm ON ucm.tok = SPLIT_PART(REGEXP_SUBSTR(LOWER(COALESCE(l.source_url,'')),
-                             '/(sexual-health|mental-health|sti-testing|clinics)/[a-z-]+'),'/',3)
+                             '/(sexual-health|mental-health|sti-testing|sex-health-clinic|clinics)/[a-z-]+'),'/',3)
   LEFT JOIN gmbslug gs ON LOWER(COALESCE(l.utm_campaign,'')) LIKE '%-clinic-gmb'
        AND gs.slug = REGEXP_REPLACE(REGEXP_REPLACE(LOWER(COALESCE(l.utm_campaign,'')),'-clinic-gmb$',''),'[^a-z0-9]','')
   LEFT JOIN tokcity tc ON LOWER(COALESCE(l.utm_campaign,'')) SIMILAR TO 't[12]_%'
