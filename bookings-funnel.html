@@ -1531,18 +1531,26 @@ function draw(P){
 
 // ---- layer chips + popovers + drag ----
 let dragIdx=null,dragP=null;
-// combine picker: tick ONLY the values to merge into one group — everything else stays visible as its own row. Starts empty (independent of the visibility checkboxes) so you never lose the others.
-function openCombinePicker(pop,dk,vals,P){const pend=new Set();
-  pop.innerHTML=`<div style="font-size:11.5px;color:var(--muted);padding:2px 4px 6px;line-height:1.35">Tick 2+ values to merge into <b>one group</b>.<br>Every other value stays as its own row.</div>`
-    +vals.map(v=>`<label><input type="checkbox" class="cbx" data-k="${(''+v.k).replace(/"/g,'&quot;')}"><span class="sw" style="background:${DIMS[dk].color(v.k)}"></span>${v.l}</label>`).join('')
-    +`<div class="pact" style="margin-top:7px"><button data-a="mk" disabled>✓ Combine (0)</button><button data-a="cx">Cancel</button></div>`;
-  const mk=pop.querySelector('[data-a="mk"]');
-  pop.querySelectorAll('input.cbx').forEach(inp=>inp.onclick=e=>{e.stopPropagation();if(inp.checked)pend.add(inp.dataset.k);else pend.delete(inp.dataset.k);mk.disabled=pend.size<2;mk.textContent='✓ Combine ('+pend.size+')';});
-  mk.onclick=e=>{e.stopPropagation();if(pend.size<2)return;const picked=[...pend];
-    P.comb=P.comb||{};P.comb[dk]=[{label:picked.map(k=>labOf(dk,k)).join(' + '),vals:picked}];
-    vals.forEach(v=>P.sel[dk].add(v.k));   // keep every value visible — the un-picked ones show as their own rows next to the combined group
-    P.open={};renderLayerBar(P);draw(P);};
-  pop.querySelector('[data-a="cx"]').onclick=e=>{e.stopPropagation();renderLayerBar(P);};
+// combine picker (multi-group): make as many groups as you like — each is 2+ values merged into one row; every value NOT in a group stays as its own row. Values already grouped drop out of the checklist. Remove any group with ✕. Independent of the visibility ticks, so you never lose the others.
+const COMB_COLS=['#4E73C4','#C77B3A','#5BA88F','#B05C8E','#8257C4','#3E9E8F','#C0523E'];
+function openCombinePicker(pop,dk,vals,P){P.comb=P.comb||{};if(!P.comb[dk])P.comb[dk]=[];
+  function render(){const groups=P.comb[dk]||[],grouped=new Set();groups.forEach(g=>g.vals.forEach(v=>grouped.add(v)));
+    const avail=vals.filter(v=>!grouped.has(v.k)),pend=new Set();
+    let h=`<div style="font-size:11.5px;color:var(--muted);padding:2px 4px 6px;line-height:1.35">Tick 2+ → <b>make a group</b>. Repeat for more groups. Ungrouped values stay as their own rows.</div>`;
+    groups.forEach((g,gi)=>{h+=`<div style="display:flex;align-items:center;gap:6px;padding:3px 4px;font-size:12px"><span class="sw" style="background:${g.color||'#4E73C4'}"></span><b style="flex:1">${g.label}</b><span class="rmg" data-gi="${gi}" style="cursor:pointer;color:var(--faint);font-weight:700" title="ungroup">✕</span></div>`;});
+    h+= avail.length ? avail.map(v=>`<label><input type="checkbox" class="cbx" data-k="${(''+v.k).replace(/"/g,'&quot;')}"><span class="sw" style="background:${DIMS[dk].color(v.k)}"></span>${v.l}</label>`).join('')
+                     : `<div style="font-size:11.5px;color:var(--faint);padding:4px">— every value is in a group —</div>`;
+    h+=`<div class="pact" style="margin-top:7px"><button data-a="mk" disabled>✓ Make group (0)</button><button data-a="done">Done</button></div>`;
+    pop.innerHTML=h;
+    const mk=pop.querySelector('[data-a="mk"]');
+    pop.querySelectorAll('input.cbx').forEach(inp=>inp.onclick=e=>{e.stopPropagation();if(inp.checked)pend.add(inp.dataset.k);else pend.delete(inp.dataset.k);mk.disabled=pend.size<2;mk.textContent='✓ Make group ('+pend.size+')';});
+    mk.onclick=e=>{e.stopPropagation();if(pend.size<2)return;const picked=[...pend];
+      P.comb[dk].push({label:picked.map(k=>labOf(dk,k)).join(' + '),vals:picked,color:COMB_COLS[P.comb[dk].length%COMB_COLS.length]});
+      vals.forEach(v=>P.sel[dk].add(v.k));P.open={};draw(P);render();};   // keep others visible + redraw, then re-render the picker so she can build the next group
+    pop.querySelectorAll('.rmg').forEach(x=>x.onclick=e=>{e.stopPropagation();P.comb[dk].splice(+x.dataset.gi,1);if(!P.comb[dk].length)delete P.comb[dk];P.open={};draw(P);render();});
+    pop.querySelector('[data-a="done"]').onclick=e=>{e.stopPropagation();renderLayerBar(P);};
+  }
+  render();
 }
 function renderLayerBar(P){
   const bar=P.els.bar;
@@ -1556,8 +1564,8 @@ function renderLayerBar(P){
     // popover
     const pop=document.createElement('div');pop.className='pop';
     const hasComb=!!(P.comb&&P.comb[dk]&&P.comb[dk].length);
-    pop.innerHTML=`<div class="pact"><button data-a="all">All</button><button data-a="none">None</button>${dk==='city'?'<button data-a="t1" title="quick-select Tier-1 cities">Tier 1</button><button data-a="t2" title="quick-select Tier-2 cities">Tier 2</button>':''}${hasComb?'<button data-a="uncomb" title="split back into separate rows">✕ un-combine</button>':'<button data-a="comb" title="pick 2+ values to merge into ONE group; every OTHER value stays visible as its own row">⊕ combine…</button>'}</div>`
-      +(hasComb?`<div class="combnote">combined → <b>${P.comb[dk][0].label}</b></div>`:'')
+    pop.innerHTML=`<div class="pact"><button data-a="all">All</button><button data-a="none">None</button>${dk==='city'?'<button data-a="t1" title="quick-select Tier-1 cities">Tier 1</button><button data-a="t2" title="quick-select Tier-2 cities">Tier 2</button>':''}<button data-a="comb" title="create &amp; manage combine groups — merge some values into groups; every other value stays as its own row">⊕ combine…</button></div>`
+      +(hasComb?`<div class="combnote">groups: <b>${P.comb[dk].map(c=>c.label).join(' · ')}</b></div>`:'')
       +vals.map(v=>`<label><input type="checkbox" data-k="${v.k}" ${P.sel[dk].has(v.k)?'checked':''}><span class="sw" style="background:${dim.color(v.k)}"></span>${v.l}</label>`).join('');
     if(dk==='status'&&P.mode==='leads'){   // show the actual book rate for the current selection, right in the Booked? dropdown
       const pass=c=>P.dims.filter(d=>d!=='status').every(d2=>d2==='campaign'?true:P.sel[d2].has(c[DIMS[d2].field]));
