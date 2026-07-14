@@ -1035,32 +1035,51 @@ function opsFunnelDrill(container,recs,layers,depth,pad,kp,cfg,parentPrim){
       if(!(only&&dk==='seg'))row.onclick=(e)=>{if(e.target.closest('.zoom'))return;OPS_OPEN[key]=!OPS_OPEN[key];cfg.rerender();};
       if(op)opsFunnelDrill(kb,sub,layers,depth+1,pad+18,key,cfg,pv);}
   });}
+// ③ Availability metric catalogue — one entry per metric. f = the avail field (totals), df = the drill-rec field,
+// stage = a headline row (else an indented sub-row), clinicOnly = slot-derived (no per-doctor split).
+const AVAIL_METS=[
+  {f:'attend_days', df:'attend',      lab:'Days attended',                 slab:'Days attended',        col:'#3E7CB1', stage:true},
+  {f:'attend_wday', df:'attend_wday', lab:'weekdays attended',             slab:'weekdays attended',    col:'#3E7CB1'},
+  {f:'attend_wend', df:'attend_wend', lab:'weekend attended',              slab:'weekend attended',     col:'#3E7CB1'},
+  {f:'rostered_hrs',df:'rostered',    lab:'Rostered hours',                slab:'Rostered hrs',         col:'#8257C4', stage:true},
+  {f:'shrink_hrs',  df:'shrink',      lab:'shrinkage hours',               slab:'shrinkage hrs',        col:'#B8503C'},
+  {f:'opened_ash',  df:'opened',      lab:'opened hours (after shrinkage)',slab:'opened hrs (after shrink)',col:'#8257C4', clinicOnly:true},
+  {f:'net_sc_hrs_r',df:'net_sc',      lab:'net SC hours',                  slab:'net SC hrs',           col:'#2E7D5B', clinicOnly:true},
+  {f:'net_rpt_hrs', df:'net_rpt',     lab:'net Rpt hours',                 slab:'net Rpt hrs',          col:'#6FA34C', clinicOnly:true},
+  {f:'dead_hrs',    df:'dead',        lab:'dead-time hours',               slab:'dead-time hrs',        col:'#B8862E', clinicOnly:true},
+];
+let AVAIL_MET_OFF=new Set();   // de-selected availability metrics (empty = all shown) — driven by the Metrics ▾ picker
 function renderAvail(units){units=units||opsUnits();const flow=document.getElementById('availFlow'),head=document.getElementById('availHead');flow.innerHTML='';head.innerHTML=opsHeadHTML('Availability · SC');
   if(!units.some(u=>!u.online)){flow.innerHTML='<div class="empty">Online telehealth has no clinic roster / availability — this applies to physical clinics only (switch to Both / Offline to see roster).</div>';return;}
   const A=f=>opsSumU(units,u=>u.avail[f]);
-  opsRow(flow,'Days attended',A('attend_days'),{stage:true,col:'#3E7CB1'});
-  opsRow(flow,'weekdays attended',A('attend_wday'),{sub:true,col:'#3E7CB1'});
-  opsRow(flow,'weekend attended',A('attend_wend'),{sub:true,col:'#3E7CB1'});
-  opsRow(flow,'Rostered hours',A('rostered_hrs'),{stage:true,col:'#8257C4'});
-  opsRow(flow,'shrinkage hours',A('shrink_hrs'),{sub:true,col:'#B8503C'});
-  if(SCOPE!=='doctor'){   // net / opened / dead-time hours exist only at clinic level in quick_diag
-    opsRow(flow,'opened hours (after shrinkage)',A('opened_ash'),{sub:true,col:'#8257C4'});
-    opsRow(flow,'net SC hours',A('net_sc_hrs_r'),{sub:true,col:'#2E7D5B'});
-    opsRow(flow,'net Rpt hours',A('net_rpt_hrs'),{sub:true,col:'#6FA34C'});
-    opsRow(flow,'dead-time hours',A('dead_hrs'),{sub:true,col:'#B8862E'});
-  }else{const n=document.createElement('div');n.className='frow';n.style.paddingLeft='34px';n.innerHTML='<span class="lbl" style="color:var(--faint);font-size:11.5px">— net SC / net Rpt / opened / dead-time hours are clinic-level only (not split per doctor)</span>';flow.appendChild(n);}
-  // City / Clinic / Doctor breakdown (draggable layer bar, all opt-in) — each leaf group shows Rostered → Shrinkage → …
+  const useDoc=opsSecLayers('avail').includes('doctor'),docGrain=(SCOPE==='doctor'||useDoc);   // doctor scope OR doctor layer → per-doctor grain (clinic-only metrics drop)
+  const shown=AVAIL_METS.filter(m=>!AVAIL_MET_OFF.has(m.f));   // metric picker selection
+  const totalMets=shown.filter(m=>!(SCOPE==='doctor'&&m.clinicOnly));   // totals: at doctor scope the clinic-only metrics are 0/absent
+  totalMets.forEach(m=>opsRow(flow,m.lab,A(m.f),m.stage?{stage:true,col:m.col}:{sub:true,col:m.col}));
+  if(SCOPE==='doctor'&&shown.some(m=>m.clinicOnly)){const n=document.createElement('div');n.className='frow';n.style.paddingLeft='34px';n.innerHTML='<span class="lbl" style="color:var(--faint);font-size:11.5px">— net SC / net Rpt / opened / dead-time hours are clinic-level only (not split per doctor)</span>';flow.appendChild(n);}
+  // City / Clinic / Doctor breakdown (draggable layer bar, all opt-in) + a Metrics ▾ picker for which metrics to show
   const ll=document.getElementById('availLayerLbl');
-  const useDoc=opsSecLayers('avail').includes('doctor');   // Doctor layer → per-doctor roster recs (net SC/opened/dead are clinic-only, so those stages drop for the doctor drill)
   const recs=useDoc?opsAvailDoctorRecs(units):opsAvailRecs(units);
-  if(ll)opsBar(ll,'avail',recs,renderAvail);
+  if(ll){opsBar(ll,'avail',recs,renderAvail);appendAvailMetricPicker(ll,docGrain);}
   const layers=opsSecLayers('avail');
   if(layers.length){const fr=recs.filter(r=>layers.every(dk=>!(OPS_SEL.avail[dk]&&OPS_SEL.avail[dk].has(OPSDIM[dk].get(r)))));
     const hd=document.createElement('div');hd.className='opssub2';hd.style.cssText='margin:10px 0 2px;font-weight:700;color:var(--muted)';hd.textContent='▾ '+layers.map(l=>OPSDIM[l].lab).join(' › ')+' breakdown'+(useDoc?' · per-doctor roster (net SC/opened/dead are clinic-level only)':'');flow.appendChild(hd);
-    const fullStages=[{lab:'Rostered hrs',f:'rostered',col:'#8257C4'},{lab:'shrinkage hrs',f:'shrink',col:'#B8503C'},{lab:'opened hrs (after shrink)',f:'opened',col:'#8257C4'},{lab:'net SC hrs',f:'net_sc',col:'#2E7D5B'},{lab:'net Rpt hrs',f:'net_rpt',col:'#6FA34C'},{lab:'dead-time hrs',f:'dead',col:'#B8862E'},{lab:'Days attended',f:'attend',col:'#3E7CB1'},{lab:'weekdays attended',f:'attend_wday',col:'#3E7CB1'},{lab:'weekend attended',f:'attend_wend',col:'#3E7CB1'}];
-    const docStages=[{lab:'Rostered hrs',f:'rostered',col:'#8257C4'},{lab:'shrinkage hrs',f:'shrink',col:'#B8503C'},{lab:'Days attended',f:'attend',col:'#3E7CB1'},{lab:'weekdays attended',f:'attend_wday',col:'#3E7CB1'},{lab:'weekend attended',f:'attend_wend',col:'#3E7CB1'}];
-    const cfg={sec:'avail',rerender:renderAvail,stages:useDoc?docStages:fullStages};
-    opsFunnelDrill(flow,fr,layers,0,15,'avail',cfg,opsDv(sumRecF(recs,'rostered')));}}
+    let stages=shown.filter(m=>!(docGrain&&m.clinicOnly)).map(m=>({lab:m.slab,f:m.df,col:m.col}));   // drill shows the SELECTED metrics (drop clinic-only at doctor grain)
+    if(!stages.length)stages=[{lab:'Rostered hrs',f:'rostered',col:'#8257C4'}];
+    const cfg={sec:'avail',rerender:renderAvail,stages};
+    opsFunnelDrill(flow,fr,layers,0,15,'avail',cfg,opsDv(sumRecF(recs,stages[0].f)));}}
+// Metrics ▾ picker for ③ Availability — choose which roster metrics appear (totals + drill). docGrain hides clinic-only metrics.
+function appendAvailMetricPicker(ll,docGrain){
+  const opts=AVAIL_METS.filter(m=>!(docGrain&&m.clinicOnly)),nsel=opts.filter(m=>!AVAIL_MET_OFF.has(m.f)).length;
+  const chip=document.createElement('div');chip.className='chip';chip.style.marginLeft='12px';
+  chip.innerHTML=`<span class="nm">Metrics</span><span class="cnt">${nsel}/${opts.length}</span><span class="cv">▾</span>`;
+  const pop=document.createElement('div');pop.className='pop';
+  pop.innerHTML='<div class="pact"><button data-a="all">All</button><button data-a="none">None</button></div>'+opts.map(m=>`<label><input type="checkbox" data-f="${m.f}" ${!AVAIL_MET_OFF.has(m.f)?'checked':''}><span class="sw" style="background:${m.col}"></span>${m.lab}</label>`).join('');
+  chip.appendChild(pop);
+  chip.onclick=(e)=>{if(e.target.closest('.pop'))return;const open=pop.classList.contains('show');document.querySelectorAll('.pop').forEach(p=>p.classList.remove('show'));document.querySelectorAll('.chip').forEach(c=>c.classList.remove('open2'));if(!open){pop.classList.add('show');chip.classList.add('open2');}};
+  pop.querySelectorAll('.pact button').forEach(b=>b.onclick=(e)=>{e.stopPropagation();if(b.dataset.a==='all')opts.forEach(m=>AVAIL_MET_OFF.delete(m.f));else opts.forEach(m=>AVAIL_MET_OFF.add(m.f));renderAvail();});
+  pop.querySelectorAll('input').forEach(inp=>inp.onclick=(e)=>{e.stopPropagation();const f=inp.dataset.f;if(inp.checked)AVAIL_MET_OFF.delete(f);else AVAIL_MET_OFF.add(f);renderAvail();});
+  ll.appendChild(chip);}
 let B2D_GRAIN=['patient'];   // which grain layers to show in ④ (toggle chips) — patient by default; slot (+ outcome breakdown) is opt-in
 function renderB2D(units){units=units||opsUnits();const flow=document.getElementById('b2dFlow'),head=document.getElementById('b2dHead');flow.innerHTML='';head.innerHTML=opsHeadHTML('Book → Done · SC');
   const hasSlot=units.some(u=>u.bookedSlots),grains=[['patient','Patient'],['slot','Slot']].filter(([g])=>g==='patient'||hasSlot);
