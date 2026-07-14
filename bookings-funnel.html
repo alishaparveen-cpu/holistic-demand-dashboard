@@ -1531,6 +1531,19 @@ function draw(P){
 
 // ---- layer chips + popovers + drag ----
 let dragIdx=null,dragP=null;
+// combine picker: tick ONLY the values to merge into one group — everything else stays visible as its own row. Starts empty (independent of the visibility checkboxes) so you never lose the others.
+function openCombinePicker(pop,dk,vals,P){const pend=new Set();
+  pop.innerHTML=`<div style="font-size:11.5px;color:var(--muted);padding:2px 4px 6px;line-height:1.35">Tick 2+ values to merge into <b>one group</b>.<br>Every other value stays as its own row.</div>`
+    +vals.map(v=>`<label><input type="checkbox" class="cbx" data-k="${(''+v.k).replace(/"/g,'&quot;')}"><span class="sw" style="background:${DIMS[dk].color(v.k)}"></span>${v.l}</label>`).join('')
+    +`<div class="pact" style="margin-top:7px"><button data-a="mk" disabled>✓ Combine (0)</button><button data-a="cx">Cancel</button></div>`;
+  const mk=pop.querySelector('[data-a="mk"]');
+  pop.querySelectorAll('input.cbx').forEach(inp=>inp.onclick=e=>{e.stopPropagation();if(inp.checked)pend.add(inp.dataset.k);else pend.delete(inp.dataset.k);mk.disabled=pend.size<2;mk.textContent='✓ Combine ('+pend.size+')';});
+  mk.onclick=e=>{e.stopPropagation();if(pend.size<2)return;const picked=[...pend];
+    P.comb=P.comb||{};P.comb[dk]=[{label:picked.map(k=>labOf(dk,k)).join(' + '),vals:picked}];
+    vals.forEach(v=>P.sel[dk].add(v.k));   // keep every value visible — the un-picked ones show as their own rows next to the combined group
+    P.open={};renderLayerBar(P);draw(P);};
+  pop.querySelector('[data-a="cx"]').onclick=e=>{e.stopPropagation();renderLayerBar(P);};
+}
 function renderLayerBar(P){
   const bar=P.els.bar;
   [...bar.querySelectorAll('.chip,.arrow,.ghost,.shbtn')].forEach(c=>c.remove());   // clear chips, arrows, ghosts, share toggle
@@ -1543,7 +1556,7 @@ function renderLayerBar(P){
     // popover
     const pop=document.createElement('div');pop.className='pop';
     const hasComb=!!(P.comb&&P.comb[dk]&&P.comb[dk].length);
-    pop.innerHTML=`<div class="pact"><button data-a="all">All</button><button data-a="none">None</button>${dk==='city'?'<button data-a="t1" title="quick-select Tier-1 cities">Tier 1</button><button data-a="t2" title="quick-select Tier-2 cities">Tier 2</button>':''}${hasComb?'<button data-a="uncomb" title="split back into separate rows">✕ un-combine</button>':'<button data-a="comb" title="merge the checked values into ONE drillable group (e.g. GMB + Google); every other value stays visible as its own row">⊕ combine checked</button>'}</div>`
+    pop.innerHTML=`<div class="pact"><button data-a="all">All</button><button data-a="none">None</button>${dk==='city'?'<button data-a="t1" title="quick-select Tier-1 cities">Tier 1</button><button data-a="t2" title="quick-select Tier-2 cities">Tier 2</button>':''}${hasComb?'<button data-a="uncomb" title="split back into separate rows">✕ un-combine</button>':'<button data-a="comb" title="pick 2+ values to merge into ONE group; every OTHER value stays visible as its own row">⊕ combine…</button>'}</div>`
       +(hasComb?`<div class="combnote">combined → <b>${P.comb[dk][0].label}</b></div>`:'')
       +vals.map(v=>`<label><input type="checkbox" data-k="${v.k}" ${P.sel[dk].has(v.k)?'checked':''}><span class="sw" style="background:${dim.color(v.k)}"></span>${v.l}</label>`).join('');
     if(dk==='status'&&P.mode==='leads'){   // show the actual book rate for the current selection, right in the Booked? dropdown
@@ -1558,8 +1571,7 @@ function renderLayerBar(P){
       if(!open){pop.classList.add('show');chip.classList.add('open2');}};
     const updCnt=()=>{chip.querySelector('.cnt').textContent=vals.filter(v=>P.sel[dk].has(v.k)).length+'/'+ntot;};
     pop.querySelectorAll('.pact button').forEach(b=>b.onclick=(e)=>{e.stopPropagation();const a=b.dataset.a;
-      if(a==='comb'){const picked=vals.filter(v=>P.sel[dk].has(v.k)).map(v=>v.k);   // merge the currently-checked values into one drillable group
-        if(picked.length>=2){P.comb=P.comb||{};P.comb[dk]=[{label:picked.map(k=>labOf(dk,k)).join(' + '),vals:picked}];vals.forEach(v=>P.sel[dk].add(v.k));P.open={};renderLayerBar(P);draw(P);}return;}   // re-select every value so the un-checked ones stay visible as their own rows alongside the combined group (combine ≠ hide the rest)
+      if(a==='comb'){openCombinePicker(pop,dk,vals,P);return;}   // dedicated combine picker: tick only the ones to merge; the rest stay as their own rows
       if(a==='uncomb'){if(P.comb)delete P.comb[dk];P.open={};renderLayerBar(P);draw(P);return;}
       if(a==='all')vals.forEach(v=>P.sel[dk].add(v.k));
       else if(a==='t1'||a==='t2'){const t=a==='t1'?'T1':'T2';vals.forEach(v=>{if(v.k!==NOCITY_LAB&&isTracked(v.k)&&tierOf(v.k)===t)P.sel[dk].add(v.k);else P.sel[dk].delete(v.k);});}   // Tier quick-select: only that tier's tracked cities — no-city bucket is de-selected
