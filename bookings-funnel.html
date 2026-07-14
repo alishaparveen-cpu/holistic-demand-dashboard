@@ -944,9 +944,10 @@ function doneLayers(){const bk=doneBucketLayer();   // maturity/rank now CROSS w
 function syncDoneOrder(){   // on scope change, drop in this scope's geo dims at the default position (after seg, before metrics), keeping the user's metric order
   const kept=DONE_OPT.filter(l=>['seg','opssrc','opscat','opssub'].includes(l));
   DONE_OPT=[...kept.filter(l=>l==='seg'),...doneGeo(),...kept.filter(l=>l!=='seg')];}
-function syncOpsGeo(){   // on scope change, make the scope's grain the FIRST layer of ③ Avail · ④ Book→Done · ⑥ Value (City at city, Clinic at clinic, Doctor at doctor). National stays lean (geo opt-in via ＋ ghosts).
+function syncOpsGeo(){   // on scope change, make the scope's grain the FIRST layer of ④ Book→Done · ⑥ Value (City at city, Clinic at clinic, Doctor at doctor). National stays lean (geo opt-in via ＋ ghosts).
   const primary=(SCOPE==='national')?null:(doneGeo()[0]||null);
-  ['b2d','val','avail'].forEach(sec=>{const nonGeo=OPS_ORD[sec].filter(l=>!['city','clinic','doctor'].includes(l));OPS_ORD[sec]=primary?[primary,...nonGeo]:nonGeo;});}
+  ['b2d','val'].forEach(sec=>{const nonGeo=OPS_ORD[sec].filter(l=>!['city','clinic','doctor'].includes(l));OPS_ORD[sec]=primary?[primary,...nonGeo]:nonGeo;});
+  OPS_ORD.avail=OPS_ORD.avail.filter(l=>!['city','clinic','doctor'].includes(l));}   // ③ Availability stays lean at every scope — City/Clinic/Doctor breakdown is opt-in via the ＋ ghosts (no auto breakdown)
 function opsDrill(container,recs,layers,depth,pad,kp,parentDisp){
   const dk=layers[depth],dim=OPSDIM[dk],last=depth===layers.length-1,groups={};
   recs.forEach(r=>{const v=dim.get(r);(groups[v]=groups[v]||[]).push(r);});
@@ -976,6 +977,17 @@ function opsAvailRecs(units){return (units||opsUnits()).filter(u=>!u.online&&u.a
   attend:u.al(u.avail.attend_days||[]),attend_wday:u.al(u.avail.attend_wday||[]),attend_wend:u.al(u.avail.attend_wend||[]),
   rostered:u.al(u.avail.rostered_hrs||[]),shrink:u.al(u.avail.shrink_hrs||[]),opened:u.al(u.avail.opened_ash||[]),
   net_sc:u.al(u.avail.net_sc_hrs_r||[]),net_rpt:u.al(u.avail.net_rpt_hrs||[]),dead:u.al(u.avail.dead_hrs||[])}));}
+// per-DOCTOR availability records (for the Doctor breakdown layer at any scope) — from quick_diag by_doctor. Only the
+// roster metrics that exist per doctor (attended days, rostered/shrinkage hrs); net SC/Rpt/opened/dead are slot-derived
+// (clinic-level only) so they're left empty at doctor grain.
+function opsAvailDoctorRecs(units){const recs=[];(units||opsUnits()).filter(u=>!u.online).forEach(u=>{
+  const bd=(QD.clinics[u.key]&&QD.clinics[u.key].sc.by_doctor)||{};
+  for(const name in bd){const av=bd[name].availability;if(!av)continue;
+    const arr=k=>qdAlign(av[k]||[]);if(!['attend_days','rostered_hrs'].some(k=>arr(k).some(x=>x)))continue;
+    recs.push({online:false,city:u.city,loc:u.loc,doctor:name,
+      attend:arr('attend_days'),attend_wday:arr('attend_wday'),attend_wend:arr('attend_wend'),
+      rostered:arr('rostered_hrs'),shrink:arr('shrink_hrs'),opened:[],net_sc:[],net_rpt:[],dead:[]});}});
+  return recs;}
 function opsValRecs(units){const recs=[];(units||opsUnits()).forEach(u=>{   // ⑥ record per unit×top-category; a '(no category)' remainder keeps Σ = unit totals (≈0 now that offline+online both carry pur/rev by category).
   const purA=(u.pur||[]).slice(),revA=(u.rev||[]).slice(),doneA=u.al(u.done);
   const pc=rollTopCat(u.purByCat),rc=rollTopCat(u.revByCat),dc=rollTopCat(u.byCat,u.al);   // purByCat/revByCat are already WEEKS-aligned (offline qdAlign · online oneAlign) → roll with identity; byCat (done) is still raw → align with u.al
@@ -985,7 +997,7 @@ function opsValRecs(units){const recs=[];(units||opsUnits()).forEach(u=>{   // �
     recs.push({online:!!u.online,city:u.city,loc:u.loc,cat:SUBCAT2TOP[cat]||cat,pur,rev,done});});
   const rP=purA.map((v,i)=>v-(acc.pur[i]||0)),rR=revA.map((v,i)=>v-(acc.rev[i]||0)),rD=doneA.map((v,i)=>v-(acc.done[i]||0));
   if([rP,rR,rD].some(a=>a.some(x=>Math.abs(x)>1e-6)))recs.push({online:!!u.online,city:u.city,loc:u.loc,cat:'(no category)',pur:rP,rev:rR,done:rD});});return recs;}
-function opsAvail(sec,l){if(['city','clinic','doctor'].includes(l))return doneGeo().includes(l);if(l==='opscat')return sec==='val';return l==='seg'&&sec!=='avail';}   // avail is offline-only → no Segment layer
+function opsAvail(sec,l){if(['city','clinic','doctor'].includes(l))return sec==='avail'?true:doneGeo().includes(l);if(l==='opscat')return sec==='val';return l==='seg'&&sec!=='avail';}   // avail is offline-only → no Segment layer; but City/Clinic/Doctor are all opt-in breakdowns (per-doctor roster comes from quick_diag by_doctor)
 function opsSecLayers(sec){return OPS_ORD[sec].filter(l=>opsAvail(sec,l));}
 function opsBar(ll,sec,recs,rerender){if(!ll)return;ll.innerHTML='';
   const shb=document.createElement('button');shb.className='dlchip'+(OPS_SHARE[sec]?' on':'');shb.textContent='% share';shb.title='show each row’s share of its parent as a weekly trend (off = decluttered)';shb.style.marginRight='10px';shb.onclick=()=>{OPS_SHARE[sec]=!OPS_SHARE[sec];rerender();};ll.appendChild(shb);
@@ -1037,13 +1049,17 @@ function renderAvail(units){units=units||opsUnits();const flow=document.getEleme
     opsRow(flow,'net Rpt hours',A('net_rpt_hrs'),{sub:true,col:'#6FA34C'});
     opsRow(flow,'dead-time hours',A('dead_hrs'),{sub:true,col:'#B8862E'});
   }else{const n=document.createElement('div');n.className='frow';n.style.paddingLeft='34px';n.innerHTML='<span class="lbl" style="color:var(--faint);font-size:11.5px">— net SC / net Rpt / opened / dead-time hours are clinic-level only (not split per doctor)</span>';flow.appendChild(n);}
-  // City / Clinic / Doctor breakdown (draggable layer bar) — each leaf group shows Rostered → Shrinkage → Net SC hrs → Attended days
-  const ll=document.getElementById('availLayerLbl'),recs=opsAvailRecs(units);
+  // City / Clinic / Doctor breakdown (draggable layer bar, all opt-in) — each leaf group shows Rostered → Shrinkage → …
+  const ll=document.getElementById('availLayerLbl');
+  const useDoc=opsSecLayers('avail').includes('doctor');   // Doctor layer → per-doctor roster recs (net SC/opened/dead are clinic-only, so those stages drop for the doctor drill)
+  const recs=useDoc?opsAvailDoctorRecs(units):opsAvailRecs(units);
   if(ll)opsBar(ll,'avail',recs,renderAvail);
   const layers=opsSecLayers('avail');
   if(layers.length){const fr=recs.filter(r=>layers.every(dk=>!(OPS_SEL.avail[dk]&&OPS_SEL.avail[dk].has(OPSDIM[dk].get(r)))));
-    const hd=document.createElement('div');hd.className='opssub2';hd.style.cssText='margin:10px 0 2px;font-weight:700;color:var(--muted)';hd.textContent='▾ '+layers.map(l=>OPSDIM[l].lab).join(' › ')+' breakdown';flow.appendChild(hd);
-    const cfg={sec:'avail',rerender:renderAvail,stages:[{lab:'Rostered hrs',f:'rostered',col:'#8257C4'},{lab:'shrinkage hrs',f:'shrink',col:'#B8503C'},{lab:'opened hrs (after shrink)',f:'opened',col:'#8257C4'},{lab:'net SC hrs',f:'net_sc',col:'#2E7D5B'},{lab:'net Rpt hrs',f:'net_rpt',col:'#6FA34C'},{lab:'dead-time hrs',f:'dead',col:'#B8862E'},{lab:'Days attended',f:'attend',col:'#3E7CB1'},{lab:'weekdays attended',f:'attend_wday',col:'#3E7CB1'},{lab:'weekend attended',f:'attend_wend',col:'#3E7CB1'}]};
+    const hd=document.createElement('div');hd.className='opssub2';hd.style.cssText='margin:10px 0 2px;font-weight:700;color:var(--muted)';hd.textContent='▾ '+layers.map(l=>OPSDIM[l].lab).join(' › ')+' breakdown'+(useDoc?' · per-doctor roster (net SC/opened/dead are clinic-level only)':'');flow.appendChild(hd);
+    const fullStages=[{lab:'Rostered hrs',f:'rostered',col:'#8257C4'},{lab:'shrinkage hrs',f:'shrink',col:'#B8503C'},{lab:'opened hrs (after shrink)',f:'opened',col:'#8257C4'},{lab:'net SC hrs',f:'net_sc',col:'#2E7D5B'},{lab:'net Rpt hrs',f:'net_rpt',col:'#6FA34C'},{lab:'dead-time hrs',f:'dead',col:'#B8862E'},{lab:'Days attended',f:'attend',col:'#3E7CB1'},{lab:'weekdays attended',f:'attend_wday',col:'#3E7CB1'},{lab:'weekend attended',f:'attend_wend',col:'#3E7CB1'}];
+    const docStages=[{lab:'Rostered hrs',f:'rostered',col:'#8257C4'},{lab:'shrinkage hrs',f:'shrink',col:'#B8503C'},{lab:'Days attended',f:'attend',col:'#3E7CB1'},{lab:'weekdays attended',f:'attend_wday',col:'#3E7CB1'},{lab:'weekend attended',f:'attend_wend',col:'#3E7CB1'}];
+    const cfg={sec:'avail',rerender:renderAvail,stages:useDoc?docStages:fullStages};
     opsFunnelDrill(flow,fr,layers,0,15,'avail',cfg,opsDv(sumRecF(recs,'rostered')));}}
 let B2D_GRAIN=['patient'];   // which grain layers to show in ④ (toggle chips) — patient by default; slot (+ outcome breakdown) is opt-in
 function renderB2D(units){units=units||opsUnits();const flow=document.getElementById('b2dFlow'),head=document.getElementById('b2dHead');flow.innerHTML='';head.innerHTML=opsHeadHTML('Book → Done · SC');
@@ -1337,7 +1353,10 @@ function imStageSeries(sk,ent,extra){
   if(ent.doctor){const u=ent.unit;   // per-doctor: ops stages straight from the doctor's quick_diag unit
     if(sk==='leads')return [];   // a lead has no doctor yet (pre-booking) — only ① leads is not per-doctor
     if(sk==='bookings')return opsDv(u.al(u.booked));   // ② SC bookings attributed to this doctor (same source as b2d's denominator)
-    if(sk==='avail'){const f={netsc:'net_sc_hrs_r',attend:'attend_days',rostered:'rostered_hrs',opened:'opened_ash'}[imCfgVariant('avail')]||'net_sc_hrs_r';return opsDv(u.al((u.avail&&u.avail[f])||[]));}
+    if(sk==='avail'){const av=u.avail||{},has=k=>av[k]&&av[k].some&&av[k].some(x=>x);
+      let f={netsc:'net_sc_hrs_r',attend:'attend_days',rostered:'rostered_hrs',opened:'opened_ash'}[imCfgVariant('avail')]||'rostered_hrs';
+      if(!has(f))f=['rostered_hrs','attend_days'].find(has)||f;   // net_sc/opened/dead are clinic-level only (slot-derived) → at doctor grain fall back to a per-doctor capacity metric (rostered hrs, else days attended)
+      return opsDv(u.al(av[f]||[]));}
     if(sk==='done')return opsDv(u.al(u.done));
     if(sk==='b2d'){const dn=opsDv(u.al(u.done)),bk=opsDv(u.al(u.booked));return bk.map((b,i)=>b?100*dn[i]/b:null);}
     if(sk==='value'){const v=imCfgVariant('value'),dn=opsDv(u.al(u.done)),pu=opsDv(u.al(u.pur||[])),rv=opsDv(u.al(u.rev||[]));   // per-doctor SC value (purchased/revenue attributed to the SC doctor)
