@@ -1170,11 +1170,13 @@ function imSelPanel(){const sel=document.getElementById('imSel');if(!sel)return;
 // 3 · CONDITION bar: per selected metric, click colours it must be (Leads red/orange = dropped, Availability green/yellow = fine). A row (entity) shows only if EVERY conditioned metric matches (AND).
 function imFilterBar(){const bar=document.getElementById('imFilterBar');if(!bar)return;const mets=imSelMets();
   const dot=(mk,k)=>{const on=IM_COND[mk]&&IM_COND[mk].has(k);return `<button class="fdot rag-${k}${on?' on':''}" data-cm="${mk}" data-ck="${k}" title="${{r:'big drop ≥'+IM_RED+'%',o:'drop ≥'+IM_ORANGE+'%',y:'smaller drop',g:'up/flat / fine'}[k]}"><i class="rag ${k}"></i></button>`;};
+  const anyChip=mk=>{const none=!(IM_COND[mk]&&IM_COND[mk].size);return `<button class="fany${none?' on':''}" data-cany="${mk}" title="no colour condition — this metric doesn't filter the rows">any</button>`;};
   const anyCond=Object.keys(IM_COND).some(k=>IM_COND[k]&&IM_COND[k].size);
   bar.innerHTML=`<span class="imfctx">show rows where…</span>`
-    +mets.map(m=>`<span class="imfg"><b>${(imMainOf(m.key)||{}).lab||m.lab}</b> is ${['r','o','y','g'].map(k=>dot(m.key,k)).join('')}</span>`).join('')
-    +(anyCond?`<button class="imclr">✕ clear conditions</button>`:'<span style="color:var(--faint);font-size:11px">— pick colours to filter (else all rows show)</span>');
+    +mets.map(m=>`<span class="imfg"><b>${(imMainOf(m.key)||{}).lab||m.lab}</b> is ${anyChip(m.key)}${['r','o','y','g'].map(k=>dot(m.key,k)).join('')}</span>`).join('')
+    +(anyCond?`<button class="imclr">✕ clear all</button>`:'<span style="color:var(--faint);font-size:11px">— set colours per metric (default: any = no filter)</span>');
   bar.querySelectorAll('.fdot').forEach(b=>b.onclick=()=>{const mk=b.dataset.cm,k=b.dataset.ck;const S=IM_COND[mk]=IM_COND[mk]||new Set();if(S.has(k))S.delete(k);else S.add(k);if(!S.size)delete IM_COND[mk];imRender();});
+  bar.querySelectorAll('.fany[data-cany]').forEach(b=>b.onclick=()=>{delete IM_COND[b.dataset.cany];imRender();});   // 'any' = clear this metric's condition
   const clr=bar.querySelector('.imclr');if(clr)clr.onclick=()=>{IM_COND={};imRender();};}
 // does an entity's tags satisfy EVERY conditioned metric? (each metric evaluated with its own cut)
 function imEntityPass(t){return imSelMets().every(m=>{const S=IM_COND[m.key];if(!S||!S.size)return true;const s=imMSeries(m,t),dp=s.disp?deltaPct(s.disp):null;return dp?S.has(imRag(dp)):false;});}
