@@ -362,9 +362,16 @@
       <div class="impanel">
         <div class="imcap">3 · Breakdown <span class="imhint">cross by city / source / category — nests &amp; drills</span></div>
         <div id="imRows" class="imchips"></div>
-        <div class="imcap" style="margin-top:13px">Read <span class="imhint">Δ vs <b id="imCmpLbl">avg</b> · click to filter</span></div>
-        <div id="imRag" class="imchips"></div>
-        <div class="imchips" style="margin-top:7px"><label class="imfilt">materiality ≥ <input id="imMat" type="number" value="0" min="0" step="1"></label><label class="imfilt">sort <select id="imSort"><option value="drop">biggest drop</option><option value="size">size (now)</option><option value="az">A–Z</option></select></label></div>
+        <div class="imcap" style="margin-top:13px">Read <span class="imhint">colour = drop severity</span></div>
+        <div class="imchips" style="align-items:center;gap:7px 12px">
+          <label class="imfilt">compare vs <select id="imCmp"><option value="avg">prior 4-wk avg</option><option value="peak">peak</option><option value="last">last week</option><option value="first">first week</option></select></label>
+        </div>
+        <div class="imchips" style="margin-top:7px;align-items:center;gap:6px 12px">
+          <label class="imfilt" title="colour a row RED when it drops at least this much"><i class="rag r"></i> red ≥ <input id="imRed" type="number" value="15" min="1" max="99" style="width:40px">%</label>
+          <label class="imfilt" title="ORANGE at this drop (must be less than red)"><i class="rag o"></i> orange ≥ <input id="imOrange" type="number" value="5" min="1" max="98" style="width:40px">%</label>
+        </div>
+        <div id="imRag" class="imchips" style="margin-top:6px"></div>
+        <div class="imchips" style="margin-top:7px"><label class="imfilt" title="hide breakdown rows whose 'now' value is below this (removes tiny, noisy rows)">hide rows &lt; <input id="imMat" type="number" value="0" min="0" step="1"> now</label><label class="imfilt">sort <select id="imSort"><option value="drop">biggest drop</option><option value="size">size (now)</option><option value="az">A–Z</option></select></label></div>
       </div>
     </div>
     <div id="imFilterBar" class="imfbar"></div>
@@ -1027,7 +1034,8 @@ function renderValue(units){units=units||opsUnits();const flow=document.getEleme
   opsFunnelDrill(flow,fr,layers,0,15,'val',cfg,opsDv(pur));}
 // ===== 📊 Individual-metric RAG diagnostic — metric-first grid over the funnel cubes, recursive breakdown, colour = drop severity vs the Δ baseline =====
 // ===== Individual-metric v2 — CROSS-FUNNEL RAG matrix: many metrics (columns) × one breakdown (rows), so a drop is traceable Leads→Bookings→Done→Value on one screen =====
-let VIEWM='funnel', IM_SEL=['leads','bookings','done','revenue'], IM_ROWS=['city'], IM_OPEN={}, IM_MAT=0, IM_SORT='drop', IM_RAG_L={r:true,o:true,y:true,g:true}, IM_RAG_B={r:true,o:true,y:true,g:true}, imRowDrag=null;
+let VIEWM='funnel', IM_SEL=['leads','bookings','netsc','b2d','done','revenue'], IM_ROWS=['city'], IM_OPEN={}, IM_MAT=0, IM_SORT='drop', IM_RAG_L={r:true,o:true,y:true,g:true}, IM_RAG_B={r:true,o:true,y:true,g:true}, imRowDrag=null;
+let IM_RED=15, IM_ORANGE=5;   // editable RAG thresholds (% drop) — user-customisable (the old "materiality" was really this)
 const IM_LEADSIDE=new Set(['leads','bookedleads','bookrate']);   // leads-side metrics (for the split Leads/Book colour filter)
 // --- source-data filters by the current breakdown tags {seg,city,loc,cat,src} ---
 function imLeadTop(c){return SUBCAT2TOP[c.category]||({STI:'STI',SH:'SH',MH:'MH'}[c.category])||(c.category&&c.category!=='na'&&c.category!=='unknown'?'Other':null);}   // call-intent category → top (null when unknown, so it doesn't pollute)
@@ -1042,12 +1050,12 @@ function imDoneCatRaw(t){let recs=opsDoneRecs(imUnitsT(t));if(t.cat!=null)recs=r
 function imValCatRaw(t,f){let recs=opsValRecs(imUnitsT(t));if(t.cat!=null)recs=recs.filter(r=>imMatch(r.cat,t.cat));return sumRecF(recs.map(r=>({v:r[f]})),'v');}
 // each metric: series(tags) → {disp,size,pct,money}; dims = which breakdown dims it supports; null = "—" for that cut
 const IM_METS=[
-  {key:'leads',      lab:'Leads',        stage:'① Demand',    dims:['seg','city','clinic','cat','src'],           series:t=>imCount(imSumCells(imLeadT(t)))},
-  {key:'bookedleads',lab:'Booked leads', stage:'① Demand',    dims:['seg','city','clinic','cat','src'],           series:t=>imCount(imSumCells(imLeadT(t).filter(c=>c.status==='booked')))},
-  {key:'bookrate',   lab:'Book rate %',  stage:'① Demand',    pct:true, dims:['seg','city','clinic','cat','src'], series:t=>{const cs=imLeadT(t);return imRate(imSumCells(cs.filter(c=>c.status==='booked')),imSumCells(cs),true);}},
+  {key:'leads',      lab:'Leads',        stage:'① Leads',    dims:['seg','city','clinic','cat','src'],           series:t=>imCount(imSumCells(imLeadT(t)))},
+  {key:'bookedleads',lab:'Booked leads', stage:'① Leads',    dims:['seg','city','clinic','cat','src'],           series:t=>imCount(imSumCells(imLeadT(t).filter(c=>c.status==='booked')))},
+  {key:'bookrate',   lab:'Book rate %',  stage:'① Leads',    pct:true, dims:['seg','city','clinic','cat','src'], series:t=>{const cs=imLeadT(t);return imRate(imSumCells(cs.filter(c=>c.status==='booked')),imSumCells(cs),true);}},
   {key:'bookings',   lab:'Bookings',     stage:'② Bookings',  dims:['seg','city','clinic'],                       series:t=>imCount(opsSumU(imUnitsT(t),u=>u.booked))},
-  {key:'netsc',      lab:'Net SC hrs',   stage:'③ Capacity',  off:true, dims:['seg','city','clinic'],             series:t=>imCount(opsSumU(imUnitsT(t).filter(u=>!u.online),u=>(u.avail&&u.avail.net_sc_hrs_r)||[]))},
-  {key:'b2d',        lab:'Book→Done %',  stage:'④ B2D',       pct:true, dims:['seg','city','clinic'],             series:t=>imRate(opsSumU(imUnitsT(t),u=>u.done),opsSumU(imUnitsT(t),u=>u.booked),true)},
+  {key:'netsc',      lab:'Net SC hrs',   stage:'③ Availability',  off:true, dims:['seg','city','clinic'],             series:t=>imCount(opsSumU(imUnitsT(t).filter(u=>!u.online),u=>(u.avail&&u.avail.net_sc_hrs_r)||[]))},
+  {key:'b2d',        lab:'Book→Done %',  stage:'④ Book→Done',       pct:true, dims:['seg','city','clinic'],             series:t=>imRate(opsSumU(imUnitsT(t),u=>u.done),opsSumU(imUnitsT(t),u=>u.booked),true)},
   {key:'done',       lab:'Done',         stage:'⑤ Done',      dims:['seg','city','clinic','cat','src'],           series:t=>imCount((t.cat||t.src)?imDoneCatRaw(t):opsSumU(imUnitsT(t),u=>u.done))},
   {key:'purchased',  lab:'Purchased',    stage:'⑥ Value',     dims:['seg','city','clinic','cat'],                 series:t=>imCount(t.cat?imValCatRaw(t,'pur'):sumPre(imUnitsT(t),u=>u.pur))},
   {key:'d2p',        lab:'D2P %',        stage:'⑥ Value',     pct:true, dims:['seg','city','clinic','cat'],       series:t=>imRate(t.cat?imValCatRaw(t,'pur'):sumPre(imUnitsT(t),u=>u.pur), t.cat?imValCatRaw(t,'done'):opsSumU(imUnitsT(t),u=>u.done), true)},
@@ -1055,11 +1063,11 @@ const IM_METS=[
   {key:'rpc',        lab:'RPC ₹',        stage:'⑥ Value',     money:true, dims:['seg','city','clinic','cat'],     series:t=>{const r=imRate(t.cat?imValCatRaw(t,'rev'):sumPre(imUnitsT(t),u=>u.rev), t.cat?imValCatRaw(t,'done'):opsSumU(imUnitsT(t),u=>u.done), false);r.money=true;return r;}},
 ];
 const IM_DIMLAB={seg:'Segment',city:'City',clinic:'Clinic',cat:'Category',src:'Source'};
-function imSelMets(){return IM_SEL.map(k=>IM_METS.find(m=>m.key===k)).filter(Boolean);}
+function imSelMets(){return IM_SEL.map(k=>IM_METS.find(m=>m.key===k)).filter(Boolean).sort((a,b)=>IM_METS.indexOf(a)-IM_METS.indexOf(b));}   // always display in funnel order (Leads→Bookings→Availability→B2D→Done→Value), whatever order they were ticked
 function imSelDims(){const mets=imSelMets();return ['seg','city','clinic','cat','src'].filter(d=>{if(['city','clinic'].includes(d)&&!doneGeo().includes(d))return false;return mets.some(m=>m.dims.includes(d));});}   // a dim is offerable if ANY selected metric supports it (+ scope-gated for geo)
 function imSyncRows(){const av=imSelDims();IM_ROWS=IM_ROWS.filter(d=>av.includes(d));if(!IM_ROWS.length)IM_ROWS=[av.includes('city')?'city':av[0]];}
 function imDropNum(dp){if(dp.before<1)return 1e6;return 100*((dp.now||0)-dp.before)/dp.before;}
-function imRag(dp){if(!dp||dp.before==null)return 'g';if(dp.before<1)return (dp.now||0)>0?'g':'y';const d=imDropNum(dp);if(d<=-15)return 'r';if(d<=-5)return 'o';if(d<0)return 'y';return 'g';}
+function imRag(dp){if(!dp||dp.before==null)return 'g';if(dp.before<1)return (dp.now||0)>0?'g':'y';const d=imDropNum(dp);if(d<=-IM_RED)return 'r';if(d<=-IM_ORANGE)return 'o';if(d<0)return 'y';return 'g';}   // thresholds user-editable (IM_RED/IM_ORANGE)
 function imTagKey(dim){return dim==='clinic'?'loc':dim;}
 function imGroupValues(dim,tags){const s=new Set(),add=v=>{if(v!=null&&v!=='')s.add(v);};
   if(dim==='seg'){imUnitsT(tags).forEach(u=>add(u.online?'online':'offline'));imLeadT(tags).forEach(c=>add(c._on?'online':'offline'));}
@@ -1172,7 +1180,8 @@ function imRender(){const sec=document.getElementById('imSection');if(!sec||sec.
   layers.forEach((dk,idx)=>{imBreakChip(dk,idx,layers,rc);if(idx<layers.length-1){const a=document.createElement('span');a.className='imarrow';a.textContent='→';rc.appendChild(a);}});
   av.filter(d=>!IM_ROWS.includes(d)).forEach(d=>{const g=document.createElement('div');g.className='imghost';g.textContent='＋ '+IM_DIMLAB[d];g.onclick=()=>{IM_ROWS.push(d);IM_OPEN={};imRender();};rc.appendChild(g);});
   // 3 · colour filter chips
-  const cf=document.getElementById('imRag');if(cf){const L={r:'≥15% drop',o:'≥5%',y:'smaller drop',g:'up/flat'};cf.innerHTML=['r','o','y','g'].map(k=>`<span class="ragleg"><i class="rag ${k}"></i>${L[k]}</span>`).join('');}   // panel-3 legend (thresholds); the interactive filter is the Leads/Book bar below
+  const cf=document.getElementById('imRag');if(cf){const L={r:'≥'+IM_RED+'% drop',o:'≥'+IM_ORANGE+'%',y:'smaller drop',g:'up/flat'};cf.innerHTML=['r','o','y','g'].map(k=>`<span class="ragleg"><i class="rag ${k}"></i>${L[k]}</span>`).join('');}   // panel-3 legend reflects the editable thresholds; the interactive filter is the Leads/Book bar below
+  {const cm=document.getElementById('imCmp');if(cm&&cm.value!==CMP)cm.value=CMP;}
   imFilterBar();
   const cl=document.getElementById('imCmpLbl');if(cl)cl.textContent=({last:'last wk',first:'first wk',peak:'peak',avg:'prior avg'})[CMP]||CMP;
   const head=document.getElementById('imHead');head.innerHTML=opsHeadHTML(IM_ROWS.map(d=>IM_DIMLAB[d]).join(' › ')+'  ·  '+mets.length+' metric'+(mets.length>1?'s':''));
@@ -1512,6 +1521,9 @@ Promise.all([
   document.querySelectorAll('#viewmode button').forEach(b=>b.onclick=()=>setViewMode(b.dataset.m));
   document.getElementById('imMat').oninput=e=>{IM_MAT=Math.max(0,+e.target.value||0);imRender();};
   document.getElementById('imSort').onchange=e=>{IM_SORT=e.target.value;imRender();};
+  document.getElementById('imCmp').onchange=e=>{CMP=e.target.value;const cs=document.getElementById('cmpsel');if(cs)cs.value=CMP;redrawAll();};   // vs-baseline (syncs the global compare-vs)
+  document.getElementById('imRed').oninput=e=>{IM_RED=Math.max(1,+e.target.value||15);if(IM_ORANGE>=IM_RED)IM_ORANGE=Math.max(1,IM_RED-1);imRender();};
+  document.getElementById('imOrange').oninput=e=>{IM_ORANGE=Math.max(1,Math.min(IM_RED-1,+e.target.value||5));imRender();};
   document.getElementById('bookwin').onchange=e=>{BOOKWIN=e.target.value;loadClinic();};   // re-derive booked/notbooked for the chosen window
   document.querySelectorAll('#wkstep button').forEach(b=>b.onclick=()=>{NWK=Math.max(1,Math.min(WEEKS.length,NWK+(+b.dataset.s)));PL.open={};PB.open={};redrawAll();});
   document.querySelectorAll('#pctseg button').forEach(b=>b.onclick=()=>{document.querySelectorAll('#pctseg button').forEach(x=>x.classList.remove('on'));b.classList.add('on');PCT=b.dataset.p==='p';redrawAll();});
