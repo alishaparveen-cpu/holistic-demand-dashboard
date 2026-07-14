@@ -140,6 +140,8 @@ lead_attr AS (
     CASE
       WHEN LOWER(COALESCE(l.utm_campaign,''))='inbound_call' THEN 'call'
       WHEN LOWER(COALESCE(l.utm_source,''))='practo' THEN 'book'
+      WHEN LOWER(COALESCE(l.source_url,'')) LIKE '%/blog/%' THEN 'blog'   -- blog content = organic content-marketing demand (biggest organic driver); precedes web/wa so blog is visible even when entered via WhatsApp
+      WHEN LOWER(COALESCE(l.utm_medium,''))='whatsapp' AND LOWER(COALESCE(l.utm_campaign,''))='outbound' THEN 'wa_outbound'   -- WhatsApp API outbound-template flow (was hiding in other/web); real demand that entered via WhatsApp
       WHEN LOWER(COALESCE(l.utm_campaign,'')) LIKE '%gmb_wa' THEN 'wa_gmb'
       WHEN LOWER(COALESCE(l.utm_campaign,'')) LIKE '%organic_wa' THEN 'wa_org'
       WHEN RIGHT(LOWER(COALESCE(l.utm_campaign,'')),3)='_wa' OR LOWER(COALESCE(l.origin,'')) LIKE '%whatsapp%' THEN 'whatsapp'
@@ -293,7 +295,7 @@ def main():
             acc['w'][WI[wkm]] += n
         if created in DI:
             acc['d'][DI[created]] += n
-    out = {'_meta': {'weeks': WEEKS, 'days': DAYS, 'channels': CHANNELS, 'mediums': ['call', 'web', 'book', 'whatsapp', 'wa_gmb', 'wa_org'],
+    out = {'_meta': {'weeks': WEEKS, 'days': DAYS, 'channels': CHANNELS, 'mediums': ['call', 'web', 'blog', 'book', 'whatsapp', 'wa_gmb', 'wa_org', 'wa_outbound'],
                      'preview': False, 'level': 'city',
                      'note': 'Attributable leads by CITY. Each cell has weekly w[] (26 wks, aligned with bookings) + daily d[] '
                              '(recent 8 wks incl. the current partial week, for day-of-week / week-to-date comparison).'}}

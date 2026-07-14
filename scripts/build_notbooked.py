@@ -95,7 +95,9 @@ lead_attr AS (
           WHEN LOWER(COALESCE(l.utm_source,'')) IN ('organic','blog','google') THEN 'Organic'   -- organic-google (no gclid/cpc) lands here
           ELSE 'Other' END                 -- justdial, referral, direct, untracked — folded into Other
     END AS channel,
-    CASE   -- medium: GMB call/web ; inbound calls ; Practo book vs web ; else caller
+    CASE   -- medium: blog/wa-outbound first ; GMB call/web ; inbound calls ; Practo book vs web ; else caller
+      WHEN LOWER(COALESCE(l.source_url,'')) LIKE '%/blog/%' THEN 'blog'   -- blog content-marketing (matches city cube)
+      WHEN LOWER(COALESCE(l.utm_medium,''))='whatsapp' AND LOWER(COALESCE(l.utm_campaign,''))='outbound' THEN 'wa_outbound'   -- WhatsApp outbound-template flow (matches city cube)
       WHEN LOWER(COALESCE(l.utm_source,''))='gmb'
            AND RIGHT(REGEXP_REPLACE(COALESCE(l.utm_medium,''),'[^0-9]',''),10) IN ({GMBNUMS}) THEN 'call'
       WHEN LOWER(COALESCE(l.utm_source,''))='gmb' AND ({CAMPLIKE}) THEN 'web'
@@ -190,7 +192,7 @@ def main():
             'or Other (justdial/referral/direct/untracked). Web leads that never call carry only the city → excluded.')
     nb = {'_meta': {'weeks': WEEKS, 'channels': CHANNELS,
                     'note': 'Leads attributed to the clinic that did NOT book an SC. ' + note}}   # aggregated
-    leads = {'_meta': {'weeks': WEEKS, 'days': DAYS, 'channels': CHANNELS, 'mediums': ['call', 'web'],
+    leads = {'_meta': {'weeks': WEEKS, 'days': DAYS, 'channels': CHANNELS, 'mediums': ['call', 'web', 'blog', 'wa_outbound'],
                        'preview': False, 'note': 'Attributable leads cube: channel x medium x booked-status x week. ' + note}}
     # locality -> Practo location code(s), for Practo book/web/call attribution
     loc_codes = defaultdict(list)
