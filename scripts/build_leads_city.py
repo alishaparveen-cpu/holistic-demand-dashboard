@@ -110,12 +110,13 @@ lead_attr AS (
   SELECT l.id, RIGHT(REGEXP_REPLACE(COALESCE(l.phone_no,''),'[^0-9]',''),10) AS ph,
     TO_CHAR(DATE_TRUNC('week', l.created_at + INTERVAL '5.5 hours'),'YYYY-MM-DD') AS wk,
     DATE(l.created_at + INTERVAL '5.5 hours') AS created,
-    -- CITY priority: Practo code > GMB clinic-gmb slug > AI user_city > source_url city > GMB number city > Google campaign token > locality backfill
+    -- CITY priority: Practo code > GMB clinic-gmb slug > AI user_city > source_url city (prefix regex, then last-segment fallback) > GMB number city > Google campaign token > locality backfill
     COALESCE(
       CASE WHEN LOWER(COALESCE(l.utm_source,''))='practo' THEN plc.city END,
       gs.city,
       cai.city,
       ucm.city,
+      ucm2.city,
       gn.city,
       tc.city,
       lcb.city
@@ -160,6 +161,9 @@ lead_attr AS (
   LEFT JOIN gmbnum gn ON gn.num = RIGHT(REGEXP_REPLACE(COALESCE(l.utm_medium,''),'[^0-9]',''),10)
   LEFT JOIN citymap ucm ON ucm.tok = SPLIT_PART(REGEXP_SUBSTR(LOWER(COALESCE(l.source_url,'')),
                              '/(sexual-health|mental-health|sti-testing|sex-health-clinic|clinics)/[a-z-]+'),'/',3)
+  LEFT JOIN citymap ucm2 ON ucm2.tok = REGEXP_SUBSTR(   -- prefix-agnostic fallback: the LAST path segment if it IS a city
+                             REGEXP_REPLACE(REGEXP_REPLACE(LOWER(COALESCE(l.source_url,'')),'[?#].*$',''),'/+$',''),   -- strip query + trailing slash
+                             '[a-z0-9-]+$')   -- catches /sexologists/<city>, /sexologists-listing/<city>, /std/testing/<city>, bare /<city>; non-city tails (online-roi, self-assessment) don't match citymap so they stay national
   LEFT JOIN gmbslug gs ON LOWER(COALESCE(l.utm_campaign,'')) LIKE '%-clinic-gmb'
        AND gs.slug = REGEXP_REPLACE(REGEXP_REPLACE(LOWER(COALESCE(l.utm_campaign,'')),'-clinic-gmb$',''),'[^a-z0-9]','')
   LEFT JOIN tokcity tc ON LOWER(COALESCE(l.utm_campaign,'')) SIMILAR TO 't[12]_%'
