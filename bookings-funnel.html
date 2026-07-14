@@ -1300,15 +1300,15 @@ function imBreakChip(dk,idx,layers,rc){const chip=document.createElement('div');
   const vals=imGroupValues(dk,{}),comb=IM_COMB[dk]||[],off=IM_OFF[dk]||new Set(),nsel=vals.filter(v=>!off.has(v)).length;
   chip.innerHTML=`<span class="grip">⋮⋮</span><span class="ord">${idx+1}</span>${IM_DIMLAB[dk]}<span class="cnt2">${nsel}/${vals.length}</span><span class="cv">▾</span>`+(layers.length>1?'<span class="rm" title="remove">×</span>':'');
   const pop=document.createElement('div');pop.className='pop';
-  pop.innerHTML=`<div class="pact"><button data-a="all">All</button><button data-a="none">None</button>${comb.length?'<button data-a="uncomb" title="split back">✕ un-combine</button>':'<button data-a="comb" title="merge the checked values into ONE group; the rest stay as their own rows">⊕ combine checked</button>'}</div>`
-    +(comb.length?`<div class="combnote">combined → <b>${comb.map(c=>c.label).join(' · ')}</b></div>`:'')
+  pop.innerHTML=`<div class="pact"><button data-a="all">All</button><button data-a="none">None</button><button data-a="comb" title="create &amp; manage combine groups — merge some values into groups; every other value stays as its own row">⊕ combine…</button></div>`
+    +(comb.length?`<div class="combnote">groups: <b>${comb.map(c=>c.label).join(' · ')}</b></div>`:'')
     +vals.map(v=>`<label><input type="checkbox" data-v="${(''+v).replace(/"/g,'&quot;')}" ${!off.has(v)?'checked':''}>${v}</label>`).join('');
   chip.appendChild(pop);
   chip.onclick=(e)=>{if(e.target.closest('.pop'))return;if(e.target.classList.contains('rm')){IM_ROWS=IM_ROWS.filter(x=>x!==dk);IM_OPEN={};imRender();return;}const o=pop.classList.contains('show');document.querySelectorAll('#imRows .pop').forEach(p=>p.classList.remove('show'));if(!o)pop.classList.add('show');};
   pop.querySelectorAll('.pact button').forEach(b=>b.onclick=(e)=>{e.stopPropagation();const a=b.dataset.a;
     if(a==='all')IM_OFF[dk]=new Set();
     else if(a==='none')IM_OFF[dk]=new Set(vals);
-    else if(a==='comb'){const picked=vals.filter(v=>!(IM_OFF[dk]||new Set()).has(v));if(picked.length>=2){IM_COMB[dk]=[{label:picked.join(' + '),vals:picked}];IM_OFF[dk]=new Set();}}
+    else if(a==='comb'){openCombinePickerIM(pop,dk);return;}
     else if(a==='uncomb')delete IM_COMB[dk];
     IM_OPEN={};imRender();});
   pop.querySelectorAll('input').forEach(inp=>inp.onclick=(e)=>{e.stopPropagation();IM_OFF[dk]=IM_OFF[dk]||new Set();const v=inp.dataset.v;if(inp.checked)IM_OFF[dk].delete(v);else IM_OFF[dk].add(v);IM_OPEN={};imRender();});
@@ -1549,6 +1549,24 @@ function openCombinePicker(pop,dk,vals,P){P.comb=P.comb||{};if(!P.comb[dk])P.com
       vals.forEach(v=>P.sel[dk].add(v.k));P.open={};draw(P);render();};   // keep others visible + redraw, then re-render the picker so she can build the next group
     pop.querySelectorAll('.rmg').forEach(x=>x.onclick=e=>{e.stopPropagation();P.comb[dk].splice(+x.dataset.gi,1);if(!P.comb[dk].length)delete P.comb[dk];P.open={};draw(P);render();});
     pop.querySelector('[data-a="done"]').onclick=e=>{e.stopPropagation();renderLayerBar(P);};
+  }
+  render();
+}
+// Quick-view multi-group combine picker (mirrors openCombinePicker, on IM_COMB/IM_OFF; values are plain strings). Applies on Done.
+function openCombinePickerIM(pop,dk){IM_COMB[dk]=IM_COMB[dk]||[];
+  function render(){const vals=imGroupValues(dk,{}),groups=IM_COMB[dk]||[],grouped=new Set();groups.forEach(g=>g.vals.forEach(v=>grouped.add(v)));
+    const avail=vals.filter(v=>!grouped.has(v)),pend=new Set();
+    let h=`<div style="font-size:11.5px;color:var(--muted);padding:2px 4px 6px;line-height:1.35">Tick 2+ → <b>make a group</b>. Repeat for more groups. Ungrouped values stay as their own rows.</div>`;
+    groups.forEach((g,gi)=>{h+=`<div style="display:flex;align-items:center;gap:6px;padding:3px 4px;font-size:12px"><b style="flex:1">${g.label}</b><span class="rmg" data-gi="${gi}" style="cursor:pointer;color:var(--faint);font-weight:700" title="ungroup">✕</span></div>`;});
+    h+= avail.length ? avail.map(v=>`<label><input type="checkbox" class="cbx" data-v="${(''+v).replace(/"/g,'&quot;')}">${v}</label>`).join('')
+                     : `<div style="font-size:11.5px;color:var(--faint);padding:4px">— every value is in a group —</div>`;
+    h+=`<div class="pact" style="margin-top:7px"><button data-a="mk" disabled>✓ Make group (0)</button><button data-a="done">Done</button></div>`;
+    pop.innerHTML=h;
+    const mk=pop.querySelector('[data-a="mk"]');
+    pop.querySelectorAll('input.cbx').forEach(inp=>inp.onclick=e=>{e.stopPropagation();const v=inp.dataset.v;if(inp.checked)pend.add(v);else pend.delete(v);mk.disabled=pend.size<2;mk.textContent='✓ Make group ('+pend.size+')';});
+    mk.onclick=e=>{e.stopPropagation();if(pend.size<2)return;const picked=[...pend];IM_COMB[dk].push({label:picked.join(' + '),vals:picked});IM_OFF[dk]=IM_OFF[dk]||new Set();picked.forEach(v=>IM_OFF[dk].delete(v));render();};   // re-render picker so she can build the next group; matrix applies on Done
+    pop.querySelectorAll('.rmg').forEach(x=>x.onclick=e=>{e.stopPropagation();IM_COMB[dk].splice(+x.dataset.gi,1);if(!IM_COMB[dk].length)delete IM_COMB[dk];render();});
+    pop.querySelector('[data-a="done"]').onclick=e=>{e.stopPropagation();IM_OPEN={};imRender();};
   }
   render();
 }
