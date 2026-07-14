@@ -205,6 +205,22 @@ booked_offline_any AS (   -- phone booked a PHYSICAL (offline) SC anywhere = NOT
 verified AS (   -- phone that has an Allo patient record (a patient_id was created), regardless of booking → "verified lead"
   SELECT DISTINCT RIGHT(REGEXP_REPLACE(COALESCE(phone_no,''),'[^0-9]',''),10) AS ph
   FROM allo_persons.patient WHERE deleted_at IS NULL AND COALESCE(phone_no,'') <> ''
+),
+done_city AS (   -- phone that COMPLETED an SC in a given city → the lead's Done? split (mirrors booked, per city)
+  SELECT DISTINCT RIGHT(REGEXP_REPLACE(COALESCE(p.phone_no,''),'[^0-9]',''),10) AS ph, COALESCE(cm.city, INITCAP(loc.city)) AS city
+  FROM allo_consultations.appointments a
+  JOIN allo_consultations.types t ON a.type_id=t.id AND t.name='Screening Call'
+  JOIN allo_health.locations loc ON a.location_id=loc.id AND loc.deleted_at IS NULL
+  LEFT JOIN citymap cm ON cm.tok = LOWER(loc.city)
+  JOIN allo_persons.patient p ON p.id=a.patient_id
+  WHERE a.deleted_at IS NULL AND LOWER(a.status) IN ('completed','reconsulted')
+),
+done_any AS (   -- phone that COMPLETED an SC anywhere (for no-city leads)
+  SELECT DISTINCT RIGHT(REGEXP_REPLACE(COALESCE(p.phone_no,''),'[^0-9]',''),10) AS ph
+  FROM allo_consultations.appointments a
+  JOIN allo_consultations.types t ON a.type_id=t.id AND t.name='Screening Call'
+  JOIN allo_persons.patient p ON p.id=a.patient_id
+  WHERE a.deleted_at IS NULL AND LOWER(a.status) IN ('completed','reconsulted')
 )
 SELECT COALESCE(la.city,'— no city · online / untracked') AS city, COALESCE(la.locality,'') AS locality, la.channel, la.medium, la.number, la.url, la.relevance, la.intent, la.strength, la.category,
   -- attributed leads: booked = booked IN THAT CITY (b). No-city leads: booked = booked ANYWHERE (ba), since there is no city to match.
@@ -217,6 +233,7 @@ SELECT COALESCE(la.city,'— no city · online / untracked') AS city, COALESCE(l
   CASE WHEN (la.city IS NOT NULL AND b.bd IS NOT NULL) OR (la.city IS NULL AND bofa.ph IS NOT NULL) THEN 'offline'   -- booked a physical SC (city-matched, or any offline for no-city leads)
        WHEN bo.ph IS NOT NULL THEN 'online'                             -- else booked an online telehealth SC
        ELSE 'none' END AS bkseg,
+  CASE WHEN (CASE WHEN la.city IS NULL THEN da.ph ELSE dc.ph END) IS NOT NULL THEN 'done' ELSE 'notdone' END AS doneq,   -- completed an SC in that city (no-city lead → completed anywhere)
   la.created, COUNT(DISTINCT la.ph) AS n
 FROM lead_attr la
   LEFT JOIN booked b ON b.ph=la.ph AND b.city=la.city
@@ -224,8 +241,10 @@ FROM lead_attr la
   LEFT JOIN booked_online bo ON bo.ph=la.ph
   LEFT JOIN booked_offline_any bofa ON bofa.ph=la.ph
   LEFT JOIN verified v ON v.ph=la.ph
+  LEFT JOIN done_city dc ON dc.ph=la.ph AND dc.city=la.city
+  LEFT JOIN done_any da ON da.ph=la.ph
 WHERE la.channel IS NOT NULL AND la.ph <> ''
-GROUP BY 1,2,3,4,5,6,7,8,9,10,11,12,13,14 ORDER BY 1,3;
+GROUP BY 1,2,3,4,5,6,7,8,9,10,11,12,13,14,15 ORDER BY 1,3;
 """
 
 def run(sql, tries=4):
@@ -254,9 +273,9 @@ def main():
     rows = run(sql)
     cube = defaultdict(lambda: defaultdict(lambda: {'w': [0]*N, 'd': [0]*ND}))   # city -> key -> {weekly(27), daily(recent 8wk)}
     for r in rows:
-        if len(r) < 15:
+        if len(r) < 16:
             continue
-        city, loc, ch, md, num, url, rel, intent, strength, cat, status, vf, bkseg, created, n = r[:15]
+        city, loc, ch, md, num, url, rel, intent, strength, cat, status, vf, bkseg, doneq, created, n = r[:16]
         if ch not in CHANNELS:
             continue
         try:
@@ -264,7 +283,7 @@ def main():
         except Exception:
             continue
         n = int(n)
-        acc = cube[city][(loc, ch, md, num, url, rel, intent, strength, cat, status, vf, bkseg)]
+        acc = cube[city][(loc, ch, md, num, url, rel, intent, strength, cat, status, vf, bkseg, doneq)]
         if wkm in WI:
             acc['w'][WI[wkm]] += n
         if created in DI:
@@ -274,8 +293,8 @@ def main():
                      'note': 'Attributable leads by CITY. Each cell has weekly w[] (26 wks, aligned with bookings) + daily d[] '
                              '(recent 8 wks incl. the current partial week, for day-of-week / week-to-date comparison).'}}
     for city, cells in cube.items():
-        out[city] = {'cells': [{'loc': loc, 'ch': ch, 'md': md, 'num': num, 'url': url, 'rel': rel, 'int': it, 'istr': istr, 'cat': cat, 'bk': st, 'vf': vf, 'bkseg': seg, 'w': v['w'], 'd': v['d']}
-                               for (loc, ch, md, num, url, rel, it, istr, cat, st, vf, seg), v in cells.items()]}
+        out[city] = {'cells': [{'loc': loc, 'ch': ch, 'md': md, 'num': num, 'url': url, 'rel': rel, 'int': it, 'istr': istr, 'cat': cat, 'bk': st, 'vf': vf, 'bkseg': seg, 'dq': dq, 'w': v['w'], 'd': v['d']}
+                               for (loc, ch, md, num, url, rel, it, istr, cat, st, vf, seg, dq), v in cells.items()]}
     json.dump(out, open(os.path.join(ROOT, 'data_leads_city.json'), 'w'), separators=(',', ':'))
     n8 = min(8, N)
     for city in sorted(cube, key=lambda c: -sum(sum(v['w'][:n8]) for v in cube[c].values())):

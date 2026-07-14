@@ -141,6 +141,14 @@ booked_online AS (   -- phone that booked an ONLINE (telehealth) Screening Call 
 verified AS (   -- phone that has an Allo patient record (a patient_id was created), regardless of booking → "verified lead"
   SELECT DISTINCT RIGHT(REGEXP_REPLACE(COALESCE(phone_no,''),'[^0-9]',''),10) AS ph
   FROM allo_persons.patient WHERE deleted_at IS NULL AND COALESCE(phone_no,'') <> ''
+),
+done_c AS (   -- phone that COMPLETED an SC at THIS clinic (ever) → the lead's Done? split (mirrors booked)
+  SELECT DISTINCT RIGHT(REGEXP_REPLACE(COALESCE(p.phone_no,''),'[^0-9]',''),10) AS ph
+  FROM allo_consultations.appointments a
+  JOIN allo_consultations.types t ON a.type_id=t.id AND t.name='Screening Call'
+  JOIN allo_health.locations loc ON a.location_id=loc.id AND loc.deleted_at IS NULL AND LOWER(loc.locality)='{LOCALITY}'
+  JOIN allo_persons.patient p ON p.id=a.patient_id
+  WHERE a.deleted_at IS NULL AND LOWER(a.status) IN ('completed','reconsulted')
 )
 SELECT la.created, la.channel, la.medium, la.number, la.url, la.relevance, la.intent, la.strength, la.category,
   CASE WHEN b.ph IS NULL THEN 'notbooked'                                -- lag bucket: UI dropdown picks the window
@@ -152,10 +160,11 @@ SELECT la.created, la.channel, la.medium, la.number, la.url, la.relevance, la.in
   CASE WHEN b.ph IS NOT NULL THEN 'offline'                              -- booked an SC at THIS clinic (physical)
        WHEN bo.ph IS NOT NULL THEN 'online'                             -- else booked an online telehealth SC
        ELSE 'none' END AS bkseg,                                         -- where the booked lead booked (offline clinic / online / not booked)
+  CASE WHEN d.ph IS NOT NULL THEN 'done' ELSE 'notdone' END AS doneq,     -- did this lead's phone COMPLETE an SC at this clinic (ever)?
   COUNT(DISTINCT la.ph) AS n    -- UNIQUE PATIENTS (by phone) per week, not raw lead records
-FROM lead_attr la LEFT JOIN booked b ON b.ph=la.ph LEFT JOIN booked_online bo ON bo.ph=la.ph LEFT JOIN verified v ON v.ph=la.ph
+FROM lead_attr la LEFT JOIN booked b ON b.ph=la.ph LEFT JOIN booked_online bo ON bo.ph=la.ph LEFT JOIN verified v ON v.ph=la.ph LEFT JOIN done_c d ON d.ph=la.ph
 WHERE la.channel IS NOT NULL AND la.ph <> ''
-GROUP BY 1,2,3,4,5,6,7,8,9,10,11,12 ORDER BY 1,2,3;
+GROUP BY 1,2,3,4,5,6,7,8,9,10,11,12,13 ORDER BY 1,2,3;
 """
 
 def run(sql, tries=4):
@@ -197,16 +206,16 @@ def main():
         cube = defaultdict(lambda: {'w': [0]*N, 'd': [0]*ND})   # key -> {weekly(26), daily(recent 8wk incl. current partial week)}
         node = {ch: {'leads': [0]*N, 'booked': [0]*N, 'notbooked': [0]*N} for ch in CHANNELS}
         for r in rows:
-            if len(r) < 13:
+            if len(r) < 14:
                 continue
-            created, ch, md, number, url, rel, intent, strength, cat, status, vf, bkseg, n = r[0], r[1], r[2], r[3], r[4], r[5], r[6], r[7], r[8], r[9], r[10], r[11], int(r[12])
+            created, ch, md, number, url, rel, intent, strength, cat, status, vf, bkseg, doneq, n = r[0], r[1], r[2], r[3], r[4], r[5], r[6], r[7], r[8], r[9], r[10], r[11], r[12], int(r[13])
             if ch not in node:
                 continue
             try:
                 wkm = wk_monday(created)
             except Exception:
                 continue
-            acc = cube[(ch, md, number, url, rel, intent, strength, cat, status, vf, bkseg)]
+            acc = cube[(ch, md, number, url, rel, intent, strength, cat, status, vf, bkseg, doneq)]
             if wkm in WI:
                 i = WI[wkm]
                 acc['w'][i] += n
@@ -214,8 +223,8 @@ def main():
                 node[ch]['notbooked' if status == 'notbooked' else 'booked'][i] += n   # lag buckets fold to ever-booked for data_notbooked.json
             if created in DI:
                 acc['d'][DI[created]] += n
-        leads[clinic] = {'cells': [{'ch': ch, 'md': md, 'num': num, 'url': url, 'rel': rel, 'int': intent, 'istr': istr, 'cat': cat, 'bk': st, 'vf': vf, 'bkseg': seg, 'w': v['w'], 'd': v['d']}
-                                   for (ch, md, num, url, rel, intent, istr, cat, st, vf, seg), v in cube.items()]}
+        leads[clinic] = {'cells': [{'ch': ch, 'md': md, 'num': num, 'url': url, 'rel': rel, 'int': intent, 'istr': istr, 'cat': cat, 'bk': st, 'vf': vf, 'bkseg': seg, 'dq': dq, 'w': v['w'], 'd': v['d']}
+                                   for (ch, md, num, url, rel, intent, istr, cat, st, vf, seg, dq), v in cube.items()]}
         nb[clinic] = node
         n8 = min(8, N)
         tot8 = sum(sum(node[ch]['leads'][:n8]) for ch in CHANNELS)

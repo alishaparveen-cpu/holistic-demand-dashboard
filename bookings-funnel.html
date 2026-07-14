@@ -469,6 +469,7 @@ const DIMS={
   campaign:{label:'Campaign (paid)', field:'campaign', values:[], color:v=>v==='na'?CAT_C.na:'#4E73C4'},   // values built per-clinic at load
 };
 DIMS.status={label:'Booked?', field:'status', values:[{k:'booked',l:'Booked an SC'},{k:'notbooked',l:'Did NOT book'}], color:v=>v==='booked'?'#2E7D5B':'#B8503C'};   // leads-mode only
+DIMS.doneq={label:'Done?', field:'doneq', values:[{k:'done',l:'Done · completed an SC'},{k:'notdone',l:'Not done yet'}], color:v=>v==='done'?'#C87B2E':'#c7ccd4'};   // leads-mode: did this lead's phone complete an SC (at this clinic / in this city / anywhere for no-city)?
 DIMS.verified={label:'Verified?', field:'verified', values:[{k:'verified',l:'Verified · became a patient'},{k:'unverified',l:'Not yet a patient'}], color:v=>v==='verified'?'#2E7D5B':'#c7ccd4'};   // leads-mode: lead phone matched an allo_persons.patient record (patient_id created)
 DIMS.number={label:'Number dialed', field:'num', values:[], color:v=>v===''?'#c7ccd4':'var(--call)'};   // leads-mode, dynamic per clinic
 DIMS.clinic={label:'Clinic (in city)', field:'loc', values:[], color:v=>v===''?'#c7ccd4':'#7C5CBF'};   // city/national scope, dynamic
@@ -562,7 +563,7 @@ function buildCells(node){
 function buildLeadCells(node){   // leads cube: channel x medium x number x url x booked-status
   const bs=BOOKED_SET[BOOKWIN]||BOOKED_SET.ever;   // booked = lag bucket within the chosen window
   return (node.cells||[]).map(c=>({channel:(window.LeadsCube?window.LeadsCube.channelOf(c.ch):(c.ch==='Google'?'Google Ads':c.ch)),medium:(c.md==='whatsapp'?'wa_org':c.md),status:bs.has(c.bk)?'booked':'notbooked',
-    num:c.num||'',url:c.url||'',relevance:c.rel||'unknown',intent:c.int||'',strength:c.istr||'',category:c.cat||'na',verified:c.vf==='y'?'verified':'unverified',bkseg:c.bkseg||'none',loc:c.loc||'',city:c.city||'',citygroup:(c.city&&c.city.indexOf('— no city')!==0)?'attr':'nocity',_on:((c.city||'').indexOf('— no city')===0),campaign:'na',arr:c.w,day:c.d||null}));   // _on = online / untracked (no-city bucket); verified = phone matched an allo_persons.patient (patient_id created); day[] = recent-8wk daily
+    num:c.num||'',url:c.url||'',relevance:c.rel||'unknown',intent:c.int||'',strength:c.istr||'',category:c.cat||'na',verified:c.vf==='y'?'verified':'unverified',doneq:c.dq==='done'?'done':'notdone',bkseg:c.bkseg||'none',loc:c.loc||'',city:c.city||'',citygroup:(c.city&&c.city.indexOf('— no city')!==0)?'attr':'nocity',_on:((c.city||'').indexOf('— no city')===0),campaign:'na',arr:c.w,day:c.d||null}));   // _on = online / untracked (no-city bucket); verified = phone matched an allo_persons.patient (patient_id created); day[] = recent-8wk daily
 }
 function total(cells){return sumT(weekArr(cells));}
 function cellPass(c,P){if(P.mode!=='leads'&&SEG!=='both'&&((SEG==='online')!==!!c._on))return false;return P.dims.every(dk=>{if(dk==='campaign')return !P.sel.campaign.size||P.sel.campaign.has(c.campaign);return P.sel[dk].has(c[DIMS[dk].field]);});}   // leads ignore Offline/Online — a lead can book anywhere
@@ -571,7 +572,7 @@ function cellPass(c,P){if(P.mode!=='leads'&&SEG!=='both'&&((SEG==='online')!==!!
 const $=id=>document.getElementById(id);
 function makeP(cfg){const P={mode:cfg.mode,dims:cfg.dims,order:[...cfg.order],build:cfg.build,hero:cfg.hero,data:null,cells:[],open:{},sel:{},present:{},els:cfg.els};
   P.dims.forEach(dk=>{P.sel[dk]=new Set(DIMS[dk].values.map(v=>v.k));});return P;}
-const PL=makeP({mode:'leads',dims:['citygroup','city','clinic','channel','medium','number','intent','strength','category','status','verified'],order:['channel','medium'],build:buildLeadCells,hero:'attributable leads',
+const PL=makeP({mode:'leads',dims:['citygroup','city','clinic','channel','medium','number','intent','strength','category','status','verified','doneq'],order:['channel','medium'],build:buildLeadCells,hero:'attributable leads',
   els:{flow:$('flowL'),bar:$('barL'),heroN:$('heroNL'),heroL:$('heroLL'),hHdr:$('hHdrL'),hRight:$('hRightL')}});
 const PB=makeP({mode:'bookings',dims:['seg','city','clinic','ptype','brank','drank','channel','maturity','medium','category','campaign'],order:['seg','ptype','channel','maturity','medium'],build:buildCells,hero:'SC bookings',
   els:{flow:$('flowB'),bar:$('barB'),heroN:$('heroNB'),heroL:$('heroLB'),hHdr:$('hHdrB'),hRight:$('hRightB')}});
