@@ -235,6 +235,19 @@
   .imcell.rr{color:#B8503C}.imcell.ro{color:#C87B2E}.imcell.ry{color:#9a8320}.imcell.rg{color:#2E7D5B}.imcell.rx{color:var(--faint)}
   .imcityhdr{background:var(--inset);font-weight:800;font-size:11.5px;color:var(--accent);padding:6px 12px;letter-spacing:.02em;border-bottom:1px solid var(--line)}
   .imtierf button.on{background:var(--accent);border-color:var(--accent);color:#fff}
+  .imcfgtog{display:inline-block;font-size:10px;color:var(--muted);cursor:pointer;padding:0 3px;border-radius:4px}
+  .imcfgtog:hover{background:var(--inset);color:var(--ink)}
+  .imcfgtog.set{color:#C2691F;font-weight:900}
+  .imcolhd.cfgopen{background:var(--inset);border-radius:6px}
+  .imcfgbar{margin:0 0 10px;padding:10px 14px;background:#fff;border:1px solid var(--accent);border-radius:12px;box-shadow:0 4px 16px rgba(20,28,24,.07)}
+  .imcfghd{font-size:12.5px;color:var(--ink);margin-bottom:8px;display:flex;align-items:center;gap:8px}
+  .imcfghd .imcfgx{margin-left:auto;border:1px solid var(--line);border-radius:6px;background:var(--sheet);cursor:pointer;font:inherit;font-size:11px;padding:2px 7px;color:var(--muted)}
+  .imcfgrow{display:flex;flex-wrap:wrap;align-items:center;gap:5px;margin-bottom:5px}
+  .imcfgrow .imcutlab{min-width:96px}
+  .imchip.cfgv,.imchip.cfgc{padding:3px 9px;font-size:11px}
+  .imchip.cfgv.on{background:var(--accent);border-color:var(--accent);color:#fff}
+  .imchip.cfgc.on{background:#C2691F;border-color:#C2691F;color:#fff}
+  .imchip.cfgreset{padding:3px 9px;font-size:11px;color:var(--muted)}
   .imfctx{font-size:11.5px;color:var(--muted);font-weight:600;margin-right:auto}
   .imfg{display:inline-flex;align-items:center;gap:4px;font-size:11.5px}
   .imfg b{font-size:11px;color:var(--ink);margin-right:2px}
@@ -397,6 +410,7 @@
         <button class="imclrall" id="imClrAll" title="clear all colour conditions">✕ clear colours</button>
       </div>
     </div>
+    <div id="imCfgBar" class="imcfgbar" style="display:none"></div>
     <div class="fmwrap"><div class="imdgwrap"><div id="imHead"></div><div id="imGrid"></div></div></div>
   </div>
 
@@ -1221,14 +1235,59 @@ let IM_ORDER=IM_STAGES.map(s=>s.key);   // draggable column order
 let IM_SRAG={};                          // per-stage colour filter: IM_SRAG[stageKey]=Set(rag); absent/empty = any
 let IM_TIERF=new Set(['T1','T2']);       // tier filter
 let IM_DRAGS=null;                        // stage key being dragged
+let IM_CFG={};                            // per-stage config: IM_CFG[stageKey]={v:variantMetKey, cut:{dim:[vals]}}
+let IM_POP=null;                          // which stage's config bar is open (null = none)
+// what each stage lets you customise: VARIANT (which metric) + slice CUTS (layers to filter to)
+const IM_STAGE_CFG={
+  leads:{variants:[['leads','Leads'],['bookedleads','Booked leads'],['bookrate','Book-rate %']],
+    cuts:[{dim:'src',lab:'Source',vals:[['GMB','GMB'],['Google Ads','Google'],['Meta','Meta'],['Practo','Practo'],['Organic','Organic'],['Other','Other']]},
+          {dim:'medium',lab:'Medium',vals:[['call','Call'],['web','Web'],['whatsapp','WhatsApp'],['walkin','Walk-in']]},
+          {dim:'cat',lab:'Category',vals:[['STI','STI'],['SH','SH'],['MH','MH'],['Other','Other']]}]},
+  bookings:{variants:[['bookings','SC bookings']],
+    cuts:[{dim:'age',lab:'Lead maturity',vals:[['fresh','fresh'],['wk1','1wk'],['wk2_4','2–4wk'],['mo1_3','1–3mo'],['mo3','3mo+'],['nolead','no lead']]},
+          {dim:'brank',lab:'Booking rank',vals:[['1st','1st-ever'],['2nd','2nd'],['3rd','3rd'],['4pl','4th+']]},
+          {dim:'drank',lab:'Done rank (before)',vals:[['d0','never done'],['d1','done 1×'],['d2pl','done 2+']]}]},
+  avail:{variants:[['netsc','Net SC hrs'],['attend','Attended days']], cuts:[]},
+  b2d:{variants:[['b2d','Book→Done %']], cuts:[]},
+  done:{variants:[['done','Done']], cuts:[{dim:'cat',lab:'Category',vals:[['STI','STI'],['SH','SH'],['MH','MH'],['Other','Other']]}]},
+  value:{variants:[['revenue','Revenue ₹'],['purchased','Purchased'],['d2p','D2P %'],['rpc','RPC ₹']], cuts:[{dim:'cat',lab:'Category',vals:[['STI','STI'],['SH','SH'],['MH','MH'],['Other','Other']]}]},
+};
 function imStageDef(k){return IM_STAGES.find(s=>s.key===k);}
 function imMetOf(k){return IM_METS.find(m=>m.key===k);}
-function imStageSeries(stageKey,c){const st=imStageDef(stageKey),m=imMetOf(st.met);return (m.series({seg:'offline',city:c.city,loc:c.loc})||{}).disp||[];}
+function imCfgVariant(sk){const c=IM_CFG[sk];return (c&&c.v)||imStageDef(sk).met;}
+function imCfgConfigured(sk){const c=IM_CFG[sk];if(!c)return false;if(c.v&&c.v!==imStageDef(sk).met)return true;return c.cut&&Object.keys(c.cut).some(d=>c.cut[d]&&c.cut[d].length);}
+function imCfgLabel(sk){const def=imStageDef(sk),spec=IM_STAGE_CFG[sk],c=IM_CFG[sk]||{},num=def.lab.split(' ')[0];
+  let base=def.lab;if(c.v&&spec.variants.length>1){const vl=(spec.variants.find(x=>x[0]===c.v)||[])[1];if(vl)base=num+' '+vl;}
+  const cut=c.cut||{},parts=[];for(const d in cut){if(!cut[d]||!cut[d].length)continue;const cd=spec.cuts.find(x=>x.dim===d);if(cd)parts.push(cut[d].map(x=>(cd.vals.find(v=>v[0]===x)||[])[1]||x).join('+'));}
+  return base+(parts.length?' · '+parts.join('·'):'');}
+function imStageSeries(sk,cl){const c=IM_CFG[sk]||{},cut=c.cut||{},t={seg:'offline',city:cl.city,loc:cl.loc};
+  if(sk==='bookings'){const dims=Object.keys(cut).filter(d=>cut[d]&&cut[d].length);   // combine maturity + booking-rank + done-rank (AND) from the ② episode cube
+    if(dims.length){const o=new Array(WEEKS.length).fill(0);(PB.cells||[]).forEach(cell=>{if(!imMatch(cell.city,cl.city)||!imMatch(cell.loc,cl.loc)||!imMatch(cell.seg,'offline'))return;if(!dims.every(d=>cut[d].includes(cell[d])))return;const a=cell.arr||[];for(let i=0;i<o.length;i++)o[i]+=a[i]||0;});return opsDv(o);}
+    return (imMetOf('bookings').series(t)||{}).disp||[];}
+  for(const d in cut){if(cut[d]&&cut[d].length)t[d]=cut[d];}
+  return (imMetOf(imCfgVariant(sk)).series(t)||{}).disp||[];}
 function imOfflineClinics(){const seen={},out=[];opsUnitsOffline().forEach(u=>{if(!u.loc)return;const k=u.city+'|'+u.loc;if(!seen[k]){seen[k]=1;out.push({city:u.city,loc:u.loc,key:k});}});return out;}
 function imClinicRow(c){const cells={};let bkNow=0;
-  IM_STAGES.forEach(st=>{const ser=imStageSeries(st.key,c),dp=ser.length?deltaPct(ser):null;cells[st.key]={ser,dp,rag:dp?imRag(dp):'g',pct:st.met==='b2d'};if(st.key==='bookings')bkNow=dp?(dp.now||0):0;});
+  IM_STAGES.forEach(st=>{const ser=imStageSeries(st.key,c),dp=ser.length?deltaPct(ser):null,mm=imMetOf(st.key==='bookings'?'bookings':imCfgVariant(st.key));cells[st.key]={ser,dp,rag:dp?imRag(dp):'g',pct:!!(mm&&mm.pct)};if(st.key==='bookings')bkNow=dp?(dp.now||0):0;});
   return {c,cells,bkNow};}
 function imPassStages(row){return IM_ORDER.every(sk=>{const S=IM_SRAG[sk];return !S||!S.size||S.has(row.cells[sk].rag);});}
+// customise-a-stage bar: pick the variant metric + which layers (source / medium / category / maturity / rank) to include for that stage
+function imCfgBar(){const bar=document.getElementById('imCfgBar');if(!bar)return;
+  if(!IM_POP||!IM_STAGE_CFG[IM_POP]){bar.style.display='none';bar.innerHTML='';return;}
+  const sk=IM_POP,spec=IM_STAGE_CFG[sk],def=imStageDef(sk),cfg=IM_CFG[sk]||{},cur=imCfgVariant(sk),cut=cfg.cut||{};
+  bar.style.display='';
+  let h=`<div class="imcfghd">Customise <b>${def.lab}</b> <span class="imhint">— pick the variant + which layers to include (multi-select = OR; leave ‘all’ for the whole stage)</span><button class="imcfgx" title="close">✕</button></div>`;
+  if(spec.variants.length>1)h+=`<div class="imcfgrow"><span class="imcutlab">Show</span>${spec.variants.map(([v,l])=>`<button class="imchip cfgv${cur===v?' on':''}" data-v="${v}">${l}</button>`).join('')}</div>`;
+  spec.cuts.forEach(cd=>{const sel=cut[cd.dim]||[];h+=`<div class="imcfgrow"><span class="imcutlab">${cd.lab}</span><button class="imchip cfgc${!sel.length?' on':''}" data-d="${cd.dim}" data-v="__all">all</button>${cd.vals.map(([v,l])=>`<button class="imchip cfgc${sel.includes(v)?' on':''}" data-d="${cd.dim}" data-v="${v}">${l}</button>`).join('')}</div>`;});
+  if(!spec.cuts.length&&spec.variants.length<=1)h+=`<div class="imcfgrow"><span class="imhint">This stage has no extra layers.</span></div>`;
+  if(imCfgConfigured(sk))h+=`<div class="imcfgrow"><button class="imchip cfgreset">↺ reset this stage</button></div>`;
+  bar.innerHTML=h;
+  bar.querySelector('.imcfgx').onclick=()=>{IM_POP=null;imRender();};
+  bar.querySelectorAll('.cfgv').forEach(b=>b.onclick=()=>{(IM_CFG[sk]=IM_CFG[sk]||{}).v=b.dataset.v;imRender();});
+  bar.querySelectorAll('.cfgc').forEach(b=>b.onclick=()=>{const d=b.dataset.d,v=b.dataset.v,C=IM_CFG[sk]=IM_CFG[sk]||{},ct=C.cut=C.cut||{};
+    if(v==='__all')delete ct[d];else{const a=ct[d]=ct[d]||[],i=a.indexOf(v);if(i<0)a.push(v);else a.splice(i,1);if(!a.length)delete ct[d];}
+    if(!Object.keys(ct).length)delete C.cut;imRender();});
+  const rs=bar.querySelector('.cfgreset');if(rs)rs.onclick=()=>{delete IM_CFG[sk];imRender();};}
 function imRender(){const sec=document.getElementById('imSection');if(!sec||sec.style.display==='none')return;
   {const cm=document.getElementById('imCmp');if(cm&&cm.value!==CMP)cm.value=CMP;}
   document.querySelectorAll('#imTierF button').forEach(b=>b.classList.toggle('on',IM_TIERF.has(b.dataset.t)));
@@ -1244,11 +1303,13 @@ function imRender(){const sec=document.getElementById('imSection');if(!sec||sec.
   const cnt=document.getElementById('imCount');if(cnt)cnt.textContent=rows.length+' clinic'+(rows.length!==1?'s':'')+' match';
   const anyCond=Object.keys(IM_SRAG).some(k=>IM_SRAG[k]&&IM_SRAG[k].size);
   const clr=document.getElementById('imClrAll');if(clr)clr.style.visibility=anyCond?'visible':'hidden';
+  imCfgBar();   // customise-a-stage bar (variant + layer cuts), shown when a stage's ▾ is open
   // header: label col + a colour-filter column per stage (in IM_ORDER)
   const head=document.getElementById('imHead');head.className='imdghdr';
   head.innerHTML='<span class="lbl">Clinic · Δ vs '+cmL+'</span>'
-    +IM_ORDER.map(sk=>{const st=imStageDef(sk),S=IM_SRAG[sk]||new Set();
-      return `<div class="imcolhd" data-sk="${sk}" draggable="true" title="drag to reorder"><span class="cl">${st.lab}</span><div class="imdots">${['r','o','y','g'].map(k=>`<button class="fdot${S.has(k)?' on':''}" data-sk="${sk}" data-k="${k}" title="${{r:'big drop ≥'+IM_RED+'%',o:'drop ≥'+IM_ORANGE+'%',y:'small drop',g:'up / flat'}[k]}"><i class="rag ${k}"></i></button>`).join('')}</div></div>`;}).join('');
+    +IM_ORDER.map(sk=>{const S=IM_SRAG[sk]||new Set(),cfgOn=imCfgConfigured(sk),open=IM_POP===sk;
+      return `<div class="imcolhd${open?' cfgopen':''}" data-sk="${sk}" draggable="true"><span class="cl" title="drag to reorder">${imCfgLabel(sk)} <span class="imcfgtog${cfgOn?' set':''}" data-cfg="${sk}" title="customise this stage (variant + layers)">▾</span></span><div class="imdots">${['r','o','y','g'].map(k=>`<button class="fdot${S.has(k)?' on':''}" data-sk="${sk}" data-k="${k}" title="${{r:'big drop ≥'+IM_RED+'%',o:'drop ≥'+IM_ORANGE+'%',y:'small drop',g:'up / flat'}[k]}"><i class="rag ${k}"></i></button>`).join('')}</div></div>`;}).join('');
+  head.querySelectorAll('.imcfgtog').forEach(b=>b.onclick=(e)=>{e.stopPropagation();IM_POP=(IM_POP===b.dataset.cfg)?null:b.dataset.cfg;imRender();});
   head.querySelectorAll('.fdot').forEach(b=>b.onclick=(e)=>{e.stopPropagation();const sk=b.dataset.sk,k=b.dataset.k,S=IM_SRAG[sk]=IM_SRAG[sk]||new Set();if(S.has(k))S.delete(k);else S.add(k);if(!S.size)delete IM_SRAG[sk];imRender();});
   head.querySelectorAll('.imcolhd').forEach(h=>{h.ondragstart=()=>{IM_DRAGS=h.dataset.sk;};
     h.ondragover=(e)=>{e.preventDefault();h.classList.add('over');};h.ondragleave=()=>h.classList.remove('over');
