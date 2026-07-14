@@ -765,7 +765,7 @@ function onlKeys(){if(!ONL||!ONL.clinics)return [];const ks=Object.keys(ONL.clin
   else if(SCOPE==='city')base=ks.filter(k=>SEL.city.has(displayCity(k.slice(k.indexOf('|')+1),k.slice(0,k.indexOf('|')))));
   else if(SCOPE==='clinic')base=ks.filter(k=>SEL.clinic.has(k));
   else base=[];   // doctor scope: online-by-doctor not wired (offline only)
-  return MATF.size?[]:base;}   // clinic-age filter is about PHYSICAL clinics → exclude online telehealth (no clinic age) so ②=④ stays consistent
+  return MATF.size?base.filter(k=>matPass(k.slice(k.indexOf('|')+1))):base;}   // clinic-age filter: online attributed to the doctor's block clinic that day → keep if that clinic is in the age bucket ('Online' unresolved → dropped)
 const SUBCAT2TOP={STI:'STI',MH:'MH','ED+':'SH','ED+PE+':'SH','PE+':'SH','PA':'SH','CM':'SH',LSD:'SH',DE:'SH',DYS:'SH',VGS:'SH',FSAD:'SH',AORG:'SH','Oth':'Other',oth:'Other','NOS':'Other'};   // diagnosis sub-cats → top categories: every named sexual-health condition rolls to SH; only the genuine catch-all (oth/Oth) + NOS → Other
 const ONL_ROLL={oth:'Oth'};   // online cube's raw diag_cat: only the catch-all 'oth' → Oth; every named sub-cat passes through unchanged (SUBCAT2TOP then rolls it, matching quick_diag)
 function qdAlign(arr){if(!arr)return new Array(WEEKS.length).fill(0);return WEEKS.map(w=>{const j=QD_IDX[w];return j===undefined?0:(arr[j]||0);});}   // QD arrays are OLDEST-first → re-align to WEEKS (newest-first)
@@ -1402,7 +1402,7 @@ function loadClinic(){const keys=scopeKeys();CLINIC=keys.join('+')||SCOPE;   // 
   // fold leads pinned to a CLOSED / non-operational clinic into the no-clinic bucket (keep their city) so only real clinics show as rows — the leads still count in the city + total
   if(OPLOC.size)[PL,PB].forEach(P=>P.cells.forEach(c=>{if(c.loc&&!OPLOC.has(c.loc))c.loc='';}));
   [PL,PB].forEach(P=>P.cells.forEach(c=>{if((!c.loc)&&c.city&&SINGLE_CLINIC_CITY[c.city])c.loc=SINGLE_CLINIC_CITY[c.city];}));   // single-clinic city (e.g. Bhopal): its city-only leads/bookings have exactly one possible clinic → roll them into it (no more "not attributed to a clinic" for these cities)
-  if(MATF.size)[PL,PB].forEach(P=>{P.cells=P.cells.filter(c=>!c._on&&c.loc&&matPass(c.loc));});   // clinic-age filter: keep only OFFLINE cells belonging to a clinic in the selected age bucket(s) (online telehealth has no clinic age → excluded)
+  if(MATF.size)[PL,PB].forEach(P=>{P.cells=P.cells.filter(c=>c.loc&&matPass(c.loc));});   // clinic-age filter: keep cells whose clinic (offline OR online's block clinic) is in the selected age bucket(s)
   // dynamic Clinic + City values (union across leads + bookings), by size — for city/national drill-down
   const locs={},cities={};
   [PL,PB].forEach(P=>P.cells.forEach(c=>{const s=(c.arr||[]).reduce((a,b)=>a+(b||0),0);if(c.loc)locs[c.loc]=(locs[c.loc]||0)+s;if(c.city)cities[c.city]=(cities[c.city]||0)+s;}));
