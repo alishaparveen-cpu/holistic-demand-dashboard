@@ -198,15 +198,17 @@ def avail_block(key, slug=None):
     ar = (REC["clinics"].get(slug, {}) if slug else {}).get("avail_roster")   # ops-roster hours (matches the Macro sheet)
     if ar:
         rw = REC["_meta"]["weeks"]; rg = lambda f: remap(ar.get(f, []), rw)
-        base.update({"opened_ash": rg("after_shrink"),
+        base.update({"opened_ash": rg("after_shrink"), "rostered_hrs": rg("opened"), "shrink_hrs": rg("shrink"),
                      "net_sc_hrs_r": rg("sc_net"), "net_rpt_hrs": rg("fu_net"), "net_avail_hrs": rg("net_avail"), "dead_hrs": rg("dead")})
-    # rostered/shrink HOURS from the per-doctor block logic, summed to clinic → covers ALL clinics (not just the ops-roster subset), consistent with per-doctor
+    # rostered/shrink HOURS come from the ops-roster cube above (opened/shrink → rostered−shrink = after_shrink = opened_ash, matches the Macro sheet).
+    # Fall back to the per-doctor block sum ONLY for weeks the ops-roster grid hasn't reached (the per-doctor sum is a GROSS over-count when avail_roster exists — that was the bug).
     avd = AVD["clinics"].get(slug) if slug else None
     if avd:
         aw = AVD["_meta"]["weeks"]; oh = Z(); sh = Z()
         for dd in avd["by_doctor"].values():
             oh = add(oh, remap(dd.get("rostered_hrs", []), aw)); sh = add(sh, remap(dd.get("shrink_hrs", []), aw))
-        base["rostered_hrs"] = oh; base["shrink_hrs"] = sh
+        base["rostered_hrs"] = [base.get("rostered_hrs", Z())[i] or oh[i] for i in range(NW)]
+        base["shrink_hrs"] = [base.get("shrink_hrs", Z())[i] or sh[i] for i in range(NW)]
     # opened / net-SC hours: prefer the ops-roster cube (REC, matches the Macro sheet); fall back to the availability cube (AV, current)
     # for weeks the ops-roster grid hasn't reached yet — same realized-roster methodology, so no discontinuity. (net-Rpt + dead-time exist only in REC.)
     if "opened_ash" in base: base["opened_ash"] = [base["opened_ash"][i] or base["avail_hours"][i] for i in range(NW)]
