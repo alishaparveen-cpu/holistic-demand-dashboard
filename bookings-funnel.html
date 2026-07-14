@@ -1304,7 +1304,7 @@ function imEntities(){const grain=imScopeGrain();
   if(grain==='doctor')return opsUnitsOffline().filter(u=>u.doctor).map(u=>({city:u.city,loc:u.loc,doctor:u.doctor,unit:u,key:'D|'+u.city+'|'+u.loc+'|'+u.doctor}));
   if(grain==='clinic'){const s={},o=[];opsUnitsOffline().forEach(u=>{if(!u.loc)return;const k=u.city+'|'+u.loc;if(!s[k]){s[k]=1;o.push({city:u.city,loc:u.loc,key:k});}});return o;}
   const s={},o=[];opsUnitsOffline().forEach(u=>{if(!u.city)return;if(!s[u.city]){s[u.city]=1;o.push({city:u.city,key:'C|'+u.city});}});return o;}
-function imClinicsInCity(city){const s={},o=[];opsUnitsOffline().forEach(u=>{if(u.city===city&&u.loc&&!s[u.loc]){s[u.loc]=1;o.push(u.loc);}});return o.sort();}
+function imClinicsInCity(city){const s={},o=[];opsUnitsOffline().forEach(u=>{if(u.city===city&&u.loc&&!s[u.loc]){s[u.loc]=1;o.push(u.loc);}});o.sort();o.push('');return o;}   // trailing '' = the city's leads/bookings NOT attributed to any clinic (rendered as a '— not attributed to a clinic' row; empty ones are auto-skipped)
 function imVisibleStages(){const grain=imScopeGrain();return IM_ORDER.filter(sk=>grain!=='doctor'||['avail','b2d','done','value'].includes(sk));}   // doctor scope: the per-doctor ops stages ③④⑤⑥ (leads/bookings don't split by doctor)
 function imStageSeries(sk,ent,extra){
   if(ent.doctor){const u=ent.unit;   // per-doctor: ops stages straight from the doctor's quick_diag unit
@@ -1401,7 +1401,7 @@ function imRender(){const sec=document.getElementById('imSection');if(!sec||sec.
     const title=[ent.city,ent.loc,ent.doctor].filter(Boolean).join(' · ')+(cutPath.length?' › '+cutPath.map(pc=>(IM_NEST_DEFS[pc.dim].vals.find(v=>v[0]===pc.val)||[])[1]||pc.val).join(' › '):'');
     row.onclick=(e)=>{const cell=e.target.closest('.imcell');if(cell&&!cell.classList.contains('im-inh')){openChart(title+' — '+imCfgLabel(cell.dataset.sk),cells[cell.dataset.sk].ser,STAGECOL[cell.dataset.sk]||'#2E7D5B');return;}if(hasKids){IM_OPEN[key]=!IM_OPEN[key];imRender();}};
     grid.appendChild(row);
-    if(hasKids&&op){if(nx.type==='clinic')imClinicsInCity(ent.city).forEach(loc=>renderNode({city:ent.city,loc},cutPath,key+'/cl:'+loc,depth+1,loc));
+    if(hasKids&&op){if(nx.type==='clinic')imClinicsInCity(ent.city).forEach(loc=>renderNode({city:ent.city,loc},cutPath,key+'/cl:'+loc,depth+1,loc||'— not attributed to a clinic'));
       else IM_NEST_DEFS[nx.dim].vals.forEach(([v,l])=>renderNode(ent,cutPath.concat([{dim:nx.dim,val:v}]),key+'/'+nx.dim+':'+v,depth+1,l));}}
   if(grain==='city'){rows.forEach(r=>renderNode(r.c,[],r.c.key,0,r.c.city));}
   else{const byG={};rows.forEach(r=>{const g=grain==='doctor'?(r.c.city+' · '+r.c.loc):r.c.city;(byG[g]=byG[g]||[]).push(r);});
@@ -1632,7 +1632,7 @@ function buildDoctors(){DOCTORS=[];if(!QD)return;Object.keys(QD.clinics).forEach
 function scopeOptions(s){
   if(s==='city')return [...TRACKED_CITY].filter(c=>c!==NOCITY_LAB).sort().map(c=>({k:c,label:c,tier:tierOf(c)}));
   if(s==='clinic')return Object.keys(DATASETS.clinic.bk).filter(k=>k!=='_meta'&&k!==NOCITY_LAB&&isTracked(k.split('|')[0])).sort()
-    .map(k=>{const i=k.indexOf('|');return {k,label:k.slice(i+1),sub:k.slice(0,i)};});
+    .map(k=>{const i=k.indexOf('|');return {k,label:k.slice(i+1),sub:k.slice(0,i),tier:tierOf(k.slice(0,i))};});   // tier = the clinic's city tier → enables the Tier-1/Tier-2 quick filter
   if(s==='doctor')return DOCTORS;
   return [];}
 function ensureDefaultSel(s){
@@ -1645,7 +1645,7 @@ function renderPicker(){
   if(nat){lab.textContent='National · all clinics';act.innerHTML='';document.getElementById('mslist').innerHTML='';return;}
   const opts=scopeOptions(SCOPE),sel=SEL[SCOPE],chosen=opts.filter(o=>sel.has(o.k)),plural=SCOPE==='city'?'cities':SCOPE+'s';
   lab.textContent=chosen.length===0?('select '+SCOPE+'…'):chosen.length===1?(chosen[0].sub?chosen[0].label+' · '+chosen[0].sub:chosen[0].label):(chosen.length+' '+plural);
-  act.innerHTML=`<button data-a="all">All</button><button data-a="none">None</button>`+(SCOPE==='city'?`<button data-a="t1">Tier 1</button><button data-a="t2">Tier 2</button>`:'');
+  act.innerHTML=`<button data-a="all">All</button><button data-a="none">None</button>`+((SCOPE==='city'||SCOPE==='clinic')?`<button data-a="t1">Tier 1</button><button data-a="t2">Tier 2</button>`:'');
   renderPickList();}
 function renderPickList(){
   const list=document.getElementById('mslist'),q=(document.getElementById('mssearch').value||'').toLowerCase().trim(),sel=SEL[SCOPE];
