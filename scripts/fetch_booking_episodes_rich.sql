@@ -57,6 +57,7 @@ joined AS (
       WHEN LOWER(COALESCE(l.utm_source,'')) IN ('justdial','jd') THEN 'JustDial'
       WHEN LOWER(COALESCE(l.utm_source,'')) IN ('alloreferral','allorefferal','doctorreferral','referral') THEN 'Referral'
       WHEN LOWER(COALESCE(l.utm_source,'')) IN ('chatgpt.com','youtube','moj') THEN 'AI / Social'
+      WHEN LOWER(COALESCE(l.utm_source,'')) IN ('organic','google','blog') AND LOWER(COALESCE(l.source_url,'')) LIKE '%/blog/%' THEN 'Organic · Blog'  -- blog content = organic sub-source (matches ① leads)
       WHEN LOWER(COALESCE(l.utm_source,'')) IN ('organic','google','blog') THEN 'Organic'
       WHEN LOWER(COALESCE(l.utm_source,'')) IN ('directwalkin','walkin','walk-in') THEN 'Walk-in'
       WHEN LOWER(COALESCE(l.utm_source,''))='others' THEN 'Other (untracked)'
@@ -65,6 +66,7 @@ joined AS (
     CASE
       WHEN l.id IS NULL THEN 'walkin'
       WHEN LOWER(COALESCE(l.utm_campaign,''))='inbound_call' THEN 'call'         -- inbound call; utm_medium = the number
+      WHEN LOWER(COALESCE(l.utm_medium,''))='whatsapp' AND LOWER(COALESCE(l.utm_campaign,''))='outbound' THEN 'wa_outbound'  -- WhatsApp outbound-template flow (matches ① leads); before the generic 'outbound' below
       WHEN LOWER(COALESCE(l.utm_campaign,''))='outbound' THEN 'outbound'         -- L2C team CALLED the patient (not inbound demand)
       WHEN RIGHT(LOWER(COALESCE(l.utm_campaign,'')),3)='_wa' OR LOWER(COALESCE(l.origin,'')) LIKE '%whatsapp%' THEN 'whatsapp'   -- gmb_wa / organic_wa / …
       WHEN LOWER(COALESCE(l.utm_source,''))='practo' THEN 'book'
