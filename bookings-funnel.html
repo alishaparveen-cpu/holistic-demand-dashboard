@@ -1180,11 +1180,13 @@ function imFilterBar(){const bar=document.getElementById('imFilterBar');if(!bar)
   const clr=bar.querySelector('.imclr');if(clr)clr.onclick=()=>{IM_COND={};imRender();};}
 // does an entity's tags satisfy EVERY conditioned metric? (each metric evaluated with its own cut)
 function imEntityPass(t){return imSelMets().every(m=>{const S=IM_COND[m.key];if(!S||!S.size)return true;const s=imMSeries(m,t),dp=s.disp?deltaPct(s.disp):null;return dp?S.has(imRag(dp)):false;});}
+// is a clinic/city operationally ACTIVE in the shown window? (has bookings or roster) — hides closed/inactive clinics that only catch stray leads
+function imActive(t){const us=imUnitsT(t);if(!us.length)return false;const ix=opsIx(),bk=opsDv(opsSumU(us,u=>u.booked)),av=opsDv(opsSumU(us.filter(u=>!u.online),u=>(u.avail&&u.avail.net_sc_hrs_r)||[]));return ix.some(i=>(bk[i]||0)>0)||ix.some(i=>(av[i]||0)>0);}
 // STACKED drill (marketing layout): each breakdown group is a header row; the selected metrics stack beneath it with full weekly columns + RAG; drill nests deeper
 function imStackDrill(container,tags,dims,depth,pad,kp){const dim=dims[depth],tk=imTagKey(dim),last=depth===dims.length-1,mets=imSelMets();
   const pathDims=dims.slice(0,depth+1),supp=mets.filter(m=>pathDims.every(d=>m.dims.includes(d))),prim=supp[0]||mets[0];
   let groups=imGroups(dim,tags).map(g=>{const t=Object.assign({},tags,{[tk]:g.vals.length>1?g.vals:g.vals[0]});const ps=prim?imMSeries(prim,t):null,dp=(ps&&ps.disp)?deltaPct(ps.disp):null;return {g,t,dp,size:ps?ps.size:0,rag:dp?imRag(dp):'g'};});
-  groups=groups.filter(g=>(g.size||0)>=IM_MAT).filter(g=>depth>0||imEntityPass(g.t));   // top-level entity must satisfy EVERY metric's colour condition (AND)
+  groups=groups.filter(g=>(g.size||0)>=IM_MAT).filter(g=>depth>0||(imActive(g.t)&&imEntityPass(g.t)));   // top-level entity: hide closed/inactive clinics + must satisfy EVERY metric's colour condition (AND)
   if(IM_SORT==='drop')groups.sort((a,b)=>imDropNum(a.dp||{})-imDropNum(b.dp||{}));
   else if(IM_SORT==='size')groups.sort((a,b)=>(b.size||0)-(a.size||0));
   else groups.sort((a,b)=>(''+a.g.label).localeCompare(''+b.g.label));
