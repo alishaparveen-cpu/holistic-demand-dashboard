@@ -1332,10 +1332,11 @@ function imEntities(){const grain=imScopeGrain();
   if(grain==='clinic'){const s={},o=[];opsUnitsOffline().forEach(u=>{if(!u.loc)return;const k=u.city+'|'+u.loc;if(!s[k]){s[k]=1;o.push({city:u.city,loc:u.loc,key:k});}});return o;}
   const s={},o=[];opsUnitsOffline().forEach(u=>{if(!u.city)return;if(!s[u.city]){s[u.city]=1;o.push({city:u.city,key:'C|'+u.city});}});return o;}
 function imClinicsInCity(city){const s={},o=[];opsUnitsOffline().forEach(u=>{if(u.city===city&&u.loc&&!s[u.loc]){s[u.loc]=1;o.push(u.loc);}});o.sort();o.push('');return o;}   // trailing '' = the city's leads/bookings NOT attributed to any clinic (rendered as a '— not attributed to a clinic' row; empty ones are auto-skipped)
-function imVisibleStages(){const grain=imScopeGrain();return IM_ORDER.filter(sk=>grain!=='doctor'||['avail','b2d','done','value'].includes(sk));}   // doctor scope: the per-doctor ops stages ③④⑤⑥ (leads/bookings don't split by doctor)
+function imVisibleStages(){const grain=imScopeGrain();return IM_ORDER.filter(sk=>grain!=='doctor'||['bookings','avail','b2d','done','value'].includes(sk));}   // doctor scope: ② bookings + the per-doctor ops stages ③④⑤⑥ (bookings/avail/done/value all attribute to the SC doctor; only ① leads has no doctor — it's pre-booking)
 function imStageSeries(sk,ent,extra){
   if(ent.doctor){const u=ent.unit;   // per-doctor: ops stages straight from the doctor's quick_diag unit
-    if(sk==='leads'||sk==='bookings')return [];
+    if(sk==='leads')return [];   // a lead has no doctor yet (pre-booking) — only ① leads is not per-doctor
+    if(sk==='bookings')return opsDv(u.al(u.booked));   // ② SC bookings attributed to this doctor (same source as b2d's denominator)
     if(sk==='avail'){const f={netsc:'net_sc_hrs_r',attend:'attend_days',rostered:'rostered_hrs',opened:'opened_ash'}[imCfgVariant('avail')]||'net_sc_hrs_r';return opsDv(u.al((u.avail&&u.avail[f])||[]));}
     if(sk==='done')return opsDv(u.al(u.done));
     if(sk==='b2d'){const dn=opsDv(u.al(u.done)),bk=opsDv(u.al(u.booked));return bk.map((b,i)=>b?100*dn[i]/b:null);}
@@ -1440,16 +1441,20 @@ function imRender(){const sec=document.getElementById('imSection');if(!sec||sec.
 }
 // "break rows deeper by …" — chain of nest dims below the clinic (true expandable drill, like the full funnel)
 function imNestChain(){const el=document.getElementById('imNestChain');if(!el)return;const grain=imScopeGrain();
-  if(grain==='doctor'){el.innerHTML='<span class="imnfix">Doctor</span> <span class="imhint" style="font-weight:400">— doctor rows show the ③④⑤ ops stages; no deeper nesting</span>';return;}
+  if(grain==='doctor'){el.innerHTML='<span class="imnfix">Doctor</span> <span class="imhint" style="font-weight:400">— doctor rows show the ②③④⑤⑥ ops stages; no deeper nesting</span>';return;}
   const prefix=grain==='city'?'City › Clinic':'Clinic';
   const avail=Object.keys(IM_NEST_DEFS).filter(d=>!IM_NEST.includes(d));
   el.innerHTML='<span class="imnfix">'+prefix+'</span>'+IM_NEST.map((d,i)=>`<span class="imnarr">›</span><button class="imchip imnest on" data-rm="${d}">${IM_NEST_DEFS[d].lab}<span class="imnx">✕</span></button>`).join('')
     +avail.map(d=>`<button class="imchip imnest add" data-add="${d}">＋ ${IM_NEST_DEFS[d].lab}</button>`).join('');
   el.querySelectorAll('[data-add]').forEach(b=>b.onclick=()=>{IM_NEST.push(b.dataset.add);IM_OPEN={};imRender();});
   el.querySelectorAll('[data-rm]').forEach(b=>b.onclick=()=>{IM_NEST=IM_NEST.filter(x=>x!==b.dataset.rm);IM_OPEN={};imRender();});}
+function docNoteHTML(){return VIEWM==='im'
+  ? '<b>Doctor scope</b> · ① leads have no doctor yet (they’re pre-booking), so ① is hidden — ②③④⑤⑥ scope to the selected doctor(s).'
+  : '<b>Doctor scope</b> · ① leads &amp; the rich ② SC-bookings pivot aren’t doctor-keyed, so ①② are hidden here — the ③④⑤ ops funnel below scopes to the selected doctor(s). (Quick view shows ② bookings per doctor.)';}
 function setViewMode(m){VIEWM=m;document.querySelectorAll('#viewmode button').forEach(b=>b.classList.toggle('on',b.dataset.m===m));
   const im=m==='im';['leadSection','bkSection','opsSection'].forEach(id=>{const e=document.getElementById(id);if(e)e.style.display=im?'none':'';});
   const s=document.getElementById('imSection');if(s)s.style.display=im?'':'none';
+  if(SCOPE==='doctor'){const dn=document.getElementById('docNote');if(dn)dn.innerHTML=docNoteHTML();}   // note is view-aware: Quick view now shows ② per doctor
   if(im)imRender();}
 function renderOps(){
   const sec=document.getElementById('opsSection');if(!sec||sec.style.display==='none')return;
@@ -1703,7 +1708,7 @@ function setScope(s){SCOPE=s;
   document.getElementById('leadSection').style.display=doc?'none':'';
   document.getElementById('bkSection').style.display=doc?'none':'';
   const dn=document.getElementById('docNote');dn.style.display=doc?'':'none';
-  if(doc)dn.innerHTML='<b>Doctor scope</b> · leads & SC-bookings don’t split by doctor, so ①② are hidden — the ③④⑤ ops funnel below scopes to the selected doctor(s).';
+  if(doc)dn.innerHTML=docNoteHTML();
   renderPicker(); loadClinic();
   if(VIEWM==='im'){['leadSection','bkSection','opsSection'].forEach(id=>{const e=document.getElementById(id);if(e)e.style.display='none';});const s2=document.getElementById('imSection');if(s2)s2.style.display='';}}
 
