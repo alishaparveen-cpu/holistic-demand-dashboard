@@ -25,6 +25,7 @@ j AS (
     CASE
       WHEN l.gclid IS NOT NULL AND l.gclid<>'' THEN 'Google Ads'
       WHEN LOWER(COALESCE(l.utm_source,''))='google' AND LOWER(COALESCE(l.utm_medium,'')) LIKE '%cpc%' THEN 'Google Ads'
+      WHEN LOWER(COALESCE(l.utm_source,''))='google' AND LOWER(COALESCE(l.utm_campaign,''))='inbound_call' THEN 'Google Ads'  -- google-source inbound calls (no gclid, medium=number not cpc); GMB calls are utm_source='gmb' so unaffected
       WHEN LOWER(COALESCE(l.utm_source,''))='bing' THEN 'Bing Ads'
       WHEN LOWER(COALESCE(l.utm_source,'')) IN ('gmb','googlelisting','google listing','google_listing') THEN 'Google Maps (GMB)'
       WHEN LOWER(COALESCE(l.utm_source,''))='practo' THEN 'Practo'

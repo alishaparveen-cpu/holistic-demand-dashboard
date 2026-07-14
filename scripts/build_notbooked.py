@@ -87,7 +87,8 @@ lead_attr AS (
       WHEN cl.best = '{LOCALITY}' THEN   -- ANY caller whose AI-audit named THIS clinic → attribute, keep the lead's real source
         CASE
           WHEN (l.gclid IS NOT NULL AND l.gclid<>'')
-               OR (LOWER(COALESCE(l.utm_source,''))='google' AND LOWER(COALESCE(l.utm_medium,'')) LIKE '%cpc%') THEN 'Google Ads'
+               OR (LOWER(COALESCE(l.utm_source,''))='google' AND LOWER(COALESCE(l.utm_medium,'')) LIKE '%cpc%')
+               OR (LOWER(COALESCE(l.utm_source,''))='google' AND LOWER(COALESCE(l.utm_campaign,''))='inbound_call') THEN 'Google Ads'  -- google-source inbound calls: no gclid & medium=number (not cpc) → were wrongly Organic. GMB calls carry utm_source='gmb', so unaffected.
           WHEN LOWER(COALESCE(l.utm_source,'')) IN ('gmb','googlelisting','google listing','google_listing') THEN 'GMB'
           WHEN (l.fbclid IS NOT NULL AND l.fbclid<>'') OR (l.accumulated_fbclids IS NOT NULL AND l.accumulated_fbclids<>'')
                OR LOWER(COALESCE(l.utm_source,'')) IN ('fb','facebook','meta','ig','instagram') THEN 'Meta'   -- FB click id (click-to-WhatsApp leads re-tagged organic)

@@ -131,7 +131,8 @@ lead_attr AS (
       WHEN LOWER(COALESCE(l.utm_source,'')) IN ('gmb','googlelisting','google listing','google_listing') THEN 'GMB'
       WHEN LOWER(COALESCE(l.utm_source,''))='practo' THEN 'Practo'
       WHEN (l.gclid IS NOT NULL AND l.gclid<>'')
-           OR (LOWER(COALESCE(l.utm_source,''))='google' AND LOWER(COALESCE(l.utm_medium,'')) LIKE '%cpc%') THEN 'Google Ads'
+           OR (LOWER(COALESCE(l.utm_source,''))='google' AND LOWER(COALESCE(l.utm_medium,'')) LIKE '%cpc%')
+           OR (LOWER(COALESCE(l.utm_source,''))='google' AND LOWER(COALESCE(l.utm_campaign,''))='inbound_call') THEN 'Google Ads'  -- google-source inbound calls (call-ext/call-only ads): no gclid & medium=number (not cpc) → were wrongly falling to Organic. GMB calls are tagged utm_source='gmb', so no risk of pulling GMB in.
       WHEN (l.fbclid IS NOT NULL AND l.fbclid<>'') OR (l.accumulated_fbclids IS NOT NULL AND l.accumulated_fbclids<>'')
            OR LOWER(COALESCE(l.utm_source,'')) IN ('fb','facebook','meta','ig','instagram') THEN 'Meta'   -- FB click id catches click-to-WhatsApp leads re-tagged as organic (mid-Jun UTM change)
       WHEN LOWER(COALESCE(l.utm_source,'')) IN ('organic','blog','google') THEN 'Organic'
