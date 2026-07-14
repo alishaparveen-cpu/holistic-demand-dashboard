@@ -248,6 +248,15 @@
   .imchip.cfgv.on{background:var(--accent);border-color:var(--accent);color:#fff}
   .imchip.cfgc.on{background:#C2691F;border-color:#C2691F;color:#fff}
   .imchip.cfgreset{padding:3px 9px;font-size:11px;color:var(--muted)}
+  .imdgrow .imchev{width:15px;flex:none;color:var(--muted);font-size:9px;align-self:center;text-align:center}
+  .imcell.im-inh{opacity:.38}
+  .imnestwrap{display:inline-flex;flex-wrap:wrap;align-items:center;gap:5px}
+  .imnfix{font-size:11px;font-weight:800;color:var(--muted)}
+  .imnarr{color:var(--faint);font-weight:800}
+  .imchip.imnest{padding:3px 9px;font-size:11px}
+  .imchip.imnest.on{background:#7A3FA0;border-color:#7A3FA0;color:#fff}
+  .imchip.imnest .imnx{margin-left:5px;opacity:.7}
+  .imchip.imnest.add{color:var(--muted)}
   .imfctx{font-size:11.5px;color:var(--muted);font-weight:600;margin-right:auto}
   .imfg{display:inline-flex;align-items:center;gap:4px;font-size:11.5px}
   .imfg b{font-size:11px;color:var(--ink);margin-right:2px}
@@ -407,6 +416,7 @@
         <span id="imCount" class="imclab" style="color:var(--accent)"></span>
         <button class="imclrall" id="imClrAll" title="clear all colour conditions">✕ clear colours</button>
       </div>
+      <div class="imctlrow" style="margin-top:7px"><span class="imclab" title="expand each clinic row deeper by these layers — like the full funnel's drill">Break rows</span><span id="imNestChain" class="imnestwrap"></span></div>
     </div>
     <div id="imCfgBar" class="imcfgbar" style="display:none"></div>
     <div class="fmwrap"><div class="imdgwrap"><div id="imHead"></div><div id="imGrid"></div></div></div>
@@ -1277,16 +1287,32 @@ function imCfgLabel(sk){const def=imStageDef(sk),spec=IM_STAGE_CFG[sk],c=IM_CFG[
   let base=def.lab;if(c.v&&spec.variants.length>1){const vl=(spec.variants.find(x=>x[0]===c.v)||[])[1];if(vl)base=num+' '+vl;}
   const cut=c.cut||{},parts=[];for(const d in cut){if(!cut[d]||!cut[d].length)continue;const cd=spec.cuts.find(x=>x.dim===d);if(cd)parts.push(cut[d].map(x=>(cd.vals.find(v=>v[0]===x)||[])[1]||x).join('+'));}
   return base+(parts.length?' · '+parts.join('·'):'');}
-function imStageSeries(sk,cl){const c=IM_CFG[sk]||{},cut=c.cut||{},t={seg:'offline',city:cl.city,loc:cl.loc};
-  if(sk==='bookings'){const dims=Object.keys(cut).filter(d=>cut[d]&&cut[d].length);   // combine maturity + booking-rank + done-rank (AND) from the ② episode cube
+function imStageSeries(sk,cl,extra){const c=IM_CFG[sk]||{},cut=Object.assign({},c.cut||{});
+  if(extra)for(const d in extra)cut[d]=extra[d];   // nest-path filters (from expandable rows) — override the stage's config cut for that field
+  const t={seg:'offline',city:cl.city,loc:cl.loc};
+  if(sk==='bookings'){const dims=Object.keys(cut).filter(d=>cut[d]&&cut[d].length);   // combine maturity + booking-rank + done-rank + channel/medium/category (AND) from the ② episode cube
     if(dims.length){const o=new Array(WEEKS.length).fill(0);(PB.cells||[]).forEach(cell=>{if(!imMatch(cell.city,cl.city)||!imMatch(cell.loc,cl.loc)||!imMatch(cell.seg,'offline'))return;if(!dims.every(d=>cut[d].includes(cell[d])))return;const a=cell.arr||[];for(let i=0;i<o.length;i++)o[i]+=a[i]||0;});return opsDv(o);}
     return (imMetOf('bookings').series(t)||{}).disp||[];}
   for(const d in cut){if(cut[d]&&cut[d].length)t[d]=cut[d];}
   return (imMetOf(imCfgVariant(sk)).series(t)||{}).disp||[];}
 function imOfflineClinics(){const seen={},out=[];opsUnitsOffline().forEach(u=>{if(!u.loc)return;const k=u.city+'|'+u.loc;if(!seen[k]){seen[k]=1;out.push({city:u.city,loc:u.loc,key:k});}});return out;}
-function imClinicRow(c){const cells={};let bkNow=0;
-  IM_STAGES.forEach(st=>{const ser=imStageSeries(st.key,c),dp=ser.length?deltaPct(ser):null,mm=imMetOf(st.key==='bookings'?'bookings':imCfgVariant(st.key));cells[st.key]={ser,dp,rag:dp?imRag(dp):'g',pct:!!(mm&&mm.pct)};if(st.key==='bookings')bkNow=dp?(dp.now||0):0;});
-  return {c,cells,bkNow};}
+// nesting dims usable BELOW the clinic level (true expandable drill, like the full funnel). Each maps to the per-STAGE cut field (leads use 'src'/'cat', bookings use 'channel'/'category', …); a stage with no field for the dim inherits the clinic total.
+const IM_NEST_DEFS={
+  channel:{lab:'Channel', vals:IM_CH_VALS, field:{leads:'src',bookings:'channel',done:'src'}},
+  medium:{lab:'Medium',   vals:IM_MED_VALS, field:{leads:'medium',bookings:'medium'}},
+  category:{lab:'Category',vals:IM_CAT_VALS, field:{leads:'cat',bookings:'category',done:'cat',value:'cat'}},
+  maturity:{lab:'Lead maturity', vals:[['fresh','fresh'],['wk1','1wk'],['wk2_4','2–4wk'],['mo1_3','1–3mo'],['mo3','3mo+'],['nolead','no lead']], field:{bookings:'age'}},
+  brank:{lab:'Booking rank', vals:[['1st','1st-ever'],['2nd','2nd'],['3rd','3rd'],['4pl','4th+']], field:{bookings:'brank'}},
+};
+let IM_NEST=[];   // dims to nest each clinic row deeper by, in order (e.g. ['channel','medium'])
+function imNodeCells(cl,path){const cells={};let bkNow=0;   // path = [{dim,val}] accumulated nest filters
+  IM_STAGES.forEach(st=>{const extra={};let applies=false;
+    path.forEach(pc=>{const f=(IM_NEST_DEFS[pc.dim].field||{})[st.key];if(f){extra[f]=[pc.val];applies=true;}});
+    const ser=imStageSeries(st.key,cl,extra),dp=ser.length?deltaPct(ser):null,mm=imMetOf(st.key==='bookings'?'bookings':imCfgVariant(st.key));
+    cells[st.key]={ser,dp,rag:dp?imRag(dp):'g',pct:!!(mm&&mm.pct),inherited:path.length>0&&!applies};   // inherited = this stage doesn't split by any path dim → shows the clinic total (muted)
+    if(st.key==='bookings')bkNow=dp?(dp.now||0):0;});
+  return {cells,bkNow};}
+function imClinicRow(c){const r=imNodeCells(c,[]);return {c,cells:r.cells,bkNow:r.bkNow};}
 function imPassStages(row){return IM_ORDER.every(sk=>{const S=IM_SRAG[sk];return !S||!S.size||S.has(row.cells[sk].rag);});}
 // customise-a-stage bar: pick the variant metric + which layers (source / medium / category / maturity / rank) to include for that stage
 function imCfgBar(){const bar=document.getElementById('imCfgBar');if(!bar)return;
@@ -1328,20 +1354,34 @@ function imRender(){const sec=document.getElementById('imSection');if(!sec||sec.
   head.querySelectorAll('.imcolhd').forEach(h=>{h.ondragstart=()=>{IM_DRAGS=h.dataset.sk;};
     h.ondragover=(e)=>{e.preventDefault();h.classList.add('over');};h.ondragleave=()=>h.classList.remove('over');
     h.ondrop=(e)=>{e.preventDefault();h.classList.remove('over');const to=h.dataset.sk;if(!IM_DRAGS||IM_DRAGS===to)return;const a=IM_ORDER.filter(x=>x!==IM_DRAGS),at=a.indexOf(to);a.splice(at,0,IM_DRAGS);IM_ORDER=a;IM_DRAGS=null;imRender();};});
+  imNestChain();   // the "break rows deeper by …" control
   const grid=document.getElementById('imGrid');grid.innerHTML='';
-  if(!rows.length){grid.innerHTML='<div class="empty" style="padding:34px;text-align:center;color:var(--muted)">No offline clinics match all conditions — loosen a colour filter, tier, or the top-bar Clinic-age.</div>';return;}
+  if(!rows.length){grid.innerHTML='<div class="empty" style="padding:34px;text-align:center;color:var(--muted)">No offline clinics match all conditions — loosen a colour filter, or the top-bar Clinic-age.</div>';return;}
   const STAGECOL={leads:'#3E7CB1',bookings:'#2E7D5B',avail:'#8257C4',b2d:'#1F6F5C',done:'#C87B2E',value:'#C87B2E'};
-  const cellHTML=(cell,sk)=>{const dp=cell.dp,cls={r:'rr',o:'ro',y:'ry',g:'rg'}[cell.rag]||'rx',now=cell.pct?(dp?Math.round(dp.now)+'%':'·'):fmtOps(dp?(dp.now||0):0);
-    return `<div class="imcell ${cls}" data-sk="${sk}" title="click to plot ${imCfgLabel(sk)}">${dp?dp.txt:'—'}<small>${now}</small></div>`;};
+  const cellHTML=(cell,sk)=>{const dp=cell.dp,cls=cell.inherited?'rx im-inh':({r:'rr',o:'ro',y:'ry',g:'rg'}[cell.rag]||'rx'),now=cell.pct?(dp?Math.round(dp.now)+'%':'·'):fmtOps(dp?(dp.now||0):0);
+    return `<div class="imcell ${cls}" data-sk="${sk}" title="${cell.inherited?'clinic total — this stage doesn’t split by this layer':'click to plot '+imCfgLabel(sk)}">${dp?dp.txt:'—'}<small>${now}</small></div>`;};
+  // recursive tree: clinic → IM_NEST[0] → IM_NEST[1] … each node shows the full 6-stage funnel for its slice
+  function renderNode(cl,path,key){const cells=imNodeCells(cl,path).cells,depth=path.length;
+    if(depth>0&&!cells.leads.ser.some(x=>x)&&!cells.bookings.ser.some(x=>x)&&!cells.done.ser.some(x=>x))return;   // skip empty sub-slices
+    const dim=IM_NEST[depth],hasKids=!!dim,op=!!IM_OPEN[key],lastPc=path[depth-1];
+    const lbl=depth?((IM_NEST_DEFS[lastPc.dim].vals.find(v=>v[0]===lastPc.val)||[])[1]||lastPc.val):cl.loc;
+    const row=document.createElement('div');row.className='imdgrow'+(hasKids?' clk':'');row.style.paddingLeft=(10+depth*15)+'px';
+    row.innerHTML=`<span class="imchev">${hasKids?(op?'▾':'▶'):''}</span><span class="lbl"><span class="dot" style="background:${depth?'#9aa3b0':'#7C5CBF'}"></span>${lbl}</span>`+IM_ORDER.map(sk=>cellHTML(cells[sk],sk)).join('');
+    row.onclick=(e)=>{const cell=e.target.closest('.imcell');if(cell){openChart(cl.city+' · '+cl.loc+(depth?' › '+lbl:'')+' — '+imCfgLabel(cell.dataset.sk),cells[cell.dataset.sk].ser,STAGECOL[cell.dataset.sk]||'#2E7D5B');return;}if(hasKids){IM_OPEN[key]=!IM_OPEN[key];imRender();}};
+    grid.appendChild(row);
+    if(hasKids&&op)IM_NEST_DEFS[dim].vals.forEach(([v])=>renderNode(cl,path.concat([{dim,val:v}]),key+'/'+dim+':'+v));}
   const byCity={};rows.forEach(r=>{(byCity[r.c.city]=byCity[r.c.city]||[]).push(r);});
   Object.keys(byCity).sort().forEach(city=>{
     const ch=document.createElement('div');ch.className='imcityhdr';ch.textContent=city+' · '+byCity[city].length+' clinic'+(byCity[city].length!==1?'s':'');grid.appendChild(ch);
-    byCity[city].forEach(r=>{const row=document.createElement('div');row.className='imdgrow clk';
-      row.innerHTML=`<span class="lbl"><span class="dot" style="background:#7C5CBF"></span>${r.c.loc}</span>`+IM_ORDER.map(sk=>cellHTML(r.cells[sk],sk)).join('');
-      row.onclick=(e)=>{const cell=e.target.closest('.imcell'),sk=cell?cell.dataset.sk:'bookings';   // clicking a cell plots THAT stage's metric + its config, over the current timeline
-        openChart(r.c.city+' · '+r.c.loc+' — '+imCfgLabel(sk),r.cells[sk].ser,STAGECOL[sk]||'#2E7D5B');};
-      grid.appendChild(row);});});
+    byCity[city].forEach(r=>renderNode(r.c,[],r.c.key));});
 }
+// "break rows deeper by …" — chain of nest dims below the clinic (true expandable drill, like the full funnel)
+function imNestChain(){const el=document.getElementById('imNestChain');if(!el)return;
+  const avail=Object.keys(IM_NEST_DEFS).filter(d=>!IM_NEST.includes(d));
+  el.innerHTML='<span class="imnfix">City › Clinic</span>'+IM_NEST.map((d,i)=>`<span class="imnarr">›</span><button class="imchip imnest on" data-rm="${d}">${IM_NEST_DEFS[d].lab}<span class="imnx">✕</span></button>`).join('')
+    +avail.map(d=>`<button class="imchip imnest add" data-add="${d}">＋ ${IM_NEST_DEFS[d].lab}</button>`).join('');
+  el.querySelectorAll('[data-add]').forEach(b=>b.onclick=()=>{IM_NEST.push(b.dataset.add);IM_OPEN={};imRender();});
+  el.querySelectorAll('[data-rm]').forEach(b=>b.onclick=()=>{IM_NEST=IM_NEST.filter(x=>x!==b.dataset.rm);IM_OPEN={};imRender();});}
 function setViewMode(m){VIEWM=m;document.querySelectorAll('#viewmode button').forEach(b=>b.classList.toggle('on',b.dataset.m===m));
   const im=m==='im';['leadSection','bkSection','opsSection'].forEach(id=>{const e=document.getElementById(id);if(e)e.style.display=im?'none':'';});
   const s=document.getElementById('imSection');if(s)s.style.display=im?'':'none';
