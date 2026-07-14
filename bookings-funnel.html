@@ -573,7 +573,7 @@ function splitCat(v,cc){   // integer v → {STI,SH,MH,Other} summing exactly to
 }
 function buildCells(node){
   return (node.cells||[]).map(c=>({ptype:c.pt,channel:(window.BookingsCube?window.BookingsCube.channelOf(c.ch):c.ch),age:c.la,medium:(c.md==='whatsapp'?'wa_org':c.md),
-    brank:c.br||'na',drank:c.dr||'na',
+    brank:c.br||'na',drank:c.dr||'na',wdArr:c.wd||[],
     num:c.num||'',campaign:c.cmp||'na',category:c.cat||'na',bkseg:c.bkseg||'none',loc:c.loc||'',city:c.city||'',citygroup:(c.city&&c.city.indexOf('— no city')!==0)?'attr':'nocity',_on:(!!c.on||c.city==='Online'),seg:((!!c.on||c.city==='Online')?'online':'offline'),arr:c.w}));   // brank/drank = booking-rank / done-rank AS-OF BEFORE this booking (unique patient-week). loc/city set on city+national rollups; _on/seg = online (telehealth) vs offline
 }
 function buildLeadCells(node){   // leads cube: channel x medium x number x url x booked-status
@@ -1282,7 +1282,10 @@ const IM_STAGE_CFG={
           {dim:'channel',lab:'Source',vals:IM_CH_VALS},{dim:'medium',lab:'Medium',vals:IM_MED_VALS},{dim:'category',lab:'Category',vals:IM_CAT_VALS}]},
   avail:{variants:[['netsc','Net SC hrs'],['attend','Attended days'],['rostered','Rostered hrs'],['opened','Opened hrs']], cuts:[]},
   b2d:{variants:[['b2d','Book→Done %']], cuts:[]},
-  done:{variants:[['done','Done']], cuts:[{dim:'cat',lab:'Category',vals:IM_CAT_VALS},{dim:'src',lab:'Source',vals:IM_CH_VALS}]},
+  done:{variants:[['done','Done']], cuts:[{dim:'cat',lab:'Category',vals:IM_CAT_VALS},{dim:'src',lab:'Source',vals:IM_CH_VALS},
+    {dim:'age',lab:'Lead maturity',vals:[['fresh','fresh'],['wk1','1wk'],['wk2_4','2–4wk'],['mo1_3','1–3mo'],['mo3','3mo+'],['nolead','no lead']]},
+    {dim:'brank',lab:'Booking rank',vals:[['1st','1st-ever'],['2nd','2nd'],['3rd','3rd'],['4pl','4th+']]},
+    {dim:'medium',lab:'Medium',vals:IM_MED_VALS}]},   // maturity/rank/medium done = book-week cohort (episode cube)
   value:{variants:[['revenue','Revenue ₹'],['purchased','Purchased'],['d2p','D2P %'],['rpc','RPC ₹']], cuts:[{dim:'cat',lab:'Category',vals:IM_CAT_VALS}]},
 };
 function imStageDef(k){return IM_STAGES.find(s=>s.key===k);}
@@ -1311,6 +1314,11 @@ function imStageSeries(sk,ent,extra){
   const c=IM_CFG[sk]||{},cut=Object.assign({},c.cut||{});
   if(extra)for(const d in extra)cut[d]=extra[d];   // nest-path filters (from expandable rows)
   const t={seg:'offline',city:ent.city,loc:ent.loc};   // ent.loc undefined at CITY grain → aggregates every clinic in the city
+  if(sk==='done'){const EPI=['age','brank','drank','medium'];const activeEpi=Object.keys(cut).filter(d=>EPI.includes(d)&&cut[d]&&cut[d].length);
+    if(activeEpi.length){   // done sliced by lead-maturity/booking-rank/medium → only the ② episode cube has these → sum its done (wd) = "of the bookings with X, how many completed" (book-week cohort)
+      const map={age:'age',brank:'brank',drank:'drank',medium:'medium',src:'channel',cat:'category',channel:'channel',category:'category'};
+      const dims=Object.keys(cut).filter(d=>cut[d]&&cut[d].length).map(d=>[map[d]||d,cut[d]]);
+      const o=new Array(WEEKS.length).fill(0);(PB.cells||[]).forEach(cell=>{if(!imMatch(cell.city,ent.city)||!imMatch(cell.loc,ent.loc)||!imMatch(cell.seg,'offline'))return;if(!dims.every(([f,vals])=>vals.includes(cell[f])))return;const a=cell.wdArr||[];for(let i=0;i<o.length;i++)o[i]+=a[i]||0;});return opsDv(o);}}
   if(sk==='bookings'){const dims=Object.keys(cut).filter(d=>cut[d]&&cut[d].length);
     if(dims.length){const o=new Array(WEEKS.length).fill(0);(PB.cells||[]).forEach(cell=>{if(!imMatch(cell.city,ent.city)||!imMatch(cell.loc,ent.loc)||!imMatch(cell.seg,'offline'))return;if(!dims.every(d=>cut[d].includes(cell[d])))return;const a=cell.arr||[];for(let i=0;i<o.length;i++)o[i]+=a[i]||0;});return opsDv(o);}
     return (imMetOf('bookings').series(t)||{}).disp||[];}
@@ -1319,10 +1327,10 @@ function imStageSeries(sk,ent,extra){
 // nesting dims usable BELOW the entity (true expandable drill, like the full funnel). Each maps to the per-STAGE cut field; a stage with no field for the dim inherits the parent total (muted).
 const IM_NEST_DEFS={
   channel:{lab:'Channel', vals:IM_CH_VALS, field:{leads:'src',bookings:'channel',done:'src'}},
-  medium:{lab:'Medium',   vals:IM_MED_VALS, field:{leads:'medium',bookings:'medium'}},
+  medium:{lab:'Medium',   vals:IM_MED_VALS, field:{leads:'medium',bookings:'medium',done:'medium'}},
   category:{lab:'Category',vals:IM_CAT_VALS, field:{leads:'cat',bookings:'category',done:'cat',value:'cat'}},
-  maturity:{lab:'Lead maturity', vals:[['fresh','fresh'],['wk1','1wk'],['wk2_4','2–4wk'],['mo1_3','1–3mo'],['mo3','3mo+'],['nolead','no lead']], field:{bookings:'age'}},
-  brank:{lab:'Booking rank', vals:[['1st','1st-ever'],['2nd','2nd'],['3rd','3rd'],['4pl','4th+']], field:{bookings:'brank'}},
+  maturity:{lab:'Lead maturity', vals:[['fresh','fresh'],['wk1','1wk'],['wk2_4','2–4wk'],['mo1_3','1–3mo'],['mo3','3mo+'],['nolead','no lead']], field:{bookings:'age',done:'age'}},
+  brank:{lab:'Booking rank', vals:[['1st','1st-ever'],['2nd','2nd'],['3rd','3rd'],['4pl','4th+']], field:{bookings:'brank',done:'brank'}},
 };
 let IM_NEST=[];   // extra dims to nest each row deeper by, in order (e.g. ['channel','medium'])
 function imNodeCells(ent,path){const cells={};let prim=0;   // path = [{dim,val}] accumulated nest filters

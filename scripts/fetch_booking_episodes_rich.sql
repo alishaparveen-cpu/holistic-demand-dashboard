@@ -37,7 +37,7 @@ callcat AS (   -- each caller phone → their most-recent inbound call's AI-audi
   ) q WHERE rn=1
 ),
 joined AS (
-  SELECT s.city, s.locality AS clinic, s.wk,
+  SELECT s.city, s.locality AS clinic, s.wk, s.week_done,
     CASE WHEN s.wk_seq=1 THEN 'new' WHEN s.prior_done>0 THEN 'relapse' ELSE 'reattempt' END AS ptype,
     CASE
       WHEN l.id IS NULL OR l.created_at IS NULL          THEN 'nolead'   -- no attributable lead drove this booking (walk-in / returning / untracked) — NOT 'fresh'
@@ -89,5 +89,5 @@ joined AS (
   WHERE s.start_time >= '2026-01-05' AND s.start_time < '2026-07-13'
     AND LOWER(COALESCE(s.locality,'')) <> 'online' AND s.locality IS NOT NULL
 )
-SELECT city, clinic, wk, ptype, lead_age, channel, medium, number, campaign, category, brank, drank, COUNT(*) AS bookings
+SELECT city, clinic, wk, ptype, lead_age, channel, medium, number, campaign, category, brank, drank, COUNT(*) AS bookings, SUM(week_done) AS done
 FROM joined GROUP BY 1,2,3,4,5,6,7,8,9,10,11,12 ORDER BY 1,2,3;

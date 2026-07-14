@@ -49,24 +49,26 @@ def main():
     except Exception:
         clf = {}
     # clinic -> cellkey(pt,la,ch,md,number) -> [N]   (weekly model: 1 booking / patient-week; number from utm_medium on calls)
-    acc = defaultdict(lambda: defaultdict(lambda: [0] * N))
+    acc = defaultdict(lambda: defaultdict(lambda: [[0] * N, [0] * N]))   # [bookings, done] per cell
     for line in p.stdout.splitlines():
         c = line.split('\t')
-        if len(c) < 11:
+        if len(c) < 14:
             continue
-        city, clinic, wk, pt, la, ch, md, num, cmp, cat, br, dr, n = c
+        city, clinic, wk, pt, la, ch, md, num, cmp, cat, br, dr, n, dn = c
         if wk not in WI:
             continue
         key = f'{city}|{clinic}'
         chs = CH.get(ch, 'Other')
         md2 = md if chs != 'Other' else 'other'   # untaxonomy channels are flat
-        acc[key][(pt, la, chs, md2, num, cmp, cat, br, dr)][WI[wk]] += int(n)
+        cell = acc[key][(pt, la, chs, md2, num, cmp, cat, br, dr)]
+        cell[0][WI[wk]] += int(n)
+        cell[1][WI[wk]] += int(dn or 0)
     out = {'_meta': {'weeks': WEEKS, 'basis': 'unique patient-intents (episodes) · REAL per-booking pull',
                      'source': 'fetch_booking_episodes_rich.sql — reschedule/rebook chains ≤14d collapsed; '
                                'pt=new/relapse/reattempt, la=lead-age, rg=return-gap, rt=needed-retry, real medium. '
                                'Category (STI/SH/MH/Other) still a provisional AI-audit prior on call leads (_callcat).'}}
     for key, cells in acc.items():
-        arr = [{'pt': k[0], 'la': k[1], 'ch': k[2], 'md': k[3], 'num': k[4], 'cmp': k[5], 'cat': k[6], 'br': k[7], 'dr': k[8], 'w': w} for k, w in cells.items()]
+        arr = [{'pt': k[0], 'la': k[1], 'ch': k[2], 'md': k[3], 'num': k[4], 'cmp': k[5], 'cat': k[6], 'br': k[7], 'dr': k[8], 'w': v[0], 'wd': v[1]} for k, v in cells.items()]
         out[key] = {'cells': arr, '_callcat': callcat(clf, key)}
     json.dump(out, open(os.path.join(ROOT, 'data_bookings_funnel.json'), 'w'), separators=(',', ':'))
     K = 'Bangalore|Indiranagar'; n8 = 8
