@@ -965,6 +965,7 @@ function opsSlugs(){if(!QD)return [];let base;
   else if(SCOPE==='city')base=Object.keys(QD.clinics).filter(s=>SEL.city.has(QD.clinics[s].city));
   else if(SCOPE==='clinic'){base=[];SEL.clinic.forEach(k=>{const i=k.indexOf('|');if(i<0)return;const cand=qnorm(k.slice(i+1))+'_'+qnorm(k.slice(0,i));if(QD.clinics[cand])base.push(cand);});}
   else {const set=new Set();SEL.doctor.forEach(dk=>{const slug=dk.slice(0,dk.indexOf('::'));if(QD.clinics[slug])set.add(slug);});base=[...set];}   // doctor scope: parent clinics of the selected doctors
+  base=base.filter(s=>!CLOSED.has(slugLoc(s).toLowerCase()));   // drop permanently-closed clinics from the ops/Quick-view path too
   return clinF()?base.filter(s=>matPass(slugLoc(s))):base;}   // clinic-age filter
 // a "unit" = one aggregable ops entity (offline clinic / doctor from quick_diag, or online clinic from the online cube).
 // Each unit carries `al` (its week-aligner) so offline & online arrays combine on the same WEEKS axis. Availability/category live on offline only.
@@ -2024,7 +2025,7 @@ function rerouteCityLeads(cityLeads,bk){const out={_meta:cityLeads._meta};
 // ---- scope multiselect (searchable checklist panel) ----
 const SEL={city:new Set(),clinic:new Set(),doctor:new Set()};
 let DOCTORS=[], PICK_OPTS=[];
-function buildDoctors(){DOCTORS=[];if(!QD)return;Object.keys(QD.clinics).forEach(s=>{const qc=QD.clinics[s],bd=qc.sc.by_doctor||{},loc=slugLoc(s),city=qc.city;
+function buildDoctors(){DOCTORS=[];if(!QD)return;Object.keys(QD.clinics).forEach(s=>{const qc=QD.clinics[s],bd=qc.sc.by_doctor||{},loc=slugLoc(s),city=qc.city;if(CLOSED.has((loc||'').toLowerCase()))return;   // skip doctors at permanently-closed clinics
   Object.keys(bd).forEach(name=>{DOCTORS.push({k:s+'::'+name,label:name,sub:loc+' · '+city,slug:s,clinicKey:city+'|'+loc});});});
   DOCTORS.sort((a,b)=>a.label.localeCompare(b.label));}
 function scopeOptions(s){
