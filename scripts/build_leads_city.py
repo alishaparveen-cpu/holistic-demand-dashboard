@@ -150,6 +150,7 @@ lead_attr AS (
       ELSE 'other' END AS medium,
     CASE WHEN LOWER(COALESCE(l.utm_campaign,''))='inbound_call'
          THEN RIGHT(REGEXP_REPLACE(COALESCE(l.utm_medium,''),'[^0-9]',''),10) ELSE '' END AS number,
+    CASE WHEN LOWER(COALESCE(l.utm_campaign,''))='inbound_call' THEN 1 ELSE 0 END AS iscall,   -- dialed a tracked inbound line → connected on a call by definition
     CASE   -- CLUBBED campaign/number dim: call → ☎ number dialed ; paid google/fb → ad campaign name ; else blank
       WHEN LOWER(COALESCE(l.utm_campaign,''))='inbound_call' THEN '☎ '||RIGHT(REGEXP_REPLACE(COALESCE(l.utm_medium,''),'[^0-9]',''),10)
       WHEN (l.gclid IS NOT NULL AND l.gclid<>'') OR (LOWER(COALESCE(l.utm_source,''))='google' AND LOWER(COALESCE(l.utm_medium,'')) LIKE '%cpc%')
@@ -204,8 +205,8 @@ pat_phone AS (   -- patient created from this lead → their phone (catches an A
   SELECT lead_id AS lid, RIGHT(REGEXP_REPLACE(COALESCE(phone_no,''),'[^0-9]',''),10) AS ph
   FROM allo_persons.patient WHERE deleted_at IS NULL AND lead_id IS NOT NULL
 ),
-lead_conn AS (   -- per-lead: did the lead's OWN phone OR its patient's phone connect on a call? (MAX → one value per lead)
-  SELECT la.id, MAX(CASE WHEN cs.ph IS NOT NULL OR cp.ph IS NOT NULL THEN 1 ELSE 0 END) AS oncall
+lead_conn AS (   -- per-lead: did the lead's OWN phone OR its patient's phone connect on a call, OR is it an inbound-call lead? (MAX → one value per lead)
+  SELECT la.id, MAX(CASE WHEN cs.ph IS NOT NULL OR cp.ph IS NOT NULL OR la.iscall=1 THEN 1 ELSE 0 END) AS oncall
   FROM lead_attr la
   LEFT JOIN called cs ON cs.ph = la.ph
   LEFT JOIN pat_phone pp ON pp.lid = la.id
