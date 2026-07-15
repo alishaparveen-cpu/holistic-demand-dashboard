@@ -92,10 +92,8 @@ lead_attr AS (
           WHEN LOWER(COALESCE(l.utm_source,'')) IN ('gmb','googlelisting','google listing','google_listing') THEN 'GMB'
           WHEN (l.fbclid IS NOT NULL AND l.fbclid<>'') OR (l.accumulated_fbclids IS NOT NULL AND l.accumulated_fbclids<>'')
                OR LOWER(COALESCE(l.utm_source,'')) IN ('fb','facebook','meta','ig','instagram') THEN 'Meta'   -- FB click id (click-to-WhatsApp leads re-tagged organic)
-          WHEN LOWER(COALESCE(l.utm_source,'')) IN ('organic','blog','google') AND LOWER(COALESCE(l.source_url,'')) LIKE '%/blog/%' THEN 'Organic · Blog'   -- blog content-marketing = organic-family sub-source (matches city cube)
+          WHEN LOWER(COALESCE(l.source_url,'')) LIKE '%/blog/%' THEN 'Organic · Blog'   -- any /blog/ landing = blog content (after paid checks); catches null-utm_source blog readers (matches city cube)
           WHEN LOWER(COALESCE(l.utm_source,'')) IN ('organic','blog','google') THEN 'Organic'   -- organic-google (no gclid/cpc) lands here
-          WHEN LOWER(COALESCE(l.utm_source,'')) IN ('chatgpt.com','youtube','moj') THEN 'AI / Social'   -- unfolded from Other
-          WHEN LOWER(COALESCE(l.utm_source,'')) IN ('justdial','jd') THEN 'JustDial'                     -- unfolded from Other
           ELSE 'Other' END                 -- remaining Other = referral / direct / bare-untracked
     END AS channel,
     CASE   -- medium: blog/wa-outbound first ; GMB call/web ; inbound calls ; Practo book vs web ; else caller
@@ -174,7 +172,7 @@ def run(sql, tries=4):
         return [l.split('\t') for l in p.stdout.splitlines() if l.strip()]
     sys.exit('query failed after %d timeouts' % tries)
 
-CHANNELS = ['GMB', 'Google Ads', 'Meta', 'Practo', 'Organic', 'Organic · Blog', 'AI / Social', 'JustDial', 'Other']
+CHANNELS = ['GMB', 'Google Ads', 'Meta', 'Practo', 'Organic', 'Organic · Blog', 'Other']
 def main():
     note = ('GMB=clinic GMB number/campaign (call+web). Everyone else = a caller whose AI-audit named THIS clinic '
             '(is_our_locality), attributed by the lead\'s real source: Google Ads(paid), Organic, Meta, Practo, '

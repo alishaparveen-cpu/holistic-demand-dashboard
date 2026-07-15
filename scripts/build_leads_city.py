@@ -27,7 +27,7 @@ DI = {d: i for i, d in enumerate(DAYS)}; ND = len(DAYS)
 def wk_monday(dstr):
     d = datetime.date.fromisoformat(dstr)
     return (d - datetime.timedelta(days=d.weekday())).isoformat()
-CHANNELS = ['GMB', 'Google Ads', 'Meta', 'Practo', 'Organic', 'Organic · Blog', 'AI / Social', 'JustDial', 'Other']
+CHANNELS = ['GMB', 'Google Ads', 'Meta', 'Practo', 'Organic', 'Organic · Blog', 'Other']
 
 # number -> canonical city (from the GMB map) ; and URL/AI token -> canonical city
 GMAP = json.load(open(os.path.join(ROOT, 'data_gmb_number_clinic.json')))
@@ -135,10 +135,8 @@ lead_attr AS (
            OR (LOWER(COALESCE(l.utm_source,''))='google' AND LOWER(COALESCE(l.utm_campaign,''))='inbound_call') THEN 'Google Ads'  -- google-source inbound calls (call-ext/call-only ads): no gclid & medium=number (not cpc) → were wrongly falling to Organic. GMB calls are tagged utm_source='gmb', so no risk of pulling GMB in.
       WHEN (l.fbclid IS NOT NULL AND l.fbclid<>'') OR (l.accumulated_fbclids IS NOT NULL AND l.accumulated_fbclids<>'')
            OR LOWER(COALESCE(l.utm_source,'')) IN ('fb','facebook','meta','ig','instagram') THEN 'Meta'   -- FB click id catches click-to-WhatsApp leads re-tagged as organic (mid-Jun UTM change)
-      WHEN LOWER(COALESCE(l.utm_source,'')) IN ('organic','blog','google') AND LOWER(COALESCE(l.source_url,'')) LIKE '%/blog/%' THEN 'Organic · Blog'   -- blog content-marketing = organic-family sub-source; kept in the Organic family so it can be combined back with Organic on demand
+      WHEN LOWER(COALESCE(l.source_url,'')) LIKE '%/blog/%' THEN 'Organic · Blog'   -- any /blog/ landing = blog content (after the paid checks above, so gclid/fbclid blog-landings stay paid); catches null-utm_source blog readers too
       WHEN LOWER(COALESCE(l.utm_source,'')) IN ('organic','blog','google') THEN 'Organic'
-      WHEN LOWER(COALESCE(l.utm_source,'')) IN ('chatgpt.com','youtube','moj') THEN 'AI / Social'   -- unfolded from Other: AI-assistant + social referrals
-      WHEN LOWER(COALESCE(l.utm_source,'')) IN ('justdial','jd') THEN 'JustDial'                     -- unfolded from Other
       ELSE 'Other' END AS channel,   -- remaining Other = bare null-source / no-url direct-untracked records
     CASE
       WHEN LOWER(COALESCE(l.utm_campaign,''))='inbound_call' THEN 'call'

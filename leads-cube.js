@@ -32,7 +32,7 @@
     '2wk': ['w0', 'w1'],
     week: ['w0']
   };
-  var CHANNELS = ['GMB', 'Google Ads', 'Meta', 'Practo', 'Organic', 'Organic · Blog', 'AI / Social', 'JustDial', 'Other'];
+  var CHANNELS = ['GMB', 'Google Ads', 'Meta', 'Practo', 'Organic', 'Organic · Blog', 'Other'];
   var NO_CITY_PREFIX = '— no city';   // the national / online-untracked bucket key prefix
 
   function bookedSet(win) { return new Set(BOOKED_SET[win] || BOOKED_SET.ever); }
