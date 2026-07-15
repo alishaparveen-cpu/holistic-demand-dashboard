@@ -530,6 +530,7 @@ function matPass(loc){if(!MATF.size)return true;const m=CLINIC_MAT[loc];return m
 let MHF=false;   // MH-pilot filter: keep only the 7 MH-pilot clinics
 const MH_PILOT=new Set(['hadapsar','kharghar','whitefield','indiranagar','bharathi nagar','vidya nagar','vaishali nagar']);   // MH-pilot localities: Hadapsar·Kharghar·Whitefield·Indiranagar + single-clinic cities Coimbatore(Bharathi Nagar)·Hubli(Vidya Nagar)·Jaipur(Vaishali Nagar)
 function mhPass(loc){return !MHF||MH_PILOT.has((loc||'').toLowerCase());}
+const CLOSED=new Set(['suryaraopeta']);   // permanently-closed clinic localities — had history then went dark ≥8 wks (Vijayawada·Suryaraopeta: ran Jan–mid-Mar, 0 since). Dropped from OPLOC so their rows vanish from every clinic list/picker/rollup (historical leads fold into the city's no-clinic bucket, keeping city totals intact). NOT newly-opening clinics (those ramp up, e.g. RT Nagar/Alkapuri/Brookefield — kept).
 function clinF(){return MATF.size||MHF;}   // any clinic filter active?   // TRACKED_CITY: real op cities (+new launches); LOC2CITY: clinic locality → its true city; OPLOC: operational clinic localities (from the bookings cube) — closed clinics with stray leads are excluded from the Clinic layer; SINGLE_CLINIC_CITY: city→its one clinic (roll city-only leads into it)
 function isTracked(city){return TRACKED_CITY.has(city);}
 function displayCity(loc,city){
@@ -1064,7 +1065,7 @@ function opsDoneBucketRecs(units,dim){const out=[],field=dim==='donerank'?'doneB
       buckets.forEach((b,bi)=>{if(cells[bi].some(x=>x))out.push(Object.assign({},r,{bucket:b.l,bkey:b.k,arr:cells[bi]}));});});});
   return out;}
 const OPS_OPEN={};
-let DONE_OPT=['seg','city','clinic','opscat','opssub'];   // FULL ordered Done layer list (seg · geo · metrics) — every layer is drag-reorderable, like ①②. doneLayers() filters to what's available at the current scope/segment.
+let DONE_OPT=['seg','opscat','city','clinic','opssub'];   // FULL ordered Done layer list — DEFAULT leads Segment → Category, THEN geo · sub-cat (every layer is drag-reorderable, like ①②). doneLayers() filters to what's available at the current scope/segment.
 function doneGeo(){return SCOPE==='national'?['city','clinic']:SCOPE==='city'?['city','clinic']:SCOPE==='clinic'?(SEL.clinic.size>1?['clinic']:[]):SCOPE==='doctor'?(SEL.doctor.size>1?['doctor']:[]):[];}   // geo dims available at this scope — the scope's own grain leads (City at city scope, Clinic at clinic, Doctor at doctor)
 function doneAvail(l){if(['city','clinic','doctor'].includes(l))return doneGeo().includes(l);   // geo available only at its scope
   if(l==='donematurity'||l==='donerank')return SCOPE!=='doctor';   // lead-maturity / booking-rank done breakdown (offline done cube; not per-doctor)
@@ -1074,10 +1075,14 @@ function doneLayers(){const bk=doneBucketLayer();   // maturity/rank now CROSS w
   return DONE_OPT.filter(doneAvail).filter(l=>!((l==='donematurity'||l==='donerank')&&l!==bk));}
 function syncDoneOrder(){   // on scope change, drop in this scope's geo dims at the default position (after seg, before metrics), keeping the user's metric order
   const kept=DONE_OPT.filter(l=>['seg','opssrc','opscat','opssub'].includes(l));
-  DONE_OPT=[...kept.filter(l=>l==='seg'),...doneGeo(),...kept.filter(l=>l!=='seg')];}
+  const lead=kept.filter(l=>l==='seg'||l==='opscat');   // default: Segment → Category lead, THEN this scope's geo, then the rest (source / sub-cat)
+  DONE_OPT=[...lead,...doneGeo(),...kept.filter(l=>!lead.includes(l))];}
 function syncOpsGeo(){   // on scope change, make the scope's grain the FIRST layer of ④ Book→Done · ⑥ Value (City at city, Clinic at clinic, Doctor at doctor). National stays lean (geo opt-in via ＋ ghosts).
   const primary=(SCOPE==='national')?null:(doneGeo()[0]||null);
-  ['b2d','val'].forEach(sec=>{const nonGeo=OPS_ORD[sec].filter(l=>!['city','clinic','doctor'].includes(l));OPS_ORD[sec]=primary?[primary,...nonGeo]:nonGeo;});
+  ['b2d','val'].forEach(sec=>{const nonGeo=OPS_ORD[sec].filter(l=>!['city','clinic','doctor'].includes(l));
+    if(!primary){OPS_ORD[sec]=nonGeo;return;}
+    if(sec==='val'){const lead=nonGeo.filter(l=>l==='seg'||l==='opscat'),rest=nonGeo.filter(l=>l!=='seg'&&l!=='opscat');OPS_ORD[sec]=[...lead,primary,...rest];}   // ⑥ Value: keep Segment → Category leading, THEN geo
+    else OPS_ORD[sec]=[primary,...nonGeo];});   // ④ Book→Done: scope grain leads (unchanged)
   OPS_ORD.avail=OPS_ORD.avail.filter(l=>!['city','clinic','doctor'].includes(l));}   // ③ Availability stays lean at every scope — City/Clinic/Doctor breakdown is opt-in via the ＋ ghosts (no auto breakdown)
 function opsDrill(container,recs,layers,depth,pad,kp,parentDisp){
   const dk=layers[depth],dim=OPSDIM[dk],last=depth===layers.length-1,groups={};
@@ -1958,7 +1963,7 @@ function buildDoctors(){DOCTORS=[];if(!QD)return;Object.keys(QD.clinics).forEach
   DOCTORS.sort((a,b)=>a.label.localeCompare(b.label));}
 function scopeOptions(s){
   if(s==='city')return [...TRACKED_CITY].filter(c=>c!==NOCITY_LAB).sort().map(c=>({k:c,label:c,tier:tierOf(c)}));
-  if(s==='clinic')return Object.keys(DATASETS.clinic.bk).filter(k=>k!=='_meta'&&k!==NOCITY_LAB&&isTracked(k.split('|')[0])&&mhPass(k.slice(k.indexOf('|')+1))).sort()
+  if(s==='clinic')return Object.keys(DATASETS.clinic.bk).filter(k=>k!=='_meta'&&k!==NOCITY_LAB&&isTracked(k.split('|')[0])&&mhPass(k.slice(k.indexOf('|')+1))&&!CLOSED.has(k.slice(k.indexOf('|')+1).toLowerCase())).sort()   // exclude permanently-closed localities from the scope picker too
     .map(k=>{const i=k.indexOf('|');return {k,label:k.slice(i+1),sub:k.slice(0,i),tier:tierOf(k.slice(0,i))};});   // tier = the clinic's city tier → enables the Tier-1/Tier-2 quick filter; MH-pilot filter narrows the list
   if(s==='doctor')return DOCTORS;
   return [];}
@@ -2006,7 +2011,8 @@ function setScope(s){SCOPE=s;
   if(VIEWM==='im'){['leadSection','lbSection','bkSection','opsSection'].forEach(id=>{const e=document.getElementById(id);if(e)e.style.display='none';});const s2=document.getElementById('imSection');if(s2)s2.style.display='';}}
 
 // merge online telehealth SC bookings (separate cube) into the offline bookings as an Online segment (tagged on:1).
-// Online has NO lead-maturity/medium (telehealth), but it DOES carry patient type — split booked by new / retry / relapse (ft_* / ret_rebook / ret_return).
+// Online has NO lead-maturity/medium (telehealth), but it DOES carry patient type — split booked by new / relapse (ft_* / ret_return).
+// RETRY (ret_rebook) is EXCLUDED so ② online = new+relapse = node.booked = ④ online = sheet (561/wk). Retries are re-attempts by patients who booked before but never completed — not new SC demand — and the sheet-tied 'booked' omits them.
 function mergeOnlineBookings(bk,onl){
   if(!onl||!onl.clinics||!onl._meta)return;
   const oi={};(onl._meta.weeks||[]).forEach((w,i)=>oi[w]=i);
@@ -2016,10 +2022,12 @@ function mergeOnlineBookings(bk,onl){
   for(const key in onl.clinics){const node=onl.clinics[key],bs=node.by_source||{};
     if(!bk[key])bk[key]={cells:[]};if(!bk[key].cells)bk[key].cells=[];
     for(const src in bs){const d=bs[src];if(!d)continue;const ch=SRC[src]||'Other';
-      const s1=d.ft_same||[],s2=d.ft_prev||[],s3=d.ft_nolead||[];
-      const nw=map.map(j=>j>=0?((s1[j]||0)+(s2[j]||0)+(s3[j]||0)):0);   // 1st-ever = ft_same+ft_prev+ft_nolead
-      const push=(pt,w)=>{if(w.some(x=>x))bk[key].cells.push({pt,ch,la:'na',md:'na',cmp:'na',cat:'na',on:1,w});};
-      push('new',nw); push('reattempt',rm(d.ret_rebook)); push('relapse',rm(d.ret_return));}
+      const AGES=['fresh','wk1','wk2_4','mo1_3','mo3','nolead'];
+      const hasAge=AGES.some(a=>d['ftm_'+a]);   // re-pulled cube carries the lead-age split of the 'new' (1st-ever) bookings
+      const push=(pt,la,w)=>{if(w.some(x=>x))bk[key].cells.push({pt,ch,la,md:'na',cmp:'na',cat:'na',on:1,w});};
+      if(hasAge)AGES.forEach(a=>push('new',a,rm(d['ftm_'+a])));   // 1st-ever split by lead maturity (fresh/wk1/…) — sums to the old ft total
+      else push('new','na',map.map(j=>j>=0?(((d.ft_same||[])[j]||0)+((d.ft_prev||[])[j]||0)+((d.ft_nolead||[])[j]||0)):0));   // pre-re-pull cube: no age split → single 'na' bucket
+      push('relapse','na',rm(d.ret_return));}   // relapse (returning patient) has no lead-age; retry (ret_rebook) still excluded so ② online ties to ④/sheet
   }
 }
 Promise.all([
@@ -2040,7 +2048,7 @@ Promise.all([
   ECOFF=ecoff; ECOFF_IDX={}; if(ecoff&&ecoff._meta&&ecoff._meta.weeks)ecoff._meta.weeks.forEach((w,i)=>ECOFF_IDX[w]=i);   // offline DONE-week economics (product-line meds/tests/therapy/consult per clinic) for ⑥ Value Metrics picker
   LOC2CITY=locCityMap(bk);   // clinic locality → its true city (for the mis-tag re-route)
   TRACKED_CITY=new Set(); Object.keys(bk).filter(k=>k!=='_meta').forEach(k=>{const c=k.split('|')[0];if(c&&!NONCITY.has(c))TRACKED_CITY.add(c);}); NEWCITY.forEach(c=>TRACKED_CITY.add(c));   // real op cities (+ new launches Indore/Rajkot), minus Online/Practo-online
-  OPLOC=new Set(); Object.keys(bk).filter(k=>k!=='_meta').forEach(k=>{const i=k.indexOf('|');if(i>=0){const loc=k.slice(i+1);if(loc)OPLOC.add(loc);}});   // operational clinic localities = the bookings cube's clinics (drops closed clinics that only have stray leads)
+  OPLOC=new Set(); Object.keys(bk).filter(k=>k!=='_meta').forEach(k=>{const i=k.indexOf('|');if(i>=0){const loc=k.slice(i+1);if(loc&&!CLOSED.has(loc.toLowerCase()))OPLOC.add(loc);}});   // operational clinic localities = the bookings cube's clinics (drops closed clinics that only have stray leads, plus explicitly-CLOSED localities)
   CITY2CLINICS={}; Object.keys(bk).filter(k=>k!=='_meta').forEach(k=>{const i=k.indexOf('|');if(i<0)return;const city=k.slice(0,i),loc=k.slice(i+1);if(!city||!loc)return;(CITY2CLINICS[city]=CITY2CLINICS[city]||new Set()).add(loc);});
   SINGLE_CLINIC_CITY={}; for(const c in CITY2CLINICS){if(CITY2CLINICS[c].size===1)SINGLE_CLINIC_CITY[c]=[...CITY2CLINICS[c]][0];}   // single-clinic city → its one clinic locality: city-only leads roll into that clinic (e.g. Bhopal → Gulmohar)
   SLUG2LOC={}; Object.keys(bk).filter(k=>k!=='_meta').forEach(k=>{const i=k.indexOf('|');if(i<0)return;const city=k.slice(0,i),loc=k.slice(i+1);SLUG2LOC[qnorm(loc)+'_'+qnorm(city)]=loc;});   // quick_diag slug → clinic locality name (for the ⑤ Done drill)
@@ -2074,7 +2082,9 @@ Promise.all([
     if(!wtd){DOWSEL=new Set([0,1,2,3,4,5,6]);document.querySelectorAll('#dowseg button').forEach(x=>x.classList.add('on'));}   // leaving week-to-date → clear the day filter so weekly/Σ are clean
     syncCmp();PL.open={};PB.open={};redrawAll();});
   document.querySelectorAll('#segseg button').forEach(b=>b.onclick=()=>{document.querySelectorAll('#segseg button').forEach(x=>x.classList.remove('on'));b.classList.add('on');SEG=b.dataset.g;syncSegLayer();PL.open={};PB.open={};renderLayerBar(PB);redrawAll();});   // toggle also adds/removes the ② Segment split (+ its layer chip)
-  document.querySelectorAll('#matseg button').forEach(b=>b.onclick=()=>{const m=b.dataset.m;if(MATF.has(m))MATF.delete(m);else MATF.add(m);b.classList.toggle('on',MATF.has(m));loadClinic();redrawAll();});   // clinic-age filter (multi-select buckets)
+  document.querySelectorAll('#matseg button').forEach(b=>b.onclick=()=>{const m=b.dataset.m;if(MATF.has(m))MATF.delete(m);else MATF.add(m);b.classList.toggle('on',MATF.has(m));
+    if(SCOPE==='clinic'){SEL.clinic.clear();if(MATF.size)scopeOptions('clinic').forEach(o=>{const cm=CLINIC_MAT[o.label];if(cm&&MATF.has(cm.b))SEL.clinic.add(o.k);});else ensureDefaultSel('clinic');renderPicker();}   // clinic scope: picking an age bucket auto-selects those clinics in the picker so you can add/remove individual ones (mirrors MH-pilot)
+    loadClinic();redrawAll();});   // clinic-age filter (multi-select buckets)
   document.querySelectorAll('#mhpilotw button').forEach(b=>b.onclick=()=>{MHF=!MHF;b.classList.toggle('on',MHF);
     if(SCOPE==='clinic'){SEL.clinic.clear();if(MHF)scopeOptions('clinic').forEach(o=>SEL.clinic.add(o.k));else ensureDefaultSel('clinic');}   // clinic scope: MH pilot on → select all 7 pilot clinics; off → re-default
     renderPicker();loadClinic();redrawAll();});

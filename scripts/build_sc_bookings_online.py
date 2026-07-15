@@ -50,6 +50,7 @@ paperform_qa AS (   -- patient's most-recent merged-Rx diagnosis → category (s
 sc_online AS (
   SELECT apt.patient_id,
     date_trunc('week', apt.start_time + interval '5.5 hours')::date AS week_start,
+    date(apt.created_at + interval '5.5 hours') AS book_crt,   -- booking-made date (for lead-age bucketing, matches offline ②)
     apt.status, COALESCE(pro.name,'—') AS doctor,
     COALESCE(dl.city,'Online') AS city, COALESCE(dl.locality,'Online') AS locality,
     COALESCE(pf.diag_cat,'oth') AS diagnosis,
@@ -63,7 +64,7 @@ sc_online AS (
     AND apt.location_id IN ({TELE})   -- ONLINE = the 2 telehealth location UUIDs (sheet definition); city/locality from the doctor's block that day (dl), else 'Online'
 ),
 lead_first AS (
-  SELECT patient_id, date_trunc('week', lead_crt)::date AS lead_week,
+  SELECT patient_id, lead_crt, date_trunc('week', lead_crt)::date AS lead_week,
     CASE
       WHEN lower(temp) IN ('directwalkin','googlelisting','googleslisting','gmb') THEN 'GMB'
       WHEN lower(temp)='google' THEN 'Google'
@@ -91,6 +92,14 @@ patient_comp AS (
 base AS (
   SELECT b.patient_id, b.doctor, b.city, b.locality, b.week_start, b.attempt_rnk, b.diagnosis,
     lf.lead_week, COALESCE(lf.source_bucket,'Direct / none') AS source_bucket, pc.first_comp_wk,
+    CASE   -- lead-age bucket (days from lead → booking-made), matches the offline ② episode cube's lead_age
+      WHEN lf.lead_crt IS NULL THEN 'nolead'
+      WHEN DATEDIFF(day, lf.lead_crt, b.book_crt) < 0  THEN 'nolead'
+      WHEN DATEDIFF(day, lf.lead_crt, b.book_crt) <= 6  THEN 'fresh'
+      WHEN DATEDIFF(day, lf.lead_crt, b.book_crt) <= 13 THEN 'wk1'
+      WHEN DATEDIFF(day, lf.lead_crt, b.book_crt) <= 27 THEN 'wk2_4'
+      WHEN DATEDIFF(day, lf.lead_crt, b.book_crt) <= 89 THEN 'mo1_3'
+      ELSE 'mo3' END AS lead_age,
     CASE WHEN b.status IN ('COMPLETED','RECONSULTED') THEN 1 ELSE 0 END AS done_flag
   FROM sc_online b
   LEFT JOIN lead_first lf ON lf.patient_id=b.patient_id
@@ -98,7 +107,7 @@ base AS (
   WHERE b.week_start >= '{START_WK}'
 ),
 bpw AS (
-  SELECT patient_id, doctor, city, locality, source_bucket, week_start, attempt_rnk, diagnosis, lead_week, first_comp_wk, done_any FROM (
+  SELECT patient_id, doctor, city, locality, source_bucket, week_start, attempt_rnk, diagnosis, lead_week, lead_age, first_comp_wk, done_any FROM (
     SELECT base.*,
       MAX(done_flag) OVER (PARTITION BY patient_id, week_start, city, locality) AS done_any,
       row_number() OVER (PARTITION BY patient_id, week_start, city, locality ORDER BY attempt_rnk ASC) AS wk_rnk
@@ -114,7 +123,14 @@ SELECT city, locality, doctor, source_bucket, week_start, diagnosis,
   count(distinct case when attempt_rnk=1 and (lead_week is null or lead_week>week_start) then patient_id end) AS ft_nolead,
   count(distinct case when attempt_rnk>1 then patient_id end) AS repeat_,
   count(distinct case when attempt_rnk>1 and first_comp_wk is not null and first_comp_wk<week_start then patient_id end) AS ret_return,
-  count(distinct case when attempt_rnk>1 and (first_comp_wk is null or first_comp_wk>=week_start) then patient_id end) AS ret_rebook
+  count(distinct case when attempt_rnk>1 and (first_comp_wk is null or first_comp_wk>=week_start) then patient_id end) AS ret_rebook,
+  -- NEW (attempt_rnk=1 = 1st-ever) split by lead-age maturity bucket; these six sum to ft_same+ft_prev+ft_nolead (the 'new' total)
+  count(distinct case when attempt_rnk=1 and lead_age='fresh'  then patient_id end) AS ftm_fresh,
+  count(distinct case when attempt_rnk=1 and lead_age='wk1'    then patient_id end) AS ftm_wk1,
+  count(distinct case when attempt_rnk=1 and lead_age='wk2_4'  then patient_id end) AS ftm_wk2_4,
+  count(distinct case when attempt_rnk=1 and lead_age='mo1_3'  then patient_id end) AS ftm_mo1_3,
+  count(distinct case when attempt_rnk=1 and lead_age='mo3'    then patient_id end) AS ftm_mo3,
+  count(distinct case when attempt_rnk=1 and lead_age='nolead' then patient_id end) AS ftm_nolead
 FROM bpw GROUP BY 1,2,3,4,5,6 ORDER BY 1,2,3,4,5,6;
 """
 
@@ -131,14 +147,15 @@ def main():
     weeks = sorted({r[4] for r in rows})
     widx = {w: i for i, w in enumerate(weeks)}
     NW = len(weeks)
-    FIELDS = ["booked", "done", "ft_same", "ft_prev", "ft_nolead", "repeat", "ret_return", "ret_rebook"]
+    FIELDS = ["booked", "done", "ft_same", "ft_prev", "ft_nolead", "repeat", "ret_return", "ret_rebook",
+              "ftm_fresh", "ftm_wk1", "ftm_wk2_4", "ftm_mo1_3", "ftm_mo3", "ftm_nolead"]
     blank = lambda: {f: [0]*NW for f in FIELDS}
     clinics = {}
     for r in rows:
         city, loc, doctor, source, wk, cat = r[0], r[1], r[2], r[3], r[4], r[5]
         key = city + "|" + loc
         i = widx[wk]
-        vals = [int(v) for v in r[6:14]]
+        vals = [int(v) for v in r[6:20]]
         o = clinics.setdefault(key, blank())
         dd = o.setdefault("by_doctor", {}).setdefault(doctor, blank())
         ss = o.setdefault("by_source", {}).setdefault(source, blank())
