@@ -150,6 +150,12 @@ lead_attr AS (
       ELSE 'other' END AS medium,
     CASE WHEN LOWER(COALESCE(l.utm_campaign,''))='inbound_call'
          THEN RIGHT(REGEXP_REPLACE(COALESCE(l.utm_medium,''),'[^0-9]',''),10) ELSE '' END AS number,
+    CASE   -- CLUBBED campaign/number dim: call → ☎ number dialed ; paid google/fb → ad campaign name ; else blank
+      WHEN LOWER(COALESCE(l.utm_campaign,''))='inbound_call' THEN '☎ '||RIGHT(REGEXP_REPLACE(COALESCE(l.utm_medium,''),'[^0-9]',''),10)
+      WHEN (l.gclid IS NOT NULL AND l.gclid<>'') OR (LOWER(COALESCE(l.utm_source,''))='google' AND LOWER(COALESCE(l.utm_medium,'')) LIKE '%cpc%')
+           OR (l.fbclid IS NOT NULL AND l.fbclid<>'') OR (l.accumulated_fbclids IS NOT NULL AND l.accumulated_fbclids<>'')
+           OR LOWER(COALESCE(l.utm_source,'')) IN ('fb','facebook','meta','ig','instagram')
+        THEN COALESCE(NULLIF(l.utm_campaign,''),'(none)') ELSE '' END AS campaign,
     CASE WHEN COALESCE(l.source_url,'')<>'' THEN LEFT(REGEXP_REPLACE(COALESCE(l.source_url,''),'[?#].*$',''),90) ELSE '' END AS url,
     CASE WHEN cai.cat IN ('SEXUAL_HEALTH_GENERAL','STI','MENTAL_HEALTH') THEN 'in-scope'
          WHEN cai.cat='OTHER' THEN 'out-of-scope' ELSE 'unknown' END AS relevance,
@@ -189,8 +195,24 @@ lead_book AS (   -- ID JOIN: lead -> ITS patient's SC bookings (patient.lead_id 
 ),
 lead_pat AS (   -- verified-lead universe: a patient_id was created FROM this lead (patient.lead_id = lead.id). The funnel is now verified-only.
   SELECT DISTINCT lead_id AS lid FROM allo_persons.patient WHERE deleted_at IS NULL AND lead_id IS NOT NULL
+),
+called AS (   -- every phone that connected on an INBOUND lead-to-call (exotel) — ground truth for "did this person actually get on a call"
+  SELECT DISTINCT RIGHT(REGEXP_REPLACE("from",'[^0-9]',''),10) AS ph
+  FROM allo_vendors.exotel_calls WHERE routed_to='lead_to_call' AND direction='inbound' AND start_time >= '2025-11-01' AND "from" IS NOT NULL
+),
+pat_phone AS (   -- patient created from this lead → their phone (catches an ALTERNATE number, not just the lead's own phone)
+  SELECT lead_id AS lid, RIGHT(REGEXP_REPLACE(COALESCE(phone_no,''),'[^0-9]',''),10) AS ph
+  FROM allo_persons.patient WHERE deleted_at IS NULL AND lead_id IS NOT NULL
+),
+lead_conn AS (   -- per-lead: did the lead's OWN phone OR its patient's phone connect on a call? (MAX → one value per lead)
+  SELECT la.id, MAX(CASE WHEN cs.ph IS NOT NULL OR cp.ph IS NOT NULL THEN 1 ELSE 0 END) AS oncall
+  FROM lead_attr la
+  LEFT JOIN called cs ON cs.ph = la.ph
+  LEFT JOIN pat_phone pp ON pp.lid = la.id
+  LEFT JOIN called cp ON cp.ph = pp.ph
+  GROUP BY la.id
 )
-SELECT COALESCE(la.city,'— no city · online / untracked') AS city, COALESCE(la.locality,'') AS locality, la.channel, la.medium, la.number, la.url, la.relevance, la.intent, la.strength, la.category,
+SELECT COALESCE(la.city,'— no city · online / untracked') AS city, COALESCE(la.locality,'') AS locality, la.channel, la.medium, la.number, la.campaign, la.url, la.relevance, la.intent, la.strength, la.category,
   -- booked via the ID join (patient.lead_id): lag from lead created -> the lead's patient's earliest SC
   CASE WHEN lb.bd IS NULL THEN 'notbooked'
        WHEN DATEDIFF(day, la.created, lb.bd) < 0 THEN 'prior'
@@ -200,12 +222,14 @@ SELECT COALESCE(la.city,'— no city · online / untracked') AS city, COALESCE(l
   'y' AS verified,                                                      -- verified-only funnel (every row has a patient via lead_id)
   CASE WHEN lb.any_off=1 THEN 'offline' WHEN lb.any_onl=1 THEN 'online' ELSE 'none' END AS bkseg,   -- where the booked lead booked (offline priority)
   CASE WHEN lb.did_done=1 THEN 'done' ELSE 'notdone' END AS doneq,      -- the lead's patient completed an SC
+  CASE WHEN lc.oncall=1 THEN 'y' ELSE 'n' END AS oncall,                -- connected on a call? (lead OR patient phone in exotel inbound) — independent of medium/source
   la.created, COUNT(DISTINCT la.id) AS n
 FROM lead_attr la
   JOIN lead_pat lp ON lp.lid = la.id                                    -- verified-only (drops the ~1% unverified; 0 bookings among them)
   LEFT JOIN lead_book lb ON lb.lid = la.id
+  LEFT JOIN lead_conn lc ON lc.id = la.id
 WHERE la.channel IS NOT NULL AND la.ph <> ''
-GROUP BY 1,2,3,4,5,6,7,8,9,10,11,12,13,14,15 ORDER BY 1,3;
+GROUP BY 1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17 ORDER BY 1,3;
 """
 
 def run(sql, tries=4):
@@ -234,9 +258,9 @@ def main():
     rows = run(sql)
     cube = defaultdict(lambda: defaultdict(lambda: {'w': [0]*N, 'd': [0]*ND}))   # city -> key -> {weekly(27), daily(recent 8wk)}
     for r in rows:
-        if len(r) < 16:
+        if len(r) < 18:
             continue
-        city, loc, ch, md, num, url, rel, intent, strength, cat, status, vf, bkseg, doneq, created, n = r[:16]
+        city, loc, ch, md, num, campaign, url, rel, intent, strength, cat, status, vf, bkseg, doneq, oncall, created, n = r[:18]
         if ch not in CHANNELS:
             continue
         try:
@@ -244,7 +268,7 @@ def main():
         except Exception:
             continue
         n = int(n)
-        acc = cube[city][(loc, ch, md, num, url, rel, intent, strength, cat, status, vf, bkseg, doneq)]
+        acc = cube[city][(loc, ch, md, num, campaign, url, rel, intent, strength, cat, status, vf, bkseg, doneq, oncall)]
         if wkm in WI:
             acc['w'][WI[wkm]] += n
         if created in DI:
@@ -254,8 +278,8 @@ def main():
                      'note': 'Attributable leads by CITY. Each cell has weekly w[] (26 wks, aligned with bookings) + daily d[] '
                              '(recent 8 wks incl. the current partial week, for day-of-week / week-to-date comparison).'}}
     for city, cells in cube.items():
-        out[city] = {'cells': [{'loc': loc, 'ch': ch, 'md': md, 'num': num, 'url': url, 'rel': rel, 'int': it, 'istr': istr, 'cat': cat, 'bk': st, 'vf': vf, 'bkseg': seg, 'dq': dq, 'w': v['w'], 'd': v['d']}
-                               for (loc, ch, md, num, url, rel, it, istr, cat, st, vf, seg, dq), v in cells.items()]}
+        out[city] = {'cells': [{'loc': loc, 'ch': ch, 'md': md, 'num': num, 'cmp': cmp, 'url': url, 'rel': rel, 'int': it, 'istr': istr, 'cat': cat, 'bk': st, 'vf': vf, 'bkseg': seg, 'dq': dq, 'oc': oc, 'w': v['w'], 'd': v['d']}
+                               for (loc, ch, md, num, cmp, url, rel, it, istr, cat, st, vf, seg, dq, oc), v in cells.items()]}
     json.dump(out, open(os.path.join(ROOT, 'data_leads_city.json'), 'w'), separators=(',', ':'))
     n8 = min(8, N)
     for city in sorted(cube, key=lambda c: -sum(sum(v['w'][:n8]) for v in cube[c].values())):

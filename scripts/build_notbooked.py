@@ -106,6 +106,12 @@ lead_attr AS (
       ELSE 'call' END AS medium,
     CASE WHEN LOWER(COALESCE(l.utm_campaign,''))='inbound_call'   -- the exact number the caller dialed (exophone)
          THEN RIGHT(REGEXP_REPLACE(COALESCE(l.utm_medium,''),'[^0-9]',''),10) ELSE '' END AS number,
+    CASE   -- CLUBBED campaign/number dim: call → ☎ number dialed ; paid google/fb → ad campaign name ; else blank
+      WHEN LOWER(COALESCE(l.utm_campaign,''))='inbound_call' THEN '☎ '||RIGHT(REGEXP_REPLACE(COALESCE(l.utm_medium,''),'[^0-9]',''),10)
+      WHEN (l.gclid IS NOT NULL AND l.gclid<>'') OR (LOWER(COALESCE(l.utm_source,''))='google' AND LOWER(COALESCE(l.utm_medium,'')) LIKE '%cpc%')
+           OR (l.fbclid IS NOT NULL AND l.fbclid<>'') OR (l.accumulated_fbclids IS NOT NULL AND l.accumulated_fbclids<>'')
+           OR LOWER(COALESCE(l.utm_source,'')) IN ('fb','facebook','meta','ig','instagram')
+        THEN COALESCE(NULLIF(l.utm_campaign,''),'(none)') ELSE '' END AS campaign,
     CASE WHEN LOWER(COALESCE(l.utm_source,''))='gmb' AND ({CAMPLIKE})   -- GMB-web landing page (exact URL)
          THEN LEFT(REGEXP_REPLACE(COALESCE(l.source_url,''),'[?#].*$',''), 90) ELSE '' END AS url,
     CASE   -- RELEVANCE from the call's AI diagnosis category (per phone — a web lead whose phone also called keeps that audit, by design)
@@ -139,8 +145,25 @@ lead_book AS (   -- ID JOIN: lead -> ITS patient's SC bookings (patient.lead_id 
 ),
 lead_pat AS (   -- verified-lead universe: a patient_id was created FROM this lead. Funnel is verified-only.
   SELECT DISTINCT lead_id AS lid FROM allo_persons.patient WHERE deleted_at IS NULL AND lead_id IS NOT NULL
+),
+called AS (   -- every phone that connected on an INBOUND lead-to-call (exotel) — the ground truth for "did this person actually get on a call"
+  SELECT DISTINCT RIGHT(REGEXP_REPLACE("from",'[^0-9]',''),10) AS ph
+  FROM allo_vendors.exotel_calls WHERE routed_to='lead_to_call' AND direction='inbound' AND start_time >= '2025-11-01' AND "from" IS NOT NULL
+),
+pat_phone AS (   -- the patient created from this lead → their phone (catches an ALTERNATE number the patient used, not just the lead's own phone)
+  SELECT lead_id AS lid, RIGHT(REGEXP_REPLACE(COALESCE(phone_no,''),'[^0-9]',''),10) AS ph
+  FROM allo_persons.patient WHERE deleted_at IS NULL AND lead_id IS NOT NULL
+),
+lead_conn AS (   -- per-lead boolean: did the lead's OWN phone OR its patient's phone connect on a call? (MAX → one value per lead, no fan-out)
+  SELECT la.id,
+    MAX(CASE WHEN cs.ph IS NOT NULL OR cp.ph IS NOT NULL THEN 1 ELSE 0 END) AS oncall
+  FROM lead_attr la
+  LEFT JOIN called cs ON cs.ph = la.ph
+  LEFT JOIN pat_phone pp ON pp.lid = la.id
+  LEFT JOIN called cp ON cp.ph = pp.ph
+  GROUP BY la.id
 )
-SELECT la.created, la.channel, la.medium, la.number, la.url, la.relevance, la.intent, la.strength, la.category,
+SELECT la.created, la.channel, la.medium, la.number, la.campaign, la.url, la.relevance, la.intent, la.strength, la.category,
   CASE WHEN lb.bd IS NULL THEN 'notbooked'
        WHEN DATEDIFF(day, la.created, lb.bd) < 0 THEN 'prior'
        WHEN DATEDIFF(day, la.created, lb.bd) <= 6 THEN 'w0'
@@ -149,12 +172,14 @@ SELECT la.created, la.channel, la.medium, la.number, la.url, la.relevance, la.in
   'y' AS verified,                                                      -- verified-only funnel
   CASE WHEN lb.any_here=1 THEN 'offline' WHEN lb.any_onl=1 THEN 'online' ELSE 'none' END AS bkseg,
   CASE WHEN lb.did_done=1 THEN 'done' ELSE 'notdone' END AS doneq,
+  CASE WHEN lc.oncall=1 THEN 'y' ELSE 'n' END AS oncall,                -- connected on a call? (lead OR patient phone in exotel inbound) — independent of medium/source
   COUNT(DISTINCT la.id) AS n    -- distinct verified leads per week
 FROM lead_attr la
   JOIN lead_pat lp ON lp.lid = la.id                                    -- verified-only
   LEFT JOIN lead_book lb ON lb.lid = la.id
+  LEFT JOIN lead_conn lc ON lc.id = la.id
 WHERE la.channel IS NOT NULL AND la.ph <> ''
-GROUP BY 1,2,3,4,5,6,7,8,9,10,11,12,13 ORDER BY 1,2,3;
+GROUP BY 1,2,3,4,5,6,7,8,9,10,11,12,13,14,15 ORDER BY 1,2,3;
 """
 
 def run(sql, tries=4):
@@ -196,16 +221,16 @@ def main():
         cube = defaultdict(lambda: {'w': [0]*N, 'd': [0]*ND})   # key -> {weekly(26), daily(recent 8wk incl. current partial week)}
         node = {ch: {'leads': [0]*N, 'booked': [0]*N, 'notbooked': [0]*N} for ch in CHANNELS}
         for r in rows:
-            if len(r) < 14:
+            if len(r) < 16:
                 continue
-            created, ch, md, number, url, rel, intent, strength, cat, status, vf, bkseg, doneq, n = r[0], r[1], r[2], r[3], r[4], r[5], r[6], r[7], r[8], r[9], r[10], r[11], r[12], int(r[13])
+            created, ch, md, number, campaign, url, rel, intent, strength, cat, status, vf, bkseg, doneq, oncall, n = r[0], r[1], r[2], r[3], r[4], r[5], r[6], r[7], r[8], r[9], r[10], r[11], r[12], r[13], r[14], int(r[15])
             if ch not in node:
                 continue
             try:
                 wkm = wk_monday(created)
             except Exception:
                 continue
-            acc = cube[(ch, md, number, url, rel, intent, strength, cat, status, vf, bkseg, doneq)]
+            acc = cube[(ch, md, number, campaign, url, rel, intent, strength, cat, status, vf, bkseg, doneq, oncall)]
             if wkm in WI:
                 i = WI[wkm]
                 acc['w'][i] += n
@@ -213,8 +238,8 @@ def main():
                 node[ch]['notbooked' if status == 'notbooked' else 'booked'][i] += n   # lag buckets fold to ever-booked for data_notbooked.json
             if created in DI:
                 acc['d'][DI[created]] += n
-        leads[clinic] = {'cells': [{'ch': ch, 'md': md, 'num': num, 'url': url, 'rel': rel, 'int': intent, 'istr': istr, 'cat': cat, 'bk': st, 'vf': vf, 'bkseg': seg, 'dq': dq, 'w': v['w'], 'd': v['d']}
-                                   for (ch, md, num, url, rel, intent, istr, cat, st, vf, seg, dq), v in cube.items()]}
+        leads[clinic] = {'cells': [{'ch': ch, 'md': md, 'num': num, 'cmp': cmp, 'url': url, 'rel': rel, 'int': intent, 'istr': istr, 'cat': cat, 'bk': st, 'vf': vf, 'bkseg': seg, 'dq': dq, 'oc': oc, 'w': v['w'], 'd': v['d']}
+                                   for (ch, md, num, cmp, url, rel, intent, istr, cat, st, vf, seg, dq, oc), v in cube.items()]}
         nb[clinic] = node
         n8 = min(8, N)
         tot8 = sum(sum(node[ch]['leads'][:n8]) for ch in CHANNELS)
