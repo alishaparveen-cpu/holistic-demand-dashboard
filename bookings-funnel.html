@@ -836,11 +836,11 @@ function lbDimsForScope(){   // mirror the leads pivot: national → Attribution
 }
 let LB_LAYERS=['channel','medium'];   // ordered drill layers (default Source → Medium)
 // L→B drill metrics: which weekly rows to show per breakdown value (default % only). Leads = volume, Booked = same-week bookings.
-const LB_MET_DEFS=[['leads','Leads',false,'var(--accent)'],['rate','L→B % · same-wk',true,'#2C6CAE'],['booked','Booked · same-wk',false,'#2E7D5B']];
-let LB_METS={leads:false,rate:true,booked:false};
+const LB_MET_DEFS=[['leads','Leads',false,'var(--accent)'],['rate','L→B % · same-wk',true,'#2C6CAE'],['booked','Booked · same-wk (all)',false,'#2E7D5B'],['booked_off','Booked · offline',false,'#2E7D5B'],['booked_onl','Booked · online',false,'#7C5CBF']];
+let LB_METS={leads:false,rate:true,booked:false,booked_off:false,booked_onl:false};
 function appendLBMetricPicker(ll){const nsel=LB_MET_DEFS.filter(m=>LB_METS[m[0]]).length;
   const chip=document.createElement('div');chip.className='chip';chip.style.marginLeft='12px';
-  chip.innerHTML=`<span class="nm">Show metrics</span><span class="cnt">${nsel}/${LB_MET_DEFS.length}</span><span class="cv">▾</span>`;
+  chip.innerHTML=`<span class="nm">Metrics</span><span class="cnt">${nsel}/${LB_MET_DEFS.length}</span><span class="cv">▾</span>`;
   const pop=document.createElement('div');pop.className='pop';
   pop.innerHTML='<div class="pact"><button data-a="all">All</button><button data-a="none">None</button></div>'+LB_MET_DEFS.map(m=>`<label><input type="checkbox" data-k="${m[0]}" ${LB_METS[m[0]]?'checked':''}><span class="sw" style="background:${m[3]}"></span>${m[1]}</label>`).join('');
   chip.appendChild(pop);
@@ -892,13 +892,15 @@ function lbDrill(container,cells,depth,pathKey){
   const active=LB_MET_DEFS.filter(m=>LB_METS[m[0]]);const mets=active.length?active:[LB_MET_DEFS[1]];   // default → L→B % only
   arr.forEach(g=>{
     const gW=dv(g.lw),swWk=weekArr(g.cells.filter(c=>c.bkw0)),swW=dv(swWk),pct=gW.map((t,i)=>t?100*swW[i]/t:null),pv=pct.map(v=>v==null?0:v);
-    const ser={leads:gW,rate:pct,booked:swW},plot={leads:gW,rate:pv,booked:swW};   // rate row: display arr = pct (may be null → '·'), plot arr = pv
+    const swOffWk=weekArr(g.cells.filter(c=>c.bkw0&&c.bkseg==='offline')),swOnlWk=weekArr(g.cells.filter(c=>c.bkw0&&c.bkseg==='online'));
+    const rawFor={leads:g.lw,booked:swWk,booked_off:swOffWk,booked_onl:swOnlWk};   // raw weekArrs for the Σ (non-weekly) total
+    const ser={leads:gW,rate:pct,booked:swW,booked_off:dv(swOffWk),booked_onl:dv(swOnlWk)},plot={leads:gW,rate:pv,booked:swW,booked_off:dv(swOffWk),booked_onl:dv(swOnlWk)};   // rate row: display arr = pct (may be null → '·'), plot arr = pv
     const key=pathKey+'/'+dim+':'+g.k,expandable=depth<LB_LAYERS.length-1,open=LB_OPEN.has(key);
     mets.forEach((m,mi)=>{const[mk,mlab,isPct,mcol]=m,marr=ser[mk],mpv=plot[mk];
       const el=document.createElement('div');el.className='frow subr'+(isPct?' rate':'')+(WEEKLY?' wkly':'')+(mi===0&&expandable?' lbexp':'');el.style.paddingLeft=(15+depth*18+(mi>0?18:0))+'px';
       let rr;
       if(WEEKLY){const ix=wkIdxs(),dp=deltaPct(mpv);rr=ix.map((i,j)=>`<span class="wk${j===ix.length-1?' last':''}">${isPct?(gW[i]?Math.round(marr[i])+'%':'·'):(marr[i]||0)}</span>`).join('')+`<span class="delta ${dp.cls}">${dp.txt}</span>${bnCols(dp,isPct)}`;}
-      else rr=`<span class="barwrap"></span><span class="cnt">${isPct?(sumT(g.lw)?Math.round(100*sumT(swWk)/sumT(g.lw))+'%':'·'):sumT(mk==='booked'?swWk:g.lw)}</span><span class="pct"></span>`;
+      else rr=`<span class="barwrap"></span><span class="cnt">${isPct?(sumT(g.lw)?Math.round(100*sumT(swWk)/sumT(g.lw))+'%':'·'):sumT(rawFor[mk]||g.lw)}</span><span class="pct"></span>`;
       const chev=(mi===0)?(expandable?`<span class="chev">${open?'▾':'▶'}</span>`:'<span class="chev leaf">▶</span>'):'<span class="chev leaf"></span>';
       const lbl=(mi===0)?`<span class="lbdot" style="background:${lbValCol(dim,g.k)}"></span>${lbValLab(dim,g.k)}${mets.length>1?` <span class="lbvol">· ${mlab}</span>`:''}`:`<span class="lbsubmet">· ${mlab}</span>`;
       el.innerHTML=`${chev}<span class="lbl">${lbl}</span>`+rr+`<span class="zoom" title="plot trend">${ZSVG}</span>`;
