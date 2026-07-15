@@ -27,7 +27,7 @@ DI = {d: i for i, d in enumerate(DAYS)}; ND = len(DAYS)
 def wk_monday(dstr):
     d = datetime.date.fromisoformat(dstr)
     return (d - datetime.timedelta(days=d.weekday())).isoformat()
-CHANNELS = ['GMB', 'Google Ads', 'Meta', 'Practo', 'Organic', 'Organic · Blog', 'Other']
+CHANNELS = ['GMB', 'Google Ads', 'Meta', 'Practo', 'Organic', 'Organic · Blog', 'AI / Social', 'JustDial', 'Other']
 
 # number -> canonical city (from the GMB map) ; and URL/AI token -> canonical city
 GMAP = json.load(open(os.path.join(ROOT, 'data_gmb_number_clinic.json')))
@@ -137,7 +137,9 @@ lead_attr AS (
            OR LOWER(COALESCE(l.utm_source,'')) IN ('fb','facebook','meta','ig','instagram') THEN 'Meta'   -- FB click id catches click-to-WhatsApp leads re-tagged as organic (mid-Jun UTM change)
       WHEN LOWER(COALESCE(l.utm_source,'')) IN ('organic','blog','google') AND LOWER(COALESCE(l.source_url,'')) LIKE '%/blog/%' THEN 'Organic · Blog'   -- blog content-marketing = organic-family sub-source; kept in the Organic family so it can be combined back with Organic on demand
       WHEN LOWER(COALESCE(l.utm_source,'')) IN ('organic','blog','google') THEN 'Organic'
-      ELSE 'Other' END AS channel,
+      WHEN LOWER(COALESCE(l.utm_source,'')) IN ('chatgpt.com','youtube','moj') THEN 'AI / Social'   -- unfolded from Other: AI-assistant + social referrals
+      WHEN LOWER(COALESCE(l.utm_source,'')) IN ('justdial','jd') THEN 'JustDial'                     -- unfolded from Other
+      ELSE 'Other' END AS channel,   -- remaining Other = bare null-source / no-url direct-untracked records
     CASE
       WHEN LOWER(COALESCE(l.utm_campaign,''))='inbound_call' THEN 'call'
       WHEN LOWER(COALESCE(l.utm_source,''))='practo' THEN 'book'

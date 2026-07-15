@@ -75,6 +75,9 @@ cons_fee AS (SELECT c.id AS cons_id, MAX(ii.payable_amount::FLOAT/100) AS cons_a
   JOIN allo_billing.invoice_items ii ON ii.id=c.invoice_item_id AND ii.deleted_at IS NULL AND ii.type='consultation'
   JOIN allo_billing.invoices inv ON inv.id=ii.invoice_id AND inv.deleted_at IS NULL AND inv.status NOT IN ('created','cancelled')
   WHERE c.deleted_at IS NULL GROUP BY c.id),
+po_drug AS (SELECT DISTINCT encounter_id FROM allo_drugs.orders WHERE deleted_at IS NULL AND encounter_id IN (SELECT encounter_id FROM elig)),
+po_lab  AS (SELECT DISTINCT encounter_id FROM allo_labs.orders  WHERE deleted_at IS NULL AND encounter_id IN (SELECT encounter_id FROM elig)),
+po_ther AS (SELECT DISTINCT encounter_id FROM allo_consultations.orders WHERE deleted_at IS NULL AND consultation_id IN ('fe5b19b4-5961-4036-bc5f-fb1009a27d64','b4409f49-3c8c-11f1-98e1-028ca0e1d7cd') AND encounter_id IN (SELECT encounter_id FROM elig)),
 appt_level AS (
   SELECT ap.id AS ap_id,
     date_trunc('week', ap.start_time+INTERVAL '5.5 hours')::date AS week_start,
@@ -85,7 +88,10 @@ appt_level AS (
          WHEN typ.name='Follow Up'      THEN 'fu_online'
          ELSE 'other' END AS segment,
     MAX(COALESCE(iid.med_pbl,0)) AS med_amt, MAX(COALESCE(iil.test_pbl,0)) AS test_amt, MAX(COALESCE(iit.ther_pbl,0)) AS ther_amt, MAX(COALESCE(cf.cons_amt,0)) AS cons_amt,
-    CASE WHEN MAX(inv.inv_amt)>0 THEN 1 ELSE 0 END AS purchased_flag
+    CASE WHEN MAX(inv.inv_amt)>0 THEN 1 ELSE 0 END AS purchased_flag,
+    MAX(CASE WHEN pod.encounter_id IS NOT NULL THEN 1 ELSE 0 END) AS pres_drug_flag,
+    MAX(CASE WHEN pol.encounter_id IS NOT NULL THEN 1 ELSE 0 END) AS pres_lab_flag,
+    MAX(CASE WHEN pot.encounter_id IS NOT NULL THEN 1 ELSE 0 END) AS pres_ther_flag
   FROM allo_consultations.appointments ap JOIN current_range cr ON TRUE
   JOIN allo_consultations.types typ ON ap.type_id=typ.id AND typ.deleted_at IS NULL
   JOIN allo_persons.providers pro ON pro.id=ap.provider_id AND pro.deleted_at IS NULL
@@ -95,6 +101,7 @@ appt_level AS (
   LEFT JOIN paperform_qa pf ON pf.patient_id=ap.patient_id
   LEFT JOIN invoice_data inv ON inv.encounter_id=enc.id
   LEFT JOIN iid ON iid.encounter_id=enc.id LEFT JOIN iil ON iil.encounter_id=enc.id LEFT JOIN iit ON iit.encounter_id=enc.id LEFT JOIN cons_fee cf ON cf.cons_id=ap.consultation_id
+  LEFT JOIN po_drug pod ON pod.encounter_id=enc.id LEFT JOIN po_lab pol ON pol.encounter_id=enc.id LEFT JOIN po_ther pot ON pot.encounter_id=enc.id
   WHERE ap.deleted_at IS NULL AND ap.status IN ('COMPLETED','RECONSULTED')
     AND typ.name IN ('Screening Call','Follow Up') AND ap.consultation_id IS NOT NULL
     AND ap.location_id IN ({TELE})   -- ONLINE = the 2 telehealth location UUIDs (sheet definition; name-match undercounted per city)
@@ -103,7 +110,9 @@ appt_level AS (
 SELECT segment, city, locality, doctor, week_start, diagnosis,
   COUNT(*) AS done,
   SUM(purchased_flag) AS purchased,
-  ROUND(SUM(med_amt)) AS meds_val, ROUND(SUM(test_amt)) AS test_val, ROUND(SUM(ther_amt)) AS ther_val, ROUND(SUM(cons_amt)) AS cons_val
+  ROUND(SUM(med_amt)) AS meds_val, ROUND(SUM(test_amt)) AS test_val, ROUND(SUM(ther_amt)) AS ther_val, ROUND(SUM(cons_amt)) AS cons_val,
+  SUM(pres_drug_flag) AS meds_pres_cnt, SUM(pres_lab_flag) AS test_pres_cnt, SUM(pres_ther_flag) AS ther_pres_cnt,
+  SUM(CASE WHEN med_amt>0 THEN 1 ELSE 0 END) AS meds_purch_cnt, SUM(CASE WHEN test_amt>0 THEN 1 ELSE 0 END) AS test_purch_cnt, SUM(CASE WHEN ther_amt>0 THEN 1 ELSE 0 END) AS ther_purch_cnt
 FROM appt_level
 WHERE week_start >= DATE_TRUNC('week', DATEADD(month, -{MONTHS_BACK}, CURRENT_DATE))::date AND segment IN ('online_sc','fu_online')
 GROUP BY 1,2,3,4,5,6 ORDER BY 1,2,3,4,5,6;
@@ -120,7 +129,7 @@ def run(sql):
 def build(rows, seg, weeks):
     widx = {w: i for i, w in enumerate(weeks)}
     NW = len(weeks)
-    FIELDS = ["done", "purchased", "meds_val", "test_val", "ther_val", "cons_val"]
+    FIELDS = ["done", "purchased", "meds_val", "test_val", "ther_val", "cons_val", "meds_pres_cnt", "test_pres_cnt", "ther_pres_cnt", "meds_purch_cnt", "test_purch_cnt", "ther_purch_cnt"]
     blank = lambda: {f: [0]*NW for f in FIELDS}
     KEY = "Online|Online"
     clinics = {}
@@ -130,7 +139,7 @@ def build(rows, seg, weeks):
         city, loc, doctor, wk, cat = r[1], r[2], r[3], r[4], r[5]
         key = city + "|" + loc
         i = widx[wk]
-        vals = [int(float(x)) for x in r[6:12]]
+        vals = [int(float(x)) for x in r[6:18]]
         o = clinics.setdefault(key, blank())
         c = o.setdefault("by_cat", {}).setdefault(cat, blank())
         dd = o.setdefault("by_doctor", {}).setdefault(doctor, blank())
@@ -148,7 +157,7 @@ def main():
         clinics = build(rows, seg, weeks)
         out = {"_meta": {"weeks": weeks, "source": label,
                          "note": "Per-clinic online (city|locality via doctor's block that day); unresolved → 'Online|Online'. by_cat / by_doctor depth. Invoiced value at done week.",
-                         "fields": ["done", "purchased", "meds_val", "test_val", "ther_val", "cons_val"]},
+                         "fields": ["done", "purchased", "meds_val", "test_val", "ther_val", "cons_val", "meds_pres_cnt", "test_pres_cnt", "ther_pres_cnt", "meds_purch_cnt", "test_purch_cnt", "ther_purch_cnt"]},
                "clinics": clinics}
         json.dump(out, open(os.path.join(ROOT, fname), "w"), separators=(",", ":"))
         tot_done = sum(sum(o["done"]) for o in clinics.values())
