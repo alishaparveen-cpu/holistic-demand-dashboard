@@ -94,7 +94,9 @@ lead_attr AS (
                OR LOWER(COALESCE(l.utm_source,'')) IN ('fb','facebook','meta','ig','instagram') THEN 'Meta'   -- FB click id (click-to-WhatsApp leads re-tagged organic)
           WHEN LOWER(COALESCE(l.utm_source,'')) IN ('organic','blog','google') AND LOWER(COALESCE(l.source_url,'')) LIKE '%/blog/%' THEN 'Organic · Blog'   -- blog content-marketing = organic-family sub-source (matches city cube)
           WHEN LOWER(COALESCE(l.utm_source,'')) IN ('organic','blog','google') THEN 'Organic'   -- organic-google (no gclid/cpc) lands here
-          ELSE 'Other' END                 -- justdial, referral, direct, untracked — folded into Other
+          WHEN LOWER(COALESCE(l.utm_source,'')) IN ('chatgpt.com','youtube','moj') THEN 'AI / Social'   -- unfolded from Other
+          WHEN LOWER(COALESCE(l.utm_source,'')) IN ('justdial','jd') THEN 'JustDial'                     -- unfolded from Other
+          ELSE 'Other' END                 -- remaining Other = referral / direct / bare-untracked
     END AS channel,
     CASE   -- medium: blog/wa-outbound first ; GMB call/web ; inbound calls ; Practo book vs web ; else caller
       WHEN LOWER(COALESCE(l.utm_medium,''))='whatsapp' AND LOWER(COALESCE(l.utm_campaign,''))='outbound' THEN 'wa_outbound'   -- WhatsApp outbound-template flow (blog now on source axis; matches city cube)
@@ -172,7 +174,7 @@ def run(sql, tries=4):
         return [l.split('\t') for l in p.stdout.splitlines() if l.strip()]
     sys.exit('query failed after %d timeouts' % tries)
 
-CHANNELS = ['GMB', 'Google Ads', 'Meta', 'Practo', 'Organic', 'Organic · Blog', 'Other']
+CHANNELS = ['GMB', 'Google Ads', 'Meta', 'Practo', 'Organic', 'Organic · Blog', 'AI / Social', 'JustDial', 'Other']
 def main():
     note = ('GMB=clinic GMB number/campaign (call+web). Everyone else = a caller whose AI-audit named THIS clinic '
             '(is_our_locality), attributed by the lead\'s real source: Google Ads(paid), Organic, Meta, Practo, '
