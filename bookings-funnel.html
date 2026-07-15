@@ -606,7 +606,7 @@ function makeP(cfg){const P={mode:cfg.mode,dims:cfg.dims,order:[...cfg.order],bu
   P.dims.forEach(dk=>{P.sel[dk]=new Set(DIMS[dk].values.map(v=>v.k));});return P;}
 const PL=makeP({mode:'leads',dims:['citygroup','city','clinic','channel','medium','number','intent','strength','category','status','verified','doneq'],order:['channel','medium'],build:buildLeadCells,hero:'attributable leads',
   els:{flow:$('flowL'),bar:$('barL'),heroN:$('heroNL'),heroL:$('heroLL'),hHdr:$('hHdrL'),hRight:$('hRightL')}});
-const PB=makeP({mode:'bookings',dims:['seg','city','clinic','brank','relapse','channel','maturity','medium','category','campaign'],order:['seg','channel','maturity','medium'],build:buildCells,hero:'SC bookings',   // dropped ptype + full drank; booking rank + lead maturity are the core lifecycle axes; 'relapse' = a simple opt-in 2-way returning-patient split
+const PB=makeP({mode:'bookings',dims:['seg','city','clinic','brank','relapse','channel','maturity','medium','category','campaign'],order:['seg','maturity','relapse','channel','medium'],build:buildCells,hero:'SC bookings',   // default: Segment → Lead maturity → Repeat/relapse → (geo) → Source → Medium; booking rank + call category + campaign are opt-in ghosts
   els:{flow:$('flowB'),bar:$('barB'),heroN:$('heroNB'),heroL:$('heroLB'),hHdr:$('hHdrB'),hRight:$('hRightB')}});
 
 // exact numbers dialed under a call node (shown inline when expanded) — so you see WHICH numbers, incl. organic
@@ -1305,26 +1305,37 @@ const VAL_METS=[
   {key:'rpcTest',lab:'RPC · tests ₹',                     slab:'RPC · tests',      num:'test', den:'done', col:'#3E7CB1'},
   {key:'rpcTher',lab:'RPC · therapy ₹',                   slab:'RPC · therapy',    num:'ther', den:'done', col:'#8257C4'},
   {key:'rpcAll', lab:'RPC · with consult fee ₹',          slab:'RPC · incl consult',num:'revAll',den:'done', col:'#1F6F5C'},
+  // Done → Prescribed → Purchased funnel (per product line): calls prescribed · % of done prescribed · % of prescribed that purchased
+  {key:'medsPres',   lab:'Meds · calls prescribed',            slab:'meds presc',     field:'mPresCnt', col:'#B07A3E'},
+  {key:'medsPresPct',lab:'Meds · prescribed % (of done)',      slab:'meds presc %',   num:'mPresCnt',den:'done',    pct:true, col:'#B07A3E'},
+  {key:'medsConvPct',lab:'Meds · purchased % (of prescribed)', slab:'meds conv %',    num:'mPurCnt', den:'mPresCnt',pct:true, col:'#B07A3E'},
+  {key:'testPres',   lab:'Tests · calls prescribed',           slab:'tests presc',    field:'tPresCnt', col:'#3E7CB1'},
+  {key:'testPresPct',lab:'Tests · prescribed % (of done)',     slab:'tests presc %',  num:'tPresCnt',den:'done',    pct:true, col:'#3E7CB1'},
+  {key:'testConvPct',lab:'Tests · purchased % (of prescribed)',slab:'tests conv %',   num:'tPurCnt', den:'tPresCnt',pct:true, col:'#3E7CB1'},
+  {key:'therPres',   lab:'Therapy · calls prescribed',         slab:'ther presc',     field:'hPresCnt', col:'#8257C4'},
+  {key:'therPresPct',lab:'Therapy · prescribed % (of done)',   slab:'ther presc %',   num:'hPresCnt',den:'done',    pct:true, col:'#8257C4'},
+  {key:'therConvPct',lab:'Therapy · purchased % (of prescribed)',slab:'ther conv %',  num:'hPurCnt', den:'hPresCnt',pct:true, col:'#8257C4'},
 ];
 let VAL_MET_OFF=new Set(VAL_METS.filter(m=>!['purTot','d2p','revAll','rpcProd'].includes(m.key)).map(m=>m.key));   // default shown: Purchased · D2P · Revenue total · RPC products
 // ⑥ Value recs — one per unit × top-category (product-line meds/tests/therapy split BY category, from the econ by_cat).
 // A '(no category)' remainder reconciles each unit back to its sheet-tied totals, so Σ ties whether or not Category is a layer.
-function opsValMetRecs(units){const out=[],N=WEEKS.length;
+const VAL_CF=['done','pur','meds','test','ther','cons','mPresCnt','tPresCnt','hPresCnt','mPurCnt','tPurCnt','hPurCnt'];   // rec fields carried through the ⑥ value drill (vals + prescribed/purchased counts per line)
+function opsValMetRecs(units){const out=[],N=WEEKS.length,zeros=()=>new Array(N).fill(0);
   (units||opsUnits()).forEach(u=>{const align=u.online?oneAlign:econAlign,ec=u.ecRaw;
-    const mk=(cat,done,pur,meds,test,ther,cons)=>{const revTP=meds.map((v,i)=>(v||0)+(test[i]||0)+(ther[i]||0)),revAll=revTP.map((v,i)=>v+(cons[i]||0));
-      return {online:!!u.online,city:u.city,loc:u.loc,doctor:u.doctor||u.label,cat,done,pur,meds,test,ther,cons,revTP,revAll};};
-    const uDone=u.al(u.done),uPur=u.pur||[],uMeds=u.vMeds||[],uTest=u.vTest||[],uTher=u.vTher||[],uCons=u.vCons||[];
+    const mk=(cat,o)=>{const revTP=o.meds.map((v,i)=>(v||0)+(o.test[i]||0)+(o.ther[i]||0)),revAll=revTP.map((v,i)=>v+(o.cons[i]||0));
+      return Object.assign({online:!!u.online,city:u.city,loc:u.loc,doctor:u.doctor||u.label,cat,revTP,revAll},o);};
+    const uTot={done:u.al(u.done),pur:u.pur||[],meds:u.vMeds||[],test:u.vTest||[],ther:u.vTher||[],cons:u.vCons||[]};VAL_CF.slice(6).forEach(f=>uTot[f]=zeros());
     if(ec&&ec.by_cat&&Object.keys(ec.by_cat).length){
-      const acc={},S={done:new Array(N).fill(0),pur:new Array(N).fill(0),meds:new Array(N).fill(0),test:new Array(N).fill(0),ther:new Array(N).fill(0),cons:new Array(N).fill(0)};
-      for(const sub in ec.by_cat){const bc=ec.by_cat[sub],top=SUBCAT2TOP[sub]||sub;
-        const a=(acc[top]=acc[top]||{done:new Array(N).fill(0),pur:new Array(N).fill(0),meds:new Array(N).fill(0),test:new Array(N).fill(0),ther:new Array(N).fill(0),cons:new Array(N).fill(0)});
-        const add=(dst,ssum,arr)=>{const al=align(arr);for(let i=0;i<N;i++){const x=al[i]||0;dst[i]+=x;ssum[i]+=x;}};
-        add(a.done,S.done,bc.done);add(a.pur,S.pur,bc.purchased);add(a.meds,S.meds,bc.meds_val);add(a.test,S.test,bc.test_val);add(a.ther,S.ther,bc.ther_val);add(a.cons,S.cons,bc.cons_val);}
-      for(const top in acc){const a=acc[top];out.push(mk(top,a.done,a.pur,a.meds,a.test,a.ther,a.cons));}
-      const rem=(uA,sA)=>uA.map((v,i)=>(v||0)-(sA[i]||0));   // reconcile to the unit's sheet-tied totals
-      const rD=rem(uDone,S.done),rP=rem(uPur,S.pur),rM=rem(uMeds,S.meds),rT=rem(uTest,S.test),rH=rem(uTher,S.ther),rC=rem(uCons,S.cons);
-      if([rD,rP,rM,rT,rH,rC].some(a=>a.some(x=>Math.abs(x)>1e-6)))out.push(mk('(no category)',rD,rP,rM,rT,rH,rC));
-    }else out.push(mk('(no category)',uDone,uPur,uMeds,uTest,uTher,uCons));   // doctor / no-econ unit → single bucket
+      const acc={},S={};VAL_CF.forEach(f=>S[f]=zeros());
+      for(const sub in ec.by_cat){const bc=ec.by_cat[sub],top=SUBCAT2TOP[sub]||sub;const a=acc[top]||(acc[top]={});VAL_CF.forEach(f=>{if(!a[f])a[f]=zeros();});
+        const add=(f,arr)=>{const al=align(arr||[]);for(let i=0;i<N;i++){const x=al[i]||0;a[f][i]+=x;S[f][i]+=x;}};
+        add('done',bc.done);add('pur',bc.purchased);add('meds',bc.meds_val);add('test',bc.test_val);add('ther',bc.ther_val);add('cons',bc.cons_val);
+        add('mPresCnt',bc.meds_pres_cnt);add('tPresCnt',bc.test_pres_cnt);add('hPresCnt',bc.ther_pres_cnt);add('mPurCnt',bc.meds_purch_cnt);add('tPurCnt',bc.test_purch_cnt);add('hPurCnt',bc.ther_purch_cnt);}
+      for(const top in acc)out.push(mk(top,acc[top]));
+      const rem={};let any=false;['done','pur','meds','test','ther','cons'].forEach(f=>{rem[f]=uTot[f].map((v,i)=>(v||0)-(S[f][i]||0));if(rem[f].some(x=>Math.abs(x)>1e-6))any=true;});
+      VAL_CF.slice(6).forEach(f=>rem[f]=zeros());   // counts have no unit-total → no remainder
+      if(any)out.push(mk('(no category)',rem));
+    }else{const o={};VAL_CF.forEach(f=>o[f]=(uTot[f]&&uTot[f].length)?uTot[f]:zeros());out.push(mk('(no category)',o));}   // doctor / no-econ → single bucket (counts 0)
   });return out;}
 function valStage(m){return m.field?{lab:m.slab||m.lab,f:m.field,col:m.col}:{lab:m.slab||m.lab,rate:[m.num,m.den],pct:!!m.pct,col:m.col};}
 function appendValMetricPicker(ll){const nsel=VAL_METS.filter(m=>!VAL_MET_OFF.has(m.key)).length;
@@ -1959,7 +1970,7 @@ function setScope(s){SCOPE=s;
   const geoL = s==='national' ? ['citygroup','city','clinic'] : s==='city' ? ['city','clinic'] : s==='clinic' ? ['clinic'] : [];
   const geoB = s==='national' ? ['city']             : s==='city' ? ['city','clinic'] : s==='clinic' ? ['clinic'] : [];
   PL.order = [...geoL,'channel','medium','category'];   // leads default drill: (Attribution →) City → Clinic → Channel → Medium → Call category
-  PB.order = [...geoB,'brank','maturity','channel','medium'];   // booking rank → lead maturity → source → medium (dropped patient-type/done-rank)
+  PB.order = ['maturity','relapse',...geoB,'channel','medium'];   // default: (Segment→) Lead maturity → Repeat/relapse → City → Clinic → Source → Medium (booking rank + call category + campaign are opt-in ghosts)
   syncSegLayer();   // prepend Segment (Offline/Online) as the top split ONLY in Both view — Offline/Online toggle scopes the whole section instead
   ensureDefaultSel(s);
   syncDoneOrder();   // refresh ⑤ Done layer order with this scope's geo dims (AFTER selection so doctor/clinic count is known)
