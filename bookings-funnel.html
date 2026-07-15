@@ -1652,7 +1652,7 @@ const IM_NEST_DEFS={
   maturity:{lab:'Lead maturity', vals:[['fresh','fresh'],['wk1','1wk'],['wk2_4','2–4wk'],['mo1_3','1–3mo'],['mo3','3mo+'],['nolead','no lead']], field:{bookings:'age',done:'age'}},
   brank:{lab:'Booking rank', vals:[['1st','1st-ever'],['2nd','2nd'],['3rd','3rd'],['4pl','4th+']], field:{bookings:'brank',done:'brank'}},
 };
-let IM_NEST=['clinic','channel','medium'];   // layer chain (like the full funnel), pre-populated: City→Clinic→Source→Medium. Every chip has a ▾ value multiselect + drag reorder + × remove + ＋ ghosts. 'clinic' = the City→Clinic drill as a real chip.
+let IM_NEST=[];   // NO global row layers — per-metric layers live in each column's ▾ popup (imCfgBar). Rows are just City → Clinic.
 let IM_NEST_SEL={};   // per-nest-dim Set of EXCLUDED (unchecked) values — the full-funnel-style ▾ value multiselect. Absent/empty = all values shown.
 let imNestDrag=null;
 function imNodeCells(ent,path){const cells={};let prim=0;   // path = [{dim,val}] accumulated nest filters
@@ -1666,13 +1666,21 @@ function imClinicRow(c){const r=imNodeCells(c,[]);return {c,cells:r.cells,bkNow:
 function imPassStages(row){return imVisibleStages().every(sk=>{const S=IM_SRAG[sk];return !S||!S.size||S.has(row.cells[sk].rag);});}
 // customise-a-stage bar: pick the variant metric + which layers (source / medium / category / maturity / rank) to include for that stage
 function imCfgBar(){const bar=document.getElementById('imCfgBar');if(!bar)return;
-  const spec=IM_POP&&IM_STAGE_CFG[IM_POP];
-  if(!spec||spec.variants.length<=1){bar.style.display='none';bar.innerHTML='';if(IM_POP&&(!spec||spec.variants.length<=1))IM_POP=null;return;}   // layers moved to the unified 'Break rows' bar; popup is now just the metric-variant switch (only stages that HAVE variants)
-  const sk=IM_POP,def=imStageDef(sk),cur=imCfgVariant(sk);
+  if(!IM_POP||!IM_STAGE_CFG[IM_POP]){bar.style.display='none';bar.innerHTML='';return;}
+  const sk=IM_POP,spec=IM_STAGE_CFG[sk],def=imStageDef(sk),cfg=IM_CFG[sk]||{},cur=imCfgVariant(sk),cut=cfg.cut||{};
   bar.style.display='';
-  bar.innerHTML=`<div class="imcfghd">Show <b>${def.lab}</b> as <button class="imcfgx" title="close">✕</button></div><div class="imcfgrow">${spec.variants.map(([v,l])=>`<button class="imchip cfgv${cur===v?' on':''}" data-v="${v}">${l}</button>`).join('')}</div>`;
+  let h=`<div class="imcfghd">Customise <b>${def.lab}</b> <span class="imhint">— this metric’s own layers (like the full funnel); tick values to filter it (multi-select = OR; ‘all’ = whole stage). Each metric is independent.</span><button class="imcfgx" title="close">✕</button></div>`;
+  if(spec.variants.length>1)h+=`<div class="imcfgrow"><span class="imcutlab">Show as</span>${spec.variants.map(([v,l])=>`<button class="imchip cfgv${cur===v?' on':''}" data-v="${v}">${l}</button>`).join('')}</div>`;
+  spec.cuts.forEach(cd=>{const sel=cut[cd.dim]||[];h+=`<div class="imcfgrow"><span class="imcutlab">${cd.lab}</span><button class="imchip cfgc${!sel.length?' on':''}" data-d="${cd.dim}" data-v="__all">all</button>${cd.vals.map(([v,l])=>`<button class="imchip cfgc${sel.includes(v)?' on':''}" data-d="${cd.dim}" data-v="${v}">${l}</button>`).join('')}</div>`;});
+  if(!spec.cuts.length&&spec.variants.length<=1)h+=`<div class="imcfgrow"><span class="imhint">This metric has no extra layers.</span></div>`;
+  if(imCfgConfigured(sk))h+=`<div class="imcfgrow"><button class="imchip cfgreset">↺ reset this metric</button></div>`;
+  bar.innerHTML=h;
   bar.querySelector('.imcfgx').onclick=()=>{IM_POP=null;imRender();};
-  bar.querySelectorAll('.cfgv').forEach(b=>b.onclick=()=>{(IM_CFG[sk]=IM_CFG[sk]||{}).v=b.dataset.v;imRender();});}
+  bar.querySelectorAll('.cfgv').forEach(b=>b.onclick=()=>{(IM_CFG[sk]=IM_CFG[sk]||{}).v=b.dataset.v;imRender();});
+  bar.querySelectorAll('.cfgc').forEach(b=>b.onclick=()=>{const d=b.dataset.d,v=b.dataset.v,C=IM_CFG[sk]=IM_CFG[sk]||{},ct=C.cut=C.cut||{};
+    if(v==='__all')delete ct[d];else{const a=ct[d]=ct[d]||[],i=a.indexOf(v);if(i<0)a.push(v);else a.splice(i,1);if(!a.length)delete ct[d];}
+    if(!Object.keys(ct).length)delete C.cut;imRender();});
+  const rs=bar.querySelector('.cfgreset');if(rs)rs.onclick=()=>{delete IM_CFG[sk];imRender();};}
 function imRender(){const sec=document.getElementById('imSection');if(!sec||sec.style.display==='none')return;
   const cmL=({last:'last wk',first:'first wk',peak:'peak',avg:'avg'})[CMP]||CMP;
   // entity grain follows scope (opsUnitsOffline already applies scope + top Clinic-age); each entity's funnel is filtered by the per-stage colour conditions
@@ -1687,8 +1695,8 @@ function imRender(){const sec=document.getElementById('imSection');if(!sec||sec.
   const VIS=imVisibleStages();   // stages shown for this grain (doctor scope hides leads/bookings/value)
   const head=document.getElementById('imHead');head.className='imdghdr';
   head.innerHTML=`<span class="lbl">${grainLbl} · Δ vs ${cmL}</span>`
-    +VIS.map(sk=>{const S=IM_SRAG[sk]||new Set(),cfgOn=imCfgConfigured(sk),open=IM_POP===sk,hasVar=(IM_STAGE_CFG[sk]&&IM_STAGE_CFG[sk].variants.length>1);
-      return `<div class="imcolhd${open?' cfgopen':''}" data-sk="${sk}" draggable="true"><span class="cl" title="drag to reorder">${imCfgLabel(sk)}${hasVar?` <span class="imcfgtog${cfgOn?' set':''}" data-cfg="${sk}" title="switch metric">▾</span>`:''}</span><div class="imdots">${['r','o','y','g'].map(k=>`<button class="fdot${S.has(k)?' on':''}" data-sk="${sk}" data-k="${k}" title="${{r:'big drop ≥'+IM_RED+'%',o:'drop ≥'+IM_ORANGE+'%',y:'small drop',g:'up / flat'}[k]}"><i class="rag ${k}"></i></button>`).join('')}</div></div>`;}).join('');
+    +VIS.map(sk=>{const S=IM_SRAG[sk]||new Set(),cfgOn=imCfgConfigured(sk),open=IM_POP===sk,cfg=IM_STAGE_CFG[sk],hasVar=cfg&&(cfg.variants.length>1||cfg.cuts.length>0);
+      return `<div class="imcolhd${open?' cfgopen':''}" data-sk="${sk}" draggable="true"><span class="cl" title="drag to reorder">${imCfgLabel(sk)}${hasVar?` <span class="imcfgtog${cfgOn?' set':''}" data-cfg="${sk}" title="customise this metric (layers)">▾</span>`:''}</span><div class="imdots">${['r','o','y','g'].map(k=>`<button class="fdot${S.has(k)?' on':''}" data-sk="${sk}" data-k="${k}" title="${{r:'big drop ≥'+IM_RED+'%',o:'drop ≥'+IM_ORANGE+'%',y:'small drop',g:'up / flat'}[k]}"><i class="rag ${k}"></i></button>`).join('')}</div></div>`;}).join('');
   head.querySelectorAll('.imcfgtog').forEach(b=>b.onclick=(e)=>{e.stopPropagation();IM_POP=(IM_POP===b.dataset.cfg)?null:b.dataset.cfg;imRender();});
   head.querySelectorAll('.fdot').forEach(b=>b.onclick=(e)=>{e.stopPropagation();const sk=b.dataset.sk,k=b.dataset.k,S=IM_SRAG[sk]=IM_SRAG[sk]||new Set();if(S.has(k))S.delete(k);else S.add(k);if(!S.size)delete IM_SRAG[sk];imRender();});
   head.querySelectorAll('.imcolhd').forEach(h=>{h.ondragstart=()=>{IM_DRAGS=h.dataset.sk;};
@@ -1702,12 +1710,7 @@ function imRender(){const sec=document.getElementById('imSection');if(!sec||sec.
   const cellHTML=(cell,sk)=>{const dp=cell.dp,cls=cell.inherited?'rx im-inh':({r:'rr',o:'ro',y:'ry',g:'rg'}[cell.rag]||'rx'),now=cell.pct?(dp?Math.round(dp.now)+'%':'·'):fmtOps(dp?(dp.now||0):0);
     return `<div class="imcell ${cls}" data-sk="${sk}" title="${cell.inherited?'total — this stage doesn’t split by this layer':'click to plot '+imCfgLabel(sk)+' over time'}">${dp?dp.txt:'—'}<small>${now}</small>${cell.inherited?'':ZM}</div>`;};
   // what a node expands into next: City entity → its clinics; then the IM_NEST dims. (Doctor rows don't nest.)
-  function drillNext(ent,cutPath){if(grain==='doctor')return null;   // Clinic is a real draggable layer (like the full funnel); the layer bar fully controls the hierarchy
-    const nestx=(grain==='city')?IM_NEST:IM_NEST.filter(d=>d!=='clinic');
-    const consumed=cutPath.length+((grain==='city'&&ent.loc!==undefined)?1:0);   // clinic drill is tracked via ent.loc, non-clinic layers via cutPath
-    const nd=nestx[consumed];
-    if(nd==='clinic')return {type:'clinic'};
-    if(nd)return {type:'nest',dim:nd};return null;}
+  function drillNext(ent,cutPath){if(grain==='doctor')return null;if(grain==='city'&&ent.loc===undefined)return {type:'clinic'};return null;}   // rows = City → Clinic only; per-metric layers are the column popups (no global row nesting)
   function renderNode(ent,cutPath,key,depth,label){const cells=imNodeCells(ent,cutPath).cells;
     if(depth>0&&!VIS.some(sk=>cells[sk].ser.some(x=>x)))return;   // skip empty children
     const nx=drillNext(ent,cutPath),hasKids=!!nx,op=!!IM_OPEN[key];
@@ -1725,7 +1728,8 @@ function imRender(){const sec=document.getElementById('imSection');if(!sec||sec.
 }
 // "Break rows by …" — the SAME draggable layer bar as the full funnel: numbered chips · ▾ value multiselect · × remove · drag reorder · ＋ ghosts.
 // Applies to ALL stages uniformly (each nest value filters every stage that carries that field). Replaces the old per-stage 'Customise' cuts.
-function imNestChain(){const el=document.getElementById('imNestChain');if(!el)return;const grain=imScopeGrain();
+function imNestChain(){const el=document.getElementById('imNestChain');if(!el)return;const row=el.closest('.imctlrow');if(row)row.style.display='none';return;   // global row-layer bar removed — layers are per-metric (column ▾ popups)
+  const grain=imScopeGrain();
   if(grain==='doctor'){el.innerHTML='<span class="imnfix">Doctor</span> <span class="imhint" style="font-weight:400">— doctor rows show the ②③④⑤⑥ ops stages; no deeper nesting</span>';return;}
   el.innerHTML='';
   const lead=document.createElement('span');lead.className='lead';lead.innerHTML=`<span class="imnfix">${grain==='city'?'City':'Clinic'} ·</span>`;el.appendChild(lead);
