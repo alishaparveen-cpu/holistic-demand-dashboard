@@ -1683,20 +1683,43 @@ function imCfgBar(){const bar=document.getElementById('imCfgBar');if(!bar)return
   const cutObj=(IM_CFG[sk]||{}).cut||{};
   const active=spec.cuts.filter(cd=>cutObj[cd.dim]), ghosts=spec.cuts.filter(cd=>!cutObj[cd.dim]);
   active.forEach((cd,idx)=>{const inc=cutObj[cd.dim],ntot=cd.vals.length;
+    const groups=((IM_CFG[sk]||{}).comb||{})[cd.dim]||[],grouped=new Set();groups.forEach(g=>g.vals.forEach(v=>grouped.add(v)));
     const chip=document.createElement('div');chip.className='chip';
     chip.innerHTML=`<span class="ord">${idx+1}</span><span class="nm">${cd.lab}</span><span class="cnt">${inc.length}/${ntot}</span><span class="cv">▾</span><span class="rm" title="remove layer">×</span>`;
     const pop=document.createElement('div');pop.className='pop';
-    pop.innerHTML=`<div class="pact"><button data-a="all">All</button><button data-a="none">None</button></div>`+(ntot>12?`<input class="popsearch" placeholder="search ${ntot}…">`:'')+cd.vals.map(([v,l])=>`<label><input type="checkbox" data-v="${(''+v).replace(/"/g,'&quot;')}" ${inc.includes(v)?'checked':''}>${l}</label>`).join('');
+    pop.innerHTML=`<div class="pact"><button data-a="all">All</button><button data-a="none">None</button><button data-a="comb" title="merge 2+ values into one group toggle">⊕ combine…</button></div>`+(ntot>12?`<input class="popsearch" placeholder="search ${ntot}…">`:'')
+      +groups.map((g,gi)=>`<label><input type="checkbox" data-g="${gi}" ${g.vals.every(v=>inc.includes(v))?'checked':''}><b>${g.label}</b><span class="rmg" data-gi="${gi}" title="ungroup" style="margin-left:auto;color:var(--faint);cursor:pointer">✕</span></label>`).join('')
+      +cd.vals.filter(([v])=>!grouped.has(v)).map(([v,l])=>`<label><input type="checkbox" data-v="${(''+v).replace(/"/g,'&quot;')}" ${inc.includes(v)?'checked':''}>${l}</label>`).join('');
     chip.appendChild(pop);
     {const ps=pop.querySelector('.popsearch');if(ps){ps.onclick=e=>e.stopPropagation();ps.oninput=()=>{const q=ps.value.toLowerCase();pop.querySelectorAll('label').forEach(lb=>lb.style.display=lb.textContent.toLowerCase().includes(q)?'':'none');};}}
-    chip.onclick=(e)=>{if(e.target.closest('.pop'))return;if(e.target.classList.contains('rm')){e.stopPropagation();delete cut()[cd.dim];if(!Object.keys(cut()).length)delete C().cut;imRender();return;}
+    chip.onclick=(e)=>{if(e.target.closest('.pop'))return;if(e.target.classList.contains('rm')){e.stopPropagation();delete cut()[cd.dim];if((IM_CFG[sk]||{}).comb)delete IM_CFG[sk].comb[cd.dim];if(!Object.keys(cut()).length)delete C().cut;imRender();return;}
       const open=pop.classList.contains('show');document.querySelectorAll('#imCfgBar .pop').forEach(p=>p.classList.remove('show'));if(!open)pop.classList.add('show');};
-    pop.querySelectorAll('.pact button').forEach(b=>b.onclick=(e)=>{e.stopPropagation();cut()[cd.dim]=b.dataset.a==='all'?cd.vals.map(x=>x[0]):[];imRender();});
-    pop.querySelectorAll('input').forEach(inp=>{if(inp.classList.contains('popsearch'))return;inp.onclick=(e)=>{e.stopPropagation();const a=cut()[cd.dim]=cut()[cd.dim]||[],v=inp.dataset.v,i=a.indexOf(v);if(inp.checked){if(i<0)a.push(v);}else if(i>=0)a.splice(i,1);imRender();};});
+    pop.querySelector('[data-a="all"]').onclick=(e)=>{e.stopPropagation();cut()[cd.dim]=cd.vals.map(x=>x[0]);imRender();};
+    pop.querySelector('[data-a="none"]').onclick=(e)=>{e.stopPropagation();cut()[cd.dim]=[];imRender();};
+    pop.querySelector('[data-a="comb"]').onclick=(e)=>{e.stopPropagation();imLayerComb(pop,sk,cd);};
+    pop.querySelectorAll('.rmg').forEach(x=>x.onclick=(e)=>{e.stopPropagation();groups.splice(+x.dataset.gi,1);if(!groups.length&&(IM_CFG[sk]||{}).comb)delete IM_CFG[sk].comb[cd.dim];imRender();});
+    pop.querySelectorAll('input[data-g]').forEach(inp=>inp.onclick=(e)=>{e.stopPropagation();const g=groups[+inp.dataset.g],a=cut()[cd.dim]=cut()[cd.dim]||[];g.vals.forEach(v=>{const i=a.indexOf(v);if(inp.checked){if(i<0)a.push(v);}else if(i>=0)a.splice(i,1);});imRender();});
+    pop.querySelectorAll('input[data-v]').forEach(inp=>inp.onclick=(e)=>{e.stopPropagation();const a=cut()[cd.dim]=cut()[cd.dim]||[],v=inp.dataset.v,i=a.indexOf(v);if(inp.checked){if(i<0)a.push(v);}else if(i>=0)a.splice(i,1);imRender();});
     lbar.appendChild(chip);
     if(idx<active.length-1){const ar=document.createElement('span');ar.className='arrow';ar.textContent='→';lbar.appendChild(ar);}});
   ghosts.forEach(cd=>{const g=document.createElement('div');g.className='ghost';g.textContent='＋ '+cd.lab;g.onclick=()=>{cut()[cd.dim]=cd.vals.map(x=>x[0]);imRender();};lbar.appendChild(g);});
   if(imCfgConfigured(sk)){const rs=document.createElement('button');rs.className='ghost';rs.style.borderStyle='solid';rs.textContent='↺ reset';rs.onclick=()=>{delete IM_CFG[sk];imRender();};lbar.appendChild(rs);}}
+// per-metric layer combine picker (merge 2+ values of a layer into one group toggle; the group's values are added to this metric's filter)
+function imLayerComb(pop,sk,cd){
+  const combArr=()=>{const c=IM_CFG[sk]=IM_CFG[sk]||{};c.comb=c.comb||{};return c.comb[cd.dim]=c.comb[cd.dim]||[];};
+  const cutArr=()=>{const c=IM_CFG[sk]=IM_CFG[sk]||{};c.cut=c.cut||{};return c.cut[cd.dim]=c.cut[cd.dim]||cd.vals.map(x=>x[0]);};
+  function render(){const groups=combArr(),grouped=new Set();groups.forEach(g=>g.vals.forEach(v=>grouped.add(v)));
+    const avail=cd.vals.filter(([v])=>!grouped.has(v)),pend=new Set();
+    let h=`<div style="font-size:11.5px;color:var(--muted);padding:2px 4px 6px;line-height:1.35">Tick 2+ → <b>make a group</b> (they toggle together). ✕ ungroups.</div>`;
+    h+=groups.map((g,gi)=>`<div style="display:flex;align-items:center;gap:6px;padding:3px 4px;font-size:12px"><b style="flex:1">${g.label}</b><span class="rmg" data-gi="${gi}" style="cursor:pointer;color:var(--faint)">✕</span></div>`).join('');
+    h+=avail.length?avail.map(([v,l])=>`<label><input type="checkbox" class="cbx" data-v="${(''+v).replace(/"/g,'&quot;')}">${l}</label>`).join(''):`<div style="font-size:11.5px;color:var(--faint);padding:4px">— all grouped —</div>`;
+    h+=`<div class="pact" style="margin-top:7px"><button data-a="mk" disabled>✓ Make group (0)</button><button data-a="done">Done</button></div>`;
+    pop.innerHTML=h;const mk=pop.querySelector('[data-a="mk"]');
+    pop.querySelectorAll('input.cbx').forEach(inp=>inp.onclick=e=>{e.stopPropagation();if(inp.checked)pend.add(inp.dataset.v);else pend.delete(inp.dataset.v);mk.disabled=pend.size<2;mk.textContent='✓ Make group ('+pend.size+')';});
+    mk.onclick=e=>{e.stopPropagation();if(pend.size<2)return;const picked=[...pend];combArr().push({label:picked.map(k=>(cd.vals.find(v=>v[0]===k)||[])[1]||k).join('+'),vals:picked});const a=cutArr();picked.forEach(v=>{if(!a.includes(v))a.push(v);});render();};
+    pop.querySelectorAll('.rmg').forEach(x=>x.onclick=e=>{e.stopPropagation();combArr().splice(+x.dataset.gi,1);if(!combArr().length)delete IM_CFG[sk].comb[cd.dim];render();});
+    pop.querySelector('[data-a="done"]').onclick=e=>{e.stopPropagation();imRender();};}
+  render();}
 function imRender(){const sec=document.getElementById('imSection');if(!sec||sec.style.display==='none')return;
   const cmL=({last:'last wk',first:'first wk',peak:'peak',avg:'avg'})[CMP]||CMP;
   // entity grain follows scope (opsUnitsOffline already applies scope + top Clinic-age); each entity's funnel is filtered by the per-stage colour conditions
