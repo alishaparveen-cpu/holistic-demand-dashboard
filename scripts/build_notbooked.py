@@ -166,9 +166,9 @@ lead_conn AS (   -- per-lead boolean: did the lead's OWN phone OR its patient's 
 )
 SELECT la.created, la.channel, la.medium, la.number, la.campaign, la.url, la.relevance, la.intent, la.strength, la.category,
   CASE WHEN lb.bd IS NULL THEN 'notbooked'
-       WHEN DATEDIFF(day, la.created, lb.bd) < 0 THEN 'prior'
-       WHEN DATEDIFF(day, la.created, lb.bd) <= 6 THEN 'w0'
-       WHEN DATEDIFF(day, la.created, lb.bd) <= 13 THEN 'w1'
+       WHEN DATE_TRUNC('week', lb.bd) < DATE_TRUNC('week', la.created) THEN 'prior'
+       WHEN DATEDIFF(week, DATE_TRUNC('week', la.created), DATE_TRUNC('week', lb.bd)) = 0 THEN 'w0'   -- SAME calendar week (lead & booking) → ties to ② 'fresh'
+       WHEN DATEDIFF(week, DATE_TRUNC('week', la.created), DATE_TRUNC('week', lb.bd)) = 1 THEN 'w1'
        ELSE 'later' END AS status,
   'y' AS verified,                                                      -- verified-only funnel
   CASE WHEN lb.any_here=1 THEN 'offline' WHEN lb.any_onl=1 THEN 'online' ELSE 'none' END AS bkseg,

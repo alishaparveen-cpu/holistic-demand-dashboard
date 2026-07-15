@@ -216,9 +216,9 @@ lead_conn AS (   -- per-lead: did the lead's OWN phone OR its patient's phone co
 SELECT COALESCE(la.city,'— no city · online / untracked') AS city, COALESCE(la.locality,'') AS locality, la.channel, la.medium, la.number, la.campaign, la.url, la.relevance, la.intent, la.strength, la.category,
   -- booked via the ID join (patient.lead_id): lag from lead created -> the lead's patient's earliest SC
   CASE WHEN lb.bd IS NULL THEN 'notbooked'
-       WHEN DATEDIFF(day, la.created, lb.bd) < 0 THEN 'prior'
-       WHEN DATEDIFF(day, la.created, lb.bd) <= 6 THEN 'w0'
-       WHEN DATEDIFF(day, la.created, lb.bd) <= 13 THEN 'w1'
+       WHEN DATE_TRUNC('week', lb.bd) < DATE_TRUNC('week', la.created) THEN 'prior'
+       WHEN DATEDIFF(week, DATE_TRUNC('week', la.created), DATE_TRUNC('week', lb.bd)) = 0 THEN 'w0'
+       WHEN DATEDIFF(week, DATE_TRUNC('week', la.created), DATE_TRUNC('week', lb.bd)) = 1 THEN 'w1'
        ELSE 'later' END AS status,
   'y' AS verified,                                                      -- verified-only funnel (every row has a patient via lead_id)
   CASE WHEN lb.any_off=1 THEN 'offline' WHEN lb.any_onl=1 THEN 'online' ELSE 'none' END AS bkseg,   -- where the booked lead booked (offline priority)

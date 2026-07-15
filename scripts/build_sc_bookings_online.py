@@ -92,13 +92,13 @@ patient_comp AS (
 base AS (
   SELECT b.patient_id, b.doctor, b.city, b.locality, b.week_start, b.attempt_rnk, b.diagnosis,
     lf.lead_week, COALESCE(lf.source_bucket,'Direct / none') AS source_bucket, pc.first_comp_wk,
-    CASE   -- lead-age bucket (days from lead → booking-made), matches the offline ② episode cube's lead_age
-      WHEN lf.lead_crt IS NULL THEN 'nolead'
-      WHEN DATEDIFF(day, lf.lead_crt, b.book_crt) < 0  THEN 'nolead'
-      WHEN DATEDIFF(day, lf.lead_crt, b.book_crt) <= 6  THEN 'fresh'
-      WHEN DATEDIFF(day, lf.lead_crt, b.book_crt) <= 13 THEN 'wk1'
-      WHEN DATEDIFF(day, lf.lead_crt, b.book_crt) <= 27 THEN 'wk2_4'
-      WHEN DATEDIFF(day, lf.lead_crt, b.book_crt) <= 89 THEN 'mo1_3'
+    CASE   -- lead maturity by CALENDAR WEEK (lead's week vs booking's week) — matches offline: 'fresh' = same week
+      WHEN lf.lead_week IS NULL THEN 'nolead'
+      WHEN lf.lead_week > b.week_start THEN 'nolead'
+      WHEN DATEDIFF(week, lf.lead_week, b.week_start) = 0 THEN 'fresh'
+      WHEN DATEDIFF(week, lf.lead_week, b.week_start) = 1 THEN 'wk1'
+      WHEN DATEDIFF(week, lf.lead_week, b.week_start) BETWEEN 2 AND 4 THEN 'wk2_4'
+      WHEN DATEDIFF(week, lf.lead_week, b.week_start) BETWEEN 5 AND 13 THEN 'mo1_3'
       ELSE 'mo3' END AS lead_age,
     CASE WHEN b.status IN ('COMPLETED','RECONSULTED') THEN 1 ELSE 0 END AS done_flag
   FROM sc_online b

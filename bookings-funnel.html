@@ -1595,10 +1595,11 @@ IM_STAGE_CFG.l2b={variants:[['lbrate','L→B % same-wk'],['bookrate','L→B % ev
 function imStageDef(k){return IM_STAGES.find(s=>s.key===k);}
 function imMetOf(k){return IM_METS.find(m=>m.key===k);}
 function imCfgVariant(sk){const c=IM_CFG[sk];return (c&&c.v)||imStageDef(sk).met;}
-function imCfgConfigured(sk){const c=IM_CFG[sk];if(!c)return false;if(c.v&&c.v!==imStageDef(sk).met)return true;return c.cut&&Object.keys(c.cut).some(d=>c.cut[d]&&c.cut[d].length);}
+function imCutActive(cd,arr){return cd&&arr&&arr.length&&arr.length<cd.vals.length;}   // a cut only FILTERS when a strict subset is selected (all-selected = no filter)
+function imCfgConfigured(sk){const c=IM_CFG[sk];if(!c)return false;if(c.v&&c.v!==imStageDef(sk).met)return true;const spec=IM_STAGE_CFG[sk];return c.cut&&Object.keys(c.cut).some(d=>imCutActive(spec.cuts.find(x=>x.dim===d),c.cut[d]));}
 function imCfgLabel(sk){const def=imStageDef(sk),spec=IM_STAGE_CFG[sk],c=IM_CFG[sk]||{},num=def.lab.split(' ')[0];
   let base=def.lab;if(c.v&&spec.variants.length>1){const vl=(spec.variants.find(x=>x[0]===c.v)||[])[1];if(vl)base=num+' '+vl;}
-  const cut=c.cut||{},parts=[];for(const d in cut){if(!cut[d]||!cut[d].length)continue;const cd=spec.cuts.find(x=>x.dim===d);if(cd)parts.push(cut[d].map(x=>(cd.vals.find(v=>v[0]===x)||[])[1]||x).join('+'));}
+  const cut=c.cut||{},parts=[];for(const d in cut){const cd=spec.cuts.find(x=>x.dim===d);if(!imCutActive(cd,cut[d]))continue;const lab=cut[d].length<=2?cut[d].map(x=>(cd.vals.find(v=>v[0]===x)||[])[1]||x).join('+'):cut[d].length+'/'+cd.vals.length;parts.push(lab);}
   return base+(parts.length?' · '+parts.join('·'):'');}
 // entity grain FOLLOWS the top scope: City → city rows (drill to clinic) · Clinic → clinic rows · Doctor → doctor rows (ops stages only, no leads/bookings/value)
 function imScopeGrain(){return SCOPE==='clinic'?'clinic':SCOPE==='doctor'?'doctor':'city';}   // national + city both lead with City (matches the full funnel)
@@ -1665,22 +1666,36 @@ function imNodeCells(ent,path){const cells={};let prim=0;   // path = [{dim,val}
 function imClinicRow(c){const r=imNodeCells(c,[]);return {c,cells:r.cells,bkNow:r.prim};}
 function imPassStages(row){return imVisibleStages().every(sk=>{const S=IM_SRAG[sk];return !S||!S.size||S.has(row.cells[sk].rag);});}
 // customise-a-stage bar: pick the variant metric + which layers (source / medium / category / maturity / rank) to include for that stage
+// per-metric layer bar — the SAME draggable chip + ▾ value-dropdown + ＋ ghost component as the full funnel, scoped to ONE metric (filters that metric only).
 function imCfgBar(){const bar=document.getElementById('imCfgBar');if(!bar)return;
   if(!IM_POP||!IM_STAGE_CFG[IM_POP]){bar.style.display='none';bar.innerHTML='';return;}
-  const sk=IM_POP,spec=IM_STAGE_CFG[sk],def=imStageDef(sk),cfg=IM_CFG[sk]||{},cur=imCfgVariant(sk),cut=cfg.cut||{};
-  bar.style.display='';
-  let h=`<div class="imcfghd">Customise <b>${def.lab}</b> <span class="imhint">— this metric’s own layers (like the full funnel); tick values to filter it (multi-select = OR; ‘all’ = whole stage). Each metric is independent.</span><button class="imcfgx" title="close">✕</button></div>`;
-  if(spec.variants.length>1)h+=`<div class="imcfgrow"><span class="imcutlab">Show as</span>${spec.variants.map(([v,l])=>`<button class="imchip cfgv${cur===v?' on':''}" data-v="${v}">${l}</button>`).join('')}</div>`;
-  spec.cuts.forEach(cd=>{const sel=cut[cd.dim]||[];h+=`<div class="imcfgrow"><span class="imcutlab">${cd.lab}</span><button class="imchip cfgc${!sel.length?' on':''}" data-d="${cd.dim}" data-v="__all">all</button>${cd.vals.map(([v,l])=>`<button class="imchip cfgc${sel.includes(v)?' on':''}" data-d="${cd.dim}" data-v="${v}">${l}</button>`).join('')}</div>`;});
-  if(!spec.cuts.length&&spec.variants.length<=1)h+=`<div class="imcfgrow"><span class="imhint">This metric has no extra layers.</span></div>`;
-  if(imCfgConfigured(sk))h+=`<div class="imcfgrow"><button class="imchip cfgreset">↺ reset this metric</button></div>`;
-  bar.innerHTML=h;
-  bar.querySelector('.imcfgx').onclick=()=>{IM_POP=null;imRender();};
-  bar.querySelectorAll('.cfgv').forEach(b=>b.onclick=()=>{(IM_CFG[sk]=IM_CFG[sk]||{}).v=b.dataset.v;imRender();});
-  bar.querySelectorAll('.cfgc').forEach(b=>b.onclick=()=>{const d=b.dataset.d,v=b.dataset.v,C=IM_CFG[sk]=IM_CFG[sk]||{},ct=C.cut=C.cut||{};
-    if(v==='__all')delete ct[d];else{const a=ct[d]=ct[d]||[],i=a.indexOf(v);if(i<0)a.push(v);else a.splice(i,1);if(!a.length)delete ct[d];}
-    if(!Object.keys(ct).length)delete C.cut;imRender();});
-  const rs=bar.querySelector('.cfgreset');if(rs)rs.onclick=()=>{delete IM_CFG[sk];imRender();};}
+  const sk=IM_POP,spec=IM_STAGE_CFG[sk],def=imStageDef(sk),cur=imCfgVariant(sk);
+  const C=()=>IM_CFG[sk]=IM_CFG[sk]||{}, cut=()=>{const c=C();return c.cut=c.cut||{};};
+  bar.style.display='';bar.innerHTML='';
+  const hd=document.createElement('div');hd.className='imcfghd';hd.innerHTML=`Customise <b>${def.lab}</b> <span class="imhint">— this metric’s own layers (like the full funnel): add a layer, then tick values to filter this metric. Each metric is independent.</span><button class="imcfgx" title="close">✕</button>`;bar.appendChild(hd);
+  hd.querySelector('.imcfgx').onclick=()=>{IM_POP=null;imRender();};
+  if(spec.variants.length>1){const vr=document.createElement('div');vr.className='imcfgrow';vr.innerHTML=`<span class="imcutlab">Show as</span>${spec.variants.map(([v,l])=>`<button class="imchip cfgv${cur===v?' on':''}" data-v="${v}">${l}</button>`).join('')}`;bar.appendChild(vr);
+    vr.querySelectorAll('.cfgv').forEach(b=>b.onclick=()=>{C().v=b.dataset.v;imRender();});}
+  if(!spec.cuts.length){if(spec.variants.length<=1){const e=document.createElement('div');e.className='imcfgrow';e.innerHTML='<span class="imhint">This metric has no extra layers.</span>';bar.appendChild(e);}return;}
+  const lbar=document.createElement('div');lbar.className='layerbar';lbar.style.margin='6px 0 0';bar.appendChild(lbar);
+  const lead=document.createElement('span');lead.className='lead';lead.textContent='Layers ·';lbar.appendChild(lead);
+  const cutObj=(IM_CFG[sk]||{}).cut||{};
+  const active=spec.cuts.filter(cd=>cutObj[cd.dim]), ghosts=spec.cuts.filter(cd=>!cutObj[cd.dim]);
+  active.forEach((cd,idx)=>{const inc=cutObj[cd.dim],ntot=cd.vals.length;
+    const chip=document.createElement('div');chip.className='chip';
+    chip.innerHTML=`<span class="ord">${idx+1}</span><span class="nm">${cd.lab}</span><span class="cnt">${inc.length}/${ntot}</span><span class="cv">▾</span><span class="rm" title="remove layer">×</span>`;
+    const pop=document.createElement('div');pop.className='pop';
+    pop.innerHTML=`<div class="pact"><button data-a="all">All</button><button data-a="none">None</button></div>`+(ntot>12?`<input class="popsearch" placeholder="search ${ntot}…">`:'')+cd.vals.map(([v,l])=>`<label><input type="checkbox" data-v="${(''+v).replace(/"/g,'&quot;')}" ${inc.includes(v)?'checked':''}>${l}</label>`).join('');
+    chip.appendChild(pop);
+    {const ps=pop.querySelector('.popsearch');if(ps){ps.onclick=e=>e.stopPropagation();ps.oninput=()=>{const q=ps.value.toLowerCase();pop.querySelectorAll('label').forEach(lb=>lb.style.display=lb.textContent.toLowerCase().includes(q)?'':'none');};}}
+    chip.onclick=(e)=>{if(e.target.closest('.pop'))return;if(e.target.classList.contains('rm')){e.stopPropagation();delete cut()[cd.dim];if(!Object.keys(cut()).length)delete C().cut;imRender();return;}
+      const open=pop.classList.contains('show');document.querySelectorAll('#imCfgBar .pop').forEach(p=>p.classList.remove('show'));if(!open)pop.classList.add('show');};
+    pop.querySelectorAll('.pact button').forEach(b=>b.onclick=(e)=>{e.stopPropagation();cut()[cd.dim]=b.dataset.a==='all'?cd.vals.map(x=>x[0]):[];imRender();});
+    pop.querySelectorAll('input').forEach(inp=>{if(inp.classList.contains('popsearch'))return;inp.onclick=(e)=>{e.stopPropagation();const a=cut()[cd.dim]=cut()[cd.dim]||[],v=inp.dataset.v,i=a.indexOf(v);if(inp.checked){if(i<0)a.push(v);}else if(i>=0)a.splice(i,1);imRender();};});
+    lbar.appendChild(chip);
+    if(idx<active.length-1){const ar=document.createElement('span');ar.className='arrow';ar.textContent='→';lbar.appendChild(ar);}});
+  ghosts.forEach(cd=>{const g=document.createElement('div');g.className='ghost';g.textContent='＋ '+cd.lab;g.onclick=()=>{cut()[cd.dim]=cd.vals.map(x=>x[0]);imRender();};lbar.appendChild(g);});
+  if(imCfgConfigured(sk)){const rs=document.createElement('button');rs.className='ghost';rs.style.borderStyle='solid';rs.textContent='↺ reset';rs.onclick=()=>{delete IM_CFG[sk];imRender();};lbar.appendChild(rs);}}
 function imRender(){const sec=document.getElementById('imSection');if(!sec||sec.style.display==='none')return;
   const cmL=({last:'last wk',first:'first wk',peak:'peak',avg:'avg'})[CMP]||CMP;
   // entity grain follows scope (opsUnitsOffline already applies scope + top Clinic-age); each entity's funnel is filtered by the per-stage colour conditions
