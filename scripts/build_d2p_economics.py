@@ -86,6 +86,9 @@ iib_t AS (SELECT inv.encounter_id, SUM(ii.payable_amount::FLOAT)/100 AS ther_b F
   JOIN allo_billing.invoice_items ii ON ii.invoice_id=inv.id AND ii.deleted_at IS NULL
   WHERE inv.deleted_at IS NULL AND inv.status NOT IN ('cancelled') AND ii.type_id IN ({THER})
     AND inv.encounter_id IN (SELECT encounter_id FROM elig) GROUP BY inv.encounter_id),
+po_drug AS (SELECT DISTINCT encounter_id FROM allo_drugs.orders WHERE deleted_at IS NULL AND encounter_id IN (SELECT encounter_id FROM elig)),   -- encounter prescribed ANY drug (order exists)
+po_lab  AS (SELECT DISTINCT encounter_id FROM allo_labs.orders  WHERE deleted_at IS NULL AND encounter_id IN (SELECT encounter_id FROM elig)),   -- prescribed ANY lab test
+po_ther AS (SELECT DISTINCT encounter_id FROM allo_consultations.orders WHERE deleted_at IS NULL AND consultation_id IN ('fe5b19b4-5961-4036-bc5f-fb1009a27d64','b4409f49-3c8c-11f1-98e1-028ca0e1d7cd') AND encounter_id IN (SELECT encounter_id FROM elig)),   -- prescribed therapy
 cons_fee AS (SELECT c.id AS cons_id, MAX(ii.payable_amount::FLOAT/100) AS cons_amt,
     MAX(CASE WHEN inv.status='paid' THEN ii.payable_amount::FLOAT/100 ELSE 0 END) AS cons_amt_paid
   FROM allo_consultations.consultations c
@@ -101,23 +104,23 @@ lead_first AS (   -- patient's first-ever lead source bucket (same L2 logic as b
   SELECT patient_id,
     CASE
       WHEN lower(temp) IN ('googlelisting','googleslisting','gmb') THEN 'GMB'
-      WHEN lower(temp)='google' THEN 'Google'
       WHEN lower(temp)='practo' THEN 'Practo'
       WHEN lower(temp) IN ('fb','facebook','meta','ig','instagram') THEN 'Meta'
+      WHEN lower(temp) IN ('organic','blog','google') AND lower(surl) LIKE '%/blog/%' THEN 'Organic · Blog'   -- blog content = organic sub-source (matches ① leads / ② bookings)
+      WHEN lower(temp)='google' THEN 'Google'
       WHEN lower(temp) LIKE '%organic%' THEN 'Organic'
       WHEN temp IS NULL OR temp='' THEN 'Direct / none'
       ELSE 'Others' END AS source_bucket
   FROM (
-    SELECT patient_id,
+    SELECT patient_id, surl,
       CASE WHEN lower(us)='directwalkin' THEN 'directwalkin'
         WHEN us2 IS NULL OR us2='' THEN us WHEN us2 IN ('fb','google') THEN us2 WHEN us2 IN ('googleslisting') THEN 'GMB' ELSE us END AS temp
     FROM (
-      SELECT pat.id AS patient_id, ld.utm_source AS us,
-        regexp_replace(regexp_substr(ld.source_url,'utm_source=[^& ]+'),'utm_source=','') AS us2,
-        row_number() over (partition by pat.id order by ld.created_at asc) AS lr
+      SELECT pat.id AS patient_id, ld.utm_source AS us, ld.source_url AS surl,
+        regexp_replace(regexp_substr(ld.source_url,'utm_source=[^& ]+'),'utm_source=','') AS us2
       FROM allo_persons.patient pat
-      JOIN allo_persons.lead ld ON pat.phone_no=ld.phone_no AND ld.deleted_at IS NULL
-      WHERE pat.deleted_at IS NULL) WHERE lr=1)),
+      JOIN allo_persons.lead ld ON ld.id = pat.lead_id AND ld.deleted_at IS NULL   -- patient.lead_id ID join (matches ①/②; was phone-match first-lead)
+      WHERE pat.deleted_at IS NULL))),
 appt_level AS (
   SELECT ap.id AS ap_id,
     date_trunc('week', ap.start_time+INTERVAL '5.5 hours')::date AS week_start,
@@ -131,7 +134,10 @@ appt_level AS (
     MAX(COALESCE(iid.med_pbl_paid,0)) AS med_amt_paid, MAX(COALESCE(iil.test_pbl_paid,0)) AS test_amt_paid, MAX(COALESCE(iit.ther_pbl_paid,0)) AS ther_amt_paid, MAX(COALESCE(cf.cons_amt_paid,0)) AS cons_amt_paid,
     MAX(COALESCE(iib_d.med_b,0)) AS pres_med_amt, MAX(COALESCE(iib_l.test_b,0)) AS pres_test_amt, MAX(COALESCE(iib_t.ther_b,0)) AS pres_ther_amt,
     CASE WHEN MAX(inv.inv_amt)>0 THEN 1 ELSE 0 END AS purchased_flag,
-    CASE WHEN MAX(inv.inv_amt_paid)>0 THEN 1 ELSE 0 END AS purchased_paid_flag
+    CASE WHEN MAX(inv.inv_amt_paid)>0 THEN 1 ELSE 0 END AS purchased_paid_flag,
+    MAX(CASE WHEN pod.encounter_id IS NOT NULL THEN 1 ELSE 0 END) AS pres_drug_flag,   -- prescribed meds / tests / therapy (order exists) — for the Done→Prescribed→Purchased funnel
+    MAX(CASE WHEN pol.encounter_id IS NOT NULL THEN 1 ELSE 0 END) AS pres_lab_flag,
+    MAX(CASE WHEN pot.encounter_id IS NOT NULL THEN 1 ELSE 0 END) AS pres_ther_flag
   FROM allo_consultations.appointments ap JOIN current_range cr ON TRUE
   JOIN allo_consultations.types typ ON ap.type_id=typ.id AND typ.deleted_at IS NULL
   JOIN allo_persons.providers pro ON pro.id=ap.provider_id AND pro.deleted_at IS NULL
@@ -142,6 +148,7 @@ appt_level AS (
   LEFT JOIN invoice_data inv ON inv.encounter_id=enc.id
   LEFT JOIN iid ON iid.encounter_id=enc.id LEFT JOIN iil ON iil.encounter_id=enc.id LEFT JOIN iit ON iit.encounter_id=enc.id LEFT JOIN iib_d ON iib_d.encounter_id=enc.id LEFT JOIN iib_l ON iib_l.encounter_id=enc.id LEFT JOIN iib_t ON iib_t.encounter_id=enc.id LEFT JOIN cons_fee cf ON cf.cons_id=ap.consultation_id
   LEFT JOIN lead_first lf ON lf.patient_id=ap.patient_id
+  LEFT JOIN po_drug pod ON pod.encounter_id=enc.id LEFT JOIN po_lab pol ON pol.encounter_id=enc.id LEFT JOIN po_ther pot ON pot.encounter_id=enc.id
   WHERE ap.deleted_at IS NULL AND ap.status IN ('COMPLETED','RECONSULTED')
     AND typ.name IN ('Screening Call','Follow Up','Report Reading','Patient Queries') AND ap.consultation_id IS NOT NULL
     AND ap.start_time+INTERVAL '5.5 hours' >= cr.start_range
@@ -160,7 +167,14 @@ SELECT doc_city, doc_locality, doctor, week_start, diagnosis, source_bucket,
   ROUND(SUM(CASE WHEN segment='offline_sc' THEN med_amt_paid  ELSE 0 END)) AS meds_val_paid,
   ROUND(SUM(CASE WHEN segment='offline_sc' THEN test_amt_paid ELSE 0 END)) AS test_val_paid,
   ROUND(SUM(CASE WHEN segment='offline_sc' THEN ther_amt_paid ELSE 0 END)) AS ther_val_paid,
-  ROUND(SUM(CASE WHEN segment='offline_sc' THEN cons_amt_paid ELSE 0 END)) AS cons_val_paid
+  ROUND(SUM(CASE WHEN segment='offline_sc' THEN cons_amt_paid ELSE 0 END)) AS cons_val_paid,
+  -- Done → Prescribed → Purchased funnel COUNTS (per product line): how many done calls prescribed / purchased meds·tests·therapy
+  SUM(CASE WHEN segment='offline_sc' AND pres_drug_flag=1 THEN 1 ELSE 0 END) AS meds_pres_cnt,
+  SUM(CASE WHEN segment='offline_sc' AND pres_lab_flag=1  THEN 1 ELSE 0 END) AS test_pres_cnt,
+  SUM(CASE WHEN segment='offline_sc' AND pres_ther_flag=1 THEN 1 ELSE 0 END) AS ther_pres_cnt,
+  SUM(CASE WHEN segment='offline_sc' AND med_amt>0  THEN 1 ELSE 0 END) AS meds_purch_cnt,
+  SUM(CASE WHEN segment='offline_sc' AND test_amt>0 THEN 1 ELSE 0 END) AS test_purch_cnt,
+  SUM(CASE WHEN segment='offline_sc' AND ther_amt>0 THEN 1 ELSE 0 END) AS ther_purch_cnt
 FROM appt_level
 WHERE week_start >= DATE_TRUNC('week', DATEADD(month, -{MONTHS_BACK}, CURRENT_DATE))::date AND segment='offline_sc'
 GROUP BY 1,2,3,4,5,6 ORDER BY 1,2,3,4,5,6;
@@ -180,7 +194,8 @@ def main():
     widx = {w: i for i, w in enumerate(weeks)}
     NW = len(weeks)
     FIELDS = ["done", "purchased", "meds_val", "test_val", "ther_val", "cons_val", "pres_meds_val", "pres_test_val", "pres_ther_val",
-              "purchased_paid", "meds_val_paid", "test_val_paid", "ther_val_paid", "cons_val_paid"]   # collection view: same done-week grain, status='paid' only
+              "purchased_paid", "meds_val_paid", "test_val_paid", "ther_val_paid", "cons_val_paid",   # collection view: same done-week grain, status='paid' only
+              "meds_pres_cnt", "test_pres_cnt", "ther_pres_cnt", "meds_purch_cnt", "test_purch_cnt", "ther_purch_cnt"]   # Done→Prescribed→Purchased funnel counts per product line
 
     def blank():
         return {f: [0]*NW for f in FIELDS}
@@ -190,7 +205,7 @@ def main():
         city, loc, doctor, wk, cat, src = r[0], r[1], r[2], r[3], r[4], r[5]
         key = f"{city}|{loc}"
         i = widx[wk]
-        vals = [int(float(x)) for x in r[6:20]]
+        vals = [int(float(x)) for x in r[6:26]]
         o = clinics.setdefault(key, blank())
         c = o.setdefault("by_cat", {}).setdefault(cat, blank())
         dd = o.setdefault("by_doctor", {}).setdefault(doctor, blank())
