@@ -1157,10 +1157,13 @@ function opsFunnelDrill(container,recs,layers,depth,pad,kp,cfg,parentPrim){
     const key=kp+'/'+dk+':'+v,col=dim.col?dim.col(sub[0]):'#9aa3b0',op=!!OPS_OPEN[key]||(only&&dk==='seg'&&!last);
     const row=opsBuildRow(v,pv,{col,pad,expandable:!last&&!(only&&dk==='seg'),open:op,rawArr:praw});row.classList.add('opsnode');container.appendChild(row);
     if(OPS_SHARE[cfg.sec]&&parentPrim&&!only){const sh=pv.map((x,i)=>parentPrim[i]?100*x/parentPrim[i]:null);const sr=opsBuildRow('↳ share of parent %',sh,{col:'#1F6F5C',pad:pad+18,pct:true,rawArr:sh});sr.classList.add('brate');container.appendChild(sr);}
-    if(last){cfg.stages.slice(1).forEach(s=>{
+    // show the node's full mini-funnel (secondary stages: D2P / Revenue / RPC · B2D%) at the LEAF, and also at every GEO node
+    // when cfg.allLevels — so City / Clinic / Doctor carry their money metrics even with a deeper (category) layer below.
+    const showSecondary=last||(cfg.allLevels&&['city','clinic','doctor'].includes(dk));
+    if(showSecondary)cfg.stages.slice(1).forEach(s=>{
       if(s.rate){const N=opsDv(sumRecF(sub,s.rate[0])),D=opsDv(sumRecF(sub,s.rate[1])),r=D.map((d,i)=>d?(s.pct?100:1)*N[i]/d:null);container.appendChild(opsBuildRow(s.lab,r,{col:s.col||'#1F6F5C',pct:!!s.pct,pad:pad+18,rawArr:r}));}
       else{const raw=sumRecF(sub,s.f);container.appendChild(opsBuildRow(s.lab,opsDv(raw),{col:s.col,pad:pad+18,rawArr:raw}));}});
-    }else{const kb=document.createElement('div');kb.style.display=op?'block':'none';container.appendChild(kb);
+    if(!last){const kb=document.createElement('div');kb.style.display=op?'block':'none';container.appendChild(kb);
       if(!(only&&dk==='seg'))row.onclick=(e)=>{if(e.target.closest('.zoom'))return;OPS_OPEN[key]=!OPS_OPEN[key];cfg.rerender();};
       if(op)opsFunnelDrill(kb,sub,layers,depth+1,pad+18,key,cfg,pv);}
   });}
@@ -1307,7 +1310,7 @@ function renderValue(units){units=units||opsUnits();const flow=document.getEleme
   {const n=opsDv(rev),d=opsDv(dn),r=d.map((x,i)=>x?n[i]/x:null);opsRow(flow,'RPC · ₹ / consult',r,{sub:true,raw:true,col:'#1F6F5C'});}
   const recs=opsValRecs(units);opsBar(ll,'val',recs,renderValue);
   const layers=opsSecLayers('val'),fr=recs.filter(r=>layers.every(dk=>!(OPS_SEL.val[dk]&&OPS_SEL.val[dk].has(OPSDIM[dk].get(r)))));
-  const cfg={sec:'val',rerender:renderValue,stages:[{lab:'Purchased · SC',f:'pur',col:'#2E7D5B'},{lab:'Done → Purchased % (D2P)',rate:['pur','done'],pct:true,col:'#1F6F5C'},{lab:'Revenue · SC ₹',f:'rev',col:'#C87B2E'},{lab:'RPC · ₹ / consult',rate:['rev','done'],col:'#1F6F5C'}]};
+  const cfg={sec:'val',rerender:renderValue,allLevels:true,stages:[{lab:'Purchased · SC',f:'pur',col:'#2E7D5B'},{lab:'Done → Purchased % (D2P)',rate:['pur','done'],pct:true,col:'#1F6F5C'},{lab:'Revenue · SC ₹',f:'rev',col:'#C87B2E'},{lab:'RPC · ₹ / consult',rate:['rev','done'],col:'#1F6F5C'}]};   // allLevels → show D2P/Revenue/RPC at every City/Clinic node, not just the deepest leaf
   opsFunnelDrill(flow,fr,layers,0,15,'val',cfg,opsDv(pur));}
 // ===== 📊 Individual-metric RAG diagnostic — metric-first grid over the funnel cubes, recursive breakdown, colour = drop severity vs the Δ baseline =====
 // ===== Individual-metric v2 — CROSS-FUNNEL RAG matrix: many metrics (columns) × one breakdown (rows), so a drop is traceable Leads→Bookings→Done→Value on one screen =====
