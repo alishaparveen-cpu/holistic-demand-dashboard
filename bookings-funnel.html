@@ -355,6 +355,7 @@
         </div>
       </div>
       <div class="segw" id="matseg" title="filter to clinics by how long they've been open (age = weeks since first booking; pick any)"><span class="matlab">Clinic age</span><button data-m="lt3">&lt;3 mo</button><button data-m="m3_6">3–6 mo</button><button data-m="m6_12">6–12 mo</button><button data-m="gt12">&gt;1 yr</button></div>
+      <div class="segw" id="mhpilotw" title="MH-pilot clinics: Coimbatore · Hadapsar · Kharghar · Whitefield · Hubli · Jaipur · Indiranagar"><button data-mh="1">MH pilot</button></div>
       <div class="segw" id="segseg" title="offline (clinic-attributed) / online (no-city, telehealth) / both"><button data-g="both" class="on">Both</button><button data-g="offline">Offline</button><button data-g="online">Online</button></div>
       <div class="segw" id="viewseg" title="weekly = each week week-vs-week · Σ total = one total over the window"><button data-v="wk" class="on">weekly</button><button data-v="agg">Σ total</button></div>
       <div class="segw" id="dowseg" title="pick the days to compare like-for-like across weeks (e.g. Mon–Thu)" style="display:none"><button data-d="0" class="on">M</button><button data-d="1" class="on">T</button><button data-d="2" class="on">W</button><button data-d="3" class="on">T</button><button data-d="4" class="on">F</button><button data-d="5" class="on">S</button><button data-d="6" class="on">S</button></div>
@@ -525,7 +526,11 @@ const NONCITY=new Set(['Online','Practo Online']);   // never a physical city �
 const NOCITY_LAB='— no city · online / untracked';   // the single no-city / untracked bucket label
 let TRACKED_CITY=new Set(), LOC2CITY={}, OPLOC=new Set(), CITY2CLINICS={}, SINGLE_CLINIC_CITY={}, CLINIC_MAT={}, MATF=new Set();   // CLINIC_MAT: locality→{b,mo,fw} clinic-age; MATF: selected age buckets (empty = all)
 const MAT_BUCKETS=[['lt3','< 3 mo'],['m3_6','3–6 mo'],['m6_12','6–12 mo'],['gt12','> 1 yr']];
-function matPass(loc){if(!MATF.size)return true;const m=CLINIC_MAT[loc];return m?MATF.has(m.b):false;}   // does this clinic's age bucket pass the filter?   // TRACKED_CITY: real op cities (+new launches); LOC2CITY: clinic locality → its true city; OPLOC: operational clinic localities (from the bookings cube) — closed clinics with stray leads are excluded from the Clinic layer; SINGLE_CLINIC_CITY: city→its one clinic (roll city-only leads into it)
+function matPass(loc){if(!MATF.size)return true;const m=CLINIC_MAT[loc];return m?MATF.has(m.b):false;}   // does this clinic's age bucket pass the filter?
+let MHF=false;   // MH-pilot filter: keep only the 7 MH-pilot clinics
+const MH_PILOT=new Set(['hadapsar','kharghar','whitefield','indiranagar','bharathi nagar','vidya nagar','vaishali nagar']);   // MH-pilot localities: Hadapsar·Kharghar·Whitefield·Indiranagar + single-clinic cities Coimbatore(Bharathi Nagar)·Hubli(Vidya Nagar)·Jaipur(Vaishali Nagar)
+function mhPass(loc){return !MHF||MH_PILOT.has((loc||'').toLowerCase());}
+function clinF(){return MATF.size||MHF;}   // any clinic filter active?   // TRACKED_CITY: real op cities (+new launches); LOC2CITY: clinic locality → its true city; OPLOC: operational clinic localities (from the bookings cube) — closed clinics with stray leads are excluded from the Clinic layer; SINGLE_CLINIC_CITY: city→its one clinic (roll city-only leads into it)
 function isTracked(city){return TRACKED_CITY.has(city);}
 function displayCity(loc,city){
   const rc=loc&&LOC2CITY[loc];
@@ -921,7 +926,7 @@ function onlKeys(){if(!ONL||!ONL.clinics)return [];const ks=Object.keys(ONL.clin
   else if(SCOPE==='city')base=ks.filter(k=>SEL.city.has(displayCity(k.slice(k.indexOf('|')+1),k.slice(0,k.indexOf('|')))));
   else if(SCOPE==='clinic')base=ks.filter(k=>SEL.clinic.has(k));
   else base=[];   // doctor scope: online-by-doctor not wired (offline only)
-  return MATF.size?base.filter(k=>matPass(k.slice(k.indexOf('|')+1))):base;}   // clinic-age filter: online attributed to the doctor's block clinic that day → keep if that clinic is in the age bucket ('Online' unresolved → dropped)
+  return clinF()?base.filter(k=>{const l=k.slice(k.indexOf('|')+1);return matPass(l)&&mhPass(l);}):base;}   // clinic-age + MH-pilot filter: online attributed to the doctor's block clinic that day → keep if that clinic passes ('Online' unresolved → dropped)
 const SUBCAT2TOP={STI:'STI',MH:'MH','ED+':'SH','ED+PE+':'SH','PE+':'SH','PA':'SH','CM':'SH',LSD:'SH',DE:'SH',DYS:'SH',VGS:'SH',FSAD:'SH',AORG:'SH','Oth':'Other',oth:'Other','NOS':'Other'};   // diagnosis sub-cats → top categories: every named sexual-health condition rolls to SH; only the genuine catch-all (oth/Oth) + NOS → Other
 const ONL_ROLL={oth:'Oth'};   // online cube's raw diag_cat: only the catch-all 'oth' → Oth; every named sub-cat passes through unchanged (SUBCAT2TOP then rolls it, matching quick_diag)
 function qdAlign(arr){if(!arr)return new Array(WEEKS.length).fill(0);return WEEKS.map(w=>{const j=QD_IDX[w];return j===undefined?0:(arr[j]||0);});}   // QD arrays are OLDEST-first → re-align to WEEKS (newest-first)
@@ -931,7 +936,7 @@ function opsSlugs(){if(!QD)return [];let base;
   else if(SCOPE==='city')base=Object.keys(QD.clinics).filter(s=>SEL.city.has(QD.clinics[s].city));
   else if(SCOPE==='clinic'){base=[];SEL.clinic.forEach(k=>{const i=k.indexOf('|');if(i<0)return;const cand=qnorm(k.slice(i+1))+'_'+qnorm(k.slice(0,i));if(QD.clinics[cand])base.push(cand);});}
   else {const set=new Set();SEL.doctor.forEach(dk=>{const slug=dk.slice(0,dk.indexOf('::'));if(QD.clinics[slug])set.add(slug);});base=[...set];}   // doctor scope: parent clinics of the selected doctors
-  return MATF.size?base.filter(s=>matPass(slugLoc(s))):base;}   // clinic-age filter
+  return clinF()?base.filter(s=>matPass(slugLoc(s))&&mhPass(slugLoc(s))):base;}   // clinic-age + MH-pilot filter
 // a "unit" = one aggregable ops entity (offline clinic / doctor from quick_diag, or online clinic from the online cube).
 // Each unit carries `al` (its week-aligner) so offline & online arrays combine on the same WEEKS axis. Availability/category live on offline only.
 function opsUnitsOffline(){if(!QD)return [];
@@ -1897,7 +1902,7 @@ function loadClinic(){const keys=scopeKeys();CLINIC=keys.join('+')||SCOPE;   // 
   // fold leads pinned to a CLOSED / non-operational clinic into the no-clinic bucket (keep their city) so only real clinics show as rows — the leads still count in the city + total
   if(OPLOC.size)[PL,PB].forEach(P=>P.cells.forEach(c=>{if(c.loc&&!OPLOC.has(c.loc))c.loc='';}));
   [PL,PB].forEach(P=>P.cells.forEach(c=>{if((!c.loc)&&c.city&&SINGLE_CLINIC_CITY[c.city])c.loc=SINGLE_CLINIC_CITY[c.city];}));   // single-clinic city (e.g. Bhopal): its city-only leads/bookings have exactly one possible clinic → roll them into it (no more "not attributed to a clinic" for these cities)
-  if(MATF.size)[PL,PB].forEach(P=>{P.cells=P.cells.filter(c=>c.loc&&matPass(c.loc));});   // clinic-age filter: keep cells whose clinic (offline OR online's block clinic) is in the selected age bucket(s)
+  if(clinF())[PL,PB].forEach(P=>{P.cells=P.cells.filter(c=>c.loc&&matPass(c.loc)&&mhPass(c.loc));});   // clinic-age + MH-pilot filter: keep cells whose clinic (offline OR online's block clinic) passes
   // dynamic Clinic + City values (union across leads + bookings), by size — for city/national drill-down
   const locs={},cities={};
   [PL,PB].forEach(P=>P.cells.forEach(c=>{const s=(c.arr||[]).reduce((a,b)=>a+(b||0),0);if(c.loc)locs[c.loc]=(locs[c.loc]||0)+s;if(c.city)cities[c.city]=(cities[c.city]||0)+s;}));
@@ -1951,8 +1956,8 @@ function buildDoctors(){DOCTORS=[];if(!QD)return;Object.keys(QD.clinics).forEach
   DOCTORS.sort((a,b)=>a.label.localeCompare(b.label));}
 function scopeOptions(s){
   if(s==='city')return [...TRACKED_CITY].filter(c=>c!==NOCITY_LAB).sort().map(c=>({k:c,label:c,tier:tierOf(c)}));
-  if(s==='clinic')return Object.keys(DATASETS.clinic.bk).filter(k=>k!=='_meta'&&k!==NOCITY_LAB&&isTracked(k.split('|')[0])).sort()
-    .map(k=>{const i=k.indexOf('|');return {k,label:k.slice(i+1),sub:k.slice(0,i),tier:tierOf(k.slice(0,i))};});   // tier = the clinic's city tier → enables the Tier-1/Tier-2 quick filter
+  if(s==='clinic')return Object.keys(DATASETS.clinic.bk).filter(k=>k!=='_meta'&&k!==NOCITY_LAB&&isTracked(k.split('|')[0])&&mhPass(k.slice(k.indexOf('|')+1))).sort()
+    .map(k=>{const i=k.indexOf('|');return {k,label:k.slice(i+1),sub:k.slice(0,i),tier:tierOf(k.slice(0,i))};});   // tier = the clinic's city tier → enables the Tier-1/Tier-2 quick filter; MH-pilot filter narrows the list
   if(s==='doctor')return DOCTORS;
   return [];}
 function ensureDefaultSel(s){
@@ -2068,6 +2073,9 @@ Promise.all([
     syncCmp();PL.open={};PB.open={};redrawAll();});
   document.querySelectorAll('#segseg button').forEach(b=>b.onclick=()=>{document.querySelectorAll('#segseg button').forEach(x=>x.classList.remove('on'));b.classList.add('on');SEG=b.dataset.g;syncSegLayer();PL.open={};PB.open={};renderLayerBar(PB);redrawAll();});   // toggle also adds/removes the ② Segment split (+ its layer chip)
   document.querySelectorAll('#matseg button').forEach(b=>b.onclick=()=>{const m=b.dataset.m;if(MATF.has(m))MATF.delete(m);else MATF.add(m);b.classList.toggle('on',MATF.has(m));loadClinic();redrawAll();});   // clinic-age filter (multi-select buckets)
+  document.querySelectorAll('#mhpilotw button').forEach(b=>b.onclick=()=>{MHF=!MHF;b.classList.toggle('on',MHF);
+    if(SCOPE==='clinic'){SEL.clinic.clear();if(MHF)scopeOptions('clinic').forEach(o=>SEL.clinic.add(o.k));else ensureDefaultSel('clinic');}   // clinic scope: MH pilot on → select all 7 pilot clinics; off → re-default
+    renderPicker();loadClinic();redrawAll();});
   document.querySelectorAll('#dowseg button').forEach(b=>b.onclick=()=>{const d=+b.dataset.d;if(DOWSEL.has(d))DOWSEL.delete(d);else DOWSEL.add(d);if(!DOWSEL.size)DOWSEL.add(d);b.classList.toggle('on',DOWSEL.has(d));
     if(DOWSEL.size<7&&CUMUL){WEEKLY=true;CUMUL=false;document.querySelectorAll('#viewseg button').forEach(x=>x.classList.toggle('on',x.dataset.v==='wk'));syncCmp();}   // picking a day subset = compare those days week-vs-week → force the weekly (non-cumulative) view
     PL.open={};PB.open={};redrawAll();});
