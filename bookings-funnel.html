@@ -814,34 +814,34 @@ function appendLeadTriplet(container,cells,padPx){
 }
 
 // ================= ①→② LEAD → BOOK (same-week conversion, WoW-fair) — first-class funnel step, drills in-table by the layer bar =================
-// L→B drill dimensions — the SAME lead cuts as the ① leads layer bar (Source/Medium/City/Clinic/Category/Number/Intent/…)
-const LB_DIMDEF={
-  city:{lab:'City',field:'city'}, clinic:{lab:'Clinic',field:'loc'},
-  channel:{lab:'Source',field:'channel',col:v=>CHAN_C[v]}, medium:{lab:'Medium',field:'medium',col:v=>MODEC[v]},
-  category:{lab:'Category',field:'category'}, number:{lab:'Number dialed',field:'num'},
-  intent:{lab:'Intent',field:'intent'}, strength:{lab:'Intent strength',field:'strength'},
-  status:{lab:'Booked?',field:'status'}, verified:{lab:'Verified?',field:'verified'}, doneq:{lab:'Done?',field:'doneq'},
-};
-const LB_DIM_ORDER=['channel','medium','city','clinic','category','number','intent','strength','status','verified','doneq'];
+// L→B drill dimensions — the EXACT same lead cuts as the ① leads layer bar (shared DIMS), scope-aware like the leads pivot.
+const LB_ALL_DIMS=['citygroup','city','clinic','channel','medium','number','intent','strength','category','status','verified','doneq','relevance'];
+function lbDimsForScope(){   // mirror the leads pivot: national → Attribution + City; city → City; clinic → neither (you've already picked the clinic)
+  return LB_ALL_DIMS.filter(d=>{
+    if(d==='citygroup')return SCOPE==='national';
+    if(d==='city')return SCOPE==='national'||SCOPE==='city';
+    if(d==='clinic')return SCOPE!=='clinic';
+    return true;});
+}
 let LB_LAYERS=['channel','medium'];   // ordered drill layers (default Source → Medium)
 let LB_SEL={};        // LB_SEL[dim] = Set of de-selected values (the ▾ value filters, exactly like the leads layer bar)
 let LB_OPEN=new Set();// expanded drill path keys
 let lbDrag=null;
-function lbFieldVal(c,dim){const v=c[LB_DIMDEF[dim].field];return v==null?'':v;}
-function lbValLab(dim,v){if(dim==='channel')return (DIMS.channel.values.find(x=>x.k===v)||{}).l||v||'—';if(dim==='medium')return (DIMS.medium.values.find(x=>x.k===v)||{}).l||v||'—';
+function lbFieldVal(c,dim){const v=c[DIMS[dim].field];return v==null?'':v;}
+function lbValLab(dim,v){const dv=(DIMS[dim].values||[]).find(x=>x.k===v);if(dv)return dv.l||dv.k;
   if(v===''||v==null)return dim==='clinic'?'— no clinic':dim==='number'?'— web / no call':dim==='city'?'— no city':'—';return v;}
-function lbValCol(dim,v){const d=LB_DIMDEF[dim];return (d.col&&d.col(v))||'#8892a0';}
+function lbValCol(dim,v){try{return DIMS[dim].color(v)||'#8892a0';}catch(e){return '#8892a0';}}
 function lbBaseCells(){return (PL.cells||[]).filter(c=>Object.keys(LB_SEL).every(dim=>{const off=LB_SEL[dim];return !off||!off.size||!off.has(lbFieldVal(c,dim));}));}
 // contribution rows for a set of cells split by one dim (each = its own same-week L→B shift-share)
 // draggable layer bar for the L→B drill (mirrors the ops / leads layer bars: numbered chips · ▾ value picker · × remove · drag · ＋ ghosts)
 function renderLBBar(){const ll=document.getElementById('lbBar');if(!ll)return;ll.innerHTML='';
   const all=(PL.cells||[]);
   const lead=document.createElement('span');lead.className='lead';lead.textContent='Layers ·';ll.appendChild(lead);
-  LB_LAYERS.forEach((dim,idx)=>{const def=LB_DIMDEF[dim];
+  LB_LAYERS.forEach((dim,idx)=>{const def=DIMS[dim];
     const tot={};all.forEach(c=>{const v=lbFieldVal(c,dim),s=(c.arr||[]).reduce((a,b)=>a+(b||0),0);tot[v]=(tot[v]||0)+s;});
     const vals=Object.keys(tot).sort((a,b)=>tot[b]-tot[a]),off=LB_SEL[dim]||new Set(),nsel=vals.filter(v=>!off.has(v)).length,isX=LB_LAYERS.length>1;
     const chip=document.createElement('div');chip.className='chip';chip.draggable=true;chip.dataset.l=dim;
-    chip.innerHTML=`<span class="grip">⋮⋮</span><span class="ord">${idx+1}</span><span class="nm">${def.lab}</span><span class="cnt">${nsel}/${vals.length}</span><span class="cv">▾</span>`+(isX?'<span class="rm" title="remove layer">×</span>':'');
+    chip.innerHTML=`<span class="grip">⋮⋮</span><span class="ord">${idx+1}</span><span class="nm">${def.label}</span><span class="cnt">${nsel}/${vals.length}</span><span class="cv">▾</span>`+(isX?'<span class="rm" title="remove layer">×</span>':'');
     const pop=document.createElement('div');pop.className='pop';
     pop.innerHTML=`<div class="pact"><button data-a="all">All</button><button data-a="none">None</button></div>`+vals.map(v=>`<label><input type="checkbox" data-v="${(''+v).replace(/"/g,'&quot;')}" ${!off.has(v)?'checked':''}><span class="sw" style="background:${lbValCol(dim,v)}"></span>${lbValLab(dim,v)}</label>`).join('');
     chip.appendChild(pop);
@@ -855,7 +855,7 @@ function renderLBBar(){const ll=document.getElementById('lbBar');if(!ll)return;l
     chip.ondrop=(e)=>{e.preventDefault();if(!lbDrag||lbDrag===dim)return;const arr=LB_LAYERS.filter(x=>x!==lbDrag),at=arr.indexOf(dim);arr.splice(at<0?arr.length:at,0,lbDrag);LB_LAYERS=arr;lbDrag=null;LB_OPEN=new Set();renderLB();};
     ll.appendChild(chip);
     if(idx<LB_LAYERS.length-1){const a=document.createElement('span');a.className='arrow';a.textContent='→';ll.appendChild(a);}});
-  LB_DIM_ORDER.filter(d=>!LB_LAYERS.includes(d)).forEach(d=>{const g=document.createElement('div');g.className='ghost';g.textContent='＋ '+LB_DIMDEF[d].lab;g.onclick=()=>{LB_LAYERS.push(d);LB_OPEN=new Set();renderLB();};ll.appendChild(g);});}
+  lbDimsForScope().filter(d=>!LB_LAYERS.includes(d)).forEach(d=>{const g=document.createElement('div');g.className='ghost';g.textContent='＋ '+DIMS[d].label;g.onclick=()=>{LB_LAYERS.push(d);LB_OPEN=new Set();renderLB();};ll.appendChild(g);});}
 // nested contribution drill by the LB_LAYERS order
 // nested drill INTO the same funnel table — each node = its L→B % weekly trend (standard row: week cols · Δ · before/now · sparkline), consistent with the tables above/below
 function lbDrill(container,cells,depth,pathKey){
@@ -884,7 +884,8 @@ function renderLB(){
   const cells=lbBaseCells();
   const gWk=weekArr(cells),swWk=weekArr(cells.filter(c=>c.bkw0));
   const gW=dv(gWk),swW=dv(swWk),rate=gW.map((t,i)=>t?Math.round(100*swW[i]/t):0);
-  hH.textContent='Attributable leads  →  booked · same week  →  L→B %  · by '+LB_LAYERS.map(d=>LB_DIMDEF[d].lab).join(' → ');
+  LB_LAYERS=LB_LAYERS.filter(d=>lbDimsForScope().includes(d));if(!LB_LAYERS.length)LB_LAYERS=['channel','medium'];   // drop layers invalid at the current scope (e.g. City at clinic scope)
+  hH.textContent='Attributable leads  →  booked · same week  →  L→B %  · by '+LB_LAYERS.map(d=>DIMS[d].label).join(' → ');
   if(WEEKLY){const ix=wkIdxs(),ba=baseAx();hR.innerHTML=ix.map((i,j)=>`<span class="wk${j===ix.length-1?' last':''}">${blockLabel(ba,i)}</span>`).join('')+`<span class="delta">Δ ${CMP}</span><span class="avgmk avgbefore"><span class="avglab">before</span></span><span class="avgmk avgnow"><span class="avglab">now</span></span><span class="zoom">graph</span>`;}
   else hR.innerHTML=`<span class="cnt">n</span><span class="pct"></span><span class="zoom">graph</span>`;
   flow.innerHTML='';if(dec)dec.innerHTML='';
