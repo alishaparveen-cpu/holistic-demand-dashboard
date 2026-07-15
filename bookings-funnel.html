@@ -403,6 +403,7 @@
   <!-- ①→② Lead → Book (same-week conversion, WoW-fair) — first-class funnel step -->
   <div id="lbSection">
   <h2 class="sech" style="margin-top:32px">①→② Lead → Book <span class="lbsub" title="Same-week conversion: of the leads that arrived in a week, how many booked an SC that SAME week. This is maturity-neutral — every week is judged only on the demand it could convert immediately — so it is comparable week-on-week (unlike 'booked ever', where older weeks keep accumulating bookings and always look better).">· same-week %, WoW-fair</span></h2>
+  <div class="layerbar" id="lbBar" style="margin-top:2px"></div>
   <div class="fmwrap">
     <div class="head"><span class="h-lbl" id="hHdrLB"></span><span id="hRightLB" style="display:contents"></span></div>
     <div id="flowLB"></div>
@@ -834,15 +835,76 @@ function appendLeadTriplet(container,cells,padPx){
 }
 
 // ================= ①→② LEAD → BOOK (same-week conversion, WoW-fair) — first-class funnel step + drop-driver decomposition =================
-let LB_OPEN=new Set();   // which source rows are expanded to their medium breakdown in the L→B decomposition
 // exact midpoint shift-share: Δbookings = volume(r̄·ΔL) + rate(L̄·Δr), volume+rate = ΔB exactly (r=B/L at each end).
 function lbShift(L0,L1,B0,B1){const r0=L0?B0/L0:0,r1=L1?B1/L1:0,rbar=(r0+r1)/2,Lbar=(L0+L1)/2;
   return {L0,L1,B0,B1,r0,r1,dL:L1-L0,dr:r1-r0,vol:rbar*(L1-L0),rate:Lbar*(r1-r0),dB:B1-B0};}
+// L→B drill dimensions — the SAME lead cuts as the ① leads layer bar (Source/Medium/City/Clinic/Category/Number/Intent/…)
+const LB_DIMDEF={
+  city:{lab:'City',field:'city'}, clinic:{lab:'Clinic',field:'loc'},
+  channel:{lab:'Source',field:'channel',col:v=>CHAN_C[v]}, medium:{lab:'Medium',field:'medium',col:v=>MODEC[v]},
+  category:{lab:'Category',field:'category'}, number:{lab:'Number dialed',field:'num'},
+  intent:{lab:'Intent',field:'intent'}, strength:{lab:'Intent strength',field:'strength'},
+  status:{lab:'Booked?',field:'status'}, verified:{lab:'Verified?',field:'verified'}, doneq:{lab:'Done?',field:'doneq'},
+};
+const LB_DIM_ORDER=['channel','medium','city','clinic','category','number','intent','strength','status','verified','doneq'];
+let LB_LAYERS=['channel','medium'];   // ordered drill layers (default Source → Medium)
+let LB_SEL={};        // LB_SEL[dim] = Set of de-selected values (the ▾ value filters, exactly like the leads layer bar)
+let LB_OPEN=new Set();// expanded drill path keys
+let lbDrag=null;
+function lbFieldVal(c,dim){const v=c[LB_DIMDEF[dim].field];return v==null?'':v;}
+function lbValLab(dim,v){if(dim==='channel')return (DIMS.channel.values.find(x=>x.k===v)||{}).l||v||'—';if(dim==='medium')return (DIMS.medium.values.find(x=>x.k===v)||{}).l||v||'—';
+  if(v===''||v==null)return dim==='clinic'?'— no clinic':dim==='number'?'— web / no call':dim==='city'?'— no city':'—';return v;}
+function lbValCol(dim,v){const d=LB_DIMDEF[dim];return (d.col&&d.col(v))||'#8892a0';}
+function lbBaseCells(){return (PL.cells||[]).filter(c=>Object.keys(LB_SEL).every(dim=>{const off=LB_SEL[dim];return !off||!off.size||!off.has(lbFieldVal(c,dim));}));}
+// contribution rows for a set of cells split by one dim (each = its own same-week L→B shift-share)
+function lbRowsFor(cs,dim){const vv={};
+  cs.forEach(c=>{const k=lbFieldVal(c,dim);(vv[k]||(vv[k]={all:[],bk:[]})).all.push(c);if(c.bkw0)vv[k].bk.push(c);});
+  return Object.keys(vv).map(k=>{const gv=dv(weekArr(vv[k].all)),sv=dv(weekArr(vv[k].bk));const a=deltaPct(gv),b=deltaPct(sv);const s=lbShift(a.before,a.now,b.before,b.now);
+    return {k,dim,cells:vv[k].all,lead0:s.L0,lead1:s.L1,r0:s.r0,r1:s.r1,contrib:s.dB,vol:s.vol,rate:s.rate,size:s.L0+s.L1};}).filter(r=>r.size>0.5).sort((a,b)=>Math.abs(b.contrib)-Math.abs(a.contrib));}
+// draggable layer bar for the L→B drill (mirrors the ops / leads layer bars: numbered chips · ▾ value picker · × remove · drag · ＋ ghosts)
+function renderLBBar(){const ll=document.getElementById('lbBar');if(!ll)return;ll.innerHTML='';
+  const all=(PL.cells||[]);
+  const lead=document.createElement('span');lead.className='lead';lead.textContent='Layers ·';ll.appendChild(lead);
+  LB_LAYERS.forEach((dim,idx)=>{const def=LB_DIMDEF[dim];
+    const tot={};all.forEach(c=>{const v=lbFieldVal(c,dim),s=(c.arr||[]).reduce((a,b)=>a+(b||0),0);tot[v]=(tot[v]||0)+s;});
+    const vals=Object.keys(tot).sort((a,b)=>tot[b]-tot[a]),off=LB_SEL[dim]||new Set(),nsel=vals.filter(v=>!off.has(v)).length,isX=LB_LAYERS.length>1;
+    const chip=document.createElement('div');chip.className='chip';chip.draggable=true;chip.dataset.l=dim;
+    chip.innerHTML=`<span class="grip">⋮⋮</span><span class="ord">${idx+1}</span><span class="nm">${def.lab}</span><span class="cnt">${nsel}/${vals.length}</span><span class="cv">▾</span>`+(isX?'<span class="rm" title="remove layer">×</span>':'');
+    const pop=document.createElement('div');pop.className='pop';
+    pop.innerHTML=`<div class="pact"><button data-a="all">All</button><button data-a="none">None</button></div>`+vals.map(v=>`<label><input type="checkbox" data-v="${(''+v).replace(/"/g,'&quot;')}" ${!off.has(v)?'checked':''}><span class="sw" style="background:${lbValCol(dim,v)}"></span>${lbValLab(dim,v)}</label>`).join('');
+    chip.appendChild(pop);
+    chip.onclick=(e)=>{if(e.target.closest('.pop'))return;
+      if(e.target.classList.contains('rm')){e.stopPropagation();LB_LAYERS=LB_LAYERS.filter(x=>x!==dim);LB_OPEN=new Set();renderLB();return;}
+      const open=pop.classList.contains('show');document.querySelectorAll('.pop').forEach(p=>p.classList.remove('show'));document.querySelectorAll('.chip').forEach(c=>c.classList.remove('open2'));if(!open){pop.classList.add('show');chip.classList.add('open2');}};
+    pop.querySelectorAll('.pact button').forEach(b=>b.onclick=(e)=>{e.stopPropagation();LB_SEL[dim]=b.dataset.a==='all'?new Set():new Set(vals);LB_OPEN=new Set();renderLB();});
+    pop.querySelectorAll('input').forEach(inp=>inp.onclick=(e)=>{e.stopPropagation();LB_SEL[dim]=LB_SEL[dim]||new Set();const v=inp.dataset.v;if(inp.checked)LB_SEL[dim].delete(v);else LB_SEL[dim].add(v);LB_OPEN=new Set();renderLB();});
+    chip.ondragstart=()=>{lbDrag=dim;chip.classList.add('drag');};chip.ondragend=()=>{lbDrag=null;ll.querySelectorAll('.chip').forEach(x=>x.classList.remove('over','drag'));};
+    chip.ondragover=(e)=>{e.preventDefault();chip.classList.add('over');};chip.ondragleave=()=>chip.classList.remove('over');
+    chip.ondrop=(e)=>{e.preventDefault();if(!lbDrag||lbDrag===dim)return;const arr=LB_LAYERS.filter(x=>x!==lbDrag),at=arr.indexOf(dim);arr.splice(at<0?arr.length:at,0,lbDrag);LB_LAYERS=arr;lbDrag=null;LB_OPEN=new Set();renderLB();};
+    ll.appendChild(chip);
+    if(idx<LB_LAYERS.length-1){const a=document.createElement('span');a.className='arrow';a.textContent='→';ll.appendChild(a);}});
+  LB_DIM_ORDER.filter(d=>!LB_LAYERS.includes(d)).forEach(d=>{const g=document.createElement('div');g.className='ghost';g.textContent='＋ '+LB_DIMDEF[d].lab;g.onclick=()=>{LB_LAYERS.push(d);LB_OPEN=new Set();renderLB();};ll.appendChild(g);});}
+// nested contribution drill by the LB_LAYERS order
+function lbDrill(container,cells,depth,pathKey){
+  if(depth>=LB_LAYERS.length)return;
+  const dim=LB_LAYERS[depth],rows=lbRowsFor(cells,dim).slice(0,depth===0?12:8),fmt=v=>(v>=0?'+':'−')+Math.abs(Math.round(v));
+  rows.forEach(r=>{const key=pathKey+'/'+dim+':'+r.k,expandable=depth<LB_LAYERS.length-1,open=LB_OPEN.has(key);
+    const cc=r.contrib>=0?'up':'dn',rc=(r.r1-r.r0)>=0?'up':'dn',lc=(r.lead1-r.lead0)>=0?'up':'dn';
+    const el=document.createElement('div');el.className='lbcrow'+(depth?' sub':'');el.style.paddingLeft=(8+depth*20)+'px';
+    el.innerHTML=`<span class="lbck">${expandable?`<span class="chev">${open?'▾':'▶'}</span>`:'<span class="chev leaf">▶</span>'}<span class="dot" style="background:${lbValCol(dim,r.k)}"></span>${lbValLab(dim,r.k)}</span>`
+      +`<span class="lbcm">leads <b>${Math.round(r.lead1)}</b> <span class="${lc}">${fmt(r.lead1-r.lead0)}</span></span>`
+      +`<span class="lbcm">L→B <b>${Math.round(r.r1*100)}%</b> <span class="${rc}">${((r.r1-r.r0)*100>=0?'+':'')+((r.r1-r.r0)*100).toFixed(1)}pp</span></span>`
+      +`<span class="lbcc ${cc}">${fmt(r.contrib)} bk</span>`
+      +`<span class="lbcvr" title="volume vs rate split of this row's contribution">vol ${fmt(r.vol)} · rate ${fmt(r.rate)}</span>`;
+    if(expandable){el.style.cursor='pointer';el.onclick=()=>{if(LB_OPEN.has(key))LB_OPEN.delete(key);else LB_OPEN.add(key);renderLB();};}
+    container.appendChild(el);
+    if(open)lbDrill(container,r.cells,depth+1,key);});}
 function renderLB(){
   const sec=document.getElementById('lbSection');if(!sec||sec.style.display==='none')return;
   const flow=document.getElementById('flowLB'),dec=document.getElementById('lbDecomp'),
         hH=document.getElementById('hHdrLB'),hR=document.getElementById('hRightLB');
-  const cells=PL.cells.filter(c=>cellPass(c,PL));
+  renderLBBar();
+  const cells=lbBaseCells();
   const gWk=weekArr(cells),swWk=weekArr(cells.filter(c=>c.bkw0));
   const gW=dv(gWk),swW=dv(swWk),rate=gW.map((t,i)=>t?Math.round(100*swW[i]/t):0);
   hH.textContent='Attributable leads  →  booked · same week  →  L→B %';
@@ -861,7 +923,6 @@ function renderLB(){
   row('Attributable leads',gW,false,'var(--accent)','foot');
   row('↳ booked · same week',swW,false,'#2E7D5B','bkd');
   row('→ L→B % · same-week',rate,true,'#2C6CAE','rate lbhero');
-  // ---- drop-driver decomposition (volume vs rate) + per-source/medium contribution ----
   renderLBDecomp(dec,cells);
 }
 function renderLBDecomp(dec,cells){
@@ -873,44 +934,24 @@ function renderLBDecomp(dec,cells){
   const dominant=Math.abs(S.rate)>=Math.abs(S.vol)?'rate':'volume';
   const volPhrase=`a <b>${S.dL>=0?'+':'−'}${Math.abs(Math.round(S.dL))}-lead</b> volume ${S.dL>=0?'gain':'drop'}`;
   const ratePhrase=`a <b>${ppt>=0?'+':''}${ppt.toFixed(1)}pp</b> L→B ${ppt>=0?'gain':'drop'}`;
-  const offsetting=(S.vol>0)!==(S.rate>0) && Math.min(Math.abs(S.vol),Math.abs(S.rate))>Math.abs(S.dB);   // vol & rate pull opposite ways and each is bigger than the net → they cancel
+  const offsetting=(S.vol>0)!==(S.rate>0) && Math.min(Math.abs(S.vol),Math.abs(S.rate))>Math.abs(S.dB);
   let verdict;
   if(Math.abs(S.dB)<0.5&&!offsetting) verdict=`Same-week bookings are flat vs ${CMP}.`;
   else if(offsetting) verdict=`Same-week bookings are <b>~flat</b> vs ${CMP} (net ${S.dB>=0?'+':'−'}${Math.abs(Math.round(S.dB))}), but that hides two offsetting moves: ${S.vol<0?volPhrase:ratePhrase} was cancelled out by ${S.vol<0?ratePhrase:volPhrase}.`;
   else verdict=`<b class="${cls}">${S.dB>=0?'▲':'▼'} ${Math.abs(Math.round(S.dB))} ${dir}</b> same-week bookings vs ${CMP} — driven mostly by <b>${dominant==='rate'?'the L→B rate':'lead volume'}</b> (${dominant==='rate'?ratePhrase:volPhrase}).`;
   const fmt=v=>(v>=0?'+':'−')+Math.abs(Math.round(v));
   const volPct=Math.abs(S.vol)+Math.abs(S.rate)?Math.round(100*Math.abs(S.vol)/(Math.abs(S.vol)+Math.abs(S.rate))):0;
-  // per-value contributions — NESTED: Source (top) → Medium (drill), like the ① leads layer bar
-  const colOf=(field,k)=>field==='channel'?(CHAN_C[k]||'#8892a0'):(MODEC[k]||'#8892a0');
-  const labOf=(field,k)=>(DIMS[field==='channel'?'channel':'medium'].values.find(v=>v.k===k)||{}).l||k;
-  const lbRowsFor=(cs,field)=>{const vv={};cs.forEach(c=>{const k=c[field]||'—';(vv[k]||(vv[k]={all:[],bk:[]})).all.push(c);if(c.bkw0)vv[k].bk.push(c);});
-    return Object.keys(vv).map(k=>{const gv=dv(weekArr(vv[k].all)),sv=dv(weekArr(vv[k].bk));const a=deltaPct(gv),b=deltaPct(sv);const s=lbShift(a.before,a.now,b.before,b.now);
-      return {k,field,cells:vv[k].all,lead0:s.L0,lead1:s.L1,r0:s.r0,r1:s.r1,contrib:s.dB,vol:s.vol,rate:s.rate,size:s.L0+s.L1};}).filter(r=>r.size>0.5).sort((a,b)=>Math.abs(b.contrib)-Math.abs(a.contrib));};
-  const rowHTML=(r,depth,expandable,open)=>{
-    const cc=r.contrib>=0?'up':'dn',rc=(r.r1-r.r0)>=0?'up':'dn',lc=(r.lead1-r.lead0)>=0?'up':'dn';
-    const chev=expandable?`<span class="chev">${open?'▾':'▶'}</span>`:'<span class="chev leaf">▶</span>';
-    return `<div class="lbcrow${depth?' sub':''}"${depth?'':` data-src="${(''+r.k).replace(/"/g,'&quot;')}"`} style="padding-left:${8+depth*20}px">
-      <span class="lbck">${chev}<span class="dot" style="background:${colOf(r.field,r.k)}"></span>${labOf(r.field,r.k)}</span>
-      <span class="lbcm">leads <b>${Math.round(r.lead1)}</b> <span class="${lc}">${fmt(r.lead1-r.lead0)}</span></span>
-      <span class="lbcm">L→B <b>${Math.round(r.r1*100)}%</b> <span class="${rc}">${((r.r1-r.r0)*100>=0?'+':'')+((r.r1-r.r0)*100).toFixed(1)}pp</span></span>
-      <span class="lbcc ${cc}">${fmt(r.contrib)} bk</span>
-      <span class="lbcvr" title="volume vs rate split of this row's contribution">vol ${fmt(r.vol)} · rate ${fmt(r.rate)}</span>
-    </div>`;};
-  const srcRows=lbRowsFor(cells,'channel').slice(0,8);
-  let rowsHTML='';
-  srcRows.forEach(r=>{const open=LB_OPEN.has(r.k);rowsHTML+=rowHTML(r,0,true,open);
-    if(open){const meds=lbRowsFor(r.cells,'medium').slice(0,6);rowsHTML+=meds.length?meds.map(m=>rowHTML(m,1,false,false)).join(''):'<div class="lbdnote" style="padding-left:36px">no medium split</div>';}});
   dec.innerHTML=`<div class="lbdec">
     <div class="lbdverdict">${verdict}</div>
     <div class="lbdsplit">
       <div class="lbdbar"><span class="lbdbfill vol" style="width:${volPct}%"></span><span class="lbdbfill rate" style="width:${100-volPct}%"></span></div>
       <div class="lbdlbls"><span class="vol">Volume ${fmt(S.vol)} bk</span><span class="rate">Rate ${fmt(S.rate)} bk</span></div>
     </div>
-    <div class="lbdhd">Contribution to the change · <b>Source → Medium</b> — ranked by impact · click a source to drill into its mediums</div>
-    <div class="lbclist">${rowsHTML||'<div class="lbdnote">no breakdown available</div>'}</div>
+    <div class="lbdhd">Contribution to the change · <b>${LB_LAYERS.map(d=>LB_DIMDEF[d].lab).join(' → ')}</b> — ranked by impact · drag the layer chips above · click a row to drill</div>
+    <div class="lbclist" id="lbclist"></div>
     <div class="lbdnote">volume = fewer/more leads at the same rate · rate = better/worse L→B at the same volume · the two sum to each row's booking change (exact).</div>
   </div>`;
-  dec.querySelectorAll('.lbcrow[data-src]').forEach(row=>row.onclick=()=>{const k=row.dataset.src;if(LB_OPEN.has(k))LB_OPEN.delete(k);else LB_OPEN.add(k);renderLB();});
+  lbDrill(document.getElementById('lbclist'),cells,0,'');
 }
 
 // ================= OPS SECTIONS (③ Availability · ④ Book→Done · ⑤ Done) — driven by data_quick_diag.json =================
