@@ -175,81 +175,35 @@ lead_attr AS (
   WHERE l.deleted_at IS NULL AND l.created_at >= '2026-01-05' AND l.created_at < '2026-07-13'
     AND NOT (lower(coalesce(l.utm_medium,''))='clinic' AND lower(coalesce(l.utm_campaign,''))='website')   -- drop the organic/clinic/website bot flood (250k fake +91 leads to /clinics/ pages in wk 6-12 Jul; legit is only ~60/wk)
 ),
-booked AS (   -- phone -> earliest SC booking date per city (for the lead->booking lag)
-  SELECT ph, city, MIN(bd) AS bd FROM (
-    SELECT RIGHT(REGEXP_REPLACE(COALESCE(p.phone_no,''),'[^0-9]',''),10) AS ph,
-           COALESCE(cm.city, INITCAP(loc.city)) AS city, DATE(a.start_time + INTERVAL '5.5 hours') AS bd
-    FROM allo_consultations.appointments a
-    JOIN allo_consultations.types t ON a.type_id=t.id AND t.name='Screening Call'
-    JOIN allo_health.locations loc ON a.location_id=loc.id AND loc.deleted_at IS NULL
-    LEFT JOIN citymap cm ON cm.tok = LOWER(loc.city)
-    JOIN allo_persons.patient p ON p.id=a.patient_id
-    WHERE a.deleted_at IS NULL
-  ) q GROUP BY ph, city
-),
-booked_any AS (   -- phone -> earliest SC booking ANYWHERE (used for no-city leads: they have no city to match against)
-  SELECT RIGHT(REGEXP_REPLACE(COALESCE(p.phone_no,''),'[^0-9]',''),10) AS ph, MIN(DATE(a.start_time + INTERVAL '5.5 hours')) AS bd
+lead_book AS (   -- ID JOIN: lead -> ITS patient's SC bookings (patient.lead_id = lead.id). Catches alternate-phone bookings; matches ②'s patient_id book side. (was phone-match)
+  SELECT p.lead_id AS lid,
+         MIN(DATE(a.start_time + INTERVAL '5.5 hours')) AS bd,   -- earliest SC anywhere (for the lead->book lag)
+         MAX(CASE WHEN a.location_id NOT IN ('c7d8c9d2-f389-4e8f-a260-71110195b83f','ffe8d849-3099-48fe-a2df-e324c4befe56') THEN 1 ELSE 0 END) AS any_off,   -- booked a physical SC
+         MAX(CASE WHEN a.location_id IN ('c7d8c9d2-f389-4e8f-a260-71110195b83f','ffe8d849-3099-48fe-a2df-e324c4befe56') THEN 1 ELSE 0 END) AS any_onl,      -- booked an online telehealth SC
+         MAX(CASE WHEN LOWER(a.status) IN ('completed','reconsulted') THEN 1 ELSE 0 END) AS did_done   -- completed an SC
   FROM allo_consultations.appointments a
   JOIN allo_consultations.types t ON a.type_id=t.id AND t.name='Screening Call'
   JOIN allo_persons.patient p ON p.id=a.patient_id
-  WHERE a.deleted_at IS NULL
-  GROUP BY 1
+  WHERE a.deleted_at IS NULL AND p.lead_id IS NOT NULL
+  GROUP BY p.lead_id
 ),
-booked_online AS (   -- phone booked an ONLINE (telehealth) SC anywhere = the 2 telehealth UUIDs (sheet definition)
-  SELECT DISTINCT RIGHT(REGEXP_REPLACE(COALESCE(p.phone_no,''),'[^0-9]',''),10) AS ph
-  FROM allo_consultations.appointments a
-  JOIN allo_consultations.types t ON a.type_id=t.id AND t.name='Screening Call'
-  JOIN allo_persons.patient p ON p.id=a.patient_id
-  WHERE a.deleted_at IS NULL AND a.location_id IN ('c7d8c9d2-f389-4e8f-a260-71110195b83f','ffe8d849-3099-48fe-a2df-e324c4befe56')
-),
-booked_offline_any AS (   -- phone booked a PHYSICAL (offline) SC anywhere = NOT the 2 telehealth UUIDs
-  SELECT DISTINCT RIGHT(REGEXP_REPLACE(COALESCE(p.phone_no,''),'[^0-9]',''),10) AS ph
-  FROM allo_consultations.appointments a
-  JOIN allo_consultations.types t ON a.type_id=t.id AND t.name='Screening Call'
-  JOIN allo_persons.patient p ON p.id=a.patient_id
-  WHERE a.deleted_at IS NULL AND a.location_id NOT IN ('c7d8c9d2-f389-4e8f-a260-71110195b83f','ffe8d849-3099-48fe-a2df-e324c4befe56')
-),
-verified AS (   -- phone that has an Allo patient record (a patient_id was created), regardless of booking → "verified lead"
-  SELECT DISTINCT RIGHT(REGEXP_REPLACE(COALESCE(phone_no,''),'[^0-9]',''),10) AS ph
-  FROM allo_persons.patient WHERE deleted_at IS NULL AND COALESCE(phone_no,'') <> ''
-),
-done_city AS (   -- phone that COMPLETED an SC in a given city → the lead's Done? split (mirrors booked, per city)
-  SELECT DISTINCT RIGHT(REGEXP_REPLACE(COALESCE(p.phone_no,''),'[^0-9]',''),10) AS ph, COALESCE(cm.city, INITCAP(loc.city)) AS city
-  FROM allo_consultations.appointments a
-  JOIN allo_consultations.types t ON a.type_id=t.id AND t.name='Screening Call'
-  JOIN allo_health.locations loc ON a.location_id=loc.id AND loc.deleted_at IS NULL
-  LEFT JOIN citymap cm ON cm.tok = LOWER(loc.city)
-  JOIN allo_persons.patient p ON p.id=a.patient_id
-  WHERE a.deleted_at IS NULL AND LOWER(a.status) IN ('completed','reconsulted')
-),
-done_any AS (   -- phone that COMPLETED an SC anywhere (for no-city leads)
-  SELECT DISTINCT RIGHT(REGEXP_REPLACE(COALESCE(p.phone_no,''),'[^0-9]',''),10) AS ph
-  FROM allo_consultations.appointments a
-  JOIN allo_consultations.types t ON a.type_id=t.id AND t.name='Screening Call'
-  JOIN allo_persons.patient p ON p.id=a.patient_id
-  WHERE a.deleted_at IS NULL AND LOWER(a.status) IN ('completed','reconsulted')
+lead_pat AS (   -- verified-lead universe: a patient_id was created FROM this lead (patient.lead_id = lead.id). The funnel is now verified-only.
+  SELECT DISTINCT lead_id AS lid FROM allo_persons.patient WHERE deleted_at IS NULL AND lead_id IS NOT NULL
 )
 SELECT COALESCE(la.city,'— no city · online / untracked') AS city, COALESCE(la.locality,'') AS locality, la.channel, la.medium, la.number, la.url, la.relevance, la.intent, la.strength, la.category,
-  -- attributed leads: booked = booked IN THAT CITY (b). No-city leads: booked = booked ANYWHERE (ba), since there is no city to match.
-  CASE WHEN (CASE WHEN la.city IS NULL THEN ba.bd ELSE b.bd END) IS NULL THEN 'notbooked'
-       WHEN DATEDIFF(day, la.created, CASE WHEN la.city IS NULL THEN ba.bd ELSE b.bd END) < 0 THEN 'prior'
-       WHEN DATEDIFF(day, la.created, CASE WHEN la.city IS NULL THEN ba.bd ELSE b.bd END) <= 6 THEN 'w0'
-       WHEN DATEDIFF(day, la.created, CASE WHEN la.city IS NULL THEN ba.bd ELSE b.bd END) <= 13 THEN 'w1'
+  -- booked via the ID join (patient.lead_id): lag from lead created -> the lead's patient's earliest SC
+  CASE WHEN lb.bd IS NULL THEN 'notbooked'
+       WHEN DATEDIFF(day, la.created, lb.bd) < 0 THEN 'prior'
+       WHEN DATEDIFF(day, la.created, lb.bd) <= 6 THEN 'w0'
+       WHEN DATEDIFF(day, la.created, lb.bd) <= 13 THEN 'w1'
        ELSE 'later' END AS status,
-  CASE WHEN v.ph IS NOT NULL THEN 'y' ELSE 'n' END AS verified,          -- patient_id created for this lead's phone
-  CASE WHEN (la.city IS NOT NULL AND b.bd IS NOT NULL) OR (la.city IS NULL AND bofa.ph IS NOT NULL) THEN 'offline'   -- booked a physical SC (city-matched, or any offline for no-city leads)
-       WHEN bo.ph IS NOT NULL THEN 'online'                             -- else booked an online telehealth SC
-       ELSE 'none' END AS bkseg,
-  CASE WHEN (CASE WHEN la.city IS NULL THEN da.ph ELSE dc.ph END) IS NOT NULL THEN 'done' ELSE 'notdone' END AS doneq,   -- completed an SC in that city (no-city lead → completed anywhere)
-  la.created, COUNT(DISTINCT la.ph) AS n
+  'y' AS verified,                                                      -- verified-only funnel (every row has a patient via lead_id)
+  CASE WHEN lb.any_off=1 THEN 'offline' WHEN lb.any_onl=1 THEN 'online' ELSE 'none' END AS bkseg,   -- where the booked lead booked (offline priority)
+  CASE WHEN lb.did_done=1 THEN 'done' ELSE 'notdone' END AS doneq,      -- the lead's patient completed an SC
+  la.created, COUNT(DISTINCT la.id) AS n
 FROM lead_attr la
-  LEFT JOIN booked b ON b.ph=la.ph AND b.city=la.city
-  LEFT JOIN booked_any ba ON ba.ph=la.ph
-  LEFT JOIN booked_online bo ON bo.ph=la.ph
-  LEFT JOIN booked_offline_any bofa ON bofa.ph=la.ph
-  LEFT JOIN verified v ON v.ph=la.ph
-  LEFT JOIN done_city dc ON dc.ph=la.ph AND dc.city=la.city
-  LEFT JOIN done_any da ON da.ph=la.ph
+  JOIN lead_pat lp ON lp.lid = la.id                                    -- verified-only (drops the ~1% unverified; 0 bookings among them)
+  LEFT JOIN lead_book lb ON lb.lid = la.id
 WHERE la.channel IS NOT NULL AND la.ph <> ''
 GROUP BY 1,2,3,4,5,6,7,8,9,10,11,12,13,14,15 ORDER BY 1,3;
 """
