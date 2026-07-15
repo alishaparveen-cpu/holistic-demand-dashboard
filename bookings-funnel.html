@@ -1650,7 +1650,7 @@ const IM_NEST_DEFS={
   maturity:{lab:'Lead maturity', vals:[['fresh','fresh'],['wk1','1wk'],['wk2_4','2–4wk'],['mo1_3','1–3mo'],['mo3','3mo+'],['nolead','no lead']], field:{bookings:'age',done:'age'}},
   brank:{lab:'Booking rank', vals:[['1st','1st-ever'],['2nd','2nd'],['3rd','3rd'],['4pl','4th+']], field:{bookings:'brank',done:'brank'}},
 };
-let IM_NEST=['clinic'];   // layer chain (like the full funnel). 'clinic' = the City→Clinic drill as a real draggable chip; add Source/Medium/etc. after it. Default populated so the bar reads like the full funnel.
+let IM_NEST=['clinic','channel','medium'];   // layer chain (like the full funnel), pre-populated: City→Clinic→Source→Medium. Every chip has a ▾ value multiselect + drag reorder + × remove + ＋ ghosts. 'clinic' = the City→Clinic drill as a real chip.
 let IM_NEST_SEL={};   // per-nest-dim Set of EXCLUDED (unchecked) values — the full-funnel-style ▾ value multiselect. Absent/empty = all values shown.
 let imNestDrag=null;
 function imNodeCells(ent,path){const cells={};let prim=0;   // path = [{dim,val}] accumulated nest filters
@@ -1714,7 +1714,7 @@ function imRender(){const sec=document.getElementById('imSection');if(!sec||sec.
     const title=[ent.city,ent.loc,ent.doctor].filter(Boolean).join(' · ')+(cutPath.length?' › '+cutPath.map(pc=>(IM_NEST_DEFS[pc.dim].vals.find(v=>v[0]===pc.val)||[])[1]||pc.val).join(' › '):'');
     row.onclick=(e)=>{const cell=e.target.closest('.imcell');if(cell&&!cell.classList.contains('im-inh')){openChart(title+' — '+imCfgLabel(cell.dataset.sk),cells[cell.dataset.sk].ser,STAGECOL[cell.dataset.sk]||'#2E7D5B');return;}if(hasKids){IM_OPEN[key]=!IM_OPEN[key];imRender();}};
     grid.appendChild(row);
-    if(hasKids&&op){if(nx.type==='clinic')imClinicsInCity(ent.city).forEach(loc=>renderNode({city:ent.city,loc},cutPath,key+'/cl:'+loc,depth+1,loc||'— not attributed to a clinic'));
+    if(hasKids&&op){if(nx.type==='clinic')imClinicsInCity(ent.city).filter(loc=>!(IM_NEST_SEL['clinic']&&IM_NEST_SEL['clinic'].has(''+loc))).forEach(loc=>renderNode({city:ent.city,loc},cutPath,key+'/cl:'+loc,depth+1,loc||'— not attributed to a clinic'));
       else IM_NEST_DEFS[nx.dim].vals.filter(([v])=>!(IM_NEST_SEL[nx.dim]&&IM_NEST_SEL[nx.dim].has(''+v))).forEach(([v,l])=>renderNode(ent,cutPath.concat([{dim:nx.dim,val:v}]),key+'/'+nx.dim+':'+v,depth+1,l));}}
   if(grain==='city'){rows.forEach(r=>renderNode(r.c,[],r.c.key,0,r.c.city));}
   else{const byG={};rows.forEach(r=>{const g=grain==='doctor'?(r.c.city+' · '+r.c.loc):r.c.city;(byG[g]=byG[g]||[]).push(r);});
@@ -1728,11 +1728,11 @@ function imNestChain(){const el=document.getElementById('imNestChain');if(!el)re
   el.innerHTML='';
   const lead=document.createElement('span');lead.className='lead';lead.innerHTML=`<span class="imnfix">${grain==='city'?'City':'Clinic'} ·</span>`;el.appendChild(lead);
   const shown=IM_NEST.filter(d=>d!=='clinic'||grain==='city');   // Clinic layer only applies at city grain (at clinic grain the row IS a clinic)
-  shown.forEach((dim,idx)=>{const isClin=dim==='clinic',def=isClin?{lab:'Clinic (in city)',vals:[]}:IM_NEST_DEFS[dim],vals=def.vals;
+  shown.forEach((dim,idx)=>{const isClin=dim==='clinic',def=isClin?{lab:'Clinic (in city)',vals:DIMS.clinic.values.filter(v=>v.k).map(v=>[v.k,v.l||v.k])}:IM_NEST_DEFS[dim],vals=def.vals;
     const off=IM_NEST_SEL[dim]||new Set(),nsel=vals.filter(([v])=>!off.has(''+v)).length;
     const chip=document.createElement('div');chip.className='chip';chip.draggable=true;chip.dataset.l=dim;
-    chip.innerHTML=`<span class="grip">⋮⋮</span><span class="ord">${idx+1}</span><span class="nm">${def.lab}</span>`+(isClin?'':`<span class="cnt">${nsel}/${vals.length}</span><span class="cv">▾</span>`)+`<span class="rm" title="remove layer">×</span>`;
-    if(!isClin){const pop=document.createElement('div');pop.className='pop';
+    chip.innerHTML=`<span class="grip">⋮⋮</span><span class="ord">${idx+1}</span><span class="nm">${def.lab}</span><span class="cnt">${nsel}/${vals.length}</span><span class="cv">▾</span><span class="rm" title="remove layer">×</span>`;
+    {const pop=document.createElement('div');pop.className='pop';
       pop.innerHTML=`<div class="pact"><button data-a="all">All</button><button data-a="none">None</button></div>`+(vals.length>12?`<input class="popsearch" placeholder="search ${vals.length} values…">`:'')+vals.map(([v,l])=>`<label><input type="checkbox" data-v="${(''+v).replace(/"/g,'&quot;')}" ${!off.has(''+v)?'checked':''}>${l}</label>`).join('');
       chip.appendChild(pop);
       {const ps=pop.querySelector('.popsearch');if(ps){ps.onclick=e=>e.stopPropagation();ps.oninput=()=>{const q=ps.value.toLowerCase();pop.querySelectorAll('label').forEach(lb=>{lb.style.display=lb.textContent.toLowerCase().includes(q)?'':'none';});};}}
