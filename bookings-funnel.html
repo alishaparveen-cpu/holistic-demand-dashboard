@@ -1291,7 +1291,7 @@ function renderValue(units){units=units||opsUnits();const flow=document.getEleme
 // ===== Individual-metric v2 — CROSS-FUNNEL RAG matrix: many metrics (columns) × one breakdown (rows), so a drop is traceable Leads→Bookings→Done→Value on one screen =====
 let VIEWM='funnel', IM_SEL=['leads','bookings','netsc','b2d','done','revenue'], IM_ROWS=['city'], IM_OPEN={}, IM_MAT=0, IM_SORT='drop', IM_RAG_L={r:true,o:true,y:true,g:true}, IM_RAG_B={r:true,o:true,y:true,g:true}, imRowDrag=null;
 let IM_RED=15, IM_ORANGE=5;   // editable RAG thresholds (% drop) — user-customisable (the old "materiality" was really this)
-const IM_LEADSIDE=new Set(['leads','bookedleads','bookrate']);   // leads-side metrics (for the split Leads/Book colour filter)
+const IM_LEADSIDE=new Set(['leads','bookedleads','bookrate','lbrate']);   // leads-side metrics (for the split Leads/Book colour filter)
 // --- source-data filters by the current breakdown tags {seg,city,loc,cat,src} ---
 function imLeadTop(c){return SUBCAT2TOP[c.category]||({STI:'STI',SH:'SH',MH:'MH'}[c.category])||(c.category&&c.category!=='na'&&c.category!=='unknown'?'Other':null);}   // call-intent category → top (null when unknown, so it doesn't pollute)
 function imMatch(val,tag){return tag==null?true:(Array.isArray(tag)?tag.includes(val):val===tag);}   // tag can be a single value OR an array (a combined group)
@@ -1309,6 +1309,7 @@ const IM_METS=[
   {key:'leads',      lab:'Leads',        stage:'① Leads',    dims:['seg','city','clinic','cat','src'],           series:t=>imCount(imSumCells(imLeadT(t)))},
   {key:'bookedleads',lab:'Booked leads', stage:'① Leads',    dims:['seg','city','clinic','cat','src'],           series:t=>imCount(imSumCells(imLeadT(t).filter(c=>c.status==='booked')))},
   {key:'bookrate',   lab:'Book rate %',  stage:'① Leads',    pct:true, dims:['seg','city','clinic','cat','src'], series:t=>{const cs=imLeadT(t);return imRate(imSumCells(cs.filter(c=>c.status==='booked')),imSumCells(cs),true);}},
+  {key:'lbrate',     lab:'L→B % (same-wk)',stage:'① Leads',  pct:true, dims:['seg','city','clinic','cat','src'], series:t=>{const cs=imLeadT(t);return imRate(imSumCells(cs.filter(c=>c.bkw0)),imSumCells(cs),true);}},   // same-week L→B — maturity-neutral, WoW-fair (mirrors the ①→② funnel stage)
   {key:'bookings',   lab:'Bookings',     stage:'② Bookings',  dims:['seg','city','clinic'],                       series:t=>imCount(opsSumU(imUnitsT(t),u=>u.booked))},
   {key:'netsc',      lab:'Net SC hrs',   stage:'③ Availability',  off:true, dims:['seg','city','clinic'],             series:t=>imCount(opsSumU(imUnitsT(t).filter(u=>!u.online),u=>(u.avail&&u.avail.net_sc_hrs_r)||[]))},
   {key:'attend',     lab:'Attended days',stage:'③ Availability',  off:true, dims:['seg','city','clinic'],             series:t=>imCount(opsSumU(imUnitsT(t).filter(u=>!u.online),u=>(u.avail&&u.avail.attend_days)||[]))},
@@ -1336,7 +1337,7 @@ function imGroupValues(dim,tags){const s=new Set(),add=v=>{if(v!=null&&v!=='')s.
   else if(dim==='src'){imLeadT(tags).forEach(c=>add(c.channel));opsDoneRecs(imUnitsT(tags)).forEach(r=>add(r.src));}
   return [...s];}
 let IM_COMB={}, IM_OFF={};   // IM_COMB[dim]=[{label,vals}] combined groups · IM_OFF[dim]=Set of de-selected values (the ▾ picker)
-function imMetCol(m){return ({leads:'#3E7CB1',bookedleads:'#2E7D5B',bookrate:'#1F6F5C',bookings:'#2E7D5B',netsc:'#8257C4',b2d:'#1F6F5C',done:'#C87B2E',purchased:'#2E7D5B',d2p:'#1F6F5C',revenue:'#C87B2E',rpc:'#1F6F5C'})[m.key]||'#455';}
+function imMetCol(m){return ({leads:'#3E7CB1',bookedleads:'#2E7D5B',bookrate:'#1F6F5C',lbrate:'#2C6CAE',bookings:'#2E7D5B',netsc:'#8257C4',b2d:'#1F6F5C',done:'#C87B2E',purchased:'#2E7D5B',d2p:'#1F6F5C',revenue:'#C87B2E',rpc:'#1F6F5C'})[m.key]||'#455';}
 function imGroups(dim,tags){   // ordered groups: combined groups first, then remaining selected singletons (respect IM_OFF de-select)
   const all=imGroupValues(dim,tags),comb=IM_COMB[dim]||[],off=IM_OFF[dim]||new Set(),inC=new Set();comb.forEach(c=>c.vals.forEach(v=>inC.add(v)));
   const out=[];comb.forEach(c=>{const vals=c.vals.filter(v=>all.includes(v));if(vals.length)out.push({label:c.label,vals,comb:true});});
@@ -1454,7 +1455,7 @@ const IM_INTENT_VALS=[['TALK_TO_DOCTOR','Talk doctor'],['TALK_TO_THERAPIST','Tal
 const IM_STRENGTH_VALS=[['STRONG','Strong'],['LOW','Low'],['COULD_NOT_DETERMINE','Undet.'],['NOT_A_PATIENT','Not patient'],['','web/na']];
 const IM_RELEV_VALS=[['in-scope','In-scope'],['out-of-scope','Out-of-scope'],['unknown','web/na']];
 const IM_STAGE_CFG={
-  leads:{variants:[['leads','Leads'],['bookedleads','Booked leads'],['bookrate','Book-rate %']],
+  leads:{variants:[['leads','Leads'],['bookedleads','Booked leads'],['bookrate','Book-rate %'],['lbrate','L→B % same-wk']],
     cuts:[{dim:'src',lab:'Source',vals:IM_CH_VALS},{dim:'medium',lab:'Medium',vals:IM_MED_VALS},{dim:'cat',lab:'Category',vals:IM_CAT_VALS},
           {dim:'status',lab:'Booked?',vals:IM_STATUS_VALS},{dim:'doneq',lab:'Done?',vals:IM_DONEQ_VALS},{dim:'verified',lab:'Verified?',vals:IM_VERIF_VALS},
           {dim:'intent',lab:'Intent',vals:IM_INTENT_VALS},{dim:'strength',lab:'Intent strength',vals:IM_STRENGTH_VALS},{dim:'relevance',lab:'Relevance',vals:IM_RELEV_VALS}]},
