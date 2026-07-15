@@ -106,7 +106,8 @@ bpw AS (
   ) WHERE wk_rnk=1   -- one row per (patient, clinic-of-doctor's-block, week): counts a patient at EVERY city they had an online SC that week (matches the sheet + the offline cube; the old (patient,week) dedup lost Ranchi when the week-earliest attempt resolved to 'Online')
 )
 SELECT city, locality, doctor, source_bucket, week_start, diagnosis,
-  count(distinct patient_id) AS booked,
+  -- booked = 1st-in-window SC (ft) + genuine returns (ret_return); EXCLUDES within-window rebooks (ret_rebook), which double-counted a patient who rebooked after a no-show → ties to the sheet (was count(distinct patient_id), inflated ~768 vs 571; B2D read 60% not 80%)
+  count(distinct case when attempt_rnk=1 or (attempt_rnk>1 and first_comp_wk is not null and first_comp_wk<week_start) then patient_id end) AS booked,
   count(distinct case when done_any=1 then patient_id end) AS done,
   count(distinct case when attempt_rnk=1 and lead_week=week_start then patient_id end) AS ft_same,
   count(distinct case when attempt_rnk=1 and lead_week<week_start then patient_id end) AS ft_prev,
