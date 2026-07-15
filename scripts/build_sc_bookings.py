@@ -51,24 +51,24 @@ lead_first AS (   -- patient's first-ever lead: week + source bucket (L2 Lead-to
   SELECT patient_id, date_trunc('week', lead_crt)::date AS lead_week,
     CASE
       WHEN lower(temp) IN ('googlelisting','googleslisting','gmb') THEN 'GMB'   -- directwalkin excluded (city-head GMB = listing only, matches sheet)
-      WHEN lower(temp)='google' THEN 'Google'
       WHEN lower(temp)='practo' THEN 'Practo'
       WHEN lower(temp) IN ('fb','facebook','meta','ig','instagram') THEN 'Meta'
+      WHEN lower(temp) IN ('organic','blog','google') AND lower(surl) LIKE '%/blog/%' THEN 'Organic · Blog'   -- blog content = organic sub-source (matches ① leads / ② bookings)
+      WHEN lower(temp)='google' THEN 'Google'
       WHEN lower(temp) LIKE '%organic%' THEN 'Organic'
       WHEN temp IS NULL OR temp='' THEN 'Direct / none'
       ELSE 'Others' END AS source_bucket   -- directwalkin + justdial/marketing/misc land here (sheet 'Others')
   FROM (
-    SELECT patient_id, lead_crt,
+    SELECT patient_id, lead_crt, surl,
       CASE WHEN lower(us)='directwalkin' THEN 'directwalkin'   -- walk-in stays a walk-in even if the lead URL carries a fb/google utm
         WHEN us2 IS NULL OR us2='' THEN us WHEN us2 IN ('fb','google') THEN us2 WHEN us2 IN ('googleslisting') THEN 'GMB' ELSE us END AS temp
     FROM (
       SELECT pat.id AS patient_id, date(ld.created_at + interval '5.5 hours') AS lead_crt,
-        ld.utm_source AS us,
-        regexp_replace(regexp_substr(ld.source_url,'utm_source=[^& ]+'),'utm_source=','') AS us2,
-        row_number() over (partition by pat.id order by ld.created_at asc) AS lr
+        ld.utm_source AS us, ld.source_url AS surl,
+        regexp_replace(regexp_substr(ld.source_url,'utm_source=[^& ]+'),'utm_source=','') AS us2
       FROM allo_persons.patient pat
-      JOIN allo_persons.lead ld ON pat.phone_no=ld.phone_no AND ld.deleted_at IS NULL
-      WHERE pat.deleted_at IS NULL) WHERE lr=1)
+      JOIN allo_persons.lead ld ON ld.id = pat.lead_id AND ld.deleted_at IS NULL   -- patient.lead_id ID join (the lead that created the patient) — matches ①/②; was phone-match first-lead
+      WHERE pat.deleted_at IS NULL))
 ),
 patient_comp AS (   -- earliest week the patient ever COMPLETED an offline SC (for rebook vs return)
   SELECT patient_id, MIN(week_start) AS first_comp_wk
