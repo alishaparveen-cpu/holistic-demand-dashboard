@@ -915,11 +915,12 @@ function renderLBDecomp(dec,cells){
 
 // ================= OPS SECTIONS (③ Availability · ④ Book→Done · ⑤ Done) — driven by data_quick_diag.json =================
 // Offline clinic operations (same source as the diagnostic + city-head sheet), so these reconcile. Weekly-only (no daily).
-let QD=null, QD_IDX={}, SLUG2LOC={}, ONL=null, ONL_IDX={}, ONE=null, ONE_IDX={};
+let QD=null, QD_IDX={}, SLUG2LOC={}, ONL=null, ONL_IDX={}, ONE=null, ONE_IDX={}, ECOFF=null, ECOFF_IDX={};   // ECOFF = offline DONE-week economics (product-line meds/tests/therapy/consult per clinic) for ⑥ Value Metrics picker
 const OPS_GRAIN='distinct';   // patient-distinct per scope (clinic→clinic booked, city→city-distinct, national→national-distinct) = exactly the city-head sheet. ② is reconciled to the SAME grain (see loadClinic), so ②=④=sheet at every level.
 const qnorm=s=>(s||'').toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_|_$/g,'');   // 'HSR Layout' -> 'hsr_layout'
 function onlAlign(arr){if(!arr)return new Array(WEEKS.length).fill(0);return WEEKS.map(w=>{const j=ONL_IDX[w];return j===undefined?0:(arr[j]||0);});}   // online cube arrays → WEEKS (newest-first)
 function oneAlign(arr){if(!arr)return new Array(WEEKS.length).fill(0);return WEEKS.map(w=>{const j=ONE_IDX[w];return j===undefined?0:(arr[j]||0);});}   // online ECON cube arrays → WEEKS
+function econAlign(arr){if(!arr)return new Array(WEEKS.length).fill(0);return WEEKS.map(w=>{const j=ECOFF_IDX[w];return j===undefined?0:(arr[j]||0);});}   // offline ECON cube arrays → WEEKS
 function onlKeys(){if(!ONL||!ONL.clinics)return [];const ks=Object.keys(ONL.clinics);let base;
   if(SCOPE==='national')base=ks;
   else if(SCOPE==='city')base=ks.filter(k=>SEL.city.has(displayCity(k.slice(k.indexOf('|')+1),k.slice(0,k.indexOf('|')))));
@@ -940,15 +941,15 @@ function opsSlugs(){if(!QD)return [];let base;
 // Each unit carries `al` (its week-aligner) so offline & online arrays combine on the same WEEKS axis. Availability/category live on offline only.
 function opsUnitsOffline(){if(!QD)return [];
   if(SCOPE==='doctor')return [...SEL.doctor].map(dk=>{const j=dk.indexOf('::'),slug=dk.slice(0,j),name=dk.slice(j+2),qc=QD.clinics[slug];if(!qc)return null;const bd=(qc.sc.by_doctor||{})[name];if(!bd)return null;
-    return {al:qdAlign,key:dk,label:name,city:qc.city,loc:slugLoc(slug),doctor:name,booked:bd.booked,done:bd.done,bookedSlots:null,doneSlots:null,byCat:bd.cat_done||{},byCatSrc:null,avail:bd.availability||{},bySource:null,pur:qdAlign(bd.purchased),rev:qdAlign(bd.rev),purByCat:{},revByCat:{},online:false};}).filter(Boolean);   // per-doctor: patient-level + SC done-week value (purchased/revenue attributed to the SC doctor, from the ecube by_doctor)
+    return {al:qdAlign,key:dk,label:name,city:qc.city,loc:slugLoc(slug),doctor:name,booked:bd.booked,done:bd.done,bookedSlots:null,doneSlots:null,byCat:bd.cat_done||{},byCatSrc:null,avail:bd.availability||{},bySource:null,pur:qdAlign(bd.purchased),rev:qdAlign(bd.rev),purByCat:{},revByCat:{},vMeds:qdAlign(bd.meds),vTest:qdAlign(bd.test),vTher:qdAlign(bd.ther),vCons:qdAlign(bd.cons),online:false};}).filter(Boolean);   // per-doctor: patient-level + SC done-week value + product-line (purchased/revenue attributed to the SC doctor, from the ecube by_doctor)
   const g=(OPS_GRAIN==='distinct')?(SCOPE==='national'?'_nat':SCOPE==='city'?'_city':''):'';   // clinic-attributed ('' = clinic-sum, ties ②) vs patient-distinct (_nat/_city, ties sheet)
-  return opsSlugs().map(s=>{const qc=QD.clinics[s],d=qc.sc.done,pu=qc.sc.purchased||{},rv=qc.sc.revenue||{};return {al:qdAlign,key:s,label:slugLoc(s),city:qc.city,loc:slugLoc(s),doctor:null,booked:d['booked'+g]||d.booked,done:d['done'+g]||d.done,bookedSlots:d.booked_slots||null,doneSlots:d.done_slots||null,slotStatus:d.slot_status||null,byCat:d.by_cat||{},byCatSrc:d.by_cat_source||null,doneByAge:d.by_age||null,doneByBrank:d.by_brank||null,avail:qc.sc.availability||{},bySource:(qc.sc.bookings||{}).by_source||null,pur:qdAlign(pu.total),rev:qdAlign(rv.rev),purByCat:alignCatMap(pu.by_cat,qdAlign),revByCat:alignCatMap(rv.by_cat,qdAlign),online:false};});}   // pur/rev + by-cat pre-aligned to WEEKS (⑥ Value funnel); doneByAge/Brank = DONE split by lead maturity / booking rank (ties to done total)
+  return opsSlugs().map(s=>{const qc=QD.clinics[s],d=qc.sc.done,pu=qc.sc.purchased||{},rv=qc.sc.revenue||{};const ec=(ECOFF&&ECOFF.clinics&&ECOFF.clinics[qc.city+'|'+slugLoc(s)])||null;return {al:qdAlign,key:s,label:slugLoc(s),city:qc.city,loc:slugLoc(s),doctor:null,booked:d['booked'+g]||d.booked,done:d['done'+g]||d.done,bookedSlots:d.booked_slots||null,doneSlots:d.done_slots||null,slotStatus:d.slot_status||null,byCat:d.by_cat||{},byCatSrc:d.by_cat_source||null,doneByAge:d.by_age||null,doneByBrank:d.by_brank||null,avail:qc.sc.availability||{},bySource:(qc.sc.bookings||{}).by_source||null,pur:qdAlign(pu.total),rev:qdAlign(rv.rev),purByCat:alignCatMap(pu.by_cat,qdAlign),revByCat:alignCatMap(rv.by_cat,qdAlign),vMeds:ec?econAlign(ec.meds_val):qdAlign(rv.meds),vTest:ec?econAlign(ec.test_val):qdAlign(rv.test),vTher:ec?econAlign(ec.ther_val):qdAlign(rv.ther),vCons:ec?econAlign(ec.cons_val):qdAlign(rv.cons),online:false};});}   // pur/rev + by-cat pre-aligned to WEEKS (⑥ Value funnel); vMeds/vTest/vTher/vCons = product-line revenue (⑥ Value Metrics picker); doneByAge/Brank = DONE split by lead maturity / booking rank (ties to done total)
 function opsUnitsOnline(){return onlKeys().map(k=>{const n=ONL.clinics[k],i=k.indexOf('|'),loc=k.slice(i+1);
   const byCat={};if(n.by_cat)for(const c in n.by_cat){const rc=ONL_ROLL[c]||c,dn=n.by_cat[c].done||[],a=(byCat[rc]=byCat[rc]||[]);for(let j=0;j<dn.length;j++)a[j]=(a[j]||0)+(dn[j]||0);}   // online done split by merged-Rx diagnosis, rolled to the same 9 sub-cats as offline (LSD/DE/…/oth → Oth)
   const e=(ONE&&ONE.clinics&&ONE.clinics[k])||null;   // online DONE-date economics for this online clinic (⑥ Value funnel)
   const revRaw=e?(e.meds_val||[]).map((v,j)=>(v||0)+((e.test_val||[])[j]||0)+((e.ther_val||[])[j]||0)+((e.cons_val||[])[j]||0)):[];   // revenue = meds+test+ther+cons
   const purByCat={},revByCat={};if(e&&e.by_cat)for(const c in e.by_cat){const bc=e.by_cat[c];purByCat[c]=oneAlign(bc.purchased||[]);revByCat[c]=oneAlign((bc.meds_val||[]).map((v,j)=>(v||0)+((bc.test_val||[])[j]||0)+((bc.ther_val||[])[j]||0)+((bc.cons_val||[])[j]||0)));}   // online purchase/revenue BY category (same by_cat the sheet shows) → no more '(no category)' for online; pre-aligned to WEEKS
-  return {al:onlAlign,key:'onl:'+k,label:loc,city:displayCity(loc,k.slice(0,i)),loc:loc,doctor:null,booked:n.booked,done:n.done,bookedSlots:n.booked,doneSlots:n.done,byCat:byCat,byCatSrc:n.by_cat_source||null,avail:{},bySource:n.by_source||null,pur:oneAlign(e?e.purchased:[]),rev:oneAlign(revRaw),purByCat:purByCat,revByCat:revByCat,online:true};});}   // online telehealth; pur/rev + by-cat pre-aligned; byCatSrc = EXACT done×cat×source (no estimate)
+  return {al:onlAlign,key:'onl:'+k,label:loc,city:displayCity(loc,k.slice(0,i)),loc:loc,doctor:null,booked:n.booked,done:n.done,bookedSlots:n.booked,doneSlots:n.done,byCat:byCat,byCatSrc:n.by_cat_source||null,avail:{},bySource:n.by_source||null,pur:oneAlign(e?e.purchased:[]),rev:oneAlign(revRaw),purByCat:purByCat,revByCat:revByCat,vMeds:oneAlign(e?e.meds_val:[]),vTest:oneAlign(e?e.test_val:[]),vTher:oneAlign(e?e.ther_val:[]),vCons:oneAlign(e?e.cons_val:[]),online:true};});}   // online telehealth; pur/rev + by-cat + product-line pre-aligned; byCatSrc = EXACT done×cat×source (no estimate)
 function opsUnits(){if(!QD)return [];
   if(SCOPE==='doctor')return opsUnitsOffline();   // doctors are offline clinicians
   if(SEG==='online')return opsUnitsOnline();
@@ -1094,7 +1095,7 @@ function opsDrill(container,recs,layers,depth,pad,kp,parentDisp){
   });}
 // ===== generalized ops funnel-drill (④ Book→Done · ⑥ Value) — layer bar + nested mini-funnel, same engine feel as ⑤ =====
 let OPS_SHARE={done:false,b2d:false,val:false,avail:false};        // per-section '% share of parent' toggle (default off = decluttered)
-const OPS_ORD={b2d:['seg'], val:['seg','opscat'], avail:[]};     // reorderable layer order per section (geo dims are opt-in via ＋ ghosts; avail is offline-only so no seg layer)
+const OPS_ORD={b2d:['seg'], val:['seg'], avail:[]};     // reorderable layer order per section (geo dims are opt-in via ＋ ghosts; avail is offline-only so no seg layer). ⑥ Value is now geo+Metrics-picker (product-line ₹ can't split by category)
 const OPS_SEL={b2d:{}, val:{}, avail:{}};                        // OPS_SEL[sec][dim] = Set of de-selected values (▾ pickers)
 let opsDrag=null;
 function sumRecF(recs,f){const o=new Array(WEEKS.length).fill(0);recs.forEach(r=>{const a=r[f]||[];for(let i=0;i<o.length;i++)o[i]+=a[i]||0;});return o;}   // element-wise sum of a pre-aligned record field
@@ -1126,7 +1127,7 @@ function opsValRecs(units){const recs=[];(units||opsUnits()).forEach(u=>{   // �
     recs.push({online:!!u.online,city:u.city,loc:u.loc,cat:SUBCAT2TOP[cat]||cat,pur,rev,done});});
   const rP=purA.map((v,i)=>v-(acc.pur[i]||0)),rR=revA.map((v,i)=>v-(acc.rev[i]||0)),rD=doneA.map((v,i)=>v-(acc.done[i]||0));
   if([rP,rR,rD].some(a=>a.some(x=>Math.abs(x)>1e-6)))recs.push({online:!!u.online,city:u.city,loc:u.loc,cat:'(no category)',pur:rP,rev:rR,done:rD});});return recs;}
-function opsAvail(sec,l){if(['city','clinic','doctor'].includes(l))return sec==='avail'?true:doneGeo().includes(l);if(l==='opscat')return sec==='val';return l==='seg'&&sec!=='avail';}   // avail is offline-only → no Segment layer; but City/Clinic/Doctor are all opt-in breakdowns (per-doctor roster comes from quick_diag by_doctor)
+function opsAvail(sec,l){if(['city','clinic','doctor'].includes(l))return sec==='avail'?true:doneGeo().includes(l);if(l==='opscat')return false;return l==='seg'&&sec!=='avail';}   // opscat retired from ⑥ Value (now geo + Metrics picker)   // avail is offline-only → no Segment layer; but City/Clinic/Doctor are all opt-in breakdowns (per-doctor roster comes from quick_diag by_doctor)
 function opsSecLayers(sec){return OPS_ORD[sec].filter(l=>opsAvail(sec,l));}
 function opsBar(ll,sec,recs,rerender){if(!ll)return;ll.innerHTML='';
   const shb=document.createElement('button');shb.className='dlchip'+(OPS_SHARE[sec]?' on':'');shb.textContent='% share';shb.title='show each row’s share of its parent as a weekly trend (off = decluttered)';shb.style.marginRight='10px';shb.onclick=()=>{OPS_SHARE[sec]=!OPS_SHARE[sec];rerender();};ll.appendChild(shb);
@@ -1299,19 +1300,51 @@ function renderDone(units){units=units||opsUnits();const flow=document.getElemen
   const fr=recs.filter(r=>layers.every(dk=>!(DONE_OFF[dk]&&DONE_OFF[dk].has(OPSDIM[dk].get(r)))));   // apply per-layer value filters (the ▾ pickers)
   opsDrill(flow,fr,layers,0,15,'done',opsDv(opsSumU(units,u=>u.done)));}   // parent = Done total → each row shows its % share (and whether it's moving)
 function sumPre(us,pick){const o=new Array(WEEKS.length).fill(0);us.forEach(u=>{const a=pick(u)||[];for(let i=0;i<o.length;i++)o[i]+=a[i]||0;});return o;}   // pur/rev are already WEEKS-aligned → element-wise sum (no re-align)
-// ⑥ Value funnel: Purchased → D2P% · Revenue → RPC, split Offline / Online (done-week invoiced)
+// ⑥ Value metric catalogue — a Metrics ▾ picker (like ③ Availability) over the SC value economics: product-line (meds/tests/therapy) ± consult fee.
+// field metrics sum a per-unit array; rate metrics = num÷den (D2P % · RPC ₹/consult). All from quick_diag sc.revenue {meds,test,ther,cons}.
+const VAL_METS=[
+  {key:'purTot', lab:'Purchased · SC (bought a plan)',   slab:'Purchased',        field:'pur',    col:'#2E7D5B', stage:true},
+  {key:'d2p',    lab:'Done → Purchased % (D2P)',          slab:'D2P %',            num:'pur',  den:'done', pct:true, col:'#1F6F5C'},
+  {key:'revAll', lab:'Revenue · total (with consult) ₹',  slab:'Revenue · total ₹',field:'revAll', col:'#C87B2E', stage:true},
+  {key:'revTP',  lab:'Revenue · TP only (ex-consult) ₹',  slab:'Revenue · TP only',field:'revTP',  col:'#C87B2E'},
+  {key:'purMeds',lab:'Purchased · meds ₹',                slab:'meds ₹',           field:'meds',   col:'#B07A3E'},
+  {key:'purTest',lab:'Purchased · tests ₹',               slab:'tests ₹',          field:'test',   col:'#3E7CB1'},
+  {key:'purTher',lab:'Purchased · therapy ₹',             slab:'therapy ₹',        field:'ther',   col:'#8257C4'},
+  {key:'rpcProd',lab:'RPC · total products ₹',            slab:'RPC · products',   num:'revTP',den:'done', col:'#1F6F5C'},
+  {key:'rpcMeds',lab:'RPC · meds ₹',                      slab:'RPC · meds',       num:'meds', den:'done', col:'#B07A3E'},
+  {key:'rpcTest',lab:'RPC · tests ₹',                     slab:'RPC · tests',      num:'test', den:'done', col:'#3E7CB1'},
+  {key:'rpcTher',lab:'RPC · therapy ₹',                   slab:'RPC · therapy',    num:'ther', den:'done', col:'#8257C4'},
+  {key:'rpcAll', lab:'RPC · with consult fee ₹',          slab:'RPC · incl consult',num:'revAll',den:'done', col:'#1F6F5C'},
+];
+let VAL_MET_OFF=new Set(VAL_METS.filter(m=>!['purTot','d2p','revAll','rpcProd'].includes(m.key)).map(m=>m.key));   // default shown: Purchased · D2P · Revenue total · RPC products
+function opsValMetRecs(units){return (units||opsUnits()).map(u=>{const done=u.al(u.done),pur=u.pur||[],meds=u.vMeds||[],test=u.vTest||[],ther=u.vTher||[],cons=u.vCons||[];
+  const revTP=meds.map((v,i)=>(v||0)+(test[i]||0)+(ther[i]||0)),revAll=revTP.map((v,i)=>v+(cons[i]||0));
+  return {online:!!u.online,city:u.city,loc:u.loc,doctor:u.doctor||u.label,done,pur,meds,test,ther,cons,revTP,revAll};});}
+function valStage(m){return m.field?{lab:m.slab||m.lab,f:m.field,col:m.col}:{lab:m.slab||m.lab,rate:[m.num,m.den],pct:!!m.pct,col:m.col};}
+function appendValMetricPicker(ll){const nsel=VAL_METS.filter(m=>!VAL_MET_OFF.has(m.key)).length;
+  const chip=document.createElement('div');chip.className='chip';chip.style.marginLeft='12px';
+  chip.innerHTML=`<span class="nm">Metrics</span><span class="cnt">${nsel}/${VAL_METS.length}</span><span class="cv">▾</span>`;
+  const pop=document.createElement('div');pop.className='pop';
+  pop.innerHTML='<div class="pact"><button data-a="all">All</button><button data-a="none">None</button></div>'+VAL_METS.map(m=>`<label><input type="checkbox" data-k="${m.key}" ${!VAL_MET_OFF.has(m.key)?'checked':''}><span class="sw" style="background:${m.col}"></span>${m.lab}</label>`).join('');
+  chip.appendChild(pop);
+  chip.onclick=(e)=>{if(e.target.closest('.pop'))return;const open=pop.classList.contains('show');document.querySelectorAll('.pop').forEach(p=>p.classList.remove('show'));document.querySelectorAll('.chip').forEach(c=>c.classList.remove('open2'));if(!open){pop.classList.add('show');chip.classList.add('open2');}};
+  pop.querySelectorAll('.pact button').forEach(b=>b.onclick=(e)=>{e.stopPropagation();VAL_MET_OFF=b.dataset.a==='all'?new Set():new Set(VAL_METS.map(m=>m.key));renderValue();});
+  pop.querySelectorAll('input').forEach(inp=>inp.onclick=(e)=>{e.stopPropagation();const k=inp.dataset.k;if(inp.checked)VAL_MET_OFF.delete(k);else VAL_MET_OFF.add(k);renderValue();});
+  ll.appendChild(chip);}
+// ⑥ Value funnel: Metrics-picker over product-line economics; totals + geo (City/Clinic/Doctor) drill (done-week invoiced)
 function renderValue(units){units=units||opsUnits();const flow=document.getElementById('valFlow'),head=document.getElementById('valHead'),ll=document.getElementById('valLayerLbl');if(!flow)return;flow.innerHTML='';head.innerHTML=opsHeadHTML('Value · SC');
   if(!QD||!units.length){if(ll)ll.innerHTML='';return;}
-  const dn=opsSumU(units,u=>u.done),pur=sumPre(units,u=>u.pur),rev=sumPre(units,u=>u.rev);
-  // totals (grand funnel) — then the layer drill breaks each metric down by segment / category / geo
-  opsRow(flow,'Purchased · SC (bought a plan)',pur,{stage:true,col:'#2E7D5B'});
-  {const n=opsDv(pur),d=opsDv(dn),r=d.map((x,i)=>x?100*n[i]/x:null);opsRow(flow,'Done → Purchased % (D2P)',r,{sub:true,pct:true,raw:true,col:'#1F6F5C'});}
-  opsRow(flow,'Revenue · SC ₹ (done-week invoiced)',rev,{stage:true,col:'#C87B2E'});
-  {const n=opsDv(rev),d=opsDv(dn),r=d.map((x,i)=>x?n[i]/x:null);opsRow(flow,'RPC · ₹ / consult',r,{sub:true,raw:true,col:'#1F6F5C'});}
-  const recs=opsValRecs(units);opsBar(ll,'val',recs,renderValue);
-  const layers=opsSecLayers('val'),fr=recs.filter(r=>layers.every(dk=>!(OPS_SEL.val[dk]&&OPS_SEL.val[dk].has(OPSDIM[dk].get(r)))));
-  const cfg={sec:'val',rerender:renderValue,allLevels:true,stages:[{lab:'Purchased · SC',f:'pur',col:'#2E7D5B'},{lab:'Done → Purchased % (D2P)',rate:['pur','done'],pct:true,col:'#1F6F5C'},{lab:'Revenue · SC ₹',f:'rev',col:'#C87B2E'},{lab:'RPC · ₹ / consult',rate:['rev','done'],col:'#1F6F5C'}]};   // allLevels → show D2P/Revenue/RPC at every City/Clinic node, not just the deepest leaf
-  opsFunnelDrill(flow,fr,layers,0,15,'val',cfg,opsDv(pur));}
+  const recs=opsValMetRecs(units);
+  const shown=VAL_METS.filter(m=>!VAL_MET_OFF.has(m.key));if(!shown.length)shown.push(VAL_METS[0]);
+  // totals — one row per selected metric (field = summed ₹/count · rate = num÷den)
+  shown.forEach(m=>{if(m.field)opsRow(flow,m.lab,sumRecF(recs,m.field),{stage:!!m.stage,sub:!m.stage,col:m.col});
+    else{const n=opsDv(sumRecF(recs,m.num)),d=opsDv(sumRecF(recs,m.den)),r=d.map((x,i)=>x?(m.pct?100:1)*n[i]/x:null);opsRow(flow,m.lab,r,{sub:true,pct:!!m.pct,raw:true,col:m.col});}});
+  opsBar(ll,'val',recs,renderValue);appendValMetricPicker(ll);
+  const layers=opsSecLayers('val');
+  if(layers.length){const fr=recs.filter(r=>layers.every(dk=>!(OPS_SEL.val[dk]&&OPS_SEL.val[dk].has(OPSDIM[dk].get(r)))));
+    const primary=shown.find(m=>m.field)||{lab:'Done',field:'done',col:'#888'},rest=shown.filter(m=>m!==primary);   // node headline needs a value field (rates can't sort/head a node)
+    const cfg={sec:'val',rerender:renderValue,allLevels:true,stages:[valStage(primary),...rest.map(valStage)]};   // allLevels → every City/Clinic node shows all selected metrics
+    opsFunnelDrill(flow,fr,layers,0,15,'val',cfg,opsDv(sumRecF(recs,primary.field||'done')));}}
 // ===== 📊 Individual-metric RAG diagnostic — metric-first grid over the funnel cubes, recursive breakdown, colour = drop severity vs the Δ baseline =====
 // ===== Individual-metric v2 — CROSS-FUNNEL RAG matrix: many metrics (columns) × one breakdown (rows), so a drop is traceable Leads→Bookings→Done→Value on one screen =====
 let VIEWM='funnel', IM_SEL=['leads','bookings','netsc','b2d','done','revenue'], IM_ROWS=['city'], IM_OPEN={}, IM_MAT=0, IM_SORT='drop', IM_RAG_L={r:true,o:true,y:true,g:true}, IM_RAG_B={r:true,o:true,y:true,g:true}, imRowDrag=null;
@@ -1960,11 +1993,13 @@ Promise.all([
   fetch('data_quick_diag.json?v='+Date.now(),{cache:'no-store'}).then(r=>r.ok?r.json():null).catch(()=>null),
   fetch('data_d2p_econ_online.json?v='+Date.now(),{cache:'no-store'}).then(r=>r.ok?r.json():null).catch(()=>null),
   fetch('data_clinic_maturity.json?v='+Date.now(),{cache:'no-store'}).then(r=>r.ok?r.json():{}).catch(()=>({})),
-]).then(([bk,ld,n2c,ldc,onlbk,qd,onlecon,cmat])=>{
+  fetch('data_d2p_econ.json?v='+Date.now(),{cache:'no-store'}).then(r=>r.ok?r.json():null).catch(()=>null),
+]).then(([bk,ld,n2c,ldc,onlbk,qd,onlecon,cmat,ecoff])=>{
   NUM2CLINIC=n2c||{}; WEEKS=bk._meta.weeks; CLINIC_MAT=cmat||{};   // clinic maturity (locality → {b:bucket,mo,fw}) for the age filter
   QD=qd; QD_IDX={}; if(qd&&qd.weeks)qd.weeks.forEach((w,i)=>QD_IDX[w]=i);   // ops funnel source (offline SC ops; ties to city-head sheet)
   ONL=onlbk; ONL_IDX={}; if(onlbk&&onlbk._meta&&onlbk._meta.weeks)onlbk._meta.weeks.forEach((w,i)=>ONL_IDX[w]=i);   // online SC cube — book→done for the Online / Both segments
   ONE=onlecon; ONE_IDX={}; if(onlecon&&onlecon._meta&&onlecon._meta.weeks)onlecon._meta.weeks.forEach((w,i)=>ONE_IDX[w]=i);   // online DONE-date economics (purchased/revenue per online clinic) for ⑥
+  ECOFF=ecoff; ECOFF_IDX={}; if(ecoff&&ecoff._meta&&ecoff._meta.weeks)ecoff._meta.weeks.forEach((w,i)=>ECOFF_IDX[w]=i);   // offline DONE-week economics (product-line meds/tests/therapy/consult per clinic) for ⑥ Value Metrics picker
   LOC2CITY=locCityMap(bk);   // clinic locality → its true city (for the mis-tag re-route)
   TRACKED_CITY=new Set(); Object.keys(bk).filter(k=>k!=='_meta').forEach(k=>{const c=k.split('|')[0];if(c&&!NONCITY.has(c))TRACKED_CITY.add(c);}); NEWCITY.forEach(c=>TRACKED_CITY.add(c));   // real op cities (+ new launches Indore/Rajkot), minus Online/Practo-online
   OPLOC=new Set(); Object.keys(bk).filter(k=>k!=='_meta').forEach(k=>{const i=k.indexOf('|');if(i>=0){const loc=k.slice(i+1);if(loc)OPLOC.add(loc);}});   // operational clinic localities = the bookings cube's clinics (drops closed clinics that only have stray leads)
