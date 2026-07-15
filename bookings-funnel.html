@@ -512,6 +512,7 @@ const DIMS={
   maturity:{label:'Lead maturity', field:'age', values:[{k:'fresh',l:'Fresh · same week'},{k:'wk1',l:'1 week old'},{k:'wk2_4',l:'2–4 weeks old'},{k:'mo1_3',l:'1–3 months old'},{k:'mo3',l:'3 months+ old'},{k:'nolead',l:'No fresh lead (walk-in / return)'},{k:'na',l:'— online (no age)'}], color:v=>BUCKET_C[v]||'#c7ccd4'},   // 'nolead' = booking not driven by a lead (mostly rebooks/returns) — separated from 'fresh' so 'fresh' means a genuine new lead
   brank:{label:'Booking rank', field:'brank', values:[{k:'1st',l:'1st-ever'},{k:'2nd',l:'2nd booking'},{k:'3rd',l:'3rd booking'},{k:'4pl',l:'4th+ booking'},{k:'na',l:'— online (no rank)'}], color:v=>({'1st':'#2E7D5B','2nd':'#6FA34C','3rd':'#C87B2E','4pl':'#B8503C'})[v]||'#c7ccd4'},   // how many SC bookings this patient had BEFORE this one (as-of-before): 1st-ever vs a rebooking. Offline only — online has no rank.
   drank:{label:'Done rank (before)', field:'drank', values:[{k:'d0',l:'Never completed before'},{k:'d1',l:'Completed once before'},{k:'d2pl',l:'Completed 2+ before'},{k:'na',l:'— online (no rank)'}], color:v=>({d0:'#7C5CBF',d1:'#C87B2E',d2pl:'#B8503C'})[v]||'#c7ccd4'},   // had this patient COMPLETED an SC before this booking? never = a fresh/retry attempt, ≥1 = a returning (relapse) patient. Offline only.
+  relapse:{label:'Repeat / relapse', field:'relapse', values:[{k:'new',l:'New (not completed before)'},{k:'relapse',l:'Relapse · completed before → back'},{k:'na',l:'— online (no rank)'}], color:v=>({new:'#2E7D5B',relapse:'#8257C4'})[v]||'#c7ccd4'},   // SIMPLE 2-way done-rank: is this a returning/relapse patient (already completed an SC before)? Offline only.
   medium:{label:'Medium', field:'medium', values:[{k:'call',l:'Call (inbound)'},{k:'outbound',l:'Outbound (L2C called)'},{k:'web',l:'Web'},{k:'blog',l:'Blog (content)'},{k:'wa_gmb',l:'WhatsApp · GMB'},{k:'wa_org',l:'WhatsApp · organic'},{k:'wa_outbound',l:'WhatsApp · outbound'},{k:'book',l:'Practo book'},{k:'walkin',l:'Walk-in'},{k:'other',l:'Other / untagged'},{k:'na',l:'— online (no medium)'}], color:v=>MODEC[v]||'var(--other)'},   // WhatsApp = GMB / organic / outbound; blog = organic content-marketing; 'na' = online SC (channel-only)
   category:{label:'Call category (AI audit)', field:'category', values:[{k:'STI'},{k:'SH'},{k:'MH'},{k:'Other'},{k:'unknown',l:'— call · not audited'},{k:'na',l:'— not a call lead'}], color:v=>CAT_C[v]||'var(--other)'},
   campaign:{label:'Campaign (paid)', field:'campaign', values:[], color:v=>v==='na'?CAT_C.na:'#4E73C4'},   // values built per-clinic at load
@@ -605,7 +606,7 @@ function splitCat(v,cc){   // integer v → {STI,SH,MH,Other} summing exactly to
 }
 function buildCells(node){
   return (node.cells||[]).map(c=>({ptype:c.pt,channel:(window.BookingsCube?window.BookingsCube.channelOf(c.ch):c.ch),age:c.la,medium:(c.md==='whatsapp'?'wa_org':c.md),
-    brank:c.br||'na',drank:c.dr||'na',wdArr:c.wd||[],
+    brank:c.br||'na',drank:c.dr||'na',relapse:((c.dr==='d1'||c.dr==='d2pl'||c.pt==='relapse')?'relapse':((c.dr==='d0'||c.pt==='new'||c.pt==='reattempt')?'new':'na')),wdArr:c.wd||[],   // relapse = simple 2-way: had this patient COMPLETED an SC before this booking? (offline done-rank d1+/d2pl OR online ret_return) → a returning/repeat patient
     num:c.num||'',campaign:c.cmp||'na',category:c.cat||'na',bkseg:c.bkseg||'none',loc:c.loc||'',city:c.city||'',citygroup:(c.city&&c.city.indexOf('— no city')!==0)?'attr':'nocity',_on:(!!c.on||c.city==='Online'),seg:((!!c.on||c.city==='Online')?'online':'offline'),arr:c.w}));   // brank/drank = booking-rank / done-rank AS-OF BEFORE this booking (unique patient-week). loc/city set on city+national rollups; _on/seg = online (telehealth) vs offline
 }
 function buildLeadCells(node){   // leads cube: channel x medium x number x url x booked-status
@@ -622,7 +623,7 @@ function makeP(cfg){const P={mode:cfg.mode,dims:cfg.dims,order:[...cfg.order],bu
   P.dims.forEach(dk=>{P.sel[dk]=new Set(DIMS[dk].values.map(v=>v.k));});return P;}
 const PL=makeP({mode:'leads',dims:['citygroup','city','clinic','channel','medium','number','intent','strength','category','status','verified','doneq'],order:['channel','medium'],build:buildLeadCells,hero:'attributable leads',
   els:{flow:$('flowL'),bar:$('barL'),heroN:$('heroNL'),heroL:$('heroLL'),hHdr:$('hHdrL'),hRight:$('hRightL')}});
-const PB=makeP({mode:'bookings',dims:['seg','city','clinic','brank','channel','maturity','medium','category','campaign'],order:['seg','channel','maturity','medium'],build:buildCells,hero:'SC bookings',   // dropped ptype (rebook/relapse) + drank (done-rank) — booking rank + lead maturity are the only lifecycle axes now (decluttered)
+const PB=makeP({mode:'bookings',dims:['seg','city','clinic','brank','relapse','channel','maturity','medium','category','campaign'],order:['seg','channel','maturity','medium'],build:buildCells,hero:'SC bookings',   // dropped ptype + full drank; booking rank + lead maturity are the core lifecycle axes; 'relapse' = a simple opt-in 2-way returning-patient split
   els:{flow:$('flowB'),bar:$('barB'),heroN:$('heroNB'),heroL:$('heroLB'),hHdr:$('hHdrB'),hRight:$('hRightB')}});
 
 // exact numbers dialed under a call node (shown inline when expanded) — so you see WHICH numbers, incl. organic
@@ -959,7 +960,7 @@ function reconcileBkDisplay(P){if(!QD)return;
   P.cells.forEach(c=>{if(c._on)return;const k=(c.city||'')+'|'+(c.loc||''),a=c.arr||[],o=(epi[k]=epi[k]||new Array(WEEKS.length).fill(0));for(let i=0;i<a.length;i++)o[i]+=a[i]||0;});
   Object.keys(epi).forEach(k=>{const i=k.indexOf('|'),city=k.slice(0,i),loc=k.slice(i+1),slug=qnorm(loc)+'_'+qnorm(city),qc=QD.clinics[slug];if(!qc)return;
     const tgt=qdAlign(qc.sc.done['booked'+g]||qc.sc.done.booked),ep=epi[k],delta=tgt.map((v,j)=>Math.round(v-(ep[j]||0)));
-    if(delta.some(x=>x))P.cells.push({ptype:'reattempt',brank:'2nd',drank:'d0',channel:'Other',age:'mo3',medium:'other',num:'',campaign:'na',category:'na',loc:loc,city:city,citygroup:(city&&city.indexOf('— no city')!==0)?'attr':'nocity',_on:false,seg:'offline',arr:delta});   // the funnel→sheet gap IS undercounted rebook → fold into Rebook (reattempt; booking-rank 2nd, never-done)
+    if(delta.some(x=>x))P.cells.push({ptype:'reattempt',brank:'2nd',drank:'d0',relapse:'new',channel:'Other',age:'mo3',medium:'other',num:'',campaign:'na',category:'na',loc:loc,city:city,citygroup:(city&&city.indexOf('— no city')!==0)?'attr':'nocity',_on:false,seg:'offline',arr:delta});   // the funnel→sheet gap IS undercounted rebook → fold into Rebook (reattempt; booking-rank 2nd, never-done)
   });}
 // ⑤ Done cube: one record per (unit × sub-category × source), tagged city/clinic/doctor/top-cat/sub-cat/source.
 // Category and Source are separate marginals in quick_diag (no true joint), so the cross is a PROPORTIONAL estimate
@@ -1040,10 +1041,20 @@ function opsDoneBucketRecs(units,dim){const out=[],field=dim==='donerank'?'doneB
   (units||opsUnits()).forEach(u=>{const base=opsDoneRecsUnit(u);   // this unit's done, fully split by cat/src (sums to done)
     if(u.online){base.forEach(r=>out.push(Object.assign({},r,{bucket:'— online (no lead-age)',bkey:'na'})));return;}   // online telehealth has no lead-maturity → its own bucket, still crossed with category
     if(!u[field]){base.forEach(r=>out.push(Object.assign({},r,{bucket:'— no lead-age',bkey:'na'})));return;}   // offline unit missing the split → single bucket so it still shows & sums
-    const bt=new Array(WEEKS.length).fill(0);base.forEach(r=>{for(let i=0;i<bt.length;i++)bt[i]+=r.arr[i]||0;});   // this unit's base total/week (= its done split by cat/src) — divide by THIS so the bucket margin stays exact
-    bl.forEach(([k,l])=>{const bArr=u.al((u[field]||{})[k]||[]);if(!bArr.some(x=>x))return;
-      const sh=bArr.map((v,w)=>bt[w]?v/bt[w]:0);   // this bucket's share of the unit's done, per week (normalised to the base total → sum over buckets = base.arr, sum over base = bArr exact)
-      base.forEach(r=>{const arr=r.arr.map((v,w)=>v*sh[w]);if(arr.some(x=>x>1e-9))out.push(Object.assign({},r,{bucket:l,bkey:k,arr}));});});});
+    const bt=new Array(WEEKS.length).fill(0);base.forEach(r=>{for(let i=0;i<bt.length;i++)bt[i]+=r.arr[i]||0;});   // this unit's base total/week (= its done split by cat/src)
+    const buckets=bl.map(([k,l])=>({k,l,bArr:u.al((u[field]||{})[k]||[])})).filter(b=>b.bArr.some(x=>x));
+    if(!buckets.length){base.forEach(r=>out.push(Object.assign({},r,{bucket:'— no lead-age',bkey:'na'})));return;}
+    // WHOLE-PERSON split: allocate each cat×src record's integer done across the buckets by proportional share,
+    // then largest-remainder round per week so every cell is a whole person AND sums exactly to the record total
+    // (→ the category total stays exact; the bucket total is whole-person ≈ exact). No more "5.3 persons".
+    base.forEach(r=>{const W=r.arr.length,cells=buckets.map(()=>new Array(W).fill(0));
+      for(let w=0;w<W;w++){const tot=Math.round(r.arr[w]||0);if(tot<=0)continue;
+        const raw=buckets.map(b=>{const sh=bt[w]?(b.bArr[w]||0)/bt[w]:0;return (r.arr[w]||0)*sh;});
+        const rs=raw.reduce((a,b)=>a+b,0);if(rs<=0){cells[0][w]=tot;continue;}
+        const scaled=raw.map(x=>x*tot/rs),fl=scaled.map(x=>Math.floor(x));let used=fl.reduce((a,b)=>a+b,0);
+        scaled.map((x,i)=>[i,x-fl[i]]).sort((a,b)=>b[1]-a[1]).slice(0,tot-used).forEach(o=>fl[o[0]]++);
+        buckets.forEach((b,bi)=>cells[bi][w]=fl[bi]);}
+      buckets.forEach((b,bi)=>{if(cells[bi].some(x=>x))out.push(Object.assign({},r,{bucket:b.l,bkey:b.k,arr:cells[bi]}));});});});
   return out;}
 const OPS_OPEN={};
 let DONE_OPT=['seg','city','clinic','opscat','opssub'];   // FULL ordered Done layer list (seg · geo · metrics) — every layer is drag-reorderable, like ①②. doneLayers() filters to what's available at the current scope/segment.
@@ -1263,7 +1274,7 @@ function renderDoneBar(ll,recs,units){
   const est=usingSrc&&units.some(u=>!u.byCatSrc&&u.bySource&&Object.keys(u.bySource).length);
   if(usingSrc){const n=document.createElement('span');n.className='dlnote';n.style.marginLeft='8px';if(!est){n.style.color='#1F6F5C';n.textContent='source×category exact ✓';}else n.textContent='source×category ≈ est. (online rows)';ll.appendChild(n);}
   const bk=doneBucketLayer(),crossedWithMix=bk&&['opscat','opssub','opssrc'].some(l=>DONE_OPT.includes(l));
-  if(crossedWithMix){const n=document.createElement('span');n.className='dlnote';n.style.marginLeft='8px';n.textContent=OPSDIM[bk].lab.toLowerCase()+' × category ≈ est. (each margin exact)';ll.appendChild(n);}}   // the bucket margin (each maturity/rank total) and the category margin are exact; only their joint cell is proportionally split
+  if(crossedWithMix){const n=document.createElement('span');n.className='dlnote';n.style.marginLeft='8px';n.textContent=OPSDIM[bk].lab.toLowerCase()+' × category ≈ whole-person est. (category total exact)';ll.appendChild(n);}}   // category total exact; the bucket split is a whole-person proportional estimate (largest-remainder)
 function renderDone(units){units=units||opsUnits();const flow=document.getElementById('doneFlow'),head=document.getElementById('doneHead'),ll=document.getElementById('doneLayerLbl');
   if(!QD||!units.length)return;flow.innerHTML='';head.innerHTML=opsHeadHTML('Done · SC');   // weekly columns (follows the weekly/Σ toggle like ③④)
   opsRow(flow,'Done · completed SC (total)',opsSumU(units,u=>u.done),{stage:true,col:'#C87B2E'});
@@ -1462,6 +1473,7 @@ const IM_STAGE_CFG={
   bookings:{variants:[['bookings','SC bookings']],
     cuts:[{dim:'age',lab:'Lead maturity',vals:[['fresh','fresh'],['wk1','1wk'],['wk2_4','2–4wk'],['mo1_3','1–3mo'],['mo3','3mo+'],['nolead','no lead']]},
           {dim:'brank',lab:'Booking rank',vals:[['1st','1st-ever'],['2nd','2nd'],['3rd','3rd'],['4pl','4th+']]},
+          {dim:'relapse',lab:'Repeat / relapse',vals:[['new','new'],['relapse','relapse']]},
           {dim:'channel',lab:'Source',vals:IM_CH_VALS},{dim:'medium',lab:'Medium',vals:IM_MED_VALS},{dim:'category',lab:'Category',vals:IM_CAT_VALS}]},
   avail:{variants:[['netsc','Net SC hrs'],['attend','Attended days'],['rostered','Rostered hrs'],['opened','Opened hrs']], cuts:[]},
   b2d:{variants:[['b2d','Book→Done %']], cuts:[]},
