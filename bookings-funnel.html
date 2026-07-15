@@ -984,13 +984,13 @@ function opsUnitsOffline(){if(!QD)return [];
   if(SCOPE==='doctor')return [...SEL.doctor].map(dk=>{const j=dk.indexOf('::'),slug=dk.slice(0,j),name=dk.slice(j+2),qc=QD.clinics[slug];if(!qc)return null;const bd=(qc.sc.by_doctor||{})[name];if(!bd)return null;
     return {al:qdAlign,key:dk,label:name,city:qc.city,loc:slugLoc(slug),doctor:name,booked:bd.booked,done:bd.done,bookedSlots:null,doneSlots:null,byCat:bd.cat_done||{},byCatSrc:null,avail:bd.availability||{},bySource:null,pur:qdAlign(bd.purchased),rev:qdAlign(bd.rev),purByCat:{},revByCat:{},vMeds:qdAlign(bd.meds),vTest:qdAlign(bd.test),vTher:qdAlign(bd.ther),vCons:qdAlign(bd.cons),online:false};}).filter(Boolean);   // per-doctor: patient-level + SC done-week value + product-line (purchased/revenue attributed to the SC doctor, from the ecube by_doctor)
   const g=(OPS_GRAIN==='distinct')?(SCOPE==='national'?'_nat':SCOPE==='city'?'_city':''):'';   // clinic-attributed ('' = clinic-sum, ties ②) vs patient-distinct (_nat/_city, ties sheet)
-  return opsSlugs().map(s=>{const qc=QD.clinics[s],d=qc.sc.done,pu=qc.sc.purchased||{},rv=qc.sc.revenue||{};const ec=(ECOFF&&ECOFF.clinics&&ECOFF.clinics[qc.city+'|'+slugLoc(s)])||null;return {al:qdAlign,key:s,label:slugLoc(s),city:qc.city,loc:slugLoc(s),doctor:null,booked:d['booked'+g]||d.booked,done:d['done'+g]||d.done,bookedSlots:d.booked_slots||null,doneSlots:d.done_slots||null,slotStatus:d.slot_status||null,byCat:d.by_cat||{},byCatSrc:d.by_cat_source||null,doneByAge:d.by_age||null,doneByBrank:d.by_brank||null,avail:qc.sc.availability||{},bySource:(qc.sc.bookings||{}).by_source||null,pur:qdAlign(pu.total),rev:qdAlign(rv.rev),purByCat:alignCatMap(pu.by_cat,qdAlign),revByCat:alignCatMap(rv.by_cat,qdAlign),vMeds:ec?econAlign(ec.meds_val):qdAlign(rv.meds),vTest:ec?econAlign(ec.test_val):qdAlign(rv.test),vTher:ec?econAlign(ec.ther_val):qdAlign(rv.ther),vCons:ec?econAlign(ec.cons_val):qdAlign(rv.cons),online:false};});}   // pur/rev + by-cat pre-aligned to WEEKS (⑥ Value funnel); vMeds/vTest/vTher/vCons = product-line revenue (⑥ Value Metrics picker); doneByAge/Brank = DONE split by lead maturity / booking rank (ties to done total)
+  return opsSlugs().map(s=>{const qc=QD.clinics[s],d=qc.sc.done,pu=qc.sc.purchased||{},rv=qc.sc.revenue||{};const ec=(ECOFF&&ECOFF.clinics&&ECOFF.clinics[qc.city+'|'+slugLoc(s)])||null;return {al:qdAlign,key:s,label:slugLoc(s),city:qc.city,loc:slugLoc(s),doctor:null,booked:d['booked'+g]||d.booked,done:d['done'+g]||d.done,bookedSlots:d.booked_slots||null,doneSlots:d.done_slots||null,slotStatus:d.slot_status||null,byCat:d.by_cat||{},byCatSrc:d.by_cat_source||null,doneByAge:d.by_age||null,doneByBrank:d.by_brank||null,avail:qc.sc.availability||{},bySource:(qc.sc.bookings||{}).by_source||null,pur:qdAlign(pu.total),rev:qdAlign(rv.rev),purByCat:alignCatMap(pu.by_cat,qdAlign),revByCat:alignCatMap(rv.by_cat,qdAlign),vMeds:ec?econAlign(ec.meds_val):qdAlign(rv.meds),vTest:ec?econAlign(ec.test_val):qdAlign(rv.test),vTher:ec?econAlign(ec.ther_val):qdAlign(rv.ther),vCons:ec?econAlign(ec.cons_val):qdAlign(rv.cons),ecRaw:ec,online:false};});}   // pur/rev + by-cat pre-aligned to WEEKS (⑥ Value funnel); vMeds/vTest/vTher/vCons = product-line revenue (⑥ Value Metrics picker); doneByAge/Brank = DONE split by lead maturity / booking rank (ties to done total)
 function opsUnitsOnline(){return onlKeys().map(k=>{const n=ONL.clinics[k],i=k.indexOf('|'),loc=k.slice(i+1);
   const byCat={};if(n.by_cat)for(const c in n.by_cat){const rc=ONL_ROLL[c]||c,dn=n.by_cat[c].done||[],a=(byCat[rc]=byCat[rc]||[]);for(let j=0;j<dn.length;j++)a[j]=(a[j]||0)+(dn[j]||0);}   // online done split by merged-Rx diagnosis, rolled to the same 9 sub-cats as offline (LSD/DE/…/oth → Oth)
   const e=(ONE&&ONE.clinics&&ONE.clinics[k])||null;   // online DONE-date economics for this online clinic (⑥ Value funnel)
   const revRaw=e?(e.meds_val||[]).map((v,j)=>(v||0)+((e.test_val||[])[j]||0)+((e.ther_val||[])[j]||0)+((e.cons_val||[])[j]||0)):[];   // revenue = meds+test+ther+cons
   const purByCat={},revByCat={};if(e&&e.by_cat)for(const c in e.by_cat){const bc=e.by_cat[c];purByCat[c]=oneAlign(bc.purchased||[]);revByCat[c]=oneAlign((bc.meds_val||[]).map((v,j)=>(v||0)+((bc.test_val||[])[j]||0)+((bc.ther_val||[])[j]||0)+((bc.cons_val||[])[j]||0)));}   // online purchase/revenue BY category (same by_cat the sheet shows) → no more '(no category)' for online; pre-aligned to WEEKS
-  return {al:onlAlign,key:'onl:'+k,label:loc,city:displayCity(loc,k.slice(0,i)),loc:loc,doctor:null,booked:n.booked,done:n.done,bookedSlots:n.booked,doneSlots:n.done,byCat:byCat,byCatSrc:n.by_cat_source||null,avail:{},bySource:n.by_source||null,pur:oneAlign(e?e.purchased:[]),rev:oneAlign(revRaw),purByCat:purByCat,revByCat:revByCat,vMeds:oneAlign(e?e.meds_val:[]),vTest:oneAlign(e?e.test_val:[]),vTher:oneAlign(e?e.ther_val:[]),vCons:oneAlign(e?e.cons_val:[]),online:true};});}   // online telehealth; pur/rev + by-cat + product-line pre-aligned; byCatSrc = EXACT done×cat×source (no estimate)
+  return {al:onlAlign,key:'onl:'+k,label:loc,city:displayCity(loc,k.slice(0,i)),loc:loc,doctor:null,booked:n.booked,done:n.done,bookedSlots:n.booked,doneSlots:n.done,byCat:byCat,byCatSrc:n.by_cat_source||null,avail:{},bySource:n.by_source||null,pur:oneAlign(e?e.purchased:[]),rev:oneAlign(revRaw),purByCat:purByCat,revByCat:revByCat,vMeds:oneAlign(e?e.meds_val:[]),vTest:oneAlign(e?e.test_val:[]),vTher:oneAlign(e?e.ther_val:[]),vCons:oneAlign(e?e.cons_val:[]),ecRaw:e,online:true};});}   // online telehealth; pur/rev + by-cat + product-line pre-aligned; byCatSrc = EXACT done×cat×source (no estimate)
 function opsUnits(){if(!QD)return [];
   if(SCOPE==='doctor')return opsUnitsOffline();   // doctors are offline clinicians
   if(SEG==='online')return opsUnitsOnline();
@@ -1136,7 +1136,7 @@ function opsDrill(container,recs,layers,depth,pad,kp,parentDisp){
   });}
 // ===== generalized ops funnel-drill (④ Book→Done · ⑥ Value) — layer bar + nested mini-funnel, same engine feel as ⑤ =====
 let OPS_SHARE={done:false,b2d:false,val:false,avail:false};        // per-section '% share of parent' toggle (default off = decluttered)
-const OPS_ORD={b2d:['seg'], val:['seg'], avail:[]};     // reorderable layer order per section (geo dims are opt-in via ＋ ghosts; avail is offline-only so no seg layer). ⑥ Value is now geo+Metrics-picker (product-line ₹ can't split by category)
+const OPS_ORD={b2d:['seg'], val:['seg','opscat'], avail:[]};     // reorderable layer order per section (geo dims are opt-in via ＋ ghosts; avail is offline-only so no seg layer). ⑥ Value = Metrics picker + Category/Geo layers (product-line ₹ splits by category via econ by_cat)
 const OPS_SEL={b2d:{}, val:{}, avail:{}};                        // OPS_SEL[sec][dim] = Set of de-selected values (▾ pickers)
 let opsDrag=null;
 function sumRecF(recs,f){const o=new Array(WEEKS.length).fill(0);recs.forEach(r=>{const a=r[f]||[];for(let i=0;i<o.length;i++)o[i]+=a[i]||0;});return o;}   // element-wise sum of a pre-aligned record field
@@ -1168,7 +1168,7 @@ function opsValRecs(units){const recs=[];(units||opsUnits()).forEach(u=>{   // �
     recs.push({online:!!u.online,city:u.city,loc:u.loc,cat:SUBCAT2TOP[cat]||cat,pur,rev,done});});
   const rP=purA.map((v,i)=>v-(acc.pur[i]||0)),rR=revA.map((v,i)=>v-(acc.rev[i]||0)),rD=doneA.map((v,i)=>v-(acc.done[i]||0));
   if([rP,rR,rD].some(a=>a.some(x=>Math.abs(x)>1e-6)))recs.push({online:!!u.online,city:u.city,loc:u.loc,cat:'(no category)',pur:rP,rev:rR,done:rD});});return recs;}
-function opsAvail(sec,l){if(['city','clinic','doctor'].includes(l))return sec==='avail'?true:doneGeo().includes(l);if(l==='opscat')return false;return l==='seg'&&sec!=='avail';}   // opscat retired from ⑥ Value (now geo + Metrics picker)   // avail is offline-only → no Segment layer; but City/Clinic/Doctor are all opt-in breakdowns (per-doctor roster comes from quick_diag by_doctor)
+function opsAvail(sec,l){if(['city','clinic','doctor'].includes(l))return sec==='avail'?true:doneGeo().includes(l);if(l==='opscat')return sec==='val';return l==='seg'&&sec!=='avail';}   // opscat = Category layer, available for ⑥ Value (product-line ₹ now splits by category via the econ by_cat)   // avail is offline-only → no Segment layer; but City/Clinic/Doctor are all opt-in breakdowns (per-doctor roster comes from quick_diag by_doctor)
 function opsSecLayers(sec){return OPS_ORD[sec].filter(l=>opsAvail(sec,l));}
 function opsBar(ll,sec,recs,rerender){if(!ll)return;ll.innerHTML='';
   const shb=document.createElement('button');shb.className='dlchip'+(OPS_SHARE[sec]?' on':'');shb.textContent='% share';shb.title='show each row’s share of its parent as a weekly trend (off = decluttered)';shb.style.marginRight='10px';shb.onclick=()=>{OPS_SHARE[sec]=!OPS_SHARE[sec];rerender();};ll.appendChild(shb);
@@ -1358,9 +1358,25 @@ const VAL_METS=[
   {key:'rpcAll', lab:'RPC · with consult fee ₹',          slab:'RPC · incl consult',num:'revAll',den:'done', col:'#1F6F5C'},
 ];
 let VAL_MET_OFF=new Set(VAL_METS.filter(m=>!['purTot','d2p','revAll','rpcProd'].includes(m.key)).map(m=>m.key));   // default shown: Purchased · D2P · Revenue total · RPC products
-function opsValMetRecs(units){return (units||opsUnits()).map(u=>{const done=u.al(u.done),pur=u.pur||[],meds=u.vMeds||[],test=u.vTest||[],ther=u.vTher||[],cons=u.vCons||[];
-  const revTP=meds.map((v,i)=>(v||0)+(test[i]||0)+(ther[i]||0)),revAll=revTP.map((v,i)=>v+(cons[i]||0));
-  return {online:!!u.online,city:u.city,loc:u.loc,doctor:u.doctor||u.label,done,pur,meds,test,ther,cons,revTP,revAll};});}
+// ⑥ Value recs — one per unit × top-category (product-line meds/tests/therapy split BY category, from the econ by_cat).
+// A '(no category)' remainder reconciles each unit back to its sheet-tied totals, so Σ ties whether or not Category is a layer.
+function opsValMetRecs(units){const out=[],N=WEEKS.length;
+  (units||opsUnits()).forEach(u=>{const align=u.online?oneAlign:econAlign,ec=u.ecRaw;
+    const mk=(cat,done,pur,meds,test,ther,cons)=>{const revTP=meds.map((v,i)=>(v||0)+(test[i]||0)+(ther[i]||0)),revAll=revTP.map((v,i)=>v+(cons[i]||0));
+      return {online:!!u.online,city:u.city,loc:u.loc,doctor:u.doctor||u.label,cat,done,pur,meds,test,ther,cons,revTP,revAll};};
+    const uDone=u.al(u.done),uPur=u.pur||[],uMeds=u.vMeds||[],uTest=u.vTest||[],uTher=u.vTher||[],uCons=u.vCons||[];
+    if(ec&&ec.by_cat&&Object.keys(ec.by_cat).length){
+      const acc={},S={done:new Array(N).fill(0),pur:new Array(N).fill(0),meds:new Array(N).fill(0),test:new Array(N).fill(0),ther:new Array(N).fill(0),cons:new Array(N).fill(0)};
+      for(const sub in ec.by_cat){const bc=ec.by_cat[sub],top=SUBCAT2TOP[sub]||sub;
+        const a=(acc[top]=acc[top]||{done:new Array(N).fill(0),pur:new Array(N).fill(0),meds:new Array(N).fill(0),test:new Array(N).fill(0),ther:new Array(N).fill(0),cons:new Array(N).fill(0)});
+        const add=(dst,ssum,arr)=>{const al=align(arr);for(let i=0;i<N;i++){const x=al[i]||0;dst[i]+=x;ssum[i]+=x;}};
+        add(a.done,S.done,bc.done);add(a.pur,S.pur,bc.purchased);add(a.meds,S.meds,bc.meds_val);add(a.test,S.test,bc.test_val);add(a.ther,S.ther,bc.ther_val);add(a.cons,S.cons,bc.cons_val);}
+      for(const top in acc){const a=acc[top];out.push(mk(top,a.done,a.pur,a.meds,a.test,a.ther,a.cons));}
+      const rem=(uA,sA)=>uA.map((v,i)=>(v||0)-(sA[i]||0));   // reconcile to the unit's sheet-tied totals
+      const rD=rem(uDone,S.done),rP=rem(uPur,S.pur),rM=rem(uMeds,S.meds),rT=rem(uTest,S.test),rH=rem(uTher,S.ther),rC=rem(uCons,S.cons);
+      if([rD,rP,rM,rT,rH,rC].some(a=>a.some(x=>Math.abs(x)>1e-6)))out.push(mk('(no category)',rD,rP,rM,rT,rH,rC));
+    }else out.push(mk('(no category)',uDone,uPur,uMeds,uTest,uTher,uCons));   // doctor / no-econ unit → single bucket
+  });return out;}
 function valStage(m){return m.field?{lab:m.slab||m.lab,f:m.field,col:m.col}:{lab:m.slab||m.lab,rate:[m.num,m.den],pct:!!m.pct,col:m.col};}
 function appendValMetricPicker(ll){const nsel=VAL_METS.filter(m=>!VAL_MET_OFF.has(m.key)).length;
   const chip=document.createElement('div');chip.className='chip';chip.style.marginLeft='12px';
