@@ -95,6 +95,9 @@
   .avgnow.up{color:#2E7D5B}.avgnow.dn{color:#B8503C}.avgnow.flat{color:var(--ink)}
   .head .avgmk{font-size:8.5px;color:var(--faint);font-weight:600}.head .avgmk .avglab{color:var(--faint)}
   .head .delta{font-size:8.5px;color:var(--faint);font-weight:600}
+  .head .sortcol{cursor:pointer;border-radius:4px}
+  .head .sortcol:hover{color:var(--accent)}.head .sortcol:hover .avglab{color:var(--accent)}
+  .sarr{color:var(--accent);font-size:8px;margin-left:2px}
   .frow.brate{background:color-mix(in srgb,#2E7D5B 6%,transparent)}
   .frow.brate .lbl{color:#2E7D5B;font-style:italic;font-weight:600}
   .frow.brate .wk{color:#2E7D5B;font-weight:700}
@@ -613,7 +616,7 @@ function cellPass(c,P){if(P.mode!=='leads'&&SEG!=='both'&&((SEG==='online')!==!!
 
 // two independent pivot instances — each owns its layers / expansions / selection; display prefs (week window, %/Σ, Δ) are shared
 const $=id=>document.getElementById(id);
-function makeP(cfg){const P={mode:cfg.mode,dims:cfg.dims,order:[...cfg.order],build:cfg.build,hero:cfg.hero,data:null,cells:[],open:{},sel:{},present:{},els:cfg.els};
+function makeP(cfg){const P={mode:cfg.mode,dims:cfg.dims,order:[...cfg.order],build:cfg.build,hero:cfg.hero,data:null,cells:[],open:{},sel:{},present:{},sort:{key:null,dir:'desc'},els:cfg.els};
   P.dims.forEach(dk=>{P.sel[dk]=new Set(DIMS[dk].values.map(v=>v.k));});return P;}
 const PL=makeP({mode:'leads',dims:['citygroup','city','clinic','channel','medium','leadcamp','oncall','intent','strength','category','status','doneq'],order:['channel','medium'],build:buildLeadCells,hero:'attributable leads',
   els:{flow:$('flowL'),bar:$('barL'),heroN:$('heroNL'),heroL:$('heroLL'),hHdr:$('hHdrL'),hRight:$('hRightL')}});
@@ -670,9 +673,20 @@ function pivotUnits(dk,P){const dim=DIMS[dk],combs=(P.comb&&P.comb[dk])||[],inC=
   dim.values.forEach(v=>{if(P.sel[dk].has(v.k)&&!inC.has(v.k))out.push({k:v.k,label:labOf(dk,v.k),vals:[v.k],valSet:new Set([v.k]),color:dim.color(v.k),single:true});});
   return out;}
 function unitLbl(dk,vk,P){if(typeof vk==='string'&&vk.indexOf('__c')===0){const c=(P.comb&&P.comb[dk])||[],ci=+vk.slice(3);return c[ci]?c[ci].label:vk;}return labOf(dk,vk);}
+// sort value for a row's week-array by the clicked column key (now / before / delta / a specific week)
+function sortMetric(wk,key){const dp=deltaPct(wk);
+  if(key==='now')return dp.now||0;
+  if(key==='before')return dp.before||0;
+  if(key==='delta')return dp.before<1?(dp.now>0?1e7:0):100*((dp.now||0)-dp.before)/dp.before;
+  if(key&&key.indexOf('wk:')===0)return wk[+key.slice(3)]||0;
+  return sumT(wk);}
 function renderLevel(container,cells,depth,parentTot,parentWk,path,pathVals,P){
   const dk=P.order[depth],dim=DIMS[dk],last=depth===P.order.length-1;
-  pivotUnits(dk,P).forEach(u=>{
+  let _units=pivotUnits(dk,P);
+  if(P.sort&&P.sort.key){   // sort rows at EVERY level by the clicked column (so drilled cities/clinics also sort)
+    _units=_units.map(u=>{const sub=cells.filter(u.single?(c=>c[dim.field]===u.vals[0]):(c=>u.valSet.has(c[dim.field])));return {u,mv:sortMetric(weekArr(sub),P.sort.key)};})
+      .sort((a,b)=>P.sort.dir==='asc'?a.mv-b.mv:b.mv-a.mv).map(x=>x.u);}
+  _units.forEach(u=>{
     const single=u.single,vk=u.vals[0];
     const sub=cells.filter(single?(c=>c[dim.field]===vk):(c=>u.valSet.has(c[dim.field])));
     const wk=weekArr(sub); const t=sumT(wk); if(!t)return;
@@ -1819,7 +1833,9 @@ function draw(P){
   P.els.heroL.textContent=P.hero+' · last '+NWK+' wks';
   P.els.hHdr.textContent=P.order.map(d=>DIMS[d].label).join('  →  ');
   const hR=P.els.hRight;
-  if(WEEKLY){const ix=wkIdxs(),ba=baseAx();hR.innerHTML=ix.map((i,j)=>`<span class="wk${j===ix.length-1?' last':''}">${blockLabel(ba,i)}</span>`).join('')+`<span class="delta">Δ ${CMP}</span><span class="avgmk avgbefore"><span class="avglab">before</span></span><span class="avgmk avgnow"><span class="avglab">now</span></span><span class="zoom">graph</span>`;}
+  const sarrow=(k)=>(P.sort&&P.sort.key===k)?`<span class="sarr">${P.sort.dir==='asc'?'▲':'▾'}</span>`:'';
+  if(WEEKLY){const ix=wkIdxs(),ba=baseAx();hR.innerHTML=ix.map((i,j)=>`<span class="wk sortcol${j===ix.length-1?' last':''}" data-sk="wk:${i}" title="click to sort by this week">${blockLabel(ba,i)}${sarrow('wk:'+i)}</span>`).join('')+`<span class="delta sortcol" data-sk="delta" title="click to sort by Δ">Δ ${CMP}${sarrow('delta')}</span><span class="avgmk avgbefore sortcol" data-sk="before" title="click to sort by before"><span class="avglab">before${sarrow('before')}</span></span><span class="avgmk avgnow sortcol" data-sk="now" title="click to sort by now"><span class="avglab">now${sarrow('now')}</span></span><span class="zoom">graph</span>`;
+    hR.querySelectorAll('[data-sk]').forEach(el=>el.onclick=()=>{const k=el.dataset.sk;if(P.sort.key!==k)P.sort={key:k,dir:'desc'};else if(P.sort.dir==='desc')P.sort.dir='asc';else P.sort={key:null,dir:'desc'};draw(P);});}
   else hR.innerHTML=`<span class="cnt">${PCT?'%par':'n'}</span><span class="pct">${PCT?'':'%par'}</span><span class="zoom">graph</span>`;
   const flow=P.els.flow;flow.innerHTML='';
   if(!tot){flow.innerHTML='<div class="empty">'+(P.mode==='leads'&&!P.cells.length?'Leads preview is wired for Indiranagar so far — other clinics populate on the next data refresh.':'no rows match the current selection')+'</div>';return;}
