@@ -14,7 +14,7 @@ def q(sql):
 L0=json.load(open(os.path.join(ROOT,'data_l0_funnel.json')))
 ALLW=L0['_meta']['weeks']; ALLLAB=L0['_meta']['week_labels']
 N=26; WEEKS=ALLW[-N:]; WK_LABELS=[ALLLAB[w] for w in WEEKS]; idx={w:i for i,w in enumerate(WEEKS)}
-LO=WEEKS[0]; HI='2026-07-06'; SC_ROSTER='cd02525c-1528-4047-a12c-1ad526c28c9a'
+LO=WEEKS[0]; HI='2026-07-14'; SC_ROSTER='cd02525c-1528-4047-a12c-1ad526c28c9a'
 def K(city,loc): return (loc or '').strip().lower()+'|'+(city or '').strip().lower()
 def Z(): return [0]*N
 def zput(d,k,i,v): d.setdefault(k,Z())[i]=d.get(k,Z())[i] if False else d.setdefault(k,Z())[i]

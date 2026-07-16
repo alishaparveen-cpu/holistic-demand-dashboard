@@ -23,9 +23,9 @@ def run_sql(sql):
     return [l.split("\t") for l in p.stdout.strip().splitlines() if l.strip()]
 
 # ---- 52 IST-Monday weeks ending at the last complete week (matches the other funnels' window) ----
-LO_DATE = datetime.date(2025, 7, 7)             # Monday — 52-wk window slid +1wk to end at 2026-06-29 (latest complete week)
+LO_DATE = datetime.date(2025, 7, 14)            # Monday — 52-wk window slid +1wk to end at 2026-07-06 (latest complete week)
 WEEKS = [(LO_DATE + datetime.timedelta(weeks=i)).isoformat() for i in range(52)]
-idx = {w: i for i, w in enumerate(WEEKS)}; NW = len(WEEKS); LO = WEEKS[0]; HI = "2026-07-06"
+idx = {w: i for i, w in enumerate(WEEKS)}; NW = len(WEEKS); LO = WEEKS[0]; HI = "2026-07-14"
 def Z(): return [0]*NW
 MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 def wlabel(ws):
