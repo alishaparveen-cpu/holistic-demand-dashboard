@@ -2177,10 +2177,13 @@ Promise.all([
   // scope multiselect picker events
   document.getElementById('msbtn').onclick=e=>{e.stopPropagation();if(SCOPE==='national')return;const pk=document.getElementById('mspick');pk.classList.toggle('open');if(pk.classList.contains('open')){const s=document.getElementById('mssearch');s.value='';renderPickList();s.focus();}};
   document.getElementById('mssearch').oninput=renderPickList;
-  document.getElementById('msact').onclick=e=>{const b=e.target.closest('button');if(!b)return;const a=b.dataset.a,sel=SEL[SCOPE],opts=scopeOptions(SCOPE);
-    if(a==='all')opts.forEach(o=>sel.add(o.k));else if(a==='none')sel.clear();
-    else if(a==='t1'||a==='t2'){const t=a==='t1'?'T1':'T2';sel.clear();opts.forEach(o=>{if(o.tier===t)sel.add(o.k);});}
-    else if(a==='mh'){sel.clear();opts.forEach(o=>{if(MH_PILOT.has((o.label||'').toLowerCase()))sel.add(o.k);});}   // MH-pilot quick-select (clinic scope) — same pattern as Tier 1/2
+  document.getElementById('msact').onclick=e=>{const b=e.target.closest('button');if(!b)return;const a=b.dataset.a,sel=SEL[SCOPE];
+    const q=(document.getElementById('mssearch').value||'').toLowerCase().trim();
+    const opts=scopeOptions(SCOPE).filter(o=>!q||o.label.toLowerCase().includes(q)||(o.sub||'').toLowerCase().includes(q));   // All/None/Tier act on the SEARCH-FILTERED list (e.g. search 'pune' → All selects only those)
+    if(a==='all')opts.forEach(o=>sel.add(o.k));
+    else if(a==='none'){if(q)opts.forEach(o=>sel.delete(o.k));else sel.clear();}   // with a search, None deselects just the matches; no search → clear all
+    else if(a==='t1'||a==='t2'){const t=a==='t1'?'T1':'T2';if(!q)sel.clear();opts.forEach(o=>{if(o.tier===t)sel.add(o.k);});}
+    else if(a==='mh'){if(!q)sel.clear();opts.forEach(o=>{if(MH_PILOT.has((o.label||'').toLowerCase()))sel.add(o.k);});}
     renderPicker();loadClinic();};
   document.addEventListener('click',e=>{if(!e.target.closest('#mspick'))document.getElementById('mspick').classList.remove('open');});
   document.querySelectorAll('#scopeseg button').forEach(b=>b.onclick=()=>setScope(b.dataset.s));
