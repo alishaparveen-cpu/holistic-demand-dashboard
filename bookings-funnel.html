@@ -604,7 +604,7 @@ function splitCat(v,cc){   // integer v → {STI,SH,MH,Other} summing exactly to
 function buildCells(node){
   return (node.cells||[]).map(c=>({ptype:c.pt,channel:(window.BookingsCube?window.BookingsCube.channelOf(c.ch):c.ch),age:c.la,medium:(c.md==='whatsapp'?'wa_org':c.md),
     brank:c.br||'na',drank:c.dr||'na',relapse:((c.dr==='d1'||c.dr==='d2pl'||c.pt==='relapse')?'relapse':((c.dr==='d0'||c.pt==='new'||c.pt==='reattempt')?'new':'na')),wdArr:c.wd||[],   // relapse = simple 2-way: had this patient COMPLETED an SC before this booking? (offline done-rank d1+/d2pl OR online ret_return) → a returning/repeat patient
-    num:c.num||'',campaign:c.cmp||'na',category:c.cat||'na',bkseg:c.bkseg||'none',loc:c.loc||'',city:c.city||'',citygroup:(c.city&&c.city.indexOf('— no city')!==0)?'attr':'nocity',_on:(!!c.on||c.city==='Online'),seg:((!!c.on||c.city==='Online')?'online':'offline'),arr:c.w}));   // brank/drank = booking-rank / done-rank AS-OF BEFORE this booking (unique patient-week). loc/city set on city+national rollups; _on/seg = online (telehealth) vs offline
+    num:c.num||'',campaign:c.cmp||'na',category:c.cat||'na',clcat:(c.dg&&c.dg!=='(none)')?(SUBCAT2TOP[c.dg]||'Other'):'(none)',bkseg:c.bkseg||'none',loc:c.loc||'',city:c.city||'',citygroup:(c.city&&c.city.indexOf('— no city')!==0)?'attr':'nocity',_on:(!!c.on||c.city==='Online'),seg:((!!c.on||c.city==='Online')?'online':'offline'),arr:c.w}));   // clcat = CLINICAL diagnosis top-category (merged-Rx dg rolled via SUBCAT2TOP) → EXACT done × maturity × category joint. brank/drank = booking/done rank AS-OF before this booking.
 }
 function buildLeadCells(node){   // leads cube: channel x medium x number x url x booked-status
   const bs=BOOKED_SET[BOOKWIN]||BOOKED_SET.ever;   // booked = lag bucket within the chosen window
@@ -1078,27 +1078,36 @@ const OPSDIM={
   opssub:{lab:'Sub-category', get:r=>r.subcat, col:r=>CAT_C[SUBCAT2TOP[r.subcat]]||'#6FA34C'},
   donematurity:{lab:'Lead maturity', get:r=>r.bucket, col:r=>BUCKET_C[r.bkey]||'#c7ccd4'},   // ⑤ Done split by lead maturity (offline, done-cohort) — standalone breakdown
   donerank:{lab:'Booking rank', get:r=>r.bucket, col:r=>({'1st':'#2E7D5B','2nd':'#6FA34C','3rd':'#C87B2E','4pl':'#B8503C'})[r.bkey]||'#c7ccd4'},
+  donemed:{lab:'Medium', get:r=>r.bucket, col:r=>({'Call':'#3E7CB1','Web':'#5BA88F','WhatsApp':'#2E7D5B','WA·GMB':'#6FA34C','WA·outbound':'#8257C4','Practo book':'#C87B2E','Walk-in':'#B8503C'})[r.bucket]||'#9aa3b0'},   // ⑤ Done split by MEDIUM (offline, from the episode cube — exact, done-cohort)
 };
 const IM_AGE_BUCKETS=[['fresh','Fresh · same wk'],['wk1','1 wk old'],['wk2_4','2–4 wk old'],['mo1_3','1–3 mo old'],['mo3','3 mo+ old'],['nolead','no lead / walk-in']];
+const IM_DONE_MED_BUCKETS=[['call','Call'],['web','Web'],['wa_org','WhatsApp'],['wa_gmb','WA·GMB'],['wa_outbound','WA·outbound'],['book','Practo book'],['walkin','Walk-in'],['blog','Blog'],['other','Other']];   // ⑤ Done Medium buckets (episode-cube medium values)
 const IM_RANK_BUCKETS=[['1st','1st-ever'],['2nd','2nd booking'],['3rd','3rd booking'],['4pl','4th+ booking']];
 // ⑤ Done standalone breakdown: one record per (offline unit × maturity/rank bucket), from the ops done cube (ties to done at clinic level)
 // ⑤ Done bucket breakdown, CROSSED with the full done cube (cat × sub-cat × source × segment × geo).
 // The maturity/rank margin (u.doneByAge / doneByBrank) is exact; it's allocated across each unit's done records
 // in proportion to that week's cat×src mix — the SAME proportional cross already used for Source (opsDoneRecsUnit).
 // So each bucket total and each category total stay exact; only the joint (bucket × category) cell is an estimate.
-function opsDoneBucketRecs(units,dim){const out=[],field=dim==='donerank'?'doneByBrank':'doneByAge',bl=dim==='donerank'?IM_RANK_BUCKETS:IM_AGE_BUCKETS;
+// EXACT per-category done split from the OFFLINE episode cube: {catTop: {bucketKey: weekArr}} for a clinic (field = 'age' | 'brank' | 'medium').
+function epiDoneByCatMat(city,loc,field){const out={};(PB.cells||[]).forEach(c=>{if(c.seg!=='offline')return;if(!imMatch(c.city,city)||!imMatch(c.loc,loc))return;const cat=c.clcat;if(!cat||cat==='(none)')return;const bk=(field==='medium'?c.medium:c[field])||'na',a=c.wdArr||[];const cc=out[cat]=out[cat]||{},o=cc[bk]=cc[bk]||new Array(WEEKS.length).fill(0);for(let i=0;i<a.length;i++)o[i]+=a[i]||0;});return out;}
+function opsDoneBucketRecs(units,dim){const out=[],field=dim==='donerank'?'doneByBrank':'doneByAge',bl=dim==='donerank'?IM_RANK_BUCKETS:(dim==='donemed'?IM_DONE_MED_BUCKETS:IM_AGE_BUCKETS);
+  const epiField=dim==='donerank'?'brank':(dim==='donemed'?'medium':'age'),epiOnly=dim==='donemed';   // medium has no quick_diag marginal → episode cube is the only source
   (units||opsUnits()).forEach(u=>{const base=opsDoneRecsUnit(u);   // this unit's done, fully split by cat/src (sums to done)
-    if(u.online){base.forEach(r=>out.push(Object.assign({},r,{bucket:'— online (no lead-age)',bkey:'na'})));return;}   // online telehealth has no lead-maturity → its own bucket, still crossed with category
-    if(!u[field]){base.forEach(r=>out.push(Object.assign({},r,{bucket:'— no lead-age',bkey:'na'})));return;}   // offline unit missing the split → single bucket so it still shows & sums
-    const bt=new Array(WEEKS.length).fill(0);base.forEach(r=>{for(let i=0;i<bt.length;i++)bt[i]+=r.arr[i]||0;});   // this unit's base total/week (= its done split by cat/src)
-    const buckets=bl.map(([k,l])=>({k,l,bArr:u.al((u[field]||{})[k]||[])})).filter(b=>b.bArr.some(x=>x));
-    if(!buckets.length){base.forEach(r=>out.push(Object.assign({},r,{bucket:'— no lead-age',bkey:'na'})));return;}
-    // WHOLE-PERSON split: allocate each cat×src record's integer done across the buckets by proportional share,
-    // then largest-remainder round per week so every cell is a whole person AND sums exactly to the record total
-    // (→ the category total stays exact; the bucket total is whole-person ≈ exact). No more "5.3 persons".
-    base.forEach(r=>{const W=r.arr.length,cells=buckets.map(()=>new Array(W).fill(0));
+    if(u.online){base.forEach(r=>out.push(Object.assign({},r,{bucket:dim==='donemed'?'— online telehealth':'— online (no lead-age)',bkey:'na'})));return;}   // online telehealth: episode cube is offline-only
+    if(!epiOnly&&!u[field]){base.forEach(r=>out.push(Object.assign({},r,{bucket:'— no lead-age',bkey:'na'})));return;}
+    const matByCat=epiDoneByCatMat(u.city,u.loc,epiField);   // EXACT per-category × bucket done from the episode cube (offline)
+    const bt=new Array(WEEKS.length).fill(0);base.forEach(r=>{for(let i=0;i<bt.length;i++)bt[i]+=r.arr[i]||0;});   // unit base total/week
+    const buckets=epiOnly
+      ? bl.map(([k,l])=>({k,l})).filter(b=>Object.values(matByCat).some(cc=>(cc[b.k]||[]).some(x=>x)))   // medium buckets present in the episode data
+      : bl.map(([k,l])=>({k,l,bArr:u.al((u[field]||{})[k]||[])})).filter(b=>b.bArr.some(x=>x));
+    if(!buckets.length){base.forEach(r=>out.push(Object.assign({},r,{bucket:epiOnly?'— no medium':'— no lead-age',bkey:'na'})));return;}
+    // EXACT split: allocate each cat×src record's integer done across the buckets using the REAL per-category
+    // maturity/medium distribution from the episode cube (was a flat proportional estimate). Largest-remainder
+    // keeps whole people AND ties to the (sheet-exact) category total. Fallback to the marginal share if a category has no episode joint.
+    base.forEach(r=>{const W=r.arr.length,cells=buckets.map(()=>new Array(W).fill(0)),cm=matByCat[r.cat]||null;
       for(let w=0;w<W;w++){const tot=Math.round(r.arr[w]||0);if(tot<=0)continue;
-        const raw=buckets.map(b=>{const sh=bt[w]?(b.bArr[w]||0)/bt[w]:0;return (r.arr[w]||0)*sh;});
+        let raw=cm?buckets.map(b=>(cm[b.k]||[])[w]||0):null;
+        if(!raw||!raw.some(x=>x))raw=epiOnly?buckets.map(()=>1):buckets.map(b=>{const sh=bt[w]?((b.bArr||[])[w]||0)/bt[w]:0;return (r.arr[w]||0)*sh;});   // fallback: marginal share (or equal split for medium)
         const rs=raw.reduce((a,b)=>a+b,0);if(rs<=0){cells[0][w]=tot;continue;}
         const scaled=raw.map(x=>x*tot/rs),fl=scaled.map(x=>Math.floor(x));let used=fl.reduce((a,b)=>a+b,0);
         scaled.map((x,i)=>[i,x-fl[i]]).sort((a,b)=>b[1]-a[1]).slice(0,tot-used).forEach(o=>fl[o[0]]++);
@@ -1109,11 +1118,11 @@ const OPS_OPEN={};
 let DONE_OPT=['seg','opscat','city','clinic','opssub'];   // FULL ordered Done layer list — DEFAULT leads Segment → Category, THEN geo · sub-cat (every layer is drag-reorderable, like ①②). doneLayers() filters to what's available at the current scope/segment.
 function doneGeo(){return SCOPE==='national'?['city','clinic']:SCOPE==='city'?['city','clinic']:SCOPE==='clinic'?(SEL.clinic.size>1?['clinic']:[]):SCOPE==='doctor'?(SEL.doctor.size>1?['doctor']:[]):[];}   // geo dims available at this scope — the scope's own grain leads (City at city scope, Clinic at clinic, Doctor at doctor)
 function doneAvail(l){if(['city','clinic','doctor'].includes(l))return doneGeo().includes(l);   // geo available only at its scope
-  if(l==='donematurity'||l==='donerank')return SCOPE!=='doctor';   // lead-maturity / booking-rank done breakdown (offline done cube; not per-doctor)
+  if(l==='donematurity'||l==='donerank'||l==='donemed')return SCOPE!=='doctor';   // lead-maturity / booking-rank / medium done breakdown (offline; not per-doctor)
   return ['seg','opssrc','opscat','opssub'].includes(l)&&!(SCOPE==='doctor'&&l==='opssrc');}   // seg available in every toggle state; doctor scope has no source
-function doneBucketLayer(){return DONE_OPT.filter(doneAvail).find(l=>l==='donematurity'||l==='donerank');}   // the active bucket breakdown, if any
+function doneBucketLayer(){return DONE_OPT.filter(doneAvail).find(l=>l==='donematurity'||l==='donerank'||l==='donemed');}   // the active bucket breakdown, if any
 function doneLayers(){const bk=doneBucketLayer();   // maturity/rank now CROSS with every other layer (cat/source/segment/geo); only the two bucket dims are mutually exclusive with each other
-  return DONE_OPT.filter(doneAvail).filter(l=>!((l==='donematurity'||l==='donerank')&&l!==bk));}
+  return DONE_OPT.filter(doneAvail).filter(l=>!((l==='donematurity'||l==='donerank'||l==='donemed')&&l!==bk));}
 function syncDoneOrder(){   // on scope change, drop in this scope's geo dims at the default position (after seg, before metrics), keeping the user's metric order
   const kept=DONE_OPT.filter(l=>['seg','opssrc','opscat','opssub'].includes(l));
   const lead=kept.filter(l=>l==='seg'||l==='opscat');   // default: Segment → Category lead, THEN this scope's geo, then the rest (source / sub-cat)
@@ -1330,14 +1339,15 @@ function renderDoneBar(ll,recs,units){
     ll.appendChild(chip);
     if(idx<layers.length-1){const a=document.createElement('span');a.className='arrow';a.textContent='→';ll.appendChild(a);}
   });
-  ['seg','opssrc','opscat','opssub','donematurity','donerank','city','clinic','doctor'].filter(doneAvail).filter(l=>!DONE_OPT.includes(l)).forEach(l=>{const g=document.createElement('div');g.className='ghost';g.textContent='＋ '+OPSDIM[l].lab;g.onclick=()=>{
-    if(l==='donematurity'||l==='donerank')DONE_OPT=DONE_OPT.filter(x=>x!=='donematurity'&&x!=='donerank');   // only one lead-maturity / booking-rank breakdown at a time (no age×rank joint in the cube)
+  ['seg','opssrc','opscat','opssub','donematurity','donerank','donemed','city','clinic','doctor'].filter(doneAvail).filter(l=>!DONE_OPT.includes(l)).forEach(l=>{const g=document.createElement('div');g.className='ghost';g.textContent='＋ '+OPSDIM[l].lab;g.onclick=()=>{
+    if(l==='donematurity'||l==='donerank'||l==='donemed')DONE_OPT=DONE_OPT.filter(x=>x!=='donematurity'&&x!=='donerank'&&x!=='donemed');   // one bucket breakdown (maturity / rank / medium) at a time
     DONE_OPT.push(l);renderDone();};ll.appendChild(g);});
   const usingSrc=DONE_OPT.includes('opssrc')&&(DONE_OPT.includes('opscat')||DONE_OPT.includes('opssub'));
   const est=usingSrc&&units.some(u=>!u.byCatSrc&&u.bySource&&Object.keys(u.bySource).length);
   if(usingSrc){const n=document.createElement('span');n.className='dlnote';n.style.marginLeft='8px';if(!est){n.style.color='#1F6F5C';n.textContent='source×category exact ✓';}else n.textContent='source×category ≈ est. (online rows)';ll.appendChild(n);}
   const bk=doneBucketLayer(),crossedWithMix=bk&&['opscat','opssub','opssrc'].some(l=>DONE_OPT.includes(l));
-  if(crossedWithMix){const n=document.createElement('span');n.className='dlnote';n.style.marginLeft='8px';n.textContent=OPSDIM[bk].lab.toLowerCase()+' × category ≈ whole-person est. (category total exact)';ll.appendChild(n);}}   // category total exact; the bucket split is a whole-person proportional estimate (largest-remainder)
+  if(crossedWithMix){const n=document.createElement('span');n.className='dlnote';n.style.marginLeft='8px';n.style.color='#1F6F5C';n.textContent=OPSDIM[bk].lab.toLowerCase()+' × category exact ✓ (offline · real done joint)'+(units.some(u=>u.online)?' · online = one bucket':'');ll.appendChild(n);}   // exact per-category maturity/medium split from the episode cube, tied to the sheet done total (was a proportional estimate)
+  else if(bk==='donemed'){const n=document.createElement('span');n.className='dlnote';n.style.marginLeft='8px';n.style.color='#1F6F5C';n.textContent='medium — exact ✓ (offline, from episode cube)'+(units.some(u=>u.online)?' · online = one bucket':'');ll.appendChild(n);}}
 function renderDone(units){units=units||opsUnits();const flow=document.getElementById('doneFlow'),head=document.getElementById('doneHead'),ll=document.getElementById('doneLayerLbl');
   if(!QD||!units.length)return;flow.innerHTML='';head.innerHTML=opsHeadHTML('Done · SC');   // weekly columns (follows the weekly/Σ toggle like ③④)
   opsRow(flow,'Done · completed SC (total)',opsSumU(units,u=>u.done),{stage:true,col:'#C87B2E'});
