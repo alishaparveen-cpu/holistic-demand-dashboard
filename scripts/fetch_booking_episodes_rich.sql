@@ -36,8 +36,23 @@ callcat AS (   -- each caller phone → their most-recent inbound call's AI-audi
     WHERE ec.start_time >= '2025-11-01'
   ) q WHERE rn=1
 ),
+pfdiag AS (   -- patient's most-recent merged-Rx CLINICAL diagnosis → category (same rollup as the econ/online cubes) — for EXACT done × maturity × category
+  SELECT patient_id, diag_cat FROM (
+    SELECT enc.patient_id,
+      CASE WHEN LISTAGG(pqa.value,',') ILIKE '%Mental Health Concern%' THEN 'MH'
+        WHEN LISTAGG(pqa.value,',') ILIKE '%Genito Urinary Infection%' OR LISTAGG(pqa.value,',') ILIKE '%GUI%' OR LISTAGG(pqa.value,',') ILIKE '%Post-Exposure%' THEN 'STI'
+        WHEN LISTAGG(pqa.value,',') ILIKE '%Premature Ejaculation%' AND LISTAGG(pqa.value,',') ILIKE '%Erectile Dysfunction%' THEN 'ED+PE+'
+        WHEN LISTAGG(pqa.value,',') ILIKE '%Erectile Dysfunction%' THEN 'ED+'
+        WHEN LISTAGG(pqa.value,',') ILIKE '%Premature Ejaculation%' THEN 'PE+'
+        WHEN LISTAGG(pqa.value,',') ILIKE '%Not Otherwise Specified%' THEN 'NOS' ELSE 'Oth' END AS diag_cat,
+      RANK() OVER (PARTITION BY enc.patient_id ORDER BY enc.created_at DESC) AS rnk
+    FROM allo_encounters.encounters enc
+    LEFT JOIN allo_health.paperform_qa pqa ON pqa.encounter_id=enc.id AND pqa.deleted_at IS NULL AND pqa.title ILIKE '%diagnosis%'
+    WHERE enc.deleted_at IS NULL AND LOWER(enc.type) LIKE '%merged-rx%'
+    GROUP BY enc.patient_id, enc.created_at) q WHERE rnk=1
+),
 joined AS (
-  SELECT s.city, s.locality AS clinic, s.wk, s.week_done,
+  SELECT s.city, s.locality AS clinic, s.wk, s.week_done, COALESCE(pf.diag_cat,'(none)') AS diag,
     CASE WHEN s.wk_seq=1 THEN 'new' WHEN s.prior_done>0 THEN 'relapse' ELSE 'reattempt' END AS ptype,
     CASE   -- lead maturity by CALENDAR WEEK (lead's week vs this booking's week) — 'fresh' = lead arrived the SAME week the SC is booked, so it ties exactly to ① "leads this week → booked this week"
       WHEN l.id IS NULL OR l.created_at IS NULL THEN 'nolead'
@@ -89,8 +104,9 @@ joined AS (
   FROM seq s
   LEFT JOIN allo_persons.lead l ON s.lead_id=l.id
   LEFT JOIN callcat cc ON RIGHT(COALESCE(l.phone_no,''),10)=cc.ph
+  LEFT JOIN pfdiag pf ON pf.patient_id=s.patient_id
   WHERE s.start_time >= '2026-01-05' AND s.start_time < '2026-07-13'
     AND LOWER(COALESCE(s.locality,'')) <> 'online' AND s.locality IS NOT NULL
 )
-SELECT city, clinic, wk, ptype, lead_age, channel, medium, number, campaign, category, brank, drank, COUNT(*) AS bookings, SUM(week_done) AS done
-FROM joined GROUP BY 1,2,3,4,5,6,7,8,9,10,11,12 ORDER BY 1,2,3;
+SELECT city, clinic, wk, ptype, lead_age, channel, medium, number, campaign, category, diag, brank, drank, COUNT(*) AS bookings, SUM(week_done) AS done
+FROM joined GROUP BY 1,2,3,4,5,6,7,8,9,10,11,12,13 ORDER BY 1,2,3;
