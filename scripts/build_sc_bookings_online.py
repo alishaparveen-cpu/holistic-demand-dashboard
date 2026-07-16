@@ -130,7 +130,14 @@ SELECT city, locality, doctor, source_bucket, week_start, diagnosis,
   count(distinct case when attempt_rnk=1 and lead_age='wk2_4'  then patient_id end) AS ftm_wk2_4,
   count(distinct case when attempt_rnk=1 and lead_age='mo1_3'  then patient_id end) AS ftm_mo1_3,
   count(distinct case when attempt_rnk=1 and lead_age='mo3'    then patient_id end) AS ftm_mo3,
-  count(distinct case when attempt_rnk=1 and lead_age='nolead' then patient_id end) AS ftm_nolead
+  count(distinct case when attempt_rnk=1 and lead_age='nolead' then patient_id end) AS ftm_nolead,
+  -- DONE split by the same lead-age maturity bucket (new patients who completed) → ⑤ Done online maturity
+  count(distinct case when done_any=1 and attempt_rnk=1 and lead_age='fresh'  then patient_id end) AS done_ftm_fresh,
+  count(distinct case when done_any=1 and attempt_rnk=1 and lead_age='wk1'    then patient_id end) AS done_ftm_wk1,
+  count(distinct case when done_any=1 and attempt_rnk=1 and lead_age='wk2_4'  then patient_id end) AS done_ftm_wk2_4,
+  count(distinct case when done_any=1 and attempt_rnk=1 and lead_age='mo1_3'  then patient_id end) AS done_ftm_mo1_3,
+  count(distinct case when done_any=1 and attempt_rnk=1 and lead_age='mo3'    then patient_id end) AS done_ftm_mo3,
+  count(distinct case when done_any=1 and attempt_rnk=1 and lead_age='nolead' then patient_id end) AS done_ftm_nolead
 FROM bpw GROUP BY 1,2,3,4,5,6 ORDER BY 1,2,3,4,5,6;
 """
 
@@ -148,14 +155,15 @@ def main():
     widx = {w: i for i, w in enumerate(weeks)}
     NW = len(weeks)
     FIELDS = ["booked", "done", "ft_same", "ft_prev", "ft_nolead", "repeat", "ret_return", "ret_rebook",
-              "ftm_fresh", "ftm_wk1", "ftm_wk2_4", "ftm_mo1_3", "ftm_mo3", "ftm_nolead"]
+              "ftm_fresh", "ftm_wk1", "ftm_wk2_4", "ftm_mo1_3", "ftm_mo3", "ftm_nolead",
+              "done_ftm_fresh", "done_ftm_wk1", "done_ftm_wk2_4", "done_ftm_mo1_3", "done_ftm_mo3", "done_ftm_nolead"]
     blank = lambda: {f: [0]*NW for f in FIELDS}
     clinics = {}
     for r in rows:
         city, loc, doctor, source, wk, cat = r[0], r[1], r[2], r[3], r[4], r[5]
         key = city + "|" + loc
         i = widx[wk]
-        vals = [int(v) for v in r[6:20]]
+        vals = [int(v) for v in r[6:26]]
         o = clinics.setdefault(key, blank())
         dd = o.setdefault("by_doctor", {}).setdefault(doctor, blank())
         ss = o.setdefault("by_source", {}).setdefault(source, blank())

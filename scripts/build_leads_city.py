@@ -75,6 +75,16 @@ WITH gmbnum AS (
 citymap AS (
     {CITYMAP}
 ),
+terr AS (   -- Marketing 'Territory' registry (allo_health.territory): each city's inbound phone line -> canonical city.
+            -- Authoritative number->city map (179 territories, 29 city lines w/ phones) -> attribute CALL leads by the number
+            -- dialed instead of relying on the AI audit. City-level only (no locality). Normalised via citymap.
+    SELECT RIGHT(REGEXP_REPLACE(t.phone_no,'[^0-9]',''),10) AS num,
+           COALESCE(cm.city, INITCAP(t.name)) AS city
+    FROM allo_health.territory t
+    LEFT JOIN citymap cm ON cm.tok = LOWER(t.name)
+    WHERE t.deleted_at IS NULL AND t.territory_type='city'
+      AND t.phone_no IS NOT NULL AND t.phone_no<>'' AND t.is_active=1
+),
 gmbslug AS (   -- GMB '<clinic>-clinic-gmb' campaign slug -> (city, locality)
     {GMBSLUG}
 ),
@@ -110,15 +120,16 @@ lead_attr AS (
   SELECT l.id, RIGHT(REGEXP_REPLACE(COALESCE(l.phone_no,''),'[^0-9]',''),10) AS ph,
     TO_CHAR(DATE_TRUNC('week', l.created_at + INTERVAL '5.5 hours'),'YYYY-MM-DD') AS wk,
     DATE(l.created_at + INTERVAL '5.5 hours') AS created,
-    -- CITY priority: Practo code > GMB clinic-gmb slug > AI user_city > source_url city (prefix regex, then last-segment fallback) > GMB number city > Google campaign token > locality backfill
+    -- CITY priority: Practo code > GMB clinic-gmb slug > Google campaign-city token > TERRITORY number (dialed city line) > AI user_city > source_url city > GMB number city > locality backfill
     COALESCE(
       CASE WHEN LOWER(COALESCE(l.utm_source,''))='practo' THEN plc.city END,
       gs.city,
+      tc.city,      -- Google T1/T2 campaign names its city explicitly -> overrides a SHARED phone line (e.g. Navi Mumbai MH uses Mumbai's number)
+      tn.city,      -- territory registry: the city phone line the caller dialed (authoritative number->city; before AI audit)
       cai.city,
       ucm.city,
       ucm2.city,
       gn.city,
-      tc.city,
       lcb.city
     ) AS city,
     COALESCE(   -- clinic locality where we CAN pin it (else NULL -> stays city-level)
@@ -169,6 +180,7 @@ lead_attr AS (
   LEFT JOIN call_ai cai ON cai.ph = RIGHT(REGEXP_REPLACE(COALESCE(l.phone_no,''),'[^0-9]',''),10)
   LEFT JOIN loc plc ON plc.code = l.location
   LEFT JOIN gmbnum gn ON gn.num = RIGHT(REGEXP_REPLACE(COALESCE(l.utm_medium,''),'[^0-9]',''),10)
+  LEFT JOIN terr tn ON tn.num = RIGHT(REGEXP_REPLACE(COALESCE(l.utm_medium,''),'[^0-9]',''),10)   -- territory city phone -> city
   LEFT JOIN citymap ucm ON ucm.tok = SPLIT_PART(REGEXP_SUBSTR(LOWER(COALESCE(l.source_url,'')),
                              '/(sexual-health|mental-health|sti-testing|sex-health-clinic|clinics)/[a-z-]+'),'/',3)
   LEFT JOIN citymap ucm2 ON ucm2.tok = REGEXP_SUBSTR(   -- prefix-agnostic fallback: the LAST path segment if it IS a city
@@ -177,7 +189,10 @@ lead_attr AS (
   LEFT JOIN gmbslug gs ON LOWER(COALESCE(l.utm_campaign,'')) LIKE '%-clinic-gmb'
        AND gs.slug = REGEXP_REPLACE(REGEXP_REPLACE(LOWER(COALESCE(l.utm_campaign,'')),'-clinic-gmb$',''),'[^a-z0-9]','')
   LEFT JOIN tokcity tc ON LOWER(COALESCE(l.utm_campaign,'')) SIMILAR TO 't[12]_%'
-       AND tc.tok = REGEXP_REPLACE(SPLIT_PART(LOWER(COALESCE(l.utm_campaign,'')),'_',2),'[^a-z0-9]','')
+       AND tc.tok = REGEXP_REPLACE(   -- full city span between the T1/T2_ prefix and the _<category>_ token → handles 2-word cities (Navi_Mumbai → navimumbai)
+             REGEXP_REPLACE(REGEXP_REPLACE(LOWER(COALESCE(l.utm_campaign,'')),'^t[12]_',''),
+                            '_(sh|std|sti|mh|ed|pe|brand|general)(_.*)?$',''),
+             '[^a-z0-9]','')
   LEFT JOIN loccity lcb ON lcb.locality = cai.locality
   WHERE l.deleted_at IS NULL AND l.created_at >= '2026-01-05' AND l.created_at < '2026-07-13'
     AND NOT (lower(coalesce(l.utm_medium,''))='clinic' AND lower(coalesce(l.utm_campaign,''))='website')   -- drop the organic/clinic/website bot flood (250k fake +91 leads to /clinics/ pages in wk 6-12 Jul; legit is only ~60/wk)
