@@ -13,15 +13,15 @@ dimension the pivot funnel needs, so the UI can nest/filter by any of them:
 Plus _callcat: AI-audit call-category mix (STI/SH/MH/Other) for the provisional category split.
 Run: AWS_PROFILE=redshift-data python3 scripts/build_bookings_funnel.py
 """
-import os, sys, json, subprocess
+import os, re, sys, json, subprocess
 from collections import defaultdict
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RQ = os.path.join(ROOT, 'scripts', 'redshift_query.py')
-WEEKS = ['2026-07-13','2026-07-06', '2026-06-29', '2026-06-22', '2026-06-15', '2026-06-08', '2026-06-01', '2026-05-25',
-         '2026-05-18', '2026-05-11', '2026-05-04', '2026-04-27', '2026-04-20', '2026-04-13',
-         '2026-04-06', '2026-03-30', '2026-03-23', '2026-03-16', '2026-03-09', '2026-03-02',
-         '2026-02-23', '2026-02-16', '2026-02-09', '2026-02-02', '2026-01-26', '2026-01-19',
-         '2026-01-12']   # 26 weeks ending at the latest complete week (6–12 Jul)
+import datetime as _dtm
+_TDY = _dtm.date.today(); _MON = _TDY - _dtm.timedelta(days=_TDY.weekday())
+_CUTOFF = _MON.isoformat()   # exclusive upper bound; grid[0]=latest COMPLETE week (auto-advances Mondays)
+def _wkgrid(n): return [(_MON - _dtm.timedelta(weeks=i + 1)).isoformat() for i in range(n)]
+WEEKS = _wkgrid(27)   # 26 weeks ending at the latest complete week (6–12 Jul)
 WI = {w: i for i, w in enumerate(WEEKS)}; N = len(WEEKS)
 CH = {'Google Maps (GMB)': 'GMB', 'Google Ads': 'Google Ads', 'Practo': 'Practo', 'Meta': 'Meta',
       'Organic': 'Organic', 'Walk-in': 'Walk-in'}
@@ -41,6 +41,7 @@ def callcat(clf, cl):
 
 def main():
     sql = open(os.path.join(ROOT, 'scripts', 'fetch_booking_episodes_rich.sql')).read()
+    sql = re.sub(r"start_time < '\\d{4}-\\d\\d-\\d\\d'", "start_time < '"+_CUTOFF+"'", sql)   # dynamic cutoff = current-week Monday
     p = subprocess.run([sys.executable, RQ], input=sql, capture_output=True, text=True)
     if p.returncode != 0:
         sys.exit('query failed: ' + p.stderr[-500:])

@@ -11,14 +11,15 @@ import os, sys, json, subprocess, datetime
 from collections import defaultdict
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RQ = os.path.join(ROOT, 'scripts', 'redshift_query.py')
-WEEKS = ['2026-07-13','2026-07-06','2026-06-29','2026-06-22','2026-06-15','2026-06-08','2026-06-01','2026-05-25','2026-05-18',
-         '2026-05-11','2026-05-04','2026-04-27','2026-04-20','2026-04-13','2026-04-06','2026-03-30',
-         '2026-03-23','2026-03-16','2026-03-09','2026-03-02','2026-02-23','2026-02-16','2026-02-09',
-         '2026-02-02','2026-01-26','2026-01-19','2026-01-12']   # weekly axis (26 wks, aligned with bookings cube — ends 6–12 Jul)
+# DYNAMIC weekly axis — auto-advances every Monday; grid[0] = latest COMPLETE Mon–Sun week (never the in-progress one).
+_TDY = datetime.date.today(); _MON = _TDY - datetime.timedelta(days=_TDY.weekday())   # Monday of the current (in-progress) week
+_CUTOFF = _MON.isoformat()   # exclusive upper bound on created_at → excludes the in-progress week
+def _wkgrid(n): return [(_MON - datetime.timedelta(weeks=i + 1)).isoformat() for i in range(n)]
+WEEKS = _wkgrid(27)   # weekly axis (27 wks)
 WI = {w: i for i, w in enumerate(WEEKS)}; N = len(WEEKS)
 # daily axis: recent 8 weeks INCLUDING the current (partial) week 2026-07-06 — powers the day-of-week / week-to-date comparison.
 # Kept separate from WEEKS so the weekly axis stays aligned with the bookings cube; current-week leads land only in d[].
-DAY_WEEKS = ['2026-07-13','2026-07-06','2026-06-29','2026-06-22','2026-06-15','2026-06-08','2026-06-01','2026-05-25','2026-05-18']
+DAY_WEEKS = _wkgrid(9)
 DAYS = []
 for _wkm in reversed(DAY_WEEKS):
     _d0 = datetime.date.fromisoformat(_wkm)
@@ -194,7 +195,7 @@ lead_attr AS (
                             '_(sh|std|sti|mh|ed|pe|brand|general)(_.*)?$',''),
              '[^a-z0-9]','')
   LEFT JOIN loccity lcb ON lcb.locality = cai.locality
-  WHERE l.deleted_at IS NULL AND l.created_at >= '2026-01-05' AND l.created_at < '2026-07-20'
+  WHERE l.deleted_at IS NULL AND l.created_at >= '2026-01-05' AND l.created_at < '{CUTOFF}'
     AND NOT (lower(coalesce(l.utm_medium,''))='clinic' AND lower(coalesce(l.utm_campaign,''))='website')   -- drop the organic/clinic/website bot flood (250k fake +91 leads to /clinics/ pages in wk 6-12 Jul; legit is only ~60/wk)
 ),
 lead_book AS (   -- ID JOIN: lead -> ITS patient's SC bookings (patient.lead_id = lead.id). Catches alternate-phone bookings; matches ②'s patient_id book side. (was phone-match)
@@ -288,7 +289,7 @@ def main():
     gmbslug_rows = ' UNION ALL '.join(f"SELECT '{s}' AS slug, '{c}' AS city, '{l}' AS locality" for s, (c, l) in GMB_SLUG.items())
     tokcity_rows = ' UNION ALL '.join(f"SELECT '{t}' AS tok, '{c}' AS city" for t, c in TOK_CITY.items())
     loccity_rows = ' UNION ALL '.join(f"SELECT '{l}' AS locality, '{c}' AS city" for l, c in LOC2CITY.items())
-    sql = (SQL.replace('{GMBNUM}', gmbvalues())
+    sql = (SQL.replace('{CUTOFF}', _CUTOFF).replace('{GMBNUM}', gmbvalues())
               .replace('{CITYMAP}', values(CITYMAP.items(), 'tok', 'city'))
               .replace('{GMBSLUG}', gmbslug_rows)
               .replace('{TOKCITY}', tokcity_rows)

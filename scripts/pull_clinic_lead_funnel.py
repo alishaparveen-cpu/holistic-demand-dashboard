@@ -18,8 +18,11 @@ import os, sys, subprocess, json
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RQ = os.path.join(ROOT, "scripts", "redshift_query.py")
-WEEKS = ["2026-07-13","2026-07-06","2026-06-29","2026-06-22","2026-06-15","2026-06-08","2026-06-01","2026-05-25","2026-05-18","2026-05-11",
-         "2026-05-04","2026-04-27","2026-04-20","2026-04-13","2026-04-06","2026-03-30","2026-03-23"]
+import datetime as _dtm
+_TDY = _dtm.date.today(); _MON = _TDY - _dtm.timedelta(days=_TDY.weekday())
+_CUTOFF = _MON.isoformat()   # exclusive upper bound; grid[0]=latest COMPLETE week (auto-advances Mondays)
+def _wkgrid(n): return [(_MON - _dtm.timedelta(weeks=i + 1)).isoformat() for i in range(n)]
+WEEKS = _wkgrid(17)
 idx = {w: i for i, w in enumerate(WEEKS)}; NW = len(WEEKS)
 CATS = ["STI", "SEXUAL_HEALTH_GENERAL", "MENTAL_HEALTH", "OTHER", "NOT_MENTIONED"]
 RELEVANT_INTENT = ("TALK_TO_DOCTOR", "NEEDS_TESTS", "BOOK_APPOINTMENT", "BOOK_TEST", "BOOK_SLOT")
