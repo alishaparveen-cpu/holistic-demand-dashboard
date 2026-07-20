@@ -70,19 +70,22 @@ def main():
     def MED(m): return 'Call' if m=='call' else 'Web' if m=='web' else 'WhatsApp' if m in('whatsapp','wa_gmb','wa_org','wa_outbound') else 'Other'
     def FCAT(x): return x if x in('SH','STI','MH','Other') else 'Uncategorized'
     from collections import defaultdict
-    fun = defaultdict(lambda:[0,0,0])   # (city,ch,med,cat,wk) -> leads,booked,done
+    fun = defaultdict(lambda:[0,0,0,0,0])   # (city,ch,med,cat,wk) -> leads,booked,done,booked_offline,booked_online
     for city, node in cube.items():
         if city=='_meta': continue
         for cel in node.get('cells',[]):
             ch = CHMAP.get(cel.get('ch'))
             if not ch: continue
             med=MED(cel.get('md')); cat=FCAT(cel.get('cat'))
-            booked=cel.get('bk')!='notbooked'; done=cel.get('dq')=='done'; w=cel.get('w',[])
+            booked=cel.get('bk')!='notbooked'; done=cel.get('dq')=='done'; seg=cel.get('bkseg'); w=cel.get('w',[])
             for wk,idx in WKIDX.items():
                 lv = w[idx] if idx < len(w) else 0
                 if lv==0: continue
                 k=(city,ch,med,cat,wk); fun[k][0]+=lv
-                if booked: fun[k][1]+=lv
+                if booked:
+                    fun[k][1]+=lv
+                    if seg=='offline': fun[k][3]+=lv
+                    elif seg=='online': fun[k][4]+=lv
                 if done: fun[k][2]+=lv
     # attribute Google spend across Google-channel leads (proportional); GMB=0
     gsp = defaultdict(float); gld = defaultdict(float)
@@ -105,9 +108,9 @@ def main():
         frows = []
         for (c2,ch,med,cat,wk),v in fun.items():
             if c2!=city: continue
-            L,B,D = v
+            L,B,D,BO,BN = v
             spend = round(gsp.get((city,wk),0)*(L/gld[(city,wk)]),1) if ch=='Google' and gld.get((city,wk)) else 0
-            frows.append({'ch':ch,'med':med,'cat':cat,'wk':wk,'lead':L,'bk':B,'dn':D,'sp':spend,'rev':round(D*rpc_of(city,cat),1)})
+            frows.append({'ch':ch,'med':med,'cat':cat,'wk':wk,'lead':L,'bk':B,'dn':D,'bko':BO,'bkn':BN,'sp':spend,'rev':round(D*rpc_of(city,cat),1)})
         if arows or frows:
             out[city] = {'acq':arows, 'fun':frows, 'rpc':rpc.get(city,{})}
     json.dump(out, open(os.path.join(ROOT,'data_campaign_compose.json'),'w'), separators=(',',':'))
