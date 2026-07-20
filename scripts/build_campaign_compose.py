@@ -54,6 +54,19 @@ def main():
         if wk not in WK: continue
         city = city_of(ctok); r = parse_report(os.path.join(REPORTS, fn))
         acq.setdefault(city, []).append(dict(cat=CAT[cat], mt=MT[mt], wk=WK[wk], **r))
+    # ---- ONLINE / brand Google-Ads campaigns → an "Online" pseudo-city ----
+    def online_catmt(fn):
+        s = fn.lower()
+        cat = 'STI' if ('_std_' in s or '_sti_' in s) else 'MH' if '_mh_' in s else 'SH'   # sh/ed/pe/li/brand-high-intent → SH
+        mt = 'Phrase-Local' if 'phrase' in s else 'Exact-Local' if ('_lc' in s or 'local' in s) else 'Exact'
+        return cat, mt
+    for fn in os.listdir(REPORTS):
+        if not fn.endswith('.md') or pat.match(fn): continue
+        if not re.match(r'^(roi_online|cc_online|onl_lt|brand_allo|pd_online)_', fn): continue
+        wkm = re.search(r'_(w[1-6])\.md$', fn)
+        if not wkm or wkm.group(1) not in WK: continue
+        cat, mt = online_catmt(fn); r = parse_report(os.path.join(REPORTS, fn))
+        acq.setdefault('Online', []).append(dict(cat=cat, mt=mt, wk=WK[wkm.group(1)], **r))
     # ---- per-city × category RPC (campaign rev ÷ done) ----
     rpc = {}
     for city, rows in acq.items():
@@ -98,8 +111,10 @@ def main():
                     'chans':['GMB','Google'], 'meds':['Call','Web','WhatsApp'],
                     'fcats':['SH','STI','MH','Other','Uncategorized'],
                     'note':'Google-Ads compose: ACQUISITION (cat×matchtype, from funnel reports) + FUNNEL (chan×med×cat, from leads cube, 3-tier waterfall). RPC per-category from reports. spend attributed to Google leads proportionally; GMB=0.'}}
-    cities = sorted(set(list(acq.keys()) + [c for c in cube if c!='_meta']))
+    NOCITY = '— no city · online / untracked'   # the cube's online/untracked bucket → surfaced as "Online"
+    cities = sorted(set(list(acq.keys()) + ['Online' if c==NOCITY else c for c in cube if c!='_meta']))
     for city in cities:
+        funsrc = NOCITY if city=='Online' else city   # funnel source key in the fun dict
         arows = [{'cat':r['cat'],'mt':r['mt'],'wk':r['wk'],'budget':round(r.get('budget') or 0,1),
                   'bid':r.get('bid'),'sp':round(r.get('spend') or 0,1),'impr':round(r.get('impr') or 0),
                   'elig':round(r.get('elig') or 0),'locimpr':round(r.get('locimpr') or 0),
@@ -107,9 +122,9 @@ def main():
                  for r in acq.get(city,[])]
         frows = []
         for (c2,ch,med,cat,wk),v in fun.items():
-            if c2!=city: continue
+            if c2!=funsrc: continue
             L,B,D,BO,BN = v
-            spend = round(gsp.get((city,wk),0)*(L/gld[(city,wk)]),1) if ch=='Google' and gld.get((city,wk)) else 0
+            spend = round(gsp.get((city,wk),0)*(L/gld[(funsrc,wk)]),1) if ch=='Google' and gld.get((funsrc,wk)) else 0
             frows.append({'ch':ch,'med':med,'cat':cat,'wk':wk,'lead':L,'bk':B,'dn':D,'bko':BO,'bkn':BN,'sp':spend,'rev':round(D*rpc_of(city,cat),1)})
         if arows or frows:
             out[city] = {'acq':arows, 'fun':frows, 'rpc':rpc.get(city,{})}
