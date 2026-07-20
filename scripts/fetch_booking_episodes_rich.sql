@@ -93,11 +93,26 @@ joined AS (
            OR (LOWER(COALESCE(l.utm_source,''))='google' AND LOWER(COALESCE(l.utm_medium,'')) LIKE '%cpc%')
            OR LOWER(COALESCE(l.utm_source,'')) IN ('fb','facebook','meta','ig','instagram')
          THEN COALESCE(NULLIF(l.utm_campaign,''),'(none)') ELSE '' END AS campaign,   -- ad campaign for paid channels
-    CASE WHEN LOWER(COALESCE(l.utm_campaign,''))='inbound_call'
-      THEN CASE cc.cat WHEN 'SEXUAL_HEALTH_GENERAL' THEN 'SH' WHEN 'MENTAL_HEALTH' THEN 'MH'
-                       WHEN 'STI' THEN 'STI' WHEN 'OTHER' THEN 'Other' WHEN 'NOT_MENTIONED' THEN 'Other'
-                       ELSE 'unknown' END
-      ELSE '' END AS category,   -- REAL per-call AI-audit category (call leads only)
+    -- CATEGORY WATERFALL (same 3-tier logic as ① leads): 1) campaign web/utm token → 2) AI call audit → 3) done diagnosis → else uncat
+    CASE
+      WHEN REGEXP_INSTR(LOWER(COALESCE(l.utm_campaign,'')),'_sh(_|$)')>0 THEN 'SH'
+      WHEN REGEXP_INSTR(LOWER(COALESCE(l.utm_campaign,'')),'_(std|sti)(_|$)')>0 THEN 'STI'
+      WHEN REGEXP_INSTR(LOWER(COALESCE(l.utm_campaign,'')),'_mh(_|$)')>0 THEN 'MH'
+      WHEN LOWER(COALESCE(l.utm_campaign,'')) SIMILAR TO 't[12]_%'
+           AND (POSITION('exact' IN LOWER(COALESCE(l.utm_campaign,'')))>0 OR POSITION('local' IN LOWER(COALESCE(l.utm_campaign,'')))>0) THEN 'SH'
+      WHEN LOWER(COALESCE(l.utm_campaign,''))='inbound_call' AND cc.cat IN ('SEXUAL_HEALTH_GENERAL','MENTAL_HEALTH','STI','OTHER','NOT_MENTIONED')
+        THEN CASE cc.cat WHEN 'SEXUAL_HEALTH_GENERAL' THEN 'SH' WHEN 'MENTAL_HEALTH' THEN 'MH' WHEN 'STI' THEN 'STI' ELSE 'Other' END
+      WHEN pf.diag_cat IN ('ED+','PE+','ED+PE+','NOS') THEN 'SH'
+      WHEN pf.diag_cat='STI' THEN 'STI'
+      WHEN pf.diag_cat='MH' THEN 'MH'
+      WHEN pf.diag_cat='Oth' THEN 'Other'
+      ELSE 'na' END AS category,
+    CASE   -- how the category was decided (source tag)
+      WHEN REGEXP_INSTR(LOWER(COALESCE(l.utm_campaign,'')),'_(sh|std|sti|mh)(_|$)')>0
+           OR (LOWER(COALESCE(l.utm_campaign,'')) SIMILAR TO 't[12]_%' AND (POSITION('exact' IN LOWER(COALESCE(l.utm_campaign,'')))>0 OR POSITION('local' IN LOWER(COALESCE(l.utm_campaign,'')))>0)) THEN 'campaign'
+      WHEN LOWER(COALESCE(l.utm_campaign,''))='inbound_call' AND cc.cat IN ('SEXUAL_HEALTH_GENERAL','MENTAL_HEALTH','STI','OTHER','NOT_MENTIONED') THEN 'audit'
+      WHEN pf.diag_cat IN ('ED+','PE+','ED+PE+','NOS','STI','MH','Oth') THEN 'done-dx'
+      ELSE 'none' END AS catsrc,
     -- rank axes, computed AS-OF BEFORE this booking (all on unique patient-weeks):
     CASE WHEN s.wk_seq=1 THEN '1st' WHEN s.wk_seq=2 THEN '2nd' WHEN s.wk_seq=3 THEN '3rd' ELSE '4pl' END AS brank,   -- booking rank: 1st-ever / 2nd / 3rd / 4th+ booking week for this patient
     CASE WHEN COALESCE(s.prior_done,0)=0 THEN 'd0' WHEN s.prior_done=1 THEN 'd1' ELSE 'd2pl' END AS drank   -- done rank: had they COMPLETED an SC before this booking? never / once / 2+ times
@@ -108,5 +123,5 @@ joined AS (
   WHERE s.start_time >= '2026-01-05' AND s.start_time < '2026-07-20'
     AND LOWER(COALESCE(s.locality,'')) <> 'online' AND s.locality IS NOT NULL
 )
-SELECT city, clinic, wk, ptype, lead_age, channel, medium, number, campaign, category, diag, brank, drank, COUNT(*) AS bookings, SUM(week_done) AS done
-FROM joined GROUP BY 1,2,3,4,5,6,7,8,9,10,11,12,13 ORDER BY 1,2,3;
+SELECT city, clinic, wk, ptype, lead_age, channel, medium, number, campaign, category, catsrc, diag, brank, drank, COUNT(*) AS bookings, SUM(week_done) AS done
+FROM joined GROUP BY 1,2,3,4,5,6,7,8,9,10,11,12,13,14 ORDER BY 1,2,3;
