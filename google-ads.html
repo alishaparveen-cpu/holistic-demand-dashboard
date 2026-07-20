@@ -1,0 +1,136 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Google Ads · Campaign Compose</title>
+<style>
+:root{--accent:#2C6CAE;--grn:#1F6F5C;--ink:#1a2230;--muted:#8a93a3;--line:#e4e8ef;--sheet:#fff;--bg:#f2f0ea;--yel:#FFF2A8;--blu:#DCE6F4;--eff:#F3E7D0;--grnf:#DDF0E8}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:13px/1.45 -apple-system,system-ui,Segoe UI,sans-serif}
+.wrap{max-width:1500px;margin:0 auto;padding:18px 22px 60px}
+a.back{color:var(--muted);text-decoration:none;font-size:13px}h1{font-size:20px;margin:8px 0 2px}.sub{color:var(--muted);margin:0 0 14px;max-width:900px}
+.top{display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin:10px 0 16px}
+select,.wkbtn{font:inherit;padding:7px 12px;border:1px solid var(--line);border-radius:8px;background:#fff;cursor:pointer}
+.wkbtn.on{background:var(--accent);color:#fff;border-color:var(--accent);font-weight:600}
+.layout{display:grid;grid-template-columns:1fr 300px;gap:18px;align-items:start}
+@media(max-width:1000px){.layout{grid-template-columns:1fr}}
+.pickers{background:var(--sheet);border:1px solid var(--line);border-radius:12px;padding:12px 14px;position:sticky;top:12px}
+.pgrp{margin-bottom:12px}.pgrp h4{margin:0 0 5px;font-size:11px;letter-spacing:.04em;text-transform:uppercase}
+.pgrp.camp h4{color:var(--accent)}.pgrp.fun h4{color:var(--grn)}
+.chk{display:flex;align-items:center;gap:7px;padding:3px 0;cursor:pointer;font-size:13px}
+.chk input{width:15px;height:15px;cursor:pointer;accent-color:var(--accent)}
+table{border-collapse:collapse;width:100%;background:var(--sheet);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+th,td{padding:5px 9px;text-align:right;border-bottom:1px solid var(--line);white-space:nowrap;font-variant-numeric:tabular-nums}
+th:first-child,td:first-child{text-align:left}
+thead th{background:var(--accent);color:#fff;font-weight:600;font-size:12px}
+thead th.avg{background:var(--grn)}
+.sec td{background:var(--blu);font-weight:700;color:var(--accent)}
+.sec.fun td{background:var(--grnf);color:var(--grn)}
+tr.hi td{background:var(--yel)}tr.eff td{background:var(--eff)}tr.blu td{background:var(--blu)}tr.grn td{background:var(--grnf)}
+td.g{color:#666;font-size:9px;font-style:italic;text-align:left;white-space:normal;max-width:210px}
+.b{font-weight:700}.avgc{background:#eaf3ef}
+.wknote{font-size:11px;color:#B03030;margin:6px 0 0}
+.split{margin-top:16px}.split h3{font-size:13px;color:var(--grn);margin:0 0 4px}
+</style></head><body><div class="wrap">
+<a class="back" href="index.html">← Dashboard</a>
+<h1>Google Ads · Campaign Compose</h1>
+<p class="sub">Compose a city's full Google-Ads funnel. <b>SPEND / Budget / Bid</b> follow the CAMPAIGN pickers (category × match-type); <b>Leads → Book → Done → Revenue</b> follow the FUNNEL pickers (channel × medium × category). Two independent levers — ROAS/CPL cross your chosen spend with your chosen leads. Uncategorised web leads recovered from campaign utm; done from clinical diagnosis.</p>
+<div class="top">
+  <label>City ▸ <select id="city"></select></label>
+  <span>Weeks:</span><span id="wkbtns"></span>
+</div>
+<div class="layout">
+  <div><table id="tbl"><thead></thead><tbody></tbody></table>
+    <div class="wknote" id="wknote"></div>
+    <div class="split" id="splits"></div>
+  </div>
+  <div class="pickers" id="pickers"></div>
+</div>
+<script>
+const CATS=['SH','STD','MH'],MTS=['Exact-Local','Exact','Phrase-Local'];
+const CHS=['GMB','Google'],MEDS=['Call','Web','WhatsApp'],FCATS=['SH','STI','MH','Other','Uncategorized'];
+let DATA=null,CITY=null,WKALL=[],WKSEL=[];
+const SEL={cat:new Set(CATS),mt:new Set(['Exact-Local']),ch:new Set(CHS),med:new Set(MEDS),fcat:new Set(FCATS)};
+const $=id=>document.getElementById(id);
+const inr=n=>'₹'+Math.round(n).toLocaleString('en-IN');
+const cm=n=>Math.round(n).toLocaleString('en-IN');
+const pc=(n,d)=>d?(100*n/d).toFixed(1)+'%':'·';
+fetch('data_campaign_compose.json').then(r=>r.json()).then(d=>{DATA=d;WKALL=d._meta.weeks;WKSEL=WKALL.slice(0,5);
+  const cities=Object.keys(d).filter(c=>c!=='_meta').sort();
+  $('city').innerHTML=cities.map(c=>`<option>${c}</option>`).join('');CITY=cities.includes('Bangalore')?'Bangalore':cities[0];$('city').value=CITY;
+  $('city').onchange=()=>{CITY=$('city').value;render();};
+  $('wkbtns').innerHTML=['5 complete','+ Jul 13-19 (partial)'].map((l,i)=>`<button class="wkbtn${i===0?' on':''}" data-w="${i}">${l}</button>`).join('');
+  $('wkbtns').querySelectorAll('.wkbtn').forEach(b=>b.onclick=()=>{const i=+b.dataset.w;WKSEL=i===0?WKALL.slice(0,5):WKALL.slice(0,6);$('wkbtns').querySelectorAll('.wkbtn').forEach(x=>x.classList.toggle('on',x===b));render();});
+  buildPickers();render();});
+function buildPickers(){
+  const grp=(cls,title,items,set)=>`<div class="pgrp ${cls}"><h4>${title}</h4>${items.map(it=>`<label class="chk"><input type="checkbox" data-set="${set}" data-v="${it}" ${SEL[set].has(it)?'checked':''}>${it}</label>`).join('')}</div>`;
+  $('pickers').innerHTML=
+    grp('camp','Campaign · Category → SPEND',CATS,'cat')+
+    grp('camp','Campaign · Match-type → SPEND',MTS,'mt')+
+    grp('fun','Funnel · Channel → LEADS',CHS,'ch')+
+    grp('fun','Funnel · Medium → LEADS',MEDS,'med')+
+    grp('fun','Funnel · Category → LEADS',FCATS,'fcat');
+  $('pickers').querySelectorAll('input').forEach(i=>i.onchange=()=>{const s=SEL[i.dataset.set];i.checked?s.add(i.dataset.v):s.delete(i.dataset.v);render();});
+}
+// STD(picker)↔STI(funnel) is the same category; campaign uses STD, funnel uses STI
+function acq(field,wk){const rows=(DATA[CITY]||{}).acq||[];let s=0;
+  for(const r of rows){if(r.wk!==wk)continue;if(!SEL.cat.has(r.cat==='STI'?'STD':r.cat))continue;if(!SEL.mt.has(r.mt))continue;s+=r[field]||0;}return s;}
+function acqBid(wk){const rows=(DATA[CITY]||{}).acq||[];let ws=0,wt=0;
+  for(const r of rows){if(r.wk!==wk)continue;if(!SEL.cat.has(r.cat==='STI'?'STD':r.cat))continue;if(!SEL.mt.has(r.mt))continue;if(r.bid){ws+=r.bid*(r.sp||0);wt+=r.sp||0;}}return wt?ws/wt:0;}
+function fun(field,wk){const rows=(DATA[CITY]||{}).fun||[];let s=0;
+  for(const r of rows){if(r.wk!==wk)continue;if(!SEL.ch.has(r.ch))continue;if(!SEL.med.has(r.med))continue;if(!SEL.fcat.has(r.cat))continue;s+=r[field]||0;}return s;}
+function render(){
+  const wks=WKSEL,nW=wks.length;
+  const rowsAcq=[
+    ['Budget (₹/day)',w=>acq('budget',w),inr,'b blu','↑ campaign pickers · Σ daily budgets'],
+    ['Bid (avg CPC ceiling)',w=>acqBid(w),inr,'','spend-wtd avg ceiling'],
+    ['Spend',w=>acq('sp',w),inr,'b hi','↑ campaign pickers (cat × match-type)'],
+    ['Budget Util %',w=>{const b=acq('budget',w)*7;return b?100*acq('sp',w)/b:0;},v=>v.toFixed(1)+'%','eff','spend ÷ (budget×7)'],
+    ['Impressions',w=>acq('impr',w),cm,'','campaign · Google Ads'],
+    ['IS (Imp. Share)',w=>{const e=acq('elig',w);return e?100*acq('impr',w)/e:0;},v=>v.toFixed(1)+'%','','won ÷ eligible impr'],
+    ['Market size estd',w=>acq('elig',w),cm,'blu','eligible impr = impr ÷ IS'],
+    ['Location Impressions',w=>acq('locimpr',w),cm,'',''],
+    ['Loc Imp %',w=>{const i=acq('impr',w);return i?100*acq('locimpr',w)/i:0;},v=>v.toFixed(1)+'%','',''],
+    ['Clicks',w=>acq('click',w),cm,'',''],
+    ['CTR',w=>{const i=acq('impr',w);return i?100*acq('click',w)/i:0;},v=>v.toFixed(1)+'%','',''],
+    ['Loc Clicks',w=>acq('locclick',w),cm,'',''],
+    ['Loc %',w=>{const c=acq('click',w);return c?100*acq('locclick',w)/c:0;},v=>v.toFixed(1)+'%','',''],
+    ['Cost per click',w=>{const c=acq('click',w);return c?acq('sp',w)/c:0;},inr,'eff','spend ÷ clicks'],
+    ['Cost per loc click',w=>{const c=acq('locclick',w);return c?acq('sp',w)/c:0;},inr,'eff','spend ÷ loc clicks'],
+  ];
+  const rowsFun=[
+    ['Leads',w=>fun('lead',w),cm,'b grn','↑ funnel pickers (chan × med × cat)'],
+    ['Click → Lead %',w=>{const c=acq('click',w);return c?100*fun('lead',w)/c:0;},v=>v.toFixed(1)+'%','','funnel leads ÷ campaign clicks'],
+    ['Loc-Click → Lead %',w=>{const c=acq('locclick',w);return c?100*fun('lead',w)/c:0;},v=>v.toFixed(1)+'%','',''],
+    ['Booked',w=>fun('bk',w),cm,'b',''],
+    ['Click → Book %',w=>{const c=acq('click',w);return c?100*fun('bk',w)/c:0;},v=>v.toFixed(1)+'%','',''],
+    ['Lead → Book %',w=>{const l=fun('lead',w);return l?100*fun('bk',w)/l:0;},v=>v.toFixed(1)+'%','','booked ÷ leads'],
+    ['Done',w=>fun('dn',w),cm,'b grn',''],
+    ['Book → Done %',w=>{const b=fun('bk',w);return b?100*fun('dn',w)/b:0;},v=>v.toFixed(1)+'%','',''],
+    ['Lead → Done %',w=>{const l=fun('lead',w);return l?100*fun('dn',w)/l:0;},v=>v.toFixed(1)+'%','',''],
+    ['Revenue (est · done×RPC)',w=>fun('rev',w),inr,'b grn','done × per-category RPC'],
+    ['Spend (campaigns)',w=>acq('sp',w),inr,'b blu','↑ campaign pickers'],
+    ['ROAS',w=>{const s=acq('sp',w);return s?fun('rev',w)/s:0;},v=>v.toFixed(2)+'×','b hi','funnel rev ÷ campaign spend'],
+    ['CPL',w=>{const l=fun('lead',w);return l?acq('sp',w)/l:0;},inr,'eff','campaign spend ÷ funnel leads'],
+    ['CPB',w=>{const b=fun('bk',w);return b?acq('sp',w)/b:0;},inr,'eff','campaign spend ÷ funnel booked'],
+    ['CPD',w=>{const d=fun('dn',w);return d?acq('sp',w)/d:0;},inr,'b eff','campaign spend ÷ funnel done'],
+    ['RPC (rev ÷ done)',w=>{const d=fun('dn',w);return d?fun('rev',w)/d:0;},inr,'grn','avg revenue per done'],
+  ];
+  const head='<tr><th>Metric</th>'+wks.map(w=>`<th>${w.replace('Jul 13-19','Jul 13-19*')}</th>`).join('')+'<th class="avg">Avg / Σ</th><th style="background:#2C6CAE">Level / grain</th></tr>';
+  const sumFmt=lbl=>['Spend','Budget (₹/day)','Impressions','Market size estd','Location Impressions','Clicks','Loc Clicks','Leads','Booked','Done','Revenue (est · done×RPC)','Spend (campaigns)'].includes(lbl);
+  const rowHTML=(r,fun2)=>{const[lbl,fn,fmt,cls,g]=r;
+    const cells=wks.map(w=>`<td>${fmt(fn(w))}</td>`).join('');
+    // Avg/Σ: sum for counts, average for rates/ratios
+    let av; if(sumFmt(lbl)){av=wks.reduce((a,w)=>a+fn(w),0);} else {av=wks.reduce((a,w)=>a+fn(w),0)/nW;}
+    return `<tr class="${cls}"><td class="${cls.includes('b')?'b':''}">${lbl}</td>${cells}<td class="avgc">${fmt(av)}</td><td class="g">${g}</td></tr>`;};
+  const sec=(t,c)=>`<tr class="sec ${c}"><td colspan="${nW+3}">${t}</td></tr>`;
+  $('tbl').querySelector('thead').innerHTML=head;
+  $('tbl').querySelector('tbody').innerHTML=
+    sec('▼ PAID ACQUISITION — Google Ads (campaign pickers)','')+rowsAcq.map(r=>rowHTML(r)).join('')+
+    sec('▼ FULL FUNNEL — leads by funnel pickers · spend by campaign pickers','fun')+rowsFun.map(r=>rowHTML(r)).join('');
+  $('wknote').innerHTML=wks.includes('Jul 13-19')?'* Jul 13-19 — funnel leads are near-complete but book/done are still maturing; campaign spend is a PARTIAL week (reports captured mid-week) so CPL/ROAS for this column are understated. Use the 5 complete weeks for clean economics.':'';
+  // splits
+  const splitBlock=(title,dim,vals,src,fld,fmt)=>`<h3>${title}</h3><table><thead><tr><th></th>${wks.map(w=>`<th>${w}</th>`).join('')}</tr></thead><tbody>`+
+    vals.map(v=>`<tr><td>${v}</td>${wks.map(w=>{let s=0;for(const r of (DATA[CITY]||{})[src]||[]){if(r.wk!==w||r[dim]!==v)continue;s+=r[fld]||0;}return `<td>${fmt(s)}</td>`;}).join('')}</tr>`).join('')+'</tbody></table>';
+  $('splits').innerHTML=
+    splitBlock('Leads by medium','med',MEDS,'fun','lead',cm)+
+    splitBlock('Leads by category','cat',FCATS,'fun','lead',cm)+
+    splitBlock('Spend by match-type','mt',MTS,'acq','sp',inr);
+}
+</script></body></html>
