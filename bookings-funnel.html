@@ -2193,6 +2193,15 @@ Promise.all([
   // the single clinic's leads from the (complete, re-routed) city cube — all city leads roll into the one clinic.
   for(const city in SINGLE_CLINIC_CITY){const clinic=SINGLE_CLINIC_CITY[city],cnode=DATASETS.city.leads[city];if(!cnode)continue;
     DATASETS.clinic.leads[city+'|'+clinic]={cells:cnode.cells.map(c=>Object.assign({},c,{loc:clinic,city}))};}   // now clinic-grain leads = city-grain leads for these cities (bookings already tie — both come from the ops/bk cube)
+  // Multi-clinic cities: SECONDARY clinics missing from the clinic cube (data_leads.json only carries loc-pinned
+  // clinics, so e.g. Bangalore·Whitefield / Pune·Hadapsar / Navi Mumbai·Kharghar had no node → dropped to 0 at
+  // clinic scope). Gap-fill their node from the (complete) city cube's loc-tagged leads so EVERY operational
+  // clinic renders. Only fills keys not already present (existing clinics untouched).
+  for(const city in CITY2CLINICS){if(SINGLE_CLINIC_CITY[city])continue;
+    const cnode=DATASETS.city.leads[city];if(!cnode)continue;
+    CITY2CLINICS[city].forEach(loc=>{const key=city+'|'+loc;if(DATASETS.clinic.leads[key])return;
+      const cells=(cnode.cells||[]).filter(c=>(c.loc||'')===loc);
+      if(cells.length)DATASETS.clinic.leads[key]={cells:cells.map(c=>Object.assign({},c,{loc,city}))};});}
   buildDoctors();   // doctor-scope option list (from quick_diag by_doctor)
   // scope multiselect picker events
   document.getElementById('msbtn').onclick=e=>{e.stopPropagation();if(SCOPE==='national')return;const pk=document.getElementById('mspick');pk.classList.toggle('open');if(pk.classList.contains('open')){const s=document.getElementById('mssearch');s.value='';renderPickList();s.focus();}};
