@@ -213,6 +213,13 @@ def avail_block(key, slug=None):
     # for weeks the ops-roster grid hasn't reached yet — same realized-roster methodology, so no discontinuity. (net-Rpt + dead-time exist only in REC.)
     if "opened_ash" in base: base["opened_ash"] = [base["opened_ash"][i] or base["avail_hours"][i] for i in range(NW)]
     if "net_sc_hrs_r" in base: base["net_sc_hrs_r"] = [base["net_sc_hrs_r"][i] or base["hours"][i] for i in range(NW)]
+    # ROSTER-LAG GUARD: roster-only hours (rostered/shrink/net-Rpt/dead) don't exist past the ops-roster grid's
+    # newest realized week (roster realization lags ~1wk). Null them beyond that edge so the immature newest week
+    # renders blank — NOT the gross per-doctor over-count (rostered/shrink) or a false −99% zero (net-Rpt/dead).
+    rec_edge = max((widx[w] for w in REC["_meta"]["weeks"] if w in widx), default=NW - 1)
+    for f in ("rostered_hrs", "shrink_hrs", "net_rpt_hrs", "dead_hrs", "net_avail_hrs"):
+        if f in base:
+            base[f] = [base[f][i] if i <= rec_edge else None for i in range(NW)]
     return base
 
 def avail_doctor_block(slug, dr):

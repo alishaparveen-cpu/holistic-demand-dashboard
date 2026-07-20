@@ -332,7 +332,7 @@
   .head .zoom{font-size:8.5px;color:var(--faint);font-weight:600;letter-spacing:.06em}
   .cmodal{position:fixed;inset:0;background:rgba(20,28,24,.5);display:none;align-items:center;justify-content:center;z-index:60;padding:20px}
   .cmodal.on{display:flex}
-  .cbox{background:var(--sheet);border-radius:14px;padding:18px 22px 22px;max-width:760px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.32)}
+  .cbox{position:relative;background:var(--sheet);border-radius:14px;padding:18px 22px 22px;max-width:760px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.32)}
   .cbox h3{font-family:'Fraunces',serif;margin:0 0 4px;font-size:18px;color:var(--ink)}
   .cbox .csub{font-size:11.5px;color:var(--muted);margin-bottom:10px}
   .cx{float:right;border:none;background:none;font-size:19px;color:var(--muted);cursor:pointer;line-height:1}
@@ -438,7 +438,7 @@
   <!-- 📊 Individual-metric RAG diagnostic (metric-first grid, reimagined for the funnel's many layers) -->
   <div id="imSection" style="display:none">
     <div class="imctrl">
-      <span class="imctag"><b>Offline funnel diagnostic</b> <span class="imhint">— each row is a clinic; read it left→right and it IS that clinic's funnel. Click a colour dot under any stage to keep only clinics that are that colour there — stack conditions (e.g. Bookings 🔴 + Availability 🟢) to find culprits. <b>Follows the scope, clinic-age &amp; Δ-baseline you set in the top bar.</b></span></span>
+      <span class="imctag"><b>Offline funnel diagnostic</b> <span class="imhint">— each row is a clinic; read it left→right and it IS that clinic's funnel. Click any metric header (▾) to sort clinics by it, show only a colour (🔴🟠🟡🟢), or add layers — stack conditions across metrics (e.g. Bookings 🔴 + Availability 🟢) to find culprits. <b>Follows the scope, clinic-age &amp; Δ-baseline you set in the top bar.</b></span></span>
       <div class="imctlrow">
         <label class="imfilt" title="colour a stage RED when it drops at least this much"><i class="rag r"></i> red ≥ <input id="imRed" type="number" value="15" min="1" max="99" style="width:38px">%</label>
         <label class="imfilt" title="ORANGE at this drop"><i class="rag o"></i> orange ≥ <input id="imOrange" type="number" value="5" min="1" max="98" style="width:38px">%</label>
@@ -453,7 +453,7 @@
   </div>
 
 </div>
-<div class="cmodal" id="cmodal"><div class="cbox"><button class="cx" id="cx">✕</button><h3 id="ctitle"></h3><div class="csub" id="csub"></div><div id="cchart" style="overflow-x:auto"></div></div></div>
+<div class="cmodal" id="cmodal"><div class="cbox"><button class="cx" id="cx">✕</button><button class="cdl" id="cdl" title="download this chart as a PNG image" style="position:absolute;top:10px;right:44px;background:var(--accent);color:#fff;border:0;border-radius:6px;padding:4px 10px;font-size:12px;font-weight:600;cursor:pointer">⬇ PNG</button><h3 id="ctitle"></h3><div class="csub" id="csub"></div><div id="cchart" style="overflow-x:auto"></div></div></div>
 
 <script>
 // ---- colours ----
@@ -1194,11 +1194,12 @@ function opsBar(ll,sec,recs,rerender){if(!ll)return;ll.innerHTML='';
     const chip=document.createElement('div');chip.className='chip';chip.draggable=true;chip.dataset.l=dk;
     chip.innerHTML=`<span class="grip">⋮⋮</span><span class="ord">${idx+1}</span><span class="nm">${dim.lab}</span><span class="cnt">${nsel}/${vals.length}</span><span class="cv">▾</span>`+(isX?'<span class="rm" title="remove layer">×</span>':'');
     const pop=document.createElement('div');pop.className='pop';
-    pop.innerHTML=`<div class="pact"><button data-a="all">All</button><button data-a="none">None</button></div>`+vals.map(v=>{const rr=recs.find(r=>dim.get(r)===v),col=dim.col?dim.col(rr):'#9aa3b0';return `<label><input type="checkbox" data-v="${(''+v).replace(/"/g,'&quot;')}" ${!off.has(v)?'checked':''}><span class="sw" style="background:${col}"></span>${v}</label>`;}).join('');
+    pop.innerHTML=`<div class="pact"><button data-a="all">All</button><button data-a="none">None</button></div>`+(vals.length>12?`<input class="popsearch" placeholder="search ${vals.length}…">`:'')+vals.map(v=>{const rr=recs.find(r=>dim.get(r)===v),col=dim.col?dim.col(rr):'#9aa3b0';return `<label><input type="checkbox" data-v="${(''+v).replace(/"/g,'&quot;')}" ${!off.has(v)?'checked':''}><span class="sw" style="background:${col}"></span>${v}</label>`;}).join('');
     chip.appendChild(pop);
+    {const ps=pop.querySelector('.popsearch');if(ps){ps.onclick=e=>e.stopPropagation();ps.oninput=()=>{const q=ps.value.toLowerCase();pop.querySelectorAll('label').forEach(lb=>{lb.style.display=lb.textContent.toLowerCase().includes(q)?'':'none';});};}}
     chip.onclick=(e)=>{if(e.target.closest('.pop'))return;if(e.target.classList.contains('rm')){e.stopPropagation();OPS_ORD[sec]=OPS_ORD[sec].filter(x=>x!==dk);rerender();return;}const open=pop.classList.contains('show');document.querySelectorAll('.pop').forEach(p=>p.classList.remove('show'));document.querySelectorAll('.chip').forEach(c=>c.classList.remove('open2'));if(!open){pop.classList.add('show');chip.classList.add('open2');}};
-    pop.querySelectorAll('.pact button').forEach(b=>b.onclick=(e)=>{e.stopPropagation();OPS_SEL[sec][dk]=OPS_SEL[sec][dk]||new Set();if(b.dataset.a==='all')OPS_SEL[sec][dk]=new Set();else vals.forEach(v=>OPS_SEL[sec][dk].add(v));rerender();});
-    pop.querySelectorAll('input').forEach(inp=>inp.onclick=(e)=>{e.stopPropagation();OPS_SEL[sec][dk]=OPS_SEL[sec][dk]||new Set();const v=inp.dataset.v;if(inp.checked)OPS_SEL[sec][dk].delete(v);else OPS_SEL[sec][dk].add(v);rerender();});
+    pop.querySelectorAll('.pact button').forEach(b=>b.onclick=(e)=>{e.stopPropagation();OPS_SEL[sec][dk]=OPS_SEL[sec][dk]||new Set();const ps=pop.querySelector('.popsearch'),q=ps?ps.value.toLowerCase().trim():'',fv=q?vals.filter(v=>(''+v).toLowerCase().includes(q)):vals;if(b.dataset.a==='all')fv.forEach(v=>OPS_SEL[sec][dk].delete(v));else fv.forEach(v=>OPS_SEL[sec][dk].add(v));rerender();});
+    pop.querySelectorAll('input[type=checkbox]').forEach(inp=>inp.onclick=(e)=>{e.stopPropagation();OPS_SEL[sec][dk]=OPS_SEL[sec][dk]||new Set();const v=inp.dataset.v;if(inp.checked)OPS_SEL[sec][dk].delete(v);else OPS_SEL[sec][dk].add(v);rerender();});
     chip.ondragstart=()=>{opsDrag=dk;chip.classList.add('drag');};chip.ondragend=()=>{opsDrag=null;ll.querySelectorAll('.chip').forEach(x=>x.classList.remove('over','drag'));};
     chip.ondragover=(e)=>{e.preventDefault();chip.classList.add('over');};chip.ondragleave=()=>chip.classList.remove('over');
     chip.ondrop=(e)=>{e.preventDefault();if(!opsDrag||opsDrag===dk)return;const arr=OPS_ORD[sec].filter(x=>x!==opsDrag),at=arr.indexOf(dk);arr.splice(at<0?arr.length:at,0,opsDrag);OPS_ORD[sec]=arr;opsDrag=null;rerender();};
@@ -1694,15 +1695,27 @@ function imPassStages(row){return imVisibleStages().every(sk=>{const S=IM_SRAG[s
 // customise-a-stage bar: pick the variant metric + which layers (source / medium / category / maturity / rank) to include for that stage
 // per-metric layer bar — the SAME draggable chip + ▾ value-dropdown + ＋ ghost component as the full funnel, scoped to ONE metric (filters that metric only).
 function imCfgBar(){const bar=document.getElementById('imCfgBar');if(!bar)return;
-  if(!IM_POP||!IM_STAGE_CFG[IM_POP]){bar.style.display='none';bar.innerHTML='';return;}
-  const sk=IM_POP,spec=IM_STAGE_CFG[sk],def=imStageDef(sk),cur=imCfgVariant(sk);
+  if(!IM_POP){bar.style.display='none';bar.innerHTML='';return;}
+  const sk=IM_POP,spec=IM_STAGE_CFG[sk]||{variants:[],cuts:[]},def=imStageDef(sk),cur=imCfgVariant(sk);
   const C=()=>IM_CFG[sk]=IM_CFG[sk]||{}, cut=()=>{const c=C();return c.cut=c.cut||{};};
   bar.style.display='';bar.innerHTML='';
-  const hd=document.createElement('div');hd.className='imcfghd';hd.innerHTML=`Customise <b>${def.lab}</b> <span class="imhint">— this metric’s own layers (like the full funnel): add a layer, then tick values to filter this metric. Each metric is independent.</span><button class="imcfgx" title="close">✕</button>`;bar.appendChild(hd);
+  const hd=document.createElement('div');hd.className='imcfghd';hd.innerHTML=`<b>${def.lab}</b> <span class="imhint">— sort clinics by this metric, show only a colour, or add layers to split it. Each metric is independent.</span><button class="imcfgx" title="close">✕</button>`;bar.appendChild(hd);
   hd.querySelector('.imcfgx').onclick=()=>{IM_POP=null;imRender();};
-  if(spec.variants.length>1){const vr=document.createElement('div');vr.className='imcfgrow';vr.innerHTML=`<span class="imcutlab">Show as</span>${spec.variants.map(([v,l])=>`<button class="imchip cfgv${cur===v?' on':''}" data-v="${v}">${l}</button>`).join('')}`;bar.appendChild(vr);
+  if(spec.variants.length>1){const vr=document.createElement('div');vr.className='imcfgrow';vr.innerHTML=`${spec.variants.map(([v,l])=>`<button class="imchip cfgv${cur===v?' on':''}" data-v="${v}">${l}</button>`).join('')}`;bar.appendChild(vr);
     vr.querySelectorAll('.cfgv').forEach(b=>b.onclick=()=>{C().v=b.dataset.v;imRender();});}
-  if(!spec.cuts.length){if(spec.variants.length<=1){const e=document.createElement('div');e.className='imcfgrow';e.innerHTML='<span class="imhint">This metric has no extra layers.</span>';bar.appendChild(e);}return;}
+  // Sort + colour-filter for THIS metric — moved OUT of the column header (kept the header clean) into clearly-labelled rows here.
+  const sr=document.createElement('div');sr.className='imcfgrow';
+  sr.innerHTML=`<span class="imcutlab">Sort clinics</span><button class="imchip sortb${IM_COL_SORT.sk===sk&&IM_COL_SORT.dir==='desc'?' on':''}" data-d="desc">↓ biggest drop first</button><button class="imchip sortb${IM_COL_SORT.sk===sk&&IM_COL_SORT.dir==='asc'?' on':''}" data-d="asc">↑ smallest first</button>${IM_COL_SORT.sk===sk?'<button class="imchip sortclr">clear sort</button>':''}`;
+  bar.appendChild(sr);
+  sr.querySelectorAll('.sortb').forEach(b=>b.onclick=()=>{IM_COL_SORT={sk,dir:b.dataset.d};imRender();});
+  {const sc=sr.querySelector('.sortclr');if(sc)sc.onclick=()=>{IM_COL_SORT={sk:null,dir:'desc'};imRender();};}
+  const SR=IM_SRAG[sk]||new Set();
+  const fr=document.createElement('div');fr.className='imcfgrow';
+  fr.innerHTML=`<span class="imcutlab">Show only clinics that are</span>`+[['r','🔴 big drop'],['o','🟠 drop'],['y','🟡 small drop'],['g','🟢 up / flat']].map(([k,lab])=>`<button class="imchip ragf${SR.has(k)?' on':''}" data-k="${k}">${lab}</button>`).join('')+(SR.size?'<button class="imchip ragclr">clear</button>':'');
+  bar.appendChild(fr);
+  fr.querySelectorAll('.ragf').forEach(b=>b.onclick=()=>{const k=b.dataset.k,SS=IM_SRAG[sk]=IM_SRAG[sk]||new Set();if(SS.has(k))SS.delete(k);else SS.add(k);if(!SS.size)delete IM_SRAG[sk];imRender();});
+  {const rc=fr.querySelector('.ragclr');if(rc)rc.onclick=()=>{delete IM_SRAG[sk];imRender();};}
+  if(!spec.cuts.length){if(spec.variants.length<=1){const e=document.createElement('div');e.className='imcfgrow';e.innerHTML='<span class="imhint">No extra layers for this metric — use Sort / Show-only above.</span>';bar.appendChild(e);}return;}
   const lbar=document.createElement('div');lbar.className='layerbar';lbar.style.margin='6px 0 0';bar.appendChild(lbar);
   const lead=document.createElement('span');lead.className='lead';lead.textContent='Layers ·';lbar.appendChild(lead);
   const cutObj=(IM_CFG[sk]||{}).cut||{};
@@ -1767,14 +1780,13 @@ function imRender(){const sec=document.getElementById('imSection');if(!sec||sec.
   const head=document.getElementById('imHead');head.className='imdghdr';
   head.innerHTML=`<span class="lbl">${grainLbl} · Δ vs ${cmL}</span>`
     +VIS.map(sk=>{const S=IM_SRAG[sk]||new Set(),cfgOn=imCfgConfigured(sk),open=IM_POP===sk,cfg=IM_STAGE_CFG[sk],hasVar=cfg&&(cfg.variants.length>1||cfg.cuts.length>0);
-      const sortArr=IM_COL_SORT.sk===sk?(IM_COL_SORT.dir==='desc'?' ▾':' ▲'):'';
-      return `<div class="imcolhd${open?' cfgopen':''}" data-sk="${sk}" draggable="true" title="click to sort by this metric${sortArr?' (sorted)':''}" style="cursor:pointer"><span class="cl">${imCfgLabel(sk)}${sortArr?`<span style="color:var(--accent);font-size:10px">${sortArr}</span>`:''}${hasVar?` <span class="imcfgtog${cfgOn?' set':''}" data-cfg="${sk}" title="customise this metric (layers)">▾</span>`:''}</span><div class="imdots">${['r','o','y','g'].map(k=>`<button class="fdot${S.has(k)?' on':''}" data-sk="${sk}" data-k="${k}" title="${{r:'big drop ≥'+IM_RED+'%',o:'drop ≥'+IM_ORANGE+'%',y:'small drop',g:'up / flat'}[k]}"><i class="rag ${k}"></i></button>`).join('')}</div></div>`;}).join('');
-  head.querySelectorAll('.imcfgtog').forEach(b=>b.onclick=(e)=>{e.stopPropagation();IM_POP=(IM_POP===b.dataset.cfg)?null:b.dataset.cfg;imRender();});
-  head.querySelectorAll('.fdot').forEach(b=>b.onclick=(e)=>{e.stopPropagation();const sk=b.dataset.sk,k=b.dataset.k,S=IM_SRAG[sk]=IM_SRAG[sk]||new Set();if(S.has(k))S.delete(k);else S.add(k);if(!S.size)delete IM_SRAG[sk];imRender();});
+      const active=(S.size>0)||cfgOn||(IM_COL_SORT.sk===sk);   // any sort/colour-filter/layer active on this metric
+      const sortMk=IM_COL_SORT.sk===sk?(IM_COL_SORT.dir==='desc'?' ↓':' ↑'):'';
+      return `<div class="imcolhd${open?' cfgopen':''}${active?' hasactive':''}" data-sk="${sk}" draggable="true" title="click for options — sort · show-only colour · layers" style="cursor:pointer"><span class="cl">${imCfgLabel(sk)}${sortMk?`<span style="color:var(--accent);font-size:10px">${sortMk}</span>`:''} <span class="imcaret" style="font-size:9px;opacity:.5">▾</span>${active?` <span class="imactd" title="sort / filter active on this metric" style="color:var(--accent);font-size:9px">●</span>`:''}</span></div>`;}).join('');
   head.querySelectorAll('.imcolhd').forEach(h=>{h.ondragstart=()=>{IM_DRAGS=h.dataset.sk;};
     h.ondragover=(e)=>{e.preventDefault();h.classList.add('over');};h.ondragleave=()=>h.classList.remove('over');
     h.ondrop=(e)=>{e.preventDefault();h.classList.remove('over');const to=h.dataset.sk;if(!IM_DRAGS||IM_DRAGS===to)return;const a=IM_ORDER.filter(x=>x!==IM_DRAGS),at=a.indexOf(to);a.splice(at,0,IM_DRAGS);IM_ORDER=a;IM_DRAGS=null;imRender();};
-    h.onclick=(e)=>{if(e.target.closest('.imcfgtog,.fdot'))return;const sk=h.dataset.sk;if(IM_COL_SORT.sk===sk){if(IM_COL_SORT.dir==='desc')IM_COL_SORT.dir='asc';else IM_COL_SORT={sk:null,dir:'desc'};}else{IM_COL_SORT={sk,dir:'desc'};}imRender();};});
+    h.onclick=()=>{const sk=h.dataset.sk;IM_POP=(IM_POP===sk)?null:sk;imRender();};});
   imNestChain();
   const grid=document.getElementById('imGrid');grid.innerHTML='';
   if(!rows.length){grid.innerHTML=`<div class="empty" style="padding:34px;text-align:center;color:var(--muted)">No ${grainLbl.toLowerCase()}s in this scope match all conditions — loosen a colour filter or change the scope above.</div>`;return;}
@@ -1976,6 +1988,17 @@ document.addEventListener('click',e=>{if(!e.target.closest('.chip')){document.qu
 let CWK=null,CCOL='var(--accent)',CTIT='',PICKA=null,PICKB=null,ZWIN=0;   // ZWIN 0 = full
 function openChart(title,wk,col){CTIT=title;CWK=wk;CCOL=col||'var(--accent)';PICKA=null;PICKB=null;ZWIN=5;renderChart();document.getElementById('cmodal').classList.add('on');}
 function closeChart(){document.getElementById('cmodal').classList.remove('on');PICKA=null;PICKB=null;}
+function downloadChartPNG(){   // serialise the modal's inline SVG → PNG (works for any chart, since all open through #cchart)
+  const svg=document.querySelector('#cchart svg');if(!svg){alert('Open a chart first, then download.');return;}
+  const cs=getComputedStyle(document.documentElement);
+  let xml=new XMLSerializer().serializeToString(svg).replace(/var\((--[a-z0-9-]+)\)/gi,(m,v)=>(cs.getPropertyValue(v).trim()||m));   // resolve CSS vars so colours survive
+  const w=(svg.width&&svg.width.baseVal.value)||720,h=(svg.height&&svg.height.baseVal.value)||300,sc=2;
+  const img=new Image();
+  img.onload=()=>{const c=document.createElement('canvas');c.width=w*sc;c.height=h*sc;const ctx=c.getContext('2d');ctx.scale(sc,sc);
+    ctx.fillStyle=(cs.getPropertyValue('--card').trim()||'#ffffff');ctx.fillRect(0,0,w,h);ctx.drawImage(img,0,0,w,h);
+    c.toBlob(b=>{const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=((CTIT||'chart').replace(/[^a-z0-9]+/gi,'_').replace(/^_+|_+$/g,'').slice(0,60)||'chart')+'.png';document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},100);});};
+  img.onerror=()=>alert('Could not render the chart to PNG.');
+  img.src='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(xml);}
 function pickPt(i){if(PICKA===null)PICKA=i;else if(PICKB===null){if(i===PICKA)PICKA=null;else PICKB=i;}else{PICKA=i;PICKB=null;}renderChart();}
 function clearPick(){PICKA=null;PICKB=null;renderChart();}
 function setZWin(n){ZWIN=n;PICKA=null;PICKB=null;renderChart();}
@@ -2244,6 +2267,7 @@ Promise.all([
   document.querySelectorAll('#wkstep button').forEach(b=>b.onclick=()=>{NWK=Math.max(1,Math.min(WEEKS.length,NWK+(+b.dataset.s)));PL.open={};PB.open={};redrawAll();});
   document.querySelectorAll('#pctseg button').forEach(b=>b.onclick=()=>{document.querySelectorAll('#pctseg button').forEach(x=>x.classList.remove('on'));b.classList.add('on');PCT=b.dataset.p==='p';redrawAll();});
   document.getElementById('cx').onclick=closeChart;
+  document.getElementById('cdl').onclick=downloadChartPNG;
   document.getElementById('cmodal').onclick=e=>{if(e.target.id==='cmodal')closeChart();};
   document.addEventListener('keydown',e=>{if(e.key==='Escape')closeChart();});
   const EMBED=new URLSearchParams(location.search).has('embed');   // embedded (e.g. in marketing-diagnostic): leads-only, national default, no page chrome

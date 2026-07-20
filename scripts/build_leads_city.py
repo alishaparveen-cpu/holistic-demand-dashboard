@@ -176,7 +176,16 @@ lead_attr AS (
     COALESCE(cai.strength,'') AS strength,
     CASE WHEN cai.cat='SEXUAL_HEALTH_GENERAL' THEN 'SH' WHEN cai.cat='MENTAL_HEALTH' THEN 'MH'
          WHEN cai.cat='STI' THEN 'STI' WHEN cai.cat='OTHER' THEN 'Other'
-         WHEN cai.cat IS NOT NULL THEN 'unknown' ELSE 'na' END AS category
+         WHEN cai.cat IS NOT NULL THEN 'unknown' ELSE 'na' END AS category,
+    -- CAMPAIGN-NAME CATEGORY: web/whatsapp leads carry the category in utm_campaign (highest-priority signal, before call-audit).
+    -- _sh_/_std_(=STI)/_mh_ tokens; a generic t1/t2_<city>_exact/local with NO token = the pre-split single campaign → SH.
+    CASE WHEN REGEXP_INSTR(LOWER(COALESCE(l.utm_campaign,'')),'_sh(_|$)')>0  THEN 'SH'
+         WHEN REGEXP_INSTR(LOWER(COALESCE(l.utm_campaign,'')),'_(std|sti)(_|$)')>0 THEN 'STI'
+         WHEN REGEXP_INSTR(LOWER(COALESCE(l.utm_campaign,'')),'_mh(_|$)')>0  THEN 'MH'
+         WHEN LOWER(COALESCE(l.utm_campaign,'')) SIMILAR TO 't[12]_%'
+              AND (POSITION('exact' IN LOWER(COALESCE(l.utm_campaign,'')))>0
+                   OR POSITION('local' IN LOWER(COALESCE(l.utm_campaign,'')))>0) THEN 'SH'
+         ELSE NULL END AS campcat
   FROM allo_persons.lead l
   LEFT JOIN call_ai cai ON cai.ph = RIGHT(REGEXP_REPLACE(COALESCE(l.phone_no,''),'[^0-9]',''),10)
   LEFT JOIN loc plc ON plc.code = l.location
@@ -250,7 +259,14 @@ lead_diag AS (   -- CATEGORY BACKFILL: a lead's completed consult carries a clin
   GROUP BY p.lead_id
 )
 SELECT COALESCE(la.city,'— no city · online / untracked') AS city, COALESCE(la.locality,'') AS locality, la.channel, la.medium, la.number, la.campaign, la.url, la.relevance, la.intent, la.strength,
-  CASE WHEN la.category IN ('na','unknown','Other') AND ld.dcat IS NOT NULL THEN ld.dcat ELSE la.category END AS category,
+  -- CATEGORY WATERFALL: 1) campaign name (web/WA utm token) → 2) AI call audit → 3) done diagnosis → else uncategorized.
+  CASE WHEN la.campcat IS NOT NULL THEN la.campcat                                                     -- 1) campaign
+       WHEN la.category IN ('na','unknown','Other') AND ld.dcat IS NOT NULL THEN ld.dcat              -- 3) done diagnosis (backfills what audit couldn't)
+       ELSE la.category END AS category,
+  CASE WHEN la.campcat IS NOT NULL THEN 'campaign'                                                    -- category SOURCE tag: which signal decided it
+       WHEN la.category IN ('na','unknown','Other') AND ld.dcat IS NOT NULL THEN 'done-dx'
+       WHEN la.category IN ('SH','STI','MH','Other') THEN 'audit'
+       ELSE 'none' END AS catsrc,                                                              -- 2) call audit (or na/unknown)
   -- booked via the ID join (patient.lead_id): lag from lead created -> the lead's patient's earliest SC
   CASE WHEN lb.bd IS NULL THEN 'notbooked'
        WHEN DATE_TRUNC('week', lb.bd) < DATE_TRUNC('week', la.created) THEN 'prior'
@@ -268,7 +284,7 @@ FROM lead_attr la
   LEFT JOIN lead_conn lc ON lc.id = la.id
   LEFT JOIN lead_diag ld ON ld.lid = la.id
 WHERE la.channel IS NOT NULL AND la.ph <> ''
-GROUP BY 1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17 ORDER BY 1,3;
+GROUP BY 1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18 ORDER BY 1,3;
 """
 
 def run(sql, tries=4):
@@ -297,9 +313,9 @@ def main():
     rows = run(sql)
     cube = defaultdict(lambda: defaultdict(lambda: {'w': [0]*N, 'd': [0]*ND}))   # city -> key -> {weekly(27), daily(recent 8wk)}
     for r in rows:
-        if len(r) < 18:
+        if len(r) < 19:
             continue
-        city, loc, ch, md, num, campaign, url, rel, intent, strength, cat, status, vf, bkseg, doneq, oncall, created, n = r[:18]
+        city, loc, ch, md, num, campaign, url, rel, intent, strength, cat, catsrc, status, vf, bkseg, doneq, oncall, created, n = r[:19]
         if ch not in CHANNELS:
             continue
         try:
@@ -307,7 +323,7 @@ def main():
         except Exception:
             continue
         n = int(n)
-        acc = cube[city][(loc, ch, md, num, campaign, url, rel, intent, strength, cat, status, vf, bkseg, doneq, oncall)]
+        acc = cube[city][(loc, ch, md, num, campaign, url, rel, intent, strength, cat, catsrc, status, vf, bkseg, doneq, oncall)]
         if wkm in WI:
             acc['w'][WI[wkm]] += n
         if created in DI:
@@ -317,8 +333,8 @@ def main():
                      'note': 'Attributable leads by CITY. Each cell has weekly w[] (26 wks, aligned with bookings) + daily d[] '
                              '(recent 8 wks incl. the current partial week, for day-of-week / week-to-date comparison).'}}
     for city, cells in cube.items():
-        out[city] = {'cells': [{'loc': loc, 'ch': ch, 'md': md, 'num': num, 'cmp': cmp, 'url': url, 'rel': rel, 'int': it, 'istr': istr, 'cat': cat, 'bk': st, 'vf': vf, 'bkseg': seg, 'dq': dq, 'oc': oc, 'w': v['w'], 'd': v['d']}
-                               for (loc, ch, md, num, cmp, url, rel, it, istr, cat, st, vf, seg, dq, oc), v in cells.items()]}
+        out[city] = {'cells': [{'loc': loc, 'ch': ch, 'md': md, 'num': num, 'cmp': cmp, 'url': url, 'rel': rel, 'int': it, 'istr': istr, 'cat': cat, 'csrc': csrc, 'bk': st, 'vf': vf, 'bkseg': seg, 'dq': dq, 'oc': oc, 'w': v['w'], 'd': v['d']}
+                               for (loc, ch, md, num, cmp, url, rel, it, istr, cat, csrc, st, vf, seg, dq, oc), v in cells.items()]}
     json.dump(out, open(os.path.join(ROOT, 'data_leads_city.json'), 'w'), separators=(',', ':'))
     n8 = min(8, N)
     for city in sorted(cube, key=lambda c: -sum(sum(v['w'][:n8]) for v in cube[c].values())):
