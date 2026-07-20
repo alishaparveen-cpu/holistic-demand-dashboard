@@ -58,7 +58,7 @@ def main():
     def online_catmt(fn):
         s = fn.lower()
         cat = 'STI' if ('_std_' in s or '_sti_' in s) else 'MH' if '_mh_' in s else 'SH'   # sh/ed/pe/li/brand-high-intent → SH
-        mt = 'Phrase-Local' if 'phrase' in s else 'Exact-Local' if ('_lc' in s or 'local' in s) else 'Exact'
+        mt = 'Phrase-Local' if 'phrase' in s else 'Exact'   # online has no location match-type → Exact / Phrase only
         return cat, mt
     for fn in os.listdir(REPORTS):
         if not fn.endswith('.md') or pat.match(fn): continue
@@ -84,11 +84,13 @@ def main():
     def FCAT(x): return x if x in('SH','STI','MH','Other') else 'Uncategorized'
     from collections import defaultdict
     fun = defaultdict(lambda:[0,0,0,0,0])   # (city,ch,med,cat,wk) -> leads,booked,done,booked_offline,booked_online
+    NOCITY_ = '— no city · online / untracked'
     for city, node in cube.items():
         if city=='_meta': continue
         for cel in node.get('cells',[]):
             ch = CHMAP.get(cel.get('ch'))
             if not ch: continue
+            if city==NOCITY_ and ch!='Google': continue   # Online = Google-Ads-online only; drop GMB-untracked (they're local, book offline)
             med=MED(cel.get('md')); cat=FCAT(cel.get('cat'))
             booked=cel.get('bk')!='notbooked'; done=cel.get('dq')=='done'; seg=cel.get('bkseg'); w=cel.get('w',[])
             for wk,idx in WKIDX.items():
