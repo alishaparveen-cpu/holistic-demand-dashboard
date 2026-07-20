@@ -26,6 +26,12 @@ def num(s):
     m = re.search(r'-?[\d,]+(?:\.\d+)?', s or '')
     return float(m.group().replace(',','')) if m else None
 
+_AC = {'sh':'SH','std':'STD','sti':'STI','mh':'MH','hi':'HI','li':'LI','lc':'LC','ed':'ED','pe':'PE',
+       'cc':'CC','roi':'ROI','pd':'PD','t1':'T1','t2':'T2','allo':'Allo','onl':'ONL','lt':'LT'}
+def campname(fn):   # filename → the actual Google-Ads campaign name (e.g. roi_online_sh_hi_exact_w5 → ROI_Online_SH_HI_Exact)
+    toks = re.sub(r'_(w[1-6])\.md$', '', fn).split('_')
+    return '_'.join(_AC.get(t, t.title()) for t in toks)
+
 def parse_report(path):
     """→ dict of the acquisition fields we need (2nd table column = the campaign value)."""
     val = {}
@@ -53,7 +59,7 @@ def main():
         _, ctok, cat, mt, wk = m.groups()
         if wk not in WK: continue
         city = city_of(ctok); r = parse_report(os.path.join(REPORTS, fn))
-        acq.setdefault(city, []).append(dict(cat=CAT[cat], mt=MT[mt], wk=WK[wk], **r))
+        acq.setdefault(city, []).append(dict(cat=CAT[cat], mt=MT[mt], wk=WK[wk], camp=campname(fn), **r))
     # ---- ONLINE / brand Google-Ads campaigns → an "Online" pseudo-city ----
     def online_catmt(fn):
         s = fn.lower()
@@ -66,7 +72,7 @@ def main():
         wkm = re.search(r'_(w[1-6])\.md$', fn)
         if not wkm or wkm.group(1) not in WK: continue
         cat, mt = online_catmt(fn); r = parse_report(os.path.join(REPORTS, fn))
-        acq.setdefault('Online', []).append(dict(cat=cat, mt=mt, wk=WK[wkm.group(1)], **r))
+        acq.setdefault('Online', []).append(dict(cat=cat, mt=mt, wk=WK[wkm.group(1)], camp=campname(fn), **r))
     # ---- per-city × category RPC (campaign rev ÷ done) ----
     rpc = {}
     for city, rows in acq.items():
@@ -117,7 +123,7 @@ def main():
     cities = sorted(set(list(acq.keys()) + ['Online' if c==NOCITY else c for c in cube if c!='_meta']))
     for city in cities:
         funsrc = NOCITY if city=='Online' else city   # funnel source key in the fun dict
-        arows = [{'cat':r['cat'],'mt':r['mt'],'wk':r['wk'],'budget':round(r.get('budget') or 0,1),
+        arows = [{'cat':r['cat'],'mt':r['mt'],'wk':r['wk'],'camp':r.get('camp',''),'budget':round(r.get('budget') or 0,1),
                   'bid':r.get('bid'),'sp':round(r.get('spend') or 0,1),'impr':round(r.get('impr') or 0),
                   'elig':round(r.get('elig') or 0),'locimpr':round(r.get('locimpr') or 0),
                   'click':round(r.get('click') or 0),'locclick':round(r.get('locclick') or 0)}
