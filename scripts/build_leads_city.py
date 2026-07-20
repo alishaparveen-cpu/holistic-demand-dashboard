@@ -11,14 +11,14 @@ import os, sys, json, subprocess, datetime
 from collections import defaultdict
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RQ = os.path.join(ROOT, 'scripts', 'redshift_query.py')
-WEEKS = ['2026-07-06','2026-06-29','2026-06-22','2026-06-15','2026-06-08','2026-06-01','2026-05-25','2026-05-18',
+WEEKS = ['2026-07-13','2026-07-06','2026-06-29','2026-06-22','2026-06-15','2026-06-08','2026-06-01','2026-05-25','2026-05-18',
          '2026-05-11','2026-05-04','2026-04-27','2026-04-20','2026-04-13','2026-04-06','2026-03-30',
          '2026-03-23','2026-03-16','2026-03-09','2026-03-02','2026-02-23','2026-02-16','2026-02-09',
          '2026-02-02','2026-01-26','2026-01-19','2026-01-12']   # weekly axis (26 wks, aligned with bookings cube — ends 6–12 Jul)
 WI = {w: i for i, w in enumerate(WEEKS)}; N = len(WEEKS)
 # daily axis: recent 8 weeks INCLUDING the current (partial) week 2026-07-06 — powers the day-of-week / week-to-date comparison.
 # Kept separate from WEEKS so the weekly axis stays aligned with the bookings cube; current-week leads land only in d[].
-DAY_WEEKS = ['2026-07-06','2026-06-29','2026-06-22','2026-06-15','2026-06-08','2026-06-01','2026-05-25','2026-05-18']
+DAY_WEEKS = ['2026-07-13','2026-07-06','2026-06-29','2026-06-22','2026-06-15','2026-06-08','2026-06-01','2026-05-25','2026-05-18']
 DAYS = []
 for _wkm in reversed(DAY_WEEKS):
     _d0 = datetime.date.fromisoformat(_wkm)
@@ -194,7 +194,7 @@ lead_attr AS (
                             '_(sh|std|sti|mh|ed|pe|brand|general)(_.*)?$',''),
              '[^a-z0-9]','')
   LEFT JOIN loccity lcb ON lcb.locality = cai.locality
-  WHERE l.deleted_at IS NULL AND l.created_at >= '2026-01-05' AND l.created_at < '2026-07-13'
+  WHERE l.deleted_at IS NULL AND l.created_at >= '2026-01-05' AND l.created_at < '2026-07-20'
     AND NOT (lower(coalesce(l.utm_medium,''))='clinic' AND lower(coalesce(l.utm_campaign,''))='website')   -- drop the organic/clinic/website bot flood (250k fake +91 leads to /clinics/ pages in wk 6-12 Jul; legit is only ~60/wk)
 ),
 lead_book AS (   -- ID JOIN: lead -> ITS patient's SC bookings (patient.lead_id = lead.id). Catches alternate-phone bookings; matches ②'s patient_id book side. (was phone-match)
@@ -227,8 +227,29 @@ lead_conn AS (   -- per-lead: did the lead's OWN phone OR its patient's phone co
   LEFT JOIN pat_phone pp ON pp.lid = la.id
   LEFT JOIN called cp ON cp.ph = pp.ph
   GROUP BY la.id
+),
+lead_diag AS (   -- CATEGORY BACKFILL: a lead's completed consult carries a clinical diagnosis (encounter_tags). Recovers the TRUE category for leads that were 'uncategorized' at call-intent (mostly web leads that never called). STI>SH precedence; MH has no diagnosis tag so it is NOT recoverable. Applies only to converted leads (a diagnosis implies a done) — read category-mix as improved, but conversion rates on backfilled cats are upward-biased (every backfilled lead is by definition a done).
+  SELECT p.lead_id AS lid,
+         CASE WHEN MAX(CASE WHEN dg.dcat='STI' THEN 1 ELSE 0 END)=1 THEN 'STI'
+              WHEN MAX(CASE WHEN dg.dcat='SH'  THEN 1 ELSE 0 END)=1 THEN 'SH'
+              ELSE 'Other' END AS dcat
+  FROM allo_consultations.appointments a
+  JOIN allo_persons.patient p ON p.id=a.patient_id AND p.deleted_at IS NULL
+  JOIN (
+    SELECT e.appointment_id,
+      CASE WHEN MAX(CASE WHEN et.tag_type='sti' THEN 1 ELSE 0 END)=1 THEN 'STI'
+           WHEN MAX(CASE WHEN et.tag_type IN ('ed_plus_pe_plus','ed_plus','pe_plus','nssd') THEN 1 ELSE 0 END)=1 THEN 'SH'
+           WHEN MAX(CASE WHEN et.encounter_id IS NOT NULL THEN 1 ELSE 0 END)=1 THEN 'oth'
+           ELSE NULL END AS dcat
+    FROM allo_encounters.encounters e
+    LEFT JOIN allo_analytics.encounter_tags et ON et.encounter_id=e.id AND et.tag_category='diagnosis' AND et.deleted_at IS NULL
+    WHERE e.deleted_at IS NULL GROUP BY 1
+  ) dg ON dg.appointment_id=a.id AND dg.dcat IS NOT NULL
+  WHERE a.deleted_at IS NULL AND p.lead_id IS NOT NULL
+  GROUP BY p.lead_id
 )
-SELECT COALESCE(la.city,'— no city · online / untracked') AS city, COALESCE(la.locality,'') AS locality, la.channel, la.medium, la.number, la.campaign, la.url, la.relevance, la.intent, la.strength, la.category,
+SELECT COALESCE(la.city,'— no city · online / untracked') AS city, COALESCE(la.locality,'') AS locality, la.channel, la.medium, la.number, la.campaign, la.url, la.relevance, la.intent, la.strength,
+  CASE WHEN la.category IN ('na','unknown','Other') AND ld.dcat IS NOT NULL THEN ld.dcat ELSE la.category END AS category,
   -- booked via the ID join (patient.lead_id): lag from lead created -> the lead's patient's earliest SC
   CASE WHEN lb.bd IS NULL THEN 'notbooked'
        WHEN DATE_TRUNC('week', lb.bd) < DATE_TRUNC('week', la.created) THEN 'prior'
@@ -244,6 +265,7 @@ FROM lead_attr la
   JOIN lead_pat lp ON lp.lid = la.id                                    -- verified-only (drops the ~1% unverified; 0 bookings among them)
   LEFT JOIN lead_book lb ON lb.lid = la.id
   LEFT JOIN lead_conn lc ON lc.id = la.id
+  LEFT JOIN lead_diag ld ON ld.lid = la.id
 WHERE la.channel IS NOT NULL AND la.ph <> ''
 GROUP BY 1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17 ORDER BY 1,3;
 """

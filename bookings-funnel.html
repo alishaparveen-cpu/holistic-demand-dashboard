@@ -1433,6 +1433,7 @@ function renderValue(units){units=units||opsUnits();const flow=document.getEleme
 // ===== 📊 Individual-metric RAG diagnostic — metric-first grid over the funnel cubes, recursive breakdown, colour = drop severity vs the Δ baseline =====
 // ===== Individual-metric v2 — CROSS-FUNNEL RAG matrix: many metrics (columns) × one breakdown (rows), so a drop is traceable Leads→Bookings→Done→Value on one screen =====
 let VIEWM='funnel', IM_SEL=['leads','bookings','netsc','b2d','done','revenue'], IM_ROWS=['city'], IM_OPEN={}, IM_MAT=0, IM_SORT='drop', IM_RAG_L={r:true,o:true,y:true,g:true}, IM_RAG_B={r:true,o:true,y:true,g:true}, imRowDrag=null;
+let IM_COL_SORT={sk:null,dir:'desc'};   // column sort: click a stage header to sort rows by that metric (now value); click again to flip; third click resets to default drop sort
 let IM_RED=15, IM_ORANGE=5;   // editable RAG thresholds (% drop) — user-customisable (the old "materiality" was really this)
 const IM_LEADSIDE=new Set(['leads','bookedleads','bookrate','lbrate']);   // leads-side metrics (for the split Leads/Book colour filter)
 // --- source-data filters by the current breakdown tags {seg,city,loc,cat,src} ---
@@ -1752,21 +1753,28 @@ function imRender(){const sec=document.getElementById('imSection');if(!sec||sec.
   let rows=imEntities().map(e=>{const r=imNodeCells(e,[]);return {c:e,cells:r.cells,prim:r.prim};})
     .filter(r=>imVisibleStages().some(sk=>r.cells[sk].ser.some(x=>x)))   // drop dormant clinics/doctors — zero across EVERY stage for the whole window (never-active / pre-launch)
     .filter(r=>r.prim>=IM_MAT).filter(imPassStages);
-  rows.sort((a,b)=>((a.cells[primStage].dp?imDropNum(a.cells[primStage].dp):1e9)-(b.cells[primStage].dp?imDropNum(b.cells[primStage].dp):1e9)));   // biggest drop first (Bookings, or Done at doctor grain)
   const cnt=document.getElementById('imCount');if(cnt){const noun=grainLbl.toLowerCase(),plural=rows.length===1?noun:(noun==='city'?'cities':noun+'s');cnt.textContent=rows.length+' '+plural+' match';}
   const anyCond=Object.keys(IM_SRAG).some(k=>IM_SRAG[k]&&IM_SRAG[k].size);
   const clr=document.getElementById('imClrAll');if(clr)clr.style.visibility=anyCond?'visible':'hidden';
   imCfgBar();   // customise-a-stage bar
   const VIS=imVisibleStages();   // stages shown for this grain (doctor scope hides leads/bookings/value)
+  if(IM_COL_SORT.sk&&VIS.includes(IM_COL_SORT.sk)){
+    const sk=IM_COL_SORT.sk,dir=IM_COL_SORT.dir==='asc'?1:-1;
+    rows.sort((a,b)=>{const an=a.cells[sk].dp?(a.cells[sk].dp.now||0):0,bn=b.cells[sk].dp?(b.cells[sk].dp.now||0):0;return dir*(an-bn);});
+  } else {
+    rows.sort((a,b)=>((a.cells[primStage].dp?imDropNum(a.cells[primStage].dp):1e9)-(b.cells[primStage].dp?imDropNum(b.cells[primStage].dp):1e9)));   // biggest drop first
+  }
   const head=document.getElementById('imHead');head.className='imdghdr';
   head.innerHTML=`<span class="lbl">${grainLbl} · Δ vs ${cmL}</span>`
     +VIS.map(sk=>{const S=IM_SRAG[sk]||new Set(),cfgOn=imCfgConfigured(sk),open=IM_POP===sk,cfg=IM_STAGE_CFG[sk],hasVar=cfg&&(cfg.variants.length>1||cfg.cuts.length>0);
-      return `<div class="imcolhd${open?' cfgopen':''}" data-sk="${sk}" draggable="true"><span class="cl" title="drag to reorder">${imCfgLabel(sk)}${hasVar?` <span class="imcfgtog${cfgOn?' set':''}" data-cfg="${sk}" title="customise this metric (layers)">▾</span>`:''}</span><div class="imdots">${['r','o','y','g'].map(k=>`<button class="fdot${S.has(k)?' on':''}" data-sk="${sk}" data-k="${k}" title="${{r:'big drop ≥'+IM_RED+'%',o:'drop ≥'+IM_ORANGE+'%',y:'small drop',g:'up / flat'}[k]}"><i class="rag ${k}"></i></button>`).join('')}</div></div>`;}).join('');
+      const sortArr=IM_COL_SORT.sk===sk?(IM_COL_SORT.dir==='desc'?' ▾':' ▲'):'';
+      return `<div class="imcolhd${open?' cfgopen':''}" data-sk="${sk}" draggable="true" title="click to sort by this metric${sortArr?' (sorted)':''}" style="cursor:pointer"><span class="cl">${imCfgLabel(sk)}${sortArr?`<span style="color:var(--accent);font-size:10px">${sortArr}</span>`:''}${hasVar?` <span class="imcfgtog${cfgOn?' set':''}" data-cfg="${sk}" title="customise this metric (layers)">▾</span>`:''}</span><div class="imdots">${['r','o','y','g'].map(k=>`<button class="fdot${S.has(k)?' on':''}" data-sk="${sk}" data-k="${k}" title="${{r:'big drop ≥'+IM_RED+'%',o:'drop ≥'+IM_ORANGE+'%',y:'small drop',g:'up / flat'}[k]}"><i class="rag ${k}"></i></button>`).join('')}</div></div>`;}).join('');
   head.querySelectorAll('.imcfgtog').forEach(b=>b.onclick=(e)=>{e.stopPropagation();IM_POP=(IM_POP===b.dataset.cfg)?null:b.dataset.cfg;imRender();});
   head.querySelectorAll('.fdot').forEach(b=>b.onclick=(e)=>{e.stopPropagation();const sk=b.dataset.sk,k=b.dataset.k,S=IM_SRAG[sk]=IM_SRAG[sk]||new Set();if(S.has(k))S.delete(k);else S.add(k);if(!S.size)delete IM_SRAG[sk];imRender();});
   head.querySelectorAll('.imcolhd').forEach(h=>{h.ondragstart=()=>{IM_DRAGS=h.dataset.sk;};
     h.ondragover=(e)=>{e.preventDefault();h.classList.add('over');};h.ondragleave=()=>h.classList.remove('over');
-    h.ondrop=(e)=>{e.preventDefault();h.classList.remove('over');const to=h.dataset.sk;if(!IM_DRAGS||IM_DRAGS===to)return;const a=IM_ORDER.filter(x=>x!==IM_DRAGS),at=a.indexOf(to);a.splice(at,0,IM_DRAGS);IM_ORDER=a;IM_DRAGS=null;imRender();};});
+    h.ondrop=(e)=>{e.preventDefault();h.classList.remove('over');const to=h.dataset.sk;if(!IM_DRAGS||IM_DRAGS===to)return;const a=IM_ORDER.filter(x=>x!==IM_DRAGS),at=a.indexOf(to);a.splice(at,0,IM_DRAGS);IM_ORDER=a;IM_DRAGS=null;imRender();};
+    h.onclick=(e)=>{if(e.target.closest('.imcfgtog,.fdot'))return;const sk=h.dataset.sk;if(IM_COL_SORT.sk===sk){if(IM_COL_SORT.dir==='desc')IM_COL_SORT.dir='asc';else IM_COL_SORT={sk:null,dir:'desc'};}else{IM_COL_SORT={sk,dir:'desc'};}imRender();};});
   imNestChain();
   const grid=document.getElementById('imGrid');grid.innerHTML='';
   if(!rows.length){grid.innerHTML=`<div class="empty" style="padding:34px;text-align:center;color:var(--muted)">No ${grainLbl.toLowerCase()}s in this scope match all conditions — loosen a colour filter or change the scope above.</div>`;return;}

@@ -105,7 +105,7 @@ joined AS (
   LEFT JOIN allo_persons.lead l ON s.lead_id=l.id
   LEFT JOIN callcat cc ON RIGHT(COALESCE(l.phone_no,''),10)=cc.ph
   LEFT JOIN pfdiag pf ON pf.patient_id=s.patient_id
-  WHERE s.start_time >= '2026-01-05' AND s.start_time < '2026-07-13'
+  WHERE s.start_time >= '2026-01-05' AND s.start_time < '2026-07-20'
     AND LOWER(COALESCE(s.locality,'')) <> 'online' AND s.locality IS NOT NULL
 )
 SELECT city, clinic, wk, ptype, lead_age, channel, medium, number, campaign, category, diag, brank, drank, COUNT(*) AS bookings, SUM(week_done) AS done

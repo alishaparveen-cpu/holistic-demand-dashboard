@@ -13,12 +13,12 @@ import os, sys, json, subprocess, datetime
 from collections import defaultdict
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RQ = os.path.join(ROOT, 'scripts', 'redshift_query.py')
-WEEKS = ['2026-07-06','2026-06-29','2026-06-22','2026-06-15','2026-06-08','2026-06-01','2026-05-25','2026-05-18',
+WEEKS = ['2026-07-13','2026-07-06','2026-06-29','2026-06-22','2026-06-15','2026-06-08','2026-06-01','2026-05-25','2026-05-18',
          '2026-05-11','2026-05-04','2026-04-27','2026-04-20','2026-04-13','2026-04-06','2026-03-30',
          '2026-03-23','2026-03-16','2026-03-09','2026-03-02','2026-02-23','2026-02-16','2026-02-09',
          '2026-02-02','2026-01-26','2026-01-19','2026-01-12']   # weekly axis (26 wks, aligned with bookings — ends 6–12 Jul)
 # daily axis: recent 8 weeks incl. the current partial week (for day-of-week / week-to-date compare); current week only lands in d[]
-DAY_WEEKS = ['2026-07-06','2026-06-29','2026-06-22','2026-06-15','2026-06-08','2026-06-01','2026-05-25','2026-05-18']
+DAY_WEEKS = ['2026-07-13','2026-07-06','2026-06-29','2026-06-22','2026-06-15','2026-06-08','2026-06-01','2026-05-25','2026-05-18']
 DAYS = []
 for _wkm in reversed(DAY_WEEKS):
     _d0 = datetime.date.fromisoformat(_wkm)
@@ -127,7 +127,7 @@ lead_attr AS (
   FROM allo_persons.lead l
   LEFT JOIN call_loc cl ON cl.ph = RIGHT(REGEXP_REPLACE(COALESCE(l.phone_no,''),'[^0-9]',''),10)
   LEFT JOIN call_cat cc ON cc.ph = RIGHT(REGEXP_REPLACE(COALESCE(l.phone_no,''),'[^0-9]',''),10)
-  WHERE l.deleted_at IS NULL AND l.created_at >= '2026-01-05' AND l.created_at < '2026-07-13'
+  WHERE l.deleted_at IS NULL AND l.created_at >= '2026-01-05' AND l.created_at < '2026-07-20'
     AND NOT (lower(coalesce(l.utm_medium,''))='clinic' AND lower(coalesce(l.utm_campaign,''))='website')   -- drop the organic/clinic/website bot flood (250k fake +91 leads in wk 6-12 Jul)
 ),
 lead_book AS (   -- ID JOIN: lead -> ITS patient's SC bookings (patient.lead_id = lead.id). Booked = booked AT THIS CLINIC; catches alt-phone bookings, matches ②. (was phone-match)
