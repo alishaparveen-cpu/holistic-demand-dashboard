@@ -438,7 +438,7 @@
   <!-- 📊 Individual-metric RAG diagnostic (metric-first grid, reimagined for the funnel's many layers) -->
   <div id="imSection" style="display:none">
     <div class="imctrl">
-      <span class="imctag"><b>Offline funnel diagnostic</b> <span class="imhint">— each row is a clinic; read it left→right and it IS that clinic's funnel. Click any metric header (▾) to sort clinics by it, show only a colour (🔴🟠🟡🟢), or add layers — stack conditions across metrics (e.g. Bookings 🔴 + Availability 🟢) to find culprits. <b>Follows the scope, clinic-age &amp; Δ-baseline you set in the top bar.</b></span></span>
+      <span class="imctag"><b>Offline funnel diagnostic</b> <span class="imhint">— each row is a clinic; read it left→right and it IS that clinic's funnel. Under each metric: ↕ sorts clinics by it · the colour dots (🔴🟠🟡🟢) show only clinics that colour · click the name (▾) for layers — stack conditions across metrics (e.g. Bookings 🔴 + Availability 🟢) to find culprits. <b>Follows the scope, clinic-age &amp; Δ-baseline you set in the top bar.</b></span></span>
       <div class="imctlrow">
         <label class="imfilt" title="colour a stage RED when it drops at least this much"><i class="rag r"></i> red ≥ <input id="imRed" type="number" value="15" min="1" max="99" style="width:38px">%</label>
         <label class="imfilt" title="ORANGE at this drop"><i class="rag o"></i> orange ≥ <input id="imOrange" type="number" value="5" min="1" max="98" style="width:38px">%</label>
@@ -1699,23 +1699,9 @@ function imCfgBar(){const bar=document.getElementById('imCfgBar');if(!bar)return
   const sk=IM_POP,spec=IM_STAGE_CFG[sk]||{variants:[],cuts:[]},def=imStageDef(sk),cur=imCfgVariant(sk);
   const C=()=>IM_CFG[sk]=IM_CFG[sk]||{}, cut=()=>{const c=C();return c.cut=c.cut||{};};
   bar.style.display='';bar.innerHTML='';
-  const hd=document.createElement('div');hd.className='imcfghd';hd.innerHTML=`<b>${def.lab}</b> <span class="imhint">— sort clinics by this metric, show only a colour, or add layers to split it. Each metric is independent.</span><button class="imcfgx" title="close">✕</button>`;bar.appendChild(hd);
+  const hd=document.createElement('div');hd.className='imcfghd';hd.innerHTML=`Layers · <b>${def.lab}</b> <span class="imhint">— add a layer (Source / Medium / Category …) to split this metric, then tick values to filter it. (Sort & colour-filter are under the metric name.)</span><button class="imcfgx" title="close">✕</button>`;bar.appendChild(hd);
   hd.querySelector('.imcfgx').onclick=()=>{IM_POP=null;imRender();};
-  if(spec.variants.length>1){const vr=document.createElement('div');vr.className='imcfgrow';vr.innerHTML=`${spec.variants.map(([v,l])=>`<button class="imchip cfgv${cur===v?' on':''}" data-v="${v}">${l}</button>`).join('')}`;bar.appendChild(vr);
-    vr.querySelectorAll('.cfgv').forEach(b=>b.onclick=()=>{C().v=b.dataset.v;imRender();});}
-  // Sort + colour-filter for THIS metric — moved OUT of the column header (kept the header clean) into clearly-labelled rows here.
-  const sr=document.createElement('div');sr.className='imcfgrow';
-  sr.innerHTML=`<span class="imcutlab">Sort clinics</span><button class="imchip sortb${IM_COL_SORT.sk===sk&&IM_COL_SORT.dir==='desc'?' on':''}" data-d="desc">↓ biggest drop first</button><button class="imchip sortb${IM_COL_SORT.sk===sk&&IM_COL_SORT.dir==='asc'?' on':''}" data-d="asc">↑ smallest first</button>${IM_COL_SORT.sk===sk?'<button class="imchip sortclr">clear sort</button>':''}`;
-  bar.appendChild(sr);
-  sr.querySelectorAll('.sortb').forEach(b=>b.onclick=()=>{IM_COL_SORT={sk,dir:b.dataset.d};imRender();});
-  {const sc=sr.querySelector('.sortclr');if(sc)sc.onclick=()=>{IM_COL_SORT={sk:null,dir:'desc'};imRender();};}
-  const SR=IM_SRAG[sk]||new Set();
-  const fr=document.createElement('div');fr.className='imcfgrow';
-  fr.innerHTML=`<span class="imcutlab">Show only clinics that are</span>`+[['r','🔴 big drop'],['o','🟠 drop'],['y','🟡 small drop'],['g','🟢 up / flat']].map(([k,lab])=>`<button class="imchip ragf${SR.has(k)?' on':''}" data-k="${k}">${lab}</button>`).join('')+(SR.size?'<button class="imchip ragclr">clear</button>':'');
-  bar.appendChild(fr);
-  fr.querySelectorAll('.ragf').forEach(b=>b.onclick=()=>{const k=b.dataset.k,SS=IM_SRAG[sk]=IM_SRAG[sk]||new Set();if(SS.has(k))SS.delete(k);else SS.add(k);if(!SS.size)delete IM_SRAG[sk];imRender();});
-  {const rc=fr.querySelector('.ragclr');if(rc)rc.onclick=()=>{delete IM_SRAG[sk];imRender();};}
-  if(!spec.cuts.length){if(spec.variants.length<=1){const e=document.createElement('div');e.className='imcfgrow';e.innerHTML='<span class="imhint">No extra layers for this metric — use Sort / Show-only above.</span>';bar.appendChild(e);}return;}
+  if(!spec.cuts.length){const e=document.createElement('div');e.className='imcfgrow';e.innerHTML='<span class="imhint">This metric has no extra layers.</span>';bar.appendChild(e);return;}
   const lbar=document.createElement('div');lbar.className='layerbar';lbar.style.margin='6px 0 0';bar.appendChild(lbar);
   const lead=document.createElement('span');lead.className='lead';lead.textContent='Layers ·';lbar.appendChild(lead);
   const cutObj=(IM_CFG[sk]||{}).cut||{};
@@ -1780,13 +1766,15 @@ function imRender(){const sec=document.getElementById('imSection');if(!sec||sec.
   const head=document.getElementById('imHead');head.className='imdghdr';
   head.innerHTML=`<span class="lbl">${grainLbl} · Δ vs ${cmL}</span>`
     +VIS.map(sk=>{const S=IM_SRAG[sk]||new Set(),cfgOn=imCfgConfigured(sk),open=IM_POP===sk,cfg=IM_STAGE_CFG[sk],hasVar=cfg&&(cfg.variants.length>1||cfg.cuts.length>0);
-      const active=(S.size>0)||cfgOn||(IM_COL_SORT.sk===sk);   // any sort/colour-filter/layer active on this metric
-      const sortMk=IM_COL_SORT.sk===sk?(IM_COL_SORT.dir==='desc'?' ↓':' ↑'):'';
-      return `<div class="imcolhd${open?' cfgopen':''}${active?' hasactive':''}" data-sk="${sk}" draggable="true" title="click for options — sort · show-only colour · layers" style="cursor:pointer"><span class="cl">${imCfgLabel(sk)}${sortMk?`<span style="color:var(--accent);font-size:10px">${sortMk}</span>`:''} <span class="imcaret" style="font-size:9px;opacity:.5">▾</span>${active?` <span class="imactd" title="sort / filter active on this metric" style="color:var(--accent);font-size:9px">●</span>`:''}</span></div>`;}).join('');
+      const sortMk=IM_COL_SORT.sk===sk?(IM_COL_SORT.dir==='desc'?'↓':'↑'):'';
+      const RAGT={r:'show only clinics with a BIG drop',o:'show only clinics with a drop',y:'show only clinics with a small drop',g:'show only clinics up / flat'};
+      return `<div class="imcolhd${open?' cfgopen':''}" data-sk="${sk}" draggable="true" style="cursor:pointer"><span class="cl" title="click for layers (Source / Medium / Category …)">${imCfgLabel(sk)} <span class="imcaret" style="font-size:9px;opacity:.5">▾</span></span><div class="imctrl" style="display:flex;align-items:center;gap:1px;margin-top:3px;justify-content:flex-end">${cfgOn?'<span title="layers active" style="color:var(--accent);font-size:9px;margin-right:1px">◆</span>':''}<button class="imsortb${IM_COL_SORT.sk===sk?' on':''}" data-sk="${sk}" title="sort clinics by this metric (↓ biggest drop first)" style="background:none;border:0;cursor:pointer;font-size:11px;color:${IM_COL_SORT.sk===sk?'var(--accent)':'var(--muted)'};padding:0 3px 0 1px">↕${sortMk}</button>${['r','o','y','g'].map(k=>`<button class="fdot${S.has(k)?' on':''}" data-sk="${sk}" data-k="${k}" title="${RAGT[k]}"><i class="rag ${k}"></i></button>`).join('')}</div></div>`;}).join('');
+  head.querySelectorAll('.imsortb').forEach(b=>b.onclick=(e)=>{e.stopPropagation();const sk=b.dataset.sk;if(IM_COL_SORT.sk===sk){if(IM_COL_SORT.dir==='desc')IM_COL_SORT.dir='asc';else IM_COL_SORT={sk:null,dir:'desc'};}else IM_COL_SORT={sk,dir:'desc'};imRender();});
+  head.querySelectorAll('.fdot').forEach(b=>b.onclick=(e)=>{e.stopPropagation();const sk=b.dataset.sk,k=b.dataset.k,SS=IM_SRAG[sk]=IM_SRAG[sk]||new Set();if(SS.has(k))SS.delete(k);else SS.add(k);if(!SS.size)delete IM_SRAG[sk];imRender();});
   head.querySelectorAll('.imcolhd').forEach(h=>{h.ondragstart=()=>{IM_DRAGS=h.dataset.sk;};
     h.ondragover=(e)=>{e.preventDefault();h.classList.add('over');};h.ondragleave=()=>h.classList.remove('over');
     h.ondrop=(e)=>{e.preventDefault();h.classList.remove('over');const to=h.dataset.sk;if(!IM_DRAGS||IM_DRAGS===to)return;const a=IM_ORDER.filter(x=>x!==IM_DRAGS),at=a.indexOf(to);a.splice(at,0,IM_DRAGS);IM_ORDER=a;IM_DRAGS=null;imRender();};
-    h.onclick=()=>{const sk=h.dataset.sk;IM_POP=(IM_POP===sk)?null:sk;imRender();};});
+    h.onclick=(e)=>{if(e.target.closest('.imsortb,.fdot'))return;const sk=h.dataset.sk;IM_POP=(IM_POP===sk)?null:sk;imRender();};});
   imNestChain();
   const grid=document.getElementById('imGrid');grid.innerHTML='';
   if(!rows.length){grid.innerHTML=`<div class="empty" style="padding:34px;text-align:center;color:var(--muted)">No ${grainLbl.toLowerCase()}s in this scope match all conditions — loosen a colour filter or change the scope above.</div>`;return;}
