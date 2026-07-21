@@ -99,6 +99,7 @@ loc AS (   -- Practo location code -> canonical city + clinic locality
   SELECT l.code, COALESCE(cm.city, INITCAP(l.city)) AS city, l.locality AS locality
   FROM allo_health.locations l LEFT JOIN citymap cm ON cm.tok = LOWER(l.city)
   WHERE l.deleted_at IS NULL AND l.code IS NOT NULL AND l.code <> ''
+    AND l.code <> 'PRACTO'   -- 'Practo Online' (code=PRACTO) is Practo's virtual-consult pseudo-location: city AND locality both 'Practo Online', not a physical clinic/city. Drop it → those telehealth leads fall to no-city / not-attributed-to-a-clinic instead of a fake city+clinic.
 ),
 call_ai AS (   -- phone -> most-recent inbound call's AI city / clinic locality / intent / intent-strength / category
   SELECT ph, city, locality, intent, strength, cat FROM (
