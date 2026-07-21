@@ -124,15 +124,15 @@ lead_attr AS (
   SELECT l.id, RIGHT(REGEXP_REPLACE(COALESCE(l.phone_no,''),'[^0-9]',''),10) AS ph,
     TO_CHAR(DATE_TRUNC('week', l.created_at + INTERVAL '5.5 hours'),'YYYY-MM-DD') AS wk,
     DATE(l.created_at + INTERVAL '5.5 hours') AS created,
-    -- CITY priority: Practo code > GMB clinic-gmb slug > TERRITORY number (dialed city line) > AI user_city > source_url city > GMB number city > Google campaign token > locality backfill
+    -- CITY priority: Practo code > GMB clinic-gmb slug > GMB NUMBER (dialed clinic exophone) > TERRITORY number (dialed city line) > AI user_city > source_url city > Google campaign token > locality backfill
     COALESCE(
       CASE WHEN LOWER(COALESCE(l.utm_source,''))='practo' THEN plc.city END,
       gs.city,
-      tn.city,      -- territory registry: the city phone line the caller dialed (authoritative number->city; before AI audit)
+      gn.city,      -- GMB number = the specific clinic exophone the caller dialed → clinic-level, most authoritative for CALL leads. Above territory: the territory registry mis-groups some cities (e.g. Gandhinagar exophones registered under Ahmedabad), which was dumping GMB call-leads into the wrong city (and a phantom 'Delhi' bucket).
+      tn.city,      -- territory registry: the city phone line the caller dialed (coarser than the GMB exophone; used when the number isn't a mapped clinic exophone)
       cai.city,
       ucm.city,
       ucm2.city,
-      gn.city,
       tc.city,      -- Google T1/T2 campaign-city token: low-priority fallback only (used when no territory number). The Navi-Mumbai-MH shared-line was fixed at source 2026-07-16, so the number itself now carries the right city — no override needed.
       lcb.city
     ) AS city,
