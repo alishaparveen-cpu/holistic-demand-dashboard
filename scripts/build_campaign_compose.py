@@ -12,6 +12,16 @@ Run: python3 scripts/build_campaign_compose.py   (no Redshift — reads the repo
 import os, re, json, glob
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 REPORTS = os.path.expanduser('~/Downloads/claude-skills/marketing/google-ads/reports/funnel')
+_LOSTIS_PATH = os.path.join(ROOT, 'data_lost_is.json')
+LOSTIS = json.load(open(_LOSTIS_PATH)) if os.path.exists(_LOSTIS_PATH) else {}
+def add_lost(fn, r):   # attach rank/budget lost-impression counts (= eligible impr × lost-IS share) to an acq row
+    stem = re.sub(r'_(w[1-6])\.md$', '', fn)
+    wklabel = WK.get(re.search(r'_(w[1-6])\.md$', fn).group(1)) if re.search(r'_(w[1-6])\.md$', fn) else None
+    li = (LOSTIS.get(stem, {}) or {}).get(wklabel, {}) if wklabel else {}
+    elig = r.get('elig') or 0
+    r['rlis'] = round(elig * (li.get('rank') or 0))
+    r['blis'] = round(elig * (li.get('budget') or 0))
+    return r
 WK = {'w1':'Jun 8-14','w2':'Jun 15-21','w3':'Jun 22-28','w4':'Jun 29-Jul 5','w5':'Jul 6-12','w6':'Jul 13-19'}
 WKS = [WK[f'w{i}'] for i in range(1,7)]
 WKIDX = {WK['w1']:5, WK['w2']:4, WK['w3']:3, WK['w4']:2, WK['w5']:1, WK['w6']:0}   # cube weeks newest-first (idx0=Jul13)
@@ -58,7 +68,7 @@ def main():
         if not m: continue
         _, ctok, cat, mt, wk = m.groups()
         if wk not in WK: continue
-        city = city_of(ctok); r = parse_report(os.path.join(REPORTS, fn))
+        city = city_of(ctok); r = add_lost(fn, parse_report(os.path.join(REPORTS, fn)))
         acq.setdefault(city, []).append(dict(cat=CAT[cat], mt=MT[mt], wk=WK[wk], camp=campname(fn), **r))
     # ---- ONLINE / brand Google-Ads campaigns → an "Online" pseudo-city ----
     def online_catmt(fn):
@@ -71,7 +81,7 @@ def main():
         if not re.match(r'^(roi_online|cc_online|onl_lt|brand_allo|pd_online)_', fn): continue
         wkm = re.search(r'_(w[1-6])\.md$', fn)
         if not wkm or wkm.group(1) not in WK: continue
-        cat, mt = online_catmt(fn); r = parse_report(os.path.join(REPORTS, fn))
+        cat, mt = online_catmt(fn); r = add_lost(fn, parse_report(os.path.join(REPORTS, fn)))
         acq.setdefault('Online', []).append(dict(cat=cat, mt=mt, wk=WK[wkm.group(1)], camp=campname(fn), **r))
     # ---- per-city × category RPC (campaign rev ÷ done) ----
     rpc = {}
@@ -126,7 +136,8 @@ def main():
         arows = [{'cat':r['cat'],'mt':r['mt'],'wk':r['wk'],'camp':r.get('camp',''),'budget':round(r.get('budget') or 0,1),
                   'bid':r.get('bid'),'sp':round(r.get('spend') or 0,1),'impr':round(r.get('impr') or 0),
                   'elig':round(r.get('elig') or 0),'locimpr':round(r.get('locimpr') or 0),
-                  'click':round(r.get('click') or 0),'locclick':round(r.get('locclick') or 0)}
+                  'click':round(r.get('click') or 0),'locclick':round(r.get('locclick') or 0),
+                  'rlis':round(r.get('rlis') or 0),'blis':round(r.get('blis') or 0)}
                  for r in acq.get(city,[])]
         frows = []
         for (c2,ch,med,cat,wk),v in fun.items():
