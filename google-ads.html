@@ -47,8 +47,9 @@ tr.key.hi td{background:var(--yel)}tr.key.eff td{background:var(--eff)}tr.key.gr
 const CATS=['SH','STD','MH'],MTS=['Exact-Local','Exact','Phrase-Local'];
 const CHS=['GMB','Google'],MEDS=['Call','Web','WhatsApp'],FCATS=['SH','STI','MH','Other','Uncategorized'];
 let DATA=null,CITY=null,WKALL=[],WKSEL=[];
-const SEL={cat:new Set(CATS),mt:new Set(['Exact-Local']),ch:new Set(CHS),med:new Set(MEDS),fcat:new Set(FCATS)};
+const SEL={cat:new Set(CATS),mt:new Set(['Exact-Local']),ch:new Set(CHS),med:new Set(MEDS),fcat:new Set(FCATS),camp:new Set()};
 const $=id=>document.getElementById(id);
+const onlineCamps=()=>[...new Set(((DATA&&DATA['Online']||{}).acq||[]).map(r=>r.camp))].filter(Boolean).sort();
 const inr=n=>'₹'+Math.round(n).toLocaleString('en-IN');
 const cm=n=>Math.round(n).toLocaleString('en-IN');
 const pc=(n,d)=>d?(100*n/d).toFixed(1)+'%':'·';
@@ -58,6 +59,7 @@ fetch('data_campaign_compose.json').then(r=>r.json()).then(d=>{DATA=d;WKALL=d._m
   $('city').onchange=()=>{CITY=$('city').value;
     SEL.mt=new Set(CITY==='Online'?['Exact','Phrase-Local']:['Exact-Local']);   // Online campaigns are Exact/Phrase (no local); cities default to Exact-Local
     SEL.ch=new Set(CITY==='Online'?['Google']:CHS);   // Online leads are Google-Ads only (no GMB) — pin channel to Google
+    SEL.camp=new Set(CITY==='Online'?onlineCamps():[]);   // Online spend filters by exact campaign name (not cat×match-type)
     buildPickers();render();};
   buildPickers();render();});
 function buildPickers(){
@@ -65,19 +67,22 @@ function buildPickers(){
   const mts=onl?['Exact','Phrase-Local']:MTS;   // Online has no local match-type
   const chs=onl?['Google']:CHS;                 // Online leads are Google-Ads only (no GMB)
   const grp=(cls,title,items,set)=>`<div class="pgrp ${cls}"><h4>${title}</h4>${items.map(it=>`<label class="chk"><input type="checkbox" data-set="${set}" data-v="${it}" ${SEL[set].has(it)?'checked':''}>${it}</label>`).join('')}</div>`;
-  $('pickers').innerHTML=
-    grp('camp','Campaign · Category → SPEND',CATS,'cat')+
-    grp('camp','Campaign · Match-type → SPEND',mts,'mt')+
+  const campSpend=onl   // Online: pick the exact campaign name; cities: category × match-type
+    ? grp('camp','Campaign → SPEND (exact name)',onlineCamps(),'camp')
+    : grp('camp','Campaign · Category → SPEND',CATS,'cat')+grp('camp','Campaign · Match-type → SPEND',mts,'mt');
+  $('pickers').innerHTML=campSpend+
     grp('fun',onl?'Funnel · Channel → LEADS (online = Google only)':'Funnel · Channel → LEADS',chs,'ch')+
     grp('fun','Funnel · Medium → LEADS',MEDS,'med')+
     grp('fun','Funnel · Category → LEADS',FCATS,'fcat');
   $('pickers').querySelectorAll('input').forEach(i=>i.onchange=()=>{const s=SEL[i.dataset.set];i.checked?s.add(i.dataset.v):s.delete(i.dataset.v);render();});
 }
 // STD(picker)↔STI(funnel) is the same category; campaign uses STD, funnel uses STI
+function acqOK(r){return CITY==='Online' ? SEL.camp.has(r.camp)   // Online: filter by exact campaign; else category × match-type
+  : (SEL.cat.has(r.cat==='STI'?'STD':r.cat) && SEL.mt.has(r.mt));}
 function acq(field,wk){const rows=(DATA[CITY]||{}).acq||[];let s=0;
-  for(const r of rows){if(r.wk!==wk)continue;if(!SEL.cat.has(r.cat==='STI'?'STD':r.cat))continue;if(!SEL.mt.has(r.mt))continue;s+=r[field]||0;}return s;}
+  for(const r of rows){if(r.wk!==wk)continue;if(!acqOK(r))continue;s+=r[field]||0;}return s;}
 function acqBid(wk){const rows=(DATA[CITY]||{}).acq||[];let ws=0,wt=0;
-  for(const r of rows){if(r.wk!==wk)continue;if(!SEL.cat.has(r.cat==='STI'?'STD':r.cat))continue;if(!SEL.mt.has(r.mt))continue;if(r.bid){ws+=r.bid*(r.sp||0);wt+=r.sp||0;}}return wt?ws/wt:0;}
+  for(const r of rows){if(r.wk!==wk)continue;if(!acqOK(r))continue;if(r.bid){ws+=r.bid*(r.sp||0);wt+=r.sp||0;}}return wt?ws/wt:0;}
 function fun(field,wk){const rows=(DATA[CITY]||{}).fun||[];let s=0;
   for(const r of rows){if(r.wk!==wk)continue;if(!SEL.ch.has(r.ch))continue;if(!SEL.med.has(r.med))continue;if(!SEL.fcat.has(r.cat))continue;s+=r[field]||0;}return s;}
 function funMed(field,medium,wk){const rows=(DATA[CITY]||{}).fun||[];let s=0;   // leads via a specific medium (Call), independent of the medium picker
