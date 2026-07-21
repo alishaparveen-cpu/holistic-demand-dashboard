@@ -63,6 +63,8 @@ TOK_CITY.update({'vizag': 'Visakhapatnam', 'navi': 'Navi Mumbai', 'hubballi': 'H
                  'vadodara': 'Vadodara', 'gandhinagar': 'Gandhinagar'})
 # clinic locality -> its city (backfill city when a call gives a locality but no confirmed city)
 LOC2CITY = {_l: _c for _c, _l in _clinics}
+# territory/locality names that leaked in as their own "city" -> the real city they belong to
+CITY_ALIAS = {'Thane West': 'Thane'}
 
 def values(pairs, c1, c2):
     return ' UNION ALL '.join(f"SELECT '{a}' AS {c1}, '{b}' AS {c2}" for a, b in pairs)
@@ -319,6 +321,11 @@ def main():
         city, loc, ch, md, num, campaign, url, rel, intent, strength, cat, catsrc, status, vf, bkseg, doneq, oncall, created, n = r[:19]
         if ch not in CHANNELS:
             continue
+        city = CITY_ALIAS.get(city, city)   # locality-name cities → their real city (e.g. 'Thane West' → 'Thane')
+        if loc and loc != city:             # drop a clinic-locality that belongs to a DIFFERENT known city (wrong-city clinic); city total unaffected, only the clinic grain is cleaned
+            _home = LOC2CITY.get(loc)
+            if _home and _home != city:
+                loc = ''
         try:
             wkm = wk_monday(created)
         except Exception:
