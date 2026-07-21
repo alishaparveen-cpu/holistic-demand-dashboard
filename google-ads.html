@@ -29,6 +29,11 @@ tr.key.hi td{background:var(--yel)}tr.key.eff td{background:var(--eff)}tr.key.gr
 .b{font-weight:700}.avgc{background:#eaf3ef}
 .wknote{font-size:11px;color:#B03030;margin:6px 0 0}
 .split{margin-top:16px}.split h3{font-size:13px;color:var(--grn);margin:0 0 4px}
+th .cpy{margin-left:6px;border:none;background:rgba(255,255,255,.22);color:#fff;border-radius:4px;cursor:pointer;font-size:10px;padding:1px 5px;line-height:1.3;vertical-align:middle}
+th .cpy:hover{background:rgba(255,255,255,.55)}
+.split th .cpy{background:rgba(0,0,0,.10);color:var(--ink)}.split th .cpy:hover{background:rgba(0,0,0,.22)}
+#toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:var(--ink);color:#fff;padding:8px 16px;border-radius:8px;font-size:13px;opacity:0;transition:opacity .2s;pointer-events:none;z-index:50}
+#toast.show{opacity:.95}
 </style></head><body><div class="wrap">
 <a class="back" href="index.html">← Dashboard</a>
 <h1>Google Ads · Campaign Compose</h1>
@@ -43,6 +48,7 @@ tr.key.hi td{background:var(--yel)}tr.key.eff td{background:var(--eff)}tr.key.gr
   </div>
   <div class="pickers" id="pickers"></div>
 </div>
+<div id="toast"></div>
 <script>
 const CATS=['SH','STD','MH'],MTS=['Exact-Local','Exact','Phrase-Local'];
 const CHS=['GMB','Google'],MEDS=['Call','Web','WhatsApp'],FCATS=['SH','STI','MH','Other','Uncategorized'];
@@ -50,6 +56,26 @@ let DATA=null,CITY=null,WKALL=[],WKSEL=[];
 const SEL={cat:new Set(CATS),mt:new Set(['Exact-Local']),ch:new Set(CHS),med:new Set(MEDS),fcat:new Set(FCATS),camp:new Set()};
 const $=id=>document.getElementById(id);
 const onlineCamps=()=>[...new Set(((DATA&&DATA['Online']||{}).acq||[]).map(r=>r.camp))].filter(Boolean).sort();
+let toastT=null;
+function toast(msg){const t=$('toast');t.textContent=msg;t.classList.add('show');clearTimeout(toastT);toastT=setTimeout(()=>t.classList.remove('show'),1400);}
+// copy a whole column (row-label + that column's value, tab-separated) for pasting into Sheets/Excel
+function writeClip(text){   // async clipboard with a textarea+execCommand fallback (works on user-gesture)
+  if(navigator.clipboard&&window.isSecureContext){return navigator.clipboard.writeText(text);}
+  return new Promise((res,rej)=>{const ta=document.createElement('textarea');ta.value=text;ta.style.position='fixed';ta.style.opacity='0';
+    document.body.appendChild(ta);ta.select();try{document.execCommand('copy');res();}catch(e){rej(e);}document.body.removeChild(ta);});
+}
+window.copyCol=(tblId,ci,title)=>{
+  const trs=[...document.querySelectorAll('#'+tblId+' tbody tr')];
+  const lines=[ci===0?'Metric':'Metric\t'+title];
+  trs.forEach(tr=>{const tds=[...tr.children];const label=(tds[0]?tds[0].innerText:'').trim();
+    if(!label)return;
+    lines.push(ci===0?label:label+'\t'+((tds[ci]?tds[ci].innerText:'').trim()));});
+  const done=()=>toast('Copied '+(ci===0?'metric names':'“'+title+'” column')+' — '+(lines.length-1)+' rows');
+  writeClip(lines.join('\n')).then(done).catch(()=>{  // fallback if async API rejects
+    const ta=document.createElement('textarea');ta.value=lines.join('\n');ta.style.position='fixed';ta.style.opacity='0';
+    document.body.appendChild(ta);ta.select();try{document.execCommand('copy');done();}catch(e){toast('Copy failed');}document.body.removeChild(ta);});
+};
+const cpyBtn=(tblId,ci,title)=>`<button class="cpy" title="Copy this column" onclick="copyCol('${tblId}',${ci},'${String(title).replace(/'/g,'’')}')">⧉</button>`;
 const inr=n=>'₹'+Math.round(n).toLocaleString('en-IN');
 const cm=n=>Math.round(n).toLocaleString('en-IN');
 const pc=(n,d)=>d?(100*n/d).toFixed(1)+'%':'·';
@@ -131,7 +157,7 @@ function render(){
     ['CPB',w=>{const b=fun('bk',w);return b?acq('sp',w)/b:0;},inr,'eff key','campaign spend ÷ funnel booked',()=>R(bA('sp'),bF('bk'))],
     ['CPD',w=>{const d=fun('dn',w);return d?acq('sp',w)/d:0;},inr,'b eff key','campaign spend ÷ funnel done',()=>R(bA('sp'),bF('dn'))],
   ];
-  const head='<tr><th>Metric</th>'+wks.map(w=>`<th>${w}</th>`).join('')+`<th class="avg">Avg ${nW}wk</th>`+'<th style="background:#2C6CAE">Level / grain</th></tr>';
+  const head='<tr>'+`<th>Metric${cpyBtn('tbl',0,'Metric')}</th>`+wks.map((w,i)=>`<th>${w}${cpyBtn('tbl',i+1,w)}</th>`).join('')+`<th class="avg">Avg ${nW}wk${cpyBtn('tbl',nW+1,'Avg '+nW+'wk')}</th>`+'<th style="background:#2C6CAE">Level / grain</th></tr>';
   const avgOf=fn=>wks.reduce((s,w)=>s+fn(w),0)/nW;   // simple mean of the weekly values
   const sumFmt=lbl=>['Spend','Budget (₹/day)','Impressions','Market size estd','Location Impressions','Clicks','Loc Clicks','Leads','Call Leads','Booked','— Booked · offline','— Booked · online','Done','Revenue (est · done×RPC)','Spend (campaigns)'].includes(lbl);
   const rowHTML=(r,fun2)=>{const[lbl,fn,fmt,cls,g,avgFn]=r;
@@ -145,19 +171,19 @@ function render(){
     sec('▼ FULL FUNNEL — leads by funnel pickers · spend by campaign pickers','fun')+rowsFun.map(r=>rowHTML(r)).join('');
   $('wknote').innerHTML=wks.includes('Jul 13-19')?'Note · Jul 13-19 spend/leads/CPL are final; its Book→Done are still maturing (this week’s leads haven’t all converted), so CPD / ROAS there will keep rising for ~2 weeks.':'';
   // splits
-  const splitBlock=(title,dim,vals,src,fld,fmt)=>`<h3>${title}</h3><table><thead><tr><th></th>${wks.map(w=>`<th>${w}</th>`).join('')}<th class="avg">Avg ${nW}wk</th></tr></thead><tbody>`+
+  const splitBlock=(tid,hdr0,title,dim,vals,src,fld,fmt)=>`<h3>${title}</h3><table id="${tid}"><thead><tr><th>${hdr0}${cpyBtn(tid,0,hdr0||'Row')}</th>${wks.map((w,i)=>`<th>${w}${cpyBtn(tid,i+1,w)}</th>`).join('')}<th class="avg">Avg ${nW}wk${cpyBtn(tid,nW+1,'Avg '+nW+'wk')}</th></tr></thead><tbody>`+
     vals.map(v=>{const cells=wks.map(w=>{let s=0;for(const r of (DATA[CITY]||{})[src]||[]){if(r.wk!==w||r[dim]!==v)continue;s+=r[fld]||0;}return s;});
       return `<tr><td>${v}</td>${cells.map(s=>`<td>${fmt(s)}</td>`).join('')}<td class="avgc">${fmt(cells.reduce((a,b)=>a+b,0)/nW)}</td></tr>`;}).join('')+'</tbody></table>';
   let sp='';
   if(CITY==='Online'){
     const camps=[...new Set(((DATA[CITY]||{}).acq||[]).map(r=>r.camp))].filter(Boolean).sort();
-    sp+=`<h3>Online campaigns · spend (₹)</h3><table><thead><tr><th>Campaign</th>${wks.map(w=>`<th>${w}</th>`).join('')}<th class="avg">Avg ${nW}wk</th></tr></thead><tbody>`+
+    sp+=`<h3>Online campaigns · spend (₹)</h3><table id="spCamp"><thead><tr><th>Campaign${cpyBtn('spCamp',0,'Campaign')}</th>${wks.map((w,i)=>`<th>${w}${cpyBtn('spCamp',i+1,w)}</th>`).join('')}<th class="avg">Avg ${nW}wk${cpyBtn('spCamp',nW+1,'Avg '+nW+'wk')}</th></tr></thead><tbody>`+
       camps.map(c=>{const cells=wks.map(w=>{let s=0;for(const r of (DATA[CITY]||{}).acq){if(r.wk!==w||r.camp!==c)continue;s+=r.sp||0;}return s;});
         return `<tr><td style="text-align:left">${c}</td>${cells.map(s=>`<td>${inr(s)}</td>`).join('')}<td class="avgc">${inr(cells.reduce((a,b)=>a+b,0)/nW)}</td></tr>`;}).join('')+'</tbody></table>';
   }
   $('splits').innerHTML=sp+
-    splitBlock('Leads by medium','med',MEDS,'fun','lead',cm)+
-    splitBlock('Leads by category','cat',FCATS,'fun','lead',cm)+
-    splitBlock(CITY==='Online'?'Spend by match-type (online)':'Spend by match-type','mt',MTS,'acq','sp',inr);
+    splitBlock('spMed','Medium','Leads by medium','med',MEDS,'fun','lead',cm)+
+    splitBlock('spCat','Category','Leads by category','cat',FCATS,'fun','lead',cm)+
+    splitBlock('spMt','Match-type',CITY==='Online'?'Spend by match-type (online)':'Spend by match-type','mt',MTS,'acq','sp',inr);
 }
 </script></body></html>
