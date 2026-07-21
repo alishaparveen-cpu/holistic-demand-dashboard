@@ -127,25 +127,28 @@ function render(){
     ['CPB',w=>{const b=fun('bk',w);return b?acq('sp',w)/b:0;},inr,'eff key','campaign spend ÷ funnel booked'],
     ['CPD',w=>{const d=fun('dn',w);return d?acq('sp',w)/d:0;},inr,'b eff key','campaign spend ÷ funnel done'],
   ];
-  const head='<tr><th>Metric</th>'+wks.map(w=>`<th>${w}</th>`).join('')+'<th style="background:#2C6CAE">Level / grain</th></tr>';
+  const head='<tr><th>Metric</th>'+wks.map(w=>`<th>${w}</th>`).join('')+`<th class="avg">Avg ${nW}wk</th>`+'<th style="background:#2C6CAE">Level / grain</th></tr>';
+  const avgOf=fn=>wks.reduce((s,w)=>s+fn(w),0)/nW;   // simple mean of the weekly values
   const sumFmt=lbl=>['Spend','Budget (₹/day)','Impressions','Market size estd','Location Impressions','Clicks','Loc Clicks','Leads','Call Leads','Booked','— Booked · offline','— Booked · online','Done','Revenue (est · done×RPC)','Spend (campaigns)'].includes(lbl);
   const rowHTML=(r,fun2)=>{const[lbl,fn,fmt,cls,g]=r;
     const cells=wks.map(w=>`<td>${fmt(fn(w))}</td>`).join('');
-    return `<tr class="${cls}"><td class="${cls.includes('b')?'b':''}">${lbl}</td>${cells}<td class="g">${g}</td></tr>`;};
-  const sec=(t,c)=>`<tr class="sec ${c}"><td colspan="${nW+2}">${t}</td></tr>`;
+    return `<tr class="${cls}"><td class="${cls.includes('b')?'b':''}">${lbl}</td>${cells}<td class="avgc">${fmt(avgOf(fn))}</td><td class="g">${g}</td></tr>`;};
+  const sec=(t,c)=>`<tr class="sec ${c}"><td colspan="${nW+3}">${t}</td></tr>`;
   $('tbl').querySelector('thead').innerHTML=head;
   $('tbl').querySelector('tbody').innerHTML=
     sec('▼ PAID ACQUISITION — Google Ads (campaign pickers)','')+rowsAcq.map(r=>rowHTML(r)).join('')+
     sec('▼ FULL FUNNEL — leads by funnel pickers · spend by campaign pickers','fun')+rowsFun.map(r=>rowHTML(r)).join('');
   $('wknote').innerHTML=wks.includes('Jul 13-19')?'Note · Jul 13-19 spend/leads/CPL are final; its Book→Done are still maturing (this week’s leads haven’t all converted), so CPD / ROAS there will keep rising for ~2 weeks.':'';
   // splits
-  const splitBlock=(title,dim,vals,src,fld,fmt)=>`<h3>${title}</h3><table><thead><tr><th></th>${wks.map(w=>`<th>${w}</th>`).join('')}</tr></thead><tbody>`+
-    vals.map(v=>`<tr><td>${v}</td>${wks.map(w=>{let s=0;for(const r of (DATA[CITY]||{})[src]||[]){if(r.wk!==w||r[dim]!==v)continue;s+=r[fld]||0;}return `<td>${fmt(s)}</td>`;}).join('')}</tr>`).join('')+'</tbody></table>';
+  const splitBlock=(title,dim,vals,src,fld,fmt)=>`<h3>${title}</h3><table><thead><tr><th></th>${wks.map(w=>`<th>${w}</th>`).join('')}<th class="avg">Avg ${nW}wk</th></tr></thead><tbody>`+
+    vals.map(v=>{const cells=wks.map(w=>{let s=0;for(const r of (DATA[CITY]||{})[src]||[]){if(r.wk!==w||r[dim]!==v)continue;s+=r[fld]||0;}return s;});
+      return `<tr><td>${v}</td>${cells.map(s=>`<td>${fmt(s)}</td>`).join('')}<td class="avgc">${fmt(cells.reduce((a,b)=>a+b,0)/nW)}</td></tr>`;}).join('')+'</tbody></table>';
   let sp='';
   if(CITY==='Online'){
     const camps=[...new Set(((DATA[CITY]||{}).acq||[]).map(r=>r.camp))].filter(Boolean).sort();
-    sp+=`<h3>Online campaigns · spend (₹)</h3><table><thead><tr><th>Campaign</th>${wks.map(w=>`<th>${w}</th>`).join('')}</tr></thead><tbody>`+
-      camps.map(c=>`<tr><td style="text-align:left">${c}</td>${wks.map(w=>{let s=0;for(const r of (DATA[CITY]||{}).acq){if(r.wk!==w||r.camp!==c)continue;s+=r.sp||0;}return `<td>${inr(s)}</td>`;}).join('')}</tr>`).join('')+'</tbody></table>';
+    sp+=`<h3>Online campaigns · spend (₹)</h3><table><thead><tr><th>Campaign</th>${wks.map(w=>`<th>${w}</th>`).join('')}<th class="avg">Avg ${nW}wk</th></tr></thead><tbody>`+
+      camps.map(c=>{const cells=wks.map(w=>{let s=0;for(const r of (DATA[CITY]||{}).acq){if(r.wk!==w||r.camp!==c)continue;s+=r.sp||0;}return s;});
+        return `<tr><td style="text-align:left">${c}</td>${cells.map(s=>`<td>${inr(s)}</td>`).join('')}<td class="avgc">${inr(cells.reduce((a,b)=>a+b,0)/nW)}</td></tr>`;}).join('')+'</tbody></table>';
   }
   $('splits').innerHTML=sp+
     splitBlock('Leads by medium','med',MEDS,'fun','lead',cm)+
