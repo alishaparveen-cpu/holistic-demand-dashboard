@@ -69,8 +69,8 @@ CITY_ALIAS = {'Thane West': 'Thane'}
 
 def values(pairs, c1, c2):
     return ' UNION ALL '.join(f"SELECT '{a}' AS {c1}, '{b}' AS {c2}" for a, b in pairs)
-def gmbvalues():   # number -> (city, locality)
-    return ' UNION ALL '.join(f"SELECT '{n}' AS num, '{NUM_CITY[n]}' AS city, '{NUM_LOC[n]}' AS locality" for n in NUM_CITY)
+def gmbvalues():   # number -> (city, locality). Empty locality (city-level Google line in a multi-clinic city) → NULL so the number PINS the city but leaves the clinic to the AI-audit (cai.locality); single-clinic cities keep their one clinic.
+    return ' UNION ALL '.join(f"SELECT '{n}' AS num, '{NUM_CITY[n]}' AS city, {(chr(39)+NUM_LOC[n]+chr(39)) if NUM_LOC[n] else 'NULL'} AS locality" for n in NUM_CITY)
 
 SQL = """
 WITH gmbnum AS (
