@@ -32,8 +32,9 @@ CHANNELS = ['GMB', 'Google Ads', 'Meta', 'Practo', 'Organic', 'Organic · Blog',
 
 # number -> canonical city (from the GMB map) ; and URL/AI token -> canonical city
 GMAP = json.load(open(os.path.join(ROOT, 'data_gmb_number_clinic.json')))
-NUM_CITY = {num: clinic.split('|')[0] for num, clinic in GMAP.items() if '|' in clinic}
-NUM_LOC = {num: clinic.split('|')[1] for num, clinic in GMAP.items() if '|' in clinic}   # number -> clinic locality
+# exclude the 'Practo Online' pseudo-clinic from the number map (e.g. 8071176846) — it's telehealth, not a physical clinic/city; else those inbound calls resolve to a fake 'Practo Online' city
+NUM_CITY = {num: clinic.split('|')[0] for num, clinic in GMAP.items() if '|' in clinic and clinic.split('|')[0] != 'Practo Online'}
+NUM_LOC = {num: clinic.split('|')[1] for num, clinic in GMAP.items() if '|' in clinic and clinic.split('|')[0] != 'Practo Online'}   # number -> clinic locality
 CANON = sorted({c for c in NUM_CITY.values()})
 # token (lowercase, hyphenated) -> canonical, plus common URL aliases
 CITYMAP = {}
@@ -142,6 +143,21 @@ lead_attr AS (
       gn.locality,
       cai.locality
     ) AS locality,
+    CASE   -- which signal set the CLINIC (locality) — mirrors the COALESCE order above
+      WHEN LOWER(COALESCE(l.utm_source,''))='practo' AND plc.locality IS NOT NULL THEN 'practo'
+      WHEN gs.locality IS NOT NULL THEN 'gmb-web'
+      WHEN gn.locality IS NOT NULL THEN 'gmb-call'
+      WHEN cai.locality IS NOT NULL THEN 'ai-audit' END AS loc_src,
+    CASE   -- which signal set the CITY (for leads with no clinic) — mirrors the city COALESCE order
+      WHEN LOWER(COALESCE(l.utm_source,''))='practo' AND plc.city IS NOT NULL THEN 'practo'
+      WHEN gs.city IS NOT NULL THEN 'gmb-web'
+      WHEN gn.city IS NOT NULL THEN 'gmb-call'
+      WHEN tn.city IS NOT NULL THEN 'territory'
+      WHEN cai.city IS NOT NULL THEN 'ai-audit'
+      WHEN ucm.city IS NOT NULL THEN 'url'
+      WHEN ucm2.city IS NOT NULL THEN 'url'
+      WHEN tc.city IS NOT NULL THEN 'campaign'
+      WHEN lcb.city IS NOT NULL THEN 'city-backfill' END AS city_src,
     CASE
       WHEN LOWER(COALESCE(l.utm_source,'')) IN ('gmb','googlelisting','google listing','google_listing') THEN 'GMB'
       WHEN LOWER(COALESCE(l.utm_source,''))='practo' THEN 'Practo'
@@ -260,8 +276,23 @@ lead_diag AS (   -- CATEGORY BACKFILL: a lead's completed consult carries a clin
   ) dg ON dg.appointment_id=a.id AND dg.dcat IS NOT NULL
   WHERE a.deleted_at IS NULL AND p.lead_id IS NOT NULL
   GROUP BY p.lead_id
+),
+lead_bookclinic AS (   -- BOOKING BACKFILL: the physical clinic where the lead's patient booked its EARLIEST OFFLINE SC. Ground truth — they showed up there → recover clinic (+ its city) for leads with no marketing clinic, shrinking the 'not attributed' bucket. Online-only bookers get NULL (no physical clinic).
+  SELECT lid, bk_city, bk_loc FROM (
+    SELECT p.lead_id AS lid, COALESCE(cm.city, INITCAP(loc.city)) AS bk_city, loc.locality AS bk_loc,
+           ROW_NUMBER() OVER (PARTITION BY p.lead_id ORDER BY a.start_time ASC) rn
+    FROM allo_consultations.appointments a
+    JOIN allo_consultations.types t ON a.type_id=t.id AND t.name='Screening Call'
+    JOIN allo_persons.patient p ON p.id=a.patient_id
+    JOIN allo_health.locations loc ON loc.id=a.location_id AND loc.deleted_at IS NULL AND loc.code <> 'PRACTO'
+    LEFT JOIN citymap cm ON cm.tok = LOWER(loc.city)
+    WHERE a.deleted_at IS NULL AND p.lead_id IS NOT NULL
+      AND a.location_id NOT IN ('c7d8c9d2-f389-4e8f-a260-71110195b83f','ffe8d849-3099-48fe-a2df-e324c4befe56')   -- offline physical clinics only
+      AND loc.locality IS NOT NULL AND loc.locality <> '' AND LOWER(loc.locality) <> 'online'
+  ) q WHERE rn=1
 )
-SELECT COALESCE(la.city,'— no city · online / untracked') AS city, COALESCE(la.locality,'') AS locality, la.channel, la.medium, la.number, la.campaign, la.url, la.relevance, la.intent, la.strength,
+SELECT CASE WHEN (la.locality IS NULL OR la.locality='') AND bkc.bk_loc IS NOT NULL THEN bkc.bk_city ELSE COALESCE(la.city,'— no city · online / untracked') END AS city,
+  CASE WHEN (la.locality IS NULL OR la.locality='') AND bkc.bk_loc IS NOT NULL THEN bkc.bk_loc ELSE COALESCE(la.locality,'') END AS locality, la.channel, la.medium, la.number, la.campaign, la.url, la.relevance, la.intent, la.strength,
   -- CATEGORY WATERFALL: 1) campaign name (web/WA utm token) → 2) AI call audit → 3) done diagnosis → else uncategorized.
   CASE WHEN la.campcat IS NOT NULL THEN la.campcat                                                     -- 1) campaign
        WHEN la.category IN ('na','unknown','Other') AND ld.dcat IS NOT NULL THEN ld.dcat              -- 3) done diagnosis (backfills what audit couldn't)
@@ -280,14 +311,19 @@ SELECT COALESCE(la.city,'— no city · online / untracked') AS city, COALESCE(l
   CASE WHEN lb.any_off=1 THEN 'offline' WHEN lb.any_onl=1 THEN 'online' ELSE 'none' END AS bkseg,   -- where the booked lead booked (offline priority)
   CASE WHEN lb.did_done=1 THEN 'done' ELSE 'notdone' END AS doneq,      -- the lead's patient completed an SC
   CASE WHEN lc.oncall=1 THEN 'y' ELSE 'n' END AS oncall,                -- connected on a call? (lead OR patient phone in exotel inbound) — independent of medium/source
+  CASE   -- ATTRIBUTION REASON: how the clinic/city was decided. Priority: booked-at-clinic > GMB > AI-audit > campaign (mirrors category catsrc)
+    WHEN (la.locality IS NULL OR la.locality='') AND bkc.bk_loc IS NOT NULL THEN 'booked'   -- ground truth: booked an offline SC there
+    WHEN la.locality IS NOT NULL AND la.locality<>'' THEN la.loc_src                          -- clinic from marketing: gmb-call / gmb-web / practo / ai-audit
+    ELSE COALESCE(la.city_src,'none') END AS asrc,                                            -- no clinic → city-level reason (territory / campaign / url / city-backfill) or none
   la.created, COUNT(DISTINCT la.id) AS n
 FROM lead_attr la
   JOIN lead_pat lp ON lp.lid = la.id                                    -- verified-only (drops the ~1% unverified; 0 bookings among them)
   LEFT JOIN lead_book lb ON lb.lid = la.id
+  LEFT JOIN lead_bookclinic bkc ON bkc.lid = la.id                      -- booking backfill: clinic they actually booked at
   LEFT JOIN lead_conn lc ON lc.id = la.id
   LEFT JOIN lead_diag ld ON ld.lid = la.id
 WHERE la.channel IS NOT NULL AND la.ph <> ''
-GROUP BY 1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18 ORDER BY 1,3;
+GROUP BY 1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19 ORDER BY 1,3;
 """
 
 def run(sql, tries=4):
@@ -316,9 +352,9 @@ def main():
     rows = run(sql)
     cube = defaultdict(lambda: defaultdict(lambda: {'w': [0]*N, 'd': [0]*ND}))   # city -> key -> {weekly(27), daily(recent 8wk)}
     for r in rows:
-        if len(r) < 19:
+        if len(r) < 20:
             continue
-        city, loc, ch, md, num, campaign, url, rel, intent, strength, cat, catsrc, status, vf, bkseg, doneq, oncall, created, n = r[:19]
+        city, loc, ch, md, num, campaign, url, rel, intent, strength, cat, catsrc, status, vf, bkseg, doneq, oncall, asrc, created, n = r[:20]
         if ch not in CHANNELS:
             continue
         city = CITY_ALIAS.get(city, city)   # locality-name cities → their real city (e.g. 'Thane West' → 'Thane')
@@ -331,7 +367,7 @@ def main():
         except Exception:
             continue
         n = int(n)
-        acc = cube[city][(loc, ch, md, num, campaign, url, rel, intent, strength, cat, catsrc, status, vf, bkseg, doneq, oncall)]
+        acc = cube[city][(loc, ch, md, num, campaign, url, rel, intent, strength, cat, catsrc, status, vf, bkseg, doneq, oncall, asrc)]
         if wkm in WI:
             acc['w'][WI[wkm]] += n
         if created in DI:
@@ -341,8 +377,8 @@ def main():
                      'note': 'Attributable leads by CITY. Each cell has weekly w[] (26 wks, aligned with bookings) + daily d[] '
                              '(recent 8 wks incl. the current partial week, for day-of-week / week-to-date comparison).'}}
     for city, cells in cube.items():
-        out[city] = {'cells': [{'loc': loc, 'ch': ch, 'md': md, 'num': num, 'cmp': cmp, 'url': url, 'rel': rel, 'int': it, 'istr': istr, 'cat': cat, 'csrc': csrc, 'bk': st, 'vf': vf, 'bkseg': seg, 'dq': dq, 'oc': oc, 'w': v['w'], 'd': v['d']}
-                               for (loc, ch, md, num, cmp, url, rel, it, istr, cat, csrc, st, vf, seg, dq, oc), v in cells.items()]}
+        out[city] = {'cells': [{'loc': loc, 'ch': ch, 'md': md, 'num': num, 'cmp': cmp, 'url': url, 'rel': rel, 'int': it, 'istr': istr, 'cat': cat, 'csrc': csrc, 'bk': st, 'vf': vf, 'bkseg': seg, 'dq': dq, 'oc': oc, 'asrc': asrc, 'w': v['w'], 'd': v['d']}
+                               for (loc, ch, md, num, cmp, url, rel, it, istr, cat, csrc, st, vf, seg, dq, oc, asrc), v in cells.items()]}
     json.dump(out, open(os.path.join(ROOT, 'data_leads_city.json'), 'w'), separators=(',', ':'))
     n8 = min(8, N)
     for city in sorted(cube, key=lambda c: -sum(sum(v['w'][:n8]) for v in cube[c].values())):

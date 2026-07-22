@@ -442,7 +442,7 @@
       <div class="imctlrow">
         <label class="imfilt" title="colour a stage RED when it drops at least this much"><i class="rag r"></i> red ≥ <input id="imRed" type="number" value="15" min="1" max="99" style="width:38px">%</label>
         <label class="imfilt" title="ORANGE at this drop"><i class="rag o"></i> orange ≥ <input id="imOrange" type="number" value="5" min="1" max="98" style="width:38px">%</label>
-        <label class="imfilt" title="hide clinics whose Bookings ‘now’ is below this (removes tiny, noisy clinics)">hide &lt; <input id="imMat" type="number" value="0" min="0" step="1" style="width:44px"> bookings</label>
+        <label class="imfilt" title="hide clinics whose Bookings ‘now’ is below this (removes tiny, noisy clinics)">hide &lt; <input id="imMat" type="number" value="1" min="0" step="1" style="width:44px"> bookings</label>
         <span id="imCount" class="imclab" style="color:var(--accent)"></span>
         <button class="imclrall" id="imClrAll" title="clear all colour conditions">✕ clear colours</button>
       </div>
@@ -508,6 +508,7 @@ const DIMS={
   medium:{label:'Medium', field:'medium', values:[{k:'call',l:'Call (inbound)'},{k:'outbound',l:'Outbound (L2C called)'},{k:'web',l:'Web'},{k:'blog',l:'Blog (content)'},{k:'wa_gmb',l:'WhatsApp · GMB'},{k:'wa_org',l:'WhatsApp · organic'},{k:'wa_outbound',l:'WhatsApp · outbound'},{k:'book',l:'Practo book'},{k:'walkin',l:'Walk-in'},{k:'other',l:'Other / untagged'},{k:'na',l:'— online (no medium)'}], color:v=>MODEC[v]||'var(--other)'},   // WhatsApp = GMB / organic / outbound; blog = organic content-marketing; 'na' = online SC (channel-only)
   category:{label:'Category (campaign→call→done-dx)', field:'category', values:[{k:'STI'},{k:'SH'},{k:'MH'},{k:'Other'},{k:'na',l:'— uncategorized'},{k:'unknown',l:'— uncategorized'}], color:v=>CAT_C[v]||'var(--other)'},   // 3-tier waterfall: web/utm campaign token → AI call audit → done clinical diagnosis → uncategorized
   catsrc:{label:'Category source (how decided)', field:'catsrc', values:[{k:'campaign',l:'① Campaign (web utm token)'},{k:'audit',l:'② AI call audit'},{k:'done-dx',l:'③ Done diagnosis'},{k:'none',l:'— uncategorized'}], color:v=>({campaign:'#4E73C4',audit:'#2C6CAE','done-dx':'#2E7D5B',none:'#c7ccd4'})[v]||'#c7ccd4'},
+  asrc:{label:'Attribution reason (how clinic/city decided)', field:'asrc', values:[{k:'booked',l:'✔ Booked at clinic (ground truth)'},{k:'gmb-call',l:'GMB call — dialed clinic number'},{k:'gmb-web',l:'GMB web — clinic listing'},{k:'practo',l:'Practo location code'},{k:'ai-audit',l:'AI call audit — locality'},{k:'territory',l:'Territory — city phone line'},{k:'campaign',l:'Google campaign city'},{k:'url',l:'Landing-page city'},{k:'city-backfill',l:'Locality → city backfill'},{k:'none',l:'— not attributed'}], color:v=>({'booked':'#2E7D5B','gmb-call':'#2C6CAE','gmb-web':'#4E73C4','practo':'#7C5CBF','ai-audit':'#2AA198','territory':'#B58900','campaign':'#6C71C4','url':'#859900','city-backfill':'#93A1A1','none':'#c7ccd4'})[v]||'#c7ccd4'},
   campaign:{label:'Campaign (paid)', field:'campaign', values:[], color:v=>v==='na'?CAT_C.na:'#4E73C4'},   // values built per-clinic at load
 };
 DIMS.status={label:'Booked?', field:'status', values:[{k:'booked',l:'Booked an SC'},{k:'notbooked',l:'Did NOT book'}], color:v=>v==='booked'?'#2E7D5B':'#B8503C'};   // leads-mode only
@@ -610,7 +611,7 @@ function buildCells(node){
 function buildLeadCells(node){   // leads cube: channel x medium x number x url x booked-status
   const bs=BOOKED_SET[BOOKWIN]||BOOKED_SET.ever;   // booked = lag bucket within the chosen window
   return (node.cells||[]).map(c=>({channel:(window.LeadsCube?window.LeadsCube.channelOf(c.ch):(c.ch==='Google'?'Google Ads':c.ch)),medium:(c.md==='whatsapp'?'wa_org':c.md),status:bs.has(c.bk)?'booked':'notbooked',bkw0:BOOKED_SET.week.has(c.bk),
-    num:c.num||'',url:c.url||'',relevance:c.rel||'unknown',intent:c.int||(c.oc==='y'?'not_audited':'no_call'),strength:c.istr||(c.oc==='y'?'not_audited':'no_call'),category:c.cat||'na',catsrc:c.csrc||'none',verified:c.vf==='y'?'verified':'unverified',doneq:c.dq==='done'?'done':'notdone',oncall:c.oc==='y'?'yes':'no',bkseg:c.bkseg||'none',loc:c.loc||'',city:c.city||'',citygroup:(c.city&&c.city.indexOf('— no city')!==0)?'attr':'nocity',_on:((c.city||'').indexOf('— no city')===0),campaign:c.cmp||'',arr:c.w,day:c.d||null}));   // _on = online / untracked (no-city bucket); verified = phone matched an allo_persons.patient (patient_id created); day[] = recent-8wk daily
+    num:c.num||'',url:c.url||'',relevance:c.rel||'unknown',intent:c.int||(c.oc==='y'?'not_audited':'no_call'),strength:c.istr||(c.oc==='y'?'not_audited':'no_call'),category:c.cat||'na',catsrc:c.csrc||'none',verified:c.vf==='y'?'verified':'unverified',doneq:c.dq==='done'?'done':'notdone',oncall:c.oc==='y'?'yes':'no',bkseg:c.bkseg||'none',loc:c.loc||'',city:c.city||'',citygroup:(c.city&&c.city.indexOf('— no city')!==0)?'attr':'nocity',_on:((c.city||'').indexOf('— no city')===0),campaign:c.cmp||'',asrc:c.asrc||'none',arr:c.w,day:c.d||null}));   // _on = online / untracked (no-city bucket); verified = phone matched an allo_persons.patient (patient_id created); day[] = recent-8wk daily; asrc = attribution reason (how clinic/city decided)
 }
 function total(cells){return sumT(weekArr(cells));}
 function cellPass(c,P){if(P.mode!=='leads'&&SEG!=='both'&&((SEG==='online')!==!!c._on))return false;return P.dims.every(dk=>{if(dk==='campaign')return !P.sel.campaign.size||P.sel.campaign.has(c.campaign);return P.sel[dk].has(c[DIMS[dk].field]);});}   // leads ignore Offline/Online — a lead can book anywhere
@@ -619,7 +620,7 @@ function cellPass(c,P){if(P.mode!=='leads'&&SEG!=='both'&&((SEG==='online')!==!!
 const $=id=>document.getElementById(id);
 function makeP(cfg){const P={mode:cfg.mode,dims:cfg.dims,order:[...cfg.order],build:cfg.build,hero:cfg.hero,data:null,cells:[],open:{},sel:{},present:{},sort:{key:null,dir:'desc'},els:cfg.els};
   P.dims.forEach(dk=>{P.sel[dk]=new Set(DIMS[dk].values.map(v=>v.k));});return P;}
-const PL=makeP({mode:'leads',dims:['citygroup','city','clinic','channel','medium','leadcamp','oncall','intent','strength','category','catsrc','status','doneq'],order:['channel','medium'],build:buildLeadCells,hero:'attributable leads',
+const PL=makeP({mode:'leads',dims:['citygroup','city','clinic','channel','medium','leadcamp','oncall','intent','strength','category','catsrc','asrc','status','doneq'],order:['channel','medium'],build:buildLeadCells,hero:'attributable leads',
   els:{flow:$('flowL'),bar:$('barL'),heroN:$('heroNL'),heroL:$('heroLL'),hHdr:$('hHdrL'),hRight:$('hRightL')}});
 const PB=makeP({mode:'bookings',dims:['seg','city','clinic','brank','relapse','channel','maturity','medium','category','catsrc','campaign'],order:['seg','maturity','channel','medium'],build:buildCells,hero:'SC bookings',   // default: Segment → Lead maturity → (geo City) → Source → Medium; Repeat/relapse + booking rank + call category + campaign are opt-in ghosts
   els:{flow:$('flowB'),bar:$('barB'),heroN:$('heroNB'),heroL:$('heroLB'),hHdr:$('hHdrB'),hRight:$('hRightB')}});
@@ -1434,7 +1435,7 @@ function renderValue(units){units=units||opsUnits();const flow=document.getEleme
     opsFunnelDrill(flow,fr,layers,0,15,'val',cfg,opsDv(sumRecF(recs,primary.field||'done')));}}
 // ===== 📊 Individual-metric RAG diagnostic — metric-first grid over the funnel cubes, recursive breakdown, colour = drop severity vs the Δ baseline =====
 // ===== Individual-metric v2 — CROSS-FUNNEL RAG matrix: many metrics (columns) × one breakdown (rows), so a drop is traceable Leads→Bookings→Done→Value on one screen =====
-let VIEWM='funnel', IM_SEL=['leads','bookings','netsc','b2d','done','revenue'], IM_ROWS=['city'], IM_OPEN={}, IM_MAT=0, IM_SORT='drop', IM_RAG_L={r:true,o:true,y:true,g:true}, IM_RAG_B={r:true,o:true,y:true,g:true}, imRowDrag=null;
+let VIEWM='funnel', IM_SEL=['leads','bookings','netsc','b2d','done','revenue'], IM_ROWS=['city'], IM_OPEN={}, IM_MAT=1, IM_SORT='drop', IM_RAG_L={r:true,o:true,y:true,g:true}, IM_RAG_B={r:true,o:true,y:true,g:true}, imRowDrag=null;
 let IM_COL_SORT={sk:null,dir:'desc'};   // column sort: click a stage header to sort rows by that metric (now value); click again to flip; third click resets to default drop sort
 let IM_RED=15, IM_ORANGE=5;   // editable RAG thresholds (% drop) — user-customisable (the old "materiality" was really this)
 const IM_LEADSIDE=new Set(['leads','bookedleads','bookrate','lbrate']);   // leads-side metrics (for the split Leads/Book colour filter)
@@ -2195,6 +2196,8 @@ Promise.all([
   initDaily((ldc&&ldc._meta)||(ld&&ld._meta));   // day-of-week axis (recent 8 wks incl. current partial week)
   {const ds=document.getElementById('dowseg');if(ds)ds.style.display='none';}   // day chips hidden by default — only shown under the "week-to-date" view (keeps the top clean)
   // ② is reconciled to ops at DISPLAY time (scope-aware, in loadClinic) so it ties to the sheet at clinic/city/national — not baked here.
+  // Thane is a Mumbai locality clinic (bookings cube = Mumbai|Thane) → on this DEMAND view fold Thane leads into Mumbai as the Thane clinic so they reconcile with the Mumbai|Thane bookings. (The Google-Ads Compose page keeps Thane standalone for campaign geo.)
+  if(ldc && ldc['Thane']){ ldc['Mumbai']=ldc['Mumbai']||{cells:[]}; ldc['Thane'].cells.forEach(c=>{ if(!c.loc)c.loc='Thane'; ldc['Mumbai'].cells.push(c); }); delete ldc['Thane']; }
   const cityLeads=rerouteCityLeads(ldc||{_meta:{weeks:WEEKS}}, bk);   // fix AI-mis-tagged city (Bangalore showing Kondapur/Kothrud/Thane etc) → re-route by locality
   DATASETS.clinic={leads:tagCells(ld||{_meta:{weeks:WEEKS}}), bk:tagCells(bk)};   // tag city/loc so clinic-scope cells survive the phantom-filtered City dim
   DATASETS.city={leads:cityLeads, bk:aggBkByCity(bk)};
