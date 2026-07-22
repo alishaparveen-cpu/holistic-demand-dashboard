@@ -14,13 +14,16 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 REPORTS = os.path.expanduser('~/Downloads/claude-skills/marketing/google-ads/reports/funnel')
 _LOSTIS_PATH = os.path.join(ROOT, 'data_lost_is.json')
 LOSTIS = json.load(open(_LOSTIS_PATH)) if os.path.exists(_LOSTIS_PATH) else {}
-def add_lost(fn, r):   # attach rank/budget lost-impression counts (= eligible impr × lost-IS share) to an acq row
+_QS_PATH = os.path.join(ROOT, 'data_quality_score.json')
+QS = json.load(open(_QS_PATH)) if os.path.exists(_QS_PATH) else {}   # campaign cost-weighted quality score per week
+def add_lost(fn, r):   # attach rank/budget lost-impression counts (= eligible impr × lost-IS share) + quality score to an acq row
     stem = re.sub(r'_(w[1-6])\.md$', '', fn)
     wklabel = WK.get(re.search(r'_(w[1-6])\.md$', fn).group(1)) if re.search(r'_(w[1-6])\.md$', fn) else None
     li = (LOSTIS.get(stem, {}) or {}).get(wklabel, {}) if wklabel else {}
     elig = r.get('elig') or 0
     r['rlis'] = round(elig * (li.get('rank') or 0))
     r['blis'] = round(elig * (li.get('budget') or 0))
+    r['qs'] = (QS.get(stem, {}) or {}).get(wklabel) if wklabel else None
     return r
 WK = {'w1':'Jun 8-14','w2':'Jun 15-21','w3':'Jun 22-28','w4':'Jun 29-Jul 5','w5':'Jul 6-12','w6':'Jul 13-19'}
 WKS = [WK[f'w{i}'] for i in range(1,7)]
@@ -137,7 +140,7 @@ def main():
                   'bid':r.get('bid'),'sp':round(r.get('spend') or 0,1),'impr':round(r.get('impr') or 0),
                   'elig':round(r.get('elig') or 0),'locimpr':round(r.get('locimpr') or 0),
                   'click':round(r.get('click') or 0),'locclick':round(r.get('locclick') or 0),
-                  'rlis':round(r.get('rlis') or 0),'blis':round(r.get('blis') or 0)}
+                  'rlis':round(r.get('rlis') or 0),'blis':round(r.get('blis') or 0),'qs':r.get('qs')}
                  for r in acq.get(city,[])]
         frows = []
         for (c2,ch,med,cat,wk),v in fun.items():
