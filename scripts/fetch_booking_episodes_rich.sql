@@ -106,7 +106,7 @@ joined AS (
       WHEN pf.diag_cat='STI' THEN 'STI'
       WHEN pf.diag_cat='MH' THEN 'MH'
       WHEN pf.diag_cat='Oth' THEN 'Other'
-      ELSE 'na' END AS category,
+      ELSE CASE WHEN cc.ph IS NOT NULL THEN 'unknown' ELSE 'na' END END AS category,   -- uncat split (same as ① leads): the phone had an audited inbound call but no clear category → 'unknown' (call, no category); never a call → 'na' (not a call lead)
     CASE   -- how the category was decided (source tag)
       WHEN REGEXP_INSTR(LOWER(COALESCE(l.utm_campaign,'')),'_(sh|std|sti|mh)(_|$)')>0
            OR (LOWER(COALESCE(l.utm_campaign,'')) SIMILAR TO 't[12]_%' AND (POSITION('exact' IN LOWER(COALESCE(l.utm_campaign,'')))>0 OR POSITION('local' IN LOWER(COALESCE(l.utm_campaign,'')))>0)) THEN 'campaign'
