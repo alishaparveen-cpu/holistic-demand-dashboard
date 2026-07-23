@@ -164,6 +164,9 @@
   .ragchip.on{opacity:1;font-weight:600;color:var(--ink)}
   .frow.imx{display:flex;align-items:stretch;gap:0;border-bottom:1px solid var(--line);min-height:34px;cursor:pointer}
   .frow.imx:hover{background:color-mix(in srgb,var(--accent) 5%,transparent)}
+  .imdgrow .imcell:not(.im-inh){cursor:pointer}
+  .imdgrow.imsrcx{background:color-mix(in srgb,var(--accent) 3%,transparent);min-height:28px}
+  .imdgrow.imsrcx .lbl{font-size:11.5px;color:var(--muted)}.imdgrow.imsrcx .imcell{font-size:11px}
   .frow.imx .chev{flex:0 0 16px;align-self:center}
   .imlbl{flex:0 0 190px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12.5px;font-weight:600;color:var(--ink);align-self:center;padding-right:8px}
   .imx.imxtot .imlbl{font-weight:800}
@@ -439,7 +442,7 @@
   <!-- 📊 Individual-metric RAG diagnostic (metric-first grid, reimagined for the funnel's many layers) -->
   <div id="imSection" style="display:none">
     <div class="imctrl">
-      <span class="imctag"><b>Offline funnel diagnostic</b> <span class="imhint">— each row is a clinic; read it left→right and it IS that clinic's funnel. Under each metric: ↕ sorts clinics by it · the colour dots (🔴🟠🟡🟢) show only clinics that colour · click the name (▾) for layers — stack conditions across metrics (e.g. Bookings 🔴 + Availability 🟢) to find culprits. <b>Follows the scope, clinic-age &amp; Δ-baseline you set in the top bar.</b></span></span>
+      <span class="imctag"><b>Offline funnel diagnostic</b> <span class="imhint">— each row is a clinic; read it left→right and it IS that clinic's funnel. Under each metric: ↕ sorts clinics by it · the colour dots (🔴🟠🟡🟢) show only clinics that colour · click the name (▾) for layers — stack conditions across metrics (e.g. Bookings 🔴 + Availability 🟢) to find culprits. <b>Click any metric number to break THAT metric down by source inline</b> (the 🔍 still plots it over time). <b>Follows the scope, clinic-age &amp; Δ-baseline you set in the top bar.</b></span></span>
       <div class="imctlrow">
         <label class="imfilt" title="colour a stage RED when it drops at least this much"><i class="rag r"></i> red ≥ <input id="imRed" type="number" value="15" min="1" max="99" style="width:38px">%</label>
         <label class="imfilt" title="ORANGE at this drop"><i class="rag o"></i> orange ≥ <input id="imOrange" type="number" value="5" min="1" max="98" style="width:38px">%</label>
@@ -1436,7 +1439,7 @@ function renderValue(units){units=units||opsUnits();const flow=document.getEleme
     opsFunnelDrill(flow,fr,layers,0,15,'val',cfg,opsDv(sumRecF(recs,primary.field||'done')));}}
 // ===== 📊 Individual-metric RAG diagnostic — metric-first grid over the funnel cubes, recursive breakdown, colour = drop severity vs the Δ baseline =====
 // ===== Individual-metric v2 — CROSS-FUNNEL RAG matrix: many metrics (columns) × one breakdown (rows), so a drop is traceable Leads→Bookings→Done→Value on one screen =====
-let VIEWM='funnel', IM_SEL=['leads','bookings','netsc','b2d','done','revenue'], IM_ROWS=['city'], IM_OPEN={}, IM_MAT=1, IM_SORT='drop', IM_RAG_L={r:true,o:true,y:true,g:true}, IM_RAG_B={r:true,o:true,y:true,g:true}, imRowDrag=null;
+let VIEWM='funnel', IM_SEL=['leads','bookings','netsc','b2d','done','revenue'], IM_ROWS=['city'], IM_OPEN={}, IM_CELLDRILL={}, IM_DRILLDIM='channel', IM_MAT=1, IM_SORT='drop', IM_RAG_L={r:true,o:true,y:true,g:true}, IM_RAG_B={r:true,o:true,y:true,g:true}, imRowDrag=null;
 let IM_COL_SORT={sk:null,dir:'desc'};   // column sort: click a stage header to sort rows by that metric (now value); click again to flip; third click resets to default drop sort
 let IM_RED=15, IM_ORANGE=5;   // editable RAG thresholds (% drop) — user-customisable (the old "materiality" was really this)
 const IM_LEADSIDE=new Set(['leads','bookedleads','bookrate','lbrate']);   // leads-side metrics (for the split Leads/Book colour filter)
@@ -1794,8 +1797,21 @@ function imRender(){const sec=document.getElementById('imSection');if(!sec||sec.
     const row=document.createElement('div');row.className='imdgrow'+(hasKids?' clk':'');row.style.paddingLeft=(10+depth*15)+'px';
     row.innerHTML=`<span class="imchev">${hasKids?(op?'▾':'▶'):''}</span><span class="lbl"><span class="dot" style="background:${depth?'#9aa3b0':'#7C5CBF'}"></span>${label}</span>`+VIS.map(sk=>cellHTML(cells[sk],sk)).join('');
     const title=[ent.city,ent.loc,ent.doctor].filter(Boolean).join(' · ')+(cutPath.length?' › '+cutPath.map(pc=>(IM_NEST_DEFS[pc.dim].vals.find(v=>v[0]===pc.val)||[])[1]||pc.val).join(' › '):'');
-    row.onclick=(e)=>{const cell=e.target.closest('.imcell');if(cell&&!cell.classList.contains('im-inh')){openChart(title+' — '+imCfgLabel(cell.dataset.sk),cells[cell.dataset.sk].ser,STAGECOL[cell.dataset.sk]||'#2E7D5B');return;}if(hasKids){IM_OPEN[key]=!IM_OPEN[key];imRender();}};
+    row.onclick=(e)=>{const zoom=e.target.closest('.imz'),cell=e.target.closest('.imcell');
+      if(zoom&&cell){openChart(title+' — '+imCfgLabel(cell.dataset.sk),cells[cell.dataset.sk].ser,STAGECOL[cell.dataset.sk]||'#2E7D5B');return;}   // magnifier = plot over time
+      if(cell&&!cell.classList.contains('im-inh')){const dk=key+'|'+cell.dataset.sk;IM_CELLDRILL[dk]?delete IM_CELLDRILL[dk]:IM_CELLDRILL[dk]=1;imRender();return;}   // cell body = drill THIS metric by source, inline
+      if(hasKids){IM_OPEN[key]=!IM_OPEN[key];imRender();}};
     grid.appendChild(row);
+    // inline per-cell source drill: for each drilled metric, break it down by source right under the row
+    VIS.forEach(sk=>{if(!IM_CELLDRILL[key+'|'+sk])return;
+      const fld=(IM_NEST_DEFS[IM_DRILLDIM].field||{})[sk];
+      if(!fld){const nr=document.createElement('div');nr.className='imdgrow imsrcx';nr.style.paddingLeft=(28+depth*15)+'px';nr.innerHTML=`<span class="lbl" style="color:var(--muted);font-size:11px">↳ ${imCfgLabel(sk)} doesn’t split by ${IM_NEST_DEFS[IM_DRILLDIM].lab.toLowerCase()}</span>`;grid.appendChild(nr);return;}
+      IM_NEST_DEFS[IM_DRILLDIM].vals.forEach(([sv,sl])=>{const ser=imStageSeries(sk,ent,{[fld]:[sv]});if(!ser.some(x=>x))return;
+        const dp=deltaPct(ser),pct=cells[sk].pct,now=pct?(dp?Math.round(dp.now)+'%':'·'):fmtOps(dp?(dp.now||0):0);
+        const sr=document.createElement('div');sr.className='imdgrow imsrcx';sr.style.paddingLeft=(28+depth*15)+'px';
+        sr.innerHTML=`<span class="imchev"></span><span class="lbl"><span class="dot" style="background:#9aa3b0"></span>↳ ${sl}</span>`+
+          VIS.map(s2=>s2===sk?`<div class="imcell ${({r:'rr',o:'ro',y:'ry',g:'rg'}[dp?imRag(dp):'g'])}">${dp?dp.txt:'—'}<small>${now}</small></div>`:'<div class="imcell rx im-inh">·</div>').join('');
+        grid.appendChild(sr);});});
     if(hasKids&&op){if(nx.type==='clinic')imClinicsInCity(ent.city).filter(loc=>!(IM_NEST_SEL['clinic']&&IM_NEST_SEL['clinic'].has(''+loc))).forEach(loc=>renderNode({city:ent.city,loc},cutPath,key+'/cl:'+loc,depth+1,loc||'— not attributed to a clinic'));
       else IM_NEST_DEFS[nx.dim].vals.filter(([v])=>!(IM_NEST_SEL[nx.dim]&&IM_NEST_SEL[nx.dim].has(''+v))).forEach(([v,l])=>renderNode(ent,cutPath.concat([{dim:nx.dim,val:v}]),key+'/'+nx.dim+':'+v,depth+1,l));}}
   if(grain==='city'){rows.forEach(r=>renderNode(r.c,[],r.c.key,0,r.c.city));}
