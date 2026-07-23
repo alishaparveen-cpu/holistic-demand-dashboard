@@ -1180,7 +1180,8 @@ function opsAvailDoctorRecs(units){const recs=[];(units||opsUnits()).filter(u=>!
     const arr=k=>qdAlign(av[k]||[]);if(!['attend_days','rostered_hrs'].some(k=>arr(k).some(x=>x)))continue;
     recs.push({online:false,city:u.city,loc:u.loc,doctor:name,
       attend:arr('attend_days'),attend_wday:arr('attend_wday'),attend_wend:arr('attend_wend'),
-      rostered:arr('rostered_hrs'),shrink:arr('shrink_hrs'),opened:[],net_sc:[],net_rpt:[],dead:[]});}});
+      rostered:arr('rostered_hrs'),shrink:arr('shrink_hrs'),
+      am:arr('am_hrs'),noon:arr('noon_hrs'),pm:arr('pm_hrs'),opened:[],net_sc:[],net_rpt:[],dead:[]});}});
   return recs;}
 function opsValRecs(units){const recs=[];(units||opsUnits()).forEach(u=>{   // ⑥ record per unit×top-category; a '(no category)' remainder keeps Σ = unit totals (≈0 now that offline+online both carry pur/rev by category).
   const purA=(u.pur||[]).slice(),revA=(u.rev||[]).slice(),doneA=u.al(u.done);
@@ -1241,6 +1242,9 @@ const AVAIL_METS=[
   {f:'attend_wend', df:'attend_wend', lab:'weekend attended',              slab:'weekend attended',     col:'#3E7CB1'},
   {f:'rostered_hrs',df:'rostered',    lab:'Rostered hours',                slab:'Rostered hrs',         col:'#8257C4', stage:true},
   {f:'shrink_hrs',  df:'shrink',      lab:'shrinkage hours',               slab:'shrinkage hrs',        col:'#B8503C'},
+  {f:'am_hrs',      df:'am',          lab:'Morning hrs (< 12pm)',          slab:'Morning hrs',          col:'#E8A33D', docOnly:true, stage:true},
+  {f:'noon_hrs',    df:'noon',        lab:'Afternoon hrs (12–4pm)',        slab:'Afternoon hrs',        col:'#D2743A'},
+  {f:'pm_hrs',      df:'pm',          lab:'Evening hrs (4pm+)',            slab:'Evening hrs',          col:'#5B6BB0'},
   {f:'opened_ash',  df:'opened',      lab:'opened hours (after shrinkage)',slab:'opened hrs (after shrink)',col:'#8257C4', clinicOnly:true},
   {f:'net_sc_hrs_r',df:'net_sc',      lab:'net SC hours',                  slab:'net SC hrs',           col:'#2E7D5B', clinicOnly:true},
   {f:'net_rpt_hrs', df:'net_rpt',     lab:'net Rpt hours',                 slab:'net Rpt hrs',          col:'#6FA34C', clinicOnly:true},
@@ -1252,7 +1256,7 @@ function renderAvail(units){units=units||opsUnits();const flow=document.getEleme
   const A=f=>opsSumU(units,u=>u.avail[f]);
   const useDoc=opsSecLayers('avail').includes('doctor'),docGrain=(SCOPE==='doctor'||useDoc);   // doctor scope OR doctor layer → per-doctor grain (clinic-only metrics drop)
   const shown=AVAIL_METS.filter(m=>!AVAIL_MET_OFF.has(m.f));   // metric picker selection
-  const totalMets=shown.filter(m=>!(SCOPE==='doctor'&&m.clinicOnly));   // totals: at doctor scope the clinic-only metrics are 0/absent
+  const totalMets=shown.filter(m=>!(SCOPE==='doctor'&&m.clinicOnly)&&!(m.docOnly&&!docGrain));   // totals: clinic-only metrics drop at doctor scope; shift-timing (docOnly) shows only at doctor grain
   totalMets.forEach(m=>opsRow(flow,m.lab,A(m.f),m.stage?{stage:true,col:m.col}:{sub:true,col:m.col}));
   if(SCOPE==='doctor'&&shown.some(m=>m.clinicOnly)){const n=document.createElement('div');n.className='frow';n.style.paddingLeft='34px';n.innerHTML='<span class="lbl" style="color:var(--faint);font-size:11.5px">— net SC / net Rpt / opened / dead-time hours are clinic-level only (not split per doctor)</span>';flow.appendChild(n);}
   // City / Clinic / Doctor breakdown (draggable layer bar, all opt-in) + a Metrics ▾ picker for which metrics to show
@@ -1262,13 +1266,13 @@ function renderAvail(units){units=units||opsUnits();const flow=document.getEleme
   const layers=opsSecLayers('avail');
   if(layers.length){const fr=recs.filter(r=>layers.every(dk=>!(OPS_SEL.avail[dk]&&OPS_SEL.avail[dk].has(OPSDIM[dk].get(r)))));
     const hd=document.createElement('div');hd.className='opssub2';hd.style.cssText='margin:10px 0 2px;font-weight:700;color:var(--muted)';hd.textContent='▾ '+layers.map(l=>OPSDIM[l].lab).join(' › ')+' breakdown'+(useDoc?' · per-doctor roster (net SC/opened/dead are clinic-level only)':'');flow.appendChild(hd);
-    let stages=shown.filter(m=>!(docGrain&&m.clinicOnly)).map(m=>({lab:m.slab,f:m.df,col:m.col}));   // drill shows the SELECTED metrics (drop clinic-only at doctor grain)
+    let stages=shown.filter(m=>!(docGrain&&m.clinicOnly)&&!(m.docOnly&&!docGrain)).map(m=>({lab:m.slab,f:m.df,col:m.col}));   // drill shows the SELECTED metrics (drop clinic-only at doctor grain; shift-timing only at doctor grain)
     if(!stages.length)stages=[{lab:'Rostered hrs',f:'rostered',col:'#8257C4'}];
     const cfg={sec:'avail',rerender:renderAvail,stages};
     opsFunnelDrill(flow,fr,layers,0,15,'avail',cfg,opsDv(sumRecF(recs,stages[0].f)));}}
 // Metrics ▾ picker for ③ Availability — choose which roster metrics appear (totals + drill). docGrain hides clinic-only metrics.
 function appendAvailMetricPicker(ll,docGrain){
-  const opts=AVAIL_METS.filter(m=>!(docGrain&&m.clinicOnly)),nsel=opts.filter(m=>!AVAIL_MET_OFF.has(m.f)).length;
+  const opts=AVAIL_METS.filter(m=>!(docGrain&&m.clinicOnly)&&!(m.docOnly&&!docGrain)),nsel=opts.filter(m=>!AVAIL_MET_OFF.has(m.f)).length;
   const chip=document.createElement('div');chip.className='chip';chip.style.marginLeft='12px';
   chip.innerHTML=`<span class="nm">Metrics</span><span class="cnt">${nsel}/${opts.length}</span><span class="cv">▾</span>`;
   const pop=document.createElement('div');pop.className='pop';

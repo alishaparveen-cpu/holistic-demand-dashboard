@@ -24,7 +24,7 @@ def norm(n):
 
 
 def main():
-    rows = run(SQL)   # city, locality, pro_name, week_start, rost_days, rost_wend, rost_wday, att_days, att_wend, att_wday
+    rows = run(SQL)   # city, locality, pro_name, week_start, rost_days, rost_wend, rost_wday, att_days, att_wend, att_wday, opened_hrs, shrink_hrs, am_hrs, noon_hrs, pm_hrs
     weeks = sorted(set(r[3] for r in rows))
     wi = {w: i for i, w in enumerate(weeks)}
     NW = len(weeks)
@@ -39,12 +39,14 @@ def main():
         cl = clinics.setdefault(slug, {})
         d = cl.setdefault(pro, {"active_days": Z(), "wday_days": Z(), "wend_days": Z(),
                                 "attend_days": Z(), "attend_wday": Z(), "attend_wend": Z(),
-                                "rostered_hrs": Z(), "shrink_hrs": Z()})
+                                "rostered_hrs": Z(), "shrink_hrs": Z(),
+                                "am_hrs": Z(), "noon_hrs": Z(), "pm_hrs": Z()})
         gi = lambda k: int(float(r[k])) if len(r) > k and r[k] not in ("", None) else 0
         gf = lambda k: float(r[k]) if len(r) > k and r[k] not in ("", None) else 0.0
         d["active_days"][i] += gi(4); d["wend_days"][i] += gi(5); d["wday_days"][i] += gi(6)
         d["attend_days"][i] += gi(7); d["attend_wend"][i] += gi(8); d["attend_wday"][i] += gi(9)
         d["rostered_hrs"][i] += gf(10); d["shrink_hrs"][i] += gf(11)
+        d["am_hrs"][i] += gf(12); d["noon_hrs"][i] += gf(13); d["pm_hrs"][i] += gf(14)
     out = {"_meta": {"weeks": weeks, "source": "avail_doctor.sql (roster_slots blocks + completed offline consults, per provider)",
                      "note": "active_days=rostered days, attend_days=days worked (>=1 completed offline consult), per doctor per clinic"},
            "clinics": {s: {"by_doctor": v} for s, v in clinics.items()}}

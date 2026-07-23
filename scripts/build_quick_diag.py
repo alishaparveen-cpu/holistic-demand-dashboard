@@ -233,7 +233,8 @@ def avail_doctor_block(slug, dr):
     aw = AVD["_meta"]["weeks"]; g = lambda f: remap(src.get(f, []), aw)
     return {"active_days": g("active_days"), "wday_days": g("wday_days"), "wend_days": g("wend_days"),
             "attend_days": g("attend_days"), "attend_wday": g("attend_wday"), "attend_wend": g("attend_wend"),
-            "rostered_hrs": g("rostered_hrs"), "shrink_hrs": g("shrink_hrs")}
+            "rostered_hrs": g("rostered_hrs"), "shrink_hrs": g("shrink_hrs"),
+            "am_hrs": g("am_hrs"), "noon_hrs": g("noon_hrs"), "pm_hrs": g("pm_hrs")}   # shift-timing split (morning/afternoon/evening bookable hrs)
 
 def doctors_block(bcube, ecube, key, slug=None):
     out = {}

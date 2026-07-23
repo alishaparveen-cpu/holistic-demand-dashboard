@@ -7,6 +7,7 @@ WITH sess AS (
   SELECT b.provider_id, p.name AS pro_name, l.city, l.locality,
     DATE(b.start_time + INTERVAL '5.5 hours') AS dt,
     (b.start_time + INTERVAL '5.5 hours') AS st, (b.end_time + INTERVAL '5.5 hours') AS et,
+    EXTRACT(hour FROM (b.start_time + INTERVAL '5.5 hours')) AS sh,   -- session start hour (IST), for AM/PM shift split
     DATEDIFF(minute, b.start_time, b.end_time) AS mins
   FROM allo_consultations.appointment_blocks b
   JOIN allo_persons.providers p ON b.provider_id=p.id
@@ -26,8 +27,12 @@ shrink AS (SELECT s.dt, s.provider_id, s.city, s.locality,
     SUM(DATEDIFF(minute, GREATEST(se.ss, s.st), LEAST(se.se, s.et))) AS shr_mins
   FROM sess s JOIN shr_exp se ON se.provider_id=s.provider_id AND se.dt=s.dt AND se.ss < s.et AND se.se > s.st
   WHERE GREATEST(se.ss, s.st) < LEAST(se.se, s.et) GROUP BY 1,2,3,4),
-oh AS (SELECT dt, provider_id, pro_name, city, locality, SUM(mins) AS opened_mins FROM sess GROUP BY 1,2,3,4,5),
-oh_shr AS (SELECT o.dt, o.pro_name, o.city, o.locality, o.opened_mins, COALESCE(sh.shr_mins,0) AS shr_mins
+oh AS (SELECT dt, provider_id, pro_name, city, locality, SUM(mins) AS opened_mins,
+    SUM(CASE WHEN sh < 12 THEN mins ELSE 0 END) AS am_mins,               -- morning slots (start < 12:00)
+    SUM(CASE WHEN sh >= 12 AND sh < 16 THEN mins ELSE 0 END) AS noon_mins, -- afternoon slots (12:00–15:59)
+    SUM(CASE WHEN sh >= 16 THEN mins ELSE 0 END) AS pm_mins                -- evening slots (>= 16:00)
+  FROM sess GROUP BY 1,2,3,4,5),
+oh_shr AS (SELECT o.dt, o.pro_name, o.city, o.locality, o.opened_mins, o.am_mins, o.noon_mins, o.pm_mins, COALESCE(sh.shr_mins,0) AS shr_mins
   FROM oh o LEFT JOIN shrink sh ON sh.dt=o.dt AND sh.provider_id=o.provider_id AND sh.city=o.city AND COALESCE(sh.locality,'')=COALESCE(o.locality,'')),
 att AS (
   SELECT DISTINCT DATE(apt.start_time + INTERVAL '5.5 hours') AS dt, p.name AS pro_name, l.city, l.locality
@@ -42,7 +47,8 @@ u AS (
     COALESCE(os.city,a.city) AS city, COALESCE(os.locality,a.locality) AS locality,
     CASE WHEN os.dt IS NOT NULL THEN 1 ELSE 0 END AS rostered,
     CASE WHEN a.dt IS NOT NULL THEN 1 ELSE 0 END AS attended,
-    COALESCE(os.opened_mins,0) AS opened_mins, COALESCE(os.shr_mins,0) AS shr_mins
+    COALESCE(os.opened_mins,0) AS opened_mins, COALESCE(os.shr_mins,0) AS shr_mins,
+    COALESCE(os.am_mins,0) AS am_mins, COALESCE(os.noon_mins,0) AS noon_mins, COALESCE(os.pm_mins,0) AS pm_mins
   FROM oh_shr os FULL OUTER JOIN att a
     ON os.dt=a.dt AND os.pro_name=a.pro_name AND os.city=a.city AND COALESCE(os.locality,'')=COALESCE(a.locality,''))
 SELECT city, locality, pro_name, date_trunc('week', dt)::date AS week_start,
@@ -53,6 +59,9 @@ SELECT city, locality, pro_name, date_trunc('week', dt)::date AS week_start,
   SUM(CASE WHEN EXTRACT(dow FROM dt) IN (0,6) THEN attended ELSE 0 END) AS att_wend,
   SUM(CASE WHEN EXTRACT(dow FROM dt) NOT IN (0,6) THEN attended ELSE 0 END) AS att_wday,
   ROUND(SUM(opened_mins)/60.0, 2) AS opened_hrs,
-  ROUND(SUM(shr_mins)/60.0, 2) AS shrink_hrs
+  ROUND(SUM(shr_mins)/60.0, 2) AS shrink_hrs,
+  ROUND(SUM(am_mins)/60.0, 2) AS am_hrs,        -- morning bookable hours (shift-timing split)
+  ROUND(SUM(noon_mins)/60.0, 2) AS noon_hrs,    -- afternoon bookable hours
+  ROUND(SUM(pm_mins)/60.0, 2) AS pm_hrs         -- evening bookable hours
 FROM u
 GROUP BY 1,2,3,4 ORDER BY 1,2,3,4;
