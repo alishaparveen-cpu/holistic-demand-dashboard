@@ -1243,8 +1243,8 @@ const AVAIL_METS=[
   {f:'rostered_hrs',df:'rostered',    lab:'Rostered hours',                slab:'Rostered hrs',         col:'#8257C4', stage:true},
   {f:'shrink_hrs',  df:'shrink',      lab:'shrinkage hours',               slab:'shrinkage hrs',        col:'#B8503C'},
   {f:'am_hrs',      df:'am',          lab:'Morning hrs (< 12pm)',          slab:'Morning hrs',          col:'#E8A33D', docOnly:true, stage:true},
-  {f:'noon_hrs',    df:'noon',        lab:'Afternoon hrs (12–4pm)',        slab:'Afternoon hrs',        col:'#D2743A'},
-  {f:'pm_hrs',      df:'pm',          lab:'Evening hrs (4pm+)',            slab:'Evening hrs',          col:'#5B6BB0'},
+  {f:'noon_hrs',    df:'noon',        lab:'Afternoon hrs (12–4pm)',        slab:'Afternoon hrs',        col:'#D2743A', docOnly:true},
+  {f:'pm_hrs',      df:'pm',          lab:'Evening hrs (4pm+)',            slab:'Evening hrs',          col:'#5B6BB0', docOnly:true},
   {f:'opened_ash',  df:'opened',      lab:'opened hours (after shrinkage)',slab:'opened hrs (after shrink)',col:'#8257C4', clinicOnly:true},
   {f:'net_sc_hrs_r',df:'net_sc',      lab:'net SC hours',                  slab:'net SC hrs',           col:'#2E7D5B', clinicOnly:true},
   {f:'net_rpt_hrs', df:'net_rpt',     lab:'net Rpt hours',                 slab:'net Rpt hrs',          col:'#6FA34C', clinicOnly:true},
@@ -1256,13 +1256,13 @@ function renderAvail(units){units=units||opsUnits();const flow=document.getEleme
   const A=f=>opsSumU(units,u=>u.avail[f]);
   const useDoc=opsSecLayers('avail').includes('doctor'),docGrain=(SCOPE==='doctor'||useDoc);   // doctor scope OR doctor layer → per-doctor grain (clinic-only metrics drop)
   const shown=AVAIL_METS.filter(m=>!AVAIL_MET_OFF.has(m.f));   // metric picker selection
-  const totalMets=shown.filter(m=>!(SCOPE==='doctor'&&m.clinicOnly)&&!(m.docOnly&&!docGrain));   // totals: clinic-only metrics drop at doctor scope; shift-timing (docOnly) shows only at doctor grain
+  const totalMets=shown.filter(m=>!(SCOPE==='doctor'&&m.clinicOnly)&&!(m.docOnly&&SCOPE!=='doctor'));   // totals: clinic-only metrics drop at doctor scope; shift-timing (docOnly) totals only at doctor SCOPE (clinic-level avail has no am/pm — otherwise it'd read 0; per-doctor drill still shows them everywhere)
   totalMets.forEach(m=>opsRow(flow,m.lab,A(m.f),m.stage?{stage:true,col:m.col}:{sub:true,col:m.col}));
   if(SCOPE==='doctor'&&shown.some(m=>m.clinicOnly)){const n=document.createElement('div');n.className='frow';n.style.paddingLeft='34px';n.innerHTML='<span class="lbl" style="color:var(--faint);font-size:11.5px">— net SC / net Rpt / opened / dead-time hours are clinic-level only (not split per doctor)</span>';flow.appendChild(n);}
   // City / Clinic / Doctor breakdown (draggable layer bar, all opt-in) + a Metrics ▾ picker for which metrics to show
   const ll=document.getElementById('availLayerLbl');
   const recs=useDoc?opsAvailDoctorRecs(units):opsAvailRecs(units);
-  if(ll){opsBar(ll,'avail',recs,renderAvail);appendAvailMetricPicker(ll,docGrain);}
+  if(ll){opsBar(ll,'avail',recs,renderAvail);appendAvailMetricPicker(ll,docGrain);appendAvailQuickCheck(ll,units);}
   const layers=opsSecLayers('avail');
   if(layers.length){const fr=recs.filter(r=>layers.every(dk=>!(OPS_SEL.avail[dk]&&OPS_SEL.avail[dk].has(OPSDIM[dk].get(r)))));
     const hd=document.createElement('div');hd.className='opssub2';hd.style.cssText='margin:10px 0 2px;font-weight:700;color:var(--muted)';hd.textContent='▾ '+layers.map(l=>OPSDIM[l].lab).join(' › ')+' breakdown'+(useDoc?' · per-doctor roster (net SC/opened/dead are clinic-level only)':'');flow.appendChild(hd);
@@ -1282,6 +1282,26 @@ function appendAvailMetricPicker(ll,docGrain){
   pop.querySelectorAll('.pact button').forEach(b=>b.onclick=(e)=>{e.stopPropagation();if(b.dataset.a==='all')opts.forEach(m=>AVAIL_MET_OFF.delete(m.f));else opts.forEach(m=>AVAIL_MET_OFF.add(m.f));renderAvail();});
   pop.querySelectorAll('input').forEach(inp=>inp.onclick=(e)=>{e.stopPropagation();const f=inp.dataset.f;if(inp.checked)AVAIL_MET_OFF.delete(f);else AVAIL_MET_OFF.add(f);renderAvail();});
   ll.appendChild(chip);}
+// Quick "check this clinic" jump: pick a clinic → instantly drill it into per-doctor availability + shift-timing (no manual layer building)
+function appendAvailQuickCheck(ll,units){
+  const clinics=[...new Set((units||[]).filter(u=>!u.online&&u.loc).map(u=>u.loc))].sort();
+  if(clinics.length<2)return;   // only useful when >1 clinic is in scope (city / national)
+  const chip=document.createElement('div');chip.className='chip';chip.style.marginLeft='12px';
+  chip.innerHTML=`<span class="nm">🕐 Check a clinic</span><span class="cv">▾</span>`;
+  const pop=document.createElement('div');pop.className='pop';
+  pop.innerHTML='<div style="font-size:11px;color:var(--muted);padding:5px 9px 3px;max-width:220px">Jump to one clinic’s per-doctor availability &amp; shift timing</div>'+clinics.map(c=>`<label data-loc="${c}" style="cursor:pointer">${c}</label>`).join('');
+  chip.appendChild(pop);
+  chip.onclick=(e)=>{const lab=e.target.closest('label[data-loc]');if(lab){availQuickCheck(lab.dataset.loc);return;}const open=pop.classList.contains('show');document.querySelectorAll('.pop').forEach(p=>p.classList.remove('show'));document.querySelectorAll('.chip').forEach(c=>c.classList.remove('open2'));if(!open){pop.classList.add('show');chip.classList.add('open2');}};
+  ll.appendChild(chip);}
+function availQuickCheck(loc){
+  OPS_ORD.avail=['clinic','doctor'];   // clinic → doctor drill
+  const allClinics=[...new Set(opsUnits().filter(u=>!u.online&&u.loc).map(u=>u.loc))];
+  OPS_SEL.avail.clinic=new Set(allClinics.filter(c=>c!==loc));   // deselect every other clinic → only this one shows
+  OPS_SEL.avail.doctor=new Set();   // all doctors of that clinic
+  ['attend_days','am_hrs','noon_hrs','pm_hrs'].forEach(f=>AVAIL_MET_OFF.delete(f));   // make sure attended-days + shift metrics are visible
+  renderAvail();
+  const sec=document.querySelector('.sech'); // scroll ③ header into view
+  (document.getElementById('availLayerLbl')||document.getElementById('availFlow')).scrollIntoView({block:'start',behavior:'smooth'});}
 let B2D_GRAIN=['patient'];   // which grain layers to show in ④ (toggle chips) — patient by default; slot (+ outcome breakdown) is opt-in
 function renderB2D(units){units=units||opsUnits();const flow=document.getElementById('b2dFlow'),head=document.getElementById('b2dHead');flow.innerHTML='';head.innerHTML=opsHeadHTML('Book → Done · SC');
   const hasSlot=units.some(u=>u.bookedSlots),grains=[['patient','Patient'],['slot','Slot']].filter(([g])=>g==='patient'||hasSlot);
