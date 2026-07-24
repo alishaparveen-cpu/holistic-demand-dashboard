@@ -24,6 +24,14 @@ def MAPS(pid, name='', city=''):
 
 DFS = json.load(open(os.path.join(ROOT, 'data_serp_dfs.json'))) if os.path.exists(os.path.join(ROOT, 'data_serp_dfs.json')) else {}
 _CATS = ('SH', 'STI', 'MH')
+def _nm0(s): return ''.join(ch for ch in str(s).lower() if ch.isalnum())
+# GMB category per competitor NAME from the crawl — used to enrich the SERP grid (grid rows lack category)
+DFS_CATMAP = {}
+for _c in _CATS:
+    for _e in DFS.get(_c, {}).values():
+        for _x in _e.get('competitors', []):
+            if _x.get('name') and _x.get('category'):
+                DFS_CATMAP.setdefault((_c, _nm0(_x['name'])), _x['category'])
 def our_listing(cat, key):
     """Our own Allo Google-Maps listing from the fresh crawl. Rank is category-specific (position in
     THIS category's search); review count/Place ID are the same listing → borrow from any category if the
@@ -200,12 +208,12 @@ PALETTE = ['#2C6CAE', '#7D5BA6', '#2A9D8F', '#C86B9E', '#B8862E', '#C0392B', '#3
 def cat_relevant(cat, name, category):
     """False = tangential (won't be the #1 rival). STI: any lab/clinic counts. MH: must be a real
     mental-health listing (drop dermatology/gynae/ENT/etc. and category-less)."""
-    c = (category or '').lower()
-    if cat == 'MH':
-        if not c: return False
-        if any(k in c for k in MH_DROP): return False                          # off-topic (education/spa/derm/…)
-        return any(k in c for k in MH_SIGNAL) or any(k in c for k in MH_GENERIC)  # must look like MH or a doctor/clinic
-    return True
+    if cat != 'MH': return True
+    s = ((category or '') + ' ' + (name or '')).lower()
+    if any(k in s for k in MH_DROP): return False                       # clearly off-topic (derm/education/spa/…)
+    if any(k in s for k in MH_SIGNAL): return True                      # clearly a mental-health listing
+    if category and not any(k in s for k in MH_GENERIC): return False   # a non-MH category with no MH signal
+    return None                                                        # unknown (e.g. grid rows have no category) → keep
 def build_tax(cube, cat):
     """Dynamic taxonomy for STI/MH: each GMB category is its own type; colours from a palette by frequency."""
     freq = {}
@@ -284,13 +292,18 @@ def _rollup(cat, cube, clinics, citymap):
                                    winrate=round(natwins / max(1, len(allkeys)), 2),
                                    tags=dict(tagcount)))
 
-def build_cat_sh(rows, cube):
-    """SH from our own SERP grid (serp_analyses / data_serp_competitors.tsv) — market-comprehensive,
-    matching the Field Data Dashboard. The #1 rival is the most grid-DOMINANT relevant men's-SH
-    competitor by APPEARANCES (share of local searches it ranks in), which surfaces the real threats
-    (e.g. Dr Gomatthi) and demotes big-review non-competitors (e.g. a general hospital). pathy from the
-    verified files (CID-keyed + name-verified); rank estimate + GMB attached."""
-    cat = 'SH'
+def _type_of(cat, name, category, pid):
+    return (NAME_PATHY.get(_nm(name)) or norm(PATHY.get(pid))) if cat == 'SH' else (category or 'Uncategorised')
+def _rel_of(cat, name, category):
+    return sh_relevant(name, category) if cat == 'SH' else cat_relevant(cat, name, category)
+
+def build_cat_grid(cat, rows, cube):
+    """Build a category from our own SERP grid (serp_analyses / data_serp_competitors.tsv) —
+    market-comprehensive, matching the Field Data Dashboard. The #1 rival is the most grid-DOMINANT
+    relevant competitor by APPEARANCES (share of local searches it ranks in), which surfaces the real
+    threats and demotes big-review non-competitors. Merges the single-point crawl (incl. supplementary
+    treatment/therapy keywords) so keyword-specific rivals aren't lost, and falls back to it for clinics
+    the grid hasn't tracked yet. SH type = pathy; STI/MH type = raw GMB category."""
     byclinic = defaultdict(list)
     for r in rows:
         if r.get('cat', 'SH') != cat: continue
@@ -307,14 +320,24 @@ def build_cat_sh(rows, cube):
             name = r.get('comp_name')
             if not name: continue
             pid = r.get('place_id', '')
-            pathy = NAME_PATHY.get(_nm(name)) or norm(PATHY.get(pid))
             app = int(num(r.get('appearances')))
-            comps_all.append(dict(name=name, pathy=pathy, category=(r.get('category') or None),
+            gcat = r.get('category') or DFS_CATMAP.get((cat, _nm(name)))   # grid lacks category → borrow from crawl by name
+            comps_all.append(dict(name=name, pathy=_type_of(cat, name, gcat, pid), category=gcat,
                 reviews=int(num(r.get('reviews'))), rating=num(r.get('rating')) or None,
                 km=round(num(r['clinic_km']), 1) if r.get('clinic_km') else None,
                 appearances=app, dompct=(round(app / grid_n * 100) if grid_n else None),
                 pos=round(num(r.get('avg_pos')), 1), ads=str(r.get('ever_sponsored', '')).lower() == 'true',
-                rel=sh_relevant(name, r.get('category')), maps=MAPS(pid, name, city)))
+                rel=_rel_of(cat, name, r.get('category')), maps=MAPS(pid, name, city)))
+        # merge single-point crawl competitors (esp. supplementary treatment/therapy keywords) not in the grid
+        seen = {_nm(c['name']) for c in comps_all}
+        for c in DFS.get(cat, {}).get(key, {}).get('competitors', []):
+            if not c.get('name') or _nm(c['name']) in seen: continue
+            seen.add(_nm(c['name']))
+            comps_all.append(dict(name=c['name'], pathy=_type_of(cat, c['name'], c.get('category'), ''),
+                category=(c.get('category') or None), reviews=int(c['reviews']) if c.get('reviews') else 0,
+                rating=c.get('rating'), km=round(c['km'], 1) if c.get('km') is not None else None,
+                appearances=0, dompct=None, pos=c.get('pos'), ads=bool(c.get('is_paid')),
+                rel=_rel_of(cat, c['name'], c.get('category')), maps=MAPS(c.get('place_id'), c['name'], city)))
         if not comps_all: continue
         # #1 rival = most grid-dominant relevant competitor (appearances), reviews as tiebreak
         rel = [c for c in comps_all if c['rel'] is True] or [c for c in comps_all if c['rel'] is not False] or comps_all
@@ -328,25 +351,25 @@ def build_cat_sh(rows, cube):
                             our_maps=MAPS('', f'Allo Health {loc}', city),
                             competitors=comps, tags=tags, verdict=vtext, vkind=vkind, gmb=GMB.get(key))
         citymap[city].append(key)
-    # clinics not yet in the SERP grid (newer) — fall back to the single-point crawl so none are missing
-    for k, e in DFS.get('SH', {}).items():
+    # clinics entirely absent from the SERP grid → build from the single-point crawl so none are missing
+    for k, e in DFS.get(cat, {}).items():
         if k in clinics or '|' not in k or k in CLOSED: continue
         city, loc = k.split('|', 1)
         comps_all = []
         for c in e.get('competitors', []):
             if not c.get('name'): continue
-            comps_all.append(dict(name=c['name'], pathy=(NAME_PATHY.get(_nm(c['name'])) or sh_pathy(c['name'], c.get('category'))),
-                category=c.get('category'), reviews=int(c['reviews']) if c.get('reviews') else 0, rating=c.get('rating'),
-                km=round(c['km'], 1) if c.get('km') is not None else None, appearances=0, pos=c.get('pos'),
-                ads=bool(c.get('is_paid')), rel=sh_relevant(c['name'], c.get('category')), maps=MAPS(c.get('place_id'), c['name'], city)))
+            comps_all.append(dict(name=c['name'], pathy=_type_of(cat, c['name'], c.get('category'), ''),
+                category=(c.get('category') or None), reviews=int(c['reviews']) if c.get('reviews') else 0, rating=c.get('rating'),
+                km=round(c['km'], 1) if c.get('km') is not None else None, appearances=0, dompct=None, pos=c.get('pos'),
+                ads=bool(c.get('is_paid')), rel=_rel_of(cat, c['name'], c.get('category')), maps=MAPS(c.get('place_id'), c['name'], city)))
         if not comps_all: continue
         rel = [c for c in comps_all if c['rel'] is True] or [c for c in comps_all if c['rel'] is not False] or comps_all
         rel.sort(key=lambda c: -c['reviews'])
         comps = [rel[0]] + sorted([c for c in comps_all if c is not rel[0]], key=lambda c: -c['reviews'])[:6]
         top = comps[0]
-        ol = our_listing('SH', k); our = ol['reviews'] if ol and ol['reviews'] is not None else 0
-        rank_est = RANK_EST.get(('SH', _nm(city), _nm(loc)))
-        tags = why_tags(our, rank_est, top, 'SH'); vtext, vkind = clinic_verdict(our, rank_est, top, tags, 'SH')
+        ol = our_listing(cat, k); our = ol['reviews'] if ol and ol['reviews'] is not None else 0
+        rank_est = RANK_EST.get((cat, _nm(city), _nm(loc)))
+        tags = why_tags(our, rank_est, top, cat); vtext, vkind = clinic_verdict(our, rank_est, top, tags, cat)
         clinics[k] = dict(city=city, loc=loc, our_reviews=our, our_rank=rank_est or 0, rank_est=rank_est,
                           our_maps=MAPS(ol['pid'] if ol else '', f'Allo Health {loc}', city),
                           competitors=comps, tags=tags, verdict=vtext, vkind=vkind, gmb=GMB.get(k))
@@ -392,10 +415,9 @@ def build_cat_dfs(cat, cube):
 def main():
     rows = list(csv.DictReader(open(os.path.join(ROOT, 'data_serp_competitors.tsv')), delimiter='\t'))
     cube = {'_meta': {'built': str(TODAY), 'cats': [], 'tax': TAX}}
-    build_cat_sh(rows, cube); cube['_meta']['cats'].append('SH')
-    for cat in ('STI', 'MH'):
-        if DFS.get(cat):
-            build_cat_dfs(cat, cube); cube['_meta']['cats'].append(cat)
+    for cat in ('SH', 'STI', 'MH'):
+        build_cat_grid(cat, rows, cube); cube['_meta']['cats'].append(cat)
+        if cat != 'SH':
             cube['_meta']['tax'][cat] = build_tax(cube, cat)   # STI/MH type = raw GMB category (dynamic)
     json.dump(cube, open(os.path.join(ROOT, 'data_competition.json'), 'w'), separators=(',', ':'))
     print('wrote data_competition.json · cats', cube['_meta']['cats'],
