@@ -122,10 +122,10 @@ fetch('data_competition.json').then(r=>r.json()).then(d=>{CUBE=d;TAX=d._meta.tax
   document.getElementById('tabs').innerHTML=d._meta.cats.map(c=>`<div class="tab" data-c="${c}">${CATLBL[c]||c}</div>`).join('');
   document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{CAT=t.dataset.c;render();});
   render();});
-let FIL={out:[],type:[],rev:[],rrev:[]},FILX={out:[],type:[],rev:[],rrev:[]},SCOPED=[];   // FIL=include, FILX=exclude
+let FIL={out:[],type:[],rev:[],rrev:[],win:[]},FILX={out:[],type:[],rev:[],rrev:[],win:[]},SCOPED=[];   // FIL=include, FILX=exclude
 function render(){
   document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('on',t.dataset.c===CAT));
-  FIL={out:[],type:[],rev:[],rrev:[]};FILX={out:[],type:[],rev:[],rrev:[]};SORT={col:null,dir:1};
+  FIL={out:[],type:[],rev:[],rrev:[],win:[]};FILX={out:[],type:[],rev:[],rrev:[],win:[]};SORT={col:null,dir:1};
   const C=CUBE[CAT];
   const cities=Object.keys(C.cities).sort();
   document.getElementById('fCity').innerHTML='<option value="">National — all cities</option>'+cities.map(c=>`<option>${c}</option>`).join('');
@@ -143,6 +143,7 @@ const PRED={
   type:(r,v)=>{const p=r.competitors[0].pathy;return kindOrder().includes(v)?kindOf(p)===v:p===v;},
   rev:(r,v)=>{const o=r.our_reviews;return v==='strong'?o>=300:v==='mid'?(o>=100&&o<300):o<100;},
   rrev:(r,v)=>{const x=r.competitors[0].reviews;return v==='giant'?x>=1000:v==='strong'?(x>=300&&x<1000):v==='mid'?(x>=100&&x<300):x<100;},
+  win:(r,v)=>{const riv=r.competitors[0].reviews,rt=riv?r.our_reviews/riv:99;return v==='ahead'?rt>=1:v==='comparable'?(rt>=0.5&&rt<1):v==='stretch'?(rt>=0.2&&rt<0.5):rt<0.2;},
 };
 const applyFil=(rows,except)=>rows.filter(r=>Object.keys(FIL).every(k=>{
   if(k===except)return true;
@@ -217,7 +218,9 @@ function outcomeFacet(){
 }
 function renderFacets(){
   const F=document.getElementById('facets');
+  const wcol=v=>({ahead:'var(--win)',comparable:'var(--acc)',stretch:'var(--amber)',heavy:'var(--red)'}[v]);
   F.innerHTML=typeFacet()+outcomeFacet()
+    +barFacet('win','Winnability · review ratio',[['ahead','Ahead ≥1×'],['comparable','Comparable ≤2× — bid can win'],['stretch','Stretch 2–5×'],['heavy','Heavy >5× — reviews first']],wcol)
     +barFacet('rev','Our reviews',[['strong','Strong ≥300'],['mid','Mid 100–300'],['thin','Thin <100']],()=>'var(--acc)')
     +barFacet('rrev','Rival reviews',[['giant','Giant ≥1000'],['strong','Strong 300–1000'],['mid','Mid 100–300'],['weak','Weak <100']],()=>'var(--red)');
   F.querySelectorAll('.frow').forEach(row=>row.onclick=()=>toggle(row.dataset.k,row.dataset.v));
@@ -231,20 +234,23 @@ function renderActive(shown,total){
   if(fCity.value)chips.push(`<span class="chip"><b>${fCity.value}</b> scope</span>`);
   const add=(k,v,txt)=>chips.push(`<span class="chip"><b>${txt}</b><span class="x" data-k="${k}" data-v="${v}">✕</span></span>`);
   const addx=(k,v,txt)=>chips.push(`<span class="chip exq"><b>≠ ${txt}</b><span class="x" data-kx="${k}" data-v="${v}">✕</span></span>`);
+  const winlbl={ahead:'Ahead ≥1×',comparable:'Comparable ≤2×',stretch:'Stretch 2–5×',heavy:'Heavy >5×'};
   FIL.out.forEach(v=>add('out',v,outLabel(v)));
   FIL.type.forEach(v=>add('type',v,v));
+  FIL.win.forEach(v=>add('win',v,'Winnability · '+(winlbl[v]||v)));
   FIL.rev.forEach(v=>add('rev',v,'Our reviews · '+v));
   FIL.rrev.forEach(v=>add('rrev',v,'Rival reviews · '+v));
   FILX.out.forEach(v=>addx('out',v,outLabel(v)));
   FILX.type.forEach(v=>addx('type',v,v));
+  FILX.win.forEach(v=>addx('win',v,'Winnability · '+(winlbl[v]||v)));
   FILX.rev.forEach(v=>addx('rev',v,'Our reviews · '+v));
   FILX.rrev.forEach(v=>addx('rrev',v,'Rival reviews · '+v));
-  const any=FIL.out.length||FIL.type.length||FIL.rev.length||FIL.rrev.length||FILX.out.length||FILX.type.length||FILX.rev.length||FILX.rrev.length;
+  const any=Object.values(FIL).some(a=>a.length)||Object.values(FILX).some(a=>a.length);
   const A=document.getElementById('active');
   A.innerHTML=chips.join('')+(any?`<span class="clrall" id="clrall">clear all</span>`:'')+`<span class="cnt">${shown} of ${total} clinics</span>`;
   A.querySelectorAll('.chip .x[data-k]').forEach(x=>x.onclick=()=>toggle(x.dataset.k,x.dataset.v));
   A.querySelectorAll('.chip .x[data-kx]').forEach(x=>x.onclick=()=>toggleX(x.dataset.kx,x.dataset.v));
-  const ca=document.getElementById('clrall');if(ca)ca.onclick=()=>{FIL={out:[],type:[],rev:[],rrev:[]};FILX={out:[],type:[],rev:[],rrev:[]};draw();};
+  const ca=document.getElementById('clrall');if(ca)ca.onclick=()=>{FIL={out:[],type:[],rev:[],rrev:[],win:[]};FILX={out:[],type:[],rev:[],rrev:[],win:[]};draw();};
 }
 function deriveAds(f){const r=(n,d)=>d?n/d:0;return{
   mkt:f.mkt,IS:r(f.impr,f.mkt),spend:f.spend,clicks:f.clicks,cpc:r(f.spend,f.clicks),

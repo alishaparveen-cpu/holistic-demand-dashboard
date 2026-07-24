@@ -100,23 +100,27 @@ def lever_move(s):
     cpd = (f['spend'] / f['done']) if f.get('done') else None
     room, profile, profsoft, booking = IS < IS_T, l2l < LOC2LD_HARD, l2l < LOC2LD_T, l2b < LD2BK_T
     expensive = cpd is not None and cpd > 600
+    comparable = gapx <= 2.0     # review gap coverable → a bid/profile push can win the click now
+    heavy = gapx >= 5.0          # rival out-reviews us so heavily that paid just leaks to them
     # 1) cut: expensive + tiny + leaky → pull budget
     if expensive and f.get('leads', 0) < 10 and (profsoft or booking):
         return ('Cut', 'CUT ↓', f"CPD ₹{cpd:.0f}, only {f['leads']:.0f} leads/wk — inefficient; pull budget & reallocate")
     # 2) booking is the drop → ops, hold spend
     if booking and not profsoft:
         return ('Booking ops', 'FIX BOOKING', f"Lead→Book {l2b:.0%} vs {LD2BK_T:.0%} — ops (calling/availability), not budget")
-    # 3) catastrophic: clicks leak hard AND rival out-reviews us ≥3× → scaling wastes money
-    if profile and big:
-        return ('Reviews', 'FIX PROFILE FIRST', f"Loc→Lead {l2l:.0%} & rival out-reviews {gapx:.0f}× — paid leaks to them; build reviews before scaling")
-    # 4) room to buy → INVEST (economics gate; note profile if soft)
+    # 3) heavy competitor + clicks leak → paid wasted; it's a reviews play, don't bid to win
+    if heavy and profsoft:
+        return ('Reviews (not bid)', 'FIX PROFILE FIRST', f"Rival out-reviews us {gapx:.0f}× — too heavy to win on ads; build reviews, don't push bid here")
+    # 4) COMPARABLE + room → the winnable case: a bid/profile push can win while reviews catch up
+    if room and comparable:
+        return ('Bid / Budget ↑', 'INVEST ↑', f"Gap coverable ({gapx:.1f}×) + IS {IS:.0%} room — bid/profile push can win the click while reviews catch up")
+    # 5) room to buy but a real gap → invest carefully + build reviews
     if room:
-        note = ' + build reviews' if (profsoft or big) else ''
+        tag = 'INVEST ↑ (careful)' if (expensive or heavy) else 'INVEST ↑'
+        note = ' + build reviews' if (profsoft or gapx > 2) else ''
         lev = 'Budget / Bid' + (' + Reviews' if note else '')
-        tag = 'INVEST ↑ (careful)' if (expensive or big) else 'INVEST ↑'
-        why = f"IS {IS:.0%} room" + (f", CPD ₹{cpd:.0f} watch" if expensive else ", funnel OK") + f" — raise budget/bid{note}"
-        return (lev, tag, why)
-    # 5) no IS room (already capturing market) — growth lever is profile, or hold
+        return (lev, tag, f"IS {IS:.0%} room, gap {gapx:.1f}×" + (f", CPD ₹{cpd:.0f}" if expensive else "") + f" — raise budget/bid{note}")
+    # 6) no IS room — growth lever is profile, or hold
     if profsoft:
         return ('Reviews / GMB rank', 'FIX PROFILE', f"IS {IS:.0%} (little room) & Loc→Lead {l2l:.0%} — grow via reviews/GMB, not budget")
     return ('Hold / defend', 'HOLD', f"IS {IS:.0%}, funnel healthy — hold spend, defend reviews")
