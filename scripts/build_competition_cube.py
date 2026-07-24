@@ -301,17 +301,19 @@ def build_cat_sh(rows, cube):
         if key in CLOSED: continue
         our = max((int(num(r.get('our_reviews'))) for r in lst), default=0)
         rank_est = RANK_EST.get((cat, _nm(city), _nm(loc)))
+        grid_n = max((int(num(r.get('clinic_searches'))) for r in lst), default=0)   # grid points for this clinic
         comps_all = []
         for r in lst:
             name = r.get('comp_name')
             if not name: continue
             pid = r.get('place_id', '')
             pathy = NAME_PATHY.get(_nm(name)) or norm(PATHY.get(pid))
+            app = int(num(r.get('appearances')))
             comps_all.append(dict(name=name, pathy=pathy, category=(r.get('category') or None),
                 reviews=int(num(r.get('reviews'))), rating=num(r.get('rating')) or None,
                 km=round(num(r['clinic_km']), 1) if r.get('clinic_km') else None,
-                appearances=int(num(r.get('appearances'))), pos=round(num(r.get('avg_pos')), 1),
-                ads=str(r.get('ever_sponsored', '')).lower() == 'true',
+                appearances=app, dompct=(round(app / grid_n * 100) if grid_n else None),
+                pos=round(num(r.get('avg_pos')), 1), ads=str(r.get('ever_sponsored', '')).lower() == 'true',
                 rel=sh_relevant(name, r.get('category')), maps=MAPS(pid, name, city)))
         if not comps_all: continue
         # #1 rival = most grid-dominant relevant competitor (appearances), reviews as tiebreak
