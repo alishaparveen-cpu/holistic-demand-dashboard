@@ -102,7 +102,8 @@ def load_nonrival():
             if r.get('rival', '').lower() == 'no' and r.get('name'): out.add(_nm(r['name']))
     return out
 NONRIVAL = load_nonrival()
-SH_SIGNAL = ('sexolog', 'androl', "men's health", 'mens health', 'urolog')          # positive men's-SH rival
+SH_SIGNAL = ('sexolog', 'androl', "men's health", 'mens health', 'urolog', 'sexual', 'sex care',
+             'sex clinic', 'sex problem', 'gupt')                                    # positive men's-SH rival
 SH_DROP = ('gyneco', 'obstetric', 'fertility', 'maternity', 'women', 'ivf', 'dermat', 'skin', 'laser',
            'endocrin', 'diabet', 'thyroid', 'dental', 'dentist', 'ophthal', ' ent ', 'cardio', 'heart',
            'ortho', 'physiothe', 'pediatric', 'paediatric', 'nephro', 'kidney', 'de-addiction', 'deaddiction')
@@ -284,43 +285,70 @@ def _rollup(cat, cube, clinics, citymap):
                                    tags=dict(tagcount)))
 
 def build_cat_sh(rows, cube):
-    """SH from the fresh Maps crawl: local pack per clinic (proximity-correct), the #1 rival is the
-    highest-review *relevant men's-SH* competitor nearby (gynae / fertility / general hospitals excluded
-    from headline), pathy classified (verified-by-name + keyword heuristic), GMB category kept."""
+    """SH from our own SERP grid (serp_analyses / data_serp_competitors.tsv) — market-comprehensive,
+    matching the Field Data Dashboard. The #1 rival is the most grid-DOMINANT relevant men's-SH
+    competitor by APPEARANCES (share of local searches it ranks in), which surfaces the real threats
+    (e.g. Dr Gomatthi) and demotes big-review non-competitors (e.g. a general hospital). pathy from the
+    verified files (CID-keyed + name-verified); rank estimate + GMB attached."""
     cat = 'SH'
+    byclinic = defaultdict(list)
+    for r in rows:
+        if r.get('cat', 'SH') != cat: continue
+        byclinic[(r['city'], r['locality'])].append(r)
     clinics = {}; citymap = defaultdict(list)
-    for key, e in DFS.get(cat, {}).items():
-        if '|' not in key or key in CLOSED: continue
-        city, loc = key.split('|', 1)
-        ol = our_listing(cat, key)
-        our = ol['reviews'] if ol and ol['reviews'] is not None else 0
-        orank = RANK_EST.get((cat, _nm(city), _nm(loc)))   # reliable grid-avg rank estimate
-        our_pid = ol['pid'] if ol else ''
+    for (city, loc), lst in byclinic.items():
+        key = f'{city}|{loc}'
+        if key in CLOSED: continue
+        our = max((int(num(r.get('our_reviews'))) for r in lst), default=0)
+        rank_est = RANK_EST.get((cat, _nm(city), _nm(loc)))
+        comps_all = []
+        for r in lst:
+            name = r.get('comp_name')
+            if not name: continue
+            pid = r.get('place_id', '')
+            pathy = NAME_PATHY.get(_nm(name)) or norm(PATHY.get(pid))
+            comps_all.append(dict(name=name, pathy=pathy, category=(r.get('category') or None),
+                reviews=int(num(r.get('reviews'))), rating=num(r.get('rating')) or None,
+                km=round(num(r['clinic_km']), 1) if r.get('clinic_km') else None,
+                appearances=int(num(r.get('appearances'))), pos=round(num(r.get('avg_pos')), 1),
+                ads=str(r.get('ever_sponsored', '')).lower() == 'true',
+                rel=sh_relevant(name, r.get('category')), maps=MAPS(pid, name, city)))
+        if not comps_all: continue
+        # #1 rival = most grid-dominant relevant competitor (appearances), reviews as tiebreak
+        rel = [c for c in comps_all if c['rel'] is True] or [c for c in comps_all if c['rel'] is not False] or comps_all
+        rel.sort(key=lambda c: (-c['appearances'], -c['reviews']))
+        rest = sorted([c for c in comps_all if c is not rel[0]], key=lambda c: -c['appearances'])
+        comps = [rel[0]] + rest[:6]
+        top = comps[0]
+        tags = why_tags(our, rank_est, top, cat)
+        vtext, vkind = clinic_verdict(our, rank_est, top, tags, cat)
+        clinics[key] = dict(city=city, loc=loc, our_reviews=our, our_rank=rank_est or 0, rank_est=rank_est,
+                            our_maps=MAPS('', f'Allo Health {loc}', city),
+                            competitors=comps, tags=tags, verdict=vtext, vkind=vkind, gmb=GMB.get(key))
+        citymap[city].append(key)
+    # clinics not yet in the SERP grid (newer) — fall back to the single-point crawl so none are missing
+    for k, e in DFS.get('SH', {}).items():
+        if k in clinics or '|' not in k or k in CLOSED: continue
+        city, loc = k.split('|', 1)
         comps_all = []
         for c in e.get('competitors', []):
             if not c.get('name'): continue
-            rel = sh_relevant(c['name'], c.get('category'))
-            comps_all.append(dict(name=c['name'], pathy=sh_pathy(c['name'], c.get('category')),
-                                  category=c.get('category'), reviews=int(c['reviews']) if c.get('reviews') else 0,
-                                  rating=c.get('rating'), km=round(c['km'], 1) if c.get('km') is not None else None,
-                                  pos=c.get('pos'), ads=bool(c.get('is_paid')), rel=rel,
-                                  maps=MAPS(c.get('place_id'), c['name'], city)))
+            comps_all.append(dict(name=c['name'], pathy=(NAME_PATHY.get(_nm(c['name'])) or sh_pathy(c['name'], c.get('category'))),
+                category=c.get('category'), reviews=int(c['reviews']) if c.get('reviews') else 0, rating=c.get('rating'),
+                km=round(c['km'], 1) if c.get('km') is not None else None, appearances=0, pos=c.get('pos'),
+                ads=bool(c.get('is_paid')), rel=sh_relevant(c['name'], c.get('category')), maps=MAPS(c.get('place_id'), c['name'], city)))
         if not comps_all: continue
-        # headline #1 rival = highest-review RELEVANT nearby (≤15km) rival; fall back to any relevant, then any
-        near = [c for c in comps_all if c['km'] is None or c['km'] <= 15]
-        rel = [c for c in near if c['rel'] is True] or [c for c in near if c['rel'] is not False] or near or comps_all
+        rel = [c for c in comps_all if c['rel'] is True] or [c for c in comps_all if c['rel'] is not False] or comps_all
         rel.sort(key=lambda c: -c['reviews'])
-        # show the headline rival first, then the rest of the pack by reviews
-        rest = sorted([c for c in comps_all if c is not rel[0]], key=lambda c: -c['reviews'])
-        comps = [rel[0]] + rest[:6]
+        comps = [rel[0]] + sorted([c for c in comps_all if c is not rel[0]], key=lambda c: -c['reviews'])[:6]
         top = comps[0]
-        tags = why_tags(our, orank, top, cat)
-        vtext, vkind = clinic_verdict(our, orank, top, tags, cat)
-        clinics[key] = dict(city=city, loc=loc, our_reviews=our, our_rank=orank or 0, rank_est=orank,
-                            our_maps=MAPS(our_pid, f'Allo Health {loc}', city),
-                            our_rating=(ol.get('rating') if ol else None),
-                            competitors=comps, tags=tags, verdict=vtext, vkind=vkind, gmb=GMB.get(key))
-        citymap[city].append(key)
+        ol = our_listing('SH', k); our = ol['reviews'] if ol and ol['reviews'] is not None else 0
+        rank_est = RANK_EST.get(('SH', _nm(city), _nm(loc)))
+        tags = why_tags(our, rank_est, top, 'SH'); vtext, vkind = clinic_verdict(our, rank_est, top, tags, 'SH')
+        clinics[k] = dict(city=city, loc=loc, our_reviews=our, our_rank=rank_est or 0, rank_est=rank_est,
+                          our_maps=MAPS(ol['pid'] if ol else '', f'Allo Health {loc}', city),
+                          competitors=comps, tags=tags, verdict=vtext, vkind=vkind, gmb=GMB.get(k))
+        citymap[city].append(k)
     _rollup(cat, cube, clinics, citymap)
 
 def build_cat_dfs(cat, cube):
