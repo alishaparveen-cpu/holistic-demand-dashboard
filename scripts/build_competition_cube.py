@@ -183,21 +183,37 @@ MH_RULES = [
                               'marriage','relationship','family counsel','de-addiction']),
   ('Clinic / Doctor', ['homeopath','medical clinic','medical cent','clinic','doctor','physician','neurolog']),
 ]
-# categories that only tangentially rank for a psychiatrist search → not a real MH rival (demoted from headline)
-MH_DROP = ('dermat','gyneco','obstetric','women','maternity','ent specialist','diabet','thyroid','pulmon','gastro','cardio',
-           'ortho','nephro','urolog','ophthal','physiothe','pediatric','paediatric','surgeon','imaging','diagnostic center',
-           'speech & hearing','emergency','research institute')
-def facility(cat, category):
-    c = (category or '').lower()
-    if not c: return 'Other'
-    for label, kws in (STI_RULES if cat == 'STI' else MH_RULES):
-        if any(k in c for k in kws): return label
-    return 'Other'
+# genuine MH signal / generic-medical — a valid #1 MH rival must match one of these …
+MH_SIGNAL = ('psychiatr', 'psycholog', 'psychotherap', 'counsel', 'therap', 'mental', 'rehab', 'de-addiction',
+             'deaddiction', 'alcohol', 'neuro', 'marriage', 'life coach', 'wellness', 'homeopath')
+MH_GENERIC = ('doctor', 'medical clinic', 'medical cent', 'hospital', 'clinic', 'physician')
+# … and must NOT match these off-topic categories (checked first, so 'career counseling' etc. are excluded)
+MH_DROP = ('dermat', 'gyneco', 'obstetric', 'women', 'maternity', 'ent specialist', 'diabet', 'thyroid', 'pulmon',
+           'gastro', 'cardio', 'ortho', 'nephro', 'urolog', 'ophthal', 'physiothe', 'pediatric', 'paediatric', 'surgeon',
+           'imaging', 'diagnostic center', 'speech & hearing', 'emergency', 'research institute',
+           'educational consultant', 'career counsel', 'student career', 'career guidance', 'spa', 'beauty', 'salon',
+           'coaching cent', 'tuition', 'training institute', 'astrolog', 'yoga', 'fitness', 'gym')
+# STI/MH type = the raw Google-Maps category (no custom buckets / no 'Other'). SH keeps pathy.
+PALETTE = ['#2C6CAE', '#7D5BA6', '#2A9D8F', '#C86B9E', '#B8862E', '#C0392B', '#3A7CA5', '#8E44AD',
+           '#16A085', '#D35400', '#2980B9', '#27AE60', '#A93226', '#5D6D7E', '#AF7AC5', '#1ABC9C', '#E67E22']
 def cat_relevant(cat, name, category):
-    """False = tangential (won't be picked as the #1 rival). STI: labs/clinics all count. MH: drop off-topic specialists."""
+    """False = tangential (won't be the #1 rival). STI: any lab/clinic counts. MH: must be a real
+    mental-health listing (drop dermatology/gynae/ENT/etc. and category-less)."""
     c = (category or '').lower()
-    if cat == 'MH' and any(k in c for k in MH_DROP): return False
+    if cat == 'MH':
+        if not c: return False
+        if any(k in c for k in MH_DROP): return False                          # off-topic (education/spa/derm/…)
+        return any(k in c for k in MH_SIGNAL) or any(k in c for k in MH_GENERIC)  # must look like MH or a doctor/clinic
     return True
+def build_tax(cube, cat):
+    """Dynamic taxonomy for STI/MH: each GMB category is its own type; colours from a palette by frequency."""
+    freq = {}
+    for v in cube[cat]['clinics'].values():
+        for c in v['competitors']:
+            freq[c['pathy']] = freq.get(c['pathy'], 0) + 1
+    order = sorted(freq, key=lambda k: -freq[k])
+    color = {c: PALETTE[i % len(PALETTE)] for i, c in enumerate(order)}
+    return {'kind': {c: c for c in order}, 'kindOrder': order, 'typeColor': color, 'kindColor': color}
 
 def why_tags(our, orank, top, cat):
     """Review-based outcome (reviews are the reliable, durable moat; map-pack rank is volatile/noisy).
@@ -304,7 +320,7 @@ def build_cat_dfs(cat, cube):
         for c in e.get('competitors', []):
             if not c.get('name'): continue
             rev = c.get('reviews')
-            comps_all.append(dict(name=c['name'], pathy=facility(cat, c.get('category')),
+            comps_all.append(dict(name=c['name'], pathy=(c.get('category') or 'Uncategorised'),
                                   category=c.get('category'), reviews=int(rev) if rev else 0,
                                   rating=c.get('rating'), km=round(c['km'], 1) if c.get('km') is not None else None,
                                   pos=c.get('pos'), ads=bool(c.get('is_paid')), rel=cat_relevant(cat, c['name'], c.get('category')),
@@ -330,7 +346,9 @@ def main():
     cube = {'_meta': {'built': str(TODAY), 'cats': [], 'tax': TAX}}
     build_cat_sh(rows, cube); cube['_meta']['cats'].append('SH')
     for cat in ('STI', 'MH'):
-        if DFS.get(cat): build_cat_dfs(cat, cube); cube['_meta']['cats'].append(cat)
+        if DFS.get(cat):
+            build_cat_dfs(cat, cube); cube['_meta']['cats'].append(cat)
+            cube['_meta']['tax'][cat] = build_tax(cube, cat)   # STI/MH type = raw GMB category (dynamic)
     json.dump(cube, open(os.path.join(ROOT, 'data_competition.json'), 'w'), separators=(',', ':'))
     print('wrote data_competition.json · cats', cube['_meta']['cats'],
           '·', {c: len(cube[c]['clinics']) for c in cube['_meta']['cats']}, 'clinics')
