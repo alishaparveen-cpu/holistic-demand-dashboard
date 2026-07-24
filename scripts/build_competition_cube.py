@@ -82,6 +82,48 @@ def load_pathy():
 PATHY = load_pathy()
 def norm(p): return p if p in ('Allopathic',) + ALT + ('Non-medical', 'Mixed') else 'Thin'
 
+# ── SH from the fresh crawl: relevance filter (real men's-SH rival vs tangential) + pathy classifier ──
+def _nm(s): return ''.join(ch for ch in str(s).lower() if ch.isalnum())
+def load_name_pathy():
+    """Verified pathy keyed by clinic NAME (fresh crawl uses ChIJ ids, not the old numeric CIDs)."""
+    out = {}
+    for fn in ('data_serp_pathy.tsv', 'data_serp_pathy_v2.tsv', 'data_serp_sh_pathy.tsv'):
+        p = os.path.join(ROOT, fn)
+        if os.path.exists(p):
+            for r in csv.DictReader(open(p), delimiter='\t'):
+                if r.get('name') and r.get('pathy'): out[_nm(r['name'])] = r['pathy']
+    return out
+NAME_PATHY = load_name_pathy()
+def load_nonrival():
+    """Web-verified non-rivals (gynae/fertility/diabetes/general that only tangentially rank for 'sexologist')."""
+    out = set(); p = os.path.join(ROOT, 'data_serp_sh_pathy.tsv')
+    if os.path.exists(p):
+        for r in csv.DictReader(open(p), delimiter='\t'):
+            if r.get('rival', '').lower() == 'no' and r.get('name'): out.add(_nm(r['name']))
+    return out
+NONRIVAL = load_nonrival()
+SH_SIGNAL = ('sexolog', 'androl', "men's health", 'mens health', 'urolog')          # positive men's-SH rival
+SH_DROP = ('gyneco', 'obstetric', 'fertility', 'maternity', 'women', 'ivf', 'dermat', 'skin', 'laser',
+           'endocrin', 'diabet', 'thyroid', 'dental', 'dentist', 'ophthal', ' ent ', 'cardio', 'heart',
+           'ortho', 'physiothe', 'pediatric', 'paediatric', 'nephro', 'kidney', 'de-addiction', 'deaddiction')
+def sh_relevant(name, category):
+    """True = a genuine men's sexual-health rival (eligible to be the #1 rival)."""
+    if _nm(name) in NONRIVAL: return False                         # web-verified tangential (gynae/fertility/diabetes/general)
+    s = (str(name) + ' ' + str(category or '')).lower()
+    if any(k in s for k in SH_SIGNAL): return True
+    if any(k in s for k in SH_DROP): return False
+    return None                                                    # generic (Doctor/Clinic) — keep in list, not a headline rival
+def sh_pathy(name, category):
+    p = NAME_PATHY.get(_nm(name))
+    if p: return p
+    s = (str(name) + ' ' + str(category or '')).lower()
+    if 'ayurved' in s or 'ayush' in s or 'kerala ayurveda' in s: return 'Ayurvedic'
+    if 'unani' in s or 'hakim' in s: return 'Unani'
+    if 'homeo' in s or 'homoeo' in s: return 'Homeopathic'
+    return 'Allopathic'                                            # default (verified later); most MBBS/andrology sexologists
+# clinics that are CLOSED — excluded from the cube (user-confirmed + known)
+CLOSED = {'Delhi NCR|Greater Kailash', 'Delhi NCR|Gurugram', 'Hyderabad|Attapur', 'Vijayawada|Suryaraopeta'}
+
 def load_gmb():
     """Per-clinic recent GMB profile. GBP lags ~1 wk → drop the newest week, average the next
     up-to-4 mature weeks (days>=6). Returns {City|Loc: {searches,calls,website,directions,interactions}/wk}."""
@@ -197,29 +239,35 @@ def _rollup(cat, cube, clinics, citymap):
                                    tags=dict(tagcount)))
 
 def build_cat_sh(rows, cube):
-    """SH: TSV competitor selection + web-verified pathy, patched from the fresh crawl
-    (our reviews + true competitive rank + Place ID; missing competitor distances recovered)."""
+    """SH from the fresh Maps crawl: local pack per clinic (proximity-correct), the #1 rival is the
+    highest-review *relevant men's-SH* competitor nearby (gynae / fertility / general hospitals excluded
+    from headline), pathy classified (verified-by-name + keyword heuristic), GMB category kept."""
     cat = 'SH'
-    byclinic = defaultdict(list)
-    for r in rows:
-        if r.get('cat', 'SH') != cat: continue
-        byclinic[(r['city'], r['locality'])].append(r)
     clinics = {}; citymap = defaultdict(list)
-    for (city, loc), lst in byclinic.items():
-        key = f'{city}|{loc}'
-        lst = sorted(lst, key=lambda r: -num(r['appearances']))
-        top5 = lst[:5]
-        # our_reviews: validated per-clinic TSV value is primary; fill genuine gaps from the crawl
+    for key, e in DFS.get(cat, {}).items():
+        if '|' not in key or key in CLOSED: continue
+        city, loc = key.split('|', 1)
         ol = our_listing(cat, key)
-        tsv_rev = int(num(top5[0]['our_reviews']))
-        our = tsv_rev if tsv_rev > 0 else (ol['reviews'] if ol and ol['reviews'] is not None else 0)
-        orank = round(num(top5[0]['our_avg_rank'])) or None
+        our = ol['reviews'] if ol and ol['reviews'] is not None else 0
+        orank = ol['rank'] if ol and ol.get('rank') else None
         our_pid = ol['pid'] if ol else ''
-        comps = [dict(name=c['comp_name'], pathy=norm(PATHY.get(c['place_id'])),
-                      reviews=int(num(c['reviews'])), rating=num(c['rating']),
-                      km=(round(num(c['clinic_km']), 1) if c['clinic_km'] else dfs_km(cat, key, c['comp_name'])),
-                      pos=round(num(c['avg_pos']), 1), ads=str(c['ever_sponsored']).lower() == 'true',
-                      maps=MAPS(c['place_id'], c['comp_name'], city)) for c in top5]
+        comps_all = []
+        for c in e.get('competitors', []):
+            if not c.get('name'): continue
+            rel = sh_relevant(c['name'], c.get('category'))
+            comps_all.append(dict(name=c['name'], pathy=sh_pathy(c['name'], c.get('category')),
+                                  category=c.get('category'), reviews=int(c['reviews']) if c.get('reviews') else 0,
+                                  rating=c.get('rating'), km=round(c['km'], 1) if c.get('km') is not None else None,
+                                  pos=c.get('pos'), ads=bool(c.get('is_paid')), rel=rel,
+                                  maps=MAPS(c.get('place_id'), c['name'], city)))
+        if not comps_all: continue
+        # headline #1 rival = highest-review RELEVANT nearby (≤15km) rival; fall back to any relevant, then any
+        near = [c for c in comps_all if c['km'] is None or c['km'] <= 15]
+        rel = [c for c in near if c['rel'] is True] or [c for c in near if c['rel'] is not False] or near or comps_all
+        rel.sort(key=lambda c: -c['reviews'])
+        # show the headline rival first, then the rest of the pack by reviews
+        rest = sorted([c for c in comps_all if c is not rel[0]], key=lambda c: -c['reviews'])
+        comps = [rel[0]] + rest[:6]
         top = comps[0]
         tags = why_tags(our, orank, top, cat)
         vtext, vkind = clinic_verdict(our, orank, top, tags, cat)
@@ -235,7 +283,7 @@ def build_cat_dfs(cat, cube):
     exact distances, true rank, current reviews, real Place IDs."""
     clinics = {}; citymap = defaultdict(list)
     for key, e in DFS.get(cat, {}).items():
-        if '|' not in key: continue
+        if '|' not in key or key in CLOSED: continue
         city, loc = key.split('|', 1)
         ol = our_listing(cat, key)
         our = ol['reviews'] if ol and ol['reviews'] is not None else 0
