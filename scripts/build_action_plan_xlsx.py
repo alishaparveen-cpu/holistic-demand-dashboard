@@ -89,6 +89,45 @@ def decide(s):
     return act, why, ins
 
 
+def lever_move(s):
+    """The specific KNOB + budget DIRECTION. Returns (lever, move, rationale).
+    move ∈ {INVEST ↑, HOLD, FIX PROFILE, FIX PROFILE FIRST, FIX BOOKING, CUT ↓, ORGANIC}."""
+    f = s['f']
+    gapx = (s['rrev'] / s['med']) if s['med'] else (99 if s['rrev'] else 1); big = gapx >= 3
+    if not f or not f.get('spend'):
+        return ('Reviews / GMB', 'ORGANIC', f"No paid spend; {s['beaten']}/{s['n']} out-reviewed → grow reviews/GMB first")
+    IS, l2l, l2b = f.get('IS', 0), f.get('loc2ld', 0), f.get('ld2bk', 0)
+    cpd = (f['spend'] / f['done']) if f.get('done') else None
+    room, profile, profsoft, booking = IS < IS_T, l2l < LOC2LD_HARD, l2l < LOC2LD_T, l2b < LD2BK_T
+    expensive = cpd is not None and cpd > 600
+    # 1) cut: expensive + tiny + leaky → pull budget
+    if expensive and f.get('leads', 0) < 10 and (profsoft or booking):
+        return ('Cut', 'CUT ↓', f"CPD ₹{cpd:.0f}, only {f['leads']:.0f} leads/wk — inefficient; pull budget & reallocate")
+    # 2) booking is the drop → ops, hold spend
+    if booking and not profsoft:
+        return ('Booking ops', 'FIX BOOKING', f"Lead→Book {l2b:.0%} vs {LD2BK_T:.0%} — ops (calling/availability), not budget")
+    # 3) catastrophic: clicks leak hard AND rival out-reviews us ≥3× → scaling wastes money
+    if profile and big:
+        return ('Reviews', 'FIX PROFILE FIRST', f"Loc→Lead {l2l:.0%} & rival out-reviews {gapx:.0f}× — paid leaks to them; build reviews before scaling")
+    # 4) room to buy → INVEST (economics gate; note profile if soft)
+    if room:
+        note = ' + build reviews' if (profsoft or big) else ''
+        lev = 'Budget / Bid' + (' + Reviews' if note else '')
+        tag = 'INVEST ↑ (careful)' if (expensive or big) else 'INVEST ↑'
+        why = f"IS {IS:.0%} room" + (f", CPD ₹{cpd:.0f} watch" if expensive else ", funnel OK") + f" — raise budget/bid{note}"
+        return (lev, tag, why)
+    # 5) no IS room (already capturing market) — growth lever is profile, or hold
+    if profsoft:
+        return ('Reviews / GMB rank', 'FIX PROFILE', f"IS {IS:.0%} (little room) & Loc→Lead {l2l:.0%} — grow via reviews/GMB, not budget")
+    return ('Hold / defend', 'HOLD', f"IS {IS:.0%}, funnel healthy — hold spend, defend reviews")
+
+
+ORANGE = PatternFill('solid', fgColor='F6D9B8')
+MOVEFILL = {'INVEST ↑': GRN, 'INVEST ↑ (careful)': PatternFill('solid', fgColor='DDEBC9'), 'HOLD': GREY,
+            'FIX PROFILE': AMB, 'FIX PROFILE FIRST': AMB, 'FIX BOOKING': ORANGE, 'CUT ↓': RED, 'ORGANIC': BLU}
+MOVEORDER = ['INVEST ↑', 'INVEST ↑ (careful)', 'FIX PROFILE FIRST', 'FIX PROFILE', 'FIX BOOKING', 'CUT ↓', 'HOLD', 'ORGANIC']
+
+
 def hdr_row(ws, row, cols, widths):
     for i, (c, w) in enumerate(zip(cols, widths), 1):
         cell = ws.cell(row, i, c); cell.fill = HDR; cell.font = WHITE; cell.alignment = CEN; cell.border = BORD
@@ -109,79 +148,110 @@ def flag(cell, val, bad, warn, invert=False):
 def build():
     wb = openpyxl.Workbook()
     # ── Sheet ① Highlights ───────────────────────────────────────────────
-    ws = wb.active; ws.title = '① Action Highlights'
-    ws.merge_cells('A1:H1')
-    t = ws.cell(1, 1, 'ACTION HIGHLIGHTS — where to Scale / Fix profile / Fix booking / Cut, and why (competition × Google Ads)')
+    ws = wb.active; ws.title = '① Highlights + why'
+    ws.merge_cells('A1:I1')
+    t = ws.cell(1, 1, 'HIGHLIGHTS — the binding metric per city×category, the reason, the lever, and the budget move')
     t.font = Font(bold=True, size=13, color='1A2230'); t.alignment = LFT
     ws.row_dimensions[1].height = 22
-    hdr_row(ws, 2, ['Category', 'City', 'Clinics', 'ACTION', 'Why (funnel)', 'Insight / contradiction', 'Top rival (reviews)', 'Our median rev'],
-            [14, 16, 8, 20, 26, 60, 26, 12])
+    hdr_row(ws, 2, ['Category', 'City', 'Clinics', 'MOVE (budget)', 'LEVER', 'Why — the binding metric', 'Insight / contradiction', 'Top rival (reviews)', 'Our med rev'],
+            [13, 15, 8, 17, 16, 30, 52, 25, 10])
     r = 3
-    prio = {'FIX PROFILE': 0, 'SCALE + FIX PROFILE': 1, 'SCALE ⚠ close reviews first': 2, 'FIX BOOKING': 3,
-            'CUT': 4, 'SCALE': 5, 'HOLD — efficient': 6, 'REVIEW-ONLY (no paid spend)': 7}
-    highlights = []
+    rows_all = []
     for cat in CUBE['_meta']['cats']:
         for city in CUBE[cat]['cities']:
             s = city_stat(cat, city)
-            act, why, ins = decide(s)
-            highlights.append((cat, s, act, why, ins))
-    # only cities with spend OR materially beaten go to highlights; sort by priority then clinics
-    hi = [h for h in highlights if (h[1]['f'].get('spend') or h[1]['beaten'])]
-    hi.sort(key=lambda h: (prio.get(h[2], 9), -h[1]['n']))
-    for cat, s, act, why, ins in hi:
+            act, why, ins = decide(s); lever, move, rat = lever_move(s)
+            rows_all.append((cat, s, act, why, ins, lever, move, rat))
+    hi = [h for h in rows_all if (h[1]['f'].get('spend') or h[1]['beaten'])]
+    hi.sort(key=lambda h: (MOVEORDER.index(h[6]) if h[6] in MOVEORDER else 9, -h[1]['n']))
+    for cat, s, act, why, ins, lever, move, rat in hi:
         ws.cell(r, 1, CATLBL[cat]).border = BORD
         ws.cell(r, 2, s['city']).border = BORD
         ws.cell(r, 3, s['n']).border = BORD; ws.cell(r, 3).alignment = CEN
-        a = ws.cell(r, 4, act); a.fill = ACTFILL.get(act, GREY); a.font = BOLD; a.alignment = CEN; a.border = BORD
-        ws.cell(r, 5, why).border = BORD; ws.cell(r, 5).alignment = LFT
-        ws.cell(r, 6, ins).border = BORD; ws.cell(r, 6).alignment = LFT
-        ws.cell(r, 7, f"{s['rival']} ({s['rrev']})").border = BORD; ws.cell(r, 7).alignment = LFT
-        ws.cell(r, 8, s['med']).border = BORD; ws.cell(r, 8).alignment = CEN
-        ws.row_dimensions[r].height = 42
+        m = ws.cell(r, 4, move); m.fill = MOVEFILL.get(move, GREY); m.font = BOLD; m.alignment = CEN; m.border = BORD
+        ws.cell(r, 5, lever).border = BORD; ws.cell(r, 5).alignment = CEN
+        ws.cell(r, 6, why).border = BORD; ws.cell(r, 6).alignment = LFT
+        ws.cell(r, 7, ins).border = BORD; ws.cell(r, 7).alignment = LFT
+        ws.cell(r, 8, f"{s['rival']} ({s['rrev']})").border = BORD; ws.cell(r, 8).alignment = LFT
+        ws.cell(r, 9, s['med']).border = BORD; ws.cell(r, 9).alignment = CEN
+        ws.row_dimensions[r].height = 40
         r += 1
     ws.freeze_panes = 'A3'
 
-    # ── Sheets ②③④ city-level per category ──────────────────────────────
-    ccols = ['City', '#Clinics', 'Market/wk', 'IS', 'Spend/wk', 'CPL', 'Loc %', 'Loc→Lead', 'Lead→Book', 'Book→Done',
-             'Our med rev', 'Top rival', 'Rival type', 'Rival rev', 'Gap ×', '#Beaten', 'ACTION', 'Insight / contradiction']
-    cwid = [15, 8, 10, 7, 10, 8, 7, 9, 9, 9, 10, 22, 14, 9, 7, 8, 20, 55]
-    for cat, sh in zip(CUBE['_meta']['cats'], ['② SH — cities', '③ STI — cities', '④ MH — cities']):
+    # ── Sheet ② Budget reallocation — pull from / invest in ──────────────
+    ws = wb.create_sheet('② Budget reallocation')
+    ws.merge_cells('A1:K1')
+    t = ws.cell(1, 1, 'BUDGET REALLOCATION — pull ₹ from CUT/inefficient, feed INVEST; FIX before scaling (grouped by move)')
+    t.font = Font(bold=True, size=13); t.alignment = LFT; ws.row_dimensions[1].height = 22
+    bcols = ['MOVE', 'Category', 'City', 'Spend/wk', 'IS', 'Loc→Lead', 'Lead→Book', 'CPD', 'Rival rev vs ours', 'LEVER', 'Rationale']
+    hdr_row(ws, 2, bcols, [17, 13, 15, 10, 7, 9, 9, 9, 16, 16, 56])
+    r = 3
+    paid = [(cat, s, lever, move, rat) for cat, s, act, why, ins, lever, move, rat in rows_all if s['f'].get('spend')]
+    paid.sort(key=lambda x: (MOVEORDER.index(x[3]) if x[3] in MOVEORDER else 9, -(x[1]['f'].get('spend') or 0)))
+    cur_move = None
+    for cat, s, lever, move, rat in paid:
+        if move != cur_move:   # section band
+            cur_move = move
+            ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=11)
+            b = ws.cell(r, 1, f"{move}  ·  {'PULL BUDGET' if move=='CUT ↓' else 'FEED THIS' if move.startswith('INVEST') else 'FIX BEFORE SCALING' if 'FIX' in move else 'HOLD / defend'}")
+            b.fill = MOVEFILL.get(move, GREY); b.font = BOLD; b.alignment = LFT; r += 1
+        f = s['f']; cpd = (f['spend'] / f['done']) if f.get('done') else None
+        gapx = (s['rrev'] / s['med']) if s['med'] else 0
+        vals = [move, CATLBL[cat], s['city'], f.get('spend'), f.get('IS'), f.get('loc2ld'), f.get('ld2bk'),
+                round(cpd) if cpd else '', f"{s['rrev']} vs {s['med']} ({gapx:.0f}×)" if s['med'] else str(s['rrev']), lever, rat]
+        for i, v in enumerate(vals, 1):
+            c = ws.cell(r, i, v); c.border = BORD; c.alignment = LFT if i in (1, 3, 9, 10, 11) else CEN
+        for col in (5, 6, 7):
+            if ws.cell(r, col).value is not None: ws.cell(r, col).number_format = '0%'
+        for col in (4, 8):
+            if ws.cell(r, col).value not in (None, ''): ws.cell(r, col).number_format = '#,##0'
+        if f.get('loc2ld') is not None: ws.cell(r, 6).fill = RED if f['loc2ld'] < LOC2LD_HARD else (AMB if f['loc2ld'] < LOC2LD_T else GRN)
+        if f.get('ld2bk') is not None and f['ld2bk'] < LD2BK_T: ws.cell(r, 7).fill = RED
+        if f.get('IS') is not None and f['IS'] < IS_T: ws.cell(r, 5).fill = AMB
+        r += 1
+    ws.freeze_panes = 'A3'
+
+    # ── Sheets ③④⑤ city-level per category ──────────────────────────────
+    ccols = ['City', '#Clinics', 'MOVE', 'LEVER', 'Market/wk', 'IS', 'Spend/wk', 'CPL', 'Loc %', 'Loc→Lead', 'Lead→Book', 'Book→Done',
+             'Our med rev', 'Top rival', 'Rival type', 'Rival rev', 'Gap ×', '#Beaten', 'Insight / contradiction']
+    cwid = [15, 8, 17, 16, 10, 7, 10, 8, 7, 9, 9, 9, 10, 22, 14, 9, 7, 8, 55]
+    for cat, sh in zip(CUBE['_meta']['cats'], ['③ SH — cities', '④ STI — cities', '⑤ MH — cities']):
         ws = wb.create_sheet(sh)
-        ws.merge_cells('A1:R1')
+        ws.merge_cells('A1:S1')
         t = ws.cell(1, 1, f'{CATLBL[cat]} — city action plan (Google Ads funnel × competition)'); t.font = Font(bold=True, size=12); t.alignment = LFT
         hdr_row(ws, 2, ccols, cwid)
         rows = sorted((city_stat(cat, c) for c in CUBE[cat]['cities']), key=lambda s: -(s['f'].get('spend') or 0))
         r = 3
         for s in rows:
-            f = s['f']; act, why, ins = decide(s)
+            f = s['f']; act, why, ins = decide(s); lever, move, rat = lever_move(s)
             gapx = (s['rrev'] / s['med']) if s['med'] else (s['rrev'] and 99 or 0)
-            vals = [s['city'], s['n'], f.get('mkt'), f.get('IS'), f.get('spend'), f.get('cpl'), f.get('locpct'),
+            vals = [s['city'], s['n'], move, lever, f.get('mkt'), f.get('IS'), f.get('spend'), f.get('cpl'), f.get('locpct'),
                     f.get('loc2ld'), f.get('ld2bk'), f.get('bk2dn'), s['med'], s['rival'], s['rtype'], s['rrev'],
-                    round(gapx, 1) if gapx else '', s['beaten'], act, ins]
+                    round(gapx, 1) if gapx else '', s['beaten'], ins]
             for i, v in enumerate(vals, 1):
                 cell = ws.cell(r, i, v); cell.border = BORD
-                cell.alignment = LFT if i in (1, 12, 13, 18) else CEN
-            # percentage formats
-            for col in (4, 7, 8, 9, 10):
+                cell.alignment = LFT if i in (1, 4, 14, 15, 19) else CEN
+            # percentage formats (IS 6, Loc% 9, Loc→Lead 10, Lead→Book 11, Book→Done 12)
+            for col in (6, 9, 10, 11, 12):
                 if ws.cell(r, col).value is not None: ws.cell(r, col).number_format = '0%'
-            for col in (3, 5, 6):
+            for col in (5, 7, 8):
                 if ws.cell(r, col).value is not None: ws.cell(r, col).number_format = '#,##0'
             # benchmark colours
-            if f.get('IS') is not None and f['IS'] < IS_T: ws.cell(r, 4).fill = AMB if f['IS'] >= 0.5 else RED
-            if f.get('loc2ld') is not None: ws.cell(r, 8).fill = RED if f['loc2ld'] < LOC2LD_HARD else (AMB if f['loc2ld'] < LOC2LD_T else GRN)
-            if f.get('ld2bk') is not None and f['ld2bk'] < LD2BK_T: ws.cell(r, 9).fill = RED
-            if gapx and gapx >= 3: ws.cell(r, 15).fill = RED
-            elif gapx and gapx >= 1.5: ws.cell(r, 15).fill = AMB
-            a = ws.cell(r, 17); a.fill = ACTFILL.get(act, GREY); a.font = BOLD
+            if f.get('IS') is not None and f['IS'] < IS_T: ws.cell(r, 6).fill = AMB if f['IS'] >= 0.5 else RED
+            if f.get('loc2ld') is not None: ws.cell(r, 10).fill = RED if f['loc2ld'] < LOC2LD_HARD else (AMB if f['loc2ld'] < LOC2LD_T else GRN)
+            if f.get('ld2bk') is not None and f['ld2bk'] < LD2BK_T: ws.cell(r, 11).fill = RED
+            if gapx and gapx >= 3: ws.cell(r, 17).fill = RED
+            elif gapx and gapx >= 1.5: ws.cell(r, 17).fill = AMB
+            m = ws.cell(r, 3); m.fill = MOVEFILL.get(move, GREY); m.font = BOLD
             ws.row_dimensions[r].height = 40
             r += 1
         ws.freeze_panes = 'A3'
 
-    # ── Sheets ⑤⑥⑦ clinic-level per category ────────────────────────────
+    # ── Sheets ⑥⑦⑧ clinic-level per category ────────────────────────────
     kcols = ['City', 'Clinic', 'Our rev', 'Top rival', 'Rival type', 'Rival rev', 'Gap (rival−ours)', 'Ratio',
              'Dist km', 'GMB views/wk', 'Verdict', 'Clinic action']
     kwid = [14, 20, 9, 24, 15, 9, 14, 8, 8, 12, 34, 30]
-    for cat, sh in zip(CUBE['_meta']['cats'], ['⑤ SH — clinics', '⑥ STI — clinics', '⑦ MH — clinics']):
+    for cat, sh in zip(CUBE['_meta']['cats'], ['⑥ SH — clinics', '⑦ STI — clinics', '⑧ MH — clinics']):
         ws = wb.create_sheet(sh)
         ws.merge_cells('A1:L1')
         t = ws.cell(1, 1, f'{CATLBL[cat]} — clinic action plan (per Allo clinic vs its #1 local rival)'); t.font = Font(bold=True, size=12); t.alignment = LFT
