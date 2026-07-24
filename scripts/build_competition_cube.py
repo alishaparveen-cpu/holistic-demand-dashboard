@@ -176,17 +176,28 @@ STI_RULES = [
   ('Hospital / Clinic', ['hospital','medical clinic','medical cent','clinic','doctor','physician','polyclinic','health']),
 ]
 MH_RULES = [
-  ('Hospital / Psych hospital', ['psychiatric hospital','mental hospital','psychiatry hospital','hospital','rehabilitation','rehab','nursing home']),
+  ('Hospital / Psych hospital', ['psychiatric hospital','mental hospital','psychiatry hospital','hospital','rehabilitation','rehab',
+                                 'nursing home','alcoholism','de-addiction','deaddiction','recovery']),
   ('Psychiatrist', ['psychiatr']),
-  ('Therapist / Counsellor', ['psycholog','psychotherap','counsel','therapist','mental health service','wellness','de-addiction','deaddiction']),
-  ('Clinic / Doctor', ['medical clinic','medical cent','clinic','doctor','physician','neurolog','pediatric']),
+  ('Therapist / Counsellor', ['psycholog','psychotherap','counsel','therapist','mental health service','wellness','life coach',
+                              'marriage','relationship','family counsel','de-addiction']),
+  ('Clinic / Doctor', ['homeopath','medical clinic','medical cent','clinic','doctor','physician','neurolog']),
 ]
+# categories that only tangentially rank for a psychiatrist search → not a real MH rival (demoted from headline)
+MH_DROP = ('dermat','gyneco','obstetric','women','maternity','ent specialist','diabet','thyroid','pulmon','gastro','cardio',
+           'ortho','nephro','urolog','ophthal','physiothe','pediatric','paediatric','surgeon','imaging','diagnostic center',
+           'speech & hearing','emergency','research institute')
 def facility(cat, category):
     c = (category or '').lower()
     if not c: return 'Other'
     for label, kws in (STI_RULES if cat == 'STI' else MH_RULES):
         if any(k in c for k in kws): return label
     return 'Other'
+def cat_relevant(cat, name, category):
+    """False = tangential (won't be picked as the #1 rival). STI: labs/clinics all count. MH: drop off-topic specialists."""
+    c = (category or '').lower()
+    if cat == 'MH' and any(k in c for k in MH_DROP): return False
+    return True
 
 def why_tags(our, orank, top, cat):
     """Review-based outcome (reviews are the reliable, durable moat; map-pack rank is volatile/noisy).
@@ -296,10 +307,14 @@ def build_cat_dfs(cat, cube):
             comps_all.append(dict(name=c['name'], pathy=facility(cat, c.get('category')),
                                   category=c.get('category'), reviews=int(rev) if rev else 0,
                                   rating=c.get('rating'), km=round(c['km'], 1) if c.get('km') is not None else None,
-                                  pos=c.get('pos'), ads=bool(c.get('is_paid')),
+                                  pos=c.get('pos'), ads=bool(c.get('is_paid')), rel=cat_relevant(cat, c['name'], c.get('category')),
                                   maps=MAPS(c.get('place_id'), c['name'], city)))
-        comps = sorted(comps_all, key=lambda c: -c['reviews'])[:5]
-        if not comps: continue
+        if not comps_all: continue
+        # headline #1 rival = highest-review RELEVANT competitor; tangential specialists stay in list but not as headline
+        rel = [c for c in comps_all if c['rel']] or comps_all
+        rel.sort(key=lambda c: -c['reviews'])
+        rest = sorted([c for c in comps_all if c is not rel[0]], key=lambda c: -c['reviews'])
+        comps = [rel[0]] + rest[:6]
         top = comps[0]
         tags = why_tags(our, orank, top, cat)
         vtext, vkind = clinic_verdict(our, orank, top, tags, cat)
