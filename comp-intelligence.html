@@ -47,7 +47,7 @@ tr.clk{cursor:pointer}tr.clk:hover td{background:#f4f7fb}
 .r-green{color:#1E8449;font-weight:800;text-align:center}
 .r-amber{color:#B8862E;font-weight:800;text-align:center}
 .r-red{color:#C0392B;font-weight:800;text-align:center}
-.vk-win{color:var(--win);font-weight:700}.vk-outrank{color:var(--acc);font-weight:700}.vk-reviews{color:var(--amber);font-weight:700}.vk-push{color:var(--muted)}
+.vk-win{color:var(--win);font-weight:700}.vk-defend{color:var(--amber);font-weight:700}.vk-outrank{color:var(--acc);font-weight:700}.vk-reviews{color:var(--red);font-weight:700}.vk-push{color:var(--muted)}
 .detail{background:#fbfcfe;padding:0}
 .detail table{border:none;border-radius:0}.detail th{background:#eef2f7;color:var(--ink)}
 a.maps{color:var(--acc);text-decoration:none;font-weight:700;white-space:nowrap}a.maps:hover{text-decoration:underline}
@@ -80,6 +80,18 @@ a.maps{color:var(--acc);text-decoration:none;font-weight:700;white-space:nowrap}
 .ksub{display:flex;flex-wrap:wrap;gap:4px;margin:1px 0 3px 15px}
 .ksub .sc{cursor:pointer;padding:1px 6px;border-radius:4px;font-size:10px;background:#f2f4f7;color:#48525f}
 .ksub .sc:hover{background:#e3e9f0}.ksub .sc.on{background:var(--acc);color:#fff;font-weight:700}
+/* horizontal chip cloud for the long GMB-category list (STI/MH) */
+.facet.cloud{flex:1 1 100%}
+.tchips{display:flex;flex-wrap:wrap;gap:6px;margin-top:4px}
+.tchip{display:inline-flex;align-items:center;gap:6px;padding:3px 9px;border-radius:14px;background:#f2f4f7;color:#48525f;cursor:pointer;font-size:11.5px;white-space:nowrap}
+.tchip:hover{background:#e6ebf1}
+.tchip.on{background:var(--acc);color:#fff}
+.tchip.ex{background:#fbe9e7;color:var(--red);text-decoration:line-through}
+.tchip.dim{opacity:.45}
+.tchip .tdot{width:8px;height:8px;border-radius:2px;flex:0 0 auto}
+.tchip .tn{font-weight:800}
+.tchip .txh{color:#b4bdc9;cursor:pointer;visibility:hidden;font-size:11px}
+.tchip:hover .txh{visibility:visible}.tchip.ex .txh{visibility:visible;color:var(--red)}
 .active{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px;min-height:22px}
 .chip{display:inline-flex;align-items:center;gap:6px;background:#eef4fb;border:1px solid #cfe0f2;color:var(--acc);border-radius:16px;padding:3px 10px;font-size:11.5px;font-weight:600}
 .chip b{font-weight:800}.chip .x{cursor:pointer;font-weight:800}
@@ -97,6 +109,7 @@ a.maps{color:var(--acc);text-decoration:none;font-weight:700;white-space:nowrap}
 <table><thead><tr id="hdr">
   <th data-s="city">City</th><th data-s="loc">Clinic</th>
   <th data-s="rival">Top rival</th><th data-s="pathy">Type</th><th data-s="rcat" title="the rival's Google Business category">Rival GMB category</th>
+  <th data-s="rank" title="our estimated local-pack position (grid avg; lower = better; — = not ranking)">Rank (est.)</th>
   <th data-s="our" title="our clinic's Google review count">Our rev</th><th data-s="rrev" title="the #1 rival's review count">Rival rev</th>
   <th data-s="ratio">Ratio</th><th data-s="gap" title="reviews we'd need to catch up (rival − ours)">Gap ⤢</th><th data-s="dist">Dist</th>
   <th data-s="gmb" title="searches that showed our Google listing, per week (map + search views · mature 4-week avg)">Our GMB views/wk</th><th data-s="verdict">Verdict</th><th>Maps</th>
@@ -113,8 +126,8 @@ function kindColor(k){return tax().kindColor[k]||'#9AA6B5';}
 function kindOrder(){return tax().kindOrder||[];}
 function pill(p){return `<span class="pill" style="background:${typeColor(p)}">${p}</span>`}
 // outcome tags → label + colour ('beaten:<Type>' resolved dynamically)
-const OUTLBL={winning:'Winning (more reviews)',['have-reviews-but-outranked']:'Have reviews · outranked',['review-gap']:'Big review gap'};
-const OUTCOL={winning:'var(--win)',['have-reviews-but-outranked']:'var(--acc)',['review-gap']:'var(--red)'};
+const OUTLBL={winning:'Winning (more reviews)',defend:'Defend · rank #1, out-reviewed',['have-reviews-but-outranked']:'Have reviews · outranked',['review-gap']:'Big review gap'};
+const OUTCOL={winning:'var(--win)',defend:'var(--amber)',['have-reviews-but-outranked']:'var(--acc)',['review-gap']:'var(--red)'};
 function tagLabel(t){return t.startsWith('beaten:')?'Beaten by '+t.slice(7):(OUTLBL[t]||t);}
 function tagColor(t){return t.startsWith('beaten:')?typeColor(t.slice(7)):(OUTCOL[t]||'#999');}
 function outLabel(v){if(v==='__beaten')return 'Beaten by a rival';if(v.startsWith('__bkind:'))return 'Beaten by '+v.slice(8);return tagLabel(v);}
@@ -154,11 +167,13 @@ function toggle(k,v){const x=FILX[k].indexOf(v);if(x>=0)FILX[k].splice(x,1);cons
 function toggleX(k,v){const a=FIL[k],i=a.indexOf(v);if(i>=0)a.splice(i,1);const b=FILX[k],j=b.indexOf(v);j>=0?b.splice(j,1):b.push(v);draw();}
 function renderCards(rows){
   const n=rows.length,cnt=f=>rows.filter(f).length;
-  const win=cnt(r=>r.tags.includes('winning')),outrank=cnt(r=>r.tags.includes('have-reviews-but-outranked')),
+  const win=cnt(r=>r.tags.includes('winning')),defend=cnt(r=>r.tags.includes('defend')),
+        outrank=cnt(r=>r.tags.includes('have-reviews-but-outranked')),
         beaten=cnt(r=>r.tags.some(t=>t.startsWith('beaten:'))),gap=cnt(r=>r.tags.includes('review-gap'));
   document.getElementById('scopehint').textContent=`${n} Allo clinic${n===1?'':'s'} in scope · ${CATLBL[CAT]}`;
   document.getElementById('cards').innerHTML=[
     ['Clinics',n],['Winning · more reviews','<span style="color:var(--win)">'+win+'</span> ('+(n?Math.round(win/n*100):0)+'%)'],
+    ['Defend · #1 out-reviewed','<span style="color:var(--amber)">'+defend+'</span>'],
     ['Beaten by a rival','<span style="color:var(--red)">'+beaten+'</span>'],['Big review gap',gap],
     ['Have reviews · outranked',outrank]
   ].map(([k,v])=>`<div class="card"><div class="k">${k}</div><div class="v">${v}</div></div>`).join('');
@@ -181,8 +196,17 @@ function barFacet(key,title,opts,colf){
 function typeFacet(){
   const base=applyFil(SCOPED,'type'),active=FIL.type;
   const g={};base.forEach(r=>{const p=r.competitors[0].pathy,k=kindOf(p);(g[k]=g[k]||{c:0,p:{}});g[k].c++;g[k].p[p]=(g[k].p[p]||0)+1;});
-  const kinds=kindOrder().filter(k=>g[k]),mx=Math.max(1,...kinds.map(k=>g[k].c));
-  const ex=FILX.type;
+  const kinds=kindOrder().filter(k=>g[k]),mx=Math.max(1,...kinds.map(k=>g[k].c)),ex=FILX.type;
+  // flat = each kind is a single self-named type (STI/MH raw GMB categories) → render as a horizontal chip cloud
+  const flat=kinds.every(k=>{const s=Object.keys(g[k].p);return s.length===1&&s[0]===k;});
+  if(flat&&kinds.length>6){
+    const chips=kinds.map(k=>{
+      const on=active.includes(k),exc=ex.includes(k),dim=active.length&&!on&&!exc;
+      return `<span class="tchip ${on?'on':exc?'ex':dim?'dim':''}" data-k="type" data-v="${k}">
+        <span class="tdot" style="background:${kindColor(k)}"></span>${k} <span class="tn">${g[k].c}</span>
+        <span class="txh" data-kx="type" data-v="${k}" title="hide">⊘</span></span>`;}).join('');
+    return `<div class="facet type cloud"><h4>Top-rival type · GMB category<span class="clr ${active.length||ex.length?'on':''}" data-k="type">clear</span></h4><div class="tchips">${chips}</div></div>`;
+  }
   const body=kinds.map(k=>{
     const G=g[k],subs=Object.entries(G.p).sort((a,b)=>b[1]-a[1]);
     const kon=active.includes(k),kex=ex.includes(k),kdim=active.length&&!kon&&!kex&&!subs.some(([p])=>active.includes(p));
@@ -197,14 +221,16 @@ function typeFacet(){
 function outcomeFacet(){
   const base=applyFil(SCOPED,'out'),active=FIL.out;
   const win=base.filter(r=>r.tags.includes('winning')).length;
+  const defend=base.filter(r=>r.tags.includes('defend')).length;
   const outrank=base.filter(r=>r.tags.includes('have-reviews-but-outranked')).length;
   const gap=base.filter(r=>r.tags.includes('review-gap')).length;
   const beaten=base.filter(r=>r.tags.some(t=>t.startsWith('beaten:')));
   const bk={};beaten.forEach(r=>{const t=r.tags.find(x=>x.startsWith('beaten:')).slice(7),k=kindOf(t);(bk[k]=bk[k]||{c:0,t:{}});bk[k].c++;bk[k].t[t]=(bk[k].t[t]||0)+1;});
-  const mx=Math.max(1,win,outrank,beaten.length,gap),ex=FILX.out;
+  const mx=Math.max(1,win,defend,outrank,beaten.length,gap),ex=FILX.out;
   const beatenOn=active.some(a=>a==='__beaten'||a.startsWith('__bkind:')||a.startsWith('beaten:'));
   const has=v=>active.includes(v),hax=v=>ex.includes(v);
   let html=frowHTML('out','winning','Winning · more reviews',win,mx,'var(--win)',has('winning'),hax('winning'),active.length&&!has('winning'));
+  if(defend)html+=frowHTML('out','defend','Defend · #1 but out-reviewed',defend,mx,'var(--amber)',has('defend'),hax('defend'),active.length&&!has('defend'));
   if(outrank)html+=frowHTML('out','have-reviews-but-outranked','Have reviews · outranked',outrank,mx,'var(--acc)',has('have-reviews-but-outranked'),hax('have-reviews-but-outranked'),active.length&&!has('have-reviews-but-outranked'));
   html+=frowHTML('out','__beaten','Beaten by a rival',beaten.length,mx,'var(--red)',has('__beaten'),hax('__beaten'),active.length&&!beatenOn);
   kindOrder().filter(k=>bk[k]).forEach(k=>{
@@ -225,6 +251,8 @@ function renderFacets(){
     +barFacet('rrev','Rival reviews',[['giant','Giant ≥1000'],['strong','Strong 300–1000'],['mid','Mid 100–300'],['weak','Weak <100']],()=>'var(--red)');
   F.querySelectorAll('.frow').forEach(row=>row.onclick=()=>toggle(row.dataset.k,row.dataset.v));
   F.querySelectorAll('.fhide').forEach(h=>h.onclick=e=>{e.stopPropagation();toggleX(h.dataset.kx,h.dataset.v);});
+  F.querySelectorAll('.tchip').forEach(c=>c.onclick=()=>toggle('type',c.dataset.v));
+  F.querySelectorAll('.tchip .txh').forEach(h=>h.onclick=e=>{e.stopPropagation();toggleX('type',h.dataset.v);});
   F.querySelectorAll('.ksub .sc[data-v]').forEach(s=>s.onclick=e=>{e.stopPropagation();toggle('type',s.dataset.v);});
   F.querySelectorAll('.ksub .sc[data-out]').forEach(s=>s.onclick=e=>{e.stopPropagation();toggle('out',s.dataset.out);});
   F.querySelectorAll('.clr').forEach(c=>c.onclick=e=>{e.stopPropagation();FIL[c.dataset.k]=[];FILX[c.dataset.k]=[];draw();});
@@ -284,7 +312,7 @@ function draw(){
   renderFacets();
   let rows=applyFil(SCOPED);
   renderActive(rows.length,SCOPED.length);
-  const sv=(r,c)=>{const t=r.competitors[0];return {city:r.city,loc:r.loc,rival:t.name,pathy:t.pathy,rcat:t.category||'',our:r.our_reviews,rrev:t.reviews,ratio:t.reviews?r.our_reviews/t.reviews:0,gap:r.our_reviews-t.reviews,dist:t.km==null?99999:t.km,gmb:r.gmb?r.gmb.searches:-1,verdict:r.vkind}[c];};
+  const sv=(r,c)=>{const t=r.competitors[0];return {city:r.city,loc:r.loc,rival:t.name,pathy:t.pathy,rcat:t.category||'',rank:r.rank_est||99,our:r.our_reviews,rrev:t.reviews,ratio:t.reviews?r.our_reviews/t.reviews:0,gap:r.our_reviews-t.reviews,dist:t.km==null?99999:t.km,gmb:r.gmb?r.gmb.searches:-1,verdict:r.vkind}[c];};
   if(SORT.col)rows.sort((a,b)=>{const x=sv(a,SORT.col),y=sv(b,SORT.col);return (typeof x==='string'?x.localeCompare(y):(x-y))*SORT.dir;});
   else rows.sort((a,b)=>(a.city+a.loc).localeCompare(b.city+b.loc));
   document.querySelectorAll('#hdr th[data-s]').forEach(h=>{const b=h.dataset.lbl||(h.dataset.lbl=h.textContent.trim());h.textContent=b+(SORT.col===h.dataset.s?(SORT.dir>0?' ▲':' ▼'):'');});
@@ -298,6 +326,7 @@ function draw(){
     return `<tr class="clk" data-k="${r.city}|${r.loc}">
       <td>${r.city}</td><td><b>${r.loc}</b></td>
       <td>${t.name.slice(0,26)}</td><td>${pill(t.pathy)}</td><td class="muted" style="font-size:11px">${t.category||'—'}</td>
+      <td title="grid-avg local-pack position">${r.rank_est?'~'+r.rank_est:'—'}</td>
       <td class="rev">${r.our_reviews||'—'}</td>
       <td class="rev">${t.reviews||'—'}</td>
       <td class="${rc}">${ratio!=null?ratio.toFixed(2):'—'}</td>
@@ -306,7 +335,7 @@ function draw(){
       <td class="rev">${r.gmb?r.gmb.searches.toLocaleString('en-IN'):'—'}</td>
       <td class="vk-${r.vkind}">${r.verdict}</td>
       <td><a class="maps" href="${r.our_maps}" target="_blank">Allo ↗</a></td></tr>
-    <tr class="detail" id="d-${i}" style="display:none"><td colspan="13"></td></tr>`;
+    <tr class="detail" id="d-${i}" style="display:none"><td colspan="14"></td></tr>`;
   }).join('');
   document.querySelectorAll('tr.clk').forEach((tr,i)=>tr.onclick=()=>{
     const d=document.getElementById('d-'+i),r=rows[i];

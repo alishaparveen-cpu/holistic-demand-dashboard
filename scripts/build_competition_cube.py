@@ -215,23 +215,41 @@ def build_tax(cube, cat):
     color = {c: PALETTE[i % len(PALETTE)] for i, c in enumerate(order)}
     return {'kind': {c: c for c in order}, 'kindOrder': order, 'typeColor': color, 'kindColor': color}
 
+def load_rank_est():
+    """Our estimated local-pack rank per clinic — grid-averaged from our own SERP tracking
+    (serp_analyses via data_serp_competitors.tsv). None/0 = not ranking; ~1 = top of pack; >1.5 = outranked."""
+    out = {}
+    p = os.path.join(ROOT, 'data_serp_competitors.tsv')
+    if os.path.exists(p):
+        for r in csv.DictReader(open(p), delimiter='\t'):
+            k = (r.get('cat', 'SH'), _nm(r.get('city', '')), _nm(r.get('locality', '')))
+            if k not in out and r.get('our_avg_rank'):
+                try: out[k] = round(float(r['our_avg_rank']), 1)
+                except ValueError: pass
+    return out
+RANK_EST = load_rank_est()
+
 def why_tags(our, orank, top, cat):
-    """Review-based outcome (reviews are the reliable, durable moat; map-pack rank is volatile/noisy).
-    Winning = we hold more reviews than our top rival. Beaten = the rival out-reviews us (by type).
-    Rank, where trustworthy, only adds the 'outranked-despite-reviews' flag."""
+    """Reviews are the durable moat; rank (grid-avg estimate) sharpens the call.
+    orank None/0 = not ranking · ≤1.5 = top of pack · >1.5 = outranked."""
+    ranked = bool(orank) and orank > 0
+    top1 = ranked and orank <= 1.5
     rival_ahead = top['reviews'] > our
     tags = []
     if not rival_ahead:
         tags.append('winning')
-        if orank and orank > 1: tags.append('have-reviews-but-outranked')   # lead on reviews but a rival ranks above → fix bid/GMB
+        if ranked and not top1: tags.append('have-reviews-but-outranked')   # more reviews but a rival ranks above → bid/GMB fix
+    elif top1:
+        tags.append('defend')                                               # rank ~#1 now but out-reviewed → protect the lead
     else:
-        tags.append('beaten:' + top['pathy'])                               # beaten by this rival TYPE (kind derived in UI)
+        tags.append('beaten:' + top['pathy'])
         if our < top['reviews'] * 0.5: tags.append('review-gap')
     return tags
 
 def clinic_verdict(our, orank, top, tags, cat):
     t = top['pathy']
     if 'have-reviews-but-outranked' in tags: return ('OUTRANK — we have the reviews, fix GMB/bid', 'outrank')
+    if 'defend' in tags: return (f'DEFEND — rank ~#1 but out-reviewed ({top["reviews"]} vs {our})', 'defend')
     if 'winning' in tags: return ('Winning — hold + keep reviews', 'win')
     if 'review-gap' in tags: return (f'BUILD REVIEWS — {t} rival far ahead ({top["reviews"]} vs {our})', 'reviews')
     return (f'BUILD REVIEWS — {t} rival leads {top["reviews"]} vs {our}', 'reviews')
@@ -276,7 +294,7 @@ def build_cat_sh(rows, cube):
         city, loc = key.split('|', 1)
         ol = our_listing(cat, key)
         our = ol['reviews'] if ol and ol['reviews'] is not None else 0
-        orank = ol['rank'] if ol and ol.get('rank') else None
+        orank = RANK_EST.get((cat, _nm(city), _nm(loc)))   # reliable grid-avg rank estimate
         our_pid = ol['pid'] if ol else ''
         comps_all = []
         for c in e.get('competitors', []):
@@ -298,7 +316,7 @@ def build_cat_sh(rows, cube):
         top = comps[0]
         tags = why_tags(our, orank, top, cat)
         vtext, vkind = clinic_verdict(our, orank, top, tags, cat)
-        clinics[key] = dict(city=city, loc=loc, our_reviews=our, our_rank=orank or 0,
+        clinics[key] = dict(city=city, loc=loc, our_reviews=our, our_rank=orank or 0, rank_est=orank,
                             our_maps=MAPS(our_pid, f'Allo Health {loc}', city),
                             our_rating=(ol.get('rating') if ol else None),
                             competitors=comps, tags=tags, verdict=vtext, vkind=vkind, gmb=GMB.get(key))
@@ -314,7 +332,7 @@ def build_cat_dfs(cat, cube):
         city, loc = key.split('|', 1)
         ol = our_listing(cat, key)
         our = ol['reviews'] if ol and ol['reviews'] is not None else 0
-        orank = ol['rank'] if ol and ol.get('rank') else None
+        orank = RANK_EST.get((cat, _nm(city), _nm(loc)))   # reliable grid-avg rank estimate
         our_pid = ol['pid'] if ol else ''
         comps_all = []
         for c in e.get('competitors', []):
@@ -334,7 +352,7 @@ def build_cat_dfs(cat, cube):
         top = comps[0]
         tags = why_tags(our, orank, top, cat)
         vtext, vkind = clinic_verdict(our, orank, top, tags, cat)
-        clinics[key] = dict(city=city, loc=loc, our_reviews=our, our_rank=orank or 0,
+        clinics[key] = dict(city=city, loc=loc, our_reviews=our, our_rank=orank or 0, rank_est=orank,
                             our_maps=MAPS(our_pid, f'Allo Health {loc}', city),
                             our_rating=(ol.get('rating') if ol else None),
                             competitors=comps, tags=tags, verdict=vtext, vkind=vkind, gmb=GMB.get(key))
