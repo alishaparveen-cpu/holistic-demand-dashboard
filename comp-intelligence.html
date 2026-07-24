@@ -60,10 +60,16 @@ a.maps{color:var(--acc);text-decoration:none;font-weight:700;white-space:nowrap}
 .facet h4{margin:0 0 7px;font-size:11px;text-transform:uppercase;letter-spacing:.3px;color:var(--muted);display:flex;align-items:center;gap:6px}
 .facet h4 .clr{margin-left:auto;color:var(--acc);cursor:pointer;font-weight:700;font-size:10px;visibility:hidden;text-transform:none;letter-spacing:0}
 .facet h4 .clr.on{visibility:visible}
-.frow{display:grid;grid-template-columns:1fr auto;align-items:center;gap:2px 8px;padding:3px 5px;margin:1px -5px;border-radius:6px;cursor:pointer}
+.frow{display:grid;grid-template-columns:1fr auto auto;align-items:center;gap:2px 6px;padding:3px 5px;margin:1px -5px;border-radius:6px;cursor:pointer}
 .frow:hover{background:#eef4fb}
 .frow.on{background:#e4eefb;box-shadow:inset 2px 0 0 var(--acc)}
+.frow.ex{background:#fbe9e7;box-shadow:inset 2px 0 0 var(--red);opacity:.85}
+.frow.ex .flbl{text-decoration:line-through;color:var(--red)}
 .frow.dim{opacity:.42}
+.fhide{font-size:12px;color:#c3ccd8;cursor:pointer;padding:0 3px;visibility:hidden;line-height:1}
+.frow:hover .fhide{visibility:visible}
+.frow.ex .fhide{visibility:visible;color:var(--red)}
+.chip.exq{background:#fbe9e7;border-color:#f1b4ab;color:var(--red)}
 .fhead{display:flex;align-items:center;gap:6px;min-width:0}
 .fdot{width:9px;height:9px;border-radius:2px;flex:0 0 auto}
 .flbl{font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -114,10 +120,10 @@ fetch('data_competition.json').then(r=>r.json()).then(d=>{CUBE=d;TAX=d._meta.tax
   document.getElementById('tabs').innerHTML=d._meta.cats.map(c=>`<div class="tab" data-c="${c}">${CATLBL[c]||c}</div>`).join('');
   document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{CAT=t.dataset.c;render();});
   render();});
-let FIL={out:[],type:[],rev:[],rrev:[]},SCOPED=[];   // multi-select: each facet holds an array of chosen values
+let FIL={out:[],type:[],rev:[],rrev:[]},FILX={out:[],type:[],rev:[],rrev:[]},SCOPED=[];   // FIL=include, FILX=exclude
 function render(){
   document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('on',t.dataset.c===CAT));
-  FIL={out:[],type:[],rev:[],rrev:[]};SORT={col:null,dir:1};
+  FIL={out:[],type:[],rev:[],rrev:[]};FILX={out:[],type:[],rev:[],rrev:[]};SORT={col:null,dir:1};
   const C=CUBE[CAT];
   const cities=Object.keys(C.cities).sort();
   document.getElementById('fCity').innerHTML='<option value="">National — all cities</option>'+cities.map(c=>`<option>${c}</option>`).join('');
@@ -136,8 +142,13 @@ const PRED={
   rev:(r,v)=>{const o=r.our_reviews;return v==='strong'?o>=300:v==='mid'?(o>=100&&o<300):o<100;},
   rrev:(r,v)=>{const x=r.competitors[0].reviews;return v==='giant'?x>=1000:v==='strong'?(x>=300&&x<1000):v==='mid'?(x>=100&&x<300):x<100;},
 };
-const applyFil=(rows,except)=>rows.filter(r=>Object.keys(FIL).every(k=>k===except||!FIL[k].length||FIL[k].some(v=>PRED[k](r,v))));
-function toggle(k,v){const a=FIL[k],i=a.indexOf(v);i>=0?a.splice(i,1):a.push(v);draw();}
+const applyFil=(rows,except)=>rows.filter(r=>Object.keys(FIL).every(k=>{
+  if(k===except)return true;
+  if(FILX[k].length&&FILX[k].some(v=>PRED[k](r,v)))return false;      // excluded value present → drop
+  if(FIL[k].length&&!FIL[k].some(v=>PRED[k](r,v)))return false;       // includes set but none match → drop
+  return true;}));
+function toggle(k,v){const x=FILX[k].indexOf(v);if(x>=0)FILX[k].splice(x,1);const a=FIL[k],i=a.indexOf(v);i>=0?a.splice(i,1):a.push(v);draw();}
+function toggleX(k,v){const a=FIL[k],i=a.indexOf(v);if(i>=0)a.splice(i,1);const b=FILX[k],j=b.indexOf(v);j>=0?b.splice(j,1):b.push(v);draw();}
 function renderCards(rows){
   const n=rows.length,cnt=f=>rows.filter(f).length;
   const win=cnt(r=>r.tags.includes('winning')),outrank=cnt(r=>r.tags.includes('have-reviews-but-outranked')),
@@ -150,33 +161,34 @@ function renderCards(rows){
   ].map(([k,v])=>`<div class="card"><div class="k">${k}</div><div class="v">${v}</div></div>`).join('');
 }
 // one compact facet row: label + count on top, a proportional coloured clickable bar below
-function frowHTML(key,v,label,n,mx,color,on,dim){
-  return `<div class="frow ${on?'on':dim?'dim':''}" data-k="${key}" data-v="${v}">
+function frowHTML(key,v,label,n,mx,color,on,exc,dim){
+  return `<div class="frow ${on?'on':exc?'ex':dim?'dim':''}" data-k="${key}" data-v="${v}">
     <div class="fhead"><span class="fdot" style="background:${color}"></span><span class="flbl">${label}</span></div>
-    <span class="fn">${n}</span>
+    <span class="fn">${n}</span><span class="fhide" data-kx="${key}" data-v="${v}" title="hide / show all but this">${exc?'⊘':'⊘'}</span>
     <div class="fbarbg"><i style="width:${mx?Math.max(n?4:0,n/mx*100):0}%;background:${color}"></i></div></div>`;
 }
 function barFacet(key,title,opts,colf){
-  const base=applyFil(SCOPED,key),active=FIL[key];
+  const base=applyFil(SCOPED,key),active=FIL[key],ex=FILX[key];
   const cts=opts.map(([v,l])=>[v,l,base.filter(r=>PRED[key](r,v)).length]);
   const mx=Math.max(1,...cts.map(c=>c[2]));
-  const rows=cts.map(([v,l,n])=>frowHTML(key,v,l,n,mx,colf(v),active.includes(v),active.length&&!active.includes(v))).join('');
-  return `<div class="facet"><h4>${title}<span class="clr ${active.length?'on':''}" data-k="${key}">clear</span></h4>${rows}</div>`;
+  const rows=cts.map(([v,l,n])=>frowHTML(key,v,l,n,mx,colf(v),active.includes(v),ex.includes(v),active.length&&!active.includes(v)&&!ex.includes(v))).join('');
+  return `<div class="facet"><h4>${title}<span class="clr ${active.length||ex.length?'on':''}" data-k="${key}">clear</span></h4>${rows}</div>`;
 }
 // two-level top-rival TYPE facet: kind rows each with type sub-chips (adapts per category via cube tax)
 function typeFacet(){
   const base=applyFil(SCOPED,'type'),active=FIL.type;
   const g={};base.forEach(r=>{const p=r.competitors[0].pathy,k=kindOf(p);(g[k]=g[k]||{c:0,p:{}});g[k].c++;g[k].p[p]=(g[k].p[p]||0)+1;});
   const kinds=kindOrder().filter(k=>g[k]),mx=Math.max(1,...kinds.map(k=>g[k].c));
+  const ex=FILX.type;
   const body=kinds.map(k=>{
     const G=g[k],subs=Object.entries(G.p).sort((a,b)=>b[1]-a[1]);
-    const kon=active.includes(k),kdim=active.length&&!kon&&!subs.some(([p])=>active.includes(p));
-    const row=frowHTML('type',k,k,G.c,mx,kindColor(k),kon,kdim);
+    const kon=active.includes(k),kex=ex.includes(k),kdim=active.length&&!kon&&!kex&&!subs.some(([p])=>active.includes(p));
+    const row=frowHTML('type',k,k,G.c,mx,kindColor(k),kon,kex,kdim);
     const showSub=subs.length>1||subs[0][0]!==k;
-    const sub=showSub?`<div class="ksub">`+subs.map(([p,c])=>`<span class="sc ${active.includes(p)?'on':''}" data-v="${p}">${p} ${c}</span>`).join('')+`</div>`:'';
+    const sub=showSub?`<div class="ksub">`+subs.map(([p,c])=>`<span class="sc ${active.includes(p)?'on':''} ${ex.includes(p)?'exq':''}" data-v="${p}">${p} ${c}</span>`).join('')+`</div>`:'';
     return row+sub;
   }).join('');
-  return `<div class="facet type"><h4>Top-rival type<span class="clr ${active.length?'on':''}" data-k="type">clear</span></h4>${body}</div>`;
+  return `<div class="facet type"><h4>Top-rival type<span class="clr ${active.length||ex.length?'on':''}" data-k="type">clear</span></h4>${body}</div>`;
 }
 // hierarchical "Where we stand": Winning / Have-reviews-outranked / Beaten (parent → by-kind → by-type) / Review gap
 function outcomeFacet(){
@@ -186,20 +198,20 @@ function outcomeFacet(){
   const gap=base.filter(r=>r.tags.includes('review-gap')).length;
   const beaten=base.filter(r=>r.tags.some(t=>t.startsWith('beaten:')));
   const bk={};beaten.forEach(r=>{const t=r.tags.find(x=>x.startsWith('beaten:')).slice(7),k=kindOf(t);(bk[k]=bk[k]||{c:0,t:{}});bk[k].c++;bk[k].t[t]=(bk[k].t[t]||0)+1;});
-  const mx=Math.max(1,win,outrank,beaten.length,gap);
+  const mx=Math.max(1,win,outrank,beaten.length,gap),ex=FILX.out;
   const beatenOn=active.some(a=>a==='__beaten'||a.startsWith('__bkind:')||a.startsWith('beaten:'));
-  const has=v=>active.includes(v);
-  let html=frowHTML('out','winning','Winning · more reviews',win,mx,'var(--win)',has('winning'),active.length&&!has('winning'));
-  if(outrank)html+=frowHTML('out','have-reviews-but-outranked','Have reviews · outranked',outrank,mx,'var(--acc)',has('have-reviews-but-outranked'),active.length&&!has('have-reviews-but-outranked'));
-  html+=frowHTML('out','__beaten','Beaten by a rival',beaten.length,mx,'var(--red)',has('__beaten'),active.length&&!beatenOn);
+  const has=v=>active.includes(v),hax=v=>ex.includes(v);
+  let html=frowHTML('out','winning','Winning · more reviews',win,mx,'var(--win)',has('winning'),hax('winning'),active.length&&!has('winning'));
+  if(outrank)html+=frowHTML('out','have-reviews-but-outranked','Have reviews · outranked',outrank,mx,'var(--acc)',has('have-reviews-but-outranked'),hax('have-reviews-but-outranked'),active.length&&!has('have-reviews-but-outranked'));
+  html+=frowHTML('out','__beaten','Beaten by a rival',beaten.length,mx,'var(--red)',has('__beaten'),hax('__beaten'),active.length&&!beatenOn);
   kindOrder().filter(k=>bk[k]).forEach(k=>{
     const K=bk[k],types=Object.entries(K.t).sort((a,b)=>b[1]-a[1]);
     const single=types.length===1&&types[0][0]===k;   // kind has one type == itself (e.g. Allopathic) → no redundant child
     html+=`<div class="ksub"><span class="sc ${has('__bkind:'+k)?'on':''}" data-out="__bkind:${k}" style="background:${kindColor(k)}1e;color:${kindColor(k)}">▸ ${k} ${K.c}</span>`+
       (single?'':types.map(([t,c])=>`<span class="sc ${has('beaten:'+t)?'on':''}" data-out="beaten:${t}">${t} ${c}</span>`).join(''))+`</div>`;
   });
-  html+=frowHTML('out','review-gap','Big review gap',gap,mx,'var(--red)',has('review-gap'),active.length&&!has('review-gap'));
-  return `<div class="facet type"><h4>Where we stand<span class="clr ${active.length?'on':''}" data-k="out">clear</span></h4>${html}</div>`;
+  html+=frowHTML('out','review-gap','Big review gap',gap,mx,'var(--red)',has('review-gap'),hax('review-gap'),active.length&&!has('review-gap'));
+  return `<div class="facet type"><h4>Where we stand<span class="clr ${active.length||ex.length?'on':''}" data-k="out">clear</span></h4>${html}</div>`;
 }
 function renderFacets(){
   const F=document.getElementById('facets');
@@ -207,23 +219,30 @@ function renderFacets(){
     +barFacet('rev','Our reviews',[['strong','Strong ≥300'],['mid','Mid 100–300'],['thin','Thin <100']],()=>'var(--acc)')
     +barFacet('rrev','Rival reviews',[['giant','Giant ≥1000'],['strong','Strong 300–1000'],['mid','Mid 100–300'],['weak','Weak <100']],()=>'var(--red)');
   F.querySelectorAll('.frow').forEach(row=>row.onclick=()=>toggle(row.dataset.k,row.dataset.v));
+  F.querySelectorAll('.fhide').forEach(h=>h.onclick=e=>{e.stopPropagation();toggleX(h.dataset.kx,h.dataset.v);});
   F.querySelectorAll('.ksub .sc[data-v]').forEach(s=>s.onclick=e=>{e.stopPropagation();toggle('type',s.dataset.v);});
   F.querySelectorAll('.ksub .sc[data-out]').forEach(s=>s.onclick=e=>{e.stopPropagation();toggle('out',s.dataset.out);});
-  F.querySelectorAll('.clr').forEach(c=>c.onclick=e=>{e.stopPropagation();FIL[c.dataset.k]=[];draw();});
+  F.querySelectorAll('.clr').forEach(c=>c.onclick=e=>{e.stopPropagation();FIL[c.dataset.k]=[];FILX[c.dataset.k]=[];draw();});
 }
 function renderActive(shown,total){
   const chips=[];
   if(fCity.value)chips.push(`<span class="chip"><b>${fCity.value}</b> scope</span>`);
   const add=(k,v,txt)=>chips.push(`<span class="chip"><b>${txt}</b><span class="x" data-k="${k}" data-v="${v}">✕</span></span>`);
+  const addx=(k,v,txt)=>chips.push(`<span class="chip exq"><b>≠ ${txt}</b><span class="x" data-kx="${k}" data-v="${v}">✕</span></span>`);
   FIL.out.forEach(v=>add('out',v,outLabel(v)));
   FIL.type.forEach(v=>add('type',v,v));
   FIL.rev.forEach(v=>add('rev',v,'Our reviews · '+v));
   FIL.rrev.forEach(v=>add('rrev',v,'Rival reviews · '+v));
-  const any=FIL.out.length||FIL.type.length||FIL.rev.length||FIL.rrev.length;
+  FILX.out.forEach(v=>addx('out',v,outLabel(v)));
+  FILX.type.forEach(v=>addx('type',v,v));
+  FILX.rev.forEach(v=>addx('rev',v,'Our reviews · '+v));
+  FILX.rrev.forEach(v=>addx('rrev',v,'Rival reviews · '+v));
+  const any=FIL.out.length||FIL.type.length||FIL.rev.length||FIL.rrev.length||FILX.out.length||FILX.type.length||FILX.rev.length||FILX.rrev.length;
   const A=document.getElementById('active');
   A.innerHTML=chips.join('')+(any?`<span class="clrall" id="clrall">clear all</span>`:'')+`<span class="cnt">${shown} of ${total} clinics</span>`;
-  A.querySelectorAll('.chip .x[data-v]').forEach(x=>x.onclick=()=>toggle(x.dataset.k,x.dataset.v));
-  const ca=document.getElementById('clrall');if(ca)ca.onclick=()=>{FIL={out:[],type:[],rev:[],rrev:[]};draw();};
+  A.querySelectorAll('.chip .x[data-k]').forEach(x=>x.onclick=()=>toggle(x.dataset.k,x.dataset.v));
+  A.querySelectorAll('.chip .x[data-kx]').forEach(x=>x.onclick=()=>toggleX(x.dataset.kx,x.dataset.v));
+  const ca=document.getElementById('clrall');if(ca)ca.onclick=()=>{FIL={out:[],type:[],rev:[],rrev:[]};FILX={out:[],type:[],rev:[],rrev:[]};draw();};
 }
 function deriveAds(f){const r=(n,d)=>d?n/d:0;return{
   mkt:f.mkt,IS:r(f.impr,f.mkt),spend:f.spend,clicks:f.clicks,cpc:r(f.spend,f.clicks),
