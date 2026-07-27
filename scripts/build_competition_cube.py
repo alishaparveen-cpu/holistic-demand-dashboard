@@ -8,7 +8,30 @@ from collections import defaultdict
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TODAY = datetime.date(2026, 7, 24)
+RADIUS_KM = 5.0   # local catchment radius (km). Competitors are KEPT regardless of distance, but tagged
+                  # in_radius True/False so the dashboard can label/filter "within 5km" vs "further out".
+def label_radius(comps):
+    """Tag each competitor with in_radius (<=RADIUS_KM from the clinic). km is None for grid rivals with no
+    distance measured at <=2km grid points — those are grid-local, so treated as in-radius. Nothing dropped."""
+    for c in comps:
+        km = c.get('km')
+        if km is not None and km > 50:      # >50km = bad geocode / wrong-city coordinate, not a real distance
+            c['geo_uncertain'] = True; c['km'] = None; km = None
+        c['in_radius'] = (km is None) or (km <= RADIUS_KM)
+    return comps
 COMPOSE = json.load(open(os.path.join(ROOT, 'data_campaign_compose.json')))
+# canonical locality → city (authoritative operational map from the demand cube), to fix the SERP grid's
+# case-inconsistent / mis-geocoded city tags (e.g. 'MUMBAI' vs 'Mumbai'; Vashi tagged Mumbai when it's Navi Mumbai).
+_BK = json.load(open(os.path.join(ROOT, 'data_bookings_funnel.json')))
+LOC2CITY = {}
+for _k in _BK:
+    if _k == '_meta': continue
+    _i = _k.find('|')
+    if _i > 0:
+        _lc = _k[_i+1:]
+        if _lc: LOC2CITY[''.join(c for c in _lc.lower() if c.isalnum())] = _k[:_i]
+def canon_city(city, loc):
+    return LOC2CITY.get(''.join(c for c in str(loc).lower() if c.isalnum())) or str(city).strip().title()
 NW = len(COMPOSE['_meta']['weeks'])
 ALT = ('Ayurvedic', 'Unani', 'Homeopathic')
 import urllib.parse
@@ -32,6 +55,23 @@ for _c in _CATS:
         for _x in _e.get('competitors', []):
             if _x.get('name') and _x.get('category'):
                 DFS_CATMAP.setdefault((_c, _nm0(_x['name'])), _x['category'])
+# MH-only name list for careful fuzzy category recovery — grid competitor names often differ slightly
+# from the crawl spelling, and the grid SERP pull itself ships NO category (empty across SH/STI/MH).
+_MH_CATLIST = [(_nm0(_x['name']), _x['category'])
+               for _e in DFS.get('MH', {}).values() for _x in _e.get('competitors', [])
+               if _x.get('name') and _x.get('category')]
+def dfs_mh_cat(name):
+    """Real GMB category (as returned in the MH SERP crawl) for an MH competitor: exact name, then a careful
+    prefix/containment fuzzy — MH crawl ONLY, so we never borrow an SH 'Sexologist' label for someone who
+    appears in a mental-health search."""
+    k = _nm0(name)
+    if not k: return None
+    hit = DFS_CATMAP.get(('MH', k))
+    if hit: return hit
+    for nmk, cat in _MH_CATLIST:
+        if len(k) >= 12 and len(nmk) >= 12 and (k[:20] == nmk[:20] or (len(k) >= 16 and (k in nmk or nmk in k))):
+            return cat
+    return None
 def our_listing(cat, key):
     """Our own Allo Google-Maps listing from the fresh crawl. Rank is category-specific (position in
     THIS category's search); review count/Place ID are the same listing → borrow from any category if the
@@ -201,19 +241,30 @@ MH_DROP = ('dermat', 'gyneco', 'obstetric', 'women', 'maternity', 'ent specialis
            'gastro', 'cardio', 'ortho', 'nephro', 'urolog', 'ophthal', 'physiothe', 'pediatric', 'paediatric', 'surgeon',
            'imaging', 'diagnostic center', 'speech & hearing', 'emergency', 'research institute',
            'educational consultant', 'career counsel', 'student career', 'career guidance', 'spa', 'beauty', 'salon',
-           'coaching cent', 'tuition', 'training institute', 'astrolog', 'yoga', 'fitness', 'gym')
+           'coaching cent', 'tuition', 'training institute', 'astrolog', 'yoga', 'fitness', 'gym',
+           # generic non-psychiatric facilities that only tangentially rank for MH searches (added 2026-07: kill review-inflating giants)
+           'hospital', 'general hospital', 'multispeciality', 'multi speciality', 'super speciality', 'superspeciality',
+           'fertility', 'ivf', 'nursing home', 'dental', 'dentist', 'hair transplant', 'skin', 'eye care', 'hearing aid',
+           'day spa', 'massage', 'chiropractor', 'occupational therap', 'physiotherap', 'acupuncture', 'reiki',
+           'language school', 'business management', 'consultant coaching')
 # STI/MH type = the raw Google-Maps category (no custom buckets / no 'Other'). SH keeps pathy.
 PALETTE = ['#2C6CAE', '#7D5BA6', '#2A9D8F', '#C86B9E', '#B8862E', '#C0392B', '#3A7CA5', '#8E44AD',
            '#16A085', '#D35400', '#2980B9', '#27AE60', '#A93226', '#5D6D7E', '#AF7AC5', '#1ABC9C', '#E67E22']
+# categories whose words overlap a broad MH signal keyword (physio-THERAPy, career-COUNSELling) — must drop BEFORE the signal test
+MH_HARD_DROP = ('physiothe', 'physiotherap', 'occupational therap', 'chiropractor', 'speech & hearing',
+                'career counsel', 'career guidance', 'student career', 'educational consultant')
 def cat_relevant(cat, name, category):
-    """False = tangential (won't be the #1 rival). STI: any lab/clinic counts. MH: must be a real
-    mental-health listing (drop dermatology/gynae/ENT/etc. and category-less)."""
+    """None/False = not a headline MH rival. MH: must be a genuine mental-health listing.
+    Order matters: (1) hard-drop the categories that would falsely trip a broad signal word, (2) accept a clear
+    MH signal (so 'psychiatric HOSPITAL', 'mind center', counselling all pass), (3) drop remaining off-topic
+    (generic hospital/fertility/IVF/dental/spa/…), (4) unknown category-less grid rows kept as low-confidence."""
     if cat != 'MH': return True
     s = ((category or '') + ' ' + (name or '')).lower()
-    if any(k in s for k in MH_DROP): return False                       # clearly off-topic (derm/education/spa/…)
-    if any(k in s for k in MH_SIGNAL): return True                      # clearly a mental-health listing
+    if any(k in s for k in MH_HARD_DROP): return False                  # physio/career/education overlaps → always off-topic
+    if any(k in s for k in MH_SIGNAL): return True                      # genuine mental-health listing (signal wins over 'hospital')
+    if any(k in s for k in MH_DROP): return False                       # generic hospital / fertility / dental / spa / …
     if category and not any(k in s for k in MH_GENERIC): return False   # a non-MH category with no MH signal
-    return None                                                        # unknown (e.g. grid rows have no category) → keep
+    return None                                                        # unknown (e.g. grid rows have no category) → keep, but not headline
 def build_tax(cube, cat):
     """Dynamic taxonomy for STI/MH: each GMB category is its own type; colours from a palette by frequency."""
     freq = {}
@@ -292,8 +343,30 @@ def _rollup(cat, cube, clinics, citymap):
                                    winrate=round(natwins / max(1, len(allkeys)), 2),
                                    tags=dict(tagcount)))
 
+def mh_type_from_name(name):
+    """Infer an MH facility type from the listing NAME when Google left the category blank
+    (many solo psychiatrists/counsellors have no GMB category). Returns None if the name gives no clue."""
+    s = (name or '').lower()
+    if 'psychiatric hospital' in s or 'mental hospital' in s: return 'Psychiatric hospital'
+    if 'rehab' in s or 'de-addiction' in s or 'deaddiction' in s or 'addiction' in s: return 'Rehabilitation center'
+    if 'child psychiatr' in s: return 'Child psychiatrist'
+    if 'psychiatr' in s or 'psychiatry' in s: return 'Psychiatrist'
+    if 'child psycholog' in s: return 'Child psychologist'
+    if 'psycholog' in s: return 'Psychologist'
+    if 'psychotherap' in s: return 'Psychotherapist'
+    if 'family counsel' in s or 'marriage counsel' in s or 'marriage' in s: return 'Family counselor'
+    if 'counsel' in s: return 'Counselor'
+    if 'neuro' in s: return 'Psychiatrist'
+    if 'mind' in s or 'mental' in s or 'wellness' in s or 'manas' in s or 'psych' in s: return 'Mental health service'
+    if 'therapist' in s or 'therapy' in s: return 'Therapist'
+    return None
 def _type_of(cat, name, category, pid):
-    return (NAME_PATHY.get(_nm(name)) or norm(PATHY.get(pid))) if cat == 'SH' else (category or 'Uncategorised')
+    if cat == 'SH':
+        return NAME_PATHY.get(_nm(name)) or norm(PATHY.get(pid))
+    if cat == 'MH':
+        # real GMB category wins; else infer from the name; else a clean generic (never bare 'Uncategorised')
+        return category or mh_type_from_name(name) or DFS_CATMAP.get(('MH', _nm(name))) or 'Mental-health professional'
+    return category or 'Uncategorised'
 def _rel_of(cat, name, category):
     return sh_relevant(name, category) if cat == 'SH' else cat_relevant(cat, name, category)
 
@@ -307,7 +380,7 @@ def build_cat_grid(cat, rows, cube):
     byclinic = defaultdict(list)
     for r in rows:
         if r.get('cat', 'SH') != cat: continue
-        byclinic[(r['city'], r['locality'])].append(r)
+        byclinic[(canon_city(r['city'], r['locality']), r['locality'])].append(r)   # snap to canonical city → merges 'MUMBAI'/'Mumbai' + routes Vashi to Navi Mumbai
     clinics = {}; citymap = defaultdict(list)
     for (city, loc), lst in byclinic.items():
         key = f'{city}|{loc}'
@@ -321,7 +394,7 @@ def build_cat_grid(cat, rows, cube):
             if not name: continue
             pid = r.get('place_id', '')
             app = int(num(r.get('appearances')))
-            gcat = r.get('category') or DFS_CATMAP.get((cat, _nm(name)))   # grid lacks category → borrow from crawl by name
+            gcat = r.get('category') or (dfs_mh_cat(name) if cat == 'MH' else DFS_CATMAP.get((cat, _nm(name))))  # grid ships no category → recover the real GMB category from the crawl by name
             comps_all.append(dict(name=name, pathy=_type_of(cat, name, gcat, pid), category=gcat,
                 reviews=int(num(r.get('reviews'))), rating=num(r.get('rating')) or None,
                 km=round(num(r['clinic_km']), 1) if r.get('clinic_km') else None,
@@ -338,11 +411,13 @@ def build_cat_grid(cat, rows, cube):
                 rating=c.get('rating'), km=round(c['km'], 1) if c.get('km') is not None else None,
                 appearances=0, dompct=None, pos=c.get('pos'), ads=bool(c.get('is_paid')),
                 rel=_rel_of(cat, c['name'], c.get('category')), maps=MAPS(c.get('place_id'), c['name'], city)))
+        comps_all = label_radius(comps_all)          # tag in_radius, keep all
         if not comps_all: continue
         # #1 rival = most grid-dominant relevant competitor (appearances), reviews as tiebreak
         rel = [c for c in comps_all if c['rel'] is True] or [c for c in comps_all if c['rel'] is not False] or comps_all
         rel.sort(key=lambda c: (-c['appearances'], -c['reviews']))
-        rest = sorted([c for c in comps_all if c is not rel[0]], key=lambda c: -c['appearances'])
+        # displayed list = relevant only (drop rel==False junk: language schools, spas, generic hospitals, IVF, …)
+        rest = sorted([c for c in comps_all if c is not rel[0] and c['rel'] is not False], key=lambda c: -c['appearances'])
         comps = [rel[0]] + rest[:6]
         top = comps[0]
         tags = why_tags(our, rank_est, top, cat)
@@ -353,8 +428,10 @@ def build_cat_grid(cat, rows, cube):
         citymap[city].append(key)
     # clinics entirely absent from the SERP grid → build from the single-point crawl so none are missing
     for k, e in DFS.get(cat, {}).items():
-        if k in clinics or '|' not in k or k in CLOSED: continue
-        city, loc = k.split('|', 1)
+        if '|' not in k or k in CLOSED: continue
+        rawcity, loc = k.split('|', 1)
+        city = canon_city(rawcity, loc); k2 = f'{city}|{loc}'   # snap to canonical city (merges MUMBAI/Mumbai, routes Vashi→Navi Mumbai)
+        if k2 in clinics or k in clinics: continue
         comps_all = []
         for c in e.get('competitors', []):
             if not c.get('name'): continue
@@ -362,18 +439,19 @@ def build_cat_grid(cat, rows, cube):
                 category=(c.get('category') or None), reviews=int(c['reviews']) if c.get('reviews') else 0, rating=c.get('rating'),
                 km=round(c['km'], 1) if c.get('km') is not None else None, appearances=0, dompct=None, pos=c.get('pos'),
                 ads=bool(c.get('is_paid')), rel=_rel_of(cat, c['name'], c.get('category')), maps=MAPS(c.get('place_id'), c['name'], city)))
+        comps_all = label_radius(comps_all)          # tag in_radius, keep all
         if not comps_all: continue
         rel = [c for c in comps_all if c['rel'] is True] or [c for c in comps_all if c['rel'] is not False] or comps_all
         rel.sort(key=lambda c: -c['reviews'])
-        comps = [rel[0]] + sorted([c for c in comps_all if c is not rel[0]], key=lambda c: -c['reviews'])[:6]
+        comps = [rel[0]] + sorted([c for c in comps_all if c is not rel[0] and c['rel'] is not False], key=lambda c: -c['reviews'])[:6]
         top = comps[0]
         ol = our_listing(cat, k); our = ol['reviews'] if ol and ol['reviews'] is not None else 0
-        rank_est = RANK_EST.get((cat, _nm(city), _nm(loc)))
+        rank_est = RANK_EST.get((cat, _nm(city), _nm(loc))) or RANK_EST.get((cat, _nm(rawcity), _nm(loc)))
         tags = why_tags(our, rank_est, top, cat); vtext, vkind = clinic_verdict(our, rank_est, top, tags, cat)
-        clinics[k] = dict(city=city, loc=loc, our_reviews=our, our_rank=rank_est or 0, rank_est=rank_est,
+        clinics[k2] = dict(city=city, loc=loc, our_reviews=our, our_rank=rank_est or 0, rank_est=rank_est,
                           our_maps=MAPS(ol['pid'] if ol else '', f'Allo Health {loc}', city),
                           competitors=comps, tags=tags, verdict=vtext, vkind=vkind, gmb=GMB.get(k))
-        citymap[city].append(k)
+        citymap[city].append(k2)
     _rollup(cat, cube, clinics, citymap)
 
 def build_cat_dfs(cat, cube):
@@ -382,10 +460,12 @@ def build_cat_dfs(cat, cube):
     clinics = {}; citymap = defaultdict(list)
     for key, e in DFS.get(cat, {}).items():
         if '|' not in key or key in CLOSED: continue
-        city, loc = key.split('|', 1)
+        rawcity, loc = key.split('|', 1)
+        city = canon_city(rawcity, loc); ckey = f'{city}|{loc}'   # snap to canonical city (merges MUMBAI/Mumbai, routes Vashi→Navi Mumbai)
+        if ckey in clinics: continue                              # de-dup: two crawl keys for the same clinic (e.g. MUMBAI|Vashi + Navi Mumbai|Vashi)
         ol = our_listing(cat, key)
         our = ol['reviews'] if ol and ol['reviews'] is not None else 0
-        orank = RANK_EST.get((cat, _nm(city), _nm(loc)))   # reliable grid-avg rank estimate
+        orank = RANK_EST.get((cat, _nm(city), _nm(loc))) or RANK_EST.get((cat, _nm(rawcity), _nm(loc)))   # reliable grid-avg rank estimate
         our_pid = ol['pid'] if ol else ''
         comps_all = []
         for c in e.get('competitors', []):
@@ -396,20 +476,21 @@ def build_cat_dfs(cat, cube):
                                   rating=c.get('rating'), km=round(c['km'], 1) if c.get('km') is not None else None,
                                   pos=c.get('pos'), ads=bool(c.get('is_paid')), rel=cat_relevant(cat, c['name'], c.get('category')),
                                   maps=MAPS(c.get('place_id'), c['name'], city)))
+        comps_all = label_radius(comps_all)          # tag in_radius, keep all
         if not comps_all: continue
-        # headline #1 rival = highest-review RELEVANT competitor; tangential specialists stay in list but not as headline
+        # headline #1 rival = highest-review RELEVANT competitor; drop rel==False junk from the displayed list
         rel = [c for c in comps_all if c['rel']] or comps_all
         rel.sort(key=lambda c: -c['reviews'])
-        rest = sorted([c for c in comps_all if c is not rel[0]], key=lambda c: -c['reviews'])
+        rest = sorted([c for c in comps_all if c is not rel[0] and c['rel'] is not False], key=lambda c: -c['reviews'])
         comps = [rel[0]] + rest[:6]
         top = comps[0]
         tags = why_tags(our, orank, top, cat)
         vtext, vkind = clinic_verdict(our, orank, top, tags, cat)
-        clinics[key] = dict(city=city, loc=loc, our_reviews=our, our_rank=orank or 0, rank_est=orank,
+        clinics[ckey] = dict(city=city, loc=loc, our_reviews=our, our_rank=orank or 0, rank_est=orank,
                             our_maps=MAPS(our_pid, f'Allo Health {loc}', city),
                             our_rating=(ol.get('rating') if ol else None),
                             competitors=comps, tags=tags, verdict=vtext, vkind=vkind, gmb=GMB.get(key))
-        citymap[city].append(key)
+        citymap[city].append(ckey)
     _rollup(cat, cube, clinics, citymap)
 
 def main():
