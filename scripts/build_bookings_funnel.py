@@ -41,7 +41,7 @@ def callcat(clf, cl):
 
 def main():
     sql = open(os.path.join(ROOT, 'scripts', 'fetch_booking_episodes_rich.sql')).read()
-    sql = re.sub(r"start_time < '\\d{4}-\\d\\d-\\d\\d'", "start_time < '"+_CUTOFF+"'", sql)   # dynamic cutoff = current-week Monday
+    sql = re.sub(r"start_time < '\d{4}-\d\d-\d\d'", "start_time < '"+_CUTOFF+"'", sql)   # dynamic cutoff = current-week Monday
     p = subprocess.run([sys.executable, RQ], input=sql, capture_output=True, text=True)
     if p.returncode != 0:
         sys.exit('query failed: ' + p.stderr[-500:])
