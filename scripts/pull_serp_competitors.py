@@ -11,11 +11,13 @@ Auth: AWS_PROFILE=redshift-data · cluster warehouse · db allo_prod.
 """
 import boto3, os, time, sys
 
-SINCE = '2026-07-10'   # latest full SERP snapshot window
+SINCE = '2026-06-25'   # full available SERP snapshot window (2026-06-25 → latest); wider = more clinics clear HAVING>=3
+# MH intent is broader than 'psychiatrist' — include psychologist / therapist / counsellor / mental-health keywords
+MH_KW = "(s.keyword ILIKE '%psychiatr%' OR s.keyword ILIKE '%psycholog%' OR s.keyword ILIKE '%therapist%' OR s.keyword ILIKE '%counsel%' OR s.keyword ILIKE '%mental health%')"
 SQL_SELECT = f"""
 SELECT CASE WHEN s.keyword ILIKE '%sexologist%' THEN 'SH'
             WHEN s.keyword ILIKE '%std%' OR s.keyword ILIKE '%hiv%' THEN 'STI'
-            WHEN s.keyword ILIKE '%psychiatr%' THEN 'MH' END AS cat,
+            WHEN {MH_KW} THEN 'MH' END AS cat,
        s.nearest_clinic.city::varchar        AS city,
        s.nearest_clinic.locality::varchar    AS locality,
        s.nearest_clinic.code::varchar        AS code,
@@ -25,7 +27,10 @@ SELECT CASE WHEN s.keyword ILIKE '%sexologist%' THEN 'SH'
        MAX(m.name::varchar)                   AS comp_name,
        MAX(m.rating::float)                   AS rating,
        MAX(m.reviewsCount::int)               AS reviews,
-       MAX(NULLIF(m.category::varchar, ''))   AS category,
+       MAX(NULLIF(m.category::varchar, ''))   AS category,   -- NOTE: currently returns empty for every row →
+                                                             -- m.category is not populated in parsed_serp.mapPack.
+                                                             -- Verify the real attribute (e.g. m.categories[0] or m.type)
+                                                             -- so grid competitors carry their GMB category natively.
        MAX(NULLIF(m.domain::varchar, ''))     AS domain,
        MAX(NULLIF(m.address::varchar, ''))    AS address,
        COUNT(*)                               AS appearances,
@@ -40,8 +45,9 @@ SELECT CASE WHEN s.keyword ILIKE '%sexologist%' THEN 'SH'
        AVG(s.allo_rank::float)                AS our_avg_rank,
        COUNT(DISTINCT s.id)                   AS clinic_searches
 FROM allo_analytics.serp_analyses s, s.parsed_serp.mapPack AS m
-WHERE (s.keyword ILIKE '%sexologist%' OR s.keyword ILIKE '%std%' OR s.keyword ILIKE '%hiv%' OR s.keyword ILIKE '%psychiatr%')
+WHERE (s.keyword ILIKE '%sexologist%' OR s.keyword ILIKE '%std%' OR s.keyword ILIKE '%hiv%' OR {MH_KW})
   AND s.search_timestamp >= '{SINCE}'
+  AND s.nearest_clinic.distanceKm::float <= 5.0   -- 5km catchment: only count grid cells within 5km of the clinic
   AND m.name IS NOT NULL
   AND LOWER(m.name::varchar)   NOT LIKE '%allo health%'
   AND LOWER(COALESCE(m.domain::varchar, '')) NOT LIKE '%allohealth%'
