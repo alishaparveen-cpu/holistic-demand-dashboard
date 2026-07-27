@@ -104,18 +104,21 @@ def main():
     from collections import defaultdict
     fun = defaultdict(lambda:[0,0,0,0,0])   # (city,ch,med,cat,wk) -> leads,booked,done,booked_offline,booked_online
     NOCITY_ = '— no city · online / untracked'
+    CITYSET = set(acq.keys())   # standalone Google-Ads cities — a lead whose LOCALITY is itself one of these (e.g. a Thane clinic mis-keyed under Mumbai in the leads cube) belongs to that city, not the cube's top-level key
     for city, node in cube.items():
         if city=='_meta': continue
         for cel in node.get('cells',[]):
             ch = CHMAP.get(cel.get('ch'))
             if not ch: continue
             if city==NOCITY_ and ch!='Google': continue   # Online = Google-Ads-online only; drop GMB-untracked (they're local, book offline)
+            loc=(cel.get('loc') or '').strip()
+            rcity = loc if (city!=NOCITY_ and loc in CITYSET and loc!=city) else city   # re-attribute to the locality's own campaign city (Thane clinic leads are keyed under Mumbai in the leads cube → move to Thane)
             med=MED(cel.get('md')); cat=FCAT(cel.get('cat'))
             booked=cel.get('bk')!='notbooked'; done=cel.get('dq')=='done'; seg=cel.get('bkseg'); w=cel.get('w',[])
             for wk,idx in WKIDX.items():
                 lv = w[idx] if idx < len(w) else 0
                 if lv==0: continue
-                k=(city,ch,med,cat,wk); fun[k][0]+=lv
+                k=(rcity,ch,med,cat,wk); fun[k][0]+=lv
                 if booked:
                     fun[k][1]+=lv
                     if seg=='offline': fun[k][3]+=lv
