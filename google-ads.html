@@ -56,6 +56,7 @@ td.oldw,th.oldw{border-right:2px solid #cfd4dc}
 <p class="sub">Compose a city's full Google-Ads funnel. <b>SPEND / Budget / Bid</b> follow the CAMPAIGN pickers (category × match-type); <b>Leads → Book → Done → Revenue</b> follow the FUNNEL pickers (channel × medium × category). Two independent levers — ROAS/CPL cross your chosen spend with your chosen leads. Uncategorised web leads recovered from campaign utm; done from clinical diagnosis.</p>
 <div class="top">
   <label>City ▸ <select id="city"></select></label>
+  <button id="olderBtn" class="wkbtn" title="show / hide the oldest week (kept for reference; never in the 6-week average)">＋ older week</button>
 </div>
 <div class="layout">
   <div><table id="tbl"><thead></thead><tbody></tbody></table>
@@ -69,7 +70,7 @@ td.oldw,th.oldw{border-right:2px solid #cfd4dc}
 <script>
 const CATS=['SH','STD','MH'],MTS=['Exact-Local','Exact','Phrase-Local'];
 const CHS=['GMB','Google'],MEDS=['Call','Web','WhatsApp'],FCATS=['SH','STI','MH','Other','Uncategorized'];
-let DATA=null,CITY=null,WKALL=[],WKSEL=[],AUCT=null;
+let DATA=null,CITY=null,WKALL=[],WKSEL=[],AUCT=null,SHOW_OLDER=false;
 const SEL={cat:new Set(CATS),mt:new Set(['Exact-Local']),ch:new Set(CHS),med:new Set(MEDS),fcat:new Set(FCATS),camp:new Set(),chmed:new Set()};
 const chmedAll=chs=>{const s=new Set();(chs||CHS).forEach(c=>MEDS.forEach(m=>s.add(c+'|'+m)));return s;};   // channel×medium combos
 SEL.chmed=chmedAll(CHS);
@@ -107,6 +108,7 @@ fetch('data_campaign_compose.json').then(r=>r.json()).then(d=>{DATA=d;WKALL=d._m
     SEL.chmed=chmedAll(CITY==='Online'?['Google']:CHS);   // reset channel×medium grid (Online = Google row only)
     SEL.camp=new Set(CITY==='Online'?onlineCamps():[]);   // Online spend filters by exact campaign name (not cat×match-type)
     buildPickers();render();};
+  $('olderBtn').onclick=()=>{SHOW_OLDER=!SHOW_OLDER;render();};
   buildPickers();render();});
 fetch('data_auction_insights.json').then(r=>r.json()).then(d=>{AUCT=d;renderCompetitors();}).catch(()=>{});
 const CATLBL={SH:'Sexual Health',STI:'STI / STD',MH:'Mental Health'};
@@ -169,7 +171,9 @@ function fun(field,wk){const rows=(DATA[CITY]||{}).fun||[];let s=0;
 function funMed(field,medium,wk){const rows=(DATA[CITY]||{}).fun||[];let s=0;   // leads via a specific medium (Call), independent of the medium picker
   for(const r of rows){if(r.wk!==wk)continue;if(!SEL.ch.has(r.ch))continue;if(r.med!==medium)continue;if(!SEL.fcat.has(r.cat))continue;s+=r[field]||0;}return s;}
 function render(){
-  const wks=WKSEL,nW=wks.length;const OLD=Math.max(0,nW-6),REC=wks.slice(OLD),NA=REC.length;   // first (nW−6) weeks = de-emphasized 'older'; the average is over the RECENT 6 only
+  const wks=WKSEL,nW=wks.length;const OLD=Math.max(0,nW-6),REC=wks.slice(OLD),NA=REC.length;   // OLD = oldest week(s) beyond 6; average is always over the RECENT 6
+  const DWKS=SHOW_OLDER?wks:REC,nD=DWKS.length,oc=i=>(SHOW_OLDER&&i<OLD)?'oldw':'',om=i=>(SHOW_OLDER&&i<OLD)?'◂ ':'';   // display = recent 6 by default; '＋ older week' toggles the oldest column(s) in
+  {const ob=$('olderBtn');if(ob){ob.textContent=SHOW_OLDER?'− hide older week':'＋ older week'+(OLD?' ('+OLD+')':'');ob.style.display=OLD?'':'none';}}
   // blended-average helpers: sum a component across the RECENT 6 weeks, then take the ratio (total÷total) — older week excluded
   const bA=f=>REC.reduce((s,w)=>s+acq(f,w),0), bF=f=>REC.reduce((s,w)=>s+fun(f,w),0);
   const R=(n,d)=>d?n/d:0;
@@ -215,29 +219,29 @@ function render(){
     ['CPB',w=>{const b=fun('bk',w);return b?acq('sp',w)/b:0;},inr,'eff key','campaign spend ÷ funnel booked',()=>R(bA('sp'),bF('bk'))],
     ['CPD',w=>{const d=fun('dn',w);return d?acq('sp',w)/d:0;},inr,'b eff key','campaign spend ÷ funnel done',()=>R(bA('sp'),bF('dn'))],
   ];
-  const head='<tr>'+`<th>Metric${cpyBtn('tbl',0,'Metric')}</th>`+wks.map((w,i)=>`<th class="${i<OLD?'oldw':''}"${i<OLD?' title="older week — kept for reference, excluded from the 6-week average"':''}>${i<OLD?'◂ ':''}${w}${cpyBtn('tbl',i+1,w)}</th>`).join('')+`<th class="avg">Avg ${NA}wk${cpyBtn('tbl',nW+1,'Avg '+NA+'wk')}</th>`+'<th style="background:#2C6CAE">Level / grain</th></tr>';
+  const head='<tr>'+`<th>Metric${cpyBtn('tbl',0,'Metric')}</th>`+DWKS.map((w,i)=>`<th class="${oc(i)}"${oc(i)?' title="older week — kept for reference, excluded from the average"':''}>${om(i)}${w}${cpyBtn('tbl',i+1,w)}</th>`).join('')+`<th class="avg">Avg ${NA}wk${cpyBtn('tbl',nD+1,'Avg '+NA+'wk')}</th>`+'<th style="background:#2C6CAE">Level / grain</th></tr>';
   const avgOf=fn=>REC.reduce((s,w)=>s+fn(w),0)/NA;   // simple mean over the RECENT 6 weeks (older week excluded)
   const sumFmt=lbl=>['Spend','Budget (₹/day)','Impressions','Market size estd','Location Impressions','Clicks','Loc Clicks','Leads','Call Leads','Booked','— Booked · offline','— Booked · online','Done','Revenue (est · done×RPC)','Spend (campaigns)'].includes(lbl);
   const rowHTML=(r,fun2)=>{const[lbl,fn,fmt,cls,g,avgFn]=r;
-    const cells=wks.map((w,i)=>`<td class="${i<OLD?'oldw':''}">${fmt(fn(w))}</td>`).join('');
+    const cells=DWKS.map((w,i)=>`<td class="${oc(i)}">${fmt(fn(w))}</td>`).join('');
     const av=avgFn?avgFn():avgOf(fn);   // ratio/cost rows blend (total÷total); volume rows take the mean
     return `<tr class="${cls}"><td class="${cls.includes('b')?'b':''}">${lbl}</td>${cells}<td class="avgc">${fmt(av)}</td><td class="g">${g}</td></tr>`;};
-  const sec=(t,c)=>`<tr class="sec ${c}"><td colspan="${nW+3}">${t}</td></tr>`;
+  const sec=(t,c)=>`<tr class="sec ${c}"><td colspan="${nD+3}">${t}</td></tr>`;
   $('tbl').querySelector('thead').innerHTML=head;
   $('tbl').querySelector('tbody').innerHTML=
     sec('▼ PAID ACQUISITION — Google Ads (campaign pickers)','')+rowsAcq.map(r=>rowHTML(r)).join('')+
     sec('▼ FULL FUNNEL — leads by funnel pickers · spend by campaign pickers','fun')+rowsFun.map(r=>rowHTML(r)).join('');
   $('wknote').innerHTML=wks.includes('Jul 13-19')?'Note · Jul 13-19 spend/leads/CPL are final; its Book→Done are still maturing (this week’s leads haven’t all converted), so CPD / ROAS there will keep rising for ~2 weeks.':'';
   // splits
-  const splitBlock=(tid,hdr0,title,dim,vals,src,fld,fmt)=>`<h3>${title}</h3><table id="${tid}"><thead><tr><th>${hdr0}${cpyBtn(tid,0,hdr0||'Row')}</th>${wks.map((w,i)=>`<th class="${i<OLD?'oldw':''}">${i<OLD?'◂ ':''}${w}${cpyBtn(tid,i+1,w)}</th>`).join('')}<th class="avg">Avg ${NA}wk${cpyBtn(tid,nW+1,'Avg '+NA+'wk')}</th></tr></thead><tbody>`+
-    vals.map(v=>{const cells=wks.map(w=>{let s=0;for(const r of (DATA[CITY]||{})[src]||[]){if(r.wk!==w||r[dim]!==v)continue;s+=r[fld]||0;}return s;});
-      return `<tr><td>${v}</td>${cells.map((s,i)=>`<td class="${i<OLD?'oldw':''}">${fmt(s)}</td>`).join('')}<td class="avgc">${fmt(cells.slice(OLD).reduce((a,b)=>a+b,0)/NA)}</td></tr>`;}).join('')+'</tbody></table>';
+  const splitBlock=(tid,hdr0,title,dim,vals,src,fld,fmt)=>`<h3>${title}</h3><table id="${tid}"><thead><tr><th>${hdr0}${cpyBtn(tid,0,hdr0||'Row')}</th>${DWKS.map((w,i)=>`<th class="${oc(i)}">${om(i)}${w}${cpyBtn(tid,i+1,w)}</th>`).join('')}<th class="avg">Avg ${NA}wk${cpyBtn(tid,nD+1,'Avg '+NA+'wk')}</th></tr></thead><tbody>`+
+    vals.map(v=>{const cells=DWKS.map(w=>{let s=0;for(const r of (DATA[CITY]||{})[src]||[]){if(r.wk!==w||r[dim]!==v)continue;s+=r[fld]||0;}return s;});
+      return `<tr><td>${v}</td>${cells.map((s,i)=>`<td class="${oc(i)}">${fmt(s)}</td>`).join('')}<td class="avgc">${fmt(cells.slice(-NA).reduce((a,b)=>a+b,0)/NA)}</td></tr>`;}).join('')+'</tbody></table>';
   let sp='';
   if(CITY==='Online'){
     const camps=[...new Set(((DATA[CITY]||{}).acq||[]).map(r=>r.camp))].filter(Boolean).sort();
-    sp+=`<h3>Online campaigns · spend (₹)</h3><table id="spCamp"><thead><tr><th>Campaign${cpyBtn('spCamp',0,'Campaign')}</th>${wks.map((w,i)=>`<th class="${i<OLD?'oldw':''}">${i<OLD?'◂ ':''}${w}${cpyBtn('spCamp',i+1,w)}</th>`).join('')}<th class="avg">Avg ${NA}wk${cpyBtn('spCamp',nW+1,'Avg '+NA+'wk')}</th></tr></thead><tbody>`+
-      camps.map(c=>{const cells=wks.map(w=>{let s=0;for(const r of (DATA[CITY]||{}).acq){if(r.wk!==w||r.camp!==c)continue;s+=r.sp||0;}return s;});
-        return `<tr><td style="text-align:left">${c}</td>${cells.map((s,i)=>`<td class="${i<OLD?'oldw':''}">${inr(s)}</td>`).join('')}<td class="avgc">${inr(cells.slice(OLD).reduce((a,b)=>a+b,0)/NA)}</td></tr>`;}).join('')+'</tbody></table>';
+    sp+=`<h3>Online campaigns · spend (₹)</h3><table id="spCamp"><thead><tr><th>Campaign${cpyBtn('spCamp',0,'Campaign')}</th>${DWKS.map((w,i)=>`<th class="${oc(i)}">${om(i)}${w}${cpyBtn('spCamp',i+1,w)}</th>`).join('')}<th class="avg">Avg ${NA}wk${cpyBtn('spCamp',nD+1,'Avg '+NA+'wk')}</th></tr></thead><tbody>`+
+      camps.map(c=>{const cells=DWKS.map(w=>{let s=0;for(const r of (DATA[CITY]||{}).acq){if(r.wk!==w||r.camp!==c)continue;s+=r.sp||0;}return s;});
+        return `<tr><td style="text-align:left">${c}</td>${cells.map((s,i)=>`<td class="${oc(i)}">${inr(s)}</td>`).join('')}<td class="avgc">${inr(cells.slice(-NA).reduce((a,b)=>a+b,0)/NA)}</td></tr>`;}).join('')+'</tbody></table>';
   }
   $('splits').innerHTML=sp+
     splitBlock('spMed','Medium','Leads by medium','med',MEDS,'fun','lead',cm)+
