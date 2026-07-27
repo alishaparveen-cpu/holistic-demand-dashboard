@@ -348,6 +348,8 @@
   .nbsum{font-family:'JetBrains Mono';font-weight:700;font-size:12px;width:120px;text-align:right;flex:none}
   .head .nbsum{font-size:8.5px;color:var(--faint);font-weight:600}
   .nbnote{font-size:11px;color:var(--faint);margin-top:9px;line-height:1.55}.nbnote b{color:var(--muted)}
+.avlink{margin-left:8px;font-size:10px;color:#8257C4;cursor:pointer;text-decoration:none;opacity:.7;white-space:nowrap}
+.avlink:hover{opacity:1;text-decoration:underline}
 </style>
 <script src="leads-cube.js"></script>
 <script src="bookings-cube.js"></script>
@@ -523,6 +525,7 @@ DIMS.oncall={label:'Connected on call?', field:'oncall', values:[{k:'yes',l:'Con
 DIMS.number={label:'Number dialed', field:'num', values:[], color:v=>v===''?'#c7ccd4':'var(--call)'};   // leads-mode, dynamic per clinic
 DIMS.leadcamp={label:'Campaign / number', field:'campaign', values:[], color:v=>v===''?'#c7ccd4':(String(v).indexOf('☎')===0?'var(--call)':'#4E73C4')};   // leads-mode: paid ad-campaign name (google/fb) OR ☎ number dialed (call) — clubbed, dynamic per scope
 DIMS.clinic={label:'Clinic (in city)', field:'loc', values:[], color:v=>v===''?'#c7ccd4':'#7C5CBF'};   // city/national scope, dynamic
+DIMS.doctor={label:'Doctor', field:'doc', values:[], color:v=>v===''?'#c7ccd4':'#2AA198'};   // ② bookings only: provider of that week's FIRST SC (offline episode grain); online bookings → '— online / not assigned'
 DIMS.city={label:'City', field:'city', values:[], color:v=>'#2C6CAE'};   // national scope, dynamic
 DIMS.citygroup={label:'Attribution', field:'citygroup', values:[{k:'attr',l:'attributed to a city'},{k:'nocity',l:'not attributed to a city / online'}], color:v=>v==='attr'?'#2C6CAE':'#c7ccd4'};   // national scope: two levels — attributed to a city (→ drills into city names) vs not-attributed / online
 DIMS.seg={label:'Segment', field:'seg', values:[{k:'offline',l:'Offline · clinic'},{k:'online',l:'Online · telehealth'}], color:v=>v==='online'?'#7C5CBF':'#2E7D5B'};   // bookings-mode: Offline (physical clinic) vs Online (telehealth). Both toggle → both groups; Offline/Online toggle → just that one
@@ -610,7 +613,7 @@ function splitCat(v,cc){   // integer v → {STI,SH,MH,Other} summing exactly to
 }
 function buildCells(node){
   return (node.cells||[]).map(c=>({ptype:c.pt,channel:(window.BookingsCube?window.BookingsCube.channelOf(c.ch):c.ch),age:c.la,medium:(c.md==='whatsapp'?'wa_org':c.md),
-    brank:c.br||'na',drank:c.dr||'na',relapse:((c.dr==='d1'||c.dr==='d2pl'||c.pt==='relapse')?'relapse':((c.dr==='d0'||c.pt==='new'||c.pt==='reattempt')?'new':'na')),wdArr:c.wd||[],   // relapse = simple 2-way: had this patient COMPLETED an SC before this booking? (offline done-rank d1+/d2pl OR online ret_return) → a returning/repeat patient
+    brank:c.br||'na',drank:c.dr||'na',doc:c.doc||'',relapse:((c.dr==='d1'||c.dr==='d2pl'||c.pt==='relapse')?'relapse':((c.dr==='d0'||c.pt==='new'||c.pt==='reattempt')?'new':'na')),wdArr:c.wd||[],   // relapse = simple 2-way: had this patient COMPLETED an SC before this booking? (offline done-rank d1+/d2pl OR online ret_return) → a returning/repeat patient
     num:c.num||'',campaign:c.cmp||'na',category:(function(x){return (x==='na'||x==='unknown')?((x==='unknown'||c.md==='call')?'unknown':'na'):x;})(c.cat||'na'),catsrc:c.csrc||'none',clcat:(c.dg&&c.dg!=='(none)')?(SUBCAT2TOP[c.dg]||'Other'):'(none)',bkseg:c.bkseg||'none',loc:c.loc||'',city:c.city||'',citygroup:(c.city&&c.city.indexOf('— no city')!==0)?'attr':'nocity',_on:(!!c.on||c.city==='Online'),seg:((!!c.on||c.city==='Online')?'online':'offline'),arr:c.w}));   // clcat = CLINICAL diagnosis top-category (merged-Rx dg rolled via SUBCAT2TOP) → EXACT done × maturity × category joint. brank/drank = booking/done rank AS-OF before this booking.
 }
 function buildLeadCells(node){   // leads cube: channel x medium x number x url x booked-status
@@ -627,7 +630,7 @@ function makeP(cfg){const P={mode:cfg.mode,dims:cfg.dims,order:[...cfg.order],bu
   P.dims.forEach(dk=>{P.sel[dk]=new Set(DIMS[dk].values.map(v=>v.k));});return P;}
 const PL=makeP({mode:'leads',dims:['citygroup','city','clinic','channel','medium','leadcamp','oncall','intent','strength','category','catsrc','asrc','status','doneq'],order:['category','channel','medium'],build:buildLeadCells,hero:'attributable leads',
   els:{flow:$('flowL'),bar:$('barL'),heroN:$('heroNL'),heroL:$('heroLL'),hHdr:$('hHdrL'),hRight:$('hRightL')}});
-const PB=makeP({mode:'bookings',dims:['seg','city','clinic','brank','relapse','channel','maturity','medium','category','catsrc','campaign'],order:['seg','maturity','channel','medium','category'],build:buildCells,hero:'SC bookings',   // default: Segment → Lead maturity → (geo City) → Source → Medium → Category; Repeat/relapse + booking rank + campaign are opt-in ghosts
+const PB=makeP({mode:'bookings',dims:['seg','city','clinic','doctor','brank','relapse','channel','maturity','medium','category','catsrc','campaign'],order:['seg','maturity','channel','medium','category'],build:buildCells,hero:'SC bookings',   // default: Segment → Lead maturity → (geo City) → Source → Medium → Category; Repeat/relapse + booking rank + campaign are opt-in ghosts
   els:{flow:$('flowB'),bar:$('barB'),heroN:$('heroNB'),heroL:$('heroLB'),hHdr:$('hHdrB'),hRight:$('hRightB')}});
 
 // exact numbers dialed under a call node (shown inline when expanded) — so you see WHICH numbers, incl. organic
@@ -739,9 +742,12 @@ function renderLevel(container,cells,depth,parentTot,parentWk,path,pathVals,P){
         +`<span class="delta ${dp.cls}">${dp.txt}</span>${bnCols(dp,false)}`;}
     else right=`<span class="barwrap"><span class="barfill" style="width:${Math.max(2,bw)}%;background:${col};opacity:${last?0.85:0.5}"></span></span><span class="cnt">${PCT?pct+'%':t}</span><span class="pct">${PCT?'':pct+'%'}</span>`;
     right+='<span class="zoom" title="plot weekly trend"><svg width="13" height="13" viewBox="0 0 16 16" style="display:inline-block;vertical-align:middle"><polyline points="1,11 5,7 9,9 15,2" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" stroke-linecap="round"/></svg></span>';
+    const availLoc=(dk==='clinic'&&single&&vk)?vk:((dk==='doctor'&&single&&pathVals.clinic)?pathVals.clinic:null);   // clinic row → its own loc; doctor row → parent clinic
+    const avL=availLoc?`<a class="avlink" title="jump to ③ Availability for ${availLoc} (all its doctors) — check if a booking drop is a supply/roster issue">◷ avail ›</a>`:'';
     row.innerHTML=`<span class="chev ${hasKids?'':'leaf'}">${hasKids?(P.open[key]?'▾':'▶'):'▶'}</span>`
-      +`<span class="lbl"><span class="dot" style="background:${col}"></span>${u.label}${attr}</span>`+right;
+      +`<span class="lbl"><span class="dot" style="background:${col}"></span>${u.label}${attr}${avL}</span>`+right;
     container.appendChild(row);
+    if(availLoc){const al=row.querySelector('.avlink');if(al)al.onclick=(e)=>{e.stopPropagation();availQuickCheck(availLoc);};}
     {const zb=row.querySelector('.zoom');zb.innerHTML=sparkline(wk);const crumb=Object.entries(pathVals).map(([d2,v2])=>unitLbl(d2,v2,P));crumb.push(u.label);
      zb.onclick=(e)=>{e.stopPropagation();openChart(crumb.join(' › '),wk,col);};}
     if(PSHARE[P.mode]&&parentWk&&sumT(parentWk))appendShareRow(container,wk,parentWk,15+(depth+1)*20);   // ↳ share of parent % (opt-in)
@@ -2097,10 +2103,12 @@ function loadClinic(){const keys=scopeKeys();CLINIC=keys.join('+')||SCOPE;   // 
   const locs={},cities={};
   [PL,PB].forEach(P=>P.cells.forEach(c=>{const s=(c.arr||[]).reduce((a,b)=>a+(b||0),0);if(c.loc)locs[c.loc]=(locs[c.loc]||0)+s;if(c.city)cities[c.city]=(cities[c.city]||0)+s;}));
   DIMS.clinic.values=Object.keys(locs).filter(k=>!OPLOC.size||OPLOC.has(k)).sort((a,b)=>locs[b]-locs[a]).map(k=>({k,l:k})).concat([{k:'',l:'— not attributed to a clinic'}]);   // operational clinics only
+  const docs={};PB.cells.forEach(c=>{const s=(c.arr||[]).reduce((a,b)=>a+(b||0),0);if(c.doc)docs[c.doc]=(docs[c.doc]||0)+s;});   // ② doctor values (offline episode cube only; online cells carry no doctor → '' bucket)
+  DIMS.doctor.values=Object.keys(docs).sort((a,b)=>docs[b]-docs[a]).map(k=>({k,l:k})).concat([{k:'',l:'— online / not assigned'}]);
   // City dim: only real (tracked) cities, size-sorted; the single no-city / online / untracked bucket sorts last. Phantoms (Delhi/Lucknow) + Practo-online already folded into it.
   const cityKeys=Object.keys(cities).filter(k=>k===NOCITY_LAB||isTracked(k));
   DIMS.city.values=cityKeys.sort((a,b)=>a===NOCITY_LAB?1:b===NOCITY_LAB?-1:cities[b]-cities[a]).map(k=>({k,l:k}));
-  [PL,PB].forEach(P=>{P.sel.clinic=new Set(DIMS.clinic.values.map(v=>v.k));P.sel.city=new Set(DIMS.city.values.map(v=>v.k));P.open={};renderLayerBar(P);draw(P);});
+  [PL,PB].forEach(P=>{P.sel.clinic=new Set(DIMS.clinic.values.map(v=>v.k));P.sel.city=new Set(DIMS.city.values.map(v=>v.k));if(P.dims.includes('doctor'))P.sel.doctor=new Set(DIMS.doctor.values.map(v=>v.k));P.open={};renderLayerBar(P);draw(P);});
   document.getElementById('subt').textContent='';
   renderLB(); renderWkEnd(); renderOps(); imRender();   // imRender: keep Quick view in sync with the picker selection (All / None / Tier / checkbox)
 }

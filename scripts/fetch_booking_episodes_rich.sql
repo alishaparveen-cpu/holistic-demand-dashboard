@@ -8,11 +8,12 @@ WITH sc AS (
   SELECT a.patient_id, a.created_at, a.start_time, LOWER(a.status) AS st,
          CASE WHEN LOWER(a.status) IN ('completed','reconsulted') THEN 1 ELSE 0 END AS done_flag,
          TO_CHAR(DATE_TRUNC('week', a.start_time + INTERVAL '5.5 hours'),'YYYY-MM-DD') AS wk,
-         loc.city, loc.locality, p.lead_id
+         loc.city, loc.locality, p.lead_id, COALESCE(pro.name,'—') AS doctor
   FROM allo_consultations.appointments a
   JOIN allo_consultations.types t ON a.type_id=t.id AND t.name='Screening Call'
   JOIN allo_health.locations loc ON a.location_id=loc.id AND loc.deleted_at IS NULL
   LEFT JOIN allo_persons.patient p ON p.id=a.patient_id
+  LEFT JOIN allo_persons.providers pro ON a.provider_id=pro.id AND pro.deleted_at IS NULL
   WHERE a.deleted_at IS NULL
 ),
 fow AS (   -- one row per patient-week = that week's FIRST SC (for attribution); week_done = completed that week?
@@ -52,7 +53,7 @@ pfdiag AS (   -- patient's most-recent merged-Rx CLINICAL diagnosis → category
     GROUP BY enc.patient_id, enc.created_at) q WHERE rnk=1
 ),
 joined AS (
-  SELECT s.city, s.locality AS clinic, s.wk, s.week_done, COALESCE(pf.diag_cat,'(none)') AS diag,
+  SELECT s.city, s.locality AS clinic, s.doctor, s.wk, s.week_done, COALESCE(pf.diag_cat,'(none)') AS diag,
     CASE WHEN s.wk_seq=1 THEN 'new' WHEN s.prior_done>0 THEN 'relapse' ELSE 'reattempt' END AS ptype,
     CASE   -- lead maturity by CALENDAR WEEK (lead's week vs this booking's week) — 'fresh' = lead arrived the SAME week the SC is booked, so it ties exactly to ① "leads this week → booked this week"
       WHEN l.id IS NULL OR l.created_at IS NULL THEN 'nolead'
@@ -123,5 +124,5 @@ joined AS (
   WHERE s.start_time >= '2026-01-05' AND s.start_time < '2026-07-20'
     AND LOWER(COALESCE(s.locality,'')) <> 'online' AND s.locality IS NOT NULL
 )
-SELECT city, clinic, wk, ptype, lead_age, channel, medium, number, campaign, category, catsrc, diag, brank, drank, COUNT(*) AS bookings, SUM(week_done) AS done
-FROM joined GROUP BY 1,2,3,4,5,6,7,8,9,10,11,12,13,14 ORDER BY 1,2,3;
+SELECT city, clinic, wk, ptype, lead_age, channel, medium, number, campaign, category, catsrc, diag, brank, drank, doctor, COUNT(*) AS bookings, SUM(week_done) AS done
+FROM joined GROUP BY 1,2,3,4,5,6,7,8,9,10,11,12,13,14,15 ORDER BY 1,2,3;

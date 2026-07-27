@@ -14,7 +14,8 @@ client=GoogleAdsClient.load_from_dict({'developer_token':cfg['GOOGLE_ADS_DEVELOP
 ga=client.get_service('GoogleAdsService'); CID='3190189170'
 WK=[('Jun 8-14','2026-06-08','2026-06-14'),('Jun 15-21','2026-06-15','2026-06-21'),
     ('Jun 22-28','2026-06-22','2026-06-28'),('Jun 29-Jul 5','2026-06-29','2026-07-05'),
-    ('Jul 6-12','2026-07-06','2026-07-12'),('Jul 13-19','2026-07-13','2026-07-19')]
+    ('Jul 6-12','2026-07-06','2026-07-12'),('Jul 13-19','2026-07-13','2026-07-19'),
+    ('Jul 20-26','2026-07-20','2026-07-26')]
 def fn_of(name): return re.sub(r'[^a-z0-9]+','_',name.lower()).strip('_')
 out={}
 for label,s,e in WK:
