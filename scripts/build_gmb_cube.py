@@ -41,7 +41,7 @@ CLINICS = sorted((set(INS) | set(REV)) - {'_meta'})
 # ── GMB leads (channel=GMB) mapped onto the GMB weekly axis ──
 lw = LEADS.get('_meta', {}).get('weeks', [])
 lidx = {w: i for i, w in enumerate(lw)}
-gcall = defaultdict(Z); gweb = defaultdict(Z)   # clinic -> weekly array on GMB axis
+gcall = defaultdict(Z); gwa = defaultdict(Z); gweb = defaultdict(Z)   # clinic -> weekly array on GMB axis (matches demand-view GMB medium split)
 for city, node in LEADS.items():
     if city == '_meta': continue
     for c in node.get('cells', []):
@@ -49,8 +49,8 @@ for city, node in LEADS.items():
         loc = c.get('loc') or ''
         key = f'{city}|{loc}' if loc else None
         if not key: continue
-        w = c.get('w') or []
-        tgt = gcall[key] if c.get('md') == 'call' else gweb[key]
+        w = c.get('w') or []; md = c.get('md') or ''
+        tgt = gcall[key] if md == 'call' else (gwa[key] if md.startswith('wa') else gweb[key])
         for gi, wk in enumerate(WEEKS):
             j = lidx.get(wk)
             if j is not None and j < len(w) and w[j]:
@@ -80,13 +80,13 @@ def clinic_block(key):
         rev_neg=[neg[i] if i < len(neg) else 0 for i in range(NW)],
         rev_rating=[rating[i] if i < len(rating) else None for i in range(NW)],
         rev_cat=RCATC.get(key, {}),   # category-tagged review velocity {SH/STI/MH/general: [..NW]} from pull_gmb_review_cat.py
-        gmb_call=gcall.get(key, Z()), gmb_web=gweb.get(key, Z()),
+        gmb_call=gcall.get(key, Z()), gmb_wa=gwa.get(key, Z()), gmb_web=gweb.get(key, Z()),
         rival=rival.get(key, {}))
 
 clinics = {k: clinic_block(k) for k in CLINICS}
 
 # ── rollups: city + national (sum the weekly arrays; rival aggregated as sum + #clinics-leading) ──
-PERF = ['impr', 'calls', 'website', 'directions', 'interactions', 'rev_n', 'rev_pos', 'rev_neg', 'gmb_call', 'gmb_web']
+PERF = ['impr', 'calls', 'website', 'directions', 'interactions', 'rev_n', 'rev_pos', 'rev_neg', 'gmb_call', 'gmb_wa', 'gmb_web']
 def roll(keys):
     out = {m: Z() for m in PERF}
     rat_num = Z(); rat_den = Z()

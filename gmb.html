@@ -67,10 +67,15 @@ svg{display:block}
       <button class="seg" data-cat="STI">STI</button>
       <button class="seg" data-cat="MH">MH</button>
     </span>
+    <span><label>Compare vs</label>
+      <button class="seg on" data-base="avg">Avg</button>
+      <button class="seg" data-base="peak">Peak</button>
+      <button class="seg" data-base="prev">Prev wk</button>
+    </span>
     <span style="margin-left:auto" class="wkflag" id="wkflag"></span>
   </div>
 
-  <div class="cards" id="kpis"></div>
+  <div class="sec" style="padding:6px 4px"><div class="chartwrap"><table id="hlTbl"></table></div></div>
 
   <div class="sec">
     <h2>Week on week</h2>
@@ -92,6 +97,7 @@ svg{display:block}
         <button class="seg on" data-rows="city">City</button>
         <button class="seg" data-rows="clinic">Clinic</button>
       </span>
+      <button id="olderBtn" class="seg" style="margin-left:auto">＋ older weeks</button>
     </div>
     <div class="chartwrap"><table id="wowTbl"></table></div>
   </div>
@@ -135,7 +141,8 @@ svg{display:block}
 </div>
 
 <script>
-let DATA=null, CAT='ALL', SCOPE={type:'national'};
+let DATA=null, CAT='ALL', SCOPE={type:'national'}, BASE='avg', SHOW_OLDER=false, EXG=new Set();
+const visN=()=>SHOW_OLDER?DATA._meta.weeks.length:Math.min(5,DATA._meta.weeks.length);
 const fmt=n=>n==null?'—':n>=1000?(n/1000).toFixed(n>=100000?0:1)+'k':(''+n);
 const F=n=>n==null?'—':n.toLocaleString('en-IN');
 const $=id=>document.getElementById(id);
@@ -153,27 +160,54 @@ function matureIdx(nd){
   return 1;
 }
 
-function kpis(){
-  const nd=node(), i=matureIdx(nd), j=i+1, W=DATA._meta.weeks;
-  $('wkflag').textContent='Latest complete GMB week: '+W[i]+(i>0?'  ·  '+W[0]+' still reporting':'');
-  const rateNow=nd.rev_rating[i];
-  const items=[
-    ['Impressions', nd.impr[i], nd.impr[j]],
-    ['Calls', nd.calls[i], nd.calls[j]],
-    ['Website clicks', nd.website[i], nd.website[j]],
-    ['Directions', nd.directions[i], nd.directions[j]],
-    ['New reviews', nd.rev_n[i], nd.rev_n[j]],
-    ['GMB leads (call)', nd.gmb_call[i], nd.gmb_call[j]],
-  ];
-  let h=items.map(([k,a,b])=>{
-    const d=(b? (a-b)/b*100 : (a?100:0));
-    const cls=Math.abs(d)<1?'flat':d>0?'up':'down', ar=d>0?'▲':d<0?'▼':'·';
-    return `<div class="card"><div class="k">${k}</div><div class="v">${F(a)}</div>
-      <div class="d ${cls}">${ar} ${Math.abs(d).toFixed(0)}% <span class="flat">vs prior wk</span></div></div>`;
-  }).join('');
-  h+=`<div class="card"><div class="k">Avg rating</div><div class="v">${rateNow!=null?rateNow.toFixed(2)+'★':'—'}</div>
-      <div class="d flat">${F(nd.rev_neg[i])} neg this wk</div></div>`;
-  $('kpis').innerHTML=h;
+const GROUPS=[
+  {key:'impr', lab:'Impressions', hint:'Search + Maps'},
+  {key:'interactions', lab:'Actions', hint:'calls + website + directions',
+     kids:[['calls','Calls'],['website','Website clicks'],['directions','Directions']]},
+  {key:'rev_n', lab:'Reviews', hint:'new Google reviews',
+     kids:[['rev_pos','Positive (4–5★)'],['rev_neg','Negative (≤2★)'],['__rating','Avg rating'],
+           ['__cat_SH','SH-tagged'],['__cat_STI','STI-tagged'],['__cat_MH','MH-tagged']]},
+  {key:'__leads', lab:'Leads (GMB)', hint:'matches demand view · call + WhatsApp + web',
+     kids:[['gmb_call','Call leads'],['gmb_wa','WhatsApp leads'],['gmb_web','Web leads']]},
+];
+function marr(nd,key){
+  if(key==='__leads') return (nd.gmb_call||[]).map((v,i)=>(v||0)+(nd.gmb_wa[i]||0)+(nd.gmb_web[i]||0));
+  if(key.startsWith('__cat_')) return (nd.rev_cat||{})[key.slice(6)]||[];
+  if(key==='__rating') return nd.rev_rating||[];
+  return nd[key]||[];
+}
+function baseVal(arr,i){
+  const N=visN();
+  if(BASE==='prev') return arr[i+1]!=null?arr[i+1]:null;
+  const win=[]; for(let k=i;k<i+N&&k<arr.length;k++) if(arr[k]!=null) win.push(arr[k]);
+  if(BASE==='peak') return win.length?Math.max(...win):null;
+  const rest=[]; for(let k=i+1;k<i+N&&k<arr.length;k++) if(arr[k]!=null) rest.push(arr[k]);
+  return rest.length?rest.reduce((a,b)=>a+b,0)/rest.length:null;
+}
+function dpill(now,base){
+  if(base==null||base===0) return '<span class="flat">—</span>';
+  const d=(now-base)/base*100, c=Math.abs(d)<1?'flat':d>0?'up':'down', ar=d>0?'▲':d<0?'▼':'·';
+  return `<span class="${c}" style="font-weight:600">${ar} ${Math.abs(d).toFixed(0)}%</span>`;
+}
+function headline(){
+  const nd=node(), i=matureIdx(nd), W=DATA._meta.weeks, N=visN();
+  const bl=BASE==='avg'?(N-1)+'-wk avg':BASE==='peak'?N+'-wk peak':'prev wk';
+  $('wkflag').textContent='Now = '+W[i]+' · vs '+bl+(i>0?' · '+W[0]+' still reporting':'');
+  const fv=(key,v)=>v==null?'—':key==='__rating'?v.toFixed(2)+'★':F(Math.round(v));
+  const row=(g,kid)=>{
+    const arr=marr(nd,g.key), now=arr[i], base=baseVal(arr,i);
+    const exp=(!kid&&g.kids)?`<span class="gexp" data-g="${g.key}" style="cursor:pointer">${EXG.has(g.key)?'▾':'▸'} </span>`:'';
+    const lab=kid?`<span style="padding-left:22px;color:var(--muted)">↳ ${g.lab}</span>`
+                 :`${exp}<b>${g.lab}</b> <span class="sub" style="font-weight:400">${g.hint||''}</span>`;
+    return `<tr><td>${lab}</td>
+      <td style="font-size:${kid?'14':'20'}px;font-weight:${kid?'400':'700'}">${fv(g.key,now)}</td>
+      <td class="flat">${fv(g.key,base)}</td><td>${dpill(now,base)}</td></tr>`;
+  };
+  let h=`<tr><th>Metric</th><th>Now · ${W[i].slice(5)}</th><th>${BASE==='avg'?'Avg':BASE==='peak'?'Peak':'Prev wk'}</th><th>Δ (drop)</th></tr>`;
+  GROUPS.forEach(g=>{ h+=row(g,false);
+    if(EXG.has(g.key)&&g.kids) g.kids.forEach(([k,lab])=>h+=row({key:k,lab},true)); });
+  $('hlTbl').innerHTML=h;
+  $('hlTbl').querySelectorAll('.gexp').forEach(el=>el.onclick=()=>{const k=el.dataset.g; EXG.has(k)?EXG.delete(k):EXG.add(k); headline();});
 }
 
 // week-on-week MATRIX: weeks across columns, city/clinic rows (demand-view style), one metric
@@ -199,10 +233,10 @@ function matrixRows(){
   return {total:{lab:'All India',node:DATA.national}, rows};
 }
 function wowTbl(){
-  const W=DATA._meta.weeks, n=W.length, {total,rows}=matrixRows();
+  const W=DATA._meta.weeks, n=visN(), {total,rows}=matrixRows();
   const rowLbl=(SCOPE.type!=='national'||ROWSBY==='clinic')?'Clinic':'City';
-  let h=`<tr><th>${rowLbl}</th>`+W.map(w=>`<th style="font-size:10px;white-space:nowrap">${wkRange(w)}</th>`).join('')+`</tr>`;
-  const cells=arr=>{let t='';for(let i=0;i<n;i++){const v=arr[i]||0,prev=i+1<n?arr[i+1]:null,imm=(i===0&&!v);
+  let h=`<tr><th>${rowLbl}</th>`+W.slice(0,n).map(w=>`<th style="font-size:10px;white-space:nowrap">${wkRange(w)}</th>`).join('')+`</tr>`;
+  const cells=arr=>{let t='';for(let i=0;i<n;i++){const v=arr[i]||0,prev=(i+1<arr.length)?arr[i+1]:null,imm=(i===0&&!v);
     t+=`<td style="${cellStyle(v,prev,imm)}">${v?F(v):'·'}</td>`;}return t;};
   if(total) h+=`<tr style="font-weight:700;background:#f4f7fa"><td>${total.lab}</td>${cells(total.node[METRIC])}</tr>`;
   h+=rows.map(r=>{
@@ -218,7 +252,7 @@ function wowTbl(){
 
 // grouped weekly bar chart (oldest→newest left→right), impressions as tall bar + interaction sub-bars
 function visChart(){
-  const nd=node(), W=DATA._meta.weeks, n=W.length;
+  const nd=node(), W=DATA._meta.weeks, n=visN();
   const idx=[...Array(n).keys()].reverse();           // oldest first
   const maxI=Math.max(1,...nd.impr), maxA=Math.max(1,...nd.calls,...nd.website,...nd.directions);
   const cw=Math.max(46, Math.floor(920/n)), H=170, pad=24, w=cw*n+60;
@@ -238,7 +272,7 @@ function visChart(){
 }
 
 function revChart(){
-  const nd=node(), W=DATA._meta.weeks, n=W.length, idx=[...Array(n).keys()].reverse();
+  const nd=node(), W=DATA._meta.weeks, n=visN(), idx=[...Array(n).keys()].reverse();
   const maxN=Math.max(1,...nd.rev_n), cw=Math.max(46,Math.floor(920/n)), H=150, w=cw*n+60;
   let g='', line='';
   idx.forEach((wi,p)=>{
@@ -281,11 +315,12 @@ function rivalTbl(){
 }
 
 function catTbl(){
-  const nd=node(), rc=nd.rev_cat||{}, W=DATA._meta.weeks, n=W.length;
-  const cats=[['SH','SH'],['STI','STI'],['MH','MH'],['general','General']];
-  let h=`<tr><th>Category</th>`+W.map(w=>`<th style="font-size:10px;white-space:nowrap">${wkRange(w)}</th>`).join('')+`<th>Total</th></tr>`;
+  const nd=node(), rc=nd.rev_cat||{}, W=DATA._meta.weeks, n=visN();
+  let cats=[['SH','SH'],['STI','STI'],['MH','MH'],['general','General']];
+  if(CAT!=='ALL') cats=cats.filter(([k])=>k===CAT||k==='general');   // category filter
+  let h=`<tr><th>Category</th>`+W.slice(0,n).map(w=>`<th style="font-size:10px;white-space:nowrap">${wkRange(w)}</th>`).join('')+`<th>Total ${n}wk</th></tr>`;
   cats.forEach(([k,lab])=>{
-    const arr=rc[k]||[], tot=arr.reduce((a,b)=>a+(b||0),0);
+    const arr=rc[k]||[], tot=arr.slice(0,n).reduce((a,b)=>a+(b||0),0);
     const cells=[...Array(n)].map((_,i)=>`<td>${arr[i]||'·'}</td>`).join('');
     h+=`<tr${k==='general'?' style="color:var(--muted)"':''}><td><span class="pill">${lab}</span></td>${cells}<td style="font-weight:700">${tot||'·'}</td></tr>`;
   });
@@ -296,7 +331,7 @@ function render(){
   const nd=node();
   $('scopeSub').textContent = SCOPE.type==='national'?'All India · '+Object.keys(DATA.clinics).length+' clinics'
     : SCOPE.type==='city'?SCOPE.key : SCOPE.key.split('|')[0]+' · '+SCOPE.key.split('|')[1];
-  kpis(); wowTbl(); visChart(); revChart(); rivalTbl(); catTbl();
+  headline(); wowTbl(); visChart(); revChart(); rivalTbl(); catTbl();
 }
 
 function initControls(){
@@ -314,11 +349,18 @@ function initControls(){
     else SCOPE={type:'clinic',key:k}; render();};
   document.querySelectorAll('.seg[data-cat]').forEach(b=>b.onclick=()=>{
     document.querySelectorAll('.seg[data-cat]').forEach(x=>x.classList.remove('on'));
-    b.classList.add('on'); CAT=b.dataset.cat; rivalTbl();});
+    b.classList.add('on'); CAT=b.dataset.cat; rivalTbl(); catTbl();});
   $('metricS').onchange=e=>{METRIC=e.target.value; wowTbl();};
   document.querySelectorAll('.seg[data-rows]').forEach(b=>b.onclick=()=>{
     document.querySelectorAll('.seg[data-rows]').forEach(x=>x.classList.remove('on'));
     b.classList.add('on'); ROWSBY=b.dataset.rows; wowTbl();});
+  document.querySelectorAll('.seg[data-base]').forEach(b=>b.onclick=()=>{
+    document.querySelectorAll('.seg[data-base]').forEach(x=>x.classList.remove('on'));
+    b.classList.add('on'); BASE=b.dataset.base; headline();});
+  $('olderBtn').onclick=()=>{SHOW_OLDER=!SHOW_OLDER;
+    $('olderBtn').textContent=SHOW_OLDER?'– latest 5 only':'＋ older weeks';
+    $('olderBtn').classList.toggle('on',SHOW_OLDER);
+    headline(); wowTbl(); visChart(); revChart(); catTbl();};
 }
 
 fetch('data_gmb_tab.json').then(r=>r.json()).then(d=>{
