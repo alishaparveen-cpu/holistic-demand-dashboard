@@ -44,6 +44,24 @@ tr:hover td{background:#fafbfc}
 svg{display:block}
 .legend{font-size:11.5px;color:var(--muted);display:flex;gap:14px;flex-wrap:wrap;margin-top:8px}
 .legend i{width:10px;height:10px;border-radius:2px;display:inline-block;margin-right:4px;vertical-align:middle}
+/* layer bar (City / Clinic) — mirrors the demand-view layer chips */
+.layerbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:2px 0 12px}
+.layerbar .lead{font-size:11px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.04em}
+.lchip{font:12px inherit;border:1px solid var(--line);border-radius:20px;padding:3px 12px;background:#fff;color:var(--ink);cursor:pointer;display:inline-flex;align-items:center;gap:5px}
+.lchip .o{font-size:10px;color:#fff;background:var(--accent);border-radius:9px;width:15px;height:15px;display:none;align-items:center;justify-content:center;font-weight:700}
+.lchip.on{background:color-mix(in srgb,var(--accent) 10%,#fff);border-color:var(--accent);color:var(--accent);font-weight:600}
+.lchip.on .o{display:inline-flex}
+.lchip.dim{opacity:.4;cursor:not-allowed}
+/* zoom trend + chart modal (ported from demand view) */
+.ztrend{cursor:pointer;border-radius:5px}
+.ztrend:hover{background:color-mix(in srgb,var(--accent) 12%,#fff)}
+.cmodal{position:fixed;inset:0;background:rgba(20,28,36,.5);display:none;align-items:center;justify-content:center;z-index:60;padding:20px}
+.cmodal.on{display:flex}
+.cbox{position:relative;background:var(--card);border-radius:14px;padding:18px 22px 20px;max-width:780px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.32)}
+.cbox h3{margin:0 4px 2px 0;font-size:17px;color:var(--ink)}
+.cbox .csub{font-size:11.5px;color:var(--muted);margin-bottom:8px}
+.cx{position:absolute;top:12px;right:16px;border:none;background:none;font-size:19px;color:var(--muted);cursor:pointer;line-height:1}
+.cdl{position:absolute;top:12px;right:46px;background:var(--accent);color:#fff;border:0;border-radius:6px;padding:3px 9px;font-size:11.5px;font-weight:600;cursor:pointer}
 </style>
 </head>
 <body>
@@ -78,6 +96,7 @@ svg{display:block}
   <div class="sec">
     <h2>GMB · week on week</h2>
     <div class="h-sub">Metrics down the side, weeks left→right <b>oldest → latest</b> (latest week is the last column, like the demand view), then a <b>compare column</b> (avg / peak / prev — toggle above) with the <b>Δ drop</b> and a <b>trend bar-chart</b>. <b>Click any metric row</b> to drill it down as <b>city → clinic</b> layers. Follows the scope + category filters.</div>
+    <div class="layerbar" id="layerBar"><span class="lead">Layers ·</span></div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px">
       <button id="olderBtn" class="seg" style="margin-left:auto">＋ older weeks</button>
     </div>
@@ -99,8 +118,16 @@ svg{display:block}
   <p class="sub" id="foot"></p>
 </div>
 
+<div class="cmodal" id="cmodal"><div class="cbox">
+  <button class="cx" id="cx">✕</button>
+  <button class="cdl" id="cdl" title="download this chart as PNG">⬇ PNG</button>
+  <h3 id="ctitle"></h3><div class="csub" id="csub"></div>
+  <div id="cchart" style="overflow-x:auto"></div>
+</div></div>
+
 <script>
-let DATA=null, CAT='ALL', SCOPE={type:'national'}, BASE='avg', SHOW_OLDER=false, EXG=new Set(), SORT={key:null,dir:-1};
+let DATA=null, CAT='ALL', SCOPE={type:'national'}, BASE='avg', SHOW_OLDER=false, EXG=new Set(), SORT={key:null,dir:-1}, LAYER=0;
+let CTIT='',CWK=[],CCOL='var(--accent)',PICKA=null,PICKB=null,ZWIN=5,ZMAP={},ZSEQ=0;   // chart-modal + trend-zoom state
 const visN=()=>SHOW_OLDER?DATA._meta.weeks.length:Math.min(5,DATA._meta.weeks.length);
 const fmt=n=>n==null?'—':n>=1000?(n/1000).toFixed(n>=100000?0:1)+'k':(''+n);
 const F=n=>n==null?'—':n.toLocaleString('en-IN');
@@ -165,13 +192,15 @@ const MROWS=[
 ];
 function fmtc(key,v){return v==null?'·':key==='__rating'?v.toFixed(2):(v?F(v):'·');}
 function wowTbl(){
+  ZMAP={};ZSEQ=0;   // reset the per-render trend-zoom registry
   const W=DATA._meta.weeks, n=visN(), base=node(), canGeo=SCOPE.type!=='clinic', i0=matureIdx(base);
   $('wkflag').textContent='Latest '+W[i0]+' · compare = '+(BASE==='avg'?(n-1)+'-wk avg':BASE==='peak'?n+'-wk peak':'prev wk')+(i0>0?' · '+W[0]+' still reporting':'');
   const ORD=[]; for(let i=n-1;i>=0;i--) ORD.push(i);   // display order: oldest → latest (latest is the RIGHTMOST week column)
   const wc=(nd,key)=>{const a=marr(nd,key);return ORD.map(i=>{const v=a[i]||0,prev=(i+1<a.length)?a[i+1]:null,imm=(i===0&&!v);
     return `<td style="${cellStyle(v,prev,imm)}${i===0?'font-weight:600;':''}">${fmtc(key,a[i])}</td>`;}).join('');};   // i===0 = latest week → emphasised
-  const xc=(nd,key)=>{const a=marr(nd,key),now=a[0],bv=baseVal(a,0);
-    return `<td class="flat" style="border-left:1px solid var(--line)">${bv==null?'—':F(Math.round(bv))}</td><td>${dpill(now,bv)}</td><td>${barSvg(a)}</td>`;};
+  const MCOL={impr:'var(--impr)',rev_n:'var(--rev)',rev_pos:'var(--pos)',rev_neg:'var(--neg)'}, mcol=k=>MCOL[k]||'var(--accent)';
+  const xc=(nd,key,label,col)=>{const a=marr(nd,key),now=a[0],bv=baseVal(a,0),cid='z'+(ZSEQ++);ZMAP[cid]={a:a.slice(),t:label||'',col:col||'var(--accent)'};
+    return `<td class="flat" style="border-left:1px solid var(--line)">${bv==null?'—':F(Math.round(bv))}</td><td>${dpill(now,bv)}</td><td class="ztrend" data-z="${cid}" title="click to zoom the full trend">${barSvg(a)}</td>`;};
   const cmp=BASE==='avg'?'Avg':BASE==='peak'?'Peak':'Prev';
   const layhint=canGeo?` <span style="font-weight:400;font-size:10px;color:var(--accent);text-transform:none;letter-spacing:0">▸ click to drill ${SCOPE.type==='national'?'by city → clinic':'by clinic'} · click a column ↕ to sort them</span>`:'';
   const sar=k=>SORT.key===k?(SORT.dir===1?' ▲':' ▼'):'<span style="opacity:.25">↕</span>';
@@ -179,7 +208,7 @@ function wowTbl(){
   let h=`<tr><th>Metric${layhint}</th>`+ORD.map(i=>sTh(i,wkRange(W[i])+(i===0?' ·latest':''),'font-size:10px;white-space:nowrap'+(i===0?';color:var(--ink)':''))).join('')
     +sTh('cmp',cmp,'border-left:1px solid var(--line)')+sTh('d','Δ','')+`<th>Trend</th></tr>`;
   // a metric/geo row: the WHOLE label cell is the click target (not just the tiny ▸)
-  const labCell=(key,lab,pad,style,bold)=>{const arrow=EXW.has(key)?'▾':'▸';
+  const labCell=(key,lab,pad,style,bold,open)=>{const arrow=open?'▾':'▸';
     return `<td class="${canGeo?'gd':''}" ${canGeo?`data-k="${key}"`:''} style="padding-left:${pad}px;${canGeo?'cursor:pointer;':''}${style}${bold?'font-weight:700':'color:var(--muted)'}">`
       +`${canGeo?`<span style="color:var(--accent);display:inline-block;width:12px">${arrow}</span>`:''}${lab}</td>`;};
   // sort value for a geo node on the active column (Δ = latest-vs-compare %; 'cmp' = compare value; number = that week's value)
@@ -191,25 +220,27 @@ function wowTbl(){
       ? list.slice().sort((x,y)=>String(x[0]).localeCompare(String(y[0])))
       : list.slice().sort((x,y)=>SORT.dir*(sVal(x[1],mkey)-sVal(y[1],mkey)));
   MROWS.forEach(m=>{
-    const ek='m:'+m.key, pad=8+m.lvl*16;
-    h+=`<tr>${labCell(ek,m.lab,pad,'',!m.lvl)}${wc(base,m.key)}${xc(base,m.key)}</tr>`;
-    if(canGeo&&EXW.has(ek)){
+    const ek='m:'+m.key, pad=8+m.lvl*16, mc=mcol(m.key);
+    const expM=canGeo&&(LAYER>=1||EXW.has(ek));   // City layer (or a manual click) expands the metric to geo rows
+    h+=`<tr>${labCell(ek,m.lab,pad,'',!m.lvl,expM)}${wc(base,m.key)}${xc(base,m.key,m.lab,mc)}</tr>`;
+    if(expM){
       let gl= SCOPE.type==='city'
         ? Object.keys(DATA.clinics).filter(k=>k.split('|')[0]===SCOPE.key).map(k=>[k.split('|')[1],DATA.clinics[k],k])
         : Object.keys(DATA.cities).map(c=>[c,DATA.cities[c],c]);
       gl=applySort(gl,m.key);
       gl.forEach(([lab,nd,gk])=>{
         const ck=ek+'|'+gk, canClin=SCOPE.type==='national';
-        if(canClin){const arrow=EXW.has(ck)?'▾':'▸';
-          h+=`<tr style="background:#fafbfc"><td class="gd" data-k="${ck}" style="padding-left:${pad+20}px;cursor:pointer;color:var(--ink)"><span style="color:var(--accent);display:inline-block;width:12px">${arrow}</span>${lab}</td>${wc(nd,m.key)}${xc(nd,m.key)}</tr>`;
+        const expC=canClin&&(LAYER>=2||EXW.has(ck));   // Clinic layer (or a manual click) expands a city to its clinics
+        if(canClin){const arrow=expC?'▾':'▸';
+          h+=`<tr style="background:#fafbfc"><td class="gd" data-k="${ck}" style="padding-left:${pad+20}px;cursor:pointer;color:var(--ink)"><span style="color:var(--accent);display:inline-block;width:12px">${arrow}</span>${lab}</td>${wc(nd,m.key)}${xc(nd,m.key,m.lab+' · '+lab,mc)}</tr>`;
         } else {
-          h+=`<tr style="background:#fafbfc"><td style="padding-left:${pad+20}px;color:var(--muted)"><span style="display:inline-block;width:12px"></span>${lab}</td>${wc(nd,m.key)}${xc(nd,m.key)}</tr>`;
+          h+=`<tr style="background:#fafbfc"><td style="padding-left:${pad+20}px;color:var(--muted)"><span style="display:inline-block;width:12px"></span>${lab}</td>${wc(nd,m.key)}${xc(nd,m.key,m.lab+' · '+lab,mc)}</tr>`;
         }
-        if(canClin&&EXW.has(ck)){
+        if(expC){
           let clist=Object.keys(DATA.clinics).filter(k=>k.split('|')[0]===gk).map(k=>[k.split('|')[1],DATA.clinics[k],k]);
           clist=applySort(clist,m.key);
           clist.forEach(([clab,cnd])=>{
-            h+=`<tr><td style="padding-left:${pad+52}px;color:var(--muted);font-size:12px">${clab}</td>${wc(cnd,m.key)}${xc(cnd,m.key)}</tr>`;
+            h+=`<tr><td style="padding-left:${pad+52}px;color:var(--muted);font-size:12px">${clab}</td>${wc(cnd,m.key)}${xc(cnd,m.key,m.lab+' · '+lab+' · '+clab,mc)}</tr>`;
           });
         }
       });
@@ -222,7 +253,68 @@ function wowTbl(){
     if(SORT.key===k) SORT.dir*=-1; else { SORT.key=k; SORT.dir=(k==='d')?1:-1; }   // Δ → biggest drops first (asc); week/compare → biggest first (desc)
     wowTbl();
   });
+  $('wowTbl').querySelectorAll('.ztrend').forEach(el=>el.onclick=()=>{const z=ZMAP[el.dataset.z];if(z)openChart(z.t,z.a,z.col);});
+  renderLayerBar();
 }
+// ── layer bar (City / Clinic) — scope-aware, mirrors the demand-view layer chips ──
+function renderLayerBar(){
+  const bar=$('layerBar'); if(!bar) return;
+  const chips=[]; const mk=(lvl,name)=>{const on=LAYER>=lvl;
+    return `<span class="lchip${on?' on':''}" data-lv="${lvl}"><span class="o">${lvl}</span>${name}</span>`;};
+  if(SCOPE.type==='national'){chips.push(mk(1,'City'));chips.push(mk(2,'Clinic'));}
+  else if(SCOPE.type==='city'){chips.push(mk(1,'Clinic'));}
+  else {bar.innerHTML='<span class="lead">Layers ·</span> <span style="color:var(--muted);font-size:12px">single clinic — no deeper layer</span>';return;}
+  bar.innerHTML='<span class="lead">Layers ·</span>'+chips.join('')
+    +' <span style="color:var(--muted);font-size:11px">— stack them to break every metric down '+(SCOPE.type==='national'?'by city → clinic':'by clinic')+', or just click one metric row</span>';
+  bar.querySelectorAll('.lchip').forEach(el=>el.onclick=()=>{const lv=+el.dataset.lv;
+    LAYER = (LAYER>=lv)? lv-1 : lv;   // toggle: on→collapse to one shallower; off→expand to this depth
+    EXW=new Set();   // layer takes over global expansion; clear manual toggles to avoid mixed state
+    wowTbl();});
+}
+// ── chart modal (zoomable weekly trend, ported from demand view; arrays are latest-first) ──
+function openChart(title,arr,col){CTIT=title;CWK=arr;CCOL=col||'var(--accent)';PICKA=null;PICKB=null;ZWIN=Math.min(5,DATA._meta.weeks.length);renderChart();$('cmodal').classList.add('on');}
+function closeChart(){$('cmodal').classList.remove('on');PICKA=null;PICKB=null;}
+function pickPt(i){if(PICKA===null)PICKA=i;else if(PICKB===null){if(i===PICKA)PICKA=null;else PICKB=i;}else{PICKA=i;PICKB=null;}renderChart();}
+function clearPick(){PICKA=null;PICKB=null;renderChart();}
+function setZWin(n){ZWIN=n;PICKA=null;PICKB=null;renderChart();}
+function renderChart(){
+  $('ctitle').textContent=CTIT;
+  const WK=DATA._meta.weeks, NWk=WK.length, allV=[],allL=[];
+  for(let i=NWk-1;i>=0;i--){allV.push(CWK[i]||0);allL.push(wkRange(WK[i]));}   // oldest → newest
+  const tot=allV.length,win=(ZWIN&&ZWIN<tot)?ZWIN:tot;
+  const v=allV.slice(tot-win),labels=allL.slice(tot-win),n=v.length,col=CCOL;
+  const FI=x=>Math.round(x).toLocaleString('en-IN');
+  const W=720,H=300,pad=42,padT=26, vmx=Math.max(1,...v),rng=vmx||1,lo=0,hi=vmx+rng*0.16;
+  const x=i=>pad+i*(W-2*pad)/((n-1)||1),y=val=>{let yy=H-pad-((val-lo)/((hi-lo)||1))*(H-pad-padT);return Math.max(padT,Math.min(H-pad,yy));};
+  let p='',pts='',lbls='',prev=null;
+  v.forEach((val,i)=>{if(prev!=null)p+=`<line x1="${x(prev.i).toFixed(1)}" y1="${y(prev.v).toFixed(1)}" x2="${x(i).toFixed(1)}" y2="${y(val).toFixed(1)}" stroke="${col}" stroke-width="2.2"/>`;prev={i,v:val};
+    const sel=(i===PICKA||i===PICKB);
+    pts+=`<circle cx="${x(i).toFixed(1)}" cy="${y(val).toFixed(1)}" r="13" fill="transparent" style="cursor:pointer" onclick="pickPt(${i})"></circle>`
+      +`<circle cx="${x(i).toFixed(1)}" cy="${y(val).toFixed(1)}" r="${sel?5.5:3.2}" fill="${sel?(i===PICKA?'#1F6F5C':'#C2691F'):col}" stroke="${sel?'#fff':col}" stroke-width="${sel?2:0}" style="cursor:pointer" onclick="pickPt(${i})"><title>${labels[i]}: ${FI(val)}</title></circle>`;
+    lbls+=`<text x="${x(i).toFixed(1)}" y="${(y(val)-9).toFixed(1)}" font-size="11" fill="${col}" text-anchor="middle" font-weight="700">${FI(val)}</text>`;});
+  let gl='';[0,.5,1].forEach(f=>{const yy=H-pad-(f*(H-pad-padT));gl+=`<line x1="${pad}" y1="${yy}" x2="${W-pad}" y2="${yy}" stroke="var(--line)"/><text x="4" y="${yy+3}" font-size="10" fill="var(--muted)">${FI(lo+f*(hi-lo))}</text>`;});
+  const rot=n>8,Hv=rot?H+44:H;let xl='';labels.forEach((L,i)=>{const lx=x(i).toFixed(1),ly=(H-pad+15).toFixed(1);xl+=rot?`<text x="${lx}" y="${ly}" font-size="9" fill="var(--muted)" text-anchor="end" transform="rotate(-40 ${lx} ${ly})">${L}</text>`:`<text x="${lx}" y="${H-9}" font-size="9" fill="var(--muted)" text-anchor="middle">${L}</text>`;});
+  const avg=v.length?v.reduce((a,b)=>a+b,0)/v.length:null;
+  let avgLine=''; if(avg!=null){const ya=y(avg);avgLine=`<line x1="${pad}" y1="${ya.toFixed(1)}" x2="${W-pad}" y2="${ya.toFixed(1)}" stroke="${col}" stroke-width="1.3" stroke-dasharray="6 4" opacity="0.5"/>`;}
+  let conn=''; if(PICKA!=null&&PICKB!=null)conn=`<line x1="${x(PICKA).toFixed(1)}" y1="${y(v[PICKA]).toFixed(1)}" x2="${x(PICKB).toFixed(1)}" y2="${y(v[PICKB]).toFixed(1)}" stroke="#C2691F" stroke-width="1.6" stroke-dasharray="5 3"/>`;
+  const zbtn=(lbl,val)=>`<button onclick="setZWin(${val})" style="border:1px solid ${ZWIN===val?'var(--accent);background:var(--accent);color:#fff':'var(--line);background:#fff;color:var(--muted)'};border-radius:6px;padding:2px 9px;font-size:10.5px;font-weight:700;cursor:pointer;margin-left:4px">${lbl}</button>`;
+  const zwinctl=`<span style="margin-left:10px;color:var(--muted)">window:</span>${zbtn('full',0)}${zbtn('12w',12)}${zbtn('5w',5)}`;
+  $('cchart').innerHTML=`<svg width="100%" viewBox="0 0 ${W} ${Hv}">${gl}${avgLine}${conn}${p}${pts}${lbls}${xl}</svg>`
+    +`<div style="font-size:11px;color:var(--muted);margin-top:6px">oldest→newest · ${n} weeks · dashed = average${avg!=null?' ('+FI(avg)+')':''}${zwinctl}</div>`;
+  const pb=$('csub');
+  if(PICKA!=null&&PICKB!=null){const a=v[PICKA],b=v[PICKB],pc=a?Math.round((b-a)/Math.abs(a)*100):0,c=pc>0?'#1F6F5C':pc<0?'#B23A2E':'var(--muted)';
+    pb.innerHTML=`<b style="color:#1F6F5C">${labels[PICKA]}</b> ${FI(a)} → <b style="color:#C2691F">${labels[PICKB]}</b> ${FI(b)} &nbsp;<span style="color:${c};font-weight:700;font-size:14px">${pc>0?'+':''}${pc}%</span> &nbsp;<span style="cursor:pointer;color:var(--muted)" onclick="clearPick()">✕ clear</span>`;}
+  else if(PICKA!=null)pb.innerHTML=`Selected <b style="color:#1F6F5C">${labels[PICKA]}</b> ${FI(v[PICKA])} — click another point to compare <span style="cursor:pointer;color:var(--muted)" onclick="clearPick()">✕</span>`;
+  else pb.innerHTML='<span style="color:var(--muted)">➜ Click any two points to compare the % change between them.</span>';
+}
+function downloadChartPNG(){const svg=document.querySelector('#cchart svg');if(!svg){return;}
+  const cs=getComputedStyle(document.documentElement);
+  let xml=new XMLSerializer().serializeToString(svg).replace(/var\((--[a-z0-9-]+)\)/gi,(m,vv)=>(cs.getPropertyValue(vv).trim()||m));
+  const w=720,h=(svg.viewBox&&svg.viewBox.baseVal.height)||300,sc=2,img=new Image();
+  img.onload=()=>{const c=document.createElement('canvas');c.width=w*sc;c.height=h*sc;const ctx=c.getContext('2d');ctx.scale(sc,sc);
+    ctx.fillStyle='#fff';ctx.fillRect(0,0,w,h);ctx.drawImage(img,0,0,w,h);
+    c.toBlob(b=>{const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=((CTIT||'chart').replace(/[^a-z0-9]+/gi,'_').slice(0,60)||'chart')+'.png';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),100);});};
+  img.src='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(xml);}
 
 function rivalTbl(){
   const cats=CAT==='ALL'?['SH','STI','MH']:[CAT];
@@ -294,9 +386,12 @@ function initControls(){
     $('olderBtn').textContent=SHOW_OLDER?'– latest 5 only':'＋ older weeks';
     $('olderBtn').classList.toggle('on',SHOW_OLDER);
     wowTbl(); catTbl();};
+  $('cx').onclick=closeChart; $('cdl').onclick=downloadChartPNG;
+  $('cmodal').onclick=e=>{if(e.target.id==='cmodal')closeChart();};
+  document.addEventListener('keydown',e=>{if(e.key==='Escape')closeChart();});
 }
 
-fetch('data_gmb_tab.json').then(r=>r.json()).then(d=>{
+fetch('data_gmb_tab.json',{cache:'no-store'}).then(r=>r.json()).then(d=>{   // no-store → always pull the freshest cube (avoids stale-cache "latest data not loading")
   DATA=d; $('foot').textContent=d._meta.note;
   initControls(); render();
 }).catch(e=>{$('kpis').innerHTML='<div class="card">Failed to load data_gmb_tab.json — run scripts/build_gmb_cube.py</div>';});
