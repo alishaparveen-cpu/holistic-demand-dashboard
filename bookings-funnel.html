@@ -2269,6 +2269,13 @@ Promise.all([
     CITY2CLINICS[city].forEach(loc=>{const key=city+'|'+loc;if(DATASETS.clinic.leads[key])return;
       const cells=(cnode.cells||[]).filter(c=>(c.loc||'')===loc);
       if(cells.length)DATASETS.clinic.leads[key]={cells:cells.map(c=>Object.assign({},c,{loc,city}))};});}
+  // UNIFY clinic-grain leads to the (complete, re-routed) CITY cube for EVERY multi-clinic clinic, loc-pinned.
+  // The standalone clinic cube (data_leads.json) attributes some multi-clinic clinics LOW, so a clinic read
+  // differently via city-drill (city cube) vs clinic-scope (clinic cube). Now both read the same city-cube leads.
+  // (Single-clinic cities keep their special node above — it also folds in the city's no-locality leads.)
+  for(const city in DATASETS.city.leads){if(city==='_meta'||SINGLE_CLINIC_CITY[city])continue;
+    const grp={};(DATASETS.city.leads[city].cells||[]).forEach(c=>{const loc=c.loc||'';if(!loc)return;(grp[loc]=grp[loc]||[]).push(c);});
+    for(const loc in grp)DATASETS.clinic.leads[city+'|'+loc]={cells:grp[loc].map(c=>Object.assign({},c,{loc,city}))};}
   buildDoctors();   // doctor-scope option list (from quick_diag by_doctor)
   // scope multiselect picker events
   document.getElementById('msbtn').onclick=e=>{e.stopPropagation();if(SCOPE==='national')return;const pk=document.getElementById('mspick');pk.classList.toggle('open');if(pk.classList.contains('open')){const s=document.getElementById('mssearch');s.value='';renderPickList();s.focus();}};
