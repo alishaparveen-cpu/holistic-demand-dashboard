@@ -79,24 +79,8 @@ svg{display:block}
 
   <div class="sec">
     <h2>Week on week</h2>
-    <div class="h-sub">Weeks across the top, <span id="rowsByLbl">cities</span> down the side — pick a metric. Cell colour = change vs the prior week. Click a city row to drill into its clinics.</div>
+    <div class="h-sub">Every metric down the side, weeks across the top. Click a metric <b>▸</b> to break it down by <b>city → clinic</b> (layers), like the demand view. Cell colour = change vs the prior week. Follows the scope + category filters.</div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px">
-      <span><label>Metric</label>
-        <select id="metricS">
-          <option value="impr">Impressions</option>
-          <option value="calls">Calls</option>
-          <option value="website">Website clicks</option>
-          <option value="directions">Directions</option>
-          <option value="interactions">Interactions</option>
-          <option value="rev_n">New reviews</option>
-          <option value="rev_pos">Positive reviews</option>
-          <option value="rev_neg">Negative reviews</option>
-          <option value="gmb_call">GMB leads · call</option>
-        </select></span>
-      <span><label>Rows</label>
-        <button class="seg on" data-rows="city">City</button>
-        <button class="seg" data-rows="clinic">Clinic</button>
-      </span>
       <button id="olderBtn" class="seg" style="margin-left:auto">＋ older weeks</button>
     </div>
     <div class="chartwrap"><table id="wowTbl"></table></div>
@@ -210,44 +194,46 @@ function headline(){
   $('hlTbl').querySelectorAll('.gexp').forEach(el=>el.onclick=()=>{const k=el.dataset.g; EXG.has(k)?EXG.delete(k):EXG.add(k); headline();});
 }
 
-// week-on-week MATRIX: weeks across columns, city/clinic rows (demand-view style), one metric
-let METRIC='impr', ROWSBY='city', EXPAND=new Set();
+// week-on-week MATRIX: METRICS down the side (+ sub-metrics), weeks across the top,
+// each metric drillable by city -> clinic as layers (demand-view style).
+let EXW=new Set();
 const MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 function wkRange(mon){const d=new Date(mon+'T00:00:00'),e=new Date(d);e.setDate(d.getDate()+6);
-  return MON[d.getMonth()]+' '+d.getDate()+'–'+(d.getMonth()===e.getMonth()?e.getDate():MON[e.getMonth()]+' '+e.getDate());}
+  return MON[d.getMonth()]+' '+d.getDate()+'\u2013'+(d.getMonth()===e.getMonth()?e.getDate():MON[e.getMonth()]+' '+e.getDate());}
 function cellStyle(v,prev,imm){let s=imm?'opacity:.4;':'';
   if(prev!=null&&prev!==0){const dd=(v-prev)/prev*100; if(dd>=8)s+='color:var(--pos)';else if(dd<=-8)s+='color:var(--neg)';}
   return s;}
-function matrixRows(){
-  const rows=[]; const push=(lab,node,lvl,x)=>rows.push(Object.assign({lab,arr:node[METRIC]||[],lvl},x||{}));
-  if(SCOPE.type==='clinic') return {total:null, rows:[{lab:SCOPE.key.split('|')[1],arr:DATA.clinics[SCOPE.key][METRIC],lvl:0}]};
-  if(SCOPE.type==='city'){
-    Object.keys(DATA.clinics).filter(k=>k.split('|')[0]===SCOPE.key).sort().forEach(k=>push(k.split('|')[1],DATA.clinics[k],1));
-    return {total:{lab:SCOPE.key+' · total',node:DATA.cities[SCOPE.key]}, rows};
-  }
-  if(ROWSBY==='clinic') Object.keys(DATA.clinics).sort().forEach(k=>push(k,DATA.clinics[k],0));
-  else Object.keys(DATA.cities).sort().forEach(c=>{
-    push(c,DATA.cities[c],0,{cityKey:c,expandable:true});
-    if(EXPAND.has(c)) Object.keys(DATA.clinics).filter(k=>k.split('|')[0]===c).sort().forEach(k=>push(k.split('|')[1],DATA.clinics[k],1));
-  });
-  return {total:{lab:'All India',node:DATA.national}, rows};
-}
+const MROWS=[
+  {key:'impr',lab:'Impressions',lvl:0},
+  {key:'interactions',lab:'Actions',lvl:0},
+    {key:'calls',lab:'Calls',lvl:1},{key:'website',lab:'Website',lvl:1},{key:'directions',lab:'Directions',lvl:1},
+  {key:'rev_n',lab:'Reviews',lvl:0},
+    {key:'rev_pos',lab:'Positive',lvl:1},{key:'rev_neg',lab:'Negative',lvl:1},
+  {key:'__leads',lab:'Leads (GMB)',lvl:0},
+    {key:'gmb_call',lab:'Call',lvl:1},{key:'gmb_wa',lab:'WhatsApp',lvl:1},{key:'gmb_web',lab:'Web',lvl:1},
+];
 function wowTbl(){
-  const W=DATA._meta.weeks, n=visN(), {total,rows}=matrixRows();
-  const rowLbl=(SCOPE.type!=='national'||ROWSBY==='clinic')?'Clinic':'City';
-  let h=`<tr><th>${rowLbl}</th>`+W.slice(0,n).map(w=>`<th style="font-size:10px;white-space:nowrap">${wkRange(w)}</th>`).join('')+`</tr>`;
-  const cells=arr=>{let t='';for(let i=0;i<n;i++){const v=arr[i]||0,prev=(i+1<arr.length)?arr[i+1]:null,imm=(i===0&&!v);
-    t+=`<td style="${cellStyle(v,prev,imm)}">${v?F(v):'·'}</td>`;}return t;};
-  if(total) h+=`<tr style="font-weight:700;background:#f4f7fa"><td>${total.lab}</td>${cells(total.node[METRIC])}</tr>`;
-  h+=rows.map(r=>{
-    const ind=r.lvl?`padding-left:${10+r.lvl*14}px`:'';
-    const exp=r.expandable?`<span style="cursor:pointer" data-city="${r.cityKey}">${EXPAND.has(r.cityKey)?'▾':'▸'} </span>`:'';
-    return `<tr><td style="${ind};${r.lvl?'color:var(--muted)':''}">${exp}${r.lab}</td>${cells(r.arr)}</tr>`;
-  }).join('');
+  const W=DATA._meta.weeks, n=visN(), base=node(), canGeo=SCOPE.type!=='clinic';
+  const cells=(nd,key)=>{const a=marr(nd,key);let t='';for(let i=0;i<n;i++){const v=a[i]||0,prev=(i+1<a.length)?a[i+1]:null,imm=(i===0&&!v);
+    t+=`<td style="${cellStyle(v,prev,imm)}">${v?F(v):'\u00b7'}</td>`;}return t;};
+  const geoChildren=()=> SCOPE.type==='city'
+    ? Object.keys(DATA.clinics).filter(k=>k.split('|')[0]===SCOPE.key).sort().map(k=>[k.split('|')[1],DATA.clinics[k],k])
+    : Object.keys(DATA.cities).sort().map(c=>[c,DATA.cities[c],c]);
+  let h=`<tr><th>Metric</th>`+W.slice(0,n).map(w=>`<th style="font-size:10px;white-space:nowrap">${wkRange(w)}</th>`).join('')+`</tr>`;
+  MROWS.forEach(m=>{
+    const ek='m:'+m.key, pad=8+m.lvl*16;
+    const tog=canGeo?`<span class="gd" data-k="${ek}" style="cursor:pointer;color:var(--accent)">${EXW.has(ek)?'\u25be':'\u25b8'} </span>`:'';
+    h+=`<tr><td style="padding-left:${pad}px;${m.lvl?'color:var(--muted)':'font-weight:700'}">${tog}${m.lab}</td>${cells(base,m.key)}</tr>`;
+    if(canGeo&&EXW.has(ek)) geoChildren().forEach(([lab,nd,gk])=>{
+      const ck=ek+'|'+gk, cliTog=(SCOPE.type==='national')?`<span class="gd" data-k="${ck}" style="cursor:pointer">${EXW.has(ck)?'\u25be':'\u25b8'} </span>`:'';
+      h+=`<tr><td style="padding-left:${pad+20}px;color:var(--muted)">${cliTog}${lab}</td>${cells(nd,m.key)}</tr>`;
+      if(SCOPE.type==='national'&&EXW.has(ck)) Object.keys(DATA.clinics).filter(k=>k.split('|')[0]===gk).sort().forEach(k=>{
+        h+=`<tr><td style="padding-left:${pad+40}px;color:var(--muted);font-size:12px">${k.split('|')[1]}</td>${cells(DATA.clinics[k],m.key)}</tr>`;
+      });
+    });
+  });
   $('wowTbl').innerHTML=h;
-  $('wowTbl').querySelectorAll('[data-city]').forEach(el=>el.onclick=()=>{
-    const c=el.dataset.city; EXPAND.has(c)?EXPAND.delete(c):EXPAND.add(c); wowTbl();});
-  const rl=$('rowsByLbl'); if(rl) rl.textContent = rowLbl.toLowerCase()+(rowLbl==='City'?' (▸ to drill into clinics)':'');
+  $('wowTbl').querySelectorAll('.gd').forEach(el=>el.onclick=()=>{const k=el.dataset.k;EXW.has(k)?EXW.delete(k):EXW.add(k);wowTbl();});
 }
 
 // grouped weekly bar chart (oldest→newest left→right), impressions as tall bar + interaction sub-bars
@@ -350,10 +336,6 @@ function initControls(){
   document.querySelectorAll('.seg[data-cat]').forEach(b=>b.onclick=()=>{
     document.querySelectorAll('.seg[data-cat]').forEach(x=>x.classList.remove('on'));
     b.classList.add('on'); CAT=b.dataset.cat; rivalTbl(); catTbl();});
-  $('metricS').onchange=e=>{METRIC=e.target.value; wowTbl();};
-  document.querySelectorAll('.seg[data-rows]').forEach(b=>b.onclick=()=>{
-    document.querySelectorAll('.seg[data-rows]').forEach(x=>x.classList.remove('on'));
-    b.classList.add('on'); ROWSBY=b.dataset.rows; wowTbl();});
   document.querySelectorAll('.seg[data-base]').forEach(b=>b.onclick=()=>{
     document.querySelectorAll('.seg[data-base]').forEach(x=>x.classList.remove('on'));
     b.classList.add('on'); BASE=b.dataset.base; headline();});
