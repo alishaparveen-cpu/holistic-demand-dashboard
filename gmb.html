@@ -77,7 +77,7 @@ svg{display:block}
 
   <div class="sec">
     <h2>GMB · week on week</h2>
-    <div class="h-sub">Every metric down the side, weeks across the top, plus a <b>compare column</b> (avg / peak / prev — toggle above) with the <b>Δ drop</b> and a <b>trend bar-chart</b>. Click a metric <b>▸</b> to break it down by <b>city → clinic</b> (layers), like the demand view. Follows the scope + category filters.</div>
+    <div class="h-sub">Metrics down the side, weeks left→right <b>oldest → latest</b> (latest week is the last column, like the demand view), then a <b>compare column</b> (avg / peak / prev — toggle above) with the <b>Δ drop</b> and a <b>trend bar-chart</b>. <b>Click any metric row</b> to drill it down as <b>city → clinic</b> layers. Follows the scope + category filters.</div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px">
       <button id="olderBtn" class="seg" style="margin-left:auto">＋ older weeks</button>
     </div>
@@ -147,9 +147,9 @@ function cellStyle(v,prev,imm){let s=imm?'opacity:.4;':'';
   if(prev!=null&&prev!==0){const dd=(v-prev)/prev*100; if(dd>=8)s+='color:var(--pos)';else if(dd<=-8)s+='color:var(--neg)';}
   return s;}
 function barSvg(arr){
-  const n=visN(), vals=arr.slice(0,n).map(v=>v||0), mx=Math.max(1,...vals);
+  const n=visN(), vals=arr.slice(0,n).map(v=>v||0).reverse(), mx=Math.max(1,...vals);   // reverse → oldest-left, latest-right (chronological, matches the week columns + the demand view)
   const bw=7,gap=2,W=n*(bw+gap),H=24; let b='';
-  vals.forEach((v,p)=>{const hh=Math.round(v/mx*(H-3)); b+=`<rect x="${p*(bw+gap)}" y="${H-hh}" width="${bw}" height="${hh}" fill="var(--accent)" opacity="0.8"/>`;});   // p=0 is latest → leftmost, matches the week columns
+  vals.forEach((v,p)=>{const hh=Math.round(v/mx*(H-3)),last=p===n-1; b+=`<rect x="${p*(bw+gap)}" y="${H-hh}" width="${bw}" height="${hh}" fill="var(--accent)" opacity="${last?1:0.55}"/>`;});   // latest week = rightmost bar, drawn solid
   return `<svg width="${W}" height="${H}" style="vertical-align:middle">${b}</svg>`;
 }
 const MROWS=[
@@ -167,26 +167,35 @@ function fmtc(key,v){return v==null?'·':key==='__rating'?v.toFixed(2):(v?F(v):'
 function wowTbl(){
   const W=DATA._meta.weeks, n=visN(), base=node(), canGeo=SCOPE.type!=='clinic', i0=matureIdx(base);
   $('wkflag').textContent='Latest '+W[i0]+' · compare = '+(BASE==='avg'?(n-1)+'-wk avg':BASE==='peak'?n+'-wk peak':'prev wk')+(i0>0?' · '+W[0]+' still reporting':'');
-  const wc=(nd,key)=>{const a=marr(nd,key);let t='';for(let i=0;i<n;i++){const v=a[i]||0,prev=(i+1<a.length)?a[i+1]:null,imm=(i===0&&!v);
-    t+=`<td style="${cellStyle(v,prev,imm)}">${fmtc(key,a[i])}</td>`;}return t;};
+  const ORD=[]; for(let i=n-1;i>=0;i--) ORD.push(i);   // display order: oldest → latest (latest is the RIGHTMOST week column)
+  const wc=(nd,key)=>{const a=marr(nd,key);return ORD.map(i=>{const v=a[i]||0,prev=(i+1<a.length)?a[i+1]:null,imm=(i===0&&!v);
+    return `<td style="${cellStyle(v,prev,imm)}${i===0?'font-weight:600;':''}">${fmtc(key,a[i])}</td>`;}).join('');};   // i===0 = latest week → emphasised
   const xc=(nd,key)=>{const a=marr(nd,key),now=a[0],bv=baseVal(a,0);
     return `<td class="flat" style="border-left:1px solid var(--line)">${bv==null?'—':F(Math.round(bv))}</td><td>${dpill(now,bv)}</td><td>${barSvg(a)}</td>`;};
   const cmp=BASE==='avg'?'Avg':BASE==='peak'?'Peak':'Prev';
-  let h=`<tr><th>Metric</th>`+W.slice(0,n).map(w=>`<th style="font-size:10px;white-space:nowrap">${wkRange(w)}</th>`).join('')
+  const layhint=canGeo?` <span style="font-weight:400;font-size:10px;color:var(--accent);text-transform:none;letter-spacing:0">▸ click to drill ${SCOPE.type==='national'?'by city → clinic':'by clinic'}</span>`:'';
+  let h=`<tr><th>Metric${layhint}</th>`+ORD.map(i=>`<th style="font-size:10px;white-space:nowrap${i===0?';color:var(--ink)':''}">${wkRange(W[i])}${i===0?' ·latest':''}</th>`).join('')
     +`<th style="border-left:1px solid var(--line)">${cmp}</th><th>Δ</th><th>Trend</th></tr>`;
+  // a metric/geo row: the WHOLE label cell is the click target (not just the tiny ▸)
+  const labCell=(key,lab,pad,style,bold)=>{const arrow=EXW.has(key)?'▾':'▸';
+    return `<td class="${canGeo?'gd':''}" ${canGeo?`data-k="${key}"`:''} style="padding-left:${pad}px;${canGeo?'cursor:pointer;':''}${style}${bold?'font-weight:700':'color:var(--muted)'}">`
+      +`${canGeo?`<span style="color:var(--accent);display:inline-block;width:12px">${arrow}</span>`:''}${lab}</td>`;};
   MROWS.forEach(m=>{
     const ek='m:'+m.key, pad=8+m.lvl*16;
-    const tog=canGeo?`<span class="gd" data-k="${ek}" style="cursor:pointer;color:var(--accent)">${EXW.has(ek)?'▾':'▸'} </span>`:'';
-    h+=`<tr><td style="padding-left:${pad}px;${m.lvl?'color:var(--muted)':'font-weight:700'}">${tog}${m.lab}</td>${wc(base,m.key)}${xc(base,m.key)}</tr>`;
+    h+=`<tr>${labCell(ek,m.lab,pad,'',!m.lvl)}${wc(base,m.key)}${xc(base,m.key)}</tr>`;
     if(canGeo&&EXW.has(ek)){
       const gl= SCOPE.type==='city'
         ? Object.keys(DATA.clinics).filter(k=>k.split('|')[0]===SCOPE.key).sort().map(k=>[k.split('|')[1],DATA.clinics[k],k])
         : Object.keys(DATA.cities).sort().map(c=>[c,DATA.cities[c],c]);
       gl.forEach(([lab,nd,gk])=>{
-        const ck=ek+'|'+gk, ct=(SCOPE.type==='national')?`<span class="gd" data-k="${ck}" style="cursor:pointer">${EXW.has(ck)?'▾':'▸'} </span>`:'';
-        h+=`<tr><td style="padding-left:${pad+20}px;color:var(--muted)">${ct}${lab}</td>${wc(nd,m.key)}${xc(nd,m.key)}</tr>`;
-        if(SCOPE.type==='national'&&EXW.has(ck)) Object.keys(DATA.clinics).filter(k=>k.split('|')[0]===gk).sort().forEach(k=>{
-          h+=`<tr><td style="padding-left:${pad+40}px;color:var(--muted);font-size:12px">${k.split('|')[1]}</td>${wc(DATA.clinics[k],m.key)}${xc(DATA.clinics[k],m.key)}</tr>`;
+        const ck=ek+'|'+gk, canClin=SCOPE.type==='national';
+        if(canClin){const arrow=EXW.has(ck)?'▾':'▸';
+          h+=`<tr style="background:#fafbfc"><td class="gd" data-k="${ck}" style="padding-left:${pad+20}px;cursor:pointer;color:var(--ink)"><span style="color:var(--accent);display:inline-block;width:12px">${arrow}</span>${lab}</td>${wc(nd,m.key)}${xc(nd,m.key)}</tr>`;
+        } else {
+          h+=`<tr style="background:#fafbfc"><td style="padding-left:${pad+20}px;color:var(--muted)"><span style="display:inline-block;width:12px"></span>${lab}</td>${wc(nd,m.key)}${xc(nd,m.key)}</tr>`;
+        }
+        if(canClin&&EXW.has(ck)) Object.keys(DATA.clinics).filter(k=>k.split('|')[0]===gk).sort().forEach(k=>{
+          h+=`<tr><td style="padding-left:${pad+52}px;color:var(--muted);font-size:12px">${k.split('|')[1]}</td>${wc(DATA.clinics[k],m.key)}${xc(DATA.clinics[k],m.key)}</tr>`;
         });
       });
     }
@@ -225,10 +234,11 @@ function catTbl(){
   const nd=node(), rc=nd.rev_cat||{}, W=DATA._meta.weeks, n=visN();
   let cats=[['SH','SH'],['STI','STI'],['MH','MH'],['general','General']];
   if(CAT!=='ALL') cats=cats.filter(([k])=>k===CAT||k==='general');   // category filter
-  let h=`<tr><th>Category</th>`+W.slice(0,n).map(w=>`<th style="font-size:10px;white-space:nowrap">${wkRange(w)}</th>`).join('')+`<th>Total ${n}wk</th></tr>`;
+  const ORD=[]; for(let i=n-1;i>=0;i--) ORD.push(i);   // oldest → latest (latest rightmost)
+  let h=`<tr><th>Category</th>`+ORD.map(i=>`<th style="font-size:10px;white-space:nowrap${i===0?';color:var(--ink)':''}">${wkRange(W[i])}${i===0?' ·latest':''}</th>`).join('')+`<th>Total ${n}wk</th></tr>`;
   cats.forEach(([k,lab])=>{
     const arr=rc[k]||[], tot=arr.slice(0,n).reduce((a,b)=>a+(b||0),0);
-    const cells=[...Array(n)].map((_,i)=>`<td>${arr[i]||'·'}</td>`).join('');
+    const cells=ORD.map(i=>`<td${i===0?' style="font-weight:600"':''}>${arr[i]||'·'}</td>`).join('');
     h+=`<tr${k==='general'?' style="color:var(--muted)"':''}><td><span class="pill">${lab}</span></td>${cells}<td style="font-weight:700">${tot||'·'}</td></tr>`;
   });
   $('catTbl').innerHTML=h;
