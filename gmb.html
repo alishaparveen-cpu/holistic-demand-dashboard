@@ -104,8 +104,8 @@ svg{display:block}
   </div>
 
   <div class="sec">
-    <h2>Out-reviewing the top rival</h2>
-    <div class="h-sub">Our Google review count vs the #1 map-pack competitor, per clinic. Green = we lead. <span id="rivalScopeNote"></span></div>
+    <h2>Whom to chase — reviews vs the #1 rival, by category</h2>
+    <div class="h-sub">Per clinic, our Google reviews vs the top map-pack competitor for the chosen <b>category (SH / STI / MH — use the filter above)</b>. Behind = red, ahead = green. Both names link to <b>Google Maps</b> so you can go straight to the rival. <span id="rivalScopeNote"></span></div>
     <div class="chartwrap"><table id="rivalTbl"></table></div>
   </div>
 
@@ -322,22 +322,28 @@ function rivalTbl(){
   const collect=(key,disp)=>{
     const c=DATA.clinics[key]; if(!c) return;
     cats.forEach(cat=>{const r=c.rival[cat]; if(!r) return;
-      rows.push({clinic:disp,cat,our:r.our_reviews,top:r.top_reviews,name:r.top_name});});
+      rows.push({clinic:disp,cat,our:r.our_reviews,ourRt:r.our_rating,ourMaps:r.our_maps,
+        top:r.top_reviews,name:r.top_name,topRt:r.top_rating,topMaps:r.top_maps,km:r.top_km});});
   };
   if(SCOPE.type==='clinic') collect(SCOPE.key, SCOPE.key.split('|')[1]);
   else{
     const keys=SCOPE.type==='city'?DATA.cities[SCOPE.key]?Object.keys(DATA.clinics).filter(k=>k.split('|')[0]===SCOPE.key):[]:Object.keys(DATA.clinics);
     keys.forEach(k=>collect(k,k));
   }
-  rows.sort((a,b)=>(b.top-b.our)-(a.top-a.our));   // biggest gap (most behind) first
+  rows.sort((a,b)=>(b.top-b.our)-(a.top-a.our));   // biggest review gap first = who to chase
   const lead=rows.filter(r=>r.our>=r.top).length;
-  $('rivalScopeNote').textContent=`We lead in ${lead} of ${rows.length} clinic·category cells shown.`;
-  let h=`<tr><th>Clinic</th><th>Cat</th><th>Our reviews</th><th>Top rival</th><th>Gap</th><th>Rival</th></tr>`;
-  h+=rows.slice(0,60).map(r=>{
+  $('rivalScopeNote').textContent=`Category = ${CAT==='ALL'?'SH · STI · MH':CAT}. We lead in ${lead} of ${rows.length} clinic·category cells — sorted by biggest gap, so the top rows are exactly who to chase. Click a name to open it in Google Maps.`;
+  const ML=(url,txt)=>url?`<a href="${url}" target="_blank" rel="noopener" title="open in Google Maps">${txt} <span style="font-size:10px">↗</span></a>`:txt;
+  const RT=v=>v?` <span style="color:var(--muted);font-size:11px">★${v}</span>`:'';
+  let h=`<tr><th>Clinic</th><th>Cat</th><th>Us (reviews)</th><th style="text-align:left">#1 rival to chase</th><th>Rival reviews</th><th>Gap</th><th>Dist</th></tr>`;
+  h+=rows.slice(0,120).map(r=>{
     const gap=r.our-r.top, cls=gap>=0?'lead':'behind';
-    return `<tr><td>${r.clinic}</td><td><span class="pill">${r.cat}</span></td><td>${F(r.our)}</td>
-      <td>${F(r.top)}</td><td class="${cls}">${gap>=0?'+':''}${F(gap)}</td>
-      <td style="text-align:left;color:var(--muted);font-size:12px">${r.name||'—'}</td></tr>`;
+    return `<tr><td>${r.clinic}</td><td><span class="pill">${r.cat}</span></td>
+      <td>${ML(r.ourMaps,F(r.our))}${RT(r.ourRt)}</td>
+      <td style="text-align:left">${ML(r.topMaps,r.name||'—')}</td>
+      <td>${F(r.top)}${RT(r.topRt)}</td>
+      <td class="${cls}">${gap>=0?'+':''}${F(gap)}</td>
+      <td style="color:var(--muted);font-size:11px">${r.km!=null?r.km+' km':'—'}</td></tr>`;
   }).join('');
   $('rivalTbl').innerHTML=h;
 }

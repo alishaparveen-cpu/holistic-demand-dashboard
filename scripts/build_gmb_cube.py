@@ -117,8 +117,10 @@ for cat in ('SH', 'STI', 'MH'):
         comps = [x for x in (e.get('competitors') or []) if x.get('rel') is not False] or (e.get('competitors') or [])
         top = comps[0] if comps else {}
         rival[canon(key)][cat] = dict(our_reviews=e.get('our_reviews') or 0, our_rating=e.get('our_rating'),
-                               our_rank=e.get('our_rank'), top_name=top.get('name'),
-                               top_reviews=top.get('reviews') or 0, top_rating=top.get('rating'))
+                               our_rank=e.get('our_rank'), our_maps=e.get('our_maps'),
+                               top_name=top.get('name'), top_reviews=top.get('reviews') or 0,
+                               top_rating=top.get('rating'), top_maps=top.get('maps'),
+                               top_km=top.get('km'), top_pathy=top.get('pathy'))
 
 def clinic_block(key):
     ins = INS.get(key, {}); rev = REV.get(key, {})
