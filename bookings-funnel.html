@@ -2239,13 +2239,14 @@ Promise.all([
   ECOFF=ecoff; ECOFF_IDX={}; if(ecoff&&ecoff._meta&&ecoff._meta.weeks)ecoff._meta.weeks.forEach((w,i)=>ECOFF_IDX[w]=i);   // offline DONE-week economics (product-line meds/tests/therapy/consult per clinic) for ⑥ Value Metrics picker
   // CLINIC RENAMES: {'City|Old locality': 'New locality'} — the physical clinic is the same, DB just carries two location records.
   // Fold OLD into NEW (ADD, never lose) across leads + bookings + ops so it isn't split into two rows. (Yelahanka → Sahakara Nagar, Bangalore.)
-  const CLINIC_RENAME={'Bangalore|Yelahanka':'Sahakara Nagar'};
+  const CLINIC_RENAME={'Bangalore|Yelahanka':'Sahakara Nagar','Bangalore|Arekere':'Bilekahalli'};   // clinic relocated/renamed: Arekere (active Jan–Jun29) → Bilekahalli (Jul6→now); fold the old history into the current name
   (function(){const deepAdd=(dst,src)=>{
       if(Array.isArray(src)){const o=Array.isArray(dst)?dst.slice():[];for(let i=0;i<src.length;i++)o[i]=(o[i]||0)+(src[i]||0);return o;}
       if(src&&typeof src==='object'){const o=(dst&&typeof dst==='object'&&!Array.isArray(dst))?dst:{};for(const k in src)o[k]=deepAdd(o[k],src[k]);return o;}
       if(typeof src==='number')return (typeof dst==='number'?dst:0)+src; return dst!==undefined?dst:src;};   // strings (city/tier) keep dst
     for(const fk in CLINIC_RENAME){const i=fk.indexOf('|'),C=fk.slice(0,i),FROM=fk.slice(i+1),TO=CLINIC_RENAME[fk],tk=C+'|'+TO;
       if(ldc&&ldc[C])ldc[C].cells.forEach(c=>{if((c.loc||'')===FROM)c.loc=TO;});                                        // ① leads
+      if(NUM2CLINIC)for(const num in NUM2CLINIC){if(NUM2CLINIC[num]===fk)NUM2CLINIC[num]=tk;}                            // GMB tracking number → new clinic (else the old locality re-appears in the clinic picker)
       if(bk[fk]){bk[tk]=bk[tk]||{cells:[]};(bk[fk].cells||[]).forEach(cell=>{cell.loc=TO;bk[tk].cells.push(cell);});delete bk[fk];}   // ② offline bookings episode cube
       if(onlbk&&onlbk.clinics&&onlbk.clinics[fk]){onlbk.clinics[tk]=onlbk.clinics[tk]?deepAdd(onlbk.clinics[tk],onlbk.clinics[fk]):onlbk.clinics[fk];delete onlbk.clinics[fk];}   // online SC cube (folded BEFORE mergeOnlineBookings re-adds it)
       if(QD&&QD.clinics){const fs=qnorm(FROM)+'_'+qnorm(C),ts=qnorm(TO)+'_'+qnorm(C);                                    // ③④⑤ ops (recursive count-merge; ratios recomputed from counts)
