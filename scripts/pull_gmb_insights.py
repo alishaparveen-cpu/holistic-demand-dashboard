@@ -14,8 +14,11 @@ ACCOUNT = "accounts/104278284314268556784"          # PERSONAL account holding t
 IMPR = ["BUSINESS_IMPRESSIONS_MOBILE_SEARCH","BUSINESS_IMPRESSIONS_DESKTOP_SEARCH",
         "BUSINESS_IMPRESSIONS_MOBILE_MAPS","BUSINESS_IMPRESSIONS_DESKTOP_MAPS"]
 INTER = ["CALL_CLICKS","WEBSITE_CLICKS","BUSINESS_DIRECTION_REQUESTS"]
-# 12 Monday-weeks, newest first (must match diagnostic WEEKS)
-WEEKS=["2026-07-06","2026-06-29","2026-06-22","2026-06-15","2026-06-08","2026-06-01","2026-05-25","2026-05-18","2026-05-11","2026-05-04","2026-04-27","2026-04-20","2026-04-13","2026-04-06","2026-03-30"]
+# 15 Monday-weeks, newest first. DYNAMIC: grid[0] = latest COMPLETE Mon–Sun week (computed from today, no drift).
+# GBP data lags ~3-5 days so the newest 1-2 weeks may report <7 days — the `days` field flags that and the GMB tab greys them.
+_today = datetime.date.today()
+_latest_mon = _today - datetime.timedelta(days=_today.weekday()) - datetime.timedelta(days=7)
+WEEKS = [(_latest_mon - datetime.timedelta(weeks=i)).isoformat() for i in range(15)]
 # derive the GBP pull window from WEEKS so it never drifts out of sync on a window shift
 WK_START = datetime.date.fromisoformat(WEEKS[-1])                                  # oldest Monday
 WK_END   = datetime.date.fromisoformat(WEEKS[0]) + datetime.timedelta(days=6)      # newest week's Sunday (GBP lag means recent days may be empty)

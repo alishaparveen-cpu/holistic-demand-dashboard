@@ -74,7 +74,25 @@ svg{display:block}
 
   <div class="sec">
     <h2>Week on week</h2>
-    <div class="h-sub">Every metric, week by week (newest first) with the change vs the previous week. The greyed row is the week GBP is still reporting.</div>
+    <div class="h-sub">Weeks across the top, <span id="rowsByLbl">cities</span> down the side — pick a metric. Cell colour = change vs the prior week. Click a city row to drill into its clinics.</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px">
+      <span><label>Metric</label>
+        <select id="metricS">
+          <option value="impr">Impressions</option>
+          <option value="calls">Calls</option>
+          <option value="website">Website clicks</option>
+          <option value="directions">Directions</option>
+          <option value="interactions">Interactions</option>
+          <option value="rev_n">New reviews</option>
+          <option value="rev_pos">Positive reviews</option>
+          <option value="rev_neg">Negative reviews</option>
+          <option value="gmb_call">GMB leads · call</option>
+        </select></span>
+      <span><label>Rows</label>
+        <button class="seg on" data-rows="city">City</button>
+        <button class="seg" data-rows="clinic">Clinic</button>
+      </span>
+    </div>
     <div class="chartwrap"><table id="wowTbl"></table></div>
   </div>
 
@@ -159,25 +177,44 @@ function kpis(){
   $('kpis').innerHTML=h;
 }
 
-// week-on-week table: newest week first, WoW delta pill on each metric
-function wowTbl(){
-  const nd=node(), W=DATA._meta.weeks, n=W.length;
-  const cols=[['impr','Impr'],['calls','Calls'],['website','Web'],['directions','Dir'],
-              ['interactions','Interact'],['rev_n','Reviews'],['rev_pos','+ve'],['rev_neg','−ve'],['gmb_call','Lead·call']];
-  const delta=(a,b)=>{ if(b==null||b===0) return a?'<span class="up">new</span>':'';
-    const d=(a-b)/b*100, c=Math.abs(d)<1?'flat':d>0?'up':'down', ar=d>0?'▲':d<0?'▼':'·';
-    return `<span class="${c}" style="font-size:11px">${ar}${Math.abs(d).toFixed(0)}%</span>`; };
-  let h=`<tr><th>Week</th>`+cols.map(c=>`<th>${c[1]}</th>`).join('')+`<th>Rating</th></tr>`;
-  for(let i=0;i<n;i++){
-    const imm=(nd.impr[i]||0)===0;
-    const cells=cols.map(([k])=>{
-      const a=nd[k][i], b=i+1<n?nd[k][i+1]:null;
-      return `<td>${F(a)} <small>${delta(a,b)}</small></td>`;
-    }).join('');
-    const r=nd.rev_rating[i];
-    h+=`<tr style="${imm?'opacity:.5':''}"><td>${W[i]}</td>${cells}<td>${r!=null?r.toFixed(2)+'★':'—'}</td></tr>`;
+// week-on-week MATRIX: weeks across columns, city/clinic rows (demand-view style), one metric
+let METRIC='impr', ROWSBY='city', EXPAND=new Set();
+const MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+function wkRange(mon){const d=new Date(mon+'T00:00:00'),e=new Date(d);e.setDate(d.getDate()+6);
+  return MON[d.getMonth()]+' '+d.getDate()+'–'+(d.getMonth()===e.getMonth()?e.getDate():MON[e.getMonth()]+' '+e.getDate());}
+function cellStyle(v,prev,imm){let s=imm?'opacity:.4;':'';
+  if(prev!=null&&prev!==0){const dd=(v-prev)/prev*100; if(dd>=8)s+='color:var(--pos)';else if(dd<=-8)s+='color:var(--neg)';}
+  return s;}
+function matrixRows(){
+  const rows=[]; const push=(lab,node,lvl,x)=>rows.push(Object.assign({lab,arr:node[METRIC]||[],lvl},x||{}));
+  if(SCOPE.type==='clinic') return {total:null, rows:[{lab:SCOPE.key.split('|')[1],arr:DATA.clinics[SCOPE.key][METRIC],lvl:0}]};
+  if(SCOPE.type==='city'){
+    Object.keys(DATA.clinics).filter(k=>k.split('|')[0]===SCOPE.key).sort().forEach(k=>push(k.split('|')[1],DATA.clinics[k],1));
+    return {total:{lab:SCOPE.key+' · total',node:DATA.cities[SCOPE.key]}, rows};
   }
+  if(ROWSBY==='clinic') Object.keys(DATA.clinics).sort().forEach(k=>push(k,DATA.clinics[k],0));
+  else Object.keys(DATA.cities).sort().forEach(c=>{
+    push(c,DATA.cities[c],0,{cityKey:c,expandable:true});
+    if(EXPAND.has(c)) Object.keys(DATA.clinics).filter(k=>k.split('|')[0]===c).sort().forEach(k=>push(k.split('|')[1],DATA.clinics[k],1));
+  });
+  return {total:{lab:'All India',node:DATA.national}, rows};
+}
+function wowTbl(){
+  const W=DATA._meta.weeks, n=W.length, {total,rows}=matrixRows();
+  const rowLbl=(SCOPE.type!=='national'||ROWSBY==='clinic')?'Clinic':'City';
+  let h=`<tr><th>${rowLbl}</th>`+W.map(w=>`<th style="font-size:10px;white-space:nowrap">${wkRange(w)}</th>`).join('')+`</tr>`;
+  const cells=arr=>{let t='';for(let i=0;i<n;i++){const v=arr[i]||0,prev=i+1<n?arr[i+1]:null,imm=(i===0&&!v);
+    t+=`<td style="${cellStyle(v,prev,imm)}">${v?F(v):'·'}</td>`;}return t;};
+  if(total) h+=`<tr style="font-weight:700;background:#f4f7fa"><td>${total.lab}</td>${cells(total.node[METRIC])}</tr>`;
+  h+=rows.map(r=>{
+    const ind=r.lvl?`padding-left:${10+r.lvl*14}px`:'';
+    const exp=r.expandable?`<span style="cursor:pointer" data-city="${r.cityKey}">${EXPAND.has(r.cityKey)?'▾':'▸'} </span>`:'';
+    return `<tr><td style="${ind};${r.lvl?'color:var(--muted)':''}">${exp}${r.lab}</td>${cells(r.arr)}</tr>`;
+  }).join('');
   $('wowTbl').innerHTML=h;
+  $('wowTbl').querySelectorAll('[data-city]').forEach(el=>el.onclick=()=>{
+    const c=el.dataset.city; EXPAND.has(c)?EXPAND.delete(c):EXPAND.add(c); wowTbl();});
+  const rl=$('rowsByLbl'); if(rl) rl.textContent = rowLbl.toLowerCase()+(rowLbl==='City'?' (▸ to drill into clinics)':'');
 }
 
 // grouped weekly bar chart (oldest→newest left→right), impressions as tall bar + interaction sub-bars
@@ -267,6 +304,10 @@ function initControls(){
   document.querySelectorAll('.seg[data-cat]').forEach(b=>b.onclick=()=>{
     document.querySelectorAll('.seg[data-cat]').forEach(x=>x.classList.remove('on'));
     b.classList.add('on'); CAT=b.dataset.cat; rivalTbl();});
+  $('metricS').onchange=e=>{METRIC=e.target.value; wowTbl();};
+  document.querySelectorAll('.seg[data-rows]').forEach(b=>b.onclick=()=>{
+    document.querySelectorAll('.seg[data-rows]').forEach(x=>x.classList.remove('on'));
+    b.classList.add('on'); ROWSBY=b.dataset.rows; wowTbl();});
 }
 
 fetch('data_gmb_tab.json').then(r=>r.json()).then(d=>{
