@@ -102,32 +102,31 @@ dl AS (SELECT DISTINCT DATE(ab.start_time+INTERVAL '5.5 hours') AS block_dt, ab.
   WHERE abtm.deleted_at IS NULL AND ab.deleted_at IS NULL AND abtm.offline_location_id IS NOT NULL),
 lead_first AS (   -- patient's first-ever lead source bucket (same L2 logic as build_sc_bookings) — enables the exact done × category × SOURCE cross
   SELECT patient_id,
-    CASE
-      WHEN lower(temp) IN ('googlelisting','googleslisting','gmb') THEN 'GMB'
-      WHEN lower(temp)='practo' THEN 'Practo'
-      WHEN lower(temp) IN ('fb','facebook','meta','ig','instagram') THEN 'Meta'
-      WHEN lower(temp) IN ('organic','blog','google') AND lower(surl) LIKE '%/blog/%' THEN 'Organic · Blog'   -- blog content = organic sub-source (matches ① leads / ② bookings)
-      WHEN lower(temp)='google' THEN 'Google'
-      WHEN lower(temp) LIKE '%organic%' THEN 'Organic'
-      WHEN temp IS NULL OR temp='' THEN 'Direct / none'
-      ELSE 'Others' END AS source_bucket
+    CASE   -- source taxonomy MIRRORS the ① leads cube exactly (see build_sc_bookings.py) so ⑤ done×source reconciles with ①/②
+      WHEN lower(coalesce(us,'')) IN ('gmb','googlelisting','google listing','google_listing') THEN 'GMB'
+      WHEN lower(coalesce(us,''))='practo' THEN 'Practo'
+      WHEN lower(coalesce(us,''))='justdial' THEN 'JustDial'
+      WHEN (gclid IS NOT NULL AND gclid<>'')
+           OR (lower(coalesce(us,''))='google' AND lower(coalesce(umed,'')) LIKE '%cpc%')
+           OR (lower(coalesce(us,''))='google' AND lower(coalesce(ucmp,''))='inbound_call') THEN 'Google Ads'
+      WHEN (fbclid IS NOT NULL AND fbclid<>'') OR (afb IS NOT NULL AND afb<>'')
+           OR lower(coalesce(us,'')) IN ('fb','facebook','meta','ig','instagram') THEN 'Meta'
+      WHEN lower(coalesce(surl,'')) LIKE '%/blog/%' THEN 'Organic · Blog'
+      WHEN lower(coalesce(us,'')) IN ('organic','blog','google') THEN 'Organic'
+      ELSE 'Other' END AS source_bucket
   FROM (
-    SELECT patient_id, surl,
-      CASE WHEN lower(us)='directwalkin' THEN 'directwalkin'
-        WHEN us2 IS NULL OR us2='' THEN us WHEN us2 IN ('fb','google') THEN us2 WHEN us2 IN ('googleslisting') THEN 'GMB' ELSE us END AS temp
-    FROM (
-      SELECT pat.id AS patient_id, ld.utm_source AS us, ld.source_url AS surl,
-        regexp_replace(regexp_substr(ld.source_url,'utm_source=[^& ]+'),'utm_source=','') AS us2
+      SELECT pat.id AS patient_id, ld.utm_source AS us, ld.source_url AS surl, ld.utm_medium AS umed, ld.utm_campaign AS ucmp,
+        ld.gclid AS gclid, ld.fbclid AS fbclid, ld.accumulated_fbclids AS afb
       FROM allo_persons.patient pat
-      JOIN allo_persons.lead ld ON ld.id = pat.lead_id AND ld.deleted_at IS NULL   -- patient.lead_id ID join (matches ①/②; was phone-match first-lead)
-      WHERE pat.deleted_at IS NULL))),
+      JOIN allo_persons.lead ld ON ld.id = pat.lead_id AND ld.deleted_at IS NULL   -- patient.lead_id ID join (matches ①/②)
+      WHERE pat.deleted_at IS NULL)),
 appt_level AS (
   SELECT ap.id AS ap_id,
     date_trunc('week', ap.start_time+INTERVAL '5.5 hours')::date AS week_start,
     COALESCE(dl.city,'Online') AS doc_city, COALESCE(dl.locality,'Online') AS doc_locality,
     COALESCE(pro.name,'—') AS doctor,
     COALESCE(pf.diag_cat,'oth') AS diagnosis,
-    COALESCE(lf.source_bucket,'Direct / none') AS source_bucket,
+    COALESCE(lf.source_bucket,'Other') AS source_bucket,
     CASE WHEN typ.name='Screening Call' AND (CASE WHEN aploc.id IN ({TELE}) OR aploc.id IS NULL THEN 0 ELSE 1 END)=1 THEN 'offline_sc'
          WHEN typ.name='Screening Call' THEN 'online_sc' ELSE 'repeat' END AS segment,
     MAX(COALESCE(iid.med_pbl,0)) AS med_amt, MAX(COALESCE(iil.test_pbl,0)) AS test_amt, MAX(COALESCE(iit.ther_pbl,0)) AS ther_amt, MAX(COALESCE(cf.cons_amt,0)) AS cons_amt,
@@ -152,7 +151,7 @@ appt_level AS (
   WHERE ap.deleted_at IS NULL AND ap.status IN ('COMPLETED','RECONSULTED')
     AND typ.name IN ('Screening Call','Follow Up','Report Reading','Patient Queries') AND ap.consultation_id IS NOT NULL
     AND ap.start_time+INTERVAL '5.5 hours' >= cr.start_range
-  GROUP BY ap.id, date_trunc('week', ap.start_time+INTERVAL '5.5 hours')::date, COALESCE(dl.city,'Online'), COALESCE(dl.locality,'Online'), COALESCE(pro.name,'—'), COALESCE(pf.diag_cat,'oth'), COALESCE(lf.source_bucket,'Direct / none'), typ.name, aploc.id)
+  GROUP BY ap.id, date_trunc('week', ap.start_time+INTERVAL '5.5 hours')::date, COALESCE(dl.city,'Online'), COALESCE(dl.locality,'Online'), COALESCE(pro.name,'—'), COALESCE(pf.diag_cat,'oth'), COALESCE(lf.source_bucket,'Other'), typ.name, aploc.id)
 SELECT doc_city, doc_locality, doctor, week_start, diagnosis, source_bucket,
   COUNT(CASE WHEN segment='offline_sc' THEN 1 END) AS done,
   SUM(CASE WHEN segment='offline_sc' AND purchased_flag=1 THEN 1 ELSE 0 END) AS purchased,

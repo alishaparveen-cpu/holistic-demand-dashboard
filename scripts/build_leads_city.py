@@ -28,7 +28,7 @@ DI = {d: i for i, d in enumerate(DAYS)}; ND = len(DAYS)
 def wk_monday(dstr):
     d = datetime.date.fromisoformat(dstr)
     return (d - datetime.timedelta(days=d.weekday())).isoformat()
-CHANNELS = ['GMB', 'Google Ads', 'Meta', 'Practo', 'Organic', 'Organic · Blog', 'Other']
+CHANNELS = ['GMB', 'Google Ads', 'Meta', 'Practo', 'JustDial', 'Organic', 'Organic · Blog', 'Other']
 
 # number -> canonical city (from the GMB map) ; and URL/AI token -> canonical city
 GMAP = json.load(open(os.path.join(ROOT, 'data_gmb_number_clinic.json')))
@@ -161,6 +161,7 @@ lead_attr AS (
     CASE
       WHEN LOWER(COALESCE(l.utm_source,'')) IN ('gmb','googlelisting','google listing','google_listing') THEN 'GMB'
       WHEN LOWER(COALESCE(l.utm_source,''))='practo' THEN 'Practo'
+      WHEN LOWER(COALESCE(l.utm_source,''))='justdial' THEN 'JustDial'   -- directory-listing inbound calls (origin=exotel); backfilled 2026-07-27, was falling to 'Other'/organic-unidentified
       WHEN (l.gclid IS NOT NULL AND l.gclid<>'')
            OR (LOWER(COALESCE(l.utm_source,''))='google' AND LOWER(COALESCE(l.utm_medium,'')) LIKE '%cpc%')
            OR (LOWER(COALESCE(l.utm_source,''))='google' AND LOWER(COALESCE(l.utm_campaign,''))='inbound_call') THEN 'Google Ads'  -- google-source inbound calls (call-ext/call-only ads): no gclid & medium=number (not cpc) → were wrongly falling to Organic. GMB calls are tagged utm_source='gmb', so no risk of pulling GMB in.

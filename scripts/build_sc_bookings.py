@@ -47,28 +47,27 @@ WITH sc_offline AS (
   LEFT JOIN allo_persons.providers pro ON apt.provider_id=pro.id AND pro.deleted_at IS NULL
   WHERE apt.deleted_at IS NULL AND apt.location_id NOT IN ({TELE})   -- OFFLINE = not one of the 2 telehealth UUIDs (mirrors the online cube; was loc.name NOT LIKE '%online%' which undercounted online → double-counted here)
 ),
-lead_first AS (   -- patient's first-ever lead: week + source bucket (L2 Lead-to-Book source logic, enriched)
+lead_first AS (   -- patient's first-ever lead: week + source bucket. Source taxonomy MIRRORS the ① leads cube (build_leads_city.py channel CASE) EXACTLY so ① leads and ② bookings reconcile by source: gclid / google-inbound-call → 'Google Ads'; fbclid → 'Meta'; utm_source=justdial → 'JustDial'; /blog/ landing → 'Organic · Blog'; organic-google (no gclid/cpc) → 'Organic'; directwalkin / bare-null → 'Other'. Total bookings unaffected (② reconciles to the sheet on booked_nat, a source-independent total).
   SELECT patient_id, date_trunc('week', lead_crt)::date AS lead_week,
     CASE
-      WHEN lower(temp) IN ('googlelisting','googleslisting','gmb') THEN 'GMB'   -- directwalkin excluded (city-head GMB = listing only, matches sheet)
-      WHEN lower(temp)='practo' THEN 'Practo'
-      WHEN lower(temp) IN ('fb','facebook','meta','ig','instagram') THEN 'Meta'
-      WHEN lower(temp) IN ('organic','blog','google') AND lower(surl) LIKE '%/blog/%' THEN 'Organic · Blog'   -- blog content = organic sub-source (matches ① leads / ② bookings)
-      WHEN lower(temp)='google' THEN 'Google'
-      WHEN lower(temp) LIKE '%organic%' THEN 'Organic'
-      WHEN temp IS NULL OR temp='' THEN 'Direct / none'
-      ELSE 'Others' END AS source_bucket   -- directwalkin + justdial/marketing/misc land here (sheet 'Others')
+      WHEN lower(coalesce(us,'')) IN ('gmb','googlelisting','google listing','google_listing') THEN 'GMB'
+      WHEN lower(coalesce(us,''))='practo' THEN 'Practo'
+      WHEN lower(coalesce(us,''))='justdial' THEN 'JustDial'
+      WHEN (gclid IS NOT NULL AND gclid<>'')
+           OR (lower(coalesce(us,''))='google' AND lower(coalesce(umed,'')) LIKE '%cpc%')
+           OR (lower(coalesce(us,''))='google' AND lower(coalesce(ucmp,''))='inbound_call') THEN 'Google Ads'
+      WHEN (fbclid IS NOT NULL AND fbclid<>'') OR (afb IS NOT NULL AND afb<>'')
+           OR lower(coalesce(us,'')) IN ('fb','facebook','meta','ig','instagram') THEN 'Meta'
+      WHEN lower(coalesce(surl,'')) LIKE '%/blog/%' THEN 'Organic · Blog'
+      WHEN lower(coalesce(us,'')) IN ('organic','blog','google') THEN 'Organic'
+      ELSE 'Other' END AS source_bucket
   FROM (
-    SELECT patient_id, lead_crt, surl,
-      CASE WHEN lower(us)='directwalkin' THEN 'directwalkin'   -- walk-in stays a walk-in even if the lead URL carries a fb/google utm
-        WHEN us2 IS NULL OR us2='' THEN us WHEN us2 IN ('fb','google') THEN us2 WHEN us2 IN ('googleslisting') THEN 'GMB' ELSE us END AS temp
-    FROM (
       SELECT pat.id AS patient_id, date(ld.created_at + interval '5.5 hours') AS lead_crt,
-        ld.utm_source AS us, ld.source_url AS surl,
-        regexp_replace(regexp_substr(ld.source_url,'utm_source=[^& ]+'),'utm_source=','') AS us2
+        ld.utm_source AS us, ld.source_url AS surl, ld.utm_medium AS umed, ld.utm_campaign AS ucmp,
+        ld.gclid AS gclid, ld.fbclid AS fbclid, ld.accumulated_fbclids AS afb
       FROM allo_persons.patient pat
-      JOIN allo_persons.lead ld ON ld.id = pat.lead_id AND ld.deleted_at IS NULL   -- patient.lead_id ID join (the lead that created the patient) — matches ①/②; was phone-match first-lead
-      WHERE pat.deleted_at IS NULL))
+      JOIN allo_persons.lead ld ON ld.id = pat.lead_id AND ld.deleted_at IS NULL   -- patient.lead_id ID join (the lead that created the patient) — matches ①/②
+      WHERE pat.deleted_at IS NULL)
 ),
 patient_comp AS (   -- earliest week the patient ever COMPLETED an offline SC (for rebook vs return)
   SELECT patient_id, MIN(week_start) AS first_comp_wk
@@ -76,7 +75,7 @@ patient_comp AS (   -- earliest week the patient ever COMPLETED an offline SC (f
 ),
 base AS (
   SELECT b.patient_id, b.city, b.clinic, b.doctor, b.week_start, b.attempt_rnk, b.dow, b.slot_status,
-    lf.lead_week, COALESCE(lf.source_bucket,'Direct / none') AS source_bucket, pc.first_comp_wk,
+    lf.lead_week, COALESCE(lf.source_bucket,'Other') AS source_bucket, pc.first_comp_wk,
     CASE WHEN b.status IN ('COMPLETED','RECONSULTED') THEN 1 ELSE 0 END AS done_flag
   FROM sc_offline b
   LEFT JOIN lead_first lf ON lf.patient_id=b.patient_id
@@ -100,7 +99,7 @@ bpwf AS (   -- add grain-primary flags so national/city rollups can de-dup a pat
   FROM bpw
 ),
 slots AS (   -- SLOT level (appointment rows, NOT distinct patient): booked slots + done slots + outcome breakdown, per clinic×source×doctor×week
-  SELECT city, clinic, doctor, COALESCE(source_bucket,'Direct / none') AS source_bucket, week_start,
+  SELECT city, clinic, doctor, COALESCE(source_bucket,'Other') AS source_bucket, week_start,
     count(*) AS booked_slots, sum(done_flag) AS done_slots,
     sum(case when slot_status='COMPLETED'  then 1 else 0 end) AS st_completed,
     sum(case when slot_status='SCHEDULED'  then 1 else 0 end) AS st_scheduled,

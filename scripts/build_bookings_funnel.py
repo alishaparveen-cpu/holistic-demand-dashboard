@@ -24,7 +24,7 @@ def _wkgrid(n): return [(_MON - _dtm.timedelta(weeks=i + 1)).isoformat() for i i
 WEEKS = _wkgrid(27)   # 26 weeks ending at the latest complete week (6–12 Jul)
 WI = {w: i for i, w in enumerate(WEEKS)}; N = len(WEEKS)
 CH = {'Google Maps (GMB)': 'GMB', 'Google Ads': 'Google Ads', 'Practo': 'Practo', 'Meta': 'Meta',
-      'Organic': 'Organic', 'Walk-in': 'Walk-in'}
+      'JustDial': 'JustDial', 'Organic': 'Organic', 'Organic · Blog': 'Organic · Blog', 'Walk-in': 'Walk-in'}   # JustDial + Organic·Blog now their own ②③④⑤ buckets (were folding to 'Other') → done-by-source reconciles with ① leads
 CATMAP = {'STI': 'STI', 'SEXUAL_HEALTH_GENERAL': 'SH', 'MENTAL_HEALTH': 'MH', 'OTHER': 'Other', 'NOT_MENTIONED': 'Other'}
 
 

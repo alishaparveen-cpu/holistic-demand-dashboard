@@ -65,25 +65,26 @@ sc_online AS (
 ),
 lead_first AS (
   SELECT patient_id, lead_crt, date_trunc('week', lead_crt)::date AS lead_week,
-    CASE
-      WHEN lower(temp) IN ('directwalkin','googlelisting','googleslisting','gmb') THEN 'GMB'
-      WHEN lower(temp)='google' THEN 'Google'
-      WHEN lower(temp)='practo' THEN 'Practo'
-      WHEN lower(temp) IN ('fb','facebook','meta','ig','instagram') THEN 'Meta'
-      WHEN lower(temp) LIKE '%organic%' THEN 'Organic'
-      WHEN temp IS NULL OR temp='' THEN 'Direct / none'
-      ELSE 'Others' END AS source_bucket
+    CASE   -- source taxonomy MIRRORS the ① leads cube exactly (see build_sc_bookings.py) so ② online reconciles by source
+      WHEN lower(coalesce(us,'')) IN ('gmb','googlelisting','google listing','google_listing') THEN 'GMB'
+      WHEN lower(coalesce(us,''))='practo' THEN 'Practo'
+      WHEN lower(coalesce(us,''))='justdial' THEN 'JustDial'
+      WHEN (gclid IS NOT NULL AND gclid<>'')
+           OR (lower(coalesce(us,''))='google' AND lower(coalesce(umed,'')) LIKE '%cpc%')
+           OR (lower(coalesce(us,''))='google' AND lower(coalesce(ucmp,''))='inbound_call') THEN 'Google Ads'
+      WHEN (fbclid IS NOT NULL AND fbclid<>'') OR (afb IS NOT NULL AND afb<>'')
+           OR lower(coalesce(us,'')) IN ('fb','facebook','meta','ig','instagram') THEN 'Meta'
+      WHEN lower(coalesce(surl,'')) LIKE '%/blog/%' THEN 'Organic · Blog'
+      WHEN lower(coalesce(us,'')) IN ('organic','blog','google') THEN 'Organic'
+      ELSE 'Other' END AS source_bucket
   FROM (
-    SELECT patient_id, lead_crt,
-      CASE WHEN us2 IS NULL OR us2='' THEN us WHEN us2 IN ('fb','google') THEN us2 WHEN us2 IN ('googleslisting') THEN 'GMB' ELSE us END AS temp
-    FROM (
       SELECT pat.id AS patient_id, date(ld.created_at + interval '5.5 hours') AS lead_crt,
-        ld.utm_source AS us,
-        regexp_replace(regexp_substr(ld.source_url,'utm_source=[^& ]+'),'utm_source=','') AS us2,
+        ld.utm_source AS us, ld.source_url AS surl, ld.utm_medium AS umed, ld.utm_campaign AS ucmp,
+        ld.gclid AS gclid, ld.fbclid AS fbclid, ld.accumulated_fbclids AS afb,
         row_number() over (partition by pat.id order by ld.created_at asc) AS lr
       FROM allo_persons.patient pat
       JOIN allo_persons.lead ld ON pat.phone_no=ld.phone_no AND ld.deleted_at IS NULL
-      WHERE pat.deleted_at IS NULL) WHERE lr=1)
+      WHERE pat.deleted_at IS NULL) WHERE lr=1
 ),
 patient_comp AS (
   SELECT patient_id, MIN(week_start) AS first_comp_wk
@@ -91,7 +92,7 @@ patient_comp AS (
 ),
 base AS (
   SELECT b.patient_id, b.doctor, b.city, b.locality, b.week_start, b.attempt_rnk, b.diagnosis,
-    lf.lead_week, COALESCE(lf.source_bucket,'Direct / none') AS source_bucket, pc.first_comp_wk,
+    lf.lead_week, COALESCE(lf.source_bucket,'Other') AS source_bucket, pc.first_comp_wk,
     CASE   -- lead maturity by CALENDAR WEEK (lead's week vs booking's week) — matches offline: 'fresh' = same week
       WHEN lf.lead_week IS NULL THEN 'nolead'
       WHEN lf.lead_week > b.week_start THEN 'nolead'
