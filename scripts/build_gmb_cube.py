@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build data_gmb.json — the cube behind the new GMB tab (gmb.html).
+"""Build data_gmb_tab.json — the cube behind the new GMB tab (gmb.html).
 
 Assembles, per clinic "City|Locality" (+ city & national rollups), on ONE weekly axis:
   • Performance (GBP Performance API, via data_gmb_insights.json):
@@ -117,8 +117,8 @@ out = {'_meta': {'weeks': WEEKS,
                          "rev_cat stub pending review-text category pull.",
                  'metrics': PERF},
        'clinics': clinics, 'cities': city_roll, 'national': nat_roll}
-json.dump(out, open(os.path.join(ROOT, 'data_gmb.json'), 'w'), separators=(',', ':'))
-print(f'wrote data_gmb.json · {len(clinics)} clinics · {len(city_roll)} cities · {NW} weeks ({WEEKS[-1]}→{WEEKS[0]})')
+json.dump(out, open(os.path.join(ROOT, 'data_gmb_tab.json'), 'w'), separators=(',', ':'))
+print(f'wrote data_gmb_tab.json · {len(clinics)} clinics · {len(city_roll)} cities · {NW} weeks ({WEEKS[-1]}→{WEEKS[0]})')
 tot = nat_roll
 print(f'national last wk: impr={tot["impr"][0]} calls={tot["calls"][0]} interactions={tot["interactions"][0]} '
       f'reviews={tot["rev_n"][0]} (neg {tot["rev_neg"][0]}) gmb_leads_call={tot["gmb_call"][0]}')
