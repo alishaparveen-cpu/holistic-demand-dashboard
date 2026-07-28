@@ -62,6 +62,25 @@ svg{display:block}
 .cbox .csub{font-size:11.5px;color:var(--muted);margin-bottom:8px}
 .cx{position:absolute;top:12px;right:16px;border:none;background:none;font-size:19px;color:var(--muted);cursor:pointer;line-height:1}
 .cdl{position:absolute;top:12px;right:46px;background:var(--accent);color:#fff;border:0;border-radius:6px;padding:3px 9px;font-size:11.5px;font-weight:600;cursor:pointer}
+/* ask-the-dashboard chat widget */
+#askLaunch{position:fixed;bottom:20px;right:20px;z-index:55;background:var(--accent);color:#fff;border:0;border-radius:26px;padding:11px 18px;font:14px inherit;font-weight:600;cursor:pointer;box-shadow:0 6px 20px rgba(44,108,174,.4);display:flex;align-items:center;gap:7px}
+#askPanel{position:fixed;bottom:20px;right:20px;z-index:56;width:390px;max-width:calc(100vw - 32px);height:560px;max-height:calc(100vh - 40px);background:var(--card);border:1px solid var(--line);border-radius:14px;box-shadow:0 20px 60px rgba(0,0,0,.28);display:none;flex-direction:column;overflow:hidden}
+#askPanel.on{display:flex}
+.askhead{display:flex;align-items:center;gap:8px;padding:12px 14px;border-bottom:1px solid var(--line);background:color-mix(in srgb,var(--accent) 6%,var(--card))}
+.askhead b{font-size:14px}.askhead .sm{font-size:11px;color:var(--muted)}
+.askhead .x{margin-left:auto;cursor:pointer;color:var(--muted);font-size:18px;border:0;background:none}
+.askhead .gear{cursor:pointer;color:var(--muted);font-size:14px;border:0;background:none}
+#askMsgs{flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:10px}
+.amsg{max-width:88%;padding:8px 11px;border-radius:11px;font-size:13px;line-height:1.5;white-space:pre-wrap}
+.amsg.u{align-self:flex-end;background:var(--accent);color:#fff;border-bottom-right-radius:3px}
+.amsg.a{align-self:flex-start;background:#f1f4f8;color:var(--ink);border-bottom-left-radius:3px}
+.amsg.sys{align-self:center;background:#fbf7ee;color:#7a6a3f;font-size:11.5px;border:1px solid #efe3c8}
+.askform{display:flex;gap:7px;padding:11px;border-top:1px solid var(--line)}
+.askform textarea{flex:1;resize:none;border:1px solid var(--line);border-radius:8px;padding:7px 9px;font:13px inherit;height:38px;max-height:110px}
+.askform button{border:0;background:var(--accent);color:#fff;border-radius:8px;padding:0 14px;font-weight:600;cursor:pointer}
+.askform button:disabled{opacity:.5;cursor:default}
+.asksug{display:flex;flex-wrap:wrap;gap:6px;padding:0 11px 8px}
+.asksug span{font-size:11px;border:1px solid var(--line);border-radius:12px;padding:3px 9px;cursor:pointer;color:var(--accent)}
 </style>
 </head>
 <body>
@@ -124,6 +143,19 @@ svg{display:block}
   <h3 id="ctitle"></h3><div class="csub" id="csub"></div>
   <div id="cchart" style="overflow-x:auto"></div>
 </div></div>
+
+<button id="askLaunch">💬 Ask the dashboard</button>
+<div id="askPanel">
+  <div class="askhead"><b>📍 GMB copilot</b><span class="sm">Claude · your data</span>
+    <button class="gear" id="askGear" title="change API key">⚙</button>
+    <button class="x" id="askClose">✕</button></div>
+  <div id="askMsgs"></div>
+  <div class="asksug" id="askSug"></div>
+  <form class="askform" id="askForm">
+    <textarea id="askInput" placeholder="Ask… e.g. why did impressions drop?" rows="1"></textarea>
+    <button type="submit" id="askSend">➤</button>
+  </form>
+</div>
 
 <script>
 let DATA=null, CAT='ALL', SCOPE={type:'national'}, BASE='avg', SHOW_OLDER=false, EXG=new Set(), SORT={key:null,dir:-1}, LAYER=0;
@@ -397,9 +429,58 @@ function initControls(){
   document.addEventListener('keydown',e=>{if(e.key==='Escape')closeChart();});
 }
 
+// ── Ask-the-dashboard chat (bring-your-own-key: Anthropic key stays in this browser's localStorage, never in the repo) ──
+const ASK_KEY_LS='allo_anthropic_key', ASK_MODEL='claude-sonnet-5';
+let ASK_HIST=[];
+function askKey(){return localStorage.getItem(ASK_KEY_LS)||'';}
+function askSetKey(){const k=prompt('Paste your Anthropic API key (starts with sk-ant-…).\nIt is stored ONLY in this browser (localStorage) and sent directly to Anthropic — never to our servers or the repo.',askKey());
+  if(k!==null){localStorage.setItem(ASK_KEY_LS,k.trim());return k.trim();}return askKey();}
+function askAdd(role,text){const d=document.createElement('div');d.className='amsg '+(role==='user'?'u':role==='sys'?'sys':'a');d.textContent=text;$('askMsgs').appendChild(d);$('askMsgs').scrollTop=1e9;return d;}
+function askContext(){
+  const W=DATA._meta.weeks, N=DATA.national;
+  const series=nd=>({impr:nd.impr,calls:nd.calls,website:nd.website,directions:nd.directions,reviews:nd.rev_n,neg_reviews:nd.rev_neg,leads_call:nd.gmb_call,leads_whatsapp:nd.gmb_wa,leads_web:nd.gmb_web});
+  const d5=a=>{const now=a[0]||0,b=a.slice(1,5).filter(x=>x!=null),avg=b.length?b.reduce((s,x)=>s+x,0)/b.length:0;return {latest:now,avg_prior4:Math.round(avg),pct_vs_avg:avg?Math.round((now-avg)/avg*100):null};};
+  const cities={};
+  for(const c in DATA.cities){const nd=DATA.cities[c];
+    cities[c]={impressions:d5(nd.impr),calls:d5(nd.calls),reviews:d5(nd.rev_n),gmb_leads:d5(nd.gmb_call.map((v,i)=>(v||0)+(nd.gmb_wa[i]||0)+(nd.gmb_web[i]||0)))};}
+  const riv={};for(const cat of ['SH','STI','MH']){const r=(N.rival||{})[cat];if(r)riv[cat]={our_reviews:r.our_reviews,top_rival_total_reviews:r.top_reviews,clinics_where_we_lead:r.clinics_leading,clinics_total:r.clinics};}
+  return {weeks_newest_first:W,national_weekly_newest_first:series(N),city_latest_vs_prior_4wk_avg:cities,rivals_by_category:riv,
+          current_scope:SCOPE.type==='national'?'All India':SCOPE.key,current_category_filter:CAT};
+}
+const ASK_SYS=`You are the analytics copilot embedded in Allo Health's GMB (Google Business Profile) marketing dashboard. Answer ONLY from the DATA JSON provided with each message — do not invent numbers.
+Schema: weeks_newest_first[] are Monday week-start dates, index 0 = latest. national_weekly_newest_first has weekly arrays (index 0 = latest): impr = Google Maps/Search impressions; calls/website/directions = GBP action clicks; reviews = new Google reviews that week; leads_* = GMB-sourced patient leads by medium. city_latest_vs_prior_4wk_avg gives each city's latest week, prior-4-week average, and % change. rivals_by_category compares our total Google reviews vs the #1 map-pack competitor per category (SH=sexual health, STI, MH=mental health).
+CRITICAL caveat: the most recent impressions week is usually UNDER-reported by Google (it finalises over ~a week), so a large latest-week impressions drop is typically a reporting lag, not real — say so when relevant and point to the last settled week.
+Be concise and specific: cite the actual numbers and week labels. Use ₹/plain formatting. If the answer isn't in DATA, say what's missing.`;
+async function askSend(q){
+  let key=askKey(); if(!key){key=askSetKey(); if(!key){askAdd('sys','No API key set — click ⚙ to add one.');return;}}
+  askAdd('user',q); ASK_HIST.push({role:'user',content:q});
+  const wait=askAdd('assistant','…'); $('askSend').disabled=true;
+  try{
+    const res=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',
+      headers:{'content-type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
+      body:JSON.stringify({model:ASK_MODEL,max_tokens:1024,system:ASK_SYS+'\n\nDATA:\n'+JSON.stringify(askContext()),messages:ASK_HIST})});
+    if(!res.ok){const t=await res.text();wait.textContent=res.status===401?'Invalid API key — click ⚙ to re-enter.':('Error '+res.status+': '+t.slice(0,180));wait.className='amsg sys';$('askSend').disabled=false;return;}
+    const j=await res.json(); const txt=(j.content||[]).map(b=>b.text||'').join('').trim()||'(no answer)';
+    wait.textContent=txt; ASK_HIST.push({role:'assistant',content:txt});
+  }catch(e){wait.textContent='Network error: '+e.message;wait.className='amsg sys';}
+  $('askSend').disabled=false;
+}
+function initAsk(){
+  const SUG=['Why did impressions drop this week?','Which cities dropped the most on GMB leads?','Who should we chase for MH reviews?','How are reviews trending nationally?'];
+  $('askSug').innerHTML=SUG.map(s=>`<span>${s}</span>`).join('');
+  $('askSug').querySelectorAll('span').forEach(el=>el.onclick=()=>{$('askInput').value=el.textContent;$('askInput').focus();});
+  $('askLaunch').onclick=()=>{$('askPanel').classList.add('on');$('askLaunch').style.display='none';
+    if(!$('askMsgs').children.length)askAdd('sys','Ask me anything about the GMB data on screen. I read the current scope + category filter. (Powered by Claude with your own API key.)');
+    $('askInput').focus();};
+  $('askClose').onclick=()=>{$('askPanel').classList.remove('on');$('askLaunch').style.display='flex';};
+  $('askGear').onclick=()=>askSetKey();
+  $('askForm').onsubmit=e=>{e.preventDefault();const q=$('askInput').value.trim();if(!q)return;$('askInput').value='';askSend(q);};
+  $('askInput').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();$('askForm').requestSubmit();}});
+}
+
 fetch('data_gmb_tab.json',{cache:'no-store'}).then(r=>r.json()).then(d=>{   // no-store → always pull the freshest cube (avoids stale-cache "latest data not loading")
   DATA=d; $('foot').textContent=d._meta.note;
-  initControls(); render();
+  initControls(); render(); initAsk();
 }).catch(e=>{$('kpis').innerHTML='<div class="card">Failed to load data_gmb_tab.json — run scripts/build_gmb_cube.py</div>';});
 </script>
 </body>
