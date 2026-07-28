@@ -351,6 +351,21 @@ def main():
               .replace('{TOKCITY}', tokcity_rows)
               .replace('{LOCCITY}', loccity_rows))
     rows = run(sql)
+    # AUTHORITATIVE active-clinic localities per city (from allo_health.locations) — used to drop lead localities
+    # that aren't a real clinic in that city (phantom localities like 'Connaught Place'/'Green Park' + misspellings
+    # + cross-city leaks). Nulled localities fall to the city-level "not attributed to a clinic" bucket; city/national
+    # totals are unaffected. Broader than the old GMB-map cross-city null (which missed non-GMB / non-clinic localities).
+    VALID_CLINIC = defaultdict(set)
+    try:
+        for _p in (run("SELECT DISTINCT INITCAP(city) AS city, locality FROM allo_health.locations "
+                       "WHERE deleted_at IS NULL AND locality IS NOT NULL AND locality<>'' "
+                       "AND LOWER(locality)<>'online' AND code<>'PRACTO'") or []):   # run() returns rows already split into [city, locality]
+            if len(_p) >= 2 and _p[1]:
+                VALID_CLINIC[_norm(CITY_ALIAS.get(_p[0], _p[0]))].add(_norm(_p[1]))
+    except Exception as _e:
+        sys.stderr.write(f'  [warn] valid-clinic query failed ({_e}); locality validation skipped\n')
+        VALID_CLINIC = defaultdict(set)
+    print(f'  valid-clinic map: {sum(len(v) for v in VALID_CLINIC.values())} localities across {len(VALID_CLINIC)} cities')
     cube = defaultdict(lambda: defaultdict(lambda: {'w': [0]*N, 'd': [0]*ND}))   # city -> key -> {weekly(27), daily(recent 8wk)}
     for r in rows:
         if len(r) < 20:
@@ -359,10 +374,13 @@ def main():
         if ch not in CHANNELS:
             continue
         city = CITY_ALIAS.get(city, city)   # locality-name cities → their real city (e.g. 'Thane West' → 'Thane')
-        if loc and loc != city:             # drop a clinic-locality that belongs to a DIFFERENT known city (wrong-city clinic); city total unaffected, only the clinic grain is cleaned
-            _home = LOC2CITY.get(loc)
-            if _home and _home != city:
-                loc = ''
+        if loc:   # keep the locality only if it's a REAL active clinic in this city; else drop to city-level (phantom / misspelled / cross-city)
+            _vc = VALID_CLINIC.get(_norm(city))
+            if _vc:                                         # authoritative list available for this city
+                if _norm(loc) not in _vc: loc = ''
+            else:                                           # fallback (city not in the clinic list / query failed): old cross-city null
+                _home = LOC2CITY.get(loc)
+                if _home and _home != city: loc = ''
         try:
             wkm = wk_monday(created)
         except Exception:

@@ -2237,6 +2237,20 @@ Promise.all([
   ONL=onlbk; ONL_IDX={}; if(onlbk&&onlbk._meta&&onlbk._meta.weeks)onlbk._meta.weeks.forEach((w,i)=>ONL_IDX[w]=i);   // online SC cube — book→done for the Online / Both segments
   ONE=onlecon; ONE_IDX={}; if(onlecon&&onlecon._meta&&onlecon._meta.weeks)onlecon._meta.weeks.forEach((w,i)=>ONE_IDX[w]=i);   // online DONE-date economics (purchased/revenue per online clinic) for ⑥
   ECOFF=ecoff; ECOFF_IDX={}; if(ecoff&&ecoff._meta&&ecoff._meta.weeks)ecoff._meta.weeks.forEach((w,i)=>ECOFF_IDX[w]=i);   // offline DONE-week economics (product-line meds/tests/therapy/consult per clinic) for ⑥ Value Metrics picker
+  // CLINIC RENAMES: {'City|Old locality': 'New locality'} — the physical clinic is the same, DB just carries two location records.
+  // Fold OLD into NEW (ADD, never lose) across leads + bookings + ops so it isn't split into two rows. (Yelahanka → Sahakara Nagar, Bangalore.)
+  const CLINIC_RENAME={'Bangalore|Yelahanka':'Sahakara Nagar'};
+  (function(){const deepAdd=(dst,src)=>{
+      if(Array.isArray(src)){const o=Array.isArray(dst)?dst.slice():[];for(let i=0;i<src.length;i++)o[i]=(o[i]||0)+(src[i]||0);return o;}
+      if(src&&typeof src==='object'){const o=(dst&&typeof dst==='object'&&!Array.isArray(dst))?dst:{};for(const k in src)o[k]=deepAdd(o[k],src[k]);return o;}
+      if(typeof src==='number')return (typeof dst==='number'?dst:0)+src; return dst!==undefined?dst:src;};   // strings (city/tier) keep dst
+    for(const fk in CLINIC_RENAME){const i=fk.indexOf('|'),C=fk.slice(0,i),FROM=fk.slice(i+1),TO=CLINIC_RENAME[fk],tk=C+'|'+TO;
+      if(ldc&&ldc[C])ldc[C].cells.forEach(c=>{if((c.loc||'')===FROM)c.loc=TO;});                                        // ① leads
+      if(bk[fk]){bk[tk]=bk[tk]||{cells:[]};(bk[fk].cells||[]).forEach(cell=>{cell.loc=TO;bk[tk].cells.push(cell);});delete bk[fk];}   // ② offline bookings episode cube
+      if(onlbk&&onlbk.clinics&&onlbk.clinics[fk]){onlbk.clinics[tk]=onlbk.clinics[tk]?deepAdd(onlbk.clinics[tk],onlbk.clinics[fk]):onlbk.clinics[fk];delete onlbk.clinics[fk];}   // online SC cube (folded BEFORE mergeOnlineBookings re-adds it)
+      if(QD&&QD.clinics){const fs=qnorm(FROM)+'_'+qnorm(C),ts=qnorm(TO)+'_'+qnorm(C);                                    // ③④⑤ ops (recursive count-merge; ratios recomputed from counts)
+        if(QD.clinics[fs]){QD.clinics[ts]=QD.clinics[ts]?deepAdd(QD.clinics[ts],QD.clinics[fs]):QD.clinics[fs];QD.clinics[ts].city=C;delete QD.clinics[fs];if(QD_IDX)delete QD_IDX[fs];}}}
+  })();
   LOC2CITY=locCityMap(bk);   // clinic locality → its true city (for the mis-tag re-route)
   TRACKED_CITY=new Set(); Object.keys(bk).filter(k=>k!=='_meta').forEach(k=>{const c=k.split('|')[0];if(c&&!NONCITY.has(c))TRACKED_CITY.add(c);}); NEWCITY.forEach(c=>TRACKED_CITY.add(c));   // real op cities (+ new launches Indore/Rajkot), minus Online/Practo-online
   OPLOC=new Set(); Object.keys(bk).filter(k=>k!=='_meta').forEach(k=>{const i=k.indexOf('|');if(i>=0){const city=k.slice(0,i),loc=k.slice(i+1);if(loc&&!CLOSED.has(loc.toLowerCase())&&!NONCITY.has(city))OPLOC.add(loc);}});   // operational clinic localities = the bookings cube's clinics (drops closed clinics that only have stray leads, explicitly-CLOSED localities, and NONCITY pseudo-clinics like Practo Online telehealth → fold to no-city)
