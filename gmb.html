@@ -100,7 +100,7 @@ svg{display:block}
 </div>
 
 <script>
-let DATA=null, CAT='ALL', SCOPE={type:'national'}, BASE='avg', SHOW_OLDER=false, EXG=new Set();
+let DATA=null, CAT='ALL', SCOPE={type:'national'}, BASE='avg', SHOW_OLDER=false, EXG=new Set(), SORT={key:null,dir:-1};
 const visN=()=>SHOW_OLDER?DATA._meta.weeks.length:Math.min(5,DATA._meta.weeks.length);
 const fmt=n=>n==null?'—':n>=1000?(n/1000).toFixed(n>=100000?0:1)+'k':(''+n);
 const F=n=>n==null?'—':n.toLocaleString('en-IN');
@@ -173,20 +173,31 @@ function wowTbl(){
   const xc=(nd,key)=>{const a=marr(nd,key),now=a[0],bv=baseVal(a,0);
     return `<td class="flat" style="border-left:1px solid var(--line)">${bv==null?'—':F(Math.round(bv))}</td><td>${dpill(now,bv)}</td><td>${barSvg(a)}</td>`;};
   const cmp=BASE==='avg'?'Avg':BASE==='peak'?'Peak':'Prev';
-  const layhint=canGeo?` <span style="font-weight:400;font-size:10px;color:var(--accent);text-transform:none;letter-spacing:0">▸ click to drill ${SCOPE.type==='national'?'by city → clinic':'by clinic'}</span>`:'';
-  let h=`<tr><th>Metric${layhint}</th>`+ORD.map(i=>`<th style="font-size:10px;white-space:nowrap${i===0?';color:var(--ink)':''}">${wkRange(W[i])}${i===0?' ·latest':''}</th>`).join('')
-    +`<th style="border-left:1px solid var(--line)">${cmp}</th><th>Δ</th><th>Trend</th></tr>`;
+  const layhint=canGeo?` <span style="font-weight:400;font-size:10px;color:var(--accent);text-transform:none;letter-spacing:0">▸ click to drill ${SCOPE.type==='national'?'by city → clinic':'by clinic'} · click a column ↕ to sort them</span>`:'';
+  const sar=k=>SORT.key===k?(SORT.dir===1?' ▲':' ▼'):'<span style="opacity:.25">↕</span>';
+  const sTh=(k,label,extra)=>`<th data-s="${k}" title="sort clinics/cities by this column" style="cursor:pointer;${extra||''}${SORT.key===k?'color:var(--accent)':''}">${label}${sar(k)}</th>`;
+  let h=`<tr><th>Metric${layhint}</th>`+ORD.map(i=>sTh(i,wkRange(W[i])+(i===0?' ·latest':''),'font-size:10px;white-space:nowrap'+(i===0?';color:var(--ink)':''))).join('')
+    +sTh('cmp',cmp,'border-left:1px solid var(--line)')+sTh('d','Δ','')+`<th>Trend</th></tr>`;
   // a metric/geo row: the WHOLE label cell is the click target (not just the tiny ▸)
   const labCell=(key,lab,pad,style,bold)=>{const arrow=EXW.has(key)?'▾':'▸';
     return `<td class="${canGeo?'gd':''}" ${canGeo?`data-k="${key}"`:''} style="padding-left:${pad}px;${canGeo?'cursor:pointer;':''}${style}${bold?'font-weight:700':'color:var(--muted)'}">`
       +`${canGeo?`<span style="color:var(--accent);display:inline-block;width:12px">${arrow}</span>`:''}${lab}</td>`;};
+  // sort value for a geo node on the active column (Δ = latest-vs-compare %; 'cmp' = compare value; number = that week's value)
+  const sVal=(nd,mkey)=>{const a=marr(nd,mkey);
+    if(SORT.key==='d'){const now=a[0],bv=baseVal(a,0);return (bv==null||bv===0)?(now>0?1e9:0):(now-bv)/bv;}
+    if(SORT.key==='cmp')return baseVal(a,0)||0;
+    return a[SORT.key]||0;};
+  const applySort=(list,mkey)=> SORT.key==null
+      ? list.slice().sort((x,y)=>String(x[0]).localeCompare(String(y[0])))
+      : list.slice().sort((x,y)=>SORT.dir*(sVal(x[1],mkey)-sVal(y[1],mkey)));
   MROWS.forEach(m=>{
     const ek='m:'+m.key, pad=8+m.lvl*16;
     h+=`<tr>${labCell(ek,m.lab,pad,'',!m.lvl)}${wc(base,m.key)}${xc(base,m.key)}</tr>`;
     if(canGeo&&EXW.has(ek)){
-      const gl= SCOPE.type==='city'
-        ? Object.keys(DATA.clinics).filter(k=>k.split('|')[0]===SCOPE.key).sort().map(k=>[k.split('|')[1],DATA.clinics[k],k])
-        : Object.keys(DATA.cities).sort().map(c=>[c,DATA.cities[c],c]);
+      let gl= SCOPE.type==='city'
+        ? Object.keys(DATA.clinics).filter(k=>k.split('|')[0]===SCOPE.key).map(k=>[k.split('|')[1],DATA.clinics[k],k])
+        : Object.keys(DATA.cities).map(c=>[c,DATA.cities[c],c]);
+      gl=applySort(gl,m.key);
       gl.forEach(([lab,nd,gk])=>{
         const ck=ek+'|'+gk, canClin=SCOPE.type==='national';
         if(canClin){const arrow=EXW.has(ck)?'▾':'▸';
@@ -194,14 +205,23 @@ function wowTbl(){
         } else {
           h+=`<tr style="background:#fafbfc"><td style="padding-left:${pad+20}px;color:var(--muted)"><span style="display:inline-block;width:12px"></span>${lab}</td>${wc(nd,m.key)}${xc(nd,m.key)}</tr>`;
         }
-        if(canClin&&EXW.has(ck)) Object.keys(DATA.clinics).filter(k=>k.split('|')[0]===gk).sort().forEach(k=>{
-          h+=`<tr><td style="padding-left:${pad+52}px;color:var(--muted);font-size:12px">${k.split('|')[1]}</td>${wc(DATA.clinics[k],m.key)}${xc(DATA.clinics[k],m.key)}</tr>`;
-        });
+        if(canClin&&EXW.has(ck)){
+          let clist=Object.keys(DATA.clinics).filter(k=>k.split('|')[0]===gk).map(k=>[k.split('|')[1],DATA.clinics[k],k]);
+          clist=applySort(clist,m.key);
+          clist.forEach(([clab,cnd])=>{
+            h+=`<tr><td style="padding-left:${pad+52}px;color:var(--muted);font-size:12px">${clab}</td>${wc(cnd,m.key)}${xc(cnd,m.key)}</tr>`;
+          });
+        }
       });
     }
   });
   $('wowTbl').innerHTML=h;
   $('wowTbl').querySelectorAll('.gd').forEach(el=>el.onclick=()=>{const k=el.dataset.k;EXW.has(k)?EXW.delete(k):EXW.add(k);wowTbl();});
+  $('wowTbl').querySelectorAll('th[data-s]').forEach(el=>el.onclick=()=>{
+    let k=el.dataset.s; if(k!=='d'&&k!=='cmp') k=+k;
+    if(SORT.key===k) SORT.dir*=-1; else { SORT.key=k; SORT.dir=(k==='d')?1:-1; }   // Δ → biggest drops first (asc); week/compare → biggest first (desc)
+    wowTbl();
+  });
 }
 
 function rivalTbl(){
