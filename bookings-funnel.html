@@ -462,6 +462,7 @@
 </div>
 <div class="cmodal" id="cmodal"><div class="cbox"><button class="cx" id="cx">✕</button><button class="cdl" id="cdl" title="download this chart as a PNG image" style="position:absolute;top:10px;right:44px;background:var(--accent);color:#fff;border:0;border-radius:6px;padding:4px 10px;font-size:12px;font-weight:600;cursor:pointer">⬇ PNG</button><h3 id="ctitle"></h3><div class="csub" id="csub"></div><div id="cchart" style="overflow-x:auto"></div></div></div>
 
+<script src="ask-widget.js"></script>
 <script>
 // ---- colours ----
 const MODEC={call:'var(--call)',web:'var(--web)',blog:'#8C6D46',whatsapp:'var(--wa)',wa_gmb:'var(--wa)',wa_org:'#1F9D76',wa_outbound:'#15A88A',book:'var(--book)',walkin:'var(--walk)',outbound:'#B8862E',other:'var(--other)'};
@@ -2347,6 +2348,38 @@ Promise.all([
     const sc=document.querySelector('.sech');if(sc)sc.style.display='none';   // hide the "① Attributable leads" header (host page has its own)
   }
   syncCmp(); setScope('national');   // default to National view
+  // ── Ask-the-dashboard copilot: build a compact demand-funnel context from QD (bookings/done/revenue/availability) + the leads cube ──
+  window.demandContext=function(){
+    try{
+      const QW=(QD&&QD.weeks)||[], nQ=QW.length, SEG='sc';   // SC = new-patient funnel
+      const qsum=(path)=>{const nat=new Array(nQ).fill(0),city={};
+        for(const s in (QD.clinics||{})){const c=QD.clinics[s];let a=c[SEG];for(const p of path)a=a&&a[p];if(!a)continue;
+          const cy=c.city||'?';city[cy]=city[cy]||new Array(nQ).fill(0);
+          for(let i=0;i<nQ;i++){const v=a[i]||0;nat[i]+=v;city[cy][i]+=v;}}return {nat,city};};
+      const bookings=qsum(['bookings','total']),done=qsum(['done','done']),revenue=qsum(['revenue','rev']),
+            aDays=qsum(['availability','active_days']),aHrs=qsum(['availability','avail_hours']);
+      // leads: sum the city leads cube's cell weekly arrays, keyed by week label, aligned to QD weeks
+      const LW=WEEKS||[], leadLab={}, leadCityLab={};
+      const src=(DATASETS&&DATASETS.city&&DATASETS.city.leads)||{};
+      for(const cy in src){if(cy==='_meta')continue;(src[cy].cells||[]).forEach(c=>{const w=c.w||[];for(let i=0;i<w.length;i++){const lab=LW[i];if(!lab)continue;leadLab[lab]=(leadLab[lab]||0)+(w[i]||0);(leadCityLab[cy]=leadCityLab[cy]||{})[lab]=((leadCityLab[cy]||{})[lab]||0)+(w[i]||0);}});}
+      const leadsNat=QW.map(w=>Math.round(leadLab[w]||0)), leadsCity={};
+      for(const cy in leadCityLab)leadsCity[cy]=QW.map(w=>Math.round(leadCityLab[cy][w]||0));
+      const lastN=(a,n)=>a.slice(Math.max(0,a.length-n)),
+        d5=a=>{const L=a.length,now=a[L-1]||0,pr=a.slice(Math.max(0,L-5),L-1).filter(x=>x!=null),av=pr.length?pr.reduce((s,x)=>s+x,0)/pr.length:0;return {latest:Math.round(now),prior4avg:Math.round(av),pct_vs_avg:av?Math.round((now-av)/av*100):null};};
+      const cityBlock={};for(const cy in bookings.city){const b=bookings.city[cy],dn=done.city[cy],L=b.length,bl=b[L-1]||0,dl=dn[L-1]||0;
+        cityBlock[cy]={leads:d5(leadsCity[cy]||[]),bookings:d5(b),done:d5(dn),revenue:d5(revenue.city[cy]),book_to_done_pct:bl?Math.round(100*dl/bl):null};}
+      return {note:'Allo Health DEMAND funnel: leads → SC bookings (new patients) → done (completed) → revenue (₹), offline+online. weeks ascending oldest→latest (last = latest week).',
+        weeks_last12:lastN(QW,12),
+        national_last12:{leads:lastN(leadsNat,12),bookings:lastN(bookings.nat,12),done:lastN(done.nat,12),revenue:lastN(revenue.nat,12)},
+        by_city_latest_vs_prior4avg:cityBlock,
+        national_availability_latest:{active_clinic_days:d5(aDays.nat),bookable_hours:d5(aHrs.nat)},
+        current_scope:CLINIC||(typeof SCOPE!=='undefined'?SCOPE:'national')};
+    }catch(e){return {error:e.message};}
+  };
+  if(window.AskWidget)AskWidget.init({title:'📊 Demand copilot',
+    suggestions:['Why did bookings drop last week?','Which city fell the most on leads?','How is done trending nationally?','Where is availability lowest?'],
+    systemPrompt:"You are the analytics copilot inside Allo Health's Demand dashboard — the marketing→bookings→done funnel across cities/clinics. Use ONLY the DATA JSON. weeks are ascending (oldest→latest; the LAST array element is the most recent week). national_last12 has weekly arrays: leads (marketing leads), bookings (SC = new-patient bookings), done (completed consults), revenue (₹). by_city_latest_vs_prior4avg gives each city's latest week vs its prior-4-week average, %change, and book→done %. national_availability_latest = active clinic-days + bookable hours. Be concise and cite specific cities, weeks and numbers. GMB impressions/reviews/competition live on a separate GMB tab — say so if asked. If a detail isn't in DATA (per-doctor, per-source, per-category), say what's missing.",
+    contextFn:window.demandContext});
 }).catch(e=>{document.getElementById('flowL').innerHTML='<div class="empty">failed to load data — '+e+'</div>';});
 </script>
 </body>
