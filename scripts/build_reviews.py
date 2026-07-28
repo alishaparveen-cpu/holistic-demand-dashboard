@@ -11,18 +11,25 @@ Per "City|Clinic" (newest-first, 12 weeks):
 NOTE: builder lost in a re-clone (only fetch_reviews.sql was committed); rebuilt 2026-06-22.
 Run:  AWS_PROFILE=redshift-data python3 scripts/build_reviews.py
 """
-import os, sys, subprocess, json
+import os, sys, subprocess, json, re, datetime
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RQ   = os.path.join(ROOT, "scripts", "redshift_query.py")
-WEEKS = ["2026-07-06","2026-06-29","2026-06-22","2026-06-15","2026-06-08","2026-06-01","2026-05-25","2026-05-18","2026-05-11",
-         "2026-05-04","2026-04-27","2026-04-20","2026-04-13","2026-04-06","2026-03-30"]
+# DYNAMIC 15 Monday-weeks, newest first (grid[0] = latest complete Mon–Sun week) — must track the GMB insights axis
+_today = datetime.date.today()
+_latest_mon = _today - datetime.timedelta(days=_today.weekday()) - datetime.timedelta(days=7)
+WEEKS = [(_latest_mon - datetime.timedelta(weeks=i)).isoformat() for i in range(15)]
 idx = {w: i for i, w in enumerate(WEEKS)}
 NW = len(WEEKS)
 
 
 def main():
     sql = open(os.path.join(ROOT, "scripts", "fetch_reviews.sql")).read()
+    # patch the SQL's date window to the dynamic grid (was hardcoded, cut off recent weeks)
+    lo = WEEKS[-1]
+    hi = (datetime.date.fromisoformat(WEEKS[0]) + datetime.timedelta(days=7)).isoformat()
+    sql = re.sub(r"review_date >= '\d{4}-\d\d-\d\d'", f"review_date >= '{lo}'", sql)
+    sql = re.sub(r"review_date < '\d{4}-\d\d-\d\d'", f"review_date < '{hi}'", sql)
     p = subprocess.run([sys.executable, RQ], input=sql, capture_output=True, text=True)
     if p.returncode != 0 or "ERROR" in (p.stderr or ""):
         sys.stderr.write("fetch_reviews failed: " + (p.stderr or "")[:400] + "\n"); sys.exit(1)

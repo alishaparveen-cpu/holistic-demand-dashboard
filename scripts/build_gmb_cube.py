@@ -41,16 +41,20 @@ CLINICS = sorted((set(INS) | set(REV)) - {'_meta'})
 # ── GMB leads (channel=GMB) mapped onto the GMB weekly axis ──
 lw = LEADS.get('_meta', {}).get('weeks', [])
 lidx = {w: i for i, w in enumerate(lw)}
-gcall = defaultdict(Z); gwa = defaultdict(Z); gweb = defaultdict(Z)   # clinic -> weekly array on GMB axis (matches demand-view GMB medium split)
+gcall = defaultdict(Z); gwa = defaultdict(Z); gweb = defaultdict(Z)   # clinic -> weekly array (matches demand-view GMB medium split)
+cityx = defaultdict(lambda: {'gmb_call': Z(), 'gmb_wa': Z(), 'gmb_web': Z()})   # city-level GMB leads with NO locality → added to city/national rollups so totals match the demand view
 for city, node in LEADS.items():
     if city == '_meta': continue
     for c in node.get('cells', []):
         if c.get('ch') != 'GMB': continue
         loc = c.get('loc') or ''
-        key = f'{city}|{loc}' if loc else None
-        if not key: continue
         w = c.get('w') or []; md = c.get('md') or ''
-        tgt = gcall[key] if md == 'call' else (gwa[key] if md.startswith('wa') else gweb[key])
+        which = 'gmb_call' if md == 'call' else ('gmb_wa' if md.startswith('wa') else 'gmb_web')
+        if loc:
+            key = f'{city}|{loc}'
+            tgt = gcall[key] if which == 'gmb_call' else (gwa[key] if which == 'gmb_wa' else gweb[key])
+        else:
+            tgt = cityx[city][which]   # no clinic → keep at the city grain
         for gi, wk in enumerate(WEEKS):
             j = lidx.get(wk)
             if j is not None and j < len(w) and w[j]:
@@ -114,6 +118,12 @@ cities = defaultdict(list)
 for k in CLINICS: cities[k.split('|')[0]].append(k)
 city_roll = {c: roll(ks) for c, ks in cities.items()}
 nat_roll = roll(CLINICS)
+# fold the no-locality city-level GMB leads into city + national rollups so GMB-lead totals match the demand view
+for city, ex in cityx.items():
+    if city in city_roll:
+        for m in ('gmb_call', 'gmb_wa', 'gmb_web'):
+            city_roll[city][m] = add(city_roll[city][m], ex[m])
+            nat_roll[m] = add(nat_roll[m], ex[m])
 
 out = {'_meta': {'weeks': WEEKS,
                  'note': "GMB tab cube. impr = total GBP impressions (BUSINESS_IMPRESSIONS_* summed; the old "
