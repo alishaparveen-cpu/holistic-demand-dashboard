@@ -26,10 +26,12 @@ def norm_city(c):
     return c.title() if c.isupper() else c
 
 SQL = """
-SELECT RIGHT(REGEXP_REPLACE(phone_no,'[^0-9]',''),10) AS num, city, locality
+SELECT RIGHT(REGEXP_REPLACE(phone_no,'[^0-9]',''),10) AS num, city, locality,
+       NVL(updated_at, created_at) AS ts
 FROM allo_health.locations
 WHERE deleted_at IS NULL AND phone_no IS NOT NULL AND phone_no <> ''
-  AND LENGTH(RIGHT(REGEXP_REPLACE(phone_no,'[^0-9]',''),10)) = 10;
+  AND LENGTH(RIGHT(REGEXP_REPLACE(phone_no,'[^0-9]',''),10)) = 10
+ORDER BY num, ts DESC;
 """
 
 def main():
@@ -43,10 +45,16 @@ def main():
         if len(c) < 3:
             continue
         num, city, loc = c[0], norm_city(c[1]), c[2]
+        ts = c[3] if len(c) > 3 else ''
         if not num or not city:
             continue
-        d = by_num.setdefault(num, {'cities': set(), 'loc': loc})
+        d = by_num.setdefault(num, {'cities': set(), 'loc': loc, 'ts': ts})
         d['cities'].add(city)
+        # when a number is shared across localities in the SAME city (e.g. a clinic
+        # relocated/renamed and both records still carry the exophone), keep the
+        # MOST-RECENTLY-UPDATED locality — that's the live clinic, not the retired one.
+        if ts > (d.get('ts') or ''):
+            d['ts'] = ts; d['loc'] = loc
     single, pooled = {}, {}
     for num, d in by_num.items():
         if len(d['cities']) > 1:           # spans MULTIPLE cities -> shared/pooled: exclude (fall to AI/URL)
