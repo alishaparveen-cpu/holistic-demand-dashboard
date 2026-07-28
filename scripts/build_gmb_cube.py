@@ -36,7 +36,56 @@ NW = len(WEEKS)
 Z = lambda: [0]*NW
 def add(a, b): return [(a[i] if i < len(a) else 0) + (b[i] if i < len(b) else 0) for i in range(NW)]
 
-CLINICS = sorted((set(INS) | set(REV)) - {'_meta'})
+# ── canonicalise clinic keys: fix city-case splits + fold renamed clinics onto one row ──
+# GBP still reports impressions/reviews under the OLD location names after a clinic relocates/renames,
+# while leads (via the corrected number map) sit on the NEW name → the two split across two rows.
+# Fold OLD→NEW so each clinic is a single unified row, matching the demand view.
+CITYCASE = {'MUMBAI': 'Mumbai', 'BANGALORE': 'Bangalore', 'BENGALURU': 'Bangalore', 'Bengaluru': 'Bangalore',
+            'Hubballi': 'Hubli', 'Mangalore': 'Mangaluru', 'Mysore': 'Mysuru', 'Vizag': 'Visakhapatnam'}
+RENAME = {'Bangalore|Arekere': 'Bangalore|Bilekahalli', 'Bangalore|Yelahanka': 'Bangalore|Sahakara Nagar'}
+def _cc(c):
+    c = (c or '').strip()
+    return CITYCASE.get(c, c.title() if c.isupper() else c)
+def canon(key):
+    if '|' not in key: return _cc(key)
+    c, l = key.split('|', 1); k = _cc(c) + '|' + l
+    return RENAME.get(k, k)
+
+def _merge_ins(a, b):
+    out = {}
+    for k in set(a) | set(b):
+        av, bv = a.get(k), b.get(k)
+        if k == 'days':
+            av, bv = av or [], bv or []
+            out[k] = [max(av[i] if i < len(av) else 0, bv[i] if i < len(bv) else 0) for i in range(NW)]
+        elif isinstance(av, list) or isinstance(bv, list):
+            out[k] = add(av or [], bv or [])
+        else:
+            out[k] = av if av is not None else bv
+    return out
+def _merge_rev(a, b):
+    na, nb = a.get('n', []), b.get('n', [])
+    ra, rb = a.get('rating', []), b.get('rating', [])
+    ga, gb = a.get('neg', []), b.get('neg', [])
+    n = add(na, nb); neg = add(ga, gb); rating = []
+    for i in range(NW):
+        n1, n2 = (na[i] if i < len(na) else 0), (nb[i] if i < len(nb) else 0)
+        r1 = ra[i] if i < len(ra) else None; r2 = rb[i] if i < len(rb) else None
+        num = (r1 * n1 if r1 is not None else 0) + (r2 * n2 if r2 is not None else 0)
+        den = (n1 if r1 is not None else 0) + (n2 if r2 is not None else 0)
+        rating.append(round(num / den, 2) if den else None)
+    return {'n': n, 'neg': neg, 'rating': rating}
+def _fold(src, merge):
+    out = {}
+    for k, v in src.items():
+        if k == '_meta': continue
+        ck = canon(k); out[ck] = merge(out[ck], v) if ck in out else v
+    return out
+INS = _fold(INS, _merge_ins)
+REV = _fold(REV, _merge_rev)
+RCATC = _fold(RCATC, lambda a, b: {c: add(a.get(c, Z()), b.get(c, Z())) for c in set(a) | set(b)})
+
+CLINICS = sorted(set(INS) | set(REV))
 
 # ── GMB leads (channel=GMB) mapped onto the GMB weekly axis ──
 lw = LEADS.get('_meta', {}).get('weeks', [])
@@ -51,10 +100,10 @@ for city, node in LEADS.items():
         w = c.get('w') or []; md = c.get('md') or ''
         which = 'gmb_call' if md == 'call' else ('gmb_wa' if md.startswith('wa') else 'gmb_web')
         if loc:
-            key = f'{city}|{loc}'
+            key = canon(f'{city}|{loc}')
             tgt = gcall[key] if which == 'gmb_call' else (gwa[key] if which == 'gmb_wa' else gweb[key])
         else:
-            tgt = cityx[city][which]   # no clinic → keep at the city grain
+            tgt = cityx[_cc(city)][which]   # no clinic → keep at the (canonical) city grain
         for gi, wk in enumerate(WEEKS):
             j = lidx.get(wk)
             if j is not None and j < len(w) and w[j]:
@@ -67,7 +116,7 @@ for cat in ('SH', 'STI', 'MH'):
         if not isinstance(e, dict): continue
         comps = [x for x in (e.get('competitors') or []) if x.get('rel') is not False] or (e.get('competitors') or [])
         top = comps[0] if comps else {}
-        rival[key][cat] = dict(our_reviews=e.get('our_reviews') or 0, our_rating=e.get('our_rating'),
+        rival[canon(key)][cat] = dict(our_reviews=e.get('our_reviews') or 0, our_rating=e.get('our_rating'),
                                our_rank=e.get('our_rank'), top_name=top.get('name'),
                                top_reviews=top.get('reviews') or 0, top_rating=top.get('rating'))
 
