@@ -29,6 +29,7 @@ INS  = L('data_gmb_insights.json')
 REV  = L('data_reviews.json')
 COMP = L('data_competition.json')
 LEADS= L('data_leads_city.json')
+RCATC= L('data_gmb_review_cat.json').get('clinics', {})   # per-clinic category-tagged review velocity
 
 WEEKS = INS.get('_meta', {}).get('weeks') or REV.get('_meta', {}).get('weeks') or []
 NW = len(WEEKS)
@@ -78,7 +79,7 @@ def clinic_block(key):
         rev_n=[n[i] if i < len(n) else 0 for i in range(NW)], rev_pos=pos,
         rev_neg=[neg[i] if i < len(neg) else 0 for i in range(NW)],
         rev_rating=[rating[i] if i < len(rating) else None for i in range(NW)],
-        rev_cat={},   # STUB: category-tagged review velocity — filled by the review text pull
+        rev_cat=RCATC.get(key, {}),   # category-tagged review velocity {SH/STI/MH/general: [..NW]} from pull_gmb_review_cat.py
         gmb_call=gcall.get(key, Z()), gmb_web=gweb.get(key, Z()),
         rival=rival.get(key, {}))
 
@@ -90,16 +91,20 @@ def roll(keys):
     out = {m: Z() for m in PERF}
     rat_num = Z(); rat_den = Z()
     riv = defaultdict(lambda: dict(our=0, top=0, lead=0, n=0))
+    rcat = {c: Z() for c in ('SH', 'STI', 'MH', 'general')}
     for k in keys:
         b = clinics[k]
         for m in PERF: out[m] = add(out[m], b[m])
         for i in range(NW):
             if b['rev_rating'][i] is not None and b['rev_n'][i]:
                 rat_num[i] += b['rev_rating'][i]*b['rev_n'][i]; rat_den[i] += b['rev_n'][i]
+        for c in rcat:
+            if b['rev_cat'].get(c): rcat[c] = add(rcat[c], b['rev_cat'][c])
         for cat, r in b['rival'].items():
             riv[cat]['our'] += r['our_reviews']; riv[cat]['top'] += r['top_reviews']
             riv[cat]['n'] += 1; riv[cat]['lead'] += 1 if r['our_reviews'] >= r['top_reviews'] else 0
     out['rev_rating'] = [round(rat_num[i]/rat_den[i], 2) if rat_den[i] else None for i in range(NW)]
+    out['rev_cat'] = rcat
     out['days'] = [7]*NW
     out['rival'] = {cat: dict(our_reviews=v['our'], top_reviews=v['top'], clinics_leading=v['lead'], clinics=v['n'])
                     for cat, v in riv.items()}
@@ -114,7 +119,7 @@ out = {'_meta': {'weeks': WEEKS,
                  'note': "GMB tab cube. impr = total GBP impressions (BUSINESS_IMPRESSIONS_* summed; the old "
                          "searches breakdown is deprecated). interactions = calls+website+directions. reviews from "
                          "allo_health.external_reviews (google/gmb); neg = rating<=2. rival from data_competition. "
-                         "rev_cat stub pending review-text category pull.",
+                         "rev_cat = review text keyword-tagged SH/STI/MH (general = no clinical mention, ~64%).",
                  'metrics': PERF},
        'clinics': clinics, 'cities': city_roll, 'national': nat_roll}
 json.dump(out, open(os.path.join(ROOT, 'data_gmb_tab.json'), 'w'), separators=(',', ':'))
