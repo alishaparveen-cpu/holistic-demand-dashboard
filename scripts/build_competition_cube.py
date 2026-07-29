@@ -579,6 +579,19 @@ def main():
                 _keep['loc'] = _newloc; cls[_new] = _keep
             else:
                 _o['loc'] = _newloc; cls[_new] = _o
+    # scrub the unreliable crawl category field: diagnostics labs mis-tag as "Hospice" (a palliative facility,
+    # never a real SH/STI/MH rival). Relabel obvious labs; blank any leftover bogus "Hospice" rather than mislabel.
+    _LAB_KW = ('lab', 'labs', 'laborator', 'diagnostic', 'patholog', 'scan', 'imaging', 'radiolog', 'nabl',
+               'blood test', 'full body', 'healthians', 'thyrocare', 'dr lal', 'metropolis', 'redcliffe', 'onco-path', 'onco path')
+    for _cat in cube['_meta']['cats']:
+        for _cl in cube[_cat].get('clinics', {}).values():
+            for _c in (_cl.get('competitors') or []):
+                _n = (_c.get('name') or '').lower()
+                if any(k in _n for k in _LAB_KW):
+                    _c['category'] = 'Diagnostic lab'; _c['pathy'] = 'Diagnostic'
+                else:
+                    if _c.get('category') in (None, '', 'Hospice'): _c['category'] = None
+                    if _c.get('pathy') in (None, '', 'Hospice'): _c['pathy'] = None
     json.dump(cube, open(os.path.join(ROOT, 'data_competition.json'), 'w'), separators=(',', ':'))
     print('wrote data_competition.json · cats', cube['_meta']['cats'],
           '·', {c: len(cube[c]['clinics']) for c in cube['_meta']['cats']}, 'clinics')
