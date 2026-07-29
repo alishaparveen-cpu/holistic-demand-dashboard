@@ -193,7 +193,7 @@ def sh_pathy(name, category):
     if 'homeo' in s or 'homoeo' in s: return 'Homeopathic'
     return 'Allopathic'                                            # default (verified later); most MBBS/andrology sexologists
 # clinics that are CLOSED — excluded from the cube (user-confirmed + known)
-CLOSED = {'Delhi NCR|Greater Kailash', 'Delhi NCR|Gurugram', 'Hyderabad|Attapur', 'Vijayawada|Suryaraopeta', 'Chennai|Kilpauk'}
+CLOSED = {'Delhi NCR|Greater Kailash', 'Delhi NCR|Gurugram', 'Hyderabad|Attapur', 'Vijayawada|Suryaraopeta', 'Chennai|Kilpauk', 'MUMBAI|Vashi'}  # MUMBAI|Vashi = uppercase duplicate of Navi Mumbai|Vashi
 
 def load_gmb():
     """Per-clinic recent GMB profile. GBP lags ~1 wk → drop the newest week, average the next
@@ -579,13 +579,21 @@ def main():
                 _keep['loc'] = _newloc; cls[_new] = _keep
             else:
                 _o['loc'] = _newloc; cls[_new] = _o
-    # scrub the unreliable crawl category field: diagnostics labs mis-tag as "Hospice" (a palliative facility,
-    # never a real SH/STI/MH rival). Relabel obvious labs; blank any leftover bogus "Hospice" rather than mislabel.
+    # Final competitor category = TRUE primary GBP category from PLACE_CAT (pull_place_categories) when we have it,
+    # for ALL categories (the crawl category field is unreliable and mis-tags diagnostics labs as "Hospice" — a
+    # palliative facility, never a real SH/STI/MH rival). Fallback when PLACE_CAT is missing: name-based lab
+    # detection, else blank the bogus "Hospice" rather than mislabel.
     _LAB_KW = ('lab', 'labs', 'laborator', 'diagnostic', 'patholog', 'scan', 'imaging', 'radiolog', 'nabl',
                'blood test', 'full body', 'healthians', 'thyrocare', 'dr lal', 'metropolis', 'redcliffe', 'onco-path', 'onco path')
     for _cat in cube['_meta']['cats']:
         for _cl in cube[_cat].get('clinics', {}).values():
             for _c in (_cl.get('competitors') or []):
+                _real = (PLACE_CAT.get(_nm0(_c.get('name') or '')) or {}).get('category')
+                if _real and _real != 'Hospice':
+                    _c['category'] = _real
+                    if _c.get('pathy') in (None, '', 'Hospice'):
+                        _c['pathy'] = 'Diagnostic' if any(k in _real.lower() for k in ('lab', 'diagnostic', 'patholog')) else _real
+                    continue
                 _n = (_c.get('name') or '').lower()
                 if any(k in _n for k in _LAB_KW):
                     _c['category'] = 'Diagnostic lab'; _c['pathy'] = 'Diagnostic'
