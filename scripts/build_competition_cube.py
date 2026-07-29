@@ -473,8 +473,19 @@ def build_cat_grid(cat, rows, cube):
         rel = [c for c in comps_all if c['rel'] is True] or [c for c in comps_all if c['rel'] is not False] or comps_all
         rel.sort(key=lambda c: (-c['appearances'], -c['reviews']))
         # displayed list = relevant only (drop rel==False junk: language schools, spas, generic hospitals, IVF, …)
-        rest = sorted([c for c in comps_all if c is not rel[0] and c['rel'] is not False], key=lambda c: -c['appearances'])
-        comps = [rel[0]] + rest[:6]
+        _relrest = [c for c in comps_all if c is not rel[0] and c['rel'] is not False]
+        if cat == 'MH':
+            # MH: pure grid-appearance ranking hides prominent (review-heavy) MH rivals that a keyword search
+            # surfaces (the MH launcher's top-7). Blend grid-dominant + review-prominent and widen the cap so
+            # the MH rival set is comprehensive (matches the dedicated MH-keyword pull).
+            _byapp = sorted(_relrest, key=lambda c: -c['appearances'])[:8]
+            _seen = {id(x) for x in _byapp}
+            _byrev = [c for c in sorted(_relrest, key=lambda c: -c['reviews']) if id(c) not in _seen]
+            rest = _byapp + _byrev
+            comps = [rel[0]] + rest[:19]
+        else:
+            rest = sorted(_relrest, key=lambda c: -c['appearances'])
+            comps = [rel[0]] + rest[:6]
         top = comps[0]
         tags = why_tags(our, rank_est, top, cat)
         vtext, vkind = clinic_verdict(our, rank_est, top, tags, cat)
@@ -499,7 +510,7 @@ def build_cat_grid(cat, rows, cube):
         # crawl-only clinic: rank by PROMINENCE (review count) so the heavyweight rivals surface, not just the
         # nearest few; keep the top 12 relevant rivals (was top 7 by search-position, which hid big MH players).
         rel.sort(key=lambda c: -c['reviews'])
-        comps = [rel[0]] + sorted([c for c in comps_all if c is not rel[0] and c['rel'] is not False], key=lambda c: -c['reviews'])[:11]
+        comps = [rel[0]] + sorted([c for c in comps_all if c is not rel[0] and c['rel'] is not False], key=lambda c: -c['reviews'])[:(18 if cat == 'MH' else 11)]
         top = comps[0]
         ol = our_listing(cat, k); our = ol['reviews'] if ol and ol['reviews'] is not None else 0
         rank_est = RANK_EST.get((cat, _nm(city), _nm(loc)))
