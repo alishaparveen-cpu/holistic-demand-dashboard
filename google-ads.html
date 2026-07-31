@@ -185,6 +185,8 @@ function fun(field,wk){const rows=(DATA[CITY]||{}).fun||[];let s=0;
   for(const r of rows){if(r.wk!==wk)continue;if(!SEL.chmed.has(r.ch+'|'+r.med))continue;if(!SEL.fcat.has(r.cat))continue;
     if(CITY==='Online'&&r.camp&&!SEL.camp.has(r.camp))continue;   // online WEB leads carry the utm campaign → obey the campaign picker (call/WA online leads have no campaign, camp='')
     s+=r[field]||0;}return s;}
+// ONLINE common call/WhatsApp leads (via the shared call number — no campaign); independent of the campaign picker, follows only the category filter
+function onlineCall(field,wk){let s=0;for(const r of ((DATA.Online||{}).fun||[])){if(r.wk!==wk||r.med==='Web')continue;if(!SEL.fcat.has(r.cat))continue;s+=r[field]||0;}return s;}
 function funMed(field,medium,wk){const rows=(DATA[CITY]||{}).fun||[];let s=0;   // leads via a specific medium (Call), independent of the medium picker
   for(const r of rows){if(r.wk!==wk)continue;if(!SEL.ch.has(r.ch))continue;if(r.med!==medium)continue;if(!SEL.fcat.has(r.cat))continue;s+=r[field]||0;}return s;}
 function render(){
@@ -240,6 +242,12 @@ function render(){
     ['CPB',w=>{const b=fun('bk',w);return b?acq('sp',w)/b:0;},inr,'eff key','campaign spend ÷ funnel booked',()=>R(bA('sp'),bF('bk'))],
     ['CPD',w=>{const d=fun('dn',w);return d?acq('sp',w)/d:0;},inr,'b eff key','campaign spend ÷ funnel done',()=>R(bA('sp'),bF('dn'))],
   ];
+  if(CITY==='Online'){   // online calls come through a shared call number (not campaign-attributable) → surface them as one common line right under Leads
+    const cn=((DATA.Online||{}).callnums||[]).filter(x=>x.num!=='(no number)'), top=cn[0]?cn[0].num:'—', more=cn.length>1?` (+${cn.length-1} more)`:'';
+    rowsFun.splice(1,0,
+      ['☎ Call/WA leads · common',w=>onlineCall('lead',w),cm,'','common online call/WhatsApp leads via the shared number ☎ '+top+more+' — not campaign-attributable'],
+      ['— of which booked',w=>onlineCall('bk',w),cm,'','bookings from the common call/WhatsApp line']);
+  }
   const head='<tr>'+`<th>Metric${cpyBtn('tbl',0,'Metric')}</th>`+DWKS.map((w,i)=>`<th class="${oc(i)}"${oc(i)?' title="older week — kept for reference, excluded from the average"':''}>${om(i)}${w}${cpyBtn('tbl',i+1,w)}</th>`).join('')+`<th class="avg">Avg ${NA}wk${cpyBtn('tbl',nD+1,'Avg '+NA+'wk')}</th>`+'<th style="background:#2C6CAE">Level / grain</th></tr>';
   const avgOf=fn=>REC.reduce((s,w)=>s+fn(w),0)/NA;   // simple mean over the RECENT 6 weeks (older week excluded)
   const sumFmt=lbl=>['Spend','Budget (₹/day)','Impressions','Market size estd','Location Impressions','Clicks','Loc Clicks','Leads','Call Leads','Booked','— Booked · offline','— Booked · online','Done','Revenue (est · done×RPC)','Spend (campaigns)'].includes(lbl);

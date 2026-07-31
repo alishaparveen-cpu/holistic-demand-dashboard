@@ -114,6 +114,7 @@ def main():
     _CAMP_BY_NORM = {}
     for _r in acq.get('Online', []): _CAMP_BY_NORM.setdefault(_cn(_r['camp']), _r['camp'])
     def norm_camp(cmp): return _CAMP_BY_NORM.get(_cn(cmp), '')   # unmatched utm (legacy/'website'/retargeting) → '' (channel-total) so the campaign picker only ever lists REAL campaign names
+    _online_callnum = defaultdict(int)   # ONLINE call/WhatsApp leads by the phone NUMBER they came through (calls carry no utm — only a shared number)
     for city, node in cube.items():
         if city=='_meta': continue
         for cel in node.get('cells',[]):
@@ -129,6 +130,8 @@ def main():
                 lv = w[idx] if idx < len(w) else 0
                 if lv==0: continue
                 k=(rcity,ch,med,cat,wk,camp); fun[k][0]+=lv
+                if city==NOCITY_ and ch=='Google' and med!='Web':   # online call/WhatsApp → track which number
+                    _online_callnum[str(cel.get('num') or '(no number)').replace('☎','').strip()] += lv
                 if booked:
                     fun[k][1]+=lv
                     if seg=='offline': fun[k][3]+=lv
@@ -164,6 +167,8 @@ def main():
             frows.append({'ch':ch,'med':med,'cat':cat,'wk':wk,'camp':camp,'lead':L,'bk':B,'dn':D,'bko':BO,'bkn':BN,'sp':spend,'rev':round(D*rpc_of(city,cat),1)})
         if arows or frows:
             out[city] = {'acq':arows, 'fun':frows, 'rpc':rpc.get(city,{})}
+            if city == 'Online':   # the shared call number(s) online call leads come through (calls carry no campaign)
+                out[city]['callnums'] = [{'num': n, 'leads': l} for n, l in sorted(_online_callnum.items(), key=lambda x: -x[1]) if l]
     json.dump(out, open(os.path.join(ROOT,'data_campaign_compose.json'),'w'), separators=(',',':'))
     nA = sum(1 for c in out if c!='_meta' and out[c]['acq'])
     nF = sum(1 for c in out if c!='_meta' and out[c]['fun'])
