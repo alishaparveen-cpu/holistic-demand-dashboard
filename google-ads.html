@@ -105,8 +105,10 @@ fetch('data_campaign_compose.json').then(r=>r.json()).then(d=>{DATA=d;WKALL=d._m
   $('city').onchange=()=>{CITY=$('city').value;
     SEL.mt=new Set(CITY==='Online'?['Exact','Phrase-Local']:['Exact-Local']);   // Online campaigns are Exact/Phrase (no local); cities default to Exact-Local
     SEL.ch=new Set(CITY==='Online'?['Google']:CHS);   // Online leads are Google-Ads only (no GMB) — pin channel to Google
-    SEL.chmed=chmedAll(CITY==='Online'?['Google']:CHS);   // reset channel×medium grid (Online = Google row only)
-    SEL.camp=new Set(CITY==='Online'?onlineCamps():[]);   // Online spend filters by exact campaign name (not cat×match-type)
+    SEL.chmed=CITY==='Online'?new Set(['Google|Web']):chmedAll(CHS);   // Online default → WEB leads only (clean per-campaign funnel); tick the Call/WhatsApp medium to add the shared '(untagged)' bucket
+    if(CITY==='Online'){const acqC=new Set(((DATA['Online']||{}).acq||[]).map(r=>r.camp));   // live = campaigns with spend; legacy no-spend names (website, ReTargeting…) start UNchecked
+      SEL.camp=new Set(onlineCamps().filter(c=>acqC.has(c)||c.indexOf('(untagged')===0));}
+    else SEL.camp=new Set();
     buildPickers();render();};
   $('olderBtn').onclick=()=>{SHOW_OLDER=!SHOW_OLDER;render();};
   buildPickers();render();});
@@ -240,7 +242,7 @@ function render(){
   $('tbl').querySelector('thead').innerHTML=head;
   // Online / telehealth campaigns have NO location impressions/clicks → hide the Loc-* rows (they'd be 0 / divide-by-zero)
   const dropLoc=r=>CITY==='Online' && /loc/i.test(r[0]);
-  const funNote=CITY==='Online'?' · online WEB leads split per campaign (from utm) → follows the campaign picker; call/WhatsApp online leads carry no campaign':'';
+  const funNote=CITY==='Online'?' · WEB leads shown per campaign (from utm); ☎ call/WhatsApp are a shared line (not per-campaign) — tick the Call/WhatsApp medium or the "(untagged)" campaign to see them. Live = spending campaigns pre-selected; no-spend legacy names start unchecked':'';
   $('tbl').querySelector('tbody').innerHTML=
     sec('▼ PAID ACQUISITION — Google Ads (campaign pickers)','')+rowsAcq.filter(r=>!dropLoc(r)).map(r=>rowHTML(r)).join('')+
     sec('▼ FULL FUNNEL — leads by funnel pickers · spend by campaign pickers'+funNote,'fun')+rowsFun.filter(r=>!dropLoc(r)).map(r=>rowHTML(r)).join('');
