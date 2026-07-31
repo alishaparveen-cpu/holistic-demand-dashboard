@@ -123,7 +123,7 @@ def main():
             loc=(cel.get('loc') or '').strip()
             rcity = loc if (city!=NOCITY_ and loc in CITYSET and loc!=city) else city   # re-attribute to the locality's own campaign city (Thane clinic leads are keyed under Mumbai in the leads cube → move to Thane)
             med=MED(cel.get('md')); cat=FCAT(cel.get('cat'))
-            camp = norm_camp(cel.get('cmp')) if (city==NOCITY_ and ch=='Google' and med=='Web') else ''   # ONLINE WEB → per-campaign; everything else stays camp-agnostic
+            camp = (norm_camp(cel.get('cmp')) if med=='Web' else '(untagged · call/WhatsApp)') if (city==NOCITY_ and ch=='Google') else ''   # ONLINE: web → per-campaign (utm); call/WA → one untagged bucket (calls carry no utm, only the phone number → not campaign-attributable)
             booked=cel.get('bk')!='notbooked'; done=cel.get('dq')=='done'; seg=cel.get('bkseg'); w=cel.get('w',[])
             for wk,idx in WKIDX.items():
                 lv = w[idx] if idx < len(w) else 0
