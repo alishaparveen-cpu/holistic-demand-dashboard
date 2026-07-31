@@ -199,7 +199,7 @@ function render(){
   // ratio/cost rows carry a 6th fn → blended 6-wk avg (total÷total). Volume rows omit it → simple mean.
   const rowsAcq=[
     ['Budget (₹/day)',w=>acq('budget',w),inr,'b blu','↑ campaign pickers · Σ daily budgets'],
-    ['Bid (avg CPC ceiling)',w=>acqBid(w),inr,'','spend-wtd avg ceiling'],
+    ['Bid (max-CPC ceiling)',w=>acqBid(w),v=>v?inr(v):'—','','max-CPC bid ceiling, spend-weighted · manual-bid campaigns only. "—" = not captured in that week\'s report (or automated bidding) — NOT a real ₹0',()=>{const vs=REC.map(w=>acqBid(w)).filter(x=>x>0);return vs.length?vs.reduce((a,b)=>a+b,0)/vs.length:0;}],
     ['Spend',w=>acq('sp',w),inr,'b hi key','↑ campaign pickers (cat × match-type)'],
     ['Budget Util %',w=>{const b=acq('budget',w)*7;return b?100*acq('sp',w)/b:0;},v=>v.toFixed(1)+'%','eff','spend ÷ (budget×7)',()=>100*R(bA('sp'),bA('budget')*7)],
     ['Impressions',w=>acq('impr',w),cm,'','campaign · Google Ads'],
@@ -277,7 +277,7 @@ function render(){
       +tbl('Impressions', nf, d=>d.im, d=>mean(d.im))
       +tbl('Clicks', nf, d=>d.cl, d=>mean(d.cl))
       +tbl('CTR', pf, d=>d.im.map((x,i)=>x?100*d.cl[i]/x:null), d=>{const ti=sum(d.im,NAa),tc=sum(d.cl,NAa);return ti?100*tc/ti:null;})
-      +tbl('CPC', rf, d=>d.cl.map((x,i)=>x?d.co[i]/x:null), d=>{const tc=sum(d.cl,NAa),tco=sum(d.co,NAa);return tc?tco/tc:null;});
+      +tbl('CPC · avg (cost ÷ clicks) — asset-level, approx', rf, d=>d.cl.map((x,i)=>x?d.co[i]/x:null), d=>{const tc=sum(d.cl,NAa),tco=sum(d.co,NAa);return tc?tco/tc:null;});
   }
   const sec=(t,c)=>`<tr class="sec ${c}"><td colspan="${nD+3}">${t}</td></tr>`;
   $('tbl').querySelector('thead').innerHTML=head;
@@ -302,7 +302,7 @@ function render(){
   $('splits').innerHTML=sp+
     splitBlock('spMed','Medium','Leads by medium','med',MEDS,'fun','lead',cm)+
     splitBlock('spCat','Category','Leads by category','cat',FCATS,'fun','lead',cm)+
-    splitBlock('spMt','Match-type',CITY==='Online'?'Spend by match-type (online)':'Spend by match-type','mt',MTS,'acq','sp',inr)+
+    (CITY==='Online'?'':splitBlock('spMt','Match-type','Spend by match-type','mt',MTS,'acq','sp',inr))+   // online has no local match-type; its spend split lives in the campaign table above
     assetTablesHTML();   // clinic-wise location-asset tables (impr / clicks / CTR / CPC, weekly)
   renderCompetitors();
 }
