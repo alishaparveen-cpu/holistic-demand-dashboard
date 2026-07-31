@@ -14,6 +14,7 @@ cfg = json.load(open(os.path.join(ROOT,"data_all_clinics_cfg.json")))
 key2slug = {(c["city"]+"|"+c["loc"]): slug for slug, c in cfg.items()}
 def Z(): return [0]*NW
 def blank(): return {"impr":Z(),"clicks":Z(),
+    "cost":Z(),   # ₹ spend on ads serving this location asset (for per-clinic CPC)
     "by_cat":{ct:{"impr":Z(),"clicks":Z()} for ct in CATS},
     "by_seg":{sg:{"impr":Z(),"clicks":Z(),"by_cat":{ct:{"impr":Z(),"clicks":Z()} for ct in CATS}} for sg in ("offline","online")}}
 
@@ -23,7 +24,7 @@ def main():
     start = datetime.date.fromisoformat(WEEKS[-1])
     rows = G.gaql(tok, c, """SELECT campaign.name, segments.week,
         segments.asset_interaction_target.asset, segments.asset_interaction_target.interaction_on_this_asset,
-        metrics.impressions, metrics.clicks FROM campaign
+        metrics.impressions, metrics.clicks, metrics.cost_micros FROM campaign
       WHERE campaign.advertising_channel_type='SEARCH' AND campaign.status='ENABLED'
         AND segments.date BETWEEN '%s' AND '%s'""" % (start.isoformat(), end.isoformat()))
     acc = {}
@@ -41,12 +42,13 @@ def main():
         if G.city_of(nm) != cfg[slug]["city"]: continue
         ct = G.cat_of(nm); sg = G.seg_of(nm)
         m = r.get("metrics", {}); clk = int(m.get("clicks",0) or 0); imp = int(m.get("impressions",0) or 0)
+        cost = int(m.get("costMicros",0) or 0)/1e6
         on_asset = ait.get("interactionOnThisAsset", False)
         a = acc.setdefault(slug, blank())
         a["clicks"][i] += clk; a["by_cat"][ct]["clicks"][i] += clk
         a["by_seg"][sg]["clicks"][i] += clk; a["by_seg"][sg]["by_cat"][ct]["clicks"][i] += clk
-        if not on_asset:   # impressions counted once (asset-served, not interaction rows)
-            a["impr"][i] += imp; a["by_cat"][ct]["impr"][i] += imp
+        if not on_asset:   # impressions + cost counted once (asset-served base rows, not the interaction split)
+            a["impr"][i] += imp; a["by_cat"][ct]["impr"][i] += imp; a["cost"][i] += cost
             a["by_seg"][sg]["impr"][i] += imp; a["by_seg"][sg]["by_cat"][ct]["impr"][i] += imp
     out = {"_meta": {"weeks": WEEKS}}   # weeks + per-clinic city/loc so the Google-Ads compose page can align + label the per-asset drill
     for slug, v in acc.items():

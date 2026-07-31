@@ -251,35 +251,34 @@ function render(){
   const head='<tr>'+`<th>Metric${cpyBtn('tbl',0,'Metric')}</th>`+DWKS.map((w,i)=>`<th class="${oc(i)}"${oc(i)?' title="older week — kept for reference, excluded from the average"':''}>${om(i)}${w}${cpyBtn('tbl',i+1,w)}</th>`).join('')+`<th class="avg">Avg ${NA}wk${cpyBtn('tbl',nD+1,'Avg '+NA+'wk')}</th>`+'<th style="background:#2C6CAE">Level / grain</th></tr>';
   const avgOf=fn=>REC.reduce((s,w)=>s+fn(w),0)/NA;   // simple mean over the RECENT 6 weeks (older week excluded)
   const sumFmt=lbl=>['Spend','Budget (₹/day)','Impressions','Market size estd','Location Impressions','Clicks','Loc Clicks','Leads','Call Leads','Booked','— Booked · offline','— Booked · online','Done','Revenue (est · done×RPC)','Spend (campaigns)'].includes(lbl);
-  // per-GMB-asset drill under the Loc rows: which clinic's Business-Profile location asset the impr/clicks came from
-  const LOCMETRIC={'Location Impressions':'impr','Loc Clicks':'clicks','Loc CTR':'ctr'};
-  const NAr=Math.min(6,DWKS.length);
-  function assetSubRows(lm){
-    if(!REACH) return '';
-    const clins=Object.keys(REACH).filter(k=>k!=='_meta'&&REACH[k].city===CITY);
-    const out=clins.map(k=>{const v=REACH[k];
-      const im=DWKS.map(w=>assetVal(v,'impr',reachIdx(w))||0), cl=DWKS.map(w=>assetVal(v,'clicks',reachIdx(w))||0);
-      const disp=lm==='impr'?im:lm==='clicks'?cl:im.map((x,i)=>x?100*cl[i]/x:null);
-      let av; if(lm==='ctr'){const ti=im.slice(0,NAr).reduce((a,b)=>a+b,0),tc=cl.slice(0,NAr).reduce((a,b)=>a+b,0);av=ti?100*tc/ti:null;}
-        else{const s=disp.slice(0,NAr);av=s.reduce((a,b)=>a+(b||0),0)/(s.length||1);}
-      return {loc:v.loc||k, disp, av, sort:(im[0]||0)+(cl[0]||0)};
-    }).filter(r=>r.disp.some(x=>x));
-    out.sort((a,b)=>b.sort-a.sort);
-    const fc=lm==='ctr'?(x=>x==null?'·':x.toFixed(1)+'%'):(x=>!x?'·':Math.round(x).toLocaleString('en-IN'));
-    if(!out.length) return `<tr class="locsub"><td style="padding-left:24px;color:#9aa">no per-asset data for ${CITY}</td><td colspan="${nD+2}"></td></tr>`;
-    return out.map(r=>`<tr class="locsub"><td style="padding-left:24px;color:#5a6673;font-size:12px">${r.loc}</td>`
-      +r.disp.map((x,i)=>`<td class="${oc(i)}">${fc(x)}</td>`).join('')
-      +`<td class="avgc">${fc(r.av)}</td><td class="g" style="font-size:10px;color:#9aa">GMB asset</td></tr>`).join('');
-  }
-  const rowHTML=(r,fun2)=>{const[lbl,fn,fmt,cls,g,avgFn]=r;
+  const rowHTML=(r,fun2)=>{const[lbl,fn,fmt,cls,g,avgFn]=r;   // city-level only — per-clinic asset detail lives in its own table below
     const cells=DWKS.map((w,i)=>`<td class="${oc(i)}">${fmt(fn(w))}</td>`).join('');
     const av=avgFn?avgFn():avgOf(fn);   // ratio/cost rows blend (total÷total); volume rows take the mean
-    const lm=LOCMETRIC[lbl], canExp=lm&&REACH&&CITY!=='Online';   // Online has no location assets
-    const lblCell=canExp
-      ? `<td class="locx" data-lm="${lm}" style="cursor:pointer">${EXPLOC.has(lm)?'▾':'▸'} ${lbl} <span style="color:#8a94a0;font-weight:400;font-size:10.5px">· by GMB asset</span></td>`
-      : `<td class="${cls.includes('b')?'b':''}">${lbl}</td>`;
-    return `<tr class="${cls}">${lblCell}${cells}<td class="avgc">${fmt(av)}</td><td class="g">${g}</td></tr>`
-      + (canExp&&EXPLOC.has(lm)?assetSubRows(lm):'');};
+    return `<tr class="${cls}"><td class="${cls.includes('b')?'b':''}">${lbl}</td>${cells}<td class="avgc">${fmt(av)}</td><td class="g">${g}</td></tr>`;};
+  // ── separate CLINIC-WISE location-asset tables (impr / clicks / CTR / CPC), weekly, for the current city ──
+  function assetTablesHTML(){
+    if(!REACH||CITY==='Online')return '';
+    const clins=Object.keys(REACH).filter(k=>k!=='_meta'&&REACH[k].city===CITY);
+    const data=clins.map(k=>{const v=REACH[k];
+      const im=DWKS.map(w=>{const wi=reachIdx(w);return wi<0?0:(v.impr[wi]||0);});
+      const cl=DWKS.map(w=>{const wi=reachIdx(w);return wi<0?0:(v.clicks[wi]||0);});
+      const co=DWKS.map(w=>{const wi=reachIdx(w);return wi<0?0:((v.cost||[])[wi]||0);});
+      return {loc:v.loc||k, im, cl, co};
+    }).filter(d=>d.im.some(x=>x)||d.cl.some(x=>x));
+    if(!data.length)return `<p class="sub" style="margin-top:24px">No Google-Ads location-asset data for ${CITY}.</p>`;
+    data.sort((a,b)=>(b.im[0]||0)-(a.im[0]||0));
+    const NAa=Math.min(6,DWKS.length), sum=(a,n)=>a.slice(0,n).reduce((s,x)=>s+(x||0),0), mean=a=>sum(a,NAa)/NAa;
+    const nf=x=>!x?'·':Math.round(x).toLocaleString('en-IN'), pf=x=>x==null?'·':x.toFixed(1)+'%', rf=x=>x==null?'·':'₹'+x.toFixed(1);
+    const th=`<th>Clinic</th>`+DWKS.map((x,i)=>`<th class="${oc(i)}">${om(i)}${x}</th>`).join('')+`<th class="avg">Avg ${NAa}wk</th>`;
+    const tbl=(title,fmt,vf,af)=>`<h3 style="margin:16px 0 3px;font-size:14px">${title}</h3><div style="overflow-x:auto"><table><thead><tr>${th}</tr></thead><tbody>`+
+      data.map(d=>{const vals=vf(d);return `<tr><td>${d.loc}</td>${vals.map((v,i)=>`<td class="${oc(i)}">${fmt(v)}</td>`).join('')}<td class="avgc">${fmt(af(d))}</td></tr>`;}).join('')+`</tbody></table></div>`;
+    return `<h2 style="margin-top:30px">📍 Location assets — clinic-wise · weekly (${CITY}, all categories)</h2>`
+      +`<p class="sub" style="margin:2px 0 4px">Google-Ads paid location-asset reach per clinic (impressions served on that GBP listing, its clicks, CTR and CPC). Reach counts impressions on the asset — it won't tie exactly to the city-level Location Impressions row.</p>`
+      +tbl('Impressions', nf, d=>d.im, d=>mean(d.im))
+      +tbl('Clicks', nf, d=>d.cl, d=>mean(d.cl))
+      +tbl('CTR', pf, d=>d.im.map((x,i)=>x?100*d.cl[i]/x:null), d=>{const ti=sum(d.im,NAa),tc=sum(d.cl,NAa);return ti?100*tc/ti:null;})
+      +tbl('CPC', rf, d=>d.cl.map((x,i)=>x?d.co[i]/x:null), d=>{const tc=sum(d.cl,NAa),tco=sum(d.co,NAa);return tc?tco/tc:null;});
+  }
   const sec=(t,c)=>`<tr class="sec ${c}"><td colspan="${nD+3}">${t}</td></tr>`;
   $('tbl').querySelector('thead').innerHTML=head;
   // Online / telehealth campaigns have NO location impressions/clicks → hide the Loc-* rows (they'd be 0 / divide-by-zero)
@@ -288,7 +287,6 @@ function render(){
   $('tbl').querySelector('tbody').innerHTML=
     sec('▼ PAID ACQUISITION — Google Ads (campaign pickers)','')+rowsAcq.filter(r=>!dropLoc(r)).map(r=>rowHTML(r)).join('')+
     sec('▼ FULL FUNNEL — leads by funnel pickers · spend by campaign pickers'+funNote,'fun')+rowsFun.filter(r=>!dropLoc(r)).map(r=>rowHTML(r)).join('');
-  $('tbl').querySelectorAll('.locx').forEach(el=>el.onclick=()=>{const m=el.dataset.lm;EXPLOC.has(m)?EXPLOC.delete(m):EXPLOC.add(m);render();});   // expand/collapse the per-GMB-asset breakdown
   $('wknote').innerHTML=wks.includes('Jul 13-19')?'Note · Jul 13-19 spend/leads/CPL are final; its Book→Done are still maturing (this week’s leads haven’t all converted), so CPD / ROAS there will keep rising for ~2 weeks.':'';
   // splits
   const splitBlock=(tid,hdr0,title,dim,vals,src,fld,fmt)=>`<h3>${title}</h3><table id="${tid}"><thead><tr><th>${hdr0}${cpyBtn(tid,0,hdr0||'Row')}</th>${DWKS.map((w,i)=>`<th class="${oc(i)}">${om(i)}${w}${cpyBtn(tid,i+1,w)}</th>`).join('')}<th class="avg">Avg ${NA}wk${cpyBtn(tid,nD+1,'Avg '+NA+'wk')}</th></tr></thead><tbody>`+
@@ -304,7 +302,8 @@ function render(){
   $('splits').innerHTML=sp+
     splitBlock('spMed','Medium','Leads by medium','med',MEDS,'fun','lead',cm)+
     splitBlock('spCat','Category','Leads by category','cat',FCATS,'fun','lead',cm)+
-    splitBlock('spMt','Match-type',CITY==='Online'?'Spend by match-type (online)':'Spend by match-type','mt',MTS,'acq','sp',inr);
+    splitBlock('spMt','Match-type',CITY==='Online'?'Spend by match-type (online)':'Spend by match-type','mt',MTS,'acq','sp',inr)+
+    assetTablesHTML();   // clinic-wise location-asset tables (impr / clicks / CTR / CPC, weekly)
   renderCompetitors();
 }
 </script></body></html>
