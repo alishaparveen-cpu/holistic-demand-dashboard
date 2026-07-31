@@ -48,7 +48,12 @@ def main():
         if not on_asset:   # impressions counted once (asset-served, not interaction rows)
             a["impr"][i] += imp; a["by_cat"][ct]["impr"][i] += imp
             a["by_seg"][sg]["impr"][i] += imp; a["by_seg"][sg]["by_cat"][ct]["impr"][i] += imp
-    json.dump(acc, open(os.path.join(ROOT,"data_clinic_reach.json"),"w"), separators=(",",":"))
+    out = {"_meta": {"weeks": WEEKS}}   # weeks + per-clinic city/loc so the Google-Ads compose page can align + label the per-asset drill
+    for slug, v in acc.items():
+        c = cfg.get(slug, {})
+        v["city"] = c.get("city"); v["loc"] = c.get("loc") or c.get("disp")
+        out[slug] = v
+    json.dump(out, open(os.path.join(ROOT,"data_clinic_reach.json"),"w"), separators=(",",":"))
     print("clinic-level reach for %d clinics" % len(acc))
     for slug in list(acc)[:5]:
         print("  %-22s impr=%d clicks=%d" % (cfg[slug]["disp"], sum(acc[slug]["impr"]), sum(acc[slug]["clicks"])))

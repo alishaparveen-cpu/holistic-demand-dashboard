@@ -27,6 +27,7 @@ td.g{color:#666;font-size:9px;font-style:italic;text-align:left;white-space:norm
 tr.key td:first-child{border-left:4px solid var(--accent);padding-left:6px;font-weight:700}tr.key td{background:#eef3fb}
 tr.key.hi td{background:var(--yel)}tr.key.eff td{background:var(--eff)}tr.key.grn td{background:var(--grnf)}
 .b{font-weight:700}.avgc{background:#eaf3ef}
+tr.locsub td{background:#f6f9fc;font-size:12px}tr.locsub td:first-child{border-left:3px solid #cbd8e6}.locx:hover{background:#eef3f9}
 .wknote{font-size:11px;color:#B03030;margin:6px 0 0}
 .split{margin-top:16px}.split h3{font-size:13px;color:var(--grn);margin:0 0 4px}
 .cmg{width:100%;border:none;background:none}.cmg th{background:none;color:var(--muted);font-size:10px;font-weight:600;padding:1px 2px;text-align:center}
@@ -70,7 +71,7 @@ td.oldw,th.oldw{border-right:2px solid #cfd4dc}
 <script>
 const CATS=['SH','STD','MH'],MTS=['Exact-Local','Exact','Phrase-Local'];
 const CHS=['GMB','Google'],MEDS=['Call','Web','WhatsApp'],FCATS=['SH','STI','MH','Other','Uncategorized'];
-let DATA=null,CITY=null,WKALL=[],WKSEL=[],AUCT=null,SHOW_OLDER=false;
+let DATA=null,CITY=null,WKALL=[],WKSEL=[],AUCT=null,SHOW_OLDER=false,REACH=null,EXPLOC=new Set();   // REACH = per-clinic (GMB location asset) impr/clicks; EXPLOC = which Loc rows are expanded
 const SEL={cat:new Set(CATS),mt:new Set(['Exact-Local']),ch:new Set(CHS),med:new Set(MEDS),fcat:new Set(FCATS),camp:new Set(),chmed:new Set()};
 const chmedAll=chs=>{const s=new Set();(chs||CHS).forEach(c=>MEDS.forEach(m=>s.add(c+'|'+m)));return s;};   // channel×medium combos
 SEL.chmed=chmedAll(CHS);
@@ -111,6 +112,16 @@ fetch('data_campaign_compose.json').then(r=>r.json()).then(d=>{DATA=d;WKALL=d._m
   $('olderBtn').onclick=()=>{SHOW_OLDER=!SHOW_OLDER;render();};
   buildPickers();render();});
 fetch('data_auction_insights.json').then(r=>r.json()).then(d=>{AUCT=d;renderCompetitors();}).catch(()=>{});
+fetch('data_clinic_reach.json',{cache:'no-store'}).then(r=>r.json()).then(d=>{REACH=d;if(DATA)render();}).catch(()=>{});   // per-GMB-asset location impressions/clicks (Google Ads asset-interaction segment)
+// map a compose week label ("Jun 29-Jul 5") → the reach weekly-array index (reach weeks are Monday ISO dates), by matching the -MM-DD suffix (year-agnostic)
+const _MON3={Jan:1,Feb:2,Mar:3,Apr:4,May:5,Jun:6,Jul:7,Aug:8,Sep:9,Oct:10,Nov:11,Dec:12};
+function reachIdx(label){if(!REACH||!REACH._meta)return -1;const m=String(label).match(/^([A-Za-z]{3})\w*\s+(\d+)/);if(!m)return -1;
+  const suf='-'+String(_MON3[m[1]]).padStart(2,'0')+'-'+String(+m[2]).padStart(2,'0');return REACH._meta.weeks.findIndex(w=>w.endsWith(suf));}
+// per-clinic (GMB asset) value for a Loc metric + week, respecting the category filter
+function assetVal(v,metric,wi){if(wi<0)return null;
+  const catSel=[...SEL.cat]; const useCat=catSel.length&&catSel.length<CATS.length;   // a category subset is active
+  const pick=src=>useCat?catSel.reduce((s,c)=>s+((src.by_cat[c==='STD'?'STI':c]||{})[metric==='clicks'?'clicks':'impr']||[])[wi]||0,0):(src[metric==='clicks'?'clicks':'impr'][wi]||0);
+  return pick(v);}
 const CATLBL={SH:'Sexual Health',STI:'STI / STD',MH:'Mental Health'};
 const COMPCOLS=[['is','Impr. share'],['overlap','Overlap'],['posAbove','Pos. above'],['top','Top of pg'],['absTop','Abs top'],['outrank','Outranking']];
 function renderCompetitors(){
@@ -232,10 +243,35 @@ function render(){
   const head='<tr>'+`<th>Metric${cpyBtn('tbl',0,'Metric')}</th>`+DWKS.map((w,i)=>`<th class="${oc(i)}"${oc(i)?' title="older week — kept for reference, excluded from the average"':''}>${om(i)}${w}${cpyBtn('tbl',i+1,w)}</th>`).join('')+`<th class="avg">Avg ${NA}wk${cpyBtn('tbl',nD+1,'Avg '+NA+'wk')}</th>`+'<th style="background:#2C6CAE">Level / grain</th></tr>';
   const avgOf=fn=>REC.reduce((s,w)=>s+fn(w),0)/NA;   // simple mean over the RECENT 6 weeks (older week excluded)
   const sumFmt=lbl=>['Spend','Budget (₹/day)','Impressions','Market size estd','Location Impressions','Clicks','Loc Clicks','Leads','Call Leads','Booked','— Booked · offline','— Booked · online','Done','Revenue (est · done×RPC)','Spend (campaigns)'].includes(lbl);
+  // per-GMB-asset drill under the Loc rows: which clinic's Business-Profile location asset the impr/clicks came from
+  const LOCMETRIC={'Location Impressions':'impr','Loc Clicks':'clicks','Loc CTR':'ctr'};
+  const NAr=Math.min(6,DWKS.length);
+  function assetSubRows(lm){
+    if(!REACH) return '';
+    const clins=Object.keys(REACH).filter(k=>k!=='_meta'&&REACH[k].city===CITY);
+    const out=clins.map(k=>{const v=REACH[k];
+      const im=DWKS.map(w=>assetVal(v,'impr',reachIdx(w))||0), cl=DWKS.map(w=>assetVal(v,'clicks',reachIdx(w))||0);
+      const disp=lm==='impr'?im:lm==='clicks'?cl:im.map((x,i)=>x?100*cl[i]/x:null);
+      let av; if(lm==='ctr'){const ti=im.slice(0,NAr).reduce((a,b)=>a+b,0),tc=cl.slice(0,NAr).reduce((a,b)=>a+b,0);av=ti?100*tc/ti:null;}
+        else{const s=disp.slice(0,NAr);av=s.reduce((a,b)=>a+(b||0),0)/(s.length||1);}
+      return {loc:v.loc||k, disp, av, sort:(im[0]||0)+(cl[0]||0)};
+    }).filter(r=>r.disp.some(x=>x));
+    out.sort((a,b)=>b.sort-a.sort);
+    const fc=lm==='ctr'?(x=>x==null?'·':x.toFixed(1)+'%'):(x=>!x?'·':Math.round(x).toLocaleString('en-IN'));
+    if(!out.length) return `<tr class="locsub"><td style="padding-left:24px;color:#9aa">no per-asset data for ${CITY}</td><td colspan="${nD+2}"></td></tr>`;
+    return out.map(r=>`<tr class="locsub"><td style="padding-left:24px;color:#5a6673;font-size:12px">${r.loc}</td>`
+      +r.disp.map((x,i)=>`<td class="${oc(i)}">${fc(x)}</td>`).join('')
+      +`<td class="avgc">${fc(r.av)}</td><td class="g" style="font-size:10px;color:#9aa">GMB asset</td></tr>`).join('');
+  }
   const rowHTML=(r,fun2)=>{const[lbl,fn,fmt,cls,g,avgFn]=r;
     const cells=DWKS.map((w,i)=>`<td class="${oc(i)}">${fmt(fn(w))}</td>`).join('');
     const av=avgFn?avgFn():avgOf(fn);   // ratio/cost rows blend (total÷total); volume rows take the mean
-    return `<tr class="${cls}"><td class="${cls.includes('b')?'b':''}">${lbl}</td>${cells}<td class="avgc">${fmt(av)}</td><td class="g">${g}</td></tr>`;};
+    const lm=LOCMETRIC[lbl], canExp=lm&&REACH&&CITY!=='Online';   // Online has no location assets
+    const lblCell=canExp
+      ? `<td class="locx" data-lm="${lm}" style="cursor:pointer">${EXPLOC.has(lm)?'▾':'▸'} ${lbl} <span style="color:#8a94a0;font-weight:400;font-size:10.5px">· by GMB asset</span></td>`
+      : `<td class="${cls.includes('b')?'b':''}">${lbl}</td>`;
+    return `<tr class="${cls}">${lblCell}${cells}<td class="avgc">${fmt(av)}</td><td class="g">${g}</td></tr>`
+      + (canExp&&EXPLOC.has(lm)?assetSubRows(lm):'');};
   const sec=(t,c)=>`<tr class="sec ${c}"><td colspan="${nD+3}">${t}</td></tr>`;
   $('tbl').querySelector('thead').innerHTML=head;
   // Online / telehealth campaigns have NO location impressions/clicks → hide the Loc-* rows (they'd be 0 / divide-by-zero)
@@ -244,6 +280,7 @@ function render(){
   $('tbl').querySelector('tbody').innerHTML=
     sec('▼ PAID ACQUISITION — Google Ads (campaign pickers)','')+rowsAcq.filter(r=>!dropLoc(r)).map(r=>rowHTML(r)).join('')+
     sec('▼ FULL FUNNEL — leads by funnel pickers · spend by campaign pickers'+funNote,'fun')+rowsFun.filter(r=>!dropLoc(r)).map(r=>rowHTML(r)).join('');
+  $('tbl').querySelectorAll('.locx').forEach(el=>el.onclick=()=>{const m=el.dataset.lm;EXPLOC.has(m)?EXPLOC.delete(m):EXPLOC.add(m);render();});   // expand/collapse the per-GMB-asset breakdown
   $('wknote').innerHTML=wks.includes('Jul 13-19')?'Note · Jul 13-19 spend/leads/CPL are final; its Book→Done are still maturing (this week’s leads haven’t all converted), so CPD / ROAS there will keep rising for ~2 weeks.':'';
   // splits
   const splitBlock=(tid,hdr0,title,dim,vals,src,fld,fmt)=>`<h3>${title}</h3><table id="${tid}"><thead><tr><th>${hdr0}${cpyBtn(tid,0,hdr0||'Row')}</th>${DWKS.map((w,i)=>`<th class="${oc(i)}">${om(i)}${w}${cpyBtn(tid,i+1,w)}</th>`).join('')}<th class="avg">Avg ${NA}wk${cpyBtn(tid,nD+1,'Avg '+NA+'wk')}</th></tr></thead><tbody>`+
