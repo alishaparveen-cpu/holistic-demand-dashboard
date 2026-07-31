@@ -75,7 +75,7 @@ const SEL={cat:new Set(CATS),mt:new Set(['Exact-Local']),ch:new Set(CHS),med:new
 const chmedAll=chs=>{const s=new Set();(chs||CHS).forEach(c=>MEDS.forEach(m=>s.add(c+'|'+m)));return s;};   // channel×medium combos
 SEL.chmed=chmedAll(CHS);
 const $=id=>document.getElementById(id);
-const onlineCamps=()=>{const o=(DATA&&DATA['Online'])||{};return [...new Set([...(o.acq||[]).map(r=>r.camp),...(o.fun||[]).map(r=>r.camp)])].filter(Boolean).sort();};   // union of spend campaigns + lead (utm) campaigns so every campaign is pickable
+const onlineCamps=()=>[...new Set(((DATA&&DATA['Online']||{}).acq||[]).map(r=>r.camp))].filter(Boolean).sort();   // real (spending) campaign names only
 let toastT=null;
 function toast(msg){const t=$('toast');t.textContent=msg;t.classList.add('show');clearTimeout(toastT);toastT=setTimeout(()=>t.classList.remove('show'),1400);}
 // copy a whole column (row-label + that column's value, tab-separated) for pasting into Sheets/Excel
@@ -105,10 +105,8 @@ fetch('data_campaign_compose.json').then(r=>r.json()).then(d=>{DATA=d;WKALL=d._m
   $('city').onchange=()=>{CITY=$('city').value;
     SEL.mt=new Set(CITY==='Online'?['Exact','Phrase-Local']:['Exact-Local']);   // Online campaigns are Exact/Phrase (no local); cities default to Exact-Local
     SEL.ch=new Set(CITY==='Online'?['Google']:CHS);   // Online leads are Google-Ads only (no GMB) — pin channel to Google
-    SEL.chmed=CITY==='Online'?new Set(['Google|Web']):chmedAll(CHS);   // Online default → WEB leads only (clean per-campaign funnel); tick the Call/WhatsApp medium to add the shared '(untagged)' bucket
-    if(CITY==='Online'){const acqC=new Set(((DATA['Online']||{}).acq||[]).map(r=>r.camp));   // live = campaigns with spend; legacy no-spend names (website, ReTargeting…) start UNchecked
-      SEL.camp=new Set(onlineCamps().filter(c=>acqC.has(c)||c.indexOf('(untagged')===0));}
-    else SEL.camp=new Set();
+    SEL.chmed=CITY==='Online'?new Set(['Google|Web']):chmedAll(CHS);   // Online default → WEB leads only (clean per-campaign funnel); tick Call/WhatsApp in the medium picker for those channel-total leads
+    SEL.camp=new Set(CITY==='Online'?onlineCamps():[]);   // Online → all real campaigns selected
     buildPickers();render();};
   $('olderBtn').onclick=()=>{SHOW_OLDER=!SHOW_OLDER;render();};
   buildPickers();render();});
@@ -242,7 +240,7 @@ function render(){
   $('tbl').querySelector('thead').innerHTML=head;
   // Online / telehealth campaigns have NO location impressions/clicks → hide the Loc-* rows (they'd be 0 / divide-by-zero)
   const dropLoc=r=>CITY==='Online' && /loc/i.test(r[0]);
-  const funNote=CITY==='Online'?' · WEB leads shown per campaign (from utm); ☎ call/WhatsApp are a shared line (not per-campaign) — tick the Call/WhatsApp medium or the "(untagged)" campaign to see them. Live = spending campaigns pre-selected; no-spend legacy names start unchecked':'';
+  const funNote='';   // keep the Online section header identical to other cities
   $('tbl').querySelector('tbody').innerHTML=
     sec('▼ PAID ACQUISITION — Google Ads (campaign pickers)','')+rowsAcq.filter(r=>!dropLoc(r)).map(r=>rowHTML(r)).join('')+
     sec('▼ FULL FUNNEL — leads by funnel pickers · spend by campaign pickers'+funNote,'fun')+rowsFun.filter(r=>!dropLoc(r)).map(r=>rowHTML(r)).join('');

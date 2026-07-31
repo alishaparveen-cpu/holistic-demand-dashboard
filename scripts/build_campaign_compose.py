@@ -113,7 +113,7 @@ def main():
     def _cn(s): return ''.join(ch for ch in str(s).lower() if ch.isalnum())
     _CAMP_BY_NORM = {}
     for _r in acq.get('Online', []): _CAMP_BY_NORM.setdefault(_cn(_r['camp']), _r['camp'])
-    def norm_camp(cmp): return _CAMP_BY_NORM.get(_cn(cmp), (cmp or '').strip())
+    def norm_camp(cmp): return _CAMP_BY_NORM.get(_cn(cmp), '')   # unmatched utm (legacy/'website'/retargeting) → '' (channel-total) so the campaign picker only ever lists REAL campaign names
     for city, node in cube.items():
         if city=='_meta': continue
         for cel in node.get('cells',[]):
@@ -123,7 +123,7 @@ def main():
             loc=(cel.get('loc') or '').strip()
             rcity = loc if (city!=NOCITY_ and loc in CITYSET and loc!=city) else city   # re-attribute to the locality's own campaign city (Thane clinic leads are keyed under Mumbai in the leads cube → move to Thane)
             med=MED(cel.get('md')); cat=FCAT(cel.get('cat'))
-            camp = (norm_camp(cel.get('cmp')) if med=='Web' else '(untagged · call/WhatsApp)') if (city==NOCITY_ and ch=='Google') else ''   # ONLINE: web → per-campaign (utm); call/WA → one untagged bucket (calls carry no utm, only the phone number → not campaign-attributable)
+            camp = norm_camp(cel.get('cmp')) if (city==NOCITY_ and ch=='Google' and med=='Web') else ''   # ONLINE WEB → per-campaign (matched to a real campaign); call/WhatsApp + unmatched web → '' (channel-total, shown via the medium picker)
             booked=cel.get('bk')!='notbooked'; done=cel.get('dq')=='done'; seg=cel.get('bkseg'); w=cel.get('w',[])
             for wk,idx in WKIDX.items():
                 lv = w[idx] if idx < len(w) else 0
