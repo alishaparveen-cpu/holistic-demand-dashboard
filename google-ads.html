@@ -75,7 +75,7 @@ const SEL={cat:new Set(CATS),mt:new Set(['Exact-Local']),ch:new Set(CHS),med:new
 const chmedAll=chs=>{const s=new Set();(chs||CHS).forEach(c=>MEDS.forEach(m=>s.add(c+'|'+m)));return s;};   // channel×medium combos
 SEL.chmed=chmedAll(CHS);
 const $=id=>document.getElementById(id);
-const onlineCamps=()=>[...new Set(((DATA&&DATA['Online']||{}).acq||[]).map(r=>r.camp))].filter(Boolean).sort();
+const onlineCamps=()=>{const o=(DATA&&DATA['Online'])||{};return [...new Set([...(o.acq||[]).map(r=>r.camp),...(o.fun||[]).map(r=>r.camp)])].filter(Boolean).sort();};   // union of spend campaigns + lead (utm) campaigns so every campaign is pickable
 let toastT=null;
 function toast(msg){const t=$('toast');t.textContent=msg;t.classList.add('show');clearTimeout(toastT);toastT=setTimeout(()=>t.classList.remove('show'),1400);}
 // copy a whole column (row-label + that column's value, tab-separated) for pasting into Sheets/Excel
@@ -171,7 +171,9 @@ function acqAR(wk){const rows=(DATA[CITY]||{}).acq||[];let ws=0,wt=0;   // impr-
 function acqLP(wk){const rows=(DATA[CITY]||{}).acq||[];let ws=0,wt=0;   // impr-weighted % of impressions with Landing Page Below Average
   for(const r of rows){if(r.wk!==wk)continue;if(!acqOK(r))continue;if(r.lp!=null){ws+=r.lp*(r.impr||0);wt+=r.impr||0;}}return wt?ws/wt:null;}
 function fun(field,wk){const rows=(DATA[CITY]||{}).fun||[];let s=0;
-  for(const r of rows){if(r.wk!==wk)continue;if(!SEL.chmed.has(r.ch+'|'+r.med))continue;if(!SEL.fcat.has(r.cat))continue;s+=r[field]||0;}return s;}
+  for(const r of rows){if(r.wk!==wk)continue;if(!SEL.chmed.has(r.ch+'|'+r.med))continue;if(!SEL.fcat.has(r.cat))continue;
+    if(CITY==='Online'&&r.camp&&!SEL.camp.has(r.camp))continue;   // online WEB leads carry the utm campaign → obey the campaign picker (call/WA online leads have no campaign, camp='')
+    s+=r[field]||0;}return s;}
 function funMed(field,medium,wk){const rows=(DATA[CITY]||{}).fun||[];let s=0;   // leads via a specific medium (Call), independent of the medium picker
   for(const r of rows){if(r.wk!==wk)continue;if(!SEL.ch.has(r.ch))continue;if(r.med!==medium)continue;if(!SEL.fcat.has(r.cat))continue;s+=r[field]||0;}return s;}
 function render(){
@@ -238,7 +240,7 @@ function render(){
   $('tbl').querySelector('thead').innerHTML=head;
   // Online / telehealth campaigns have NO location impressions/clicks → hide the Loc-* rows (they'd be 0 / divide-by-zero)
   const dropLoc=r=>CITY==='Online' && /loc/i.test(r[0]);
-  const funNote=CITY==='Online'?' · ⚠ online leads are category-total (no per-campaign tag) → Click→Lead only reconciles with ALL matching campaigns selected':'';
+  const funNote=CITY==='Online'?' · online WEB leads split per campaign (from utm) → follows the campaign picker; call/WhatsApp online leads carry no campaign':'';
   $('tbl').querySelector('tbody').innerHTML=
     sec('▼ PAID ACQUISITION — Google Ads (campaign pickers)','')+rowsAcq.filter(r=>!dropLoc(r)).map(r=>rowHTML(r)).join('')+
     sec('▼ FULL FUNNEL — leads by funnel pickers · spend by campaign pickers'+funNote,'fun')+rowsFun.filter(r=>!dropLoc(r)).map(r=>rowHTML(r)).join('');

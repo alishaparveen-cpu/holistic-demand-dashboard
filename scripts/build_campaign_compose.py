@@ -23,7 +23,11 @@ def add_lost(fn, r):   # attach rank/budget lost-impression counts (= eligible i
     elig = r.get('elig') or 0
     r['rlis'] = round(elig * (li.get('rank') or 0))
     r['blis'] = round(elig * (li.get('budget') or 0))
-    r['qs'] = (QS.get(stem, {}) or {}).get(wklabel) if wklabel else None
+    qs_data = (QS.get(stem, {}) or {}).get(wklabel) if wklabel else None
+    if isinstance(qs_data, dict):
+        r['qs'] = qs_data.get('qs'); r['ar'] = qs_data.get('ar'); r['lp'] = qs_data.get('lp')
+    else:
+        r['qs'] = qs_data; r['ar'] = None; r['lp'] = None   # old scalar format fallback
     return r
 WK = {'w1':'Jun 8-14','w2':'Jun 15-21','w3':'Jun 22-28','w4':'Jun 29-Jul 5','w5':'Jul 6-12','w6':'Jul 13-19','w7':'Jul 20-26'}
 WKS = [WK[f'w{i}'] for i in range(1,8)]   # 7 weeks — keep w1 (Jun 8-14), add w7 (Jul 20-26)
@@ -102,9 +106,14 @@ def main():
     def MED(m): return 'Call' if m=='call' else 'Web' if m=='web' else 'WhatsApp' if m in('whatsapp','wa_gmb','wa_org','wa_outbound') else 'Other'
     def FCAT(x): return x if x in('SH','STI','MH','Other') else 'Uncategorized'
     from collections import defaultdict
-    fun = defaultdict(lambda:[0,0,0,0,0])   # (city,ch,med,cat,wk) -> leads,booked,done,booked_offline,booked_online
+    fun = defaultdict(lambda:[0,0,0,0,0])   # (city,ch,med,cat,wk,camp) -> leads,booked,done,booked_offline,booked_online   (camp populated only for ONLINE WEB leads)
     NOCITY_ = '— no city · online / untracked'
     CITYSET = set(acq.keys())   # standalone Google-Ads cities — a lead whose LOCALITY is itself one of these (e.g. a Thane clinic mis-keyed under Mumbai in the leads cube) belongs to that city, not the cube's top-level key
+    # normalize a leads-cube campaign (cel.cmp = utm campaign) → the acquisition campaign name, so ONLINE WEB leads split per campaign
+    def _cn(s): return ''.join(ch for ch in str(s).lower() if ch.isalnum())
+    _CAMP_BY_NORM = {}
+    for _r in acq.get('Online', []): _CAMP_BY_NORM.setdefault(_cn(_r['camp']), _r['camp'])
+    def norm_camp(cmp): return _CAMP_BY_NORM.get(_cn(cmp), (cmp or '').strip())
     for city, node in cube.items():
         if city=='_meta': continue
         for cel in node.get('cells',[]):
@@ -114,11 +123,12 @@ def main():
             loc=(cel.get('loc') or '').strip()
             rcity = loc if (city!=NOCITY_ and loc in CITYSET and loc!=city) else city   # re-attribute to the locality's own campaign city (Thane clinic leads are keyed under Mumbai in the leads cube → move to Thane)
             med=MED(cel.get('md')); cat=FCAT(cel.get('cat'))
+            camp = norm_camp(cel.get('cmp')) if (city==NOCITY_ and ch=='Google' and med=='Web') else ''   # ONLINE WEB → per-campaign; everything else stays camp-agnostic
             booked=cel.get('bk')!='notbooked'; done=cel.get('dq')=='done'; seg=cel.get('bkseg'); w=cel.get('w',[])
             for wk,idx in WKIDX.items():
                 lv = w[idx] if idx < len(w) else 0
                 if lv==0: continue
-                k=(rcity,ch,med,cat,wk); fun[k][0]+=lv
+                k=(rcity,ch,med,cat,wk,camp); fun[k][0]+=lv
                 if booked:
                     fun[k][1]+=lv
                     if seg=='offline': fun[k][3]+=lv
@@ -128,7 +138,7 @@ def main():
     gsp = defaultdict(float); gld = defaultdict(float)
     for city, rows in acq.items():
         for r in rows: gsp[(city,r['wk'])] += r.get('spend') or 0
-    for (city,ch,med,cat,wk),v in fun.items():
+    for (city,ch,med,cat,wk,camp),v in fun.items():
         if ch=='Google': gld[(city,wk)] += v[0]
     # ---- assemble the cube ----
     out = {'_meta':{'weeks':WKS, 'cats':['SH','STD','MH'], 'mts':['Exact-Local','Exact','Phrase-Local'],
@@ -143,14 +153,15 @@ def main():
                   'bid':r.get('bid'),'sp':round(r.get('spend') or 0,1),'impr':round(r.get('impr') or 0),
                   'elig':round(r.get('elig') or 0),'locimpr':round(r.get('locimpr') or 0),
                   'click':round(r.get('click') or 0),'locclick':round(r.get('locclick') or 0),
-                  'rlis':round(r.get('rlis') or 0),'blis':round(r.get('blis') or 0),'qs':r.get('qs')}
+                  'rlis':round(r.get('rlis') or 0),'blis':round(r.get('blis') or 0),
+                  'qs':r.get('qs'),'ar':r.get('ar'),'lp':r.get('lp')}
                  for r in acq.get(city,[])]
         frows = []
-        for (c2,ch,med,cat,wk),v in fun.items():
+        for (c2,ch,med,cat,wk,camp),v in fun.items():
             if c2!=funsrc: continue
             L,B,D,BO,BN = v
             spend = round(gsp.get((city,wk),0)*(L/gld[(funsrc,wk)]),1) if ch=='Google' and gld.get((funsrc,wk)) else 0
-            frows.append({'ch':ch,'med':med,'cat':cat,'wk':wk,'lead':L,'bk':B,'dn':D,'bko':BO,'bkn':BN,'sp':spend,'rev':round(D*rpc_of(city,cat),1)})
+            frows.append({'ch':ch,'med':med,'cat':cat,'wk':wk,'camp':camp,'lead':L,'bk':B,'dn':D,'bko':BO,'bkn':BN,'sp':spend,'rev':round(D*rpc_of(city,cat),1)})
         if arows or frows:
             out[city] = {'acq':arows, 'fun':frows, 'rpc':rpc.get(city,{})}
     json.dump(out, open(os.path.join(ROOT,'data_campaign_compose.json'),'w'), separators=(',',':'))
