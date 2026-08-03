@@ -130,6 +130,20 @@
   .frow.opsnode .lbl{font-weight:650;color:var(--ink)}
   /* ===== Individual-metric (RAG) diagnostic view ===== */
   #viewmode{margin-top:12px}
+  /* 🔍 Diagnose why-board */
+  .diag{background:var(--inset);border:1px solid var(--line);border-radius:12px;padding:11px 15px;margin:14px 0 6px}
+  .diag h3{margin:0 0 3px;font-size:14px;font-weight:700;color:var(--ink)}
+  .diag .drow{display:grid;grid-template-columns:16px 1fr auto;gap:11px;padding:10px 2px;border-top:1px solid var(--line);align-items:start;cursor:pointer}
+  .diag .drow:hover{background:color-mix(in srgb,var(--accent) 5%,transparent)}
+  .diag .ddot{width:10px;height:10px;border-radius:50%;margin-top:5px}
+  .diag .dcity{font-weight:700;font-size:13.5px;color:var(--ink)}
+  .diag .dstage{display:inline-block;font-size:10px;font-weight:700;padding:1px 7px;border-radius:9px;margin-left:6px;background:var(--card,#fff);border:1px solid var(--line);color:var(--muted)}
+  .diag .dwhy{font-size:12.5px;margin-top:3px;color:var(--ink2)}
+  .diag .dfix{font-size:12px;margin-top:3px;color:var(--muted)}
+  .diag .dfix b{color:#2E7D5B;font-weight:700;margin-right:3px}
+  .diag .ddelta{font-size:11px;color:var(--faint);margin-top:4px;letter-spacing:.01em}
+  .diag .dnum{text-align:right;font-weight:700;font-size:15px;white-space:nowrap}
+  .diag .dnum small{display:block;font-size:10.5px;color:var(--muted);font-weight:400}
   .imhead{display:flex;flex-wrap:wrap;gap:20px;margin:16px 0 12px;padding:14px 16px;background:var(--sheet);border:1px solid var(--line);border-radius:var(--r)}
   .imblock{display:flex;flex-direction:column;gap:7px}
   .imcap{font-size:10px;font-weight:700;letter-spacing:.07em;color:var(--muted);text-transform:uppercase}
@@ -383,6 +397,9 @@
   <h1>Demand overview</h1>
   <div class="sub" id="subt"></div>
   <div class="segw" id="viewmode" title="Full funnel = the whole ①→⑥ funnel · Quick view = the offline funnel diagnostic — one row per clinic, filter to culprits by colour; follows the scope + Δ-baseline you pick above"><button data-m="funnel" class="on">🩺 Full funnel</button><button data-m="im">📊 Quick view</button></div>
+
+  <!-- 🔍 Diagnose why-board (auto: which cities dropped this week + the culprit funnel stage) -->
+  <div id="diagSection" class="diag" style="display:none"></div>
 
   <!-- ① attributable leads -->
   <div id="leadSection">
@@ -2129,7 +2146,51 @@ function renderWkEnd(){const sel=document.getElementById('wkendsel');if(!sel)ret
   const ba=baseAx();let html='';for(let i=0;i<=maxOff;i++)html+='<option value="'+i+'"'+(i===WKOFF?' selected':'')+'>'+blockLabel(ba,i)+'</option>';   // no "· latest" suffix — the greyed ▶ signals newest; keeps the toolbar compact
   sel.innerHTML=html;
   const ctl=document.getElementById('wkendctl');ctl.querySelector('[data-w="newer"]').disabled=(WKOFF<=0);ctl.querySelector('[data-w="older"]').disabled=(WKOFF>=maxOff);}
-function redrawAll(){document.getElementById('nwkLbl').textContent=NWK+(CLUB>1?' × '+CLUB+'w':' wk');renderWkEnd();draw(PL);draw(PB);renderLB();renderOps();imRender();}
+// 🔍 Diagnose why-board — reads the same demandContext() that feeds the copilot: per-city latest settled
+// week vs prior-4wk, walks the funnel top-down and names the FIRST stage that broke (leads → convert →
+// availability → book-done → value), each with a one-line fix. Auto-refreshes with redrawAll.
+function renderDiagnose(){
+  var el=document.getElementById('diagSection'); if(!el||!window.demandContext)return;
+  var ctx; try{ctx=window.demandContext();}catch(e){el.style.display='none';return;}
+  if(!ctx||ctx.error||!ctx.by_city_latest_vs_prior4avg){el.style.display='none';return;}
+  var cities=ctx.by_city_latest_vs_prior4avg, rows=[];
+  var P=function(o){return o&&o.pct_vs_avg!=null?o.pct_vs_avg:null;};
+  var pctTxt=function(o){var v=P(o);return v==null?'—':((v>0?'+':'')+v+'%');};
+  for(var cy in cities){var c=cities[cy],b=c.bookings,l=c.leads,d=c.done,r=c.revenue;
+    if(!b||b.latest==null)continue;
+    var vol=b.prior4avg||0; if(vol<3)continue;                 // materiality floor — ignore tiny cities' noise
+    var bp=P(b),lp=P(l),dp=P(d),rp=P(r);
+    var bookDrop=bp!=null&&bp<=-15, doneDrop=dp!=null&&dp<=-15, revDrop=rp!=null&&rp<=-15;
+    if(!bookDrop&&!doneDrop&&!revDrop)continue;
+    var stage,why,fix;
+    if(bookDrop&&lp!=null&&lp<=-15){stage='① Leads';why='Leads ↓'+Math.abs(lp)+'% → bookings followed. Demand problem, not conversion.';fix='Open ① Leads and drill by <b>source</b> (GMB / Google / Meta / organic) to see which channel fell.';}
+    else if(bookDrop&&(lp==null||lp>-10)){stage='①→② Convert';why='Leads held'+(lp!=null?' ('+(lp>0?'+':'')+lp+'%)':'')+' but bookings ↓'+Math.abs(bp)+'% — a lead→booking conversion drop.';fix='Check <b>calling / answer-rate</b> and <b>③ Availability</b> (did roster / slots shrink?).';}
+    else if(doneDrop&&(bp==null||bp>-10)){stage='④ Book→Done';why='Bookings held but done ↓'+Math.abs(dp)+'% — more no-shows / fewer completed (B2D '+(c.book_to_done_pct!=null?c.book_to_done_pct+'%':'—')+').';fix='Check <b>④ show-rate</b> + reminder cadence; find the clinic / doctor with the B2D dip.';}
+    else if(revDrop&&(dp==null||dp>-10)){stage='⑥ Value';why='Done held but revenue ↓'+Math.abs(rp)+'% — fewer plans bought or lower RPC.';fix='Check <b>⑥ D2P + RPC</b> by category — which product line slipped.';}
+    else if(bookDrop){stage='② Bookings';why='Bookings ↓'+Math.abs(bp)+'%'+(lp!=null?' (leads '+(lp>0?'+':'')+lp+'%)':'')+'.';fix='Drill <b>② City → Clinic → Doctor</b> to localise, then ③ Availability.';}
+    else{stage='⑤ Done';why='Done ↓'+Math.abs(dp)+'%.';fix='Drill <b>⑤ Done</b> by clinic / category.';}
+    var dir=bookDrop?'b':(doneDrop?'d':'r'),node=({b:b,d:d,r:r})[dir],lab=({b:'bookings',d:'done',r:'revenue'})[dir],mag=Math.abs(P(node));
+    rows.push({cy:cy,stage:stage,why:why,fix:fix,sev:mag>=30?3:2,priority:vol*mag,mag:mag,lab:lab,now:node.latest,was:node.prior4avg,l:l,b:b,d:d,r:r});
+  }
+  rows.sort(function(a,b){return b.priority-a.priority;});
+  var money=function(v){v=Math.round(v);return Math.abs(v)>=1e5?(v/1e5).toFixed(1)+'L':v.toLocaleString('en-IN');};
+  if(!rows.length){el.style.display='block';el.innerHTML='<h3>🔍 Diagnose <span style="font-weight:400;color:var(--muted);font-size:12px">· latest settled week vs prior 4-wk avg</span></h3><div style="padding:11px 2px;color:#2E7D5B;font-size:13px">✅ No material city drops this week — bookings, done and revenue are holding vs the 4-week baseline.</div>';return;}
+  var dcol=function(s){return s>=3?'#B8503C':'#C9862A';};
+  var h='<h3>🔍 Diagnose <span style="font-weight:400;color:var(--muted);font-size:12px">· '+rows.length+' cit'+(rows.length>1?'ies':'y')+' dropped · latest settled week vs prior 4-wk avg · <b>where</b> &amp; <b>why</b></span></h3>';
+  rows.forEach(function(x){
+    var val=x.lab==='revenue'?('₹'+money(x.was)+'→₹'+money(x.now)):(Math.round(x.was)+'→'+Math.round(x.now));
+    h+='<div class="drow">'
+      +'<div class="ddot" style="background:'+dcol(x.sev)+'"></div>'
+      +'<div><div class="dcity">'+x.cy+' <span class="dstage">'+x.stage+'</span></div>'
+      +'<div class="dwhy">'+x.why+'</div>'
+      +'<div class="dfix"><b>FIX</b>'+x.fix+'</div>'
+      +'<div class="ddelta">Leads '+pctTxt(x.l)+' · Bookings '+pctTxt(x.b)+' · Done '+pctTxt(x.d)+' · Revenue '+pctTxt(x.r)+'</div></div>'
+      +'<div class="dnum" style="color:'+dcol(x.sev)+'">▼ '+x.mag+'%<small>'+x.lab+' '+val+'</small></div>'
+      +'</div>';
+  });
+  el.style.display='block'; el.innerHTML=h;
+}
+function redrawAll(){document.getElementById('nwkLbl').textContent=NWK+(CLUB>1?' × '+CLUB+'w':' wk');renderWkEnd();draw(PL);draw(PB);renderLB();renderOps();imRender();renderDiagnose();}
 
 let SCOPE='national';
 const DATASETS={clinic:{leads:null,bk:null},city:{leads:null,bk:null},national:{leads:null,bk:null}};
@@ -2391,6 +2452,7 @@ Promise.all([
     suggestions:['Why did bookings drop last week?','Which city fell the most on leads?','How is done trending nationally?','Where is availability lowest?'],
     systemPrompt:"You are the analytics copilot inside Allo Health's Demand dashboard — the marketing→bookings→done funnel across cities/clinics. Use ONLY the DATA JSON. weeks are ascending (oldest→latest; the LAST array element is the most recent week). national_last12 has weekly arrays: leads (marketing leads), bookings (SC = new-patient bookings), done (completed consults), revenue (₹). by_city_latest_vs_prior4avg gives each city's latest week vs its prior-4-week average, %change, and book→done %. national_availability_latest = active clinic-days + bookable hours. Be concise and cite specific cities, weeks and numbers. GMB impressions/reviews/competition live on a separate GMB tab — say so if asked. If a detail isn't in DATA (per-doctor, per-source, per-category), say what's missing.",
     contextFn:window.demandContext});
+  renderDiagnose();   // demandContext is now defined — paint the why-board (earlier setScope ran before it existed)
 }).catch(e=>{document.getElementById('flowL').innerHTML='<div class="empty">failed to load data — '+e+'</div>';});
 </script>
 </body>
