@@ -121,19 +121,23 @@ for c in CLINICS:
     nums0 = "','".join(c["nums"])
     a = q(f"""
     WITH lead1 AS (SELECT RIGHT(phone_no,10) ph, MIN(created_at) lead_dt FROM allo_persons.lead WHERE deleted_at IS NULL GROUP BY 1),
+    cpat AS (SELECT DISTINCT RIGHT(phone_no,10) ph FROM allo_persons.lead WHERE location='{c['code']}' AND deleted_at IS NULL),
     rec AS ({REC_LISTAGG(nums0, REC_S)}),
     metaB AS ({META_BYPHONE(nums0, REC_S)})
     SELECT DATE(a.start_time + {IST}) d,
       p.phone_no phone, p.id pid, COALESCE(pr.name,'Unassigned') doc,
       DATEDIFF(day, DATE(l.lead_dt + {IST}), DATE(a.created_at + {IST})) age,
+      TO_CHAR(DATE(a.created_at + {IST}),'YYYY-MM-DD') bkmade,
       {SRC('ld')} src, {MED('ld')} med, {ST_SQL} st,
       REPLACE(REPLACE(REPLACE(COALESCE(a.reason,''),CHR(9),' '),CHR(10),' '),CHR(13),' ') reason,
       COALESCE(cbp.cat, cba.cat, '') cat, COALESCE(cbp.summ, cba.summ, '') summ,
+      CASE WHEN a.mode='offline' THEN 'offline' ELSE 'online' END booking_mode,
       COALESCE(rp.recs,'') recs_p, COALESCE(ra.recs,'') recs_a
     FROM allo_consultations.appointments a
     JOIN allo_consultations.types t ON t.id=a.type_id AND t.name='Screening Call'
-    JOIN allo_health.locations loc ON loc.id=a.location_id AND loc.deleted_at IS NULL AND loc.locality='{c['loc']}' AND loc.city='{c['city']}'
     JOIN allo_persons.patient p ON p.id=a.patient_id
+    LEFT JOIN allo_health.locations loc ON loc.id=a.location_id AND loc.deleted_at IS NULL
+    LEFT JOIN cpat cp ON cp.ph=RIGHT(p.phone_no,10)
     LEFT JOIN allo_persons.providers pr ON pr.id=a.provider_id
     LEFT JOIN lead1 l ON l.ph=RIGHT(p.phone_no,10)
     LEFT JOIN allo_persons.lead ld ON RIGHT(ld.phone_no,10)=l.ph AND ld.created_at=l.lead_dt AND ld.deleted_at IS NULL
@@ -142,19 +146,21 @@ for c in CLINICS:
     LEFT JOIN metaB cbp ON cbp.ph=RIGHT(p.phone_no,10)
     LEFT JOIN metaB cba ON cba.ph=RIGHT(p.alternate_phone_no,10)
     WHERE a.deleted_at IS NULL AND (a.start_time + {IST})>='{S}' AND (a.start_time + {IST})<'{E}'
+      AND ( (loc.locality='{c['loc']}' AND loc.city='{c['city']}')
+            OR (a.mode<>'offline' AND cp.ph IS NOT NULL) )
     """)
     days = {d:{"bookings":[], "leads":[]} for d in DAYS}
     docs=set()
     for r in a:
         d=r[0]
         if d not in days: continue
-        age = None if (len(r)<5 or r[4] in ("","\\N",None)) else int(float(r[4]))
+        age = None if (r[4] in NUL) else int(float(r[4]))
         doc=r[3] or "Unassigned"; docs.add(doc)
-        days[d]["bookings"].append({"p":r[1], "pid":(r[2] or ""), "doc":doc, "age":age,
-                                    "src":(r[5] or "Direct/unknown"), "med":(r[6] or "Web"), "st":r[7],
-                                    "rzntxt":(g(r,8) or ""), "rzn":rzn_bucket(g(r,8)),
-                                    "cat":(g(r,9) or ""), "summ":(g(r,10) or ""),
-                                    "recs":parse_recs(g(r,11), g(r,12))})
+        days[d]["bookings"].append({"p":r[1], "pid":(r[2] or ""), "doc":doc, "age":age, "bkmade":(g(r,5) or ""),
+                                    "src":(g(r,6) or "Direct/unknown"), "med":(g(r,7) or "Web"), "st":r[8],
+                                    "rzntxt":(g(r,9) or ""), "rzn":rzn_bucket(g(r,9)),
+                                    "cat":(g(r,10) or ""), "summ":(g(r,11) or ""), "mode":(g(r,12) or "offline"),
+                                    "recs":parse_recs(g(r,13), g(r,14))})
     # ---- B) per-lead rows (all sources by clinic code) + call outcome/recording + booked flag ----
     nums = "','".join(c["nums"])
     b = q(f"""

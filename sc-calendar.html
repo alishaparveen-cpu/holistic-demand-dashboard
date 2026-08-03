@@ -67,6 +67,12 @@ select{font:13px inherit;color:var(--ink);border:1px solid var(--line);border-ra
 .catMH{color:#7C5CBF;border-color:#d9cff0}.catSH{color:#3E5FA8;border-color:#cdd8ef}.catSTI{color:#B8503C;border-color:#f0d4cd}.catED{color:#8a6a2a;border-color:#ecdfc0}
 .ntico{cursor:help;font-size:12px;opacity:.75}.ntico:hover{opacity:1}
 .rzn{font-size:10px;color:var(--muted);margin-top:1px;cursor:help}.rzn.rznD{color:var(--noshow);font-weight:700}
+.frow th{padding:3px 6px 6px;border-bottom:1px solid var(--line);vertical-align:top}
+.fsel,.fin{font:11px inherit;color:var(--ink2);padding:3px 5px;border:1px solid var(--line);border-radius:5px;background:#fff;width:100%;max-width:150px}
+.ftbar{display:flex;align-items:center;gap:10px;margin:4px 0 8px;font-size:12px;color:var(--muted)}
+.ftclear{font:11px inherit;color:var(--accent);background:none;border:1px solid var(--line);border-radius:6px;padding:2px 9px;cursor:pointer}
+.ftclear:hover{background:var(--bg)}
+.btbl thead th{position:sticky;top:0;background:var(--card);z-index:1}
 </style>
 </head>
 <body>
@@ -76,22 +82,21 @@ select{font:13px inherit;color:var(--ink);border:1px solid var(--line);border-ra
 
   <div class="controls">
     <span><label>Clinic</label><select id="clinS"></select></span>
-    <span><label>Doctor</label><select id="docS"></select></span>
     <span style="margin-left:auto" class="sub" id="wkflag"></span>
   </div>
 
-  <div class="hd">① Screening calls — <b>done</b>, then booked · click a day, then an age band</div>
+  <div class="hd">① Screening calls — click a day to filter, or filter any column below</div>
   <div class="cal" id="cal"></div>
   <div class="legend"><span><i style="background:var(--done)"></i>Completed</span><span><i style="background:var(--sched)"></i>Scheduled</span><span><i style="background:var(--noshow)"></i>No-show (missed)</span><span><i style="background:var(--rel)"></i>Rescheduled</span><span><i style="background:#9a5a3a"></i>Cancelled</span></div>
 
   <div class="detail" id="detail"></div>
 
-  <div class="hd">② Every lead that came that day — source · connected · wanted to book · booked · recording</div>
+  <div class="hd">② Every lead — filter any column</div>
   <div class="cal" id="leadCal"></div>
   <div class="detail" id="leadDetail"></div>
 </div>
 <script>
-let D=null, CK=null, DOC='all', SEL=null, SELAGE=null, SELLD=null;
+let D=null, CK=null, FB={}, FL={};   // FB/FL = per-column filter state for bookings / leads tables
 const $=id=>document.getElementById(id);
 const DOW=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
 const AGES=['0','1','2','3','4','5','6','7','8+','no_lead'];
@@ -127,104 +132,110 @@ function recsCell(recs){
   if(!recs||!recs.length) return '<span class="na">—</span>';
   return recs.map(r=>{const dt=r.dt?dlabel(r.dt):null;return `<a class="rec" href="${r.u}" target="_blank" rel="noopener" title="${r.dt||''}">▶ ${mmss(r.d)}${dt?` <span style="color:var(--faint);font-weight:400">${dt.dow} ${dt.dm}</span>`:''}</a>`;}).join('<br>');
 }
-function phFmt(p){return (p||'').replace(/^\+?91/,'');}
+function catVal(cat){if(!cat)return '—';const l=CATLAB[cat];return l===undefined?cat:(l||'—');}
+function pidCell(x){return x.pid?`<span class="pid" data-full="${x.pid}" onclick="copyPid(this)">${x.pid}</span>`:'<span class="na">—</span>';}
+const dayDisp=iso=>{const dt=dlabel(iso);return dt.dow+' '+dt.dm;};
+
+// booking table columns
+const BCOLS=[
+ {k:'day',label:'Day',filt:'sel',val:b=>b._day,selDisp:dayDisp,cell:b=>dayDisp(b._day)},
+ {k:'pid',label:'Patient ID',filt:'txt',val:b=>b.pid,cell:pidCell},
+ {k:'p',label:'Phone',filt:'txt',val:b=>b.p,cell:b=>`<span class="ph">${b.p||'—'}</span>`},
+ {k:'doc',label:'Doctor',filt:'sel',val:b=>b.doc,cell:b=>b.doc.replace(/^Dr\.?\s*/,'')},
+ {k:'cat',label:'Category',filt:'sel',val:b=>catVal(b.cat),cell:b=>catCell(b.cat)},
+ {k:'src',label:'Source',filt:'sel',val:b=>b.src,cell:b=>`<span class="chip ${SRCCLS(b.src)}">${b.src}</span>`},
+ {k:'med',label:'Medium',filt:'sel',val:b=>b.med,cell:b=>b.med},
+ {k:'age',label:'Lead age',filt:'sel',val:b=>ageKey(b),selDisp:ALAB,cell:b=>b.age==null?'<span class="na">no lead</span>':(b.age===0?'same day':b.age+'d')},
+ {k:'bkmade',label:'Booked on',filt:null,cell:b=>b.bkmade?dayDisp(b.bkmade):'—'},
+ {k:'st',label:'Status',filt:'sel',val:b=>b.st,selDisp:STLAB,cell:b=>`<span class="dot" style="background:${STCOL[b.st]}"></span>${STLAB[b.st]}`},
+ {k:'rzn',label:'Move reason',filt:'sel',val:b=>b.rzn||'—',selDisp:{doctor:'Doctor-side',patient:'Patient-side',other:'Other','—':'—'},cell:b=>b.rzntxt?`<span class="rzn ${b.rzn==='doctor'?'rznD':''}" title="${esc(b.rzntxt)}">${b.rzn==='doctor'?'⚠ doctor':b.rzn==='patient'?'patient':'other'}</span>`:'<span class="na">—</span>'},
+ {k:'mode',label:'Mode',filt:'sel',val:b=>b.mode,cell:b=>b.mode},
+ {k:'rec',label:'Recording',filt:null,cell:b=>recsCell(b.recs)+noteIcon(b.summ)},
+];
+// lead table columns
+const LCOLS=[
+ {k:'day',label:'Day',filt:'sel',val:l=>l._day,selDisp:dayDisp,cell:l=>dayDisp(l._day)},
+ {k:'pid',label:'Patient ID',filt:'txt',val:l=>l.pid,cell:pidCell},
+ {k:'p',label:'Phone',filt:'txt',val:l=>l.p,cell:l=>`<span class="ph">${l.p||'—'}</span>`},
+ {k:'cat',label:'Category',filt:'sel',val:l=>catVal(l.cat),cell:l=>catCell(l.cat)},
+ {k:'src',label:'Source',filt:'sel',val:l=>l.src,cell:l=>`<span class="chip ${SRCCLS(l.src)}">${l.src}</span>`},
+ {k:'med',label:'Medium',filt:'sel',val:l=>l.med,cell:l=>l.med},
+ {k:'conn',label:'Connected',filt:'sel',val:l=>l.med==='Call'?(l.conn?'Yes':'No'):'—',cell:l=>l.med==='Call'?(l.conn?'<span class="yes">✓ yes</span>':'<span class="no">✗ no</span>'):'<span class="na">—</span>'},
+ {k:'intent',label:'Looking for',filt:'sel',val:l=>l.intent?(CARELAB[l.intent]||l.intent):'—',cell:l=>l.intent?(CARELAB[l.intent]||l.intent):'<span class="na">—</span>'},
+ {k:'strength',label:'Intent',filt:'sel',val:l=>l.strength?(STRLAB[l.strength]||l.strength):'—',cell:l=>l.strength?`<span class="${STRCLS[l.strength]||'na'}">${STRLAB[l.strength]||l.strength}</span>`:'<span class="na">—</span>'},
+ {k:'booked',label:'Booked for',filt:'sel',val:l=>!l.booked?'not booked':(l.blag===0?'same day':l.blag>0?'+'+l.blag+'d':l.blag<0?'earlier':'booked'),cell:bookedCell},
+ {k:'rec',label:'Recording',filt:null,cell:l=>recsCell(l.recs)+noteIcon(l.summ)},
+];
+
+// generic filterable table: builds header + per-column filter row once; filter changes only re-render the body (keeps input focus)
+function filterTable(el, rows, cols, fstate){
+  const opts={}; cols.forEach(c=>{if(c.filt==='sel')opts[c.k]=[...new Set(rows.map(r=>c.val(r)))].filter(x=>x!==''&&x!=null).sort();});
+  const dispOpt=(c,o)=>c.selDisp?(typeof c.selDisp==='function'?c.selDisp(o):(c.selDisp[o]||o)):o;
+  const head=cols.map(c=>`<th>${c.label}</th>`).join('');
+  const frow=cols.map(c=>{
+    if(c.filt==='txt') return `<th><input data-fk="${c.k}" class="fin" placeholder="search" value="${esc(fstate[c.k]||'')}"></th>`;
+    if(c.filt==='sel') return `<th><select data-fk="${c.k}" class="fsel"><option value="">All</option>${opts[c.k].map(o=>`<option value="${esc(o)}"${fstate[c.k]===o?' selected':''}>${esc(dispOpt(c,o))}</option>`).join('')}</select></th>`;
+    return '<th></th>';
+  }).join('');
+  el.innerHTML=`<div class="ftbar"><span class="ftcount"></span><button class="ftclear">clear filters</button></div><div class="bkwrap"><table class="btbl"><thead><tr>${head}</tr><tr class="frow">${frow}</tr></thead><tbody></tbody></table></div>`;
+  const tb=el.querySelector('tbody'), cnt=el.querySelector('.ftcount');
+  function apply(){
+    const fr=rows.filter(r=>cols.every(c=>{if(!c.filt)return true;const fv=fstate[c.k];if(!fv)return true;const rv=c.val(r);
+      return c.filt==='txt'?String(rv||'').toLowerCase().includes(fv.toLowerCase()):rv===fv;}));
+    tb.innerHTML=fr.length?fr.map(r=>`<tr>${cols.map(c=>`<td>${c.cell(r)}</td>`).join('')}</tr>`).join(''):`<tr><td colspan="${cols.length}" style="color:var(--faint);padding:14px">No rows match these filters.</td></tr>`;
+    cnt.textContent=`${fr.length} of ${rows.length} shown`;
+  }
+  el.querySelectorAll('.fsel').forEach(s=>s.addEventListener('change',()=>{fstate[s.dataset.fk]=s.value;apply();}));
+  el.querySelectorAll('.fin').forEach(i=>i.addEventListener('input',()=>{fstate[i.dataset.fk]=i.value;apply();}));
+  el.querySelector('.ftclear').addEventListener('click',()=>{cols.forEach(c=>delete fstate[c.k]);el.querySelectorAll('.fsel').forEach(s=>s.value='');el.querySelectorAll('.fin').forEach(i=>i.value='');apply();});
+  apply();
+}
 
 function render(){
   const c=D.clinics[CK], days=D._meta.days;
   $('wkflag').textContent='Week '+D._meta.week;
 
-  // ① calendar — DONE-first
-  $('cal').innerHTML=days.map(iso=>{const bks=bookingsOf(iso),L=dlabel(iso),tot=bks.length;
-    const st=countBy(bks,b=>b.st), done=st.done||0;
-    const seg=k=>tot?Math.round(100*(st[k]||0)/tot):0;
-    const sameDay=bks.filter(b=>b.age===0).length;
-    return `<div class="day${SEL===iso?' sel':''}" data-d="${iso}">
+  // ① booking day-cards (overview; click filters the table by day)
+  $('cal').innerHTML=days.map(iso=>{const bks=c.days[iso].bookings||[],L=dlabel(iso),tot=bks.length;
+    const st=countBy(bks,b=>b.st), done=st.done||0, seg=k=>tot?Math.round(100*(st[k]||0)/tot):0;
+    const onl=bks.filter(b=>b.mode==='online').length, sameDay=bks.filter(b=>b.age===0).length;
+    return `<div class="day${FB.day===iso?' sel':''}" data-d="${iso}">
       <div class="dn">${L.dow} ${L.dm}</div>
       <div class="dv" style="color:var(--done)">${tot}</div><div class="dl">booked</div>
       <div><span class="bchip">${done} <span>completed</span></span></div>
       <div class="sbar">${STORDER.map(k=>`<i style="width:${seg(k)}%;background:${STCOL[k]}"></i>`).join('')}</div>
-      <div class="leadmini"><b>${sameDay}</b> same-day · <b>${tot-sameDay}</b> older</div>
+      <div class="leadmini"><b>${sameDay}</b> same-day · <b>${tot-sameDay}</b> older${onl?` · <b>${onl}</b> online`:''}</div>
     </div>`;}).join('');
-  $('cal').querySelectorAll('.day').forEach(el=>el.onclick=()=>{SEL=el.dataset.d;SELAGE=null;render();});
+  $('cal').querySelectorAll('.day').forEach(el=>el.onclick=()=>{FB.day=(FB.day===el.dataset.d?'':el.dataset.d);render();});
 
-  // ① detail — exact-age bars + booking table
-  const sel=SEL||days[0]; SEL=sel; const L=dlabel(sel),bks=bookingsOf(sel),tot=bks.length;
-  const byAge=countBy(bks,ageKey), st=countBy(bks,b=>b.st);
-  const bars=AGES.map(k=>{const v=byAge[k]||0,pct=tot?Math.round(100*v/tot):0;
-    return `<div class="brow${SELAGE===k?' on':''}" data-age="${k}"><div class="bl">${ALAB[k]}</div><div class="btrack"><div class="bfill" style="width:${Math.max(v?3:0,pct)}%;background:${ACOL[k]}"></div></div><div class="bn">${v}<span style="color:var(--faint);font-weight:400;font-size:11px"> ${pct}%</span></div></div>`;}).join('');
-  let bkHTML;
-  if(SELAGE){
-    const rows=bks.filter(b=>ageKey(b)===SELAGE);
-    bkHTML=`<div class="bkwrap"><h4>${ALAB[SELAGE]} — ${rows.length} booking${rows.length!==1?'s':''} <span style="color:var(--faint);font-weight:400">(click a patient ID to copy)</span></h4>
-      <table class="btbl"><thead><tr><th>Patient ID</th><th>Phone</th><th>Doctor</th><th>Category</th><th>Source</th><th>Medium</th><th>Lead age</th><th>Status</th><th>Recording</th></tr></thead><tbody>
-      ${rows.map(b=>`<tr>
-          <td>${b.pid?`<span class="pid" data-full="${b.pid}" onclick="copyPid(this)">${b.pid}</span>`:'<span class="na">—</span>'}</td>
-          <td class="ph">${b.p||'—'}</td>
-          <td>${b.doc.replace(/^Dr\.?\s*/,'')}</td>
-          <td>${catCell(b.cat)}</td>
-          <td><span class="chip ${SRCCLS(b.src)}">${b.src}</span></td>
-          <td>${b.med}</td>
-          <td>${b.age==null?'<span class="na">no lead</span>':(b.age===0?'same day':b.age+'d')}</td>
-          <td><span class="dot" style="background:${STCOL[b.st]}"></span>${STLAB[b.st]}${b.rzntxt?`<div class="rzn ${b.rzn==='doctor'?'rznD':''}" title="${esc(b.rzntxt)}">${b.rzn==='doctor'?'⚠ doctor-side':b.rzn==='patient'?'patient-side':'other'}</div>`:''}</td>
-          <td>${recsCell(b.recs)}${noteIcon(b.summ)}</td>
-        </tr>`).join('')}
-      </tbody></table></div>`;
-  } else bkHTML=`<div class="bkwrap" style="color:var(--faint);font-size:12.5px">Click an age band above to see the booking-level breakdown (patient ID · phone · source · medium · status).</div>`;
-  const stLine=STORDER.filter(k=>st[k]).map(k=>`<b style="color:${STCOL[k]}">${st[k]} ${STLAB[k].toLowerCase()}</b>`).join(' · ')||'—';
-  const rznBk=bks.filter(b=>b.st==='resched'||b.st==='cancelled');
-  const rc={doctor:0,patient:0,other:0}; rznBk.forEach(b=>{if(b.rzn&&rc[b.rzn]!=null)rc[b.rzn]++;});
-  const rznLine=rznBk.length?`<div class="ds" style="margin-top:-6px">↻ Of the ${rznBk.length} moved/cancelled: <b style="color:var(--noshow)">${rc.doctor} doctor-side (shrinkage)</b> · <b>${rc.patient} patient-side</b>${rc.other?` · ${rc.other} other`:''}. <span style="color:var(--faint)">Hover a row's status for the exact reason.</span></div>`:'';
-  $('detail').innerHTML=`<h3>${L.dow} ${L.dm} — ${st.done||0} completed of ${tot} booked</h3>
-    <div class="ds">${stLine}. How old was each lead when it booked:</div>${rznLine}
-    <div class="bars">${bars}</div>${bkHTML}`;
-  $('detail').querySelectorAll('.brow').forEach(el=>el.onclick=()=>{SELAGE=(SELAGE===el.dataset.age?null:el.dataset.age);render();});
+  // ① filterable bookings table (all days)
+  const allBk=days.flatMap(iso=>(c.days[iso].bookings||[]).map(b=>Object.assign({_day:iso},b)));
+  filterTable($('detail'), allBk, BCOLS, FB);
 
-  // ② leads calendar
+  // ② leads day-cards (overview; click filters the leads table by day)
   $('leadCal').innerHTML=days.map(iso=>{const lds=c.days[iso].leads||[],L=dlabel(iso),tl=lds.length;
     const conn=lds.filter(l=>l.conn).length, booked=lds.filter(l=>l.booked).length;
     const bysrc=countBy(lds,l=>l.src);
     const srcLine=Object.keys(bysrc).sort((a,b)=>bysrc[b]-bysrc[a]).map(s=>`<span class="${SRCCLS(s)}">${s} ${bysrc[s]}</span>`).join(' · ')||'—';
-    return `<div class="day${SELLD===iso?' sel':''}" data-l="${iso}">
+    return `<div class="day${FL.day===iso?' sel':''}" data-l="${iso}">
       <div class="dn">${L.dow} ${L.dm}</div><div class="dv">${tl}</div><div class="dl">leads</div>
       <div class="leadmini"><b>${conn}</b> connected · <b style="color:var(--done)">${booked}</b> booked<br><span style="font-size:10px">${srcLine}</span></div>
     </div>`;}).join('');
-  $('leadCal').querySelectorAll('.day').forEach(el=>el.onclick=()=>{SELLD=(SELLD===el.dataset.l?null:el.dataset.l);render();});
+  $('leadCal').querySelectorAll('.day').forEach(el=>el.onclick=()=>{FL.day=(FL.day===el.dataset.l?'':el.dataset.l);render();});
 
-  // ② leads detail — per-lead table
-  if(SELLD){const lds=c.days[SELLD].leads||[],L=dlabel(SELLD);
-    lds.sort((a,b)=>(b.rec?1:0)-(a.rec?1:0));
-    $('leadDetail').style.display='';
-    $('leadDetail').innerHTML=`<h3>${L.dow} ${L.dm} — ${lds.length} leads</h3>
-      <div class="ds">Every lead attributed to ${c.disp} that day. <b>Connected</b>, <b>looking for</b> (what care they asked for) &amp; <b>intent</b> (how genuine the caller is) come from the AI audit of the clinic's own call line — so they show only for <b>call</b> leads. <b>Booked for</b> = whether they got an SC and how soon (same day vs a later day).</div>
-      <div class="bkwrap"><table class="btbl"><thead><tr><th>Patient ID</th><th>Phone</th><th>Category</th><th>Source</th><th>Medium</th><th>Connected</th><th>Looking for</th><th>Intent</th><th>Booked for</th><th>Recording</th></tr></thead><tbody>
-      ${lds.map(l=>{const call=l.med==='Call';
-        return `<tr>
-          <td>${l.pid?`<span class="pid" data-full="${l.pid}" onclick="copyPid(this)">${l.pid}</span>`:'<span class="na">—</span>'}</td>
-          <td class="ph">${l.p||'—'}</td>
-          <td>${catCell(l.cat)}</td>
-          <td><span class="chip ${SRCCLS(l.src)}">${l.src}</span></td>
-          <td>${l.med}</td>
-          <td>${call?(l.conn?'<span class="yes">✓ yes</span>':'<span class="no">✗ no</span>'):'<span class="na">—</span>'}</td>
-          <td>${l.intent?(CARELAB[l.intent]||l.intent):'<span class="na">—</span>'}</td>
-          <td>${l.strength?`<span class="${STRCLS[l.strength]||'na'}">${STRLAB[l.strength]||l.strength}</span>`:'<span class="na">—</span>'}</td>
-          <td>${bookedCell(l)}</td>
-          <td>${recsCell(l.recs)}${noteIcon(l.summ)}</td>
-        </tr>`;}).join('')}
-      </tbody></table></div>`;
-  } else { $('leadDetail').style.display='none'; }
+  // ② filterable leads table (all days)
+  const allLd=days.flatMap(iso=>(c.days[iso].leads||[]).map(l=>Object.assign({_day:iso},l)));
+  $('leadDetail').style.display='';
+  filterTable($('leadDetail'), allLd, LCOLS, FL);
 }
-
-function loadDocs(){const c=D.clinics[CK];$('docS').innerHTML=`<option value="all">All doctors</option>`+(c.doctors||[]).map(x=>`<option value="${x}">${x}</option>`).join('');$('docS').value=DOC='all';}
 
 fetch('data_sc_calendar.json?v='+Date.now(),{cache:'no-store'}).then(r=>r.json()).then(d=>{
   D=d; const cs=Object.keys(d.clinics);
   $('clinS').innerHTML=cs.map(k=>`<option value="${k}">${d.clinics[k].disp}</option>`).join('');
-  CK=cs.includes('whitefield')?'whitefield':cs[0]; $('clinS').value=CK; SEL=d._meta.days[0]; SELAGE=null; SELLD=null;
-  loadDocs();
-  $('clinS').onchange=e=>{CK=e.target.value;SEL=d._meta.days[0];SELAGE=null;SELLD=null;loadDocs();render();};
-  $('docS').onchange=e=>{DOC=e.target.value;SELAGE=null;render();};
+  CK=cs.includes('whitefield')?'whitefield':cs[0]; $('clinS').value=CK;
+  $('clinS').onchange=e=>{CK=e.target.value;FB={};FL={};render();};
   render();
-}).catch(e=>{$('verdict').innerHTML='Failed to load data_sc_calendar.json — run scripts/build_sc_calendar.py';});
+}).catch(e=>{$('detail').innerHTML='Failed to load data_sc_calendar.json — run scripts/build_sc_calendar.py';});
 </script>
 </body>
 </html>
