@@ -101,7 +101,7 @@ select{font:13px inherit;color:var(--ink);border:1px solid var(--line);border-ra
   <div class="cal" id="leadCal"></div>
   <div class="detail" id="leadDetail"></div>
 
-  <div class="hd">③ Doctor availability — SC roster: rostered vs what actually stood (shrinkage &amp; leave)</div>
+  <div class="hd">③ Could we give a same-day slot? — SC roster capacity per day</div>
   <div class="detail" id="avail"></div>
 </div>
 <script>
@@ -151,6 +151,8 @@ function recsCell(recs){
 function catVal(cat){if(!cat)return '—';const l=CATLAB[cat];return l===undefined?cat:(l||'—');}
 function pidCell(x){return x.pid?`<span class="pid" data-full="${x.pid}" onclick="copyPid(this)">${x.pid}</span>`:'<span class="na">—</span>';}
 const dayDisp=iso=>{const dt=dlabel(iso);return dt.dow+' '+dt.dm;};
+function isoMinus(iso,n){const dt=new Date(iso+'T00:00:00');dt.setDate(dt.getDate()-n);return dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0')+'-'+String(dt.getDate()).padStart(2,'0');}
+function leadCameCell(b){if(b.age==null||!b.bkmade)return '<span class="na">no lead</span>';return dayDisp(isoMinus(b.bkmade,b.age));}
 
 // booking table columns
 const BCOLS=[
@@ -161,7 +163,8 @@ const BCOLS=[
  {k:'cat',label:'Category',filt:'sel',val:b=>catVal(b.cat),cell:b=>catCell(b.cat)},
  {k:'src',label:'Source',filt:'sel',val:b=>b.src,cell:b=>`<span class="chip ${SRCCLS(b.src)}">${b.src}</span>`},
  {k:'med',label:'Medium',filt:'sel',val:b=>b.med,cell:b=>b.med},
- {k:'age',label:'Lead age',filt:'sel',val:b=>ageKey(b),selDisp:ALAB,cell:b=>b.age==null?'<span class="na">no lead</span>':(b.age===0?'same day':b.age+'d')},
+ {k:'leadcame',label:'Lead came',filt:'sel',val:b=>(b.age==null||!b.bkmade)?'':isoMinus(b.bkmade,b.age),selDisp:iso=>iso?dayDisp(iso):'no lead',cell:leadCameCell},
+ {k:'age',label:'Lead→book',filt:'sel',val:b=>ageKey(b),selDisp:ALAB,cell:b=>b.age==null?'<span class="na">no lead</span>':(b.age===0?'same day':'+'+b.age+'d')},
  {k:'bkmade',label:'Booked on',filt:'sel',val:b=>b.bkmade||'',selDisp:iso=>iso?dayDisp(iso):'—',cell:b=>b.bkmade?dayDisp(b.bkmade):'—'},
  {k:'st',label:'Status',filt:'sel',val:b=>b.st,selDisp:STLAB,cell:b=>`<span class="dot" style="background:${STCOL[b.st]}"></span>${STLAB[b.st]}`},
  {k:'rzn',label:'Move reason',filt:'sel',val:b=>b.rzn||'—',selDisp:{doctor:'Doctor-side',patient:'Patient-side',other:'Other','—':'—'},cell:b=>b.rzntxt?`<span class="rzn ${b.rzn==='doctor'?'rznD':''}" title="${esc(b.rzntxt)}">${b.rzn==='doctor'?'⚠ doctor':b.rzn==='patient'?'patient':'other'}</span>`:'<span class="na">—</span>'},
@@ -247,18 +250,22 @@ function render(){
   $('leadDetail').style.display='';
   filterTable($('leadDetail'), allLd, LCOLS, FL);
 
-  // ③ doctor availability — roster capacity per day (all 7 days)
-  $('avail').innerHTML=`<div class="bkwrap"><table class="btbl"><thead><tr><th>Day</th><th>Doctors</th><th>Rostered slots</th><th>Realized (stood)</th><th>Shrinkage</th><th>Blocked (leave)</th><th>Booked slots</th><th>What happened</th></tr></thead><tbody>${days.map(iso=>{const a=c.days[iso].avail;
-    if(!a) return `<tr><td>${dayDisp(iso)}</td><td colspan="7" class="na">no roster data</td></tr>`;
-    const shrink=Math.max(0,a.open-a.realized); let verdict,cls='';
-    if(a.open>0&&a.nonbook>=a.open){verdict='🚫 Whole day blocked — doctor unavailable';cls='no';}
-    else if(shrink>0){verdict=`⚠ Shrinkage — ${shrink} of ${a.open} rostered slots didn't stand`;cls='no';}
-    else if(a.nonbook>0){verdict=`${a.nonbook} slots blocked (partial leave)`;}
-    else verdict='✓ Full roster stood';
-    return `<tr><td>${dayDisp(iso)}</td><td>${a.docs}</td><td>${a.open}</td><td>${a.realized} <span class="na">(${a.rhrs}h)</span></td>
-      <td>${shrink?`<span class="no">${shrink}</span>`:'0'}</td><td>${a.nonbook?`<span class="no">${a.nonbook}</span>`:'0'}</td>
-      <td>${a.booked}</td><td><span class="${cls}" style="font-weight:600">${verdict}</span></td></tr>`;}).join('')}</tbody></table></div>
-    <div class="ds" style="margin-top:8px">Roster-slot capacity (each ~10-min SC slot). <b>Shrinkage</b> = rostered slots that didn't stand (hours cut / doctor no-show). <b>Blocked</b> = slots overlapping a non-bookable block (leave). Cross-check a high-shrinkage or blocked day with the ① reschedules tagged <b>doctor-side</b>. <span style="color:var(--faint)">Roster-slot grain ≠ appointment count.</span></div>`;
+  // ③ could we give a same-day slot? — roster open-bookable slots per day
+  const avDays=days.map(iso=>c.days[iso].avail).filter(Boolean);
+  const fullDays=avDays.filter(a=>a.openleft===0).length, tightDays=avDays.filter(a=>a.openleft>0&&a.openleft<=2).length;
+  const headline=avDays.length?`<div class="ds" style="margin-bottom:8px;font-size:13px">This week the clinic <b style="color:var(--noshow)">ran out of same-day SC slots on ${fullDays} day${fullDays!==1?'s':''}</b>${tightDays?` and was nearly full (≤2 left) on ${tightDays} more`:''} — those are the days a walk-up lead <b>could not</b> be given a slot. On the other days there were open slots, so a lead not booking was choice/ops, not availability.</div>`:'';
+  $('avail').innerHTML=headline+`<div class="bkwrap"><table class="btbl"><thead><tr><th>Day</th><th>Rostered slots</th><th>Booked</th><th>Open slots left</th><th>Blocked (leave)</th><th>Could we give a same-day slot?</th></tr></thead><tbody>${days.map(iso=>{const a=c.days[iso].avail;
+    if(!a) return `<tr><td>${dayDisp(iso)}</td><td colspan="5" class="na">no roster data</td></tr>`;
+    let verdict,cls='yes';
+    if(a.open>0&&a.nonbook>=a.open){verdict='🚫 Blocked (leave) — 0 slots';cls='no';}
+    else if(a.openleft===0){verdict='🔴 FULL — 0 same-day slots left';cls='no';}
+    else if(a.openleft<=2){verdict=`🟠 Nearly full — only ${a.openleft} left`;cls='';}
+    else verdict=`🟢 ${a.openleft} same-day slots spare`;
+    return `<tr><td>${dayDisp(iso)}</td><td>${a.open}</td><td>${a.booked}</td>
+      <td>${a.openleft===0?`<span class="no">0</span>`:`<b>${a.openleft}</b>`}</td>
+      <td>${a.nonbook?`<span class="no">${a.nonbook}</span>`:'0'}</td>
+      <td><span class="${cls}" style="font-weight:600">${verdict}</span></td></tr>`;}).join('')}</tbody></table></div>
+    <div class="ds" style="margin-top:8px"><b>Open slots left</b> = realized, bookable SC slots that stayed unbooked (each ~10-min). 0 left = the clinic was full/blocked that day → same-day demand couldn't be slotted. <span style="color:var(--faint)">Day-level; exact-time (e.g. evening-only) constraints need the hour-level view. Roster-slot grain ≠ appointment count.</span></div>`;
 }
 
 fetch('data_sc_calendar.json?v='+Date.now(),{cache:'no-store'}).then(r=>r.json()).then(d=>{

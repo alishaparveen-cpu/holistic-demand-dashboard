@@ -224,6 +224,7 @@ for c in CLINICS:
       SUM(CASE WHEN rs.is_realized=1 THEN 1 ELSE 0 END) realized_slots,
       SUM(CASE WHEN rs.is_realized=1 THEN DATEDIFF(minute,rs.start_time,rs.end_time) ELSE 0 END) realized_mins,
       SUM(CASE WHEN rs.is_realized=1 AND rs.is_booked=1 THEN 1 ELSE 0 END) booked_slots,
+      SUM(CASE WHEN rs.is_realized=1 AND rs.available_for_booking=1 AND rs.is_booked=0 AND rs.overlaps_non_bookable_block=0 THEN 1 ELSE 0 END) openleft_slots,
       SUM(CASE WHEN rs.overlaps_non_bookable_block=1 THEN 1 ELSE 0 END) nonbook_slots,
       COUNT(DISTINCT rs.provider_id) docs
     FROM allo_consultations.roster_slots rs
@@ -237,7 +238,7 @@ for c in CLINICS:
         d=r[0]
         if d not in days: continue
         days[d]["avail"]={"open":int(float(r[1])),"realized":int(float(r[2])),"rhrs":round(float(r[3])/60,1),
-                          "booked":int(float(r[4])),"nonbook":int(float(r[5])),"docs":int(float(r[6]))}
+                          "booked":int(float(r[4])),"openleft":int(float(r[5])),"nonbook":int(float(r[6])),"docs":int(float(r[7]))}
     out["clinics"][c["key"]]={"disp":c["disp"],"city":c["city"],"loc":c["loc"],
                               "doctors":sorted(docs),"days":days}
     tot=sum(len(days[d]["bookings"]) for d in DAYS)
