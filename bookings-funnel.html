@@ -1077,7 +1077,12 @@ function opsSourceDone(){const out={};opsSlugs().forEach(s=>{const bs=(QD.clinic
 function opsClubify(raw){if(CLUB<=1)return (raw||[]).slice();const n=Math.ceil(WEEKS.length/CLUB),o=new Array(n).fill(0);for(let i=0;i<WEEKS.length;i++)o[Math.floor(i/CLUB)]+=(raw[i]||0);return o;}   // sum CLUB weeks per display column (ops WEEKS axis)
 function opsIx(){const n=Math.ceil(WEEKS.length/CLUB),a=[];for(let i=NWK-1;i>=0;i--){const idx=WKOFF+i;if(idx<n)a.push(idx);}return a;}   // ops display columns (each = CLUB weeks), ending WKOFF columns back
 function opsCum(a){if(!CUMUL)return (a||[]).slice();const ix=opsIx(),out=(a||[]).slice();let r=0;for(let k=0;k<ix.length;k++){const i=ix[k];r+=a[i]||0;out[i]=r;}return out;}
-function opsDv(a){const c=opsClubify(a);return CUMUL?opsCum(c):c;}   // clubify (per-week → columns) then optional cumulate
+let AVAIL_RENDER=false;   // true only during renderAvail → opsDv blanks the immature newest week (roster realization lags ~1wk) across totals + clinic + per-doctor drill, robust to stray-0 clinics or a stale-cached cube
+function opsDv(a){let c=opsClubify(a);c=CUMUL?opsCum(c):c;
+  if(AVAIL_RENDER&&!CUMUL){let rec=[];for(let k=1;k<=4&&k<c.length;k++)if(c[k]!=null)rec.push(c[k]);   // newest week < 15% of the prior-4wk norm ⇒ immature (a real network-wide 85% attendance collapse in one week doesn't happen) → blank it
+    let norm=rec.length?rec.reduce((s,x)=>s+x,0)/rec.length:0;
+    if(norm>0&&c[0]!=null&&c[0]<0.15*norm){c=c.slice();c[0]=null;}}
+  return c;}   // clubify (per-week → columns) then optional cumulate
 function fmtOps(v){const a=Math.abs(v);   // abbreviate big ₹ (revenue) to lakhs/crores so it fits the narrow weekly columns
   if(a>=1e7)return (v/1e7).toFixed(2)+'Cr';
   if(a>=1e5)return (v/1e5).toFixed(1)+'L';
@@ -1288,9 +1293,9 @@ const AVAIL_METS=[
   {f:'dead_hrs',    df:'dead',        lab:'dead-time hours',               slab:'dead-time hrs',        col:'#B8862E', clinicOnly:true},
 ];
 let AVAIL_MET_OFF=new Set(['rostered_hrs','shrink_hrs','net_rpt_hrs','dead_hrs']);   // de-selected availability metrics by default — the roster-fed metrics (rostered / shrinkage / net Rpt / dead-time) lag ~1wk so the latest week reads 0; hidden by default (re-add via Metrics ▾). Shown: Days attended (+weekday/weekend), opened hrs after shrinkage, net SC hrs.
-function renderAvail(units){units=units||opsUnits();const flow=document.getElementById('availFlow'),head=document.getElementById('availHead');flow.innerHTML='';head.innerHTML=opsHeadHTML('Availability · SC');
+function renderAvail(units){AVAIL_RENDER=true;try{units=units||opsUnits();const flow=document.getElementById('availFlow'),head=document.getElementById('availHead');flow.innerHTML='';head.innerHTML=opsHeadHTML('Availability · SC');
   if(!units.some(u=>!u.online)){flow.innerHTML='<div class="empty">Online telehealth has no clinic roster / availability — this applies to physical clinics only (switch to Both / Offline to see roster).</div>';return;}
-  const availU=units.filter(u=>!u.online);   // availability is offline-only; online units have no roster (avail={}) → their qdAlign(undefined)=zeros would mask the immature-week null. Aggregate offline clinics only.
+  const availU=units.filter(u=>!u.online);   // availability is offline-only; online units have no roster → aggregate offline clinics only. (The immature-newest-week blanking is handled universally in opsDv while AVAIL_RENDER is set — see below.)
   const A=f=>opsSumU(availU,u=>u.avail[f]);
   const useDoc=opsSecLayers('avail').includes('doctor'),docGrain=(SCOPE==='doctor'||useDoc);   // doctor scope OR doctor layer → per-doctor grain (clinic-only metrics drop)
   const shown=AVAIL_METS.filter(m=>!AVAIL_MET_OFF.has(m.f));   // metric picker selection
@@ -1312,7 +1317,7 @@ function renderAvail(units){units=units||opsUnits();const flow=document.getEleme
     if(flow.querySelectorAll('.opsnode').length===_before){   // drill produced no rows → don't leave a lonely header that looks broken
       const n=document.createElement('div');n.className='frow';n.style.cssText='padding:9px 15px;color:var(--faint);font-size:12px;line-height:1.5';
       n.innerHTML='No per-doctor roster / attendance for the shown weeks yet — recent roster realization lags ~1 week (the same reason the newest week reads blank above). Widen the week window (− / +) to see earlier weeks, or read the clinic totals above.';
-      flow.appendChild(n);}}}
+      flow.appendChild(n);}}}finally{AVAIL_RENDER=false;}}
 // Metrics ▾ picker for ③ Availability — choose which roster metrics appear (totals + drill). docGrain hides clinic-only metrics.
 function appendAvailMetricPicker(ll,docGrain){
   const opts=AVAIL_METS.filter(m=>!(docGrain&&m.clinicOnly)&&!(m.docOnly&&!docGrain)),nsel=opts.filter(m=>!AVAIL_MET_OFF.has(m.f)).length;
