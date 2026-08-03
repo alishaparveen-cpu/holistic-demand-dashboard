@@ -144,6 +144,13 @@
   .diag .ddelta{font-size:11px;color:var(--faint);margin-top:4px;letter-spacing:.01em}
   .diag .dnum{text-align:right;font-weight:700;font-size:15px;white-space:nowrap}
   .diag .dnum small{display:block;font-size:10.5px;color:var(--muted);font-weight:400}
+  /* per-row 'why?' */
+  .whylink{margin-left:8px;font-size:10.5px;color:var(--accent);cursor:pointer;font-weight:600;white-space:nowrap}
+  .whylink:hover{text-decoration:underline}
+  .whypanel{margin:0 0 5px 40px;padding:8px 12px;background:var(--inset);border:1px solid var(--line);border-left:3px solid var(--accent);border-radius:0 8px 8px 0;font-size:12.5px;color:var(--ink2)}
+  .whypanel .ws{font-weight:700;color:var(--ink)}
+  .whypanel .wf{color:var(--muted);margin-top:3px}.whypanel .wf b{color:#2E7D5B;font-weight:700;margin-right:3px}
+  .whypanel .wd{color:var(--faint);font-size:11px;margin-top:3px}
   .imhead{display:flex;flex-wrap:wrap;gap:20px;margin:16px 0 12px;padding:14px 16px;background:var(--sheet);border:1px solid var(--line);border-radius:var(--r)}
   .imblock{display:flex;flex-direction:column;gap:7px}
   .imcap{font-size:10px;font-weight:700;letter-spacing:.07em;color:var(--muted);text-transform:uppercase}
@@ -764,10 +771,13 @@ function renderLevel(container,cells,depth,parentTot,parentWk,path,pathVals,P){
     right+='<span class="zoom" title="plot weekly trend"><svg width="13" height="13" viewBox="0 0 16 16" style="display:inline-block;vertical-align:middle"><polyline points="1,11 5,7 9,9 15,2" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" stroke-linecap="round"/></svg></span>';
     const availLoc=(dk==='clinic'&&single&&vk)?vk:((dk==='doctor'&&single&&pathVals.clinic)?pathVals.clinic:null);   // clinic row → its own loc; doctor row → parent clinic
     const avL=availLoc?`<a class="avlink" title="jump to ③ Availability for ${availLoc} (all its doctors) — check if a booking drop is a supply/roster issue">◷ avail ›</a>`:'';
+    const whyU=(P.mode==='bookings'&&dk==='city'&&single&&vk)?vk:null;   // per-row 'why?' on ② city rows → funnel-stage diagnosis for that city
+    const whyL=whyU?`<a class="whylink" title="why did this city move? — funnel-stage diagnosis (leads → convert → done → value)">🔍 why?</a>`:'';
     row.innerHTML=`<span class="chev ${hasKids?'':'leaf'}">${hasKids?(P.open[key]?'▾':'▶'):'▶'}</span>`
-      +`<span class="lbl"><span class="dot" style="background:${col}"></span>${u.label}${attr}${avL}</span>`+right;
+      +`<span class="lbl"><span class="dot" style="background:${col}"></span>${u.label}${attr}${avL}${whyL}</span>`+right;
     container.appendChild(row);
     if(availLoc){const al=row.querySelector('.avlink');if(al)al.onclick=(e)=>{e.stopPropagation();availQuickCheck(availLoc);};}
+    if(whyU){const wl=row.querySelector('.whylink');if(wl)wl.onclick=(e)=>{e.stopPropagation();toggleCityWhy(row,whyU);};}
     {const zb=row.querySelector('.zoom');zb.innerHTML=sparkline(wk);const crumb=Object.entries(pathVals).map(([d2,v2])=>unitLbl(d2,v2,P));crumb.push(u.label);
      zb.onclick=(e)=>{e.stopPropagation();openChart(crumb.join(' › '),wk,col);};}
     if(PSHARE[P.mode]&&parentWk&&sumT(parentWk))appendShareRow(container,wk,parentWk,15+(depth+1)*20);   // ↳ share of parent % (opt-in)
@@ -2189,6 +2199,30 @@ function renderDiagnose(){
       +'</div>';
   });
   el.style.display='block'; el.innerHTML=h;
+}
+// per-row 'why?' (② city rows) — same funnel-stage attribution as the Diagnose board, for one city, shown inline
+function cityWhyHTML(cy){
+  var ctx; try{ctx=window.demandContext();}catch(e){return null;}
+  var c=ctx&&ctx.by_city_latest_vs_prior4avg&&ctx.by_city_latest_vs_prior4avg[cy];
+  if(!c||!c.bookings)return '<div class="whypanel">No settled-week diagnosis data for '+cy+' yet.</div>';
+  var P=function(o){return o&&o.pct_vs_avg!=null?o.pct_vs_avg:null;},pct=function(o){var v=P(o);return v==null?'—':((v>0?'+':'')+v+'%');};
+  var b=c.bookings,l=c.leads,d=c.done,r=c.revenue,bp=P(b),lp=P(l),dp=P(d),rp=P(r);
+  var bookDrop=bp!=null&&bp<=-15,doneDrop=dp!=null&&dp<=-15,revDrop=rp!=null&&rp<=-15,stage,why,fix='';
+  if(!bookDrop&&!doneDrop&&!revDrop){stage='✓ Holding';why='No material drop vs the prior 4-week average — this city is stable.';}
+  else if(bookDrop&&lp!=null&&lp<=-15){stage='① Leads';why='Leads ↓'+Math.abs(lp)+'% → bookings followed. A demand problem, not conversion.';fix='Drill ① Leads by <b>source</b> (GMB / Google / Meta / organic) to see which channel fell.';}
+  else if(bookDrop&&(lp==null||lp>-10)){stage='①→② Convert';why='Leads held'+(lp!=null?' ('+(lp>0?'+':'')+lp+'%)':'')+' but bookings ↓'+Math.abs(bp)+'% — a lead→booking conversion drop.';fix='Check <b>calling / answer-rate</b> and <b>③ Availability</b> (did roster / slots shrink?).';}
+  else if(doneDrop&&(bp==null||bp>-10)){stage='④ Book→Done';why='Bookings held but done ↓'+Math.abs(dp)+'% — more no-shows / fewer completed (B2D '+(c.book_to_done_pct!=null?c.book_to_done_pct+'%':'—')+').';fix='Check <b>④ show-rate</b> + reminders; find the clinic / doctor with the B2D dip.';}
+  else if(revDrop&&(dp==null||dp>-10)){stage='⑥ Value';why='Done held but revenue ↓'+Math.abs(rp)+'% — fewer plans bought or lower RPC.';fix='Check <b>⑥ D2P + RPC</b> by category.';}
+  else if(bookDrop){stage='② Bookings';why='Bookings ↓'+Math.abs(bp)+'%.';fix='Drill <b>Clinic → Doctor</b> to localise, then ③ Availability.';}
+  else{stage='⑤ Done';why='Done ↓'+Math.abs(dp)+'%.';fix='Drill <b>⑤ Done</b> by clinic / category.';}
+  return '<div class="whypanel"><span class="ws">'+cy+' — '+stage+'</span> '+why+(fix?'<div class="wf"><b>FIX</b> '+fix+'</div>':'')+'<div class="wd">Leads '+pct(l)+' · Bookings '+pct(b)+' · Done '+pct(d)+' · Revenue '+pct(r)+' · vs prior 4-wk avg</div></div>';
+}
+function toggleCityWhy(row,cy){
+  var nx=row.nextSibling;
+  if(nx&&nx.classList&&nx.classList.contains('whypanel')){nx.remove();return;}   // toggle off
+  var html=cityWhyHTML(cy); if(!html)return;
+  var tmp=document.createElement('div'); tmp.innerHTML=html;
+  row.parentNode.insertBefore(tmp.firstChild,row.nextSibling);
 }
 function redrawAll(){document.getElementById('nwkLbl').textContent=NWK+(CLUB>1?' × '+CLUB+'w':' wk');renderWkEnd();draw(PL);draw(PB);renderLB();renderOps();imRender();renderDiagnose();}
 
