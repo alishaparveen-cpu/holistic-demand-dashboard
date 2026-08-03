@@ -26,6 +26,8 @@ select{font:13px inherit;color:var(--ink);border:1px solid var(--line);border-ra
 .day .dv{font-size:26px;font-weight:800;margin-top:2px;line-height:1}
 .day .dvsub{font-size:11px;color:var(--muted);font-weight:500}
 .day .dl{font-size:10.5px;color:var(--muted);margin-top:1px}
+.bchip{display:inline-block;margin-top:6px;font-size:11.5px;font-weight:700;color:var(--ink2);background:var(--bg);border:1px solid var(--line);border-radius:20px;padding:2px 10px}
+.bchip span{color:var(--muted);font-weight:500}
 .sbar{display:flex;height:6px;border-radius:3px;overflow:hidden;margin-top:8px;background:var(--bg)}
 .sbar i{height:100%}
 .leadmini{font-size:10.5px;color:var(--muted);margin-top:7px;border-top:1px dashed var(--line);padding-top:6px}
@@ -79,7 +81,7 @@ select{font:13px inherit;color:var(--ink);border:1px solid var(--line);border-ra
 
   <div class="hd">① Screening calls — <b>done</b>, then booked · click a day, then an age band</div>
   <div class="cal" id="cal"></div>
-  <div class="legend"><span><i style="background:var(--done)"></i>Done (completed)</span><span><i style="background:var(--sched)"></i>Still scheduled</span><span><i style="background:var(--noshow)"></i>No-show</span><span><i style="background:var(--rel)"></i>Rescheduled / Cancelled</span></div>
+  <div class="legend"><span><i style="background:var(--done)"></i>Completed</span><span><i style="background:var(--sched)"></i>Scheduled</span><span><i style="background:var(--noshow)"></i>No-show (missed)</span><span><i style="background:var(--rel)"></i>Rescheduled</span><span><i style="background:#9a5a3a"></i>Cancelled</span></div>
 
   <div class="detail" id="detail"></div>
 
@@ -97,8 +99,9 @@ const DOW=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
 const AGES=['0','1','2','3','4','5','6','7','8+','no_lead'];
 const ALAB={'0':'Same day','1':'1 day old','2':'2 days old','3':'3 days old','4':'4 days old','5':'5 days old','6':'6 days old','7':'7 days old','8+':'8+ days old','no_lead':'No lead matched'};
 const ACOL={'0':'#2E7D5B','1':'#3E7CB1','2':'#4E97A8','3':'#6FA98F','4':'#9CAE6B','5':'#C9A43A','6':'#C9862A','7':'#C06A2E','8+':'#B8503C','no_lead':'#c7ccd4'};
-const STCOL={done:'var(--done)',sched:'var(--sched)',noshow:'var(--noshow)',released:'var(--rel)'};
-const STLAB={done:'Done',sched:'Scheduled',noshow:'No-show',released:'Resch./Canc.'};
+const STCOL={done:'var(--done)',sched:'var(--sched)',noshow:'var(--noshow)',resched:'var(--rel)',cancelled:'#9a5a3a',other:'#c7ccd4'};
+const STLAB={done:'Completed',sched:'Scheduled',noshow:'No-show',resched:'Rescheduled',cancelled:'Cancelled',other:'Other'};
+const STORDER=['done','sched','noshow','resched','cancelled','other'];
 const SRCCLS=s=>'src'+(s||'').replace(/[^A-Za-z]/g,'');
 function dlabel(iso){const dt=new Date(iso+'T00:00:00');return {dow:DOW[(dt.getDay()+6)%7],dm:dt.getDate()};}
 function ageKey(bk){return bk.age==null?'no_lead':(bk.age<=7?String(bk.age):'8+');}
@@ -121,8 +124,9 @@ function render(){
     const sameDay=bks.filter(b=>b.age===0).length;
     return `<div class="day${SEL===iso?' sel':''}" data-d="${iso}">
       <div class="dn">${L.dow} ${L.dm}</div>
-      <div class="dv">${done}<span class="dvsub"> / ${tot}</span></div><div class="dl">done / booked</div>
-      <div class="sbar"><i style="width:${seg('done')}%;background:var(--done)"></i><i style="width:${seg('sched')}%;background:var(--sched)"></i><i style="width:${seg('noshow')}%;background:var(--noshow)"></i><i style="width:${seg('released')}%;background:var(--rel)"></i></div>
+      <div class="dv" style="color:var(--done)">${done}</div><div class="dl">completed</div>
+      <div><span class="bchip">${tot} <span>booked</span></span></div>
+      <div class="sbar">${STORDER.map(k=>`<i style="width:${seg(k)}%;background:${STCOL[k]}"></i>`).join('')}</div>
       <div class="leadmini"><b>${sameDay}</b> same-day · <b>${tot-sameDay}</b> older</div>
     </div>`;}).join('');
   $('cal').querySelectorAll('.day').forEach(el=>el.onclick=()=>{SEL=el.dataset.d;SELAGE=null;render();});
@@ -136,7 +140,7 @@ function render(){
   if(SELAGE){
     const rows=bks.filter(b=>ageKey(b)===SELAGE);
     bkHTML=`<div class="bkwrap"><h4>${ALAB[SELAGE]} — ${rows.length} booking${rows.length!==1?'s':''} <span style="color:var(--faint);font-weight:400">(click a patient ID to copy)</span></h4>
-      <table class="btbl"><thead><tr><th>Patient ID</th><th>Phone</th><th>Doctor</th><th>Source</th><th>Medium</th><th>Lead age</th><th>Status</th></tr></thead><tbody>
+      <table class="btbl"><thead><tr><th>Patient ID</th><th>Phone</th><th>Doctor</th><th>Source</th><th>Medium</th><th>Lead age</th><th>Status</th><th>Recording</th></tr></thead><tbody>
       ${rows.map(b=>`<tr>
           <td>${b.pid?`<span class="pid" data-full="${b.pid}" onclick="copyPid(this)">${b.pid}</span>`:'<span class="na">—</span>'}</td>
           <td class="ph">${b.p||'—'}</td>
@@ -145,11 +149,13 @@ function render(){
           <td>${b.med}</td>
           <td>${b.age==null?'<span class="na">no lead</span>':(b.age===0?'same day':b.age+'d')}</td>
           <td><span class="dot" style="background:${STCOL[b.st]}"></span>${STLAB[b.st]}</td>
+          <td>${b.rec?`<a class="rec" href="${b.rec}" target="_blank" rel="noopener">▶ ${mmss(b.dur)}</a>`:'<span class="na">—</span>'}</td>
         </tr>`).join('')}
       </tbody></table></div>`;
   } else bkHTML=`<div class="bkwrap" style="color:var(--faint);font-size:12.5px">Click an age band above to see the booking-level breakdown (patient ID · phone · source · medium · status).</div>`;
-  $('detail').innerHTML=`<h3>${L.dow} ${L.dm} — ${st.done||0} done of ${tot} booked</h3>
-    <div class="ds"><b style="color:var(--done)">${st.done||0} done</b> · <b style="color:var(--sched)">${st.sched||0} still scheduled</b> · <b style="color:var(--noshow)">${st.noshow||0} no-show</b> · <b style="color:var(--rel)">${st.released||0} resch./canc.</b>. How old was each lead when it booked:</div>
+  const stLine=STORDER.filter(k=>st[k]).map(k=>`<b style="color:${STCOL[k]}">${st[k]} ${STLAB[k].toLowerCase()}</b>`).join(' · ')||'—';
+  $('detail').innerHTML=`<h3>${L.dow} ${L.dm} — ${st.done||0} completed of ${tot} booked</h3>
+    <div class="ds">${stLine}. How old was each lead when it booked:</div>
     <div class="bars">${bars}</div>${bkHTML}`;
   $('detail').querySelectorAll('.brow').forEach(el=>el.onclick=()=>{SELAGE=(SELAGE===el.dataset.age?null:el.dataset.age);render();});
 

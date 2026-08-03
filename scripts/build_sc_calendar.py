@@ -56,22 +56,38 @@ mon = today - datetime.timedelta(days=today.weekday())
 start = mon - datetime.timedelta(days=7); end = start + datetime.timedelta(days=7)
 DAYS = [(start+datetime.timedelta(days=i)).isoformat() for i in range(7)]
 S, E = start.isoformat(), end.isoformat()
+REC_S = (start - datetime.timedelta(days=35)).isoformat()  # recording lookback (catch older-lead calls)
+
+# 6-way appointment-status map (verified: RESCHEDULED/COMPLETED/MISSED/CANCELLED; SCHEDULED/RECONSULTED future-proofed)
+ST_SQL = """CASE
+  WHEN a.status IN ('COMPLETED','RECONSULTED') THEN 'done'
+  WHEN a.status='SCHEDULED' THEN 'sched'
+  WHEN a.status='MISSED' THEN 'noshow'
+  WHEN a.status='RESCHEDULED' THEN 'resched'
+  WHEN a.status='CANCELLED' THEN 'cancelled'
+  ELSE 'other' END"""
 
 out = {"_meta":{"days":DAYS, "week":f"{S}→{(end-datetime.timedelta(days=1)).isoformat()}",
         "note":"① SC bookings = Screening-Call appts scheduled that day at the clinic (all statuses = the clinician calendar). done=COMPLETED/RECONSULTED. age = booking-made − lead-first-seen (exact). src/med from the patient's earliest lead. ② Leads = ALL leads attributed to the clinic by lead.location code, per-lead; conn/want/recording from the clinic's own call lines (lead_to_call). ①source & ②source use different attribution (patient's earliest lead vs clinic code) so they won't perfectly reconcile."},
        "clinics":{}}
 
 for c in CLINICS:
-    # ---- A) per-booking rows ----
+    # ---- A) per-booking rows (+ call recording matched on patient primary OR alternate number) ----
+    nums0 = "','".join(c["nums"])
     a = q(f"""
-    WITH lead1 AS (SELECT RIGHT(phone_no,10) ph, MIN(created_at) lead_dt FROM allo_persons.lead WHERE deleted_at IS NULL GROUP BY 1)
+    WITH lead1 AS (SELECT RIGHT(phone_no,10) ph, MIN(created_at) lead_dt FROM allo_persons.lead WHERE deleted_at IS NULL GROUP BY 1),
+    rec AS (SELECT ph, rec, dur FROM (
+        SELECT RIGHT(ec."from",10) ph, ec.recording_url rec, ec.total_duration dur,
+          ROW_NUMBER() OVER (PARTITION BY RIGHT(ec."from",10) ORDER BY ec.total_duration DESC) rn
+        FROM allo_vendors.exotel_calls ec
+        WHERE RIGHT(ec.exotel_number,10) IN ('{nums0}') AND ec.routed_to='lead_to_call'
+          AND ec.recording_url IS NOT NULL AND ec.recording_url!=''
+          AND (ec.start_time + {IST})>='{REC_S}' AND (ec.start_time + {IST})<'{E}') WHERE rn=1)
     SELECT DATE(a.start_time + {IST}) d,
       p.phone_no phone, p.id pid, COALESCE(pr.name,'Unassigned') doc,
       DATEDIFF(day, DATE(l.lead_dt + {IST}), DATE(a.created_at + {IST})) age,
-      {SRC('ld')} src, {MED('ld')} med,
-      CASE WHEN a.status IN ('COMPLETED','RECONSULTED') THEN 'done'
-           WHEN a.status='SCHEDULED' THEN 'sched'
-           WHEN a.status='MISSED' THEN 'noshow' ELSE 'released' END st
+      {SRC('ld')} src, {MED('ld')} med, {ST_SQL} st,
+      COALESCE(rp.rec, ra.rec, '') rec, COALESCE(rp.dur, ra.dur, 0) dur
     FROM allo_consultations.appointments a
     JOIN allo_consultations.types t ON t.id=a.type_id AND t.name='Screening Call'
     JOIN allo_health.locations loc ON loc.id=a.location_id AND loc.deleted_at IS NULL AND loc.locality='{c['loc']}' AND loc.city='{c['city']}'
@@ -79,6 +95,8 @@ for c in CLINICS:
     LEFT JOIN allo_persons.providers pr ON pr.id=a.provider_id
     LEFT JOIN lead1 l ON l.ph=RIGHT(p.phone_no,10)
     LEFT JOIN allo_persons.lead ld ON RIGHT(ld.phone_no,10)=l.ph AND ld.created_at=l.lead_dt AND ld.deleted_at IS NULL
+    LEFT JOIN rec rp ON rp.ph=RIGHT(p.phone_no,10)
+    LEFT JOIN rec ra ON ra.ph=RIGHT(p.alternate_phone_no,10)
     WHERE a.deleted_at IS NULL AND (a.start_time + {IST})>='{S}' AND (a.start_time + {IST})<'{E}'
     """)
     days = {d:{"bookings":[], "leads":[]} for d in DAYS}
@@ -89,7 +107,8 @@ for c in CLINICS:
         age = None if (len(r)<5 or r[4] in ("","\\N",None)) else int(float(r[4]))
         doc=r[3] or "Unassigned"; docs.add(doc)
         days[d]["bookings"].append({"p":r[1], "pid":(r[2] or ""), "doc":doc, "age":age,
-                                    "src":(r[5] or "Direct/unknown"), "med":(r[6] or "Web"), "st":r[7]})
+                                    "src":(r[5] or "Direct/unknown"), "med":(r[6] or "Web"), "st":r[7],
+                                    "rec":(r[8] or ""), "dur":int(float(r[9] or 0))})
     # ---- B) per-lead rows (all sources by clinic code) + call outcome/recording + booked flag ----
     nums = "','".join(c["nums"])
     b = q(f"""
