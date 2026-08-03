@@ -17,8 +17,8 @@ LOSTIS = json.load(open(_LOSTIS_PATH)) if os.path.exists(_LOSTIS_PATH) else {}
 _QS_PATH = os.path.join(ROOT, 'data_quality_score.json')
 QS = json.load(open(_QS_PATH)) if os.path.exists(_QS_PATH) else {}   # campaign cost-weighted quality score per week
 def add_lost(fn, r):   # attach rank/budget lost-impression counts (= eligible impr × lost-IS share) + quality score to an acq row
-    stem = re.sub(r'_(w[1-7])\.md$', '', fn)
-    wklabel = WK.get(re.search(r'_(w[1-7])\.md$', fn).group(1)) if re.search(r'_(w[1-7])\.md$', fn) else None
+    stem = re.sub(r'_(w[1-8])\.md$', '', fn)
+    wklabel = WK.get(re.search(r'_(w[1-8])\.md$', fn).group(1)) if re.search(r'_(w[1-8])\.md$', fn) else None
     li = (LOSTIS.get(stem, {}) or {}).get(wklabel, {}) if wklabel else {}
     elig = r.get('elig') or 0
     r['rlis'] = round(elig * (li.get('rank') or 0))
@@ -29,9 +29,9 @@ def add_lost(fn, r):   # attach rank/budget lost-impression counts (= eligible i
     else:
         r['qs'] = qs_data; r['ar'] = None; r['lp'] = None   # old scalar format fallback
     return r
-WK = {'w1':'Jun 8-14','w2':'Jun 15-21','w3':'Jun 22-28','w4':'Jun 29-Jul 5','w5':'Jul 6-12','w6':'Jul 13-19','w7':'Jul 20-26'}
-WKS = [WK[f'w{i}'] for i in range(1,8)]   # 7 weeks — keep w1 (Jun 8-14), add w7 (Jul 20-26)
-WKIDX = {WK['w1']:6, WK['w2']:5, WK['w3']:4, WK['w4']:3, WK['w5']:2, WK['w6']:1, WK['w7']:0}   # cube weeks newest-first (idx0=Jul20, leads cube refreshed 2026-07-27)
+WK = {'w1':'Jun 8-14','w2':'Jun 15-21','w3':'Jun 22-28','w4':'Jun 29-Jul 5','w5':'Jul 6-12','w6':'Jul 13-19','w7':'Jul 20-26','w8':'Jul 27-Aug 2'}
+WKS = [WK[f'w{i}'] for i in range(1,9)]   # 8 weeks — keep w1 (Jun 8-14), add w8 (Jul 27-Aug 2, GAQL-pulled acq via pull_ga_compose.py)
+WKIDX = {WK['w1']:7, WK['w2']:6, WK['w3']:5, WK['w4']:4, WK['w5']:3, WK['w6']:2, WK['w7']:1, WK['w8']:0}   # cube weeks newest-first (idx0=Jul27, leads cube refreshed 2026-08 → aligns w8 to the newest funnel week)
 # report city token -> cube city name (aliases where they differ)
 CITYFIX = {'hubballi':'Hubli','vizag':'Visakhapatnam','mangalore':'Mangaluru','navi_mumbai':'Navi Mumbai'}
 def city_of(tok): return CITYFIX.get(tok) or tok.replace('_',' ').title()
@@ -46,7 +46,7 @@ def num(s):
 _AC = {'sh':'SH','std':'STD','sti':'STI','mh':'MH','hi':'HI','li':'LI','lc':'LC','ed':'ED','pe':'PE',
        'cc':'CC','roi':'ROI','pd':'PD','t1':'T1','t2':'T2','allo':'Allo','onl':'ONL','lt':'LT'}
 def campname(fn):   # filename → the actual Google-Ads campaign name (e.g. roi_online_sh_hi_exact_w5 → ROI_Online_SH_HI_Exact)
-    toks = re.sub(r'_(w[1-7])\.md$', '', fn).split('_')
+    toks = re.sub(r'_(w[1-8])\.md$', '', fn).split('_')
     return '_'.join(_AC.get(t, t.title()) for t in toks)
 
 def parse_report(path):
@@ -69,7 +69,7 @@ def parse_report(path):
 def main():
     # ---- ACQUISITION: parse every campaign report ----
     acq = {}   # city -> [{cat,mt,wk, budget,bid,spend,impr,elig,locimpr,click,locclick,rev,done}]
-    pat = re.compile(r'^(t[12])_(.+?)_(sh|std|mh)_(exact_local|phrase_local|exact)_(w[1-7])\.md$')
+    pat = re.compile(r'^(t[12])_(.+?)_(sh|std|mh)_(exact_local|phrase_local|exact)_(w[1-8])\.md$')
     for fn in os.listdir(REPORTS):
         m = pat.match(fn)
         if not m: continue
@@ -86,7 +86,7 @@ def main():
     for fn in os.listdir(REPORTS):
         if not fn.endswith('.md') or pat.match(fn): continue
         if not re.match(r'^(roi_online|cc_online|onl_lt|brand_allo|pd_online)_', fn): continue
-        wkm = re.search(r'_(w[1-7])\.md$', fn)
+        wkm = re.search(r'_(w[1-8])\.md$', fn)
         if not wkm or wkm.group(1) not in WK: continue
         cat, mt = online_catmt(fn); r = add_lost(fn, parse_report(os.path.join(REPORTS, fn)))
         acq.setdefault('Online', []).append(dict(cat=cat, mt=mt, wk=WK[wkm.group(1)], camp=campname(fn), **r))
