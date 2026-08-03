@@ -1229,7 +1229,8 @@ function opsFunnelDrill(container,recs,layers,depth,pad,kp,cfg,parentPrim){
   recs.forEach(r=>{const v=dim.get(r);(groups[v]=groups[v]||[]).push(r);});
   const only=Object.keys(groups).length===1;
   Object.keys(groups).sort((a,b)=>sumT(opsDv(sumRecF(groups[b],p0.f)))-sumT(opsDv(sumRecF(groups[a],p0.f)))).forEach(v=>{
-    const sub=groups[v],praw=sumRecF(sub,p0.f),pv=opsDv(praw);if(!sumT(pv))return;
+    const sub=groups[v],praw=sumRecF(sub,p0.f),pv=opsDv(praw);
+    if(!sumT(pv)&&!(cfg.sec==='avail'&&cfg.stages.some(s=>s.f&&sumT(opsDv(sumRecF(sub,s.f))))))return;   // avail: keep a node with data in ANY shown metric (a doctor can have roster/opened hrs but 0 attended-days) so the Clinic›Doctor breakdown isn't falsely empty
     const key=kp+'/'+dk+':'+v,col=dim.col?dim.col(sub[0]):'#9aa3b0',op=!!OPS_OPEN[key]||(only&&dk==='seg'&&!last);
     const row=opsBuildRow(v,pv,{col,pad,expandable:!last&&!(only&&dk==='seg'),open:op,rawArr:praw});row.classList.add('opsnode');container.appendChild(row);
     if(OPS_SHARE[cfg.sec]&&parentPrim&&!only){const sh=pv.map((x,i)=>parentPrim[i]?100*x/parentPrim[i]:null);const sr=opsBuildRow('↳ share of parent %',sh,{col:'#1F6F5C',pad:pad+18,pct:true,rawArr:sh});sr.classList.add('brate');container.appendChild(sr);}
@@ -1279,7 +1280,12 @@ function renderAvail(units){units=units||opsUnits();const flow=document.getEleme
     let stages=shown.filter(m=>!(docGrain&&m.clinicOnly)&&!(m.docOnly&&!docGrain)).map(m=>({lab:m.slab,f:m.df,col:m.col}));   // drill shows the SELECTED metrics (drop clinic-only at doctor grain; shift-timing only at doctor grain)
     if(!stages.length)stages=[{lab:'Rostered hrs',f:'rostered',col:'#8257C4'}];
     const cfg={sec:'avail',rerender:renderAvail,stages};
-    opsFunnelDrill(flow,fr,layers,0,15,'avail',cfg,opsDv(sumRecF(recs,stages[0].f)));}}
+    const _before=flow.querySelectorAll('.opsnode').length;
+    opsFunnelDrill(flow,fr,layers,0,15,'avail',cfg,opsDv(sumRecF(recs,stages[0].f)));
+    if(flow.querySelectorAll('.opsnode').length===_before){   // drill produced no rows → don't leave a lonely header that looks broken
+      const n=document.createElement('div');n.className='frow';n.style.cssText='padding:9px 15px;color:var(--faint);font-size:12px;line-height:1.5';
+      n.innerHTML='No per-doctor roster / attendance for the shown weeks yet — recent roster realization lags ~1 week (the same reason the newest week reads blank above). Widen the week window (− / +) to see earlier weeks, or read the clinic totals above.';
+      flow.appendChild(n);}}}
 // Metrics ▾ picker for ③ Availability — choose which roster metrics appear (totals + drill). docGrain hides clinic-only metrics.
 function appendAvailMetricPicker(ll,docGrain){
   const opts=AVAIL_METS.filter(m=>!(docGrain&&m.clinicOnly)&&!(m.docOnly&&!docGrain)),nsel=opts.filter(m=>!AVAIL_MET_OFF.has(m.f)).length;
@@ -1309,6 +1315,7 @@ function availQuickCheck(loc){
   OPS_SEL.avail.clinic=new Set(allClinics.filter(c=>c!==loc));   // deselect every other clinic → only this one shows
   OPS_SEL.avail.doctor=new Set();   // all doctors of that clinic
   ['attend_days','am_hrs','noon_hrs','pm_hrs'].forEach(f=>AVAIL_MET_OFF.delete(f));   // make sure attended-days + shift metrics are visible
+  OPS_OPEN['avail/clinic:'+loc]=true;   // AUTO-EXPAND the clinic node so its doctors show immediately (was collapsed → looked like it "didn't open")
   renderAvail();
   const sec=document.querySelector('.sech'); // scroll ③ header into view
   (document.getElementById('availLayerLbl')||document.getElementById('availFlow')).scrollIntoView({block:'start',behavior:'smooth'});}
