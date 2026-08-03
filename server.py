@@ -86,6 +86,13 @@ class Handler(SimpleHTTPRequestHandler):
         except Exception as e:
             send(f'__ERROR__ {e}')
 
+    def end_headers(self):
+        # Always tell the browser NOT to cache dashboard files, so edits show on a normal refresh.
+        self.send_header('Cache-Control', 'no-cache, no-store, must-revalidate')
+        self.send_header('Pragma', 'no-cache')
+        self.send_header('Expires', '0')
+        super().end_headers()
+
     def do_OPTIONS(self):
         self.send_response(204)
         self.send_header('Access-Control-Allow-Origin', '*')

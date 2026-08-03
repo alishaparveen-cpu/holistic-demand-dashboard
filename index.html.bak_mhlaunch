@@ -1,0 +1,308 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Allo Health · Demand Dashboard</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+html,body{background:#f8fafc;color:#0f172a;font-family:ui-sans-serif,system-ui,sans-serif;margin:0;min-height:100vh;}
+
+/* Hero gradient */
+.hero{
+  background:linear-gradient(135deg,#0f172a 0%,#1e293b 60%,#1e3a5f 100%);
+  padding:44px 24px 48px;
+  text-align:center;
+  position:relative;
+  overflow:hidden;
+}
+.hero::before{
+  content:'';
+  position:absolute;inset:0;
+  background:radial-gradient(ellipse at 70% 50%,rgba(99,102,241,.18),transparent 60%),
+             radial-gradient(ellipse at 20% 80%,rgba(16,185,129,.12),transparent 50%);
+  pointer-events:none;
+}
+
+/* Nav cards */
+.nav-card{
+  background:#fff;
+  border:1.5px solid #e2e8f0;
+  border-radius:14px;
+  padding:18px 20px;
+  cursor:pointer;
+  transition:all .18s;
+  text-decoration:none;
+  color:inherit;
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+  position:relative;
+  overflow:hidden;
+}
+.nav-card:hover{
+  border-color:#94a3b8;
+  box-shadow:0 6px 20px rgba(15,23,42,.1);
+  transform:translateY(-2px);
+}
+.nav-card::after{
+  content:'→';
+  position:absolute;
+  right:16px;
+  bottom:16px;
+  font-size:14px;
+  color:#cbd5e1;
+  transition:all .18s;
+}
+.nav-card:hover::after{ color:#64748b; right:12px; }
+
+/* Featured card (Overview) */
+.nav-card.featured{
+  background:linear-gradient(135deg,#faf5ff 0%,#f0f9ff 100%);
+  border-color:#c4b5fd;
+  grid-column:1/-1;
+}
+.nav-card.featured:hover{ border-color:#7c3aed; }
+
+/* Section header */
+.section-label{
+  font-size:10px;
+  font-weight:700;
+  text-transform:uppercase;
+  letter-spacing:.08em;
+  color:#94a3b8;
+  margin-bottom:12px;
+}
+
+/* Status pill */
+.status-pill{
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  padding:5px 12px;
+  background:rgba(16,185,129,.15);
+  border:1px solid rgba(16,185,129,.3);
+  border-radius:999px;
+  font-size:11px;
+  font-weight:600;
+  color:#6ee7b7;
+  margin-bottom:20px;
+}
+
+/* Badge */
+.tag{padding:2px 8px;border-radius:999px;font-size:9px;font-weight:700;letter-spacing:.04em;}
+.tag-new{background:#ede9fe;color:#6d28d9;}
+.tag-live{background:#ecfdf5;color:#065f46;}
+.tag-upd{background:#eff6ff;color:#1e40af;}
+
+/* Metric pills in featured card */
+.metric-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:4px;}
+.metric-pill{display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border-radius:6px;font-size:11px;font-weight:600;background:#f1f5f9;color:#475569;}
+
+/* ── Polish ── */
+.nav-card{box-shadow:0 1px 2px rgba(15,23,42,.05);min-height:118px;}
+.nav-card:hover{transform:translateY(-3px);box-shadow:0 14px 34px rgba(15,23,42,.13);}
+/* icon → tinted rounded chip */
+.nav-card > div:first-child > span:first-child{
+  display:inline-flex;align-items:center;justify-content:center;
+  min-width:38px;height:38px;border-radius:11px;background:#eef2ff;
+  box-shadow:inset 0 0 0 1px rgba(99,102,241,.14);
+}
+.section-label{font-size:11px;letter-spacing:.1em;color:#475569;display:flex;align-items:center;gap:7px;}
+.section-label::after{content:'';flex:1;height:1px;background:linear-gradient(90deg,#e2e8f0,transparent);}
+/* live/updated tags pop a little more */
+.tag{box-shadow:0 1px 0 rgba(0,0,0,.02);}
+/* gentle reveal on load */
+@keyframes cardIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+.nav-card{animation:cardIn .4s ease both;}
+.nav-card:nth-child(2){animation-delay:.05s}
+.nav-card:nth-child(3){animation-delay:.1s}
+</style>
+</head>
+<body>
+
+<!-- PASSWORD GATE -->
+<div id="pwGate" style="position:fixed;inset:0;z-index:9999;background:linear-gradient(135deg,#0f172a 0%,#1e293b 100%);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;">
+  <div style="text-align:center;margin-bottom:4px;">
+    <div style="font-size:36px;margin-bottom:8px;">🔒</div>
+    <h2 style="color:#f8fafc;font-size:22px;font-weight:700;margin:0 0 4px;">Allo Health Dashboard</h2>
+    <p style="color:#94a3b8;font-size:13px;margin:0;">Enter password to continue</p>
+  </div>
+  <div style="background:#1e293b;border:1px solid #334155;border-radius:14px;padding:28px 32px;width:300px;box-shadow:0 20px 60px rgba(0,0,0,.5);">
+    <input id="pwInput" type="password" placeholder="Password"
+      style="width:100%;box-sizing:border-box;padding:10px 14px;border:1.5px solid #334155;border-radius:8px;background:#0f172a;color:#f8fafc;font-size:14px;outline:none;margin-bottom:10px;"
+      onkeydown="if(event.key==='Enter')checkPw()"/>
+    <button onclick="checkPw()"
+      style="width:100%;padding:10px;background:#6366f1;color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;">
+      Unlock
+    </button>
+    <p id="pwErr" style="color:#f87171;font-size:12px;text-align:center;margin:8px 0 0;display:none;">Incorrect password.</p>
+  </div>
+</div>
+<script>
+(function(){
+  const PW='allo', SK='allo_dash_auth';
+  function checkPw(){
+    if(document.getElementById('pwInput').value===PW){
+      sessionStorage.setItem(SK,'1');
+      document.getElementById('pwGate').style.display='none';
+    } else {
+      document.getElementById('pwErr').style.display='block';
+    }
+  }
+  window.checkPw=checkPw;
+  if(sessionStorage.getItem(SK)) document.getElementById('pwGate').style.display='none';
+})();
+</script>
+
+<!-- ═══ HERO ═══ -->
+<div class="hero">
+  <!-- Logo + Brand -->
+  <div style="display:inline-flex;align-items:center;gap:10px;margin-bottom:20px;">
+    <div style="width:40px;height:40px;background:rgba(255,255,255,.12);border:1.5px solid rgba(255,255,255,.2);border-radius:12px;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px);">
+      <span style="font-size:20px;">📊</span>
+    </div>
+    <span style="font-size:18px;font-weight:700;color:#f8fafc;letter-spacing:-.01em;">Allo Health</span>
+  </div>
+
+  <!-- Status pill -->
+  <div>
+    <span class="status-pill">
+      <span style="width:6px;height:6px;border-radius:50%;background:#34d399;box-shadow:0 0 6px #34d399;"></span>
+      Demand view · live
+    </span>
+  </div>
+
+  <h1 style="font-size:32px;font-weight:800;color:#f8fafc;margin:0 0 10px;letter-spacing:-.02em;">Demand Dashboard</h1>
+  <p style="color:#94a3b8;font-size:14px;margin:0 auto;max-width:440px;line-height:1.6;">
+    Holistic demand analysis across channels, cities &amp; categories
+  </p>
+
+  <!-- Quick stats row -->
+  <div style="display:flex;justify-content:center;gap:24px;margin-top:28px;flex-wrap:wrap;">
+    <div style="text-align:center;">
+      <div style="font-size:22px;font-weight:800;color:#f8fafc;">55</div>
+      <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:#64748b;margin-top:2px;">Clinics</div>
+    </div>
+    <div style="width:1px;background:rgba(255,255,255,.08);"></div>
+    <div style="text-align:center;">
+      <div style="font-size:22px;font-weight:800;color:#f8fafc;">20</div>
+      <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:#64748b;margin-top:2px;">Cities</div>
+    </div>
+    <div style="width:1px;background:rgba(255,255,255,.08);"></div>
+    <div style="text-align:center;">
+      <div style="font-size:22px;font-weight:800;color:#f8fafc;">6</div>
+      <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:#64748b;margin-top:2px;">Channels</div>
+    </div>
+    <div style="width:1px;background:rgba(255,255,255,.08);"></div>
+    <div style="text-align:center;">
+      <div style="font-size:22px;font-weight:800;color:#f8fafc;">7+</div>
+      <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:#64748b;margin-top:2px;">Categories</div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ NAV CARDS ═══ -->
+<style>
+  .grp-lead{display:block;text-decoration:none;border-radius:14px;padding:18px 22px;box-shadow:0 8px 24px rgba(15,23,42,.18);border:1px solid;transition:transform .18s,box-shadow .18s;}
+  .grp-lead:hover{transform:translateY(-3px);box-shadow:0 16px 38px rgba(15,23,42,.24);}
+  details.archive > summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:8px;font-size:13px;font-weight:700;color:#475569;padding:12px 14px;background:#fff;border:1.5px solid #e2e8f0;border-radius:12px;user-select:none;}
+  details.archive > summary::-webkit-details-marker{display:none;}
+  details.archive > summary .chev{transition:transform .18s;color:#94a3b8;}
+  details.archive[open] > summary .chev{transform:rotate(90deg);}
+  details.archive[open] > summary{border-radius:12px 12px 0 0;border-bottom-color:transparent;}
+</style>
+<div style="max-width:900px;margin:0 auto;padding:36px 20px 60px;">
+
+  <!-- ═══ MAIN · DEMAND VIEW (featured) ═══ -->
+  <div class="section-label" style="margin-bottom:14px;">⭐ Main view</div>
+  <a href="bookings-funnel.html" class="grp-lead" style="background:linear-gradient(135deg,#2a1e4a 0%,#3d2c6e 100%);border-color:#7c5cbf;display:block;margin-bottom:40px;padding:26px 30px;">
+    <div style="display:flex;align-items:center;gap:12px;">
+      <span style="font-size:30px;">🎯</span>
+      <span style="font-size:23px;font-weight:800;color:#fff;letter-spacing:-.01em;">Demand view</span>
+      <span class="tag tag-live" style="margin-left:auto;">LIVE</span>
+    </div>
+    <div style="font-size:13.5px;color:#D6CBEC;line-height:1.6;margin-top:11px;">
+      The demand cockpit — <b>attributable leads → book %</b>, the SC-bookings pivot, and the Book→Done → Done ops funnel, all in one place. Break by <b>GMB · Google · Practo · Organic · Other</b>, medium, AI intent &amp; category; scope <b>National ▸ City ▸ Clinic ▸ Doctor</b>; toggle <b>Offline / Online</b>; verified leads, slot outcomes &amp; book-rate at every level.
+    </div>
+  </a>
+
+  <!-- ═══ MARKETING TEAM VIEWS ═══ -->
+  <div class="section-label" style="margin-bottom:14px;">📣 Marketing team views</div>
+  <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:14px;margin-bottom:34px;">
+    <a href="google-ads.html" class="grp-lead" style="background:linear-gradient(135deg,#123a63 0%,#2C6CAE 100%);border-color:#4E73C4;">
+      <div style="display:flex;align-items:center;gap:9px;"><span style="font-size:24px;">🎯</span><span style="font-size:16px;font-weight:800;color:#fff;">Google Ads · Campaign Compose</span></div>
+      <div style="font-size:12.5px;color:#C7DBF2;line-height:1.5;margin-top:8px;">Compose any city's full Google-Ads funnel — <b>spend / budget / bid by campaign</b> × <b>leads → book → done → ROAS by source</b>, two independent levers. Budget → IS → clicks → CPL → ROAS, all filterable. 25 cities.</div>
+    </a>
+    <a href="gmb.html" class="grp-lead" style="background:linear-gradient(135deg,#1b4332 0%,#2E7D5B 100%);border-color:#40916c;">
+      <div style="display:flex;align-items:center;gap:9px;"><span style="font-size:24px;">📍</span><span style="font-size:16px;font-weight:800;color:#fff;">GMB · Google Business Profile</span></div>
+      <div style="font-size:12.5px;color:#c7ecd8;line-height:1.5;margin-top:8px;">Per-clinic <b>impressions · calls · website · directions</b> + <b>review velocity (+ve/−ve)</b> + <b>out-reviewing the top rival</b> by category. Week-on-week matrix (weeks × city→clinic), scope + category filters. 71 clinics.</div>
+    </a>
+    <a href="comp-intelligence.html" class="grp-lead" style="background:linear-gradient(135deg,#2d1b4e 0%,#4a2d7a 100%);border-color:#7c4dbe;">
+      <div style="display:flex;align-items:center;gap:9px;"><span style="font-size:24px;">🔭</span><span style="font-size:16px;font-weight:800;color:#fff;">Competition Intelligence · Reviews · Type · Action</span></div>
+      <div style="font-size:12.5px;color:#d4bcf5;line-height:1.5;margin-top:8px;">National → city → clinic, across <b>SH · STI · MH</b>. Who beats us and by how many reviews, by rival <b>type</b> (pathy / diagnostic-lab / psychiatrist…), with <b>Google Ads (IS · CPL)</b> + per-clinic <b>GMB</b> and a scale / fix-profile / fix-booking verdict. Faceted, clickable, Maps-linked.</div>
+    </a>
+  </div>
+
+  <!-- ═══ MORE / ARCHIVE (collapsed) ═══ -->
+  <details class="archive">
+    <summary><span class="chev">▸</span> More views &amp; older tabs <span style="color:#94a3b8;font-weight:600;">(click to expand)</span></summary>
+    <div style="border:1.5px solid #e2e8f0;border-top:none;border-radius:0 0 12px 12px;padding:16px;background:#fbfcfe;">
+
+      <div class="section-label" style="margin-bottom:10px;">🏙️ City Head views</div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:20px;">
+        <a href="master.html" class="nav-card"><div style="display:flex;align-items:center;gap:8px;"><span style="font-size:16px;">🗺️</span><span style="font-size:13px;font-weight:700;">Master Demand Sheet</span></div><div style="font-size:11.5px;color:#64748b;line-height:1.45;">One sheet for everything — Leads → Bookings → Done → Purchased → Revenue. Filter by Tier / City / Clinic / Doctor / Maturity.</div></a>
+        <a href="city-diagnostic.html" class="nav-card"><div style="display:flex;align-items:center;gap:8px;"><span style="font-size:16px;">🩻</span><span style="font-size:13px;font-weight:700;">Quick Diagnostic</span></div><div style="font-size:11.5px;color:#64748b;line-height:1.45;">City-head quick scan — vitals (Revenue · Availability · Leads · Bookings · B2D · RPC · D2P), drill to clinics &amp; doctors.</div></a>
+      </div>
+
+      <div class="section-label" style="margin-bottom:10px;">🏥 Clinic views</div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:20px;">
+        <a href="mh-flow-funnel.html" class="nav-card"><div style="display:flex;align-items:center;gap:8px;"><span style="font-size:16px;">🔭</span><span style="font-size:13px;font-weight:700;">MH Lead → Book Flow</span></div><div style="font-size:11.5px;color:#64748b;line-height:1.45;">Validated unique-patient funnel — leads by source → booked → done, per MH clinic. AI-intent filter &amp; dispositions.</div></a>
+        <a href="mh-funnel.html" class="nav-card"><div style="display:flex;align-items:center;gap:8px;"><span style="font-size:16px;">🧠</span><span style="font-size:13px;font-weight:700;">Clinic × Category WoW</span></div><div style="font-size:11.5px;color:#64748b;line-height:1.45;">Full-depth weekly funnel per clinic, split by category (STI / SH / MH / Other) — reach → leads → done → revenue.</div></a>
+      </div>
+
+      <div class="section-label" style="margin-bottom:10px;">📣 Marketing &amp; funnels</div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:20px;">
+        <a href="channel-view.html" class="nav-card"><div style="display:flex;align-items:center;gap:8px;"><span style="font-size:16px;">🔀</span><span style="font-size:13px;font-weight:700;">Channel View</span></div><div style="font-size:11.5px;color:#64748b;line-height:1.45;">Demand by acquisition channel — Google · GMB · Facebook · Practo. Leads → bookings → done per channel, WoW.</div></a>
+        <a href="efficiency.html" class="nav-card"><div style="display:flex;align-items:center;gap:8px;"><span style="font-size:16px;">⚡</span><span style="font-size:13px;font-weight:700;">Efficiency</span></div><div style="font-size:11.5px;color:#64748b;line-height:1.45;">Channel cost &amp; efficiency — CPL / CPB / CPD, spend allocation, RoAS — across every paid channel.</div></a>
+        <a href="l2b-dashboard.html" class="nav-card"><div style="display:flex;align-items:center;gap:8px;"><span style="font-size:16px;">📞</span><span style="font-size:13px;font-weight:700;">L2B · Lead → Book by source</span></div><div style="font-size:11.5px;color:#64748b;line-height:1.45;">Call + web leads → booked, by system source, reconciled to ops total. Four tabs — Overview · Call · Web · Final.</div></a>
+        <a href="l0-funnel.html" class="nav-card"><div style="display:flex;align-items:center;gap:8px;"><span style="font-size:16px;">🩺</span><span style="font-size:13px;font-weight:700;">L0 · New-patient funnel</span></div><div style="font-size:11.5px;color:#64748b;line-height:1.45;">Validated book2done on new SCs — bookings → done → purchased → revenue, 52w.</div></a>
+        <a href="campaigns.html" class="nav-card"><div style="display:flex;align-items:center;gap:8px;"><span style="font-size:16px;">🔍</span><span style="font-size:13px;font-weight:700;">Campaigns</span></div><div style="font-size:11.5px;color:#64748b;line-height:1.45;">Per-campaign Google Ads auction &amp; outcomes — IS, QS, CPC, conversions, actions.</div></a>
+        <a href="marketing.html" class="nav-card"><div style="display:flex;align-items:center;gap:8px;"><span style="font-size:16px;">🩺</span><span style="font-size:13px;font-weight:700;">Practo</span></div><div style="font-size:11.5px;color:#64748b;line-height:1.45;">Practo marketplace — leads → bookings by city / clinic / doctor.</div></a>
+        <a href="clinic-funnel.html" class="nav-card"><div style="display:flex;align-items:center;gap:8px;"><span style="font-size:16px;">⛓️</span><span style="font-size:13px;font-weight:700;">Clinic Funnel</span></div><div style="font-size:11.5px;color:#64748b;line-height:1.45;">Per-clinic stage-0-to-9 funnel — GMB discovery → … → done → velocity.</div></a>
+        <a href="mh.html" class="nav-card"><div style="display:flex;align-items:center;gap:8px;"><span style="font-size:16px;">⚖️</span><span style="font-size:13px;font-weight:700;">MH · Cannibalisation</span></div><div style="font-size:11.5px;color:#64748b;line-height:1.45;">Is MH net-new or eating SH bookings? Per-clinic verdict across the 5 MH clinics.</div></a>
+        <a href="sss.html" class="nav-card"><div style="display:flex;align-items:center;gap:8px;"><span style="font-size:16px;">⭐</span><span style="font-size:13px;font-weight:700;">Same-Store Sales · North Star</span></div><div style="font-size:11.5px;color:#64748b;line-height:1.45;">True same-store growth, recent vs prior 13w, by maturity cohort × category.</div></a>
+      </div>
+
+      <div class="section-label" style="margin-bottom:10px;">🔎 City-head diagnostics</div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:20px;">
+        <a href="diagnostic.html" class="nav-card"><div style="display:flex;align-items:center;gap:8px;"><span style="font-size:16px;">🔍</span><span style="font-size:13px;font-weight:700;">Quick View</span></div><div style="font-size:11.5px;color:#64748b;line-height:1.45;">Weekly RCA — where bookings broke this week, worst-first by city → clinic.</div></a>
+        <a href="diagnostic-view.html" class="nav-card"><div style="display:flex;align-items:center;gap:8px;"><span style="font-size:16px;">🩻</span><span style="font-size:13px;font-weight:700;">Diagnostic View</span></div><div style="font-size:11.5px;color:#64748b;line-height:1.45;">Filter any metric by drop / flat / growth vs baseline — city → clinic → doctor.</div></a>
+        <a href="clinic-cannibalization.html" class="nav-card"><div style="display:flex;align-items:center;gap:8px;"><span style="font-size:16px;">🏥</span><span style="font-size:13px;font-weight:700;">Clinic Cannibalization</span></div><div style="font-size:11.5px;color:#64748b;line-height:1.45;">Did a new clinic eat an old one's demand? Per T1 city, with an auto verdict.</div></a>
+        <a href="doctor-fluctuation.html" class="nav-card"><div style="display:flex;align-items:center;gap:8px;"><span style="font-size:16px;">🩺</span><span style="font-size:13px;font-weight:700;">Doctor Fluctuation</span></div><div style="font-size:11.5px;color:#64748b;line-height:1.45;">Each doctor's monthly consults + active-doctor count; who left / joined.</div></a>
+        <a href="demand-funnel.html" class="nav-card"><div style="display:flex;align-items:center;gap:8px;"><span style="font-size:16px;">📊</span><span style="font-size:13px;font-weight:700;">Demand RCA</span></div><div style="font-size:11.5px;color:#64748b;line-height:1.45;">Top-of-funnel drops — leads by channel, GMB views/actions, reviews, city → clinic.</div></a>
+        <a href="online-rca.html" class="nav-card"><div style="display:flex;align-items:center;gap:8px;"><span style="font-size:16px;">🌐</span><span style="font-size:13px;font-weight:700;">Online Demand RCA</span></div><div style="font-size:11.5px;color:#64748b;line-height:1.45;">Online / national pool — leads → bookings → done by source over 18 months.</div></a>
+      </div>
+
+      <div class="section-label" style="margin-bottom:10px;">🗺️ Roll-ups &amp; executive</div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;">
+        <a href="source-recon.html" class="nav-card"><div style="display:flex;align-items:center;gap:8px;"><span style="font-size:16px;">📈</span><span style="font-size:13px;font-weight:700;">Clinic WoW · all clinics</span></div><div style="font-size:11.5px;color:#64748b;line-height:1.45;">Week-over-week per clinic — availability, leads, lead→book%, bookings, outcomes.</div></a>
+        <a href="city-funnel.html" class="nav-card"><div style="display:flex;align-items:center;gap:8px;"><span style="font-size:16px;">🏙️</span><span style="font-size:13px;font-weight:700;">City Funnel · by city</span></div><div style="font-size:11.5px;color:#64748b;line-height:1.45;">Metrics summed per city — expand any row to each clinic's contribution.</div></a>
+        <a href="country-funnel.html" class="nav-card"><div style="display:flex;align-items:center;gap:8px;"><span style="font-size:16px;">🇮🇳</span><span style="font-size:13px;font-weight:700;">Country Funnel · all India</span></div><div style="font-size:11.5px;color:#64748b;line-height:1.45;">National roll-up with Tier + maturity filters; expand to each city.</div></a>
+        <a href="category.html" class="nav-card"><div style="display:flex;align-items:center;gap:8px;"><span style="font-size:16px;">📈</span><span style="font-size:13px;font-weight:700;">Category</span></div><div style="font-size:11.5px;color:#64748b;line-height:1.45;">STI / ED+ / PE+ / MH — growth index, channel mix, city &amp; clinic drilldown.</div></a>
+      </div>
+
+    </div>
+  </details>
+
+  <!-- Footer -->
+  <div style="text-align:center;color:#94a3b8;font-size:11px;margin-top:44px;display:flex;align-items:center;justify-content:center;gap:10px;">
+    <span style="width:6px;height:6px;border-radius:50%;background:#34d399;display:inline-block;box-shadow:0 0 4px #34d399;"></span>
+    Allo Health Demand Dashboard · Last data: 25–31 May 2026
+    <span style="color:#e2e8f0;">·</span>
+    <span title="Click any sparkline chip to zoom into week-by-week values">💡 Click any sparkline to zoom</span>
+  </div>
+</div>
+
+</body>
+</html>

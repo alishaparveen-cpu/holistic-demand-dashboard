@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Pull Quality Score per campaign per week (all 6 weeks) → data_quality_score.json
-   { "<report_stem>": { "<week label>": qs } }.
-QS lives on keywords; the campaign value is the COST-WEIGHTED average across its enabled keywords
-(a low-QS keyword burning budget pulls the score down more than a low-QS keyword that barely spends).
-build_campaign_compose.py merges these onto acq rows; the dashboard cost-weights across selected campaigns.
+"""Pull Quality Score + AR/LP per campaign per week → data_quality_score.json
+   { "<stem>": { "<week label>": { "qs": float, "ar": int%, "lp": int% } } }
+QS = cost-weighted average across enabled keywords (Σ QS·cost ÷ Σ cost).
+AR% = % of impressions where ad relevance was BELOW_AVERAGE (impression-weighted).
+LP% = % of impressions where landing page experience was BELOW_AVERAGE (impression-weighted).
+build_campaign_compose.py merges these onto acq rows.
 Reads creds from ~/.claude/.mcp.json.
 """
 import json, os, re
@@ -20,19 +21,30 @@ WK=[('Jun 8-14','2026-06-08','2026-06-14'),('Jun 15-21','2026-06-15','2026-06-21
 def fn_of(name): return re.sub(r'[^a-z0-9]+','_',name.lower()).strip('_')
 out={}
 for label,s,e in WK:
-    acc={}   # stem -> [Σ qs*cost, Σ cost]
-    q=(f"SELECT campaign.name, ad_group_criterion.quality_info.quality_score, metrics.cost_micros "
+    # stem -> [Σ qs*cost, Σ cost, imp_ar_bad, imp_lp_bad, imp_total]
+    acc={}
+    q=(f"SELECT campaign.name, metrics.cost_micros, metrics.impressions, "
+       f"ad_group_criterion.quality_info.quality_score, "
+       f"ad_group_criterion.quality_info.creative_quality_score, "
+       f"ad_group_criterion.quality_info.post_click_quality_score "
        f"FROM keyword_view WHERE segments.date BETWEEN '{s}' AND '{e}' AND metrics.impressions>0")
     n=0
     for r in ga.search(customer_id=CID, query=q):
-        qs=r.ad_group_criterion.quality_info.quality_score
+        qi=r.ad_group_criterion.quality_info
+        qs=qi.quality_score
         if not qs: continue   # keyword has no QS (skip; don't dilute with 0)
         cost=r.metrics.cost_micros/1e6
-        w=cost if cost>0 else 0.0001   # tiny floor so a 0-cost-but-has-QS keyword still counts a hair
-        stem=fn_of(r.campaign.name); a=acc.setdefault(stem,[0.0,0.0])
-        a[0]+=qs*w; a[1]+=w; n+=1
-    for stem,(num,den) in acc.items():
-        if den>0: out.setdefault(stem,{})[label]=round(num/den,2)
+        imp=r.metrics.impressions
+        w=cost if cost>0 else 0.0001   # tiny floor so a 0-cost keyword still counts a hair
+        ar_bad=1 if int(qi.creative_quality_score)==2 else 0   # 2=BELOW_AVERAGE in QualityScoreBucket enum
+        lp_bad=1 if int(qi.post_click_quality_score)==2 else 0
+        stem=fn_of(r.campaign.name); a=acc.setdefault(stem,[0.0,0.0,0,0,0])
+        a[0]+=qs*w; a[1]+=w; a[2]+=ar_bad*imp; a[3]+=lp_bad*imp; a[4]+=imp; n+=1
+    for stem,a in acc.items():
+        qs_val=round(a[0]/a[1],2) if a[1]>0 else None
+        ar_val=round(a[2]/a[4]*100) if a[4]>0 else None
+        lp_val=round(a[3]/a[4]*100) if a[4]>0 else None
+        out.setdefault(stem,{})[label]={'qs':qs_val,'ar':ar_val,'lp':lp_val}
     print(f"{label}: {len(acc)} campaigns with QS ({n} keywords)")
 json.dump(out, open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),'data_quality_score.json'),'w'), separators=(',',':'))
 print(f"wrote data_quality_score.json · {len(out)} campaign stems")
