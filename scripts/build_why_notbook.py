@@ -28,7 +28,7 @@ QD = json.load(open(os.path.join(ROOT, "data_quick_diag.json")))
 # clinic_funnels short key -> quick_diag slug
 SLUG = {"bharathi":"bharathi_nagar_coimbatore","indiranagar":"indiranagar_bangalore",
         "vaishali":"vaishali_nagar_jaipur","hadapsar":"hadapsar_pune","kharghar":"kharghar_navi_mumbai",
-        "hubli":"vidya_nagar_hubli","kharadi":"kharadi_pune"}
+        "hubli":"vidya_nagar_hubli","kharadi":"kharadi_pune","whitefield":"whitefield_bangalore"}
 
 # agent-disposition reason → bucket (the founder's "why")
 BUCKET = {

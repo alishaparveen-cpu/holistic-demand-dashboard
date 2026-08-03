@@ -59,6 +59,7 @@ RAW={
  'kharghar':   {'disp':'Kharghar · Navi Mumbai','city':'Navi Mumbai','loc':'Kharghar','nums':['2248932451','2248931386'],'paid':'2248931386','paid_solo':False},
  'hubli':      {'disp':'Vidya Nagar · Hubli','city':'Hubli','loc':'Vidya Nagar','nums':['8047094835','8046802123'],'paid':None,'paid_solo':True},
  'kharadi':    {'disp':'Kharadi · Pune','city':'Pune','loc':'Kharadi','nums':['2241484446','2048556242'],'paid':'2048556242','paid_solo':False},
+ 'whitefield': {'disp':'Whitefield · Bangalore','city':'Bangalore','loc':'Whitefield','nums':['8047280292','8045680561'],'paid':'8045680561','paid_solo':False},   # founder ask (2026-08-03): GMB 8047280292; paid 8045680561 shared w/ Indiranagar → backtrack
 }
 def cfg_of(slug):
     c=RAW[slug]; paid=c['paid']
