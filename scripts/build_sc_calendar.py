@@ -53,6 +53,14 @@ def MED(a): return f"""CASE
 
 NUL=("","\\N","True",None)
 def g(r,i): return r[i] if i<len(r) else ""   # trailing empty cols are dropped by the tab-split
+def rzn_bucket(reason):
+    """Bucket an appointment reschedule/cancel reason → doctor-side (shrinkage) vs patient-side vs other."""
+    r=(reason or "").lower().strip()
+    if not r or r=="(no reason)": return ""
+    if "doctor" in r or "nonbookable" in r or "block" in r or "provider" in r: return "doctor"
+    if ("patient" in r or "i want to" in r or "cancel" in r or "change my appointment" in r
+        or "book later" in r or "travel" in r or "busy" in r or "mistake" in r or "feeling better" in r): return "patient"
+    return "other"
 def parse_recs(*ss):
     """Parse one or more LISTAGG strings ('url~dur~date|url~dur~date') into a deduped recording list."""
     out=[]; seen=set()
@@ -119,6 +127,7 @@ for c in CLINICS:
       p.phone_no phone, p.id pid, COALESCE(pr.name,'Unassigned') doc,
       DATEDIFF(day, DATE(l.lead_dt + {IST}), DATE(a.created_at + {IST})) age,
       {SRC('ld')} src, {MED('ld')} med, {ST_SQL} st,
+      REPLACE(REPLACE(REPLACE(COALESCE(a.reason,''),CHR(9),' '),CHR(10),' '),CHR(13),' ') reason,
       COALESCE(cbp.cat, cba.cat, '') cat, COALESCE(cbp.summ, cba.summ, '') summ,
       COALESCE(rp.recs,'') recs_p, COALESCE(ra.recs,'') recs_a
     FROM allo_consultations.appointments a
@@ -143,8 +152,9 @@ for c in CLINICS:
         doc=r[3] or "Unassigned"; docs.add(doc)
         days[d]["bookings"].append({"p":r[1], "pid":(r[2] or ""), "doc":doc, "age":age,
                                     "src":(r[5] or "Direct/unknown"), "med":(r[6] or "Web"), "st":r[7],
-                                    "cat":(g(r,8) or ""), "summ":(g(r,9) or ""),
-                                    "recs":parse_recs(g(r,10), g(r,11))})
+                                    "rzntxt":(g(r,8) or ""), "rzn":rzn_bucket(g(r,8)),
+                                    "cat":(g(r,9) or ""), "summ":(g(r,10) or ""),
+                                    "recs":parse_recs(g(r,11), g(r,12))})
     # ---- B) per-lead rows (all sources by clinic code) + call outcome/recording + booked flag ----
     nums = "','".join(c["nums"])
     b = q(f"""

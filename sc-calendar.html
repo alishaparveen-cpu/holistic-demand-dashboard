@@ -66,6 +66,7 @@ select{font:13px inherit;color:var(--ink);border:1px solid var(--line);border-ra
 .srcGoogle{color:#B8503C}.srcGMB{color:#2E7D5B}.srcMeta{color:#3E5FA8}.srcPracto{color:#7C5CBF}.srcOrganic{color:#8a7a3f}
 .catMH{color:#7C5CBF;border-color:#d9cff0}.catSH{color:#3E5FA8;border-color:#cdd8ef}.catSTI{color:#B8503C;border-color:#f0d4cd}.catED{color:#8a6a2a;border-color:#ecdfc0}
 .ntico{cursor:help;font-size:12px;opacity:.75}.ntico:hover{opacity:1}
+.rzn{font-size:10px;color:var(--muted);margin-top:1px;cursor:help}.rzn.rznD{color:var(--noshow);font-weight:700}
 </style>
 </head>
 <body>
@@ -164,14 +165,17 @@ function render(){
           <td><span class="chip ${SRCCLS(b.src)}">${b.src}</span></td>
           <td>${b.med}</td>
           <td>${b.age==null?'<span class="na">no lead</span>':(b.age===0?'same day':b.age+'d')}</td>
-          <td><span class="dot" style="background:${STCOL[b.st]}"></span>${STLAB[b.st]}</td>
+          <td><span class="dot" style="background:${STCOL[b.st]}"></span>${STLAB[b.st]}${b.rzntxt?`<div class="rzn ${b.rzn==='doctor'?'rznD':''}" title="${esc(b.rzntxt)}">${b.rzn==='doctor'?'⚠ doctor-side':b.rzn==='patient'?'patient-side':'other'}</div>`:''}</td>
           <td>${recsCell(b.recs)}${noteIcon(b.summ)}</td>
         </tr>`).join('')}
       </tbody></table></div>`;
   } else bkHTML=`<div class="bkwrap" style="color:var(--faint);font-size:12.5px">Click an age band above to see the booking-level breakdown (patient ID · phone · source · medium · status).</div>`;
   const stLine=STORDER.filter(k=>st[k]).map(k=>`<b style="color:${STCOL[k]}">${st[k]} ${STLAB[k].toLowerCase()}</b>`).join(' · ')||'—';
+  const rznBk=bks.filter(b=>b.st==='resched'||b.st==='cancelled');
+  const rc={doctor:0,patient:0,other:0}; rznBk.forEach(b=>{if(b.rzn&&rc[b.rzn]!=null)rc[b.rzn]++;});
+  const rznLine=rznBk.length?`<div class="ds" style="margin-top:-6px">↻ Of the ${rznBk.length} moved/cancelled: <b style="color:var(--noshow)">${rc.doctor} doctor-side (shrinkage)</b> · <b>${rc.patient} patient-side</b>${rc.other?` · ${rc.other} other`:''}. <span style="color:var(--faint)">Hover a row's status for the exact reason.</span></div>`:'';
   $('detail').innerHTML=`<h3>${L.dow} ${L.dm} — ${st.done||0} completed of ${tot} booked</h3>
-    <div class="ds">${stLine}. How old was each lead when it booked:</div>
+    <div class="ds">${stLine}. How old was each lead when it booked:</div>${rznLine}
     <div class="bars">${bars}</div>${bkHTML}`;
   $('detail').querySelectorAll('.brow').forEach(el=>el.onclick=()=>{SELAGE=(SELAGE===el.dataset.age?null:el.dataset.age);render();});
 
