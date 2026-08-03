@@ -1,0 +1,97 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>How the launch score is calculated</title>
+<style>
+:root{--ink:#1b2733;--mut:#748092;--line:#e6e9ec;--bg:#f4f6f8;--card:#fff;
+--demand:#2c6cae;--comp:#2f7d32;--win:#7d5ba6;--sh:#b8862e}
+*{box-sizing:border-box}body{font:14.5px/1.62 -apple-system,Segoe UI,Roboto,sans-serif;color:var(--ink);background:var(--bg);margin:0;padding:26px}
+.wrap{max-width:820px;margin:0 auto}
+a{color:var(--demand);font-weight:700;text-decoration:none}
+h1{font-size:22px;margin:6px 0 2px}h2{font-size:16px;margin:26px 0 8px;padding-bottom:5px;border-bottom:2px solid var(--line)}
+h3{font-size:13.5px;margin:16px 0 3px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:9px;padding:16px 18px;margin:12px 0}
+.big{background:#eef4fb;border-left:4px solid var(--demand)}
+.step{display:flex;gap:12px;margin:10px 0}
+.num{flex:0 0 26px;height:26px;border-radius:50%;background:var(--demand);color:#fff;font-weight:800;display:flex;align-items:center;justify-content:center;font-size:13px}
+code{background:#eef1f4;padding:1px 6px;border-radius:4px;font-size:12.5px;font-family:ui-monospace,Menlo,monospace}
+.f{border-left:4px solid #ccc;padding-left:12px;margin:14px 0}
+.f.demand{border-color:var(--demand)}.f.comp{border-color:var(--comp)}.f.win{border-color:var(--win)}.f.sh{border-color:var(--sh)}
+.fl{font-weight:800;font-size:15px}.fl.demand{color:var(--demand)}.fl.comp{color:var(--comp)}.fl.win{color:var(--win)}.fl.sh{color:var(--sh)}
+.w{font-size:11px;color:var(--mut);font-weight:700;background:#f0f2f4;padding:1px 7px;border-radius:9px;margin-left:6px}
+table{width:100%;border-collapse:collapse;margin:6px 0;font-size:13px}
+td,th{text-align:left;padding:5px 9px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-size:11px;text-transform:uppercase;color:var(--mut)}
+.m{font-weight:700}.d{color:var(--mut);font-size:12.5px}
+.eg{background:#fbfcf8;border:1px solid #ece7d6;border-radius:8px;padding:12px 15px;font-size:13px}
+.tag{font-size:10px;color:#fff;background:var(--mut);border-radius:8px;padding:1px 7px;font-weight:700}
+</style></head><body><div class="wrap">
+<a href="mh-launch.html">← Back to Scoring Explorer</a>
+<h1>How the launch score is calculated</h1>
+<div class="d">Every clinic gets a single 0–100 <b>Score</b>. Here is exactly what goes into it — in plain language.</div>
+
+<div class="card big">
+<h3 style="margin-top:0">The one idea to hold onto: every number is a <u>rank</u>, not a raw value</h3>
+Each metric is turned into a <b>percentile (0–100) among the clinics you're currently looking at</b> (the selected tier, or a city). So “Demand&nbsp;86” doesn't mean 86 searches — it means this clinic has <b>higher demand than 86% of its peers</b>. Switch the tier (All / Tier&nbsp;1 / Tier&nbsp;2) or pick a city and every clinic is re-ranked against that new peer group. This is why a clinic can look strong in Tier&nbsp;2 but average across All.
+</div>
+
+<h2>The math, in three steps</h2>
+<div class="card">
+<div class="step"><div class="num">1</div><div><b>Each raw metric → a percentile.</b> We take the raw value (e.g. how far we lead the field, or number of strong rivals) and rank it 0–100 against the other clinics in view.</div></div>
+<div class="step"><div class="num">2</div><div><b>Blend the metrics inside a factor → the factor score.</b> Each factor (Demand, Competition, Right to win, SH stays safe) is a weighted average of its own metric-percentiles. A metric with a <b>negative</b> weight is flipped first (we use <code>100 − percentile</code>), so “more of this” lowers the factor. <br><code>factor = Σ(|weight| × percentile) / Σ|weight|</code></div></div>
+<div class="step"><div class="num">3</div><div><b>Blend the four factors → the final Score.</b> Same rule again, one level up. Competition sits at a <b>negative</b> weight by default, so a more contested field pulls the Score down.<br><code>Score = Σ(|weight| × factor) / Σ|weight|</code></div></div>
+<div class="d" style="margin-top:8px">Weights are <b>relative</b> — only their ratios matter. Setting them to 25/25/25/20 or 50/50/50/40 gives the identical result; each is shown as a % of the total next to the slider. Open any clinic and the <b>“Score math”</b> line shows this exact sum for that clinic, live.</div>
+</div>
+
+<h2>The four factors &amp; what every metric means</h2>
+
+<div class="f demand"><span class="fl demand">Demand</span><span class="w">default +25</span>
+<div class="d">How much mental-health search demand the clinic's market has. Competition is deliberately NOT in here.</div>
+<table><tr><th>Metric</th><th>What it is</th></tr>
+<tr><td class="m">City search volume</td><td class="d">Google keyword search volume for MH across the whole city (one figure per city). <span class="tag" style="background:var(--demand)">only metric</span></td></tr></table>
+<div class="d">Practo locality pageviews are shown as a <i>reference</i> only — not scored (they cover ~⅓ of clinics and one vertical).</div>
+</div>
+
+<div class="f comp"><span class="fl comp">Competition</span><span class="w">default −25 (negative)</span>
+<div class="d">How contested the local MH field is. Negative weight → more competition lowers the Score. This is the ONLY place rivals are counted as a difficulty.</div>
+<table><tr><th>Metric</th><th>What it is</th></tr>
+<tr><td class="m">Strong-rival count</td><td class="d">how many nearby MH rivals clear the “strong rival” review bar (default 100+ reviews). The main driver. <span class="tag" style="background:var(--comp)">weight 100</span></td></tr>
+<tr><td class="m">Rival count (pure)</td><td class="d">total nearby rivals, any size. <span class="tag">off by default</span></td></tr>
+<tr><td class="m">Top-rival dominance</td><td class="d">the #1 rival's share of local reviews — is one giant dominating? <span class="tag">off by default</span></td></tr>
+<tr><td class="m">Field diversity (1/HHI)</td><td class="d">effective number of comparable players — a scattered field vs a concentrated one. <span class="tag">off by default</span></td></tr></table>
+</div>
+
+<div class="f win"><span class="fl win">Right to win today</span><span class="w">default +25</span>
+<div class="d">Can we win MH here — measured <b>relative to the local field</b>, so a clinic we tower over scores high even if the raw count calls the rivals “strong”.</div>
+<table><tr><th>Metric</th><th>What it is</th></tr>
+<tr><td class="m">How far we lead the field</td><td class="d">our reviews head-to-head vs the <b>single strongest</b> nearby MH rival. <code>ours ÷ (ours + top rival)</code>. 50% = tied; 77% = we out-review them ~3:1. <span class="tag" style="background:var(--win)">weight 45</span></td></tr>
+<tr><td class="m">Beat the local pack</td><td class="d">the share of nearby MH rivals we out-review. Beat all = 100. <span class="tag" style="background:var(--win)">weight 30</span></td></tr>
+<tr><td class="m">Clinic reach (GMB)</td><td class="d">our Google listing's searches/week — clinic-wide visibility that will funnel MH patients once launched. <span class="tag" style="background:var(--win)">weight 25</span></td></tr></table>
+</div>
+
+<div class="f sh"><span class="fl sh">SH stays safe</span><span class="w">default +20</span>
+<div class="d">Will launching MH cannibalise our existing sexual-health business? High = our SH is entrenched enough to look after itself. All metrics here are SH-specific (no overlap with Right-to-win). The <b>verdict badge</b> (Entrenched / Contested / Exposed …) is a plain read of our relative lead vs SH competition.</div>
+<table><tr><th>Metric</th><th>What it is</th></tr>
+<tr><td class="m">How far we lead the SH field</td><td class="d">our SH reviews head-to-head vs the strongest nearby SH rival — same relative idea as MH. <span class="tag" style="background:var(--sh)">weight 35</span></td></tr>
+<tr><td class="m">Our SH rank (local)</td><td class="d">our position in the local SH search pack (~#1 = entrenched). <span class="tag" style="background:var(--sh)">weight 20</span></td></tr>
+<tr><td class="m">Our SH leads (SH-tagged)</td><td class="d">GMB leads tagged to sexual health (cat=SH) per week — the SH-specific funnel. <span class="tag" style="background:var(--sh)">weight 15</span></td></tr>
+<tr><td class="m">SH strong rivals (100+)</td><td class="d">nearby SH rivals over the review bar. <b>Negative</b> — more established SH competition = less safe. <span class="tag" style="background:#c0392b">weight −30</span></td></tr>
+<tr><td class="m">SH review share · rival count · dominance · diversity</td><td class="d">extra SH competition reads, tucked under “advanced sub-weights”. <span class="tag">off by default</span></td></tr></table>
+</div>
+
+<h2>A worked example</h2>
+<div class="card eg">
+Suppose a clinic ranks: <b class="m" style="color:var(--demand)">Demand 86</b>, <b class="m" style="color:var(--comp)">Competition 67</b>, <b class="m" style="color:var(--win)">Right to win 81</b>, <b class="m" style="color:var(--sh)">SH stays safe 72</b>, at default weights 25 / −25 / 25 / 20.<br><br>
+Competition is negative, so it enters as <code>100 − 67 = 33</code>. Total of the weight sizes = 25+25+25+20 = 95.<br><br>
+<code>Score = (25×86 + 25×33 + 25×81 + 20×72) ÷ 95</code><br>
+<code>= (2150 + 825 + 2025 + 1440) ÷ 95 = 6440 ÷ 95 ≈ <b>68</b></code><br><br>
+So a busy market (high demand) that's contested (competition drags it) but where we clearly lead the field nets a solid mid-to-high Score. Drag any weight and this recomputes instantly.
+</div>
+
+<h2>Where the numbers come from</h2>
+<div class="card"><table>
+<tr><td class="m">Reviews, ratings, rivals, distance</td><td class="d">Google Maps crawl (7 MH keywords: psychiatrist, psychologist, therapist, counsellor, psychotherapist, mental-health clinic, mental hospital), ≤5&nbsp;km catchment.</td></tr>
+<tr><td class="m">Our local rank</td><td class="d">your own SERP-grid tracking (average map-pack position across the city grid, within 5&nbsp;km).</td></tr>
+<tr><td class="m">GMB discovery &amp; leads</td><td class="d">Google Business Profile insights + your lead tracking (leads split by vertical tag: SH vs MH).</td></tr>
+<tr><td class="m">City demand</td><td class="d">Google keyword search volume per city.</td></tr>
+</table></div>
+<p class="d">Every clinic's drill has a <b>“show sub-score split”</b> toggle under Score math — that reveals each metric's percentile and weight for that exact clinic, so nothing is hidden.</p>
+</div></body></html>

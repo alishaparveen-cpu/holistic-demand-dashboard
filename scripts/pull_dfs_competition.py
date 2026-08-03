@@ -8,9 +8,11 @@ Output: data_serp_dfs.json  {cat:{ 'City|Locality': {our:{...}, competitors:[...
 """
 import os, json, time, math, urllib.request, urllib.error
 
-AUTH = open(os.path.expanduser('~/.allo_dfs_auth')).read().strip()
+AUTH = os.environ.get('DATAFORSEO_AUTH') or open(os.path.expanduser('~/.allo_dfs_auth')).read().strip()
 URL = 'https://api.dataforseo.com/v3/serp/google/maps/live/advanced'
-KEYWORDS = {'SH': 'sexologist', 'STI': 'std testing clinic', 'MH': 'psychiatrist'}
+KEYWORDS = {'SH': ['sexologist'], 'STI': ['std testing clinic'],
+            'MH': ['psychiatrist', 'psychologist', 'mental health clinic', 'mental hospital',
+                   'therapist', 'counsellor', 'psychotherapist']}
 
 def hav(a, b, c, dd):
     R = 6371; p1, p2 = math.radians(a), math.radians(c)
@@ -45,28 +47,38 @@ def main():
     total = len(clinics) * len(KEYWORDS); done = 0
     for city, loc, name, lat, lng in clinics:
         key = f'{city}|{loc}'
-        for cat, kw in KEYWORDS.items():
-            if key in out[cat]: done += 1; continue   # resume: skip already-crawled
-            items = [it for it in maps(kw, lat, lng) if it.get('type') == 'maps_search']
-            comps = []; ours = None
-            for it in items:
-                title = it.get('title') or ''
-                rec = {'name': title, 'rating': (it.get('rating') or {}).get('value'),
-                       'reviews': (it.get('rating') or {}).get('votes_count'),
-                       'category': it.get('category'), 'pos': it.get('rank_absolute'),
-                       'place_id': it.get('place_id'), 'address': it.get('address'),
-                       'domain': it.get('domain'), 'is_paid': it.get('is_paid', False)}
-                ilat, ilng = it.get('latitude'), it.get('longitude')
-                rec['km'] = hav(lat, lng, ilat, ilng) if (ilat and ilng) else None
-                if 'allo' in title.lower() or 'allohealth' in (it.get('domain') or ''):
-                    ours = rec
-                else:
-                    comps.append(rec)
-            out[cat][key] = {'our': ours, 'competitors': comps, 'lat': lat, 'lng': lng}
+        for cat, kws in KEYWORDS.items():
+            if key in out[cat]: done += 1; continue   # resume: skip already-crawled clinic|cat
+            seen = {}; ours = None
+            for kw in kws:                              # merge the local pack across ALL keywords for this vertical
+                for it in maps(kw, lat, lng):
+                    if it.get('type') != 'maps_search': continue
+                    title = it.get('title') or ''
+                    ilat, ilng = it.get('latitude'), it.get('longitude')
+                    rec = {'name': title, 'rating': (it.get('rating') or {}).get('value'),
+                           'reviews': (it.get('rating') or {}).get('votes_count'),
+                           'category': it.get('category'),                      # PRIMARY Google Maps category
+                           'additional_categories': it.get('additional_categories') or [],
+                           'pos': it.get('rank_absolute'),
+                           'place_id': it.get('place_id'), 'address': it.get('address'),
+                           'domain': it.get('domain'), 'is_paid': it.get('is_paid', False)}
+                    rec['km'] = hav(lat, lng, ilat, ilng) if (ilat and ilng) else None
+                    if 'allo' in title.lower() or 'allohealth' in (it.get('domain') or ''):
+                        if ours is None: ours = rec
+                        continue
+                    dk = rec['place_id'] or f"{title.strip().lower()}|{ilat}|{ilng}"
+                    prev = seen.get(dk)
+                    if prev is None:
+                        rec['found_via'] = [kw]; seen[dk] = rec
+                    else:
+                        if kw not in prev['found_via']: prev['found_via'].append(kw)
+                        if (rec.get('reviews') or 0) > (prev.get('reviews') or 0):
+                            rec['found_via'] = prev['found_via']; seen[dk] = rec   # keep richest record
+                time.sleep(0.4)                         # throttle between keyword calls
+            out[cat][key] = {'our': ours, 'competitors': list(seen.values()), 'lat': lat, 'lng': lng}
             done += 1
-            time.sleep(0.4)
-            if done % 15 == 0:
-                json.dump(out, open(outpath, 'w')); print(f'  {done}/{total} (checkpoint)', flush=True)
+            json.dump(out, open(outpath, 'w'))   # checkpoint after EVERY real crawl so a kill loses nothing
+            print(f'  {done}/{total} · {key} saved', flush=True)
     json.dump(out, open(outpath, 'w'))
     tc = sum(len(v.get('competitors', [])) for cat in out.values() for v in cat.values())
     print(f'done · {len(clinics)} clinics × {len(KEYWORDS)} cats · {tc} competitor rows · data_serp_dfs.json')
