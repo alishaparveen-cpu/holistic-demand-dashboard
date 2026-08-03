@@ -591,9 +591,11 @@ function cumArr(a){if(!CUMUL||dowActive())return a||[];const ix=wkIdxs();const o
 const dv=a=>(CUMUL&&!dowActive())?cumArr(a):(a||[]);   // display array: cumulative ONLY in Σ to-date with no day filter; a day-of-week selection is always per-week comparison
 function weekArr(cells){const b=baseAx(),L=b.length,a=new Array(L).fill(0);cells.forEach(c=>{const ar=(typeof cellArr==='function'?cellArr(c):c.arr)||[];for(let i=0;i<L;i++)a[i]+=ar[i]||0;});return clubify(a);}   // per-week sums → clubbed to display columns
 function sumT(wk){let s=0;for(let i=0;i<NWK;i++)s+=wk[WKOFF+i]||0;return s;}   // sum the shown window (WKOFF..WKOFF+NWK-1)
-function fmtVal(v,par){return PCT?(par>0?Math.round(100*v/par)+'%':'0%'):(''+v);}
+function fmtVal(v,par){if(v==null)return '—';return PCT?(par>0?Math.round(100*v/par)+'%':'0%'):(''+v);}   // null = immature/trimmed week → blank, never a false 0
 // latest week (idx 0) vs baseline over prior weeks — avg or peak
-function deltaPct(wk){const latest=wk[WKOFF]||0;const hist=wk.slice(WKOFF+1,WKOFF+NWK);   // prior weeks within the shown window (ending WKOFF back)
+function deltaPct(wk){const latest=wk[WKOFF];
+  if(latest==null)return{txt:'—',cls:'flat',before:null,now:null};   // immature/trimmed newest week → blank Δ, never a false −99%
+  const hist=wk.slice(WKOFF+1,WKOFF+NWK).filter(v=>v!=null);   // prior weeks within the shown window (ending WKOFF back)
   let base;
   if(CMP==='last') base=wk[WKOFF+1]||0;
   else if(CMP==='first') base=wk[Math.min(WKOFF+NWK,(typeof AX==='function'?AX().length:WEEKS.length))-1]||0;   // oldest column shown
@@ -631,7 +633,7 @@ function makeP(cfg){const P={mode:cfg.mode,dims:cfg.dims,order:[...cfg.order],bu
   P.dims.forEach(dk=>{P.sel[dk]=new Set(DIMS[dk].values.map(v=>v.k));});return P;}
 const PL=makeP({mode:'leads',dims:['citygroup','city','clinic','channel','medium','leadcamp','oncall','intent','strength','category','catsrc','asrc','status','doneq'],order:['category','channel','medium'],build:buildLeadCells,hero:'attributable leads',
   els:{flow:$('flowL'),bar:$('barL'),heroN:$('heroNL'),heroL:$('heroLL'),hHdr:$('hHdrL'),hRight:$('hRightL')}});
-const PB=makeP({mode:'bookings',dims:['seg','city','clinic','doctor','brank','relapse','channel','maturity','medium','category','catsrc','campaign'],order:['seg','maturity','channel','medium','category'],build:buildCells,hero:'SC bookings',   // default: Segment → Lead maturity → (geo City) → Source → Medium → Category; Repeat/relapse + booking rank + campaign are opt-in ghosts
+const PB=makeP({mode:'bookings',dims:['seg','city','clinic','doctor','brank','relapse','channel','maturity','medium','category','catsrc','campaign'],order:['seg','city','clinic','doctor','category','channel'],build:buildCells,hero:'SC bookings',   // default: Segment → City → Clinic → Doctor → Category → Source (geo drill — the layered "where is the drop" view); Lead maturity / Medium / Repeat-relapse / booking rank / campaign are opt-in ghosts
   els:{flow:$('flowB'),bar:$('barB'),heroN:$('heroNB'),heroL:$('heroLB'),hHdr:$('hHdrB'),hRight:$('hRightB')}});
 
 // exact numbers dialed under a call node (shown inline when expanded) — so you see WHICH numbers, incl. organic
@@ -739,7 +741,7 @@ function renderLevel(container,cells,depth,parentTot,parentWk,path,pathVals,P){
     row.className='frow'+(hasKids?' clk':'')+(WEEKLY?' wkly':'');
     let right;
     if(WEEKLY){const ix=wkIdxs();const wv=dv(wk),pv=dv(parentWk);const dp=deltaPct(wv);
-      right=ix.map((i,j)=>`<span class="wk${j===ix.length-1?' last':''}">${fmtVal(wv[i]||0,pv[i]||0)}</span>`).join('')
+      right=ix.map((i,j)=>`<span class="wk${j===ix.length-1?' last':''}">${fmtVal(wv[i]==null?null:wv[i],pv[i]||0)}</span>`).join('')
         +`<span class="delta ${dp.cls}">${dp.txt}</span>${bnCols(dp,false)}`;}
     else right=`<span class="barwrap"><span class="barfill" style="width:${Math.max(2,bw)}%;background:${col};opacity:${last?0.85:0.5}"></span></span><span class="cnt">${PCT?pct+'%':t}</span><span class="pct">${PCT?'':pct+'%'}</span>`;
     right+='<span class="zoom" title="plot weekly trend"><svg width="13" height="13" viewBox="0 0 16 16" style="display:inline-block;vertical-align:middle"><polyline points="1,11 5,7 9,9 15,2" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" stroke-linecap="round"/></svg></span>';
@@ -986,7 +988,7 @@ function onlKeys(){if(!ONL||!ONL.clinics)return [];const ks=Object.keys(ONL.clin
   return clinF()?base.filter(k=>matPass(k.slice(k.indexOf('|')+1))):base;}   // clinic-age filter: online attributed to the doctor's block clinic that day → keep if that clinic passes ('Online' unresolved → dropped)
 const SUBCAT2TOP={STI:'STI',MH:'MH','ED+':'SH','ED+PE+':'SH','PE+':'SH','PA':'SH','CM':'SH',LSD:'SH',DE:'SH',DYS:'SH',VGS:'SH',FSAD:'SH',AORG:'SH','Oth':'Other',oth:'Other','NOS':'Other'};   // diagnosis sub-cats → top categories: every named sexual-health condition rolls to SH; only the genuine catch-all (oth/Oth) + NOS → Other
 const ONL_ROLL={oth:'Oth'};   // online cube's raw diag_cat: only the catch-all 'oth' → Oth; every named sub-cat passes through unchanged (SUBCAT2TOP then rolls it, matching quick_diag)
-function qdAlign(arr){if(!arr)return new Array(WEEKS.length).fill(0);return WEEKS.map(w=>{const j=QD_IDX[w];return j===undefined?0:(arr[j]||0);});}   // QD arrays are OLDEST-first → re-align to WEEKS (newest-first)
+function qdAlign(arr){if(!arr)return new Array(WEEKS.length).fill(null);return WEEKS.map(w=>{const j=QD_IDX[w];return j===undefined?0:(arr[j]==null?null:arr[j]);});}   // QD arrays are OLDEST-first → re-align to WEEKS (newest-first); PRESERVE null (immature/trimmed week, e.g. roster not realized) so it renders blank downstream, not a false 0. Missing array (field absent on this clinic) → all-null (contributes nothing to sums) rather than phantom zeros that mask the immature-week blank.
 function slugLoc(s){if(SLUG2LOC[s])return SLUG2LOC[s];const city=(QD.clinics[s]||{}).city||'';let loc=s;const suf='_'+qnorm(city);if(loc.endsWith(suf))loc=loc.slice(0,-suf.length);loc=loc.replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase());return (SLUG2LOC[s]=loc);}
 function opsSlugs(){if(!QD)return [];let base;
   if(SCOPE==='national')base=Object.keys(QD.clinics);
@@ -1013,7 +1015,7 @@ function opsUnits(){if(!QD)return [];
   if(SEG==='online')return opsUnitsOnline();
   if(SEG==='offline')return opsUnitsOffline();
   return opsUnitsOffline().concat(opsUnitsOnline());}   // both
-function opsSumU(units,pick){const out=new Array(WEEKS.length).fill(0);units.forEach(u=>{const a=u.al(pick(u));for(let i=0;i<out.length;i++)out[i]+=a[i]||0;});return out;}
+function opsSumU(units,pick){const out=new Array(WEEKS.length).fill(0),seen=new Array(WEEKS.length).fill(false);units.forEach(u=>{const a=u.al(pick(u));for(let i=0;i<out.length;i++)if(a[i]!=null){out[i]+=a[i];seen[i]=true;}});for(let i=0;i<out.length;i++)if(!seen[i])out[i]=null;return out;}   // week with NO reporting unit (immature/trimmed, e.g. roster not realized) → null → renders blank, not a false 0/−99%
 // make the ② SC-bookings funnel EXACT to ops: the funnel cube (episode lens) undercounts vs ops bookings.total (appointment lens) — entirely in rebook. Add the (ops − funnel) gap per clinic-week as a labelled 'reconcile' rebook cell so every scope's ② total ties to the sheet. (verified ≥0 every week)
 // DISPLAY-time, SCOPE-aware reconcile: per in-scope clinic, top the OFFLINE episode cube up to the patient-distinct booked
 // (national → booked_nat, city → booked_city, clinic → clinic-sum) so ② total = ④ = the city-head sheet at whatever scope is selected.
@@ -1069,7 +1071,7 @@ function opsBuildRow(label,disp,opt){opt=opt||{};
   const row=document.createElement('div');row.className='frow'+(WEEKLY?' wkly':'')+(opt.stage?' opsstage':'')+(opt.sub?' opssub':'')+(opt.expandable?' clk':'');row.style.paddingLeft=(opt.pad!=null?opt.pad:15)+'px';
   const chev=opt.expandable?`<span class="chev">${opt.open?'▾':'▶'}</span>`:'<span class="chev leaf">▶</span>';
   let right;
-  if(WEEKLY){const wkc=OPS_NOWEEK?'':ix.map((i,j)=>`<span class="wk${j===ix.length-1?' last':''}">${isPct?(disp[i]!=null?Math.round(disp[i])+'%':'·'):fmtOps(disp[i]||0)}</span>`).join('');
+  if(WEEKLY){const wkc=OPS_NOWEEK?'':ix.map((i,j)=>`<span class="wk${j===ix.length-1?' last':''}">${isPct?(disp[i]!=null?Math.round(disp[i])+'%':'·'):(disp[i]!=null?fmtOps(disp[i]):'·')}</span>`).join('');
     right=wkc+`<span class="delta ${dp.cls}">${dp.txt}</span>${bnCols(dp,isPct)}<span class="zoom" title="plot weekly trend">${ZSVG}</span>`;}
   else{   // Σ total: one column = window total (counts sum · rates average over the shown weeks)
     let tot;if(isPct){const vs=ix.map(i=>disp[i]).filter(v=>v!=null);tot=vs.length?vs.reduce((a,b)=>a+b,0)/vs.length:null;}else tot=ix.reduce((s,i)=>s+(disp[i]||0),0);
@@ -1260,7 +1262,8 @@ const AVAIL_METS=[
 let AVAIL_MET_OFF=new Set(['rostered_hrs','shrink_hrs','net_rpt_hrs','dead_hrs']);   // de-selected availability metrics by default — the roster-fed metrics (rostered / shrinkage / net Rpt / dead-time) lag ~1wk so the latest week reads 0; hidden by default (re-add via Metrics ▾). Shown: Days attended (+weekday/weekend), opened hrs after shrinkage, net SC hrs.
 function renderAvail(units){units=units||opsUnits();const flow=document.getElementById('availFlow'),head=document.getElementById('availHead');flow.innerHTML='';head.innerHTML=opsHeadHTML('Availability · SC');
   if(!units.some(u=>!u.online)){flow.innerHTML='<div class="empty">Online telehealth has no clinic roster / availability — this applies to physical clinics only (switch to Both / Offline to see roster).</div>';return;}
-  const A=f=>opsSumU(units,u=>u.avail[f]);
+  const availU=units.filter(u=>!u.online);   // availability is offline-only; online units have no roster (avail={}) → their qdAlign(undefined)=zeros would mask the immature-week null. Aggregate offline clinics only.
+  const A=f=>opsSumU(availU,u=>u.avail[f]);
   const useDoc=opsSecLayers('avail').includes('doctor'),docGrain=(SCOPE==='doctor'||useDoc);   // doctor scope OR doctor layer → per-doctor grain (clinic-only metrics drop)
   const shown=AVAIL_METS.filter(m=>!AVAIL_MET_OFF.has(m.f));   // metric picker selection
   const totalMets=shown.filter(m=>!(SCOPE==='doctor'&&m.clinicOnly)&&!(m.docOnly&&SCOPE!=='doctor'));   // totals: clinic-only metrics drop at doctor scope; shift-timing (docOnly) totals only at doctor SCOPE (clinic-level avail has no am/pm — otherwise it'd read 0; per-doctor drill still shows them everywhere)
@@ -2178,17 +2181,18 @@ function renderPickList(){
   if(!PICK_OPTS.length){list.innerHTML='<div class="msempty">no matches</div>';return;}
   list.innerHTML=PICK_OPTS.map((o,i)=>`<label class="msrow"><input type="checkbox" data-i="${i}" ${sel.has(o.k)?'checked':''}><span class="mslab">${o.label}${o.sub?` <span class="mssub">· ${o.sub}</span>`:''}</span>${o.tier?`<span class="mstier">${o.tier}</span>`:''}</label>`).join('');
   list.querySelectorAll('input').forEach(inp=>inp.onchange=()=>{const o=PICK_OPTS[+inp.dataset.i];if(!o)return;if(inp.checked)sel.add(o.k);else sel.delete(o.k);renderPicker();loadClinic();});}
-function syncSegLayer(){   // ② always carries the Segment layer, placed right AFTER the leading geo dims so the scope's grain (City/Clinic) still leads
-  if(!PB.order.includes('seg')){const geo=['citygroup','city','clinic'];let i=0;while(i<PB.order.length&&geo.includes(PB.order[i]))i++;PB.order.splice(i,0,'seg');}}
+function syncSegLayer(){   // ② carries Segment as the LEADING split, but only in Both view (single Offline/Online scopes the whole section via cellPass → the layer would be a redundant 1-value row)
+  PB.order=PB.order.filter(d=>d!=='seg');
+  if(SEG==='both')PB.order.unshift('seg');}
 function setScope(s){SCOPE=s;
   document.querySelectorAll('#scopeseg button').forEach(x=>x.classList.toggle('on',x.dataset.s===s));
   const ds=s==='doctor'?'clinic':s;PL.data=DATASETS[ds].leads;PB.data=DATASETS[ds].bk;
   // per-scope default drill layers (National: Attribution→City for leads; City: Clinic split; bookings always attributed → no citygroup)
   // the scope's own grain leads every funnel section: National → City·Clinic · City → City·Clinic · Clinic → Clinic first
   const geoL = s==='national' ? ['citygroup','city','clinic'] : s==='city' ? ['city','clinic'] : s==='clinic' ? ['clinic'] : [];
-  const geoB = s==='national' ? ['city']             : s==='city' ? ['city','clinic'] : s==='clinic' ? ['clinic'] : [];
+  const geoB = s==='national' ? ['city','clinic','doctor'] : s==='city' ? ['clinic','doctor'] : s==='clinic' ? ['doctor'] : [];
   PL.order = [...geoL,'channel','medium','category'];   // leads default drill: (Attribution →) City → Clinic → Channel → Medium → Call category
-  PB.order = ['maturity',...geoB,'channel','medium','category'];   // default: (Segment→) Lead maturity → City → Source → Medium → Category (Repeat/relapse · Clinic · booking rank · campaign are opt-in ghosts)
+  PB.order = [...geoB,'category','channel'];   // default: (Segment→) geo drill [City → Clinic → Doctor] → Category → Source — the "where is the drop" layered view (Lead maturity · Medium · Repeat/relapse · booking rank · campaign are opt-in ghosts)
   syncSegLayer();   // prepend Segment (Offline/Online) as the top split ONLY in Both view — Offline/Online toggle scopes the whole section instead
   ensureDefaultSel(s);
   syncDoneOrder();   // refresh ⑤ Done layer order with this scope's geo dims (AFTER selection so doctor/clinic count is known)
