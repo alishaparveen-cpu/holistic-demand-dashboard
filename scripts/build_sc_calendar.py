@@ -1,17 +1,16 @@
 #!/usr/bin/env python3
-"""Build data_sc_calendar.json — the founder's day-on-day SC calendar for a clinic × week.
+"""Build data_sc_calendar.json — founder day-on-day SC calendar for a clinic × week,
+with EXACT lead-age (0–7d, 8+), per-BOOKING source/medium detail, and per-day leads by source.
 
 Goal: separate "lead→book didn't happen because of AVAILABILITY" from "…because of LEAD QUALITY".
 
-Two halves, per clinic, per day of the last complete Mon–Sun week:
-  A. SC BOOKINGS (matches the clinician calendar) — count of Screening-Call appointments scheduled
-     that day at the clinic, split by the LEAD AGE at booking (same-day / 1d / 2d / 3-7d / 8d+ / no-lead),
-     and by status (Completed·Scheduled / No-Show / Rescheduled·Cancelled).
-  B. LEADS THAT CAME (calls to the clinic's own numbers) that day — connected / wanted-to-book (AI intent)
-     / connected-but-no-book-intent / not-connected.
-
-Read A against your clinician calendar (should tie). Read A vs B to see: on a day with lots of leads
-but few bookings, did the leads want to book (→ availability/ops) or not (→ lead quality)?
+Per clinic, per day of the last complete Mon–Sun week:
+  A. SC BOOKINGS (= the clinician calendar) — every Screening-Call appt scheduled that day, as a
+     per-booking list: {p:phone-last4, age:exact days lead→booking, src, med, st}. Age bucketed
+     exact 0..7 then 8+ / no-lead. Source = GMB/Google/Meta/Practo/Organic/Walk-in (from the lead's
+     utm); Medium = Call/Web/WhatsApp/Practo/Walk-in (from the lead's origin). Status live/noshow/released.
+  B. LEADS (calls to the clinic's own numbers) that day, by source (which number): total / connected
+     (answered) / wanted-to-book (AI call-audit book-intent).
 
 Run: AWS_PROFILE=redshift-data python3 scripts/build_sc_calendar.py
 """
@@ -22,62 +21,71 @@ def q(sql):
     if p.returncode!=0 or "ERROR" in (p.stderr or ""): sys.stderr.write("query failed:\n"+(p.stderr or "")[:600]+"\n"); sys.exit(1)
     return [l.split("\t") for l in p.stdout.strip().splitlines() if l.strip()]
 
-# clinics: locality+city for the booking side; clinic-OWN call numbers for the leads side (exclude shared paid → clean attribution)
+# clinics: locality+city for bookings; own call numbers (→ source) for the leads side
 CLINICS = [
-  {"key":"coimbatore","disp":"Bharathi Nagar · Coimbatore","city":"Coimbatore","loc":"Bharathi Nagar","nums":["4440114608","4440116568","4440114631"]},
-  {"key":"whitefield","disp":"Whitefield · Bangalore","city":"Bangalore","loc":"Whitefield","nums":["8047280292"]},
+  {"key":"coimbatore","disp":"Bharathi Nagar · Coimbatore","city":"Coimbatore","loc":"Bharathi Nagar",
+   "num_src":{"4440114608":"GMB","4440116568":"GMB","4440114631":"Google"}},
+  {"key":"whitefield","disp":"Whitefield · Bangalore","city":"Bangalore","loc":"Whitefield",
+   "num_src":{"8047280292":"GMB"}},
 ]
 BOOK_INTENT = ("BOOK_APPOINTMENT","BOOK_SLOT","BOOK_TEST","NEEDS_TESTS","NEEDS_MEDS")
 
-# last COMPLETE Mon–Sun week (IST)
+# lead source/medium classification (from lead.utm_source / lead.origin) — verified live 2026-08-03
+SRC_SQL = """CASE
+  WHEN ld.gclid IS NOT NULL OR ld.utm_source ILIKE 'google' THEN 'Google'
+  WHEN ld.fbclid IS NOT NULL OR ld.fbc IS NOT NULL OR ld.utm_source ILIKE 'fb' OR ld.utm_source ILIKE '%facebook%' OR ld.utm_source ILIKE '%meta%' THEN 'Meta'
+  WHEN ld.utm_source ILIKE 'gmb' THEN 'GMB'
+  WHEN ld.utm_source ILIKE 'practo' THEN 'Practo'
+  WHEN ld.utm_source ILIKE 'organic' THEN 'Organic'
+  WHEN ld.utm_source ILIKE '%walkin%' OR ld.origin ILIKE 'retool' THEN 'Walk-in'
+  WHEN ld.utm_source IS NULL OR ld.utm_source='' THEN 'Direct/unknown'
+  ELSE ld.utm_source END"""
+MED_SQL = """CASE
+  WHEN ld.origin ILIKE 'exotel' THEN 'Call'
+  WHEN ld.origin ILIKE 'whatsapp' THEN 'WhatsApp'
+  WHEN ld.origin ILIKE 'practo' THEN 'Practo'
+  WHEN ld.origin ILIKE 'retool' OR ld.utm_source ILIKE '%walkin%' THEN 'Walk-in'
+  WHEN ld.origin IS NULL OR ld.origin='' THEN 'Web'
+  ELSE 'Web' END"""
+
 today = datetime.date.today()
-mon = today - datetime.timedelta(days=today.weekday())     # this week's Monday
-start = mon - datetime.timedelta(days=7)                    # last week's Monday
-end = start + datetime.timedelta(days=7)                    # exclusive
+mon = today - datetime.timedelta(days=today.weekday())
+start = mon - datetime.timedelta(days=7); end = start + datetime.timedelta(days=7)
 DAYS = [(start+datetime.timedelta(days=i)).isoformat() for i in range(7)]
 S, E = start.isoformat(), end.isoformat()
 
-def bkey(age):
-    if age is None: return "no_lead"
-    if age<=0: return "same_day"
-    if age==1: return "d1"
-    if age==2: return "d2"
-    if age<=7: return "d3_7"
-    return "d8plus"
-
 out = {"_meta":{"days":DAYS, "week":f"{S}→{(end-datetime.timedelta(days=1)).isoformat()}",
-        "age_buckets":["same_day","d1","d2","d3_7","d8plus","no_lead"],
-        "age_label":{"same_day":"Same-day lead","d1":"1-day-old","d2":"2-day-old","d3_7":"3–7-day-old","d8plus":"8-day+ old","no_lead":"No lead matched"},
-        "note":"SC bookings = Screening-Call appts scheduled that day at the clinic (all statuses = the calendar). Lead age = booking-made − lead-first-seen. Leads = calls to the clinic's own numbers; connected=answered; wanted_book=AI book-intent."},
+        "note":"SC bookings = Screening-Call appts scheduled that day at the clinic (all statuses = the clinician calendar). age = booking-made − lead-first-seen (exact days). src/med from the lead's utm/origin. Leads = calls to the clinic's own numbers; connected=answered; wanted_book=AI book-intent (undercount)."},
        "clinics":{}}
 
 for c in CLINICS:
-    # ---- A) SC bookings per day × lead-age × status ----
+    # ---- A) per-booking rows: day, phone-last4, exact lead age, source, medium, status ----
     a = q(f"""
     WITH lead1 AS (SELECT RIGHT(phone_no,10) ph, MIN(created_at) lead_dt FROM allo_persons.lead WHERE deleted_at IS NULL GROUP BY 1)
     SELECT DATE(a.start_time + INTERVAL '5 hours 30 minutes') d,
-      CASE WHEN a.status IN ('COMPLETED','RECONSULTED','SCHEDULED') THEN 'live'
-           WHEN a.status='MISSED' THEN 'noshow' ELSE 'released' END st,   -- MISSED = no-show; RESCHEDULED/CANCELLED = released
+      RIGHT(p.phone_no,4) p4,
       DATEDIFF(day, DATE(l.lead_dt + INTERVAL '5 hours 30 minutes'), DATE(a.created_at + INTERVAL '5 hours 30 minutes')) age,
-      COUNT(*) n
+      p.id pid,
+      {SRC_SQL} src, {MED_SQL} med,
+      CASE WHEN a.status IN ('COMPLETED','RECONSULTED','SCHEDULED') THEN 'live' WHEN a.status='MISSED' THEN 'noshow' ELSE 'released' END st
     FROM allo_consultations.appointments a
     JOIN allo_consultations.types t ON t.id=a.type_id AND t.name='Screening Call'
     JOIN allo_health.locations loc ON loc.id=a.location_id AND loc.deleted_at IS NULL AND loc.locality='{c['loc']}' AND loc.city='{c['city']}'
     JOIN allo_persons.patient p ON p.id=a.patient_id
     LEFT JOIN lead1 l ON l.ph=RIGHT(p.phone_no,10)
+    LEFT JOIN allo_persons.lead ld ON RIGHT(ld.phone_no,10)=l.ph AND ld.created_at=l.lead_dt AND ld.deleted_at IS NULL
     WHERE a.deleted_at IS NULL AND (a.start_time + INTERVAL '5 hours 30 minutes')>='{S}' AND (a.start_time + INTERVAL '5 hours 30 minutes')<'{E}'
-    GROUP BY 1,2,3""")
-    days = {d:{"sc":0,"by_age":{k:0 for k in out["_meta"]["age_buckets"]},
-               "by_status":{"live":0,"noshow":0,"released":0},
-               "age_status":{k:{"live":0,"noshow":0,"released":0} for k in out["_meta"]["age_buckets"]}} for d in DAYS}
+    """)
+    days = {d:{"bookings":[]} for d in DAYS}
     for r in a:
-        d, st = r[0], r[1]; age = None if (len(r)<4 or r[2] in ("","\\N",None)) else int(float(r[2])); n=int(float(r[3]))
+        d=r[0]
         if d not in days: continue
-        k=bkey(age); days[d]["sc"]+=n; days[d]["by_age"][k]+=n; days[d]["by_status"][st]+=n; days[d]["age_status"][k][st]+=n
-    # ---- B) leads (calls to the clinic's own numbers) per day: connected / wanted-book ----
-    nums = "','".join(c["nums"])
+        age = None if (len(r)<3 or r[2] in ("","\\N",None)) else int(float(r[2]))
+        days[d]["bookings"].append({"p":r[1], "pid":(r[3] or ""), "age":age, "src":(r[4] or "Direct/unknown"), "med":(r[5] or "Web"), "st":r[6]})
+    # ---- B) leads by source (calls to the clinic's own numbers) ----
+    nums = "','".join(c["num_src"].keys())
     b = q(f"""
-    SELECT DATE(ec.start_time + INTERVAL '5 hours 30 minutes') d,
+    SELECT DATE(ec.start_time + INTERVAL '5 hours 30 minutes') d, RIGHT(ec.exotel_number,10) num,
       COUNT(DISTINCT RIGHT(COALESCE(ec."from",''),10)) leads,
       COUNT(DISTINCT CASE WHEN ec.status='completed' THEN RIGHT(COALESCE(ec."from",''),10) END) connected,
       COUNT(DISTINCT CASE WHEN ca.analysis.user_intent.result::varchar IN ('{"','".join(BOOK_INTENT)}') THEN RIGHT(COALESCE(ec."from",''),10) END) wanted_book
@@ -85,16 +93,18 @@ for c in CLINICS:
     LEFT JOIN allo_analytics.call_analyses ca ON ca.call_id=ec.call_id
     WHERE RIGHT(ec.exotel_number,10) IN ('{nums}') AND ec.routed_to='lead_to_call'
       AND (ec.start_time + INTERVAL '5 hours 30 minutes')>='{S}' AND (ec.start_time + INTERVAL '5 hours 30 minutes')<'{E}'
-    GROUP BY 1""")
-    for d in days: days[d]["leads"]={"total":0,"connected":0,"wanted_book":0}
+    GROUP BY 1,2""")
+    for d in days: days[d]["leads_by_src"]={}
     for r in b:
-        d=r[0]
+        d=r[0]; num=r[1]
         if d not in days: continue
-        days[d]["leads"]={"total":int(float(r[1])),"connected":int(float(r[2])),"wanted_book":int(float(r[3]))}
+        src=c["num_src"].get(num, "Call")
+        e=days[d]["leads_by_src"].setdefault(src, {"leads":0,"connected":0,"wanted_book":0})
+        e["leads"]+=int(float(r[2])); e["connected"]+=int(float(r[3])); e["wanted_book"]+=int(float(r[4]))
     out["clinics"][c["key"]]={"disp":c["disp"],"city":c["city"],"loc":c["loc"],"days":days}
-    tot=sum(days[d]["sc"] for d in DAYS); sd=sum(days[d]["by_age"]["same_day"] for d in DAYS)
-    ld=sum(days[d]["leads"]["total"] for d in DAYS); wb=sum(days[d]["leads"]["wanted_book"] for d in DAYS)
-    print(f"{c['key']:<11} week {out['_meta']['week']}: {tot} SC bookings ({sd} same-day-lead) · {ld} call leads ({wb} wanted to book)")
+    tot=sum(len(days[d]["bookings"]) for d in DAYS)
+    sd=sum(1 for d in DAYS for bk in days[d]["bookings"] if bk["age"]==0)
+    print(f"{c['key']:<11} {out['_meta']['week']}: {tot} SC bookings ({sd} same-day-lead)")
 
 json.dump(out, open(os.path.join(ROOT,"data_sc_calendar.json"),"w"), separators=(",",":"))
 print("wrote data_sc_calendar.json")
