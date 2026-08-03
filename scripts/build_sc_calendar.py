@@ -51,6 +51,30 @@ def MED(a): return f"""CASE
   WHEN {a}.origin IS NULL OR {a}.origin='' THEN 'Web'
   ELSE 'Web' END"""
 
+NUL=("","\\N","True",None)
+def g(r,i): return r[i] if i<len(r) else ""   # trailing empty cols are dropped by the tab-split
+def parse_recs(*ss):
+    """Parse one or more LISTAGG strings ('url~dur~date|url~dur~date') into a deduped recording list."""
+    out=[]; seen=set()
+    for s in ss:
+        if not s or s in NUL: continue
+        for item in s.split('|'):
+            p=item.split('~')
+            if not p or not p[0] or p[0] in NUL: continue
+            if p[0] in seen: continue
+            seen.add(p[0])
+            out.append({"u":p[0], "d":(int(float(p[1])) if len(p)>1 and p[1] not in NUL else 0), "dt":(p[2] if len(p)>2 and p[2] not in NUL else "")})
+    return out
+
+# LISTAGG all lead_to_call recordings per caller number (fragment: window bounds passed in)
+def REC_LISTAGG(nums_csv, wstart):
+    return f"""SELECT RIGHT(ec."from",10) ph,
+      LISTAGG(ec.recording_url||'~'||COALESCE(ec.total_duration,0)||'~'||TO_CHAR(DATE(ec.start_time+{IST}),'YYYY-MM-DD'),'|') WITHIN GROUP (ORDER BY ec.start_time) recs
+    FROM allo_vendors.exotel_calls ec
+    WHERE RIGHT(ec.exotel_number,10) IN ('{nums_csv}') AND ec.routed_to='lead_to_call'
+      AND ec.recording_url IS NOT NULL AND ec.recording_url!=''
+      AND (ec.start_time + {IST})>='{wstart}' AND (ec.start_time + {IST})<'{E}' GROUP BY 1"""
+
 today = datetime.date.today()
 mon = today - datetime.timedelta(days=today.weekday())
 start = mon - datetime.timedelta(days=7); end = start + datetime.timedelta(days=7)
@@ -76,18 +100,12 @@ for c in CLINICS:
     nums0 = "','".join(c["nums"])
     a = q(f"""
     WITH lead1 AS (SELECT RIGHT(phone_no,10) ph, MIN(created_at) lead_dt FROM allo_persons.lead WHERE deleted_at IS NULL GROUP BY 1),
-    rec AS (SELECT ph, rec, dur FROM (
-        SELECT RIGHT(ec."from",10) ph, ec.recording_url rec, ec.total_duration dur,
-          ROW_NUMBER() OVER (PARTITION BY RIGHT(ec."from",10) ORDER BY ec.total_duration DESC) rn
-        FROM allo_vendors.exotel_calls ec
-        WHERE RIGHT(ec.exotel_number,10) IN ('{nums0}') AND ec.routed_to='lead_to_call'
-          AND ec.recording_url IS NOT NULL AND ec.recording_url!=''
-          AND (ec.start_time + {IST})>='{REC_S}' AND (ec.start_time + {IST})<'{E}') WHERE rn=1)
+    rec AS ({REC_LISTAGG(nums0, REC_S)})
     SELECT DATE(a.start_time + {IST}) d,
       p.phone_no phone, p.id pid, COALESCE(pr.name,'Unassigned') doc,
       DATEDIFF(day, DATE(l.lead_dt + {IST}), DATE(a.created_at + {IST})) age,
       {SRC('ld')} src, {MED('ld')} med, {ST_SQL} st,
-      COALESCE(rp.rec, ra.rec, '') rec, COALESCE(rp.dur, ra.dur, 0) dur
+      COALESCE(rp.recs,'') recs_p, COALESCE(ra.recs,'') recs_a
     FROM allo_consultations.appointments a
     JOIN allo_consultations.types t ON t.id=a.type_id AND t.name='Screening Call'
     JOIN allo_health.locations loc ON loc.id=a.location_id AND loc.deleted_at IS NULL AND loc.locality='{c['loc']}' AND loc.city='{c['city']}'
@@ -108,7 +126,7 @@ for c in CLINICS:
         doc=r[3] or "Unassigned"; docs.add(doc)
         days[d]["bookings"].append({"p":r[1], "pid":(r[2] or ""), "doc":doc, "age":age,
                                     "src":(r[5] or "Direct/unknown"), "med":(r[6] or "Web"), "st":r[7],
-                                    "rec":(r[8] or ""), "dur":int(float(r[9] or 0))})
+                                    "recs":parse_recs(g(r,8), g(r,9))})
     # ---- B) per-lead rows (all sources by clinic code) + call outcome/recording + booked flag ----
     nums = "','".join(c["nums"])
     b = q(f"""
@@ -120,39 +138,39 @@ for c in CLINICS:
       JOIN allo_persons.patient p ON p.id=a.patient_id
       WHERE a.deleted_at IS NULL AND (a.start_time + {IST})>='{S}' AND (a.start_time + {IST})<'{E}'
       GROUP BY 1),
-    callout AS (SELECT ph, d, conn, strength, intent, rec, dur FROM (
+    callout AS (SELECT ph, d, conn, strength, intent FROM (
       SELECT RIGHT(ec."from",10) ph, DATE(ec.start_time + {IST}) d,
         CASE WHEN ec.status='completed' THEN 1 ELSE 0 END conn,
         ca.analysis.patient_intent_strength.result::varchar strength,
         ca.analysis.user_intent.result::varchar intent,
-        NULLIF(ec.recording_url,'') rec, ec.total_duration dur,
         ROW_NUMBER() OVER (PARTITION BY RIGHT(ec."from",10), DATE(ec.start_time + {IST})
           ORDER BY (CASE WHEN ec.status='completed' THEN 1 ELSE 0 END) DESC, ec.total_duration DESC NULLS LAST) rn
       FROM allo_vendors.exotel_calls ec
       LEFT JOIN allo_analytics.call_analyses ca ON ca.call_id=ec.call_id
       WHERE RIGHT(ec.exotel_number,10) IN ('{nums}') AND ec.routed_to='lead_to_call'
-        AND (ec.start_time + {IST})>='{S}' AND (ec.start_time + {IST})<'{E}') WHERE rn=1)
+        AND (ec.start_time + {IST})>='{S}' AND (ec.start_time + {IST})<'{E}') WHERE rn=1),
+    recL AS ({REC_LISTAGG(nums, S)})
     SELECT DATE(ld.created_at + {IST}) d, ld.phone_no phone, {SRC('ld')} src, {MED('ld')} med,
       COALESCE(co.conn,0) conn, COALESCE(co.strength,'') strength, COALESCE(co.intent,'') intent,
       CASE WHEN sb.ph IS NOT NULL THEN 1 ELSE 0 END booked,
       sb.sc_date bkdate, DATEDIFF(day, DATE(ld.created_at + {IST}), sb.sc_date) blag,
-      COALESCE(co.rec,'') rec, COALESCE(co.dur,0) dur
+      COALESCE(rl.recs,'') recs
     FROM allo_persons.lead ld
     LEFT JOIN callout co ON co.ph=RIGHT(ld.phone_no,10) AND co.d=DATE(ld.created_at + {IST})
     LEFT JOIN scbk sb ON sb.ph=RIGHT(ld.phone_no,10)
+    LEFT JOIN recL rl ON rl.ph=RIGHT(ld.phone_no,10)
     WHERE ld.deleted_at IS NULL AND ld.location='{c['code']}'
       AND (ld.created_at + {IST})>='{S}' AND (ld.created_at + {IST})<'{E}'
     """)
     for r in b:
         d=r[0]
         if d not in days: continue
-        NUL=("","\\N","True",None)
-        blag = None if r[9] in NUL else int(float(r[9]))
-        bkdate = "" if r[8] in NUL else r[8]
+        blag = None if g(r,9) in NUL else int(float(r[9]))
+        bkdate = "" if g(r,8) in NUL else r[8]
         days[d]["leads"].append({"p":r[1], "src":(r[2] or "Direct/unknown"), "med":(r[3] or "Web"),
-                                 "conn":int(r[4]), "strength":(r[5] or ""), "intent":(r[6] or ""),
+                                 "conn":int(r[4]), "strength":(g(r,5) or ""), "intent":(g(r,6) or ""),
                                  "booked":int(r[7]), "bkdate":bkdate, "blag":blag,
-                                 "rec":(r[10] or ""), "dur":int(float(r[11] or 0))})
+                                 "recs":parse_recs(g(r,10))})
     out["clinics"][c["key"]]={"disp":c["disp"],"city":c["city"],"loc":c["loc"],
                               "doctors":sorted(docs),"days":days}
     tot=sum(len(days[d]["bookings"]) for d in DAYS)
