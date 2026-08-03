@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>SC calendar — day-on-day · lead age vs availability</title>
+<style>
+:root{--accent:#2C6CAE;--ink:#1f2733;--ink2:#404a58;--muted:#6b7580;--faint:#9aa3b0;--line:#e6e9ee;--bg:#f6f7f9;--card:#fff;
+      --live:#2E7D5B;--noshow:#B8503C;--rel:#C9862A;--purple:#7C5CBF;--blue:#3E7CB1;}
+*{box-sizing:border-box}
+body{margin:0;font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;color:var(--ink);background:var(--bg)}
+a{color:var(--accent);text-decoration:none}
+.wrap{max-width:1120px;margin:0 auto;padding:18px 20px 70px}
+h1{font-size:20px;margin:0 0 2px;font-weight:700}
+.sub{color:var(--muted);font-size:12.5px}
+.nav{margin:3px 0 14px;font-size:12.5px}.nav a{margin-right:14px;color:var(--muted)}
+.controls{display:flex;gap:12px;flex-wrap:wrap;align-items:center;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 13px;margin-bottom:16px}
+.controls label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-right:5px}
+select{font:13px inherit;color:var(--ink);border:1px solid var(--line);border-radius:7px;padding:5px 9px;background:#fff}
+.hd{font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:700;margin:18px 0 8px}
+/* calendar grid */
+.cal{display:grid;grid-template-columns:repeat(7,1fr);gap:8px}
+.day{background:var(--card);border:1px solid var(--line);border-radius:11px;padding:10px 10px 11px;cursor:pointer;transition:border-color .12s,box-shadow .12s}
+.day:hover{border-color:var(--accent)}
+.day.sel{border-color:var(--accent);box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 22%,#fff)}
+.day .dn{font-size:11px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.03em}
+.day .dv{font-size:26px;font-weight:800;margin-top:2px;line-height:1}
+.day .dl{font-size:10.5px;color:var(--muted);margin-top:1px}
+.sbar{display:flex;height:6px;border-radius:3px;overflow:hidden;margin-top:8px;background:var(--bg)}
+.sbar i{height:100%}
+.leadmini{font-size:10.5px;color:var(--muted);margin-top:7px;border-top:1px dashed var(--line);padding-top:6px}
+.leadmini b{color:var(--ink2)}
+/* selected-day detail */
+.detail{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin-top:12px}
+.detail h3{margin:0 0 3px;font-size:15px;font-weight:700}
+.detail .ds{font-size:12px;color:var(--muted);margin-bottom:12px}
+.bars{display:flex;flex-direction:column;gap:7px;max-width:640px}
+.brow{display:grid;grid-template-columns:150px 1fr 74px;gap:10px;align-items:center;font-size:13px}
+.brow .bl{color:var(--ink2)}
+.btrack{height:16px;background:var(--bg);border-radius:5px;overflow:hidden}
+.bfill{height:100%;border-radius:5px}
+.brow .bn{text-align:right;font-weight:700}
+.legend{font-size:11px;color:var(--muted);display:flex;gap:14px;flex-wrap:wrap;margin-top:8px}
+.legend i{width:10px;height:10px;border-radius:2px;display:inline-block;margin-right:4px;vertical-align:middle}
+.verdict{border-radius:12px;padding:13px 15px;margin:16px 0;border:1px solid var(--line);border-left:4px solid var(--accent);background:var(--card);font-size:13.5px;line-height:1.55}
+.verdict b{font-weight:700}
+.note{background:#fbf7ee;border:1px solid #efe3c8;border-radius:9px;padding:10px 13px;font-size:12px;color:#7a6a3f;margin-bottom:14px}
+.foot{color:var(--faint);font-size:11.5px;margin-top:20px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>🗓️ SC calendar — day-on-day</h1>
+  <div class="sub">Screening-Call bookings per day (matches the clinician calendar) → click a day for the <b>lead age</b> of those bookings · then the day's <b>leads &amp; what they wanted</b>. Availability vs lead-quality, in one view.</div>
+  <div class="nav"><a href="why-notbook.html">← Why didn't it book</a><a href="bookings-funnel.html">Demand view</a></div>
+
+  <div class="controls">
+    <span><label>Clinic</label><select id="clinS"></select></span>
+    <span style="margin-left:auto" class="sub" id="wkflag"></span>
+  </div>
+  <div class="note" id="scopeNote"></div>
+
+  <div class="hd">① SC bookings — click a day to break it down by lead age</div>
+  <div class="cal" id="cal"></div>
+  <div class="legend"><span><i style="background:var(--live)"></i>Completed / Scheduled</span><span><i style="background:var(--noshow)"></i>No-show</span><span><i style="background:var(--rel)"></i>Rescheduled / Cancelled</span></div>
+
+  <div class="detail" id="detail"></div>
+
+  <div class="hd">② Leads that came that day — connected · wanted to book</div>
+  <div class="cal" id="leadCal"></div>
+
+  <div class="verdict" id="verdict"></div>
+  <p class="foot" id="foot"></p>
+</div>
+<script>
+let D=null, CK=null, SEL=null;
+const $=id=>document.getElementById(id);
+const F=n=>n==null?'—':Math.round(n).toLocaleString('en-IN');
+const DOW=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+const AGES=['same_day','d1','d2','d3_7','d8plus','no_lead'];
+const ACOL={same_day:'#2E7D5B',d1:'#3E7CB1',d2:'#5BA88F',d3_7:'#C9862A',d8plus:'#B8503C',no_lead:'#c7ccd4'};
+function dlabel(iso){const dt=new Date(iso+'T00:00:00');return {dow:DOW[(dt.getDay()+6)%7],dm:dt.getDate()};}
+
+function render(){
+  const c=D.clinics[CK], days=D._meta.days, AL=D._meta.age_label;
+  $('wkflag').textContent='Week '+D._meta.week;
+  $('scopeNote').innerHTML=`<b>${c.disp}</b> — ① SC bookings are every Screening-Call appointment scheduled that day (all statuses = your clinician calendar; they should tie). <b>Lead age</b> = days between the lead first reaching us and the booking being made. ② Leads = calls to this clinic's own number(s); <b>connected</b> = answered, <b>wanted to book</b> = AI call-audit book-intent (an undercount — only audited calls).`;
+
+  // ① SC booking calendar
+  $('cal').innerHTML=days.map(iso=>{const d=c.days[iso],L=dlabel(iso),s=d.by_status,tot=d.sc||0;
+    const seg=k=>tot?Math.round(100*s[k]/tot):0;
+    const lead=d.leads||{total:0,connected:0,wanted_book:0};
+    return `<div class="day${SEL===iso?' sel':''}" data-d="${iso}">
+      <div class="dn">${L.dow} ${L.dm}</div><div class="dv">${tot}</div><div class="dl">SC bookings</div>
+      <div class="sbar"><i style="width:${seg('live')}%;background:var(--live)"></i><i style="width:${seg('noshow')}%;background:var(--noshow)"></i><i style="width:${seg('released')}%;background:var(--rel)"></i></div>
+      <div class="leadmini"><b>${d.by_age.same_day||0}</b> same-day · <b>${(tot-(d.by_age.same_day||0))}</b> older</div>
+    </div>`;}).join('');
+  $('cal').querySelectorAll('.day').forEach(el=>el.onclick=()=>{SEL=el.dataset.d;render();});
+
+  // selected-day detail — lead-age breakdown
+  const sel=SEL||days[0]; SEL=sel; const d=c.days[sel],L=dlabel(sel),tot=d.sc||0;
+  const bars=AGES.map(k=>{const v=d.by_age[k]||0,pct=tot?Math.round(100*v/tot):0;
+    return `<div class="brow"><div class="bl">${AL[k]}</div><div class="btrack"><div class="bfill" style="width:${Math.max(v?3:0,pct)}%;background:${ACOL[k]}"></div></div><div class="bn">${v}<span style="color:var(--faint);font-weight:400;font-size:11px"> ${pct}%</span></div></div>`;}).join('');
+  const st=d.by_status;
+  $('detail').innerHTML=`<h3>${L.dow} ${L.dm} — ${tot} SC bookings by lead age</h3>
+    <div class="ds">Of the ${tot} SC bookings that day: <b style="color:var(--live)">${st.live} live</b> · <b style="color:var(--noshow)">${st.noshow} no-show</b> · <b style="color:var(--rel)">${st.released} rescheduled/cancelled</b>. How old was each lead when it booked:</div>
+    <div class="bars">${bars}</div>`;
+
+  // ② leads calendar
+  $('leadCal').innerHTML=days.map(iso=>{const d=c.days[iso],l=d.leads||{total:0,connected:0,wanted_book:0},L=dlabel(iso);
+    const cp=l.total?Math.round(100*l.connected/l.total):0, wp=l.total?Math.round(100*l.wanted_book/l.total):0;
+    return `<div class="day" style="cursor:default">
+      <div class="dn">${L.dow} ${L.dm}</div><div class="dv">${l.total}</div><div class="dl">call leads</div>
+      <div class="leadmini" style="border-top:none;padding-top:8px"><b>${l.connected}</b> connected <span style="color:var(--faint)">(${cp}%)</span><br><b style="color:var(--live)">${l.wanted_book}</b> wanted to book</div>
+    </div>`;}).join('');
+
+  // verdict
+  const sum=f=>days.reduce((s,iso)=>s+f(c.days[iso]),0);
+  const scTot=sum(d=>d.sc), sd=sum(d=>d.by_age.same_day||0), old=scTot-sd;
+  const ldTot=sum(d=>d.leads.total), conn=sum(d=>d.leads.connected), wb=sum(d=>d.leads.wanted_book);
+  const sdPct=scTot?Math.round(100*sd/scTot):0;
+  $('verdict').innerHTML=`<b>Read of the week — ${c.disp}:</b> ${scTot} SC bookings, and <b>${sdPct}% (${sd}) came from a same-day lead</b> — leads that convert do it fast; only ${old} came from an older lead, so nurtured/old leads rarely book. On the demand side, <b>${ldTot} call leads</b> came to this clinic's line, <b>${conn} connected</b> and <b>${wb} were AI-tagged "wanted to book"</b>. When a day has lots of leads but few bookings, use ② to check: were they connected &amp; wanting to book (→ an <b>availability / ops</b> gap) or not (→ <b>lead quality</b>)? <span style="color:var(--muted)">Caveat: "wanted to book" is an undercount (only audited calls), and call leads ≠ all bookings (web/walk-in also book).</span>`;
+
+  $('foot').textContent=D._meta.note;
+}
+
+fetch('data_sc_calendar.json',{cache:'no-store'}).then(r=>r.json()).then(d=>{
+  D=d; const cs=Object.keys(d.clinics);
+  $('clinS').innerHTML=cs.map(k=>`<option value="${k}">${d.clinics[k].disp}</option>`).join('');
+  CK=cs.includes('whitefield')?'whitefield':cs[0]; $('clinS').value=CK; SEL=d._meta.days[0];
+  $('clinS').onchange=e=>{CK=e.target.value;SEL=d._meta.days[0];render();};
+  render();
+}).catch(e=>{$('verdict').innerHTML='Failed to load data_sc_calendar.json — run scripts/build_sc_calendar.py';});
+</script>
+</body>
+</html>
