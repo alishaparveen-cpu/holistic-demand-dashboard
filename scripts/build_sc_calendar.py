@@ -32,6 +32,7 @@ CLINICS = [
    "code":"BLR_WTF","nums":["8047280292"]},
 ]
 BOOK_INTENT = ("BOOK_APPOINTMENT","BOOK_SLOT","BOOK_TEST","NEEDS_TESTS","NEEDS_MEDS")
+SC_TYPE = "'cd02525c-1528-4047-a12c-1ad526c28c9a'"  # roster_slots SC slot type
 
 # lead source/medium classification (from lead.utm_source/gclid/fbclid + lead.origin) — verified live 2026-08-03
 def SRC(a): return f"""CASE
@@ -130,7 +131,8 @@ for c in CLINICS:
       TO_CHAR(DATE(a.created_at + {IST}),'YYYY-MM-DD') bkmade,
       {SRC('ld')} src, {MED('ld')} med, {ST_SQL} st,
       REPLACE(REPLACE(REPLACE(COALESCE(a.reason,''),CHR(9),' '),CHR(10),' '),CHR(13),' ') reason,
-      COALESCE(cbp.cat, cba.cat, '') cat, COALESCE(cbp.summ, cba.summ, '') summ,
+      CASE WHEN a.program='mental_health' THEN 'MENTAL_HEALTH' WHEN a.program='sexual_health' THEN 'SEXUAL_HEALTH_GENERAL' ELSE '' END cat,
+      COALESCE(cbp.summ, cba.summ, '') summ,
       CASE WHEN a.mode='offline' THEN 'offline' ELSE 'online' END booking_mode,
       COALESCE(rp.recs,'') recs_p, COALESCE(ra.recs,'') recs_a
     FROM allo_consultations.appointments a
@@ -211,6 +213,28 @@ for c in CLINICS:
                                  "booked":int(r[7]), "bkdate":bkdate, "blag":blag,
                                  "cat":(g(r,10) or ""), "pid":(g(r,11) or ""), "summ":(g(r,12) or ""),
                                  "recs":parse_recs(g(r,13))})
+    # ---- C) doctor SC-roster capacity per day: rostered vs realized (shrinkage) + non-bookable (leave) ----
+    av = q(f"""
+    WITH abtm AS (SELECT DISTINCT appointment_block_id, COALESCE(offline_location_id,online_location_id) blid FROM allo_consultations.appointment_block_type_maps WHERE deleted_at IS NULL)
+    SELECT CAST(DATEADD(minute,330,rs.start_time) AS DATE) dt,
+      COUNT(*) open_slots,
+      SUM(CASE WHEN rs.is_realized=1 THEN 1 ELSE 0 END) realized_slots,
+      SUM(CASE WHEN rs.is_realized=1 THEN DATEDIFF(minute,rs.start_time,rs.end_time) ELSE 0 END) realized_mins,
+      SUM(CASE WHEN rs.is_realized=1 AND rs.is_booked=1 THEN 1 ELSE 0 END) booked_slots,
+      SUM(CASE WHEN rs.overlaps_non_bookable_block=1 THEN 1 ELSE 0 END) nonbook_slots,
+      COUNT(DISTINCT rs.provider_id) docs
+    FROM allo_consultations.roster_slots rs
+    JOIN abtm ON abtm.appointment_block_id=rs.block_id AND abtm.blid=rs.location_id
+    JOIN allo_health.locations l ON l.id=abtm.blid AND l.locality='{c['loc']}' AND l.city='{c['city']}'
+    WHERE rs.type_id={SC_TYPE}
+      AND DATEADD(minute,330,rs.start_time)>='{S}' AND DATEADD(minute,330,rs.start_time)<'{E}'
+    GROUP BY 1""")
+    for d in DAYS: days[d]["avail"]=None
+    for r in av:
+        d=r[0]
+        if d not in days: continue
+        days[d]["avail"]={"open":int(float(r[1])),"realized":int(float(r[2])),"rhrs":round(float(r[3])/60,1),
+                          "booked":int(float(r[4])),"nonbook":int(float(r[5])),"docs":int(float(r[6]))}
     out["clinics"][c["key"]]={"disp":c["disp"],"city":c["city"],"loc":c["loc"],
                               "doctors":sorted(docs),"days":days}
     tot=sum(len(days[d]["bookings"]) for d in DAYS)

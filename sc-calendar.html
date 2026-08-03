@@ -73,9 +73,11 @@ select{font:13px inherit;color:var(--ink);border:1px solid var(--line);border-ra
 .ftclear{font:11px inherit;color:var(--accent);background:none;border:1px solid var(--line);border-radius:6px;padding:2px 9px;cursor:pointer}
 .ftclear:hover{background:var(--bg)}
 .btbl thead th{position:sticky;top:0;background:var(--card);z-index:1}
+#summpop{display:none;position:fixed;z-index:50;max-width:320px;background:#1f2733;color:#f3f5f8;font-size:12px;line-height:1.5;padding:10px 12px;border-radius:9px;box-shadow:0 6px 24px rgba(0,0,0,.28)}
 </style>
 </head>
 <body>
+<div id="summpop"></div>
 <div class="wrap">
   <h1>🗓️ SC calendar — day-on-day</h1>
   <div class="nav"><a href="why-notbook.html">← Why didn't it book</a><a href="bookings-funnel.html">Demand view</a></div>
@@ -94,6 +96,9 @@ select{font:13px inherit;color:var(--ink);border:1px solid var(--line);border-ra
   <div class="hd">② Every lead — filter any column</div>
   <div class="cal" id="leadCal"></div>
   <div class="detail" id="leadDetail"></div>
+
+  <div class="hd">③ Doctor availability — SC roster: rostered vs what actually stood (shrinkage &amp; leave)</div>
+  <div class="detail" id="avail"></div>
 </div>
 <script>
 let D=null, CK=null, FB={}, FL={};   // FB/FL = per-column filter state for bookings / leads tables
@@ -113,7 +118,11 @@ const CATLAB={MENTAL_HEALTH:'MH',SEXUAL_HEALTH_GENERAL:'SH',STI:'STI',ERECTILE_D
 const CATCLS={MENTAL_HEALTH:'catMH',SEXUAL_HEALTH_GENERAL:'catSH',STI:'catSTI',ERECTILE_DYSFUNCTION:'catED',PREMATURE_EJACULATION:'catED'};
 function catCell(cat){const lab=CATLAB[cat]; if(lab===undefined&&cat){return `<span class="chip">${cat}</span>`;} if(!lab) return '<span class="na">—</span>'; return `<span class="chip ${CATCLS[cat]||''}">${lab}</span>`;}
 function esc(s){return (s||'').replace(/"/g,'&quot;').replace(/</g,'&lt;');}
-function noteIcon(summ){return summ?` <span class="ntico" title="${esc(summ)}">📝</span>`:'';}
+function noteIcon(summ){return summ?` <span class="ntico" data-s="${esc(summ)}" onclick="showSumm(event,this)" title="click for call summary">📝</span>`:'';}
+function showSumm(e,el){e.stopPropagation();const p=$('summpop');p.textContent=el.dataset.s;p.style.display='block';
+  const x=Math.min(e.clientX,window.innerWidth-330), y=e.clientY+14;
+  p.style.left=x+'px';p.style.top=y+'px';}
+document.addEventListener('click',e=>{if(!e.target.classList||!e.target.classList.contains('ntico')){const p=$('summpop');if(p)p.style.display='none';}});
 function bookedCell(l){
   if(!l.booked) return '<span class="no">✗ not booked</span>';
   if(l.blag==null) return '<span class="yes">✓ booked</span>';
@@ -146,7 +155,7 @@ const BCOLS=[
  {k:'src',label:'Source',filt:'sel',val:b=>b.src,cell:b=>`<span class="chip ${SRCCLS(b.src)}">${b.src}</span>`},
  {k:'med',label:'Medium',filt:'sel',val:b=>b.med,cell:b=>b.med},
  {k:'age',label:'Lead age',filt:'sel',val:b=>ageKey(b),selDisp:ALAB,cell:b=>b.age==null?'<span class="na">no lead</span>':(b.age===0?'same day':b.age+'d')},
- {k:'bkmade',label:'Booked on',filt:null,cell:b=>b.bkmade?dayDisp(b.bkmade):'—'},
+ {k:'bkmade',label:'Booked on',filt:'sel',val:b=>b.bkmade||'',selDisp:iso=>iso?dayDisp(iso):'—',cell:b=>b.bkmade?dayDisp(b.bkmade):'—'},
  {k:'st',label:'Status',filt:'sel',val:b=>b.st,selDisp:STLAB,cell:b=>`<span class="dot" style="background:${STCOL[b.st]}"></span>${STLAB[b.st]}`},
  {k:'rzn',label:'Move reason',filt:'sel',val:b=>b.rzn||'—',selDisp:{doctor:'Doctor-side',patient:'Patient-side',other:'Other','—':'—'},cell:b=>b.rzntxt?`<span class="rzn ${b.rzn==='doctor'?'rznD':''}" title="${esc(b.rzntxt)}">${b.rzn==='doctor'?'⚠ doctor':b.rzn==='patient'?'patient':'other'}</span>`:'<span class="na">—</span>'},
  {k:'mode',label:'Mode',filt:'sel',val:b=>b.mode,cell:b=>b.mode},
@@ -206,7 +215,7 @@ function render(){
       <div class="sbar">${STORDER.map(k=>`<i style="width:${seg(k)}%;background:${STCOL[k]}"></i>`).join('')}</div>
       <div class="leadmini"><b>${sameDay}</b> same-day · <b>${tot-sameDay}</b> older${onl?` · <b>${onl}</b> online`:''}</div>
     </div>`;}).join('');
-  $('cal').querySelectorAll('.day').forEach(el=>el.onclick=()=>{FB.day=(FB.day===el.dataset.d?'':el.dataset.d);render();});
+  $('cal').querySelectorAll('.day').forEach(el=>el.onclick=()=>{FB.day=el.dataset.d;render();});
 
   // ① filterable bookings table (all days)
   const allBk=days.flatMap(iso=>(c.days[iso].bookings||[]).map(b=>Object.assign({_day:iso},b)));
@@ -221,19 +230,33 @@ function render(){
       <div class="dn">${L.dow} ${L.dm}</div><div class="dv">${tl}</div><div class="dl">leads</div>
       <div class="leadmini"><b>${conn}</b> connected · <b style="color:var(--done)">${booked}</b> booked<br><span style="font-size:10px">${srcLine}</span></div>
     </div>`;}).join('');
-  $('leadCal').querySelectorAll('.day').forEach(el=>el.onclick=()=>{FL.day=(FL.day===el.dataset.l?'':el.dataset.l);render();});
+  $('leadCal').querySelectorAll('.day').forEach(el=>el.onclick=()=>{FL.day=el.dataset.l;render();});
 
   // ② filterable leads table (all days)
   const allLd=days.flatMap(iso=>(c.days[iso].leads||[]).map(l=>Object.assign({_day:iso},l)));
   $('leadDetail').style.display='';
   filterTable($('leadDetail'), allLd, LCOLS, FL);
+
+  // ③ doctor availability — roster capacity per day (all 7 days)
+  $('avail').innerHTML=`<div class="bkwrap"><table class="btbl"><thead><tr><th>Day</th><th>Doctors</th><th>Rostered slots</th><th>Realized (stood)</th><th>Shrinkage</th><th>Blocked (leave)</th><th>Booked slots</th><th>What happened</th></tr></thead><tbody>${days.map(iso=>{const a=c.days[iso].avail;
+    if(!a) return `<tr><td>${dayDisp(iso)}</td><td colspan="7" class="na">no roster data</td></tr>`;
+    const shrink=Math.max(0,a.open-a.realized); let verdict,cls='';
+    if(a.open>0&&a.nonbook>=a.open){verdict='🚫 Whole day blocked — doctor unavailable';cls='no';}
+    else if(shrink>0){verdict=`⚠ Shrinkage — ${shrink} of ${a.open} rostered slots didn't stand`;cls='no';}
+    else if(a.nonbook>0){verdict=`${a.nonbook} slots blocked (partial leave)`;}
+    else verdict='✓ Full roster stood';
+    return `<tr><td>${dayDisp(iso)}</td><td>${a.docs}</td><td>${a.open}</td><td>${a.realized} <span class="na">(${a.rhrs}h)</span></td>
+      <td>${shrink?`<span class="no">${shrink}</span>`:'0'}</td><td>${a.nonbook?`<span class="no">${a.nonbook}</span>`:'0'}</td>
+      <td>${a.booked}</td><td><span class="${cls}" style="font-weight:600">${verdict}</span></td></tr>`;}).join('')}</tbody></table></div>
+    <div class="ds" style="margin-top:8px">Roster-slot capacity (each ~10-min SC slot). <b>Shrinkage</b> = rostered slots that didn't stand (hours cut / doctor no-show). <b>Blocked</b> = slots overlapping a non-bookable block (leave). Cross-check a high-shrinkage or blocked day with the ① reschedules tagged <b>doctor-side</b>. <span style="color:var(--faint)">Roster-slot grain ≠ appointment count.</span></div>`;
 }
 
 fetch('data_sc_calendar.json?v='+Date.now(),{cache:'no-store'}).then(r=>r.json()).then(d=>{
   D=d; const cs=Object.keys(d.clinics);
   $('clinS').innerHTML=cs.map(k=>`<option value="${k}">${d.clinics[k].disp}</option>`).join('');
   CK=cs.includes('whitefield')?'whitefield':cs[0]; $('clinS').value=CK;
-  $('clinS').onchange=e=>{CK=e.target.value;FB={};FL={};render();};
+  const d1=d._meta.days[0]; FB={day:d1}; FL={day:d1};
+  $('clinS').onchange=e=>{CK=e.target.value;FB={day:d._meta.days[0]};FL={day:d._meta.days[0]};render();};
   render();
 }).catch(e=>{$('detail').innerHTML='Failed to load data_sc_calendar.json — run scripts/build_sc_calendar.py';});
 </script>
