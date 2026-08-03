@@ -403,7 +403,7 @@
   </div>
   <h1>Demand overview</h1>
   <div class="sub" id="subt"></div>
-  <div class="segw" id="viewmode" title="Full funnel = the whole ①→⑥ funnel · Quick view = the offline funnel diagnostic — one row per clinic, filter to culprits by colour; follows the scope + Δ-baseline you pick above"><button data-m="funnel" class="on">🩺 Full funnel</button><button data-m="im">📊 Quick view</button></div>
+  <div class="segw" id="viewmode" title="Full funnel = the whole ①→⑥ funnel · Quick view = the offline funnel diagnostic — one row per clinic, filter to culprits by colour; follows the scope + Δ-baseline you pick above"><button data-m="funnel" class="on">🩺 Full funnel</button><button data-m="im">📊 Quick view</button><button data-m="diag">🔍 Diagnose</button></div>
 
   <!-- 🔍 Diagnose why-board (auto: which cities dropped this week + the culprit funnel stage) -->
   <div id="diagSection" class="diag" style="display:none"></div>
@@ -1925,10 +1925,25 @@ function docNoteHTML(){return VIEWM==='im'
   ? '<b>Doctor scope</b> · ① leads have no doctor yet (they’re pre-booking), so ① is hidden — ②③④⑤⑥ scope to the selected doctor(s).'
   : '<b>Doctor scope</b> · ① leads &amp; the rich ② SC-bookings pivot aren’t doctor-keyed, so ①② are hidden here — the ③④⑤ ops funnel below scopes to the selected doctor(s). (Quick view shows ② bookings per doctor.)';}
 function setViewMode(m){VIEWM=m;document.querySelectorAll('#viewmode button').forEach(b=>b.classList.toggle('on',b.dataset.m===m));
-  const im=m==='im';['leadSection','lbSection','bkSection','opsSection'].forEach(id=>{const e=document.getElementById(id);if(e)e.style.display=im?'none':'';});
+  const im=m==='im',diag=m==='diag';['leadSection','lbSection','bkSection','opsSection'].forEach(id=>{const e=document.getElementById(id);if(e)e.style.display=(im||diag)?'none':'';});
   const s=document.getElementById('imSection');if(s)s.style.display=im?'':'none';
+  const dv=document.getElementById('diagSection');if(dv)dv.style.display=diag?'block':'none';
   if(SCOPE==='doctor'){const dn=document.getElementById('docNote');if(dn)dn.innerHTML=docNoteHTML();}   // note is view-aware: Quick view now shows ② per doctor
-  if(im)imRender();}
+  if(im)imRender(); if(diag)renderDiagnose();}
+// click a Diagnose finding → jump into the funnel scoped to that city, landing on the culprit stage
+function diagStageSection(stage){
+  if(/① Leads/.test(stage))return 'leadSection';
+  if(/Convert/.test(stage))return 'lbSection';
+  if(/② Bookings/.test(stage))return 'bkSection';
+  return 'opsSection';   // ④ Book→Done · ⑤ Done · ⑥ Value · ③ availability all live in the ops funnel
+}
+function drillToCity(city,stage){
+  SEL.city=new Set([city]);
+  setScope('city');   // scope the whole funnel to this one city
+  setViewMode('funnel');
+  const secId=diagStageSection(stage), sec=document.getElementById(secId);
+  if(sec) setTimeout(function(){sec.scrollIntoView({block:'start',behavior:'smooth'});},50);
+}
 function renderOps(){
   const sec=document.getElementById('opsSection');if(!sec||sec.style.display==='none')return;
   const lbl=document.getElementById('opsScopeLbl'),flows=['availFlow','b2dFlow','doneFlow'].map(id=>document.getElementById(id));
@@ -2166,6 +2181,7 @@ function renderWkEnd(){const sel=document.getElementById('wkendsel');if(!sel)ret
 // availability → book-done → value), each with a one-line fix. Auto-refreshes with redrawAll.
 function renderDiagnose(){
   var el=document.getElementById('diagSection'); if(!el||!window.demandContext)return;
+  if(typeof VIEWM!=='undefined'&&VIEWM!=='diag'){el.style.display='none';return;}   // Diagnose is its own view now (🔍 tab) — not shown in Full funnel / Quick view
   var ctx; try{ctx=window.demandContext();}catch(e){el.style.display='none';return;}
   if(!ctx||ctx.error||!ctx.by_city_latest_vs_prior4avg){el.style.display='none';return;}
   var cities=ctx.by_city_latest_vs_prior4avg, rows=[];
@@ -2191,10 +2207,10 @@ function renderDiagnose(){
   var money=function(v){v=Math.round(v);return Math.abs(v)>=1e5?(v/1e5).toFixed(1)+'L':v.toLocaleString('en-IN');};
   if(!rows.length){el.style.display='block';el.innerHTML='<h3>🔍 Diagnose <span style="font-weight:400;color:var(--muted);font-size:12px">· latest settled week vs prior 4-wk avg</span></h3><div style="padding:11px 2px;color:#2E7D5B;font-size:13px">✅ No material city drops this week — bookings, done and revenue are holding vs the 4-week baseline.</div>';return;}
   var dcol=function(s){return s>=3?'#B8503C':'#C9862A';};
-  var h='<h3>🔍 Diagnose <span style="font-weight:400;color:var(--muted);font-size:12px">· '+rows.length+' cit'+(rows.length>1?'ies':'y')+' dropped · latest settled week vs prior 4-wk avg · <b>where</b> &amp; <b>why</b></span></h3>';
+  var h='<h3>🔍 Diagnose <span style="font-weight:400;color:var(--muted);font-size:12px">· '+rows.length+' cit'+(rows.length>1?'ies':'y')+' dropped · latest settled week vs prior 4-wk avg · <b>click any finding</b> to open that city in the funnel at its culprit stage</span></h3>';
   rows.forEach(function(x){
     var val=x.lab==='revenue'?('₹'+money(x.was)+'→₹'+money(x.now)):(Math.round(x.was)+'→'+Math.round(x.now));
-    h+='<div class="drow">'
+    h+='<div class="drow" data-city="'+x.cy+'" data-stage="'+x.stage.replace(/"/g,'')+'" title="click → open '+x.cy+' in the funnel at the '+x.stage.replace(/[^ -~]/g,'').trim()+' stage">'
       +'<div class="ddot" style="background:'+dcol(x.sev)+'"></div>'
       +'<div><div class="dcity">'+x.cy+' <span class="dstage">'+x.stage+'</span></div>'
       +'<div class="dwhy">'+x.why+'</div>'
@@ -2204,6 +2220,7 @@ function renderDiagnose(){
       +'</div>';
   });
   el.style.display='block'; el.innerHTML=h;
+  el.querySelectorAll('.drow[data-city]').forEach(function(r){r.onclick=function(){drillToCity(r.dataset.city,r.dataset.stage);};});
 }
 // per-row 'why?' (② city rows) — same funnel-stage attribution as the Diagnose board, for one city, shown inline
 function cityWhyHTML(cy){
