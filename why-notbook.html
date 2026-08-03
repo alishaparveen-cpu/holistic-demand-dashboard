@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Why didn't it book? — MH clinic patient-flow</title>
+<style>
+:root{--accent:#2C6CAE;--ink:#1f2733;--ink2:#404a58;--muted:#6b7580;--faint:#9aa3b0;--line:#e6e9ee;--bg:#f6f7f9;--card:#fff;
+      --red:#B8503C;--amber:#C9862A;--green:#2E7D5B;--purple:#7C5CBF;--blue:#3E7CB1;}
+*{box-sizing:border-box}
+body{margin:0;font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;color:var(--ink);background:var(--bg)}
+a{color:var(--accent);text-decoration:none}
+.wrap{max-width:1080px;margin:0 auto;padding:18px 20px 70px}
+h1{font-size:20px;margin:0 0 2px;font-weight:700}
+.sub{color:var(--muted);font-size:12.5px}
+.nav{margin:3px 0 14px;font-size:12.5px}.nav a{margin-right:14px;color:var(--muted)}
+.controls{display:flex;gap:12px;flex-wrap:wrap;align-items:center;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 13px;margin-bottom:16px;position:sticky;top:0;z-index:5}
+.controls label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-right:5px}
+select,button.seg{font:13px inherit;color:var(--ink);border:1px solid var(--line);border-radius:7px;padding:5px 9px;background:#fff}
+.seg{cursor:pointer}.seg.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+.cat{font-size:11px;font-weight:700;padding:1px 8px;border-radius:9px;background:color-mix(in srgb,var(--purple) 14%,#fff);color:var(--purple)}
+/* verdict banner */
+.verdict{border-radius:12px;padding:14px 16px;margin-bottom:16px;border:1px solid var(--line);background:var(--card)}
+.verdict .vhd{font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:700;margin-bottom:5px}
+.verdict .vmain{font-size:16px;font-weight:700;line-height:1.4}
+.verdict .vsub{font-size:13px;color:var(--ink2);margin-top:6px;line-height:1.55}
+.verdict.good{border-left:4px solid var(--green)}.verdict.warn{border-left:4px solid var(--amber)}.verdict.bad{border-left:4px solid var(--red)}
+/* funnel row */
+.funnel{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:16px}
+.fcell{background:var(--card);border:1px solid var(--line);border-radius:11px;padding:12px 13px}
+.fcell .k{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+.fcell .v{font-size:24px;font-weight:700;margin-top:3px}
+.fcell .d{font-size:12px;color:var(--muted);margin-top:2px}
+.sec{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin-bottom:16px}
+.sec h2{font-size:15px;margin:0 0 3px;font-weight:700}
+.sec .hs{font-size:12px;color:var(--muted);margin-bottom:12px}
+.bars{display:flex;flex-direction:column;gap:8px}
+.brow{display:grid;grid-template-columns:180px 1fr 54px;gap:10px;align-items:center;font-size:13px}
+.brow .bl{color:var(--ink2)}
+.btrack{height:16px;background:var(--bg);border-radius:5px;overflow:hidden;position:relative}
+.bfill{height:100%;border-radius:5px}
+.brow .bn{text-align:right;font-weight:700}
+table{border-collapse:collapse;width:100%;font-size:12.5px}
+th,td{text-align:right;padding:6px 8px;border-bottom:1px solid var(--line)}
+th:first-child,td:first-child{text-align:left}
+th{font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.03em;font-weight:600}
+.pill{display:inline-block;font-size:10.5px;font-weight:700;padding:1px 7px;border-radius:9px}
+.p-cap{background:#fbeae6;color:var(--red)}.p-ops{background:#fbf1e0;color:var(--amber)}.p-mix{background:#fbf1e0;color:var(--amber)}.p-ok{background:#e8f3ec;color:var(--green)}
+.note{background:#fbf7ee;border:1px solid #efe3c8;border-radius:9px;padding:10px 13px;font-size:12px;color:#7a6a3f;margin-bottom:14px}
+.chartwrap{overflow-x:auto}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>🔎 Why didn't it book? <span class="cat">MH</span></h1>
+  <div class="sub">Patient-flow for a clinic × category: MH leads → booked / not-booked → the reason → and the <b>availability cross-check</b> (was it really "no slot"?).</div>
+  <div class="nav"><a href="bookings-funnel.html">← Demand view</a><a href="mh-flow-funnel.html">MH flow funnel</a><a href="gmb.html">GMB</a></div>
+
+  <div class="controls">
+    <span><label>Clinic</label><select id="clinS"></select></span>
+    <span><label>Window</label>
+      <button class="seg on" data-w="4">4 wk</button><button class="seg" data-w="8">8 wk</button><button class="seg" data-w="0">all</button></span>
+    <span style="margin-left:auto" class="sub" id="wkflag"></span>
+  </div>
+
+  <div class="note" id="scopeNote"></div>
+  <div class="verdict" id="verdict"></div>
+  <div class="funnel" id="funnel"></div>
+
+  <div class="sec">
+    <h2>Why the not-booked didn't book</h2>
+    <div class="hs">Agent disposition (CRM), <b>clinic-level</b> — the disposition isn't category-tagged, so this covers all categories at this clinic, not MH-only. Bucketed over the window.</div>
+    <div class="bars" id="reasons"></div>
+  </div>
+
+  <div class="sec">
+    <h2>⭐ Availability cross-check — was it really "no slot"?</h2>
+    <div class="hs">Per week: open SC slots vs booked → <b>spare</b> (unused capacity) · <b>wasted</b> = No-Show + Cancelled (capacity burned) · <b>lost to "slot/availability"</b> from the disposition · <b>verdict</b>.</div>
+    <div class="chartwrap"><table id="xcheck"></table></div>
+  </div>
+
+  <p class="sub" id="foot"></p>
+</div>
+<script>
+let D=null, CK=null, WIN=4;
+const $=id=>document.getElementById(id);
+const F=n=>n==null?'—':Math.round(n).toLocaleString('en-IN');
+const sum=a=>a.reduce((s,x)=>s+(x||0),0);
+// window = latest WIN weeks (weeks are OLDEST-first in clinic_funnels → take the tail)
+function widx(){const W=D._meta.weeks.length;const n=WIN||W;return {a:Math.max(0,W-n),b:W};}
+function win(arr){const {a,b}=widx();return (arr||[]).slice(a,b);}
+
+function bucketRow(lbl,val,tot,col){
+  const pct=tot?Math.round(100*val/tot):0;
+  return `<div class="brow"><div class="bl">${lbl}</div>
+    <div class="btrack"><div class="bfill" style="width:${Math.max(val?3:0,pct)}%;background:${col}"></div></div>
+    <div class="bn">${F(val)}<span style="color:var(--faint);font-weight:400;font-size:11px"> ${pct}%</span></div></div>`;
+}
+
+function render(){
+  const c=D.clinics[CK]; if(!c){return;}
+  const {a,b}=widx(), W=D._meta.weeks, WL=D._meta.week_labels||W;
+  $('wkflag').textContent = (WL[a]||W[a])+' → '+(WL[b-1]||W[b-1]);
+  $('scopeNote').innerHTML = `<b>${c.loc} · ${c.city}</b> — <b>MH leads</b> are category-specific (AI call-audit intent). <b>Book/not-book + reasons + slots are clinic-level</b> (disposition isn't category-tagged; a slot isn't category-specific). Whitefield / day-level / per-category reasons need the Redshift re-pull (phase 2).`;
+
+  // funnel (MH leads is category-specific; booked/not-booked are clinic-level)
+  const mh=sum(win(c.mh_leads)), bk=sum(win(c.booked)), nb=sum(win(c.not_booked));
+  const openS=sum(win(c.open_slots)), bookedS=sum(win(c.booked_slots)), spare=sum(win(c.spare_slots)), wasted=sum(win(c.wasted_slots));
+  const availLoss=sum(win(c.buckets.avail));
+  $('funnel').innerHTML =
+    `<div class="fcell"><div class="k">MH leads (calls)</div><div class="v">${F(mh)}</div><div class="d">AI-audited MH intent</div></div>
+     <div class="fcell"><div class="k">Clinic booked</div><div class="v" style="color:var(--green)">${F(bk)}</div><div class="d">all categories</div></div>
+     <div class="fcell"><div class="k">Didn't book</div><div class="v" style="color:var(--red)">${F(nb)}</div><div class="d">all categories</div></div>
+     <div class="fcell"><div class="k">Spare SC slots</div><div class="v" style="color:${spare>0?'var(--amber)':'var(--muted)'}">${F(spare)}</div><div class="d">open − booked (unused)</div></div>
+     <div class="fcell"><div class="k">Wasted slots</div><div class="v" style="color:var(--red)">${F(wasted)}</div><div class="d">No-Show + Cancelled</div></div>`;
+
+  // VERDICT
+  let cls='good', main='', sub='';
+  if(availLoss>0 && spare>=availLoss){cls='warn';
+    main=`🟠 Availability was NOT the real blocker — it was a booking/ops fumble.`;
+    sub=`${availLoss} lead(s) were turned away for "slot/availability", but <b>${spare} SC slots sat spare</b> in the same window — a slot existed, it just wasn't offered/booked. Fix is calling/ops, not roster.`;}
+  else if(availLoss>0 && spare>0){cls='warn';
+    main=`🟠 Mixed — some real tightness, some fumble.`;
+    sub=`${availLoss} turned away for "no slot" with only ${spare} spare — partly capacity, partly ops.`;}
+  else if(availLoss>0){cls='bad';
+    main=`🔴 Real capacity gap.`;
+    sub=`${availLoss} turned away for "no slot" and ~no spare capacity — this clinic needs more MH roster.`;}
+  else {cls= spare>0?'good':'good';
+    main=`✅ Availability is not the constraint here.`;
+    sub=`No leads were tagged "slot/availability" in this window, and <b>${spare} SC slots were spare</b>. ${wasted>0?`But <b>${wasted} booked slots were wasted</b> on No-Shows/Cancellations — that capacity could have served more patients (deposit / overbook policy).`:''} The bigger levers are MH lead volume and answer-rate/conversion.`;}
+  $('verdict').className='verdict '+cls;
+  $('verdict').innerHTML=`<div class="vhd">Verdict · ${c.loc} · MH</div><div class="vmain">${main}</div><div class="vsub">${sub}</div>`;
+
+  // reason buckets
+  const B=c.buckets, order=['avail','timing','wantbook','lowint','noise','untag'];
+  const cols={avail:'var(--red)',timing:'var(--amber)',wantbook:'var(--green)',lowint:'var(--blue)',noise:'var(--faint)',untag:'#c7ccd4'};
+  const tot=order.reduce((s,k)=>s+sum(win(B[k])),0)||1;
+  $('reasons').innerHTML = order.map(k=>bucketRow(D._meta.bucket_label[k],sum(win(B[k])),tot,cols[k])).join('');
+
+  // cross-check table (per week, newest first for reading)
+  let h='<tr><th>Week</th><th>MH leads</th><th>Open</th><th>Booked</th><th>Spare</th><th>Wasted</th><th>Lost·"no slot"</th><th>Verdict</th></tr>';
+  for(let i=b-1;i>=a;i--){
+    const v=c.verdict[i], pill = v==='capacity'?'<span class="pill p-cap">capacity gap</span>':v==='ops'?'<span class="pill p-ops">ops fumble</span>':v==='mixed'?'<span class="pill p-mix">mixed</span>':(c.spare_slots[i]>0?'<span class="pill p-ok">slots spare</span>':'—');
+    h+=`<tr><td>${WL[i]||W[i]}</td><td>${F(c.mh_leads[i])}</td><td>${F(c.open_slots[i])}</td><td>${F(c.booked_slots[i])}</td>
+      <td style="color:${c.spare_slots[i]>0?'var(--amber)':'var(--muted)'}">${F(c.spare_slots[i])}</td>
+      <td style="color:${c.wasted_slots[i]>0?'var(--red)':'var(--muted)'}">${F(c.wasted_slots[i])}</td>
+      <td style="color:${c.buckets.avail[i]>0?'var(--red)':'var(--muted)'};font-weight:${c.buckets.avail[i]>0?700:400}">${F(c.buckets.avail[i])}</td><td>${pill}</td></tr>`;
+  }
+  $('xcheck').innerHTML=h;
+}
+
+fetch('data_why_notbook.json',{cache:'no-store'}).then(r=>r.json()).then(d=>{
+  D=d; $('foot').textContent=d._meta.note;
+  const cs=Object.keys(d.clinics);
+  $('clinS').innerHTML=cs.map(k=>`<option value="${k}">${d.clinics[k].loc} · ${d.clinics[k].city}</option>`).join('');
+  CK=cs.includes('indiranagar')?'indiranagar':cs[0]; $('clinS').value=CK;
+  $('clinS').onchange=e=>{CK=e.target.value;render();};
+  document.querySelectorAll('.seg[data-w]').forEach(b=>b.onclick=()=>{document.querySelectorAll('.seg[data-w]').forEach(x=>x.classList.remove('on'));b.classList.add('on');WIN=+b.dataset.w;render();});
+  render();
+}).catch(e=>{$('verdict').innerHTML='<div class="vmain">Failed to load data_why_notbook.json — run scripts/build_why_notbook.py</div>';});
+</script>
+</body>
+</html>
