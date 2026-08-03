@@ -103,6 +103,17 @@ const STCOL={done:'var(--done)',sched:'var(--sched)',noshow:'var(--noshow)',resc
 const STLAB={done:'Completed',sched:'Scheduled',noshow:'No-show',resched:'Rescheduled',cancelled:'Cancelled',other:'Other'};
 const STORDER=['done','sched','noshow','resched','cancelled','other'];
 const SRCCLS=s=>'src'+(s||'').replace(/[^A-Za-z]/g,'');
+const STRLAB={STRONG:'Strong',NOT_A_PATIENT:'Not a patient',COULD_NOT_DETERMINE:'Unclear'};
+const STRCLS={STRONG:'yes',NOT_A_PATIENT:'no',COULD_NOT_DETERMINE:'na'};
+const CARELAB={TALK_TO_THERAPIST:'Therapist',TALK_TO_DOCTOR:'Doctor',NEEDS_TESTS:'Tests',NEEDS_MEDS:'Meds',COULD_NOT_DETERMINE:'Unclear',OTHER:'Other'};
+function bookedCell(l){
+  if(!l.booked) return '<span class="no">✗ not booked</span>';
+  if(l.blag==null) return '<span class="yes">✓ booked</span>';
+  if(l.blag===0) return '<span class="yes">same day</span>';
+  if(l.blag<0) return '<span class="na">earlier lead</span>';
+  const dt=l.bkdate?dlabel(l.bkdate):null;
+  return `<span class="yes">+${l.blag}d</span>${dt?` <span style="color:var(--muted)">${dt.dow} ${dt.dm}</span>`:''}`;
+}
 function dlabel(iso){const dt=new Date(iso+'T00:00:00');return {dow:DOW[(dt.getDay()+6)%7],dm:dt.getDate()};}
 function ageKey(bk){return bk.age==null?'no_lead':(bk.age<=7?String(bk.age):'8+');}
 function countBy(arr,fn){const m={};arr.forEach(x=>{const k=fn(x);m[k]=(m[k]||0)+1});return m;}
@@ -115,7 +126,7 @@ function render(){
   const c=D.clinics[CK], days=D._meta.days;
   $('wkflag').textContent='Week '+D._meta.week;
   const docTxt=DOC==='all'?'all doctors':DOC;
-  $('scopeNote').innerHTML=`<b>${c.disp}</b> · <b>${docTxt}</b> — ① every Screening-Call appointment scheduled that day (matches your clinician calendar). <b>Done</b> = the call was completed; the big number leads with done, then total booked. <b>Lead age</b> = days from the lead first reaching us to the booking (0 = same day). Click a day → an age band → each booking's <b>patient ID, phone, source &amp; medium</b>. ② Every lead attributed to this clinic (by clinic code) — <b>connected</b> &amp; <b>wanted to book</b> come from the clinic's own call line, <b>booked</b> = they got an SC this week, ▶ = call recording.`;
+  $('scopeNote').innerHTML=`<b>${c.disp}</b> · <b>${docTxt}</b> — ① every Screening-Call appointment scheduled that day (matches your clinician calendar). <b>Done</b> = the call was completed; the big number leads with done, then total booked. <b>Lead age</b> = days from the lead first reaching us to the booking (0 = same day). Click a day → an age band → each booking's <b>patient ID, phone, source &amp; medium</b>. ② Every lead attributed to this clinic (by clinic code) — <b>looking for</b> (care asked for) &amp; <b>intent</b> (how genuine) come from the AI call audit, <b>booked for</b> = if/when they got an SC (same day vs later), ▶ = call recording.`;
 
   // ① calendar — DONE-first
   $('cal').innerHTML=days.map(iso=>{const bks=bookingsOf(iso),L=dlabel(iso),tot=bks.length;
@@ -175,27 +186,29 @@ function render(){
     lds.sort((a,b)=>(b.rec?1:0)-(a.rec?1:0));
     $('leadDetail').style.display='';
     $('leadDetail').innerHTML=`<h3>${L.dow} ${L.dm} — ${lds.length} leads</h3>
-      <div class="ds">Every lead attributed to ${c.disp} that day. <b>Connected</b> / <b>wanted book</b> are from the clinic's own call line (so they show only for call leads); <b>booked</b> = this person got an SC booking this week.</div>
-      <div class="bkwrap"><table class="btbl"><thead><tr><th>Phone</th><th>Source</th><th>Medium</th><th>Connected</th><th>Wanted book</th><th>Booked SC</th><th>Recording</th></tr></thead><tbody>
+      <div class="ds">Every lead attributed to ${c.disp} that day. <b>Connected</b>, <b>looking for</b> (what care they asked for) &amp; <b>intent</b> (how genuine the caller is) come from the AI audit of the clinic's own call line — so they show only for <b>call</b> leads. <b>Booked for</b> = whether they got an SC and how soon (same day vs a later day).</div>
+      <div class="bkwrap"><table class="btbl"><thead><tr><th>Phone</th><th>Source</th><th>Medium</th><th>Connected</th><th>Looking for</th><th>Intent</th><th>Booked for</th><th>Recording</th></tr></thead><tbody>
       ${lds.map(l=>{const call=l.med==='Call';
         return `<tr>
           <td class="ph">${l.p||'—'}</td>
           <td><span class="chip ${SRCCLS(l.src)}">${l.src}</span></td>
           <td>${l.med}</td>
           <td>${call?(l.conn?'<span class="yes">✓ yes</span>':'<span class="no">✗ no</span>'):'<span class="na">—</span>'}</td>
-          <td>${call?(l.want?'<span class="yes">✓ yes</span>':'<span class="no">✗ no</span>'):'<span class="na">—</span>'}</td>
-          <td>${l.booked?'<span class="yes">✓ yes</span>':'<span class="no">✗ no</span>'}</td>
+          <td>${l.intent?(CARELAB[l.intent]||l.intent):'<span class="na">—</span>'}</td>
+          <td>${l.strength?`<span class="${STRCLS[l.strength]||'na'}">${STRLAB[l.strength]||l.strength}</span>`:'<span class="na">—</span>'}</td>
+          <td>${bookedCell(l)}</td>
           <td>${l.rec?`<a class="rec" href="${l.rec}" target="_blank" rel="noopener">▶ ${mmss(l.dur)}</a>`:'<span class="na">—</span>'}</td>
         </tr>`;}).join('')}
       </tbody></table></div>`;
   } else { $('leadDetail').style.display='none'; }
 
   // verdict
-  let wDone=0,wTot=0,wSd=0,wLd=0,wConn=0,wWb=0,wBk=0;
+  let wDone=0,wTot=0,wSd=0,wLd=0,wConn=0,wStrong=0,wBk=0,wBkSame=0;
   days.forEach(iso=>{const b=bookingsOf(iso);wTot+=b.length;wDone+=b.filter(x=>x.st==='done').length;wSd+=b.filter(x=>x.age===0).length;
-    const l=c.days[iso].leads||[];wLd+=l.length;wConn+=l.filter(x=>x.conn).length;wWb+=l.filter(x=>x.want).length;wBk+=l.filter(x=>x.booked).length;});
+    const l=c.days[iso].leads||[];wLd+=l.length;wConn+=l.filter(x=>x.conn).length;wStrong+=l.filter(x=>x.strength==='STRONG').length;
+    wBk+=l.filter(x=>x.booked).length;wBkSame+=l.filter(x=>x.booked&&x.blag===0).length;});
   const sdPct=wTot?Math.round(100*wSd/wTot):0, donePct=wTot?Math.round(100*wDone/wTot):0;
-  $('verdict').innerHTML=`<b>Read of the week — ${c.disp}${DOC!=='all'?' · '+DOC:''}:</b> ${wTot} SC booked, <b>${wDone} done (${donePct}%)</b>; <b>${sdPct}% (${wSd}) from a same-day lead</b> — leads that convert do it fast. On the demand side, <b>${wLd} leads</b> were attributed to this clinic across all sources, <b>${wConn} connected on call</b>, <b>${wBk} ended up with an SC booking</b>. Big lead day but few done? Drill ② to see whether they connected &amp; wanted to book (→ <b>availability / ops</b>) or not (→ <b>lead quality</b>) — and open the recording. <span style="color:var(--muted)">Caveat: ① source (patient's earliest lead) and ② source (clinic code) use different attribution, so they won't perfectly reconcile.</span>`;
+  $('verdict').innerHTML=`<b>Read of the week — ${c.disp}${DOC!=='all'?' · '+DOC:''}:</b> ${wTot} SC booked, <b>${wDone} completed (${donePct}%)</b>; <b>${sdPct}% (${wSd}) from a same-day lead</b> — leads that convert do it fast. On the demand side, <b>${wLd} leads</b> were attributed to this clinic across all sources, <b>${wConn} connected on call</b> (${wStrong} tagged strong intent), <b>${wBk} ended up with an SC — ${wBkSame} of them same day</b>. Big lead day but few booked? Drill ② to see whether they connected &amp; had strong intent (→ an <b>availability / ops</b> gap) or were weak / not-a-patient (→ <b>lead quality</b>) — and open the recording. <span style="color:var(--muted)">Caveat: ① source (patient's earliest lead) and ② source (clinic code) use different attribution, so they won't perfectly reconcile.</span>`;
 
   $('foot').textContent=D._meta.note;
 }

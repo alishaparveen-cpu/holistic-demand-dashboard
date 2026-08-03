@@ -68,7 +68,7 @@ ST_SQL = """CASE
   ELSE 'other' END"""
 
 out = {"_meta":{"days":DAYS, "week":f"{S}→{(end-datetime.timedelta(days=1)).isoformat()}",
-        "note":"① SC bookings = Screening-Call appts scheduled that day at the clinic (all statuses = the clinician calendar). done=COMPLETED/RECONSULTED. age = booking-made − lead-first-seen (exact). src/med from the patient's earliest lead. ② Leads = ALL leads attributed to the clinic by lead.location code, per-lead; conn/want/recording from the clinic's own call lines (lead_to_call). ①source & ②source use different attribution (patient's earliest lead vs clinic code) so they won't perfectly reconcile."},
+        "note":"① SC bookings = Screening-Call appts scheduled that day at the clinic (all statuses = the clinician calendar). done=COMPLETED/RECONSULTED. age = booking-made − lead-first-seen (exact). src/med from the patient's earliest lead. ② Leads = ALL leads attributed to the clinic by lead.location code, per-lead; connected + intent (patient_intent_strength: STRONG/NOT_A_PATIENT/COULD_NOT_DETERMINE) + care-type (user_intent: therapist/doctor/tests/meds) + recording come from the representative call on the clinic's own lines (lead_to_call). ①source & ②source use different attribution (patient's earliest lead vs clinic code) so they won't perfectly reconcile."},
        "clinics":{}}
 
 for c in CLINICS:
@@ -113,25 +113,29 @@ for c in CLINICS:
     nums = "','".join(c["nums"])
     b = q(f"""
     WITH scbk AS (
-      SELECT DISTINCT RIGHT(p.phone_no,10) ph
+      SELECT RIGHT(p.phone_no,10) ph, MIN(DATE(a.start_time + {IST})) sc_date
       FROM allo_consultations.appointments a
       JOIN allo_consultations.types t ON t.id=a.type_id AND t.name='Screening Call'
       JOIN allo_health.locations loc ON loc.id=a.location_id AND loc.locality='{c['loc']}' AND loc.city='{c['city']}'
       JOIN allo_persons.patient p ON p.id=a.patient_id
-      WHERE a.deleted_at IS NULL AND (a.start_time + {IST})>='{S}' AND (a.start_time + {IST})<'{E}'),
-    callout AS (
+      WHERE a.deleted_at IS NULL AND (a.start_time + {IST})>='{S}' AND (a.start_time + {IST})<'{E}'
+      GROUP BY 1),
+    callout AS (SELECT ph, d, conn, strength, intent, rec, dur FROM (
       SELECT RIGHT(ec."from",10) ph, DATE(ec.start_time + {IST}) d,
-        MAX(CASE WHEN ec.status='completed' THEN 1 ELSE 0 END) conn,
-        MAX(CASE WHEN ca.analysis.user_intent.result::varchar IN ('{"','".join(BOOK_INTENT)}') THEN 1 ELSE 0 END) want,
-        MAX(NULLIF(ec.recording_url,'')) rec, MAX(ec.total_duration) dur
+        CASE WHEN ec.status='completed' THEN 1 ELSE 0 END conn,
+        ca.analysis.patient_intent_strength.result::varchar strength,
+        ca.analysis.user_intent.result::varchar intent,
+        NULLIF(ec.recording_url,'') rec, ec.total_duration dur,
+        ROW_NUMBER() OVER (PARTITION BY RIGHT(ec."from",10), DATE(ec.start_time + {IST})
+          ORDER BY (CASE WHEN ec.status='completed' THEN 1 ELSE 0 END) DESC, ec.total_duration DESC NULLS LAST) rn
       FROM allo_vendors.exotel_calls ec
       LEFT JOIN allo_analytics.call_analyses ca ON ca.call_id=ec.call_id
       WHERE RIGHT(ec.exotel_number,10) IN ('{nums}') AND ec.routed_to='lead_to_call'
-        AND (ec.start_time + {IST})>='{S}' AND (ec.start_time + {IST})<'{E}'
-      GROUP BY 1,2)
+        AND (ec.start_time + {IST})>='{S}' AND (ec.start_time + {IST})<'{E}') WHERE rn=1)
     SELECT DATE(ld.created_at + {IST}) d, ld.phone_no phone, {SRC('ld')} src, {MED('ld')} med,
-      COALESCE(co.conn,0) conn, COALESCE(co.want,0) want,
+      COALESCE(co.conn,0) conn, COALESCE(co.strength,'') strength, COALESCE(co.intent,'') intent,
       CASE WHEN sb.ph IS NOT NULL THEN 1 ELSE 0 END booked,
+      sb.sc_date bkdate, DATEDIFF(day, DATE(ld.created_at + {IST}), sb.sc_date) blag,
       COALESCE(co.rec,'') rec, COALESCE(co.dur,0) dur
     FROM allo_persons.lead ld
     LEFT JOIN callout co ON co.ph=RIGHT(ld.phone_no,10) AND co.d=DATE(ld.created_at + {IST})
@@ -142,9 +146,13 @@ for c in CLINICS:
     for r in b:
         d=r[0]
         if d not in days: continue
+        NUL=("","\\N","True",None)
+        blag = None if r[9] in NUL else int(float(r[9]))
+        bkdate = "" if r[8] in NUL else r[8]
         days[d]["leads"].append({"p":r[1], "src":(r[2] or "Direct/unknown"), "med":(r[3] or "Web"),
-                                 "conn":int(r[4]), "want":int(r[5]), "booked":int(r[6]),
-                                 "rec":(r[7] or ""), "dur":int(float(r[8] or 0))})
+                                 "conn":int(r[4]), "strength":(r[5] or ""), "intent":(r[6] or ""),
+                                 "booked":int(r[7]), "bkdate":bkdate, "blag":blag,
+                                 "rec":(r[10] or ""), "dur":int(float(r[11] or 0))})
     out["clinics"][c["key"]]={"disp":c["disp"],"city":c["city"],"loc":c["loc"],
                               "doctors":sorted(docs),"days":days}
     tot=sum(len(days[d]["bookings"]) for d in DAYS)
