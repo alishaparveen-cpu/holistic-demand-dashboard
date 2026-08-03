@@ -66,14 +66,27 @@ def parse_recs(*ss):
             out.append({"u":p[0], "d":(int(float(p[1])) if len(p)>1 and p[1] not in NUL else 0), "dt":(p[2] if len(p)>2 and p[2] not in NUL else "")})
     return out
 
-# LISTAGG all lead_to_call recordings per caller number (fragment: window bounds passed in)
+# LISTAGG ALL recordings (any routed_to, not just lead_to_call) per caller number, window passed in
 def REC_LISTAGG(nums_csv, wstart):
     return f"""SELECT RIGHT(ec."from",10) ph,
       LISTAGG(ec.recording_url||'~'||COALESCE(ec.total_duration,0)||'~'||TO_CHAR(DATE(ec.start_time+{IST}),'YYYY-MM-DD'),'|') WITHIN GROUP (ORDER BY ec.start_time) recs
     FROM allo_vendors.exotel_calls ec
-    WHERE RIGHT(ec.exotel_number,10) IN ('{nums_csv}') AND ec.routed_to='lead_to_call'
+    WHERE RIGHT(ec.exotel_number,10) IN ('{nums_csv}')
       AND ec.recording_url IS NOT NULL AND ec.recording_url!=''
       AND (ec.start_time + {IST})>='{wstart}' AND (ec.start_time + {IST})<'{E}' GROUP BY 1"""
+
+# AI call-audit category (diagnoses.category) + summary per caller number — real category wins, else longest call.
+# summary sanitized of tabs/newlines so it survives the tab-separated query output.
+def META_BYPHONE(nums_csv, wstart):
+    return f"""SELECT ph, cat, summ FROM (
+      SELECT RIGHT(ec."from",10) ph, ca.analysis.diagnoses.category::varchar cat,
+        REPLACE(REPLACE(REPLACE(ca.analysis.summary::varchar,CHR(9),' '),CHR(10),' '),CHR(13),' ') summ,
+        ROW_NUMBER() OVER (PARTITION BY RIGHT(ec."from",10)
+          ORDER BY (CASE WHEN ca.analysis.diagnoses.category::varchar NOT IN ('NOT_MENTIONED','OTHER') AND ca.analysis.diagnoses.category IS NOT NULL THEN 1 ELSE 0 END) DESC, ec.total_duration DESC NULLS LAST) rn
+      FROM allo_vendors.exotel_calls ec
+      JOIN allo_analytics.call_analyses ca ON ca.call_id=ec.call_id
+      WHERE RIGHT(ec.exotel_number,10) IN ('{nums_csv}') AND ec.routed_to='lead_to_call'
+        AND (ec.start_time + {IST})>='{wstart}' AND (ec.start_time + {IST})<'{E}') WHERE rn=1"""
 
 today = datetime.date.today()
 mon = today - datetime.timedelta(days=today.weekday())
@@ -100,11 +113,13 @@ for c in CLINICS:
     nums0 = "','".join(c["nums"])
     a = q(f"""
     WITH lead1 AS (SELECT RIGHT(phone_no,10) ph, MIN(created_at) lead_dt FROM allo_persons.lead WHERE deleted_at IS NULL GROUP BY 1),
-    rec AS ({REC_LISTAGG(nums0, REC_S)})
+    rec AS ({REC_LISTAGG(nums0, REC_S)}),
+    metaB AS ({META_BYPHONE(nums0, REC_S)})
     SELECT DATE(a.start_time + {IST}) d,
       p.phone_no phone, p.id pid, COALESCE(pr.name,'Unassigned') doc,
       DATEDIFF(day, DATE(l.lead_dt + {IST}), DATE(a.created_at + {IST})) age,
       {SRC('ld')} src, {MED('ld')} med, {ST_SQL} st,
+      COALESCE(cbp.cat, cba.cat, '') cat, COALESCE(cbp.summ, cba.summ, '') summ,
       COALESCE(rp.recs,'') recs_p, COALESCE(ra.recs,'') recs_a
     FROM allo_consultations.appointments a
     JOIN allo_consultations.types t ON t.id=a.type_id AND t.name='Screening Call'
@@ -115,6 +130,8 @@ for c in CLINICS:
     LEFT JOIN allo_persons.lead ld ON RIGHT(ld.phone_no,10)=l.ph AND ld.created_at=l.lead_dt AND ld.deleted_at IS NULL
     LEFT JOIN rec rp ON rp.ph=RIGHT(p.phone_no,10)
     LEFT JOIN rec ra ON ra.ph=RIGHT(p.alternate_phone_no,10)
+    LEFT JOIN metaB cbp ON cbp.ph=RIGHT(p.phone_no,10)
+    LEFT JOIN metaB cba ON cba.ph=RIGHT(p.alternate_phone_no,10)
     WHERE a.deleted_at IS NULL AND (a.start_time + {IST})>='{S}' AND (a.start_time + {IST})<'{E}'
     """)
     days = {d:{"bookings":[], "leads":[]} for d in DAYS}
@@ -126,7 +143,8 @@ for c in CLINICS:
         doc=r[3] or "Unassigned"; docs.add(doc)
         days[d]["bookings"].append({"p":r[1], "pid":(r[2] or ""), "doc":doc, "age":age,
                                     "src":(r[5] or "Direct/unknown"), "med":(r[6] or "Web"), "st":r[7],
-                                    "recs":parse_recs(g(r,8), g(r,9))})
+                                    "cat":(g(r,8) or ""), "summ":(g(r,9) or ""),
+                                    "recs":parse_recs(g(r,10), g(r,11))})
     # ---- B) per-lead rows (all sources by clinic code) + call outcome/recording + booked flag ----
     nums = "','".join(c["nums"])
     b = q(f"""
@@ -149,16 +167,21 @@ for c in CLINICS:
       LEFT JOIN allo_analytics.call_analyses ca ON ca.call_id=ec.call_id
       WHERE RIGHT(ec.exotel_number,10) IN ('{nums}') AND ec.routed_to='lead_to_call'
         AND (ec.start_time + {IST})>='{S}' AND (ec.start_time + {IST})<'{E}') WHERE rn=1),
-    recL AS ({REC_LISTAGG(nums, S)})
+    recL AS ({REC_LISTAGG(nums, S)}),
+    metaL AS ({META_BYPHONE(nums, S)}),
+    pat AS (SELECT RIGHT(phone_no,10) ph, MAX(id::varchar) pid FROM allo_persons.patient WHERE deleted_at IS NULL GROUP BY 1)
     SELECT DATE(ld.created_at + {IST}) d, ld.phone_no phone, {SRC('ld')} src, {MED('ld')} med,
       COALESCE(co.conn,0) conn, COALESCE(co.strength,'') strength, COALESCE(co.intent,'') intent,
       CASE WHEN sb.ph IS NOT NULL THEN 1 ELSE 0 END booked,
       sb.sc_date bkdate, DATEDIFF(day, DATE(ld.created_at + {IST}), sb.sc_date) blag,
+      COALESCE(ml.cat,'') cat, COALESCE(pt.pid,'') pid, COALESCE(ml.summ,'') summ,
       COALESCE(rl.recs,'') recs
     FROM allo_persons.lead ld
     LEFT JOIN callout co ON co.ph=RIGHT(ld.phone_no,10) AND co.d=DATE(ld.created_at + {IST})
     LEFT JOIN scbk sb ON sb.ph=RIGHT(ld.phone_no,10)
     LEFT JOIN recL rl ON rl.ph=RIGHT(ld.phone_no,10)
+    LEFT JOIN metaL ml ON ml.ph=RIGHT(ld.phone_no,10)
+    LEFT JOIN pat pt ON pt.ph=RIGHT(ld.phone_no,10)
     WHERE ld.deleted_at IS NULL AND ld.location='{c['code']}'
       AND (ld.created_at + {IST})>='{S}' AND (ld.created_at + {IST})<'{E}'
     """)
@@ -170,7 +193,8 @@ for c in CLINICS:
         days[d]["leads"].append({"p":r[1], "src":(r[2] or "Direct/unknown"), "med":(r[3] or "Web"),
                                  "conn":int(r[4]), "strength":(g(r,5) or ""), "intent":(g(r,6) or ""),
                                  "booked":int(r[7]), "bkdate":bkdate, "blag":blag,
-                                 "recs":parse_recs(g(r,10))})
+                                 "cat":(g(r,10) or ""), "pid":(g(r,11) or ""), "summ":(g(r,12) or ""),
+                                 "recs":parse_recs(g(r,13))})
     out["clinics"][c["key"]]={"disp":c["disp"],"city":c["city"],"loc":c["loc"],
                               "doctors":sorted(docs),"days":days}
     tot=sum(len(days[d]["bookings"]) for d in DAYS)

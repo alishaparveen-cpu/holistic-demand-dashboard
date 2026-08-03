@@ -64,6 +64,8 @@ select{font:13px inherit;color:var(--ink);border:1px solid var(--line);border-ra
 .yes{color:var(--done);font-weight:700}.no{color:var(--noshow);font-weight:700}.na{color:var(--faint)}
 .rec{display:inline-flex;align-items:center;gap:4px;font-size:11.5px;color:var(--accent);font-weight:600}
 .srcGoogle{color:#B8503C}.srcGMB{color:#2E7D5B}.srcMeta{color:#3E5FA8}.srcPracto{color:#7C5CBF}.srcOrganic{color:#8a7a3f}
+.catMH{color:#7C5CBF;border-color:#d9cff0}.catSH{color:#3E5FA8;border-color:#cdd8ef}.catSTI{color:#B8503C;border-color:#f0d4cd}.catED{color:#8a6a2a;border-color:#ecdfc0}
+.ntico{cursor:help;font-size:12px;opacity:.75}.ntico:hover{opacity:1}
 </style>
 </head>
 <body>
@@ -86,9 +88,6 @@ select{font:13px inherit;color:var(--ink);border:1px solid var(--line);border-ra
   <div class="hd">② Every lead that came that day — source · connected · wanted to book · booked · recording</div>
   <div class="cal" id="leadCal"></div>
   <div class="detail" id="leadDetail"></div>
-
-  <div class="verdict" id="verdict"></div>
-  <p class="foot" id="foot"></p>
 </div>
 <script>
 let D=null, CK=null, DOC='all', SEL=null, SELAGE=null, SELLD=null;
@@ -104,6 +103,11 @@ const SRCCLS=s=>'src'+(s||'').replace(/[^A-Za-z]/g,'');
 const STRLAB={STRONG:'Strong',NOT_A_PATIENT:'Not a patient',COULD_NOT_DETERMINE:'Unclear'};
 const STRCLS={STRONG:'yes',NOT_A_PATIENT:'no',COULD_NOT_DETERMINE:'na'};
 const CARELAB={TALK_TO_THERAPIST:'Therapist',TALK_TO_DOCTOR:'Doctor',NEEDS_TESTS:'Tests',NEEDS_MEDS:'Meds',COULD_NOT_DETERMINE:'Unclear',OTHER:'Other'};
+const CATLAB={MENTAL_HEALTH:'MH',SEXUAL_HEALTH_GENERAL:'SH',STI:'STI',ERECTILE_DYSFUNCTION:'ED',PREMATURE_EJACULATION:'PE',NOT_MENTIONED:'',OTHER:'Other'};
+const CATCLS={MENTAL_HEALTH:'catMH',SEXUAL_HEALTH_GENERAL:'catSH',STI:'catSTI',ERECTILE_DYSFUNCTION:'catED',PREMATURE_EJACULATION:'catED'};
+function catCell(cat){const lab=CATLAB[cat]; if(lab===undefined&&cat){return `<span class="chip">${cat}</span>`;} if(!lab) return '<span class="na">—</span>'; return `<span class="chip ${CATCLS[cat]||''}">${lab}</span>`;}
+function esc(s){return (s||'').replace(/"/g,'&quot;').replace(/</g,'&lt;');}
+function noteIcon(summ){return summ?` <span class="ntico" title="${esc(summ)}">📝</span>`:'';}
 function bookedCell(l){
   if(!l.booked) return '<span class="no">✗ not booked</span>';
   if(l.blag==null) return '<span class="yes">✓ booked</span>';
@@ -151,16 +155,17 @@ function render(){
   if(SELAGE){
     const rows=bks.filter(b=>ageKey(b)===SELAGE);
     bkHTML=`<div class="bkwrap"><h4>${ALAB[SELAGE]} — ${rows.length} booking${rows.length!==1?'s':''} <span style="color:var(--faint);font-weight:400">(click a patient ID to copy)</span></h4>
-      <table class="btbl"><thead><tr><th>Patient ID</th><th>Phone</th><th>Doctor</th><th>Source</th><th>Medium</th><th>Lead age</th><th>Status</th><th>Recording</th></tr></thead><tbody>
+      <table class="btbl"><thead><tr><th>Patient ID</th><th>Phone</th><th>Doctor</th><th>Category</th><th>Source</th><th>Medium</th><th>Lead age</th><th>Status</th><th>Recording</th></tr></thead><tbody>
       ${rows.map(b=>`<tr>
           <td>${b.pid?`<span class="pid" data-full="${b.pid}" onclick="copyPid(this)">${b.pid}</span>`:'<span class="na">—</span>'}</td>
           <td class="ph">${b.p||'—'}</td>
           <td>${b.doc.replace(/^Dr\.?\s*/,'')}</td>
+          <td>${catCell(b.cat)}</td>
           <td><span class="chip ${SRCCLS(b.src)}">${b.src}</span></td>
           <td>${b.med}</td>
           <td>${b.age==null?'<span class="na">no lead</span>':(b.age===0?'same day':b.age+'d')}</td>
           <td><span class="dot" style="background:${STCOL[b.st]}"></span>${STLAB[b.st]}</td>
-          <td>${recsCell(b.recs)}</td>
+          <td>${recsCell(b.recs)}${noteIcon(b.summ)}</td>
         </tr>`).join('')}
       </tbody></table></div>`;
   } else bkHTML=`<div class="bkwrap" style="color:var(--faint);font-size:12.5px">Click an age band above to see the booking-level breakdown (patient ID · phone · source · medium · status).</div>`;
@@ -187,30 +192,22 @@ function render(){
     $('leadDetail').style.display='';
     $('leadDetail').innerHTML=`<h3>${L.dow} ${L.dm} — ${lds.length} leads</h3>
       <div class="ds">Every lead attributed to ${c.disp} that day. <b>Connected</b>, <b>looking for</b> (what care they asked for) &amp; <b>intent</b> (how genuine the caller is) come from the AI audit of the clinic's own call line — so they show only for <b>call</b> leads. <b>Booked for</b> = whether they got an SC and how soon (same day vs a later day).</div>
-      <div class="bkwrap"><table class="btbl"><thead><tr><th>Phone</th><th>Source</th><th>Medium</th><th>Connected</th><th>Looking for</th><th>Intent</th><th>Booked for</th><th>Recording</th></tr></thead><tbody>
+      <div class="bkwrap"><table class="btbl"><thead><tr><th>Patient ID</th><th>Phone</th><th>Category</th><th>Source</th><th>Medium</th><th>Connected</th><th>Looking for</th><th>Intent</th><th>Booked for</th><th>Recording</th></tr></thead><tbody>
       ${lds.map(l=>{const call=l.med==='Call';
         return `<tr>
+          <td>${l.pid?`<span class="pid" data-full="${l.pid}" onclick="copyPid(this)">${l.pid}</span>`:'<span class="na">—</span>'}</td>
           <td class="ph">${l.p||'—'}</td>
+          <td>${catCell(l.cat)}</td>
           <td><span class="chip ${SRCCLS(l.src)}">${l.src}</span></td>
           <td>${l.med}</td>
           <td>${call?(l.conn?'<span class="yes">✓ yes</span>':'<span class="no">✗ no</span>'):'<span class="na">—</span>'}</td>
           <td>${l.intent?(CARELAB[l.intent]||l.intent):'<span class="na">—</span>'}</td>
           <td>${l.strength?`<span class="${STRCLS[l.strength]||'na'}">${STRLAB[l.strength]||l.strength}</span>`:'<span class="na">—</span>'}</td>
           <td>${bookedCell(l)}</td>
-          <td>${recsCell(l.recs)}</td>
+          <td>${recsCell(l.recs)}${noteIcon(l.summ)}</td>
         </tr>`;}).join('')}
       </tbody></table></div>`;
   } else { $('leadDetail').style.display='none'; }
-
-  // verdict
-  let wDone=0,wTot=0,wSd=0,wLd=0,wConn=0,wStrong=0,wBk=0,wBkSame=0;
-  days.forEach(iso=>{const b=bookingsOf(iso);wTot+=b.length;wDone+=b.filter(x=>x.st==='done').length;wSd+=b.filter(x=>x.age===0).length;
-    const l=c.days[iso].leads||[];wLd+=l.length;wConn+=l.filter(x=>x.conn).length;wStrong+=l.filter(x=>x.strength==='STRONG').length;
-    wBk+=l.filter(x=>x.booked).length;wBkSame+=l.filter(x=>x.booked&&x.blag===0).length;});
-  const sdPct=wTot?Math.round(100*wSd/wTot):0, donePct=wTot?Math.round(100*wDone/wTot):0;
-  $('verdict').innerHTML=`<b>Read of the week — ${c.disp}${DOC!=='all'?' · '+DOC:''}:</b> ${wTot} SC booked, <b>${wDone} completed (${donePct}%)</b>; <b>${sdPct}% (${wSd}) from a same-day lead</b> — leads that convert do it fast. On the demand side, <b>${wLd} leads</b> were attributed to this clinic across all sources, <b>${wConn} connected on call</b> (${wStrong} tagged strong intent), <b>${wBk} ended up with an SC — ${wBkSame} of them same day</b>. Big lead day but few booked? Drill ② to see whether they connected &amp; had strong intent (→ an <b>availability / ops</b> gap) or were weak / not-a-patient (→ <b>lead quality</b>) — and open the recording. <span style="color:var(--muted)">Caveat: ① source (patient's earliest lead) and ② source (clinic code) use different attribution, so they won't perfectly reconcile.</span>`;
-
-  $('foot').textContent=D._meta.note;
 }
 
 function loadDocs(){const c=D.clinics[CK];$('docS').innerHTML=`<option value="all">All doctors</option>`+(c.doctors||[]).map(x=>`<option value="${x}">${x}</option>`).join('');$('docS').value=DOC='all';}
