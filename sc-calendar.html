@@ -74,6 +74,9 @@ select{font:13px inherit;color:var(--ink);border:1px solid var(--line);border-ra
 .ftclear:hover{background:var(--bg)}
 .btbl thead th{position:sticky;top:0;background:var(--card);z-index:1}
 #summpop{display:none;position:fixed;z-index:50;max-width:320px;background:#1f2733;color:#f3f5f8;font-size:12px;line-height:1.5;padding:10px 12px;border-radius:9px;box-shadow:0 6px 24px rgba(0,0,0,.28)}
+.summt{display:inline-block;max-width:240px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;vertical-align:bottom;color:var(--ink2)}
+.summt.exp{white-space:normal;max-width:380px}
+.smore{cursor:pointer;font-size:11px;color:var(--accent);margin-left:2px;white-space:nowrap}
 </style>
 </head>
 <body>
@@ -119,6 +122,8 @@ const CATCLS={MENTAL_HEALTH:'catMH',SEXUAL_HEALTH_GENERAL:'catSH',STI:'catSTI',E
 function catCell(cat){const lab=CATLAB[cat]; if(lab===undefined&&cat){return `<span class="chip">${cat}</span>`;} if(!lab) return '<span class="na">—</span>'; return `<span class="chip ${CATCLS[cat]||''}">${lab}</span>`;}
 function esc(s){return (s||'').replace(/"/g,'&quot;').replace(/</g,'&lt;');}
 function noteIcon(summ){return summ?` <span class="ntico" data-s="${esc(summ)}" onclick="showSumm(event,this)" title="click for call summary">📝</span>`:'';}
+function summCell(s){if(!s)return '<span class="na">—</span>';return `<span class="summt">${esc(s)}</span>${s.length>55?' <a class="smore" onclick="toggleSumm(event)">more</a>':''}`;}
+function toggleSumm(e){e.stopPropagation();const sp=e.target.previousElementSibling;const on=sp.classList.toggle('exp');e.target.textContent=on?'less':'more';}
 function showSumm(e,el){e.stopPropagation();const p=$('summpop');p.textContent=el.dataset.s;p.style.display='block';
   const x=Math.min(e.clientX,window.innerWidth-330), y=e.clientY+14;
   p.style.left=x+'px';p.style.top=y+'px';}
@@ -159,7 +164,8 @@ const BCOLS=[
  {k:'st',label:'Status',filt:'sel',val:b=>b.st,selDisp:STLAB,cell:b=>`<span class="dot" style="background:${STCOL[b.st]}"></span>${STLAB[b.st]}`},
  {k:'rzn',label:'Move reason',filt:'sel',val:b=>b.rzn||'—',selDisp:{doctor:'Doctor-side',patient:'Patient-side',other:'Other','—':'—'},cell:b=>b.rzntxt?`<span class="rzn ${b.rzn==='doctor'?'rznD':''}" title="${esc(b.rzntxt)}">${b.rzn==='doctor'?'⚠ doctor':b.rzn==='patient'?'patient':'other'}</span>`:'<span class="na">—</span>'},
  {k:'mode',label:'Mode',filt:'sel',val:b=>b.mode,cell:b=>b.mode},
- {k:'rec',label:'Recording',filt:null,cell:b=>recsCell(b.recs)+noteIcon(b.summ)},
+ {k:'rec',label:'Recording',filt:null,cell:b=>recsCell(b.recs)},
+ {k:'summ',label:'Call summary',filt:'txt',val:b=>b.summ,cell:b=>summCell(b.summ)},
 ];
 // lead table columns
 const LCOLS=[
@@ -173,7 +179,8 @@ const LCOLS=[
  {k:'intent',label:'Looking for',filt:'sel',val:l=>l.intent?(CARELAB[l.intent]||l.intent):'—',cell:l=>l.intent?(CARELAB[l.intent]||l.intent):'<span class="na">—</span>'},
  {k:'strength',label:'Intent',filt:'sel',val:l=>l.strength?(STRLAB[l.strength]||l.strength):'—',cell:l=>l.strength?`<span class="${STRCLS[l.strength]||'na'}">${STRLAB[l.strength]||l.strength}</span>`:'<span class="na">—</span>'},
  {k:'booked',label:'Booked for',filt:'sel',val:l=>!l.booked?'not booked':(l.blag===0?'same day':l.blag>0?'+'+l.blag+'d':l.blag<0?'earlier':'booked'),cell:bookedCell},
- {k:'rec',label:'Recording',filt:null,cell:l=>recsCell(l.recs)+noteIcon(l.summ)},
+ {k:'rec',label:'Recording',filt:null,cell:l=>recsCell(l.recs)},
+ {k:'summ',label:'Call summary',filt:'txt',val:l=>l.summ,cell:l=>summCell(l.summ)},
 ];
 
 // generic filterable table: builds header + per-column filter row once; filter changes only re-render the body (keeps input focus)
