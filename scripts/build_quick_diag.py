@@ -213,6 +213,14 @@ def avail_block(key, slug=None):
     # for weeks the ops-roster grid hasn't reached yet — same realized-roster methodology, so no discontinuity. (net-Rpt + dead-time exist only in REC.)
     if "opened_ash" in base: base["opened_ash"] = [base["opened_ash"][i] or base["avail_hours"][i] for i in range(NW)]
     if "net_sc_hrs_r" in base: base["net_sc_hrs_r"] = [base["net_sc_hrs_r"][i] or base["hours"][i] for i in range(NW)]
+    # AVAILABILITY-LAG GUARD: the roster/attendance cube (AV) covers only through its newest realized week
+    # (roster is_realized lags ~1wk; a re-pull can't fix it upstream). Null every AV-derived metric beyond that
+    # edge so the immature newest week renders BLANK (—) instead of a false 0 / −99% drop. Mirrors rec_edge below.
+    av_edge = max((widx[w] for w in AV["_meta"]["weeks"] if w in widx), default=NW - 1)
+    for f in ("active_days", "wday_days", "wend_days", "avail_hours", "hours", "sc_slots", "rpt_slots",
+              "attend_days", "attend_wday", "attend_wend", "opened_ash", "net_sc_hrs_r"):
+        if f in base:
+            base[f] = [base[f][i] if i <= av_edge else None for i in range(NW)]
     # ROSTER-LAG GUARD: roster-only hours (rostered/shrink/net-Rpt/dead) don't exist past the ops-roster grid's
     # newest realized week (roster realization lags ~1wk). Null them beyond that edge so the immature newest week
     # renders blank — NOT the gross per-doctor over-count (rostered/shrink) or a false −99% zero (net-Rpt/dead).
