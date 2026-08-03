@@ -71,6 +71,7 @@ select{font:13px inherit;color:var(--ink);border:1px solid var(--line);border-ra
 .fsel,.fin{font:11px inherit;color:var(--ink2);padding:3px 5px;border:1px solid var(--line);border-radius:5px;background:#fff;width:100%;max-width:150px}
 .ftbar{display:flex;align-items:center;gap:10px;margin:4px 0 8px;font-size:12px;color:var(--muted)}
 .ftclear{font:11px inherit;color:var(--accent);background:none;border:1px solid var(--line);border-radius:6px;padding:2px 9px;cursor:pointer}
+.uniqlab{font-size:12px;color:var(--ink2);display:inline-flex;align-items:center;gap:5px;cursor:pointer}.uniqlab input{cursor:pointer}
 .ftclear:hover{background:var(--bg)}
 .btbl thead th{position:sticky;top:0;background:var(--card);z-index:1}
 #summpop{display:none;position:fixed;z-index:50;max-width:320px;background:#1f2733;color:#f3f5f8;font-size:12px;line-height:1.5;padding:10px 12px;border-radius:9px;box-shadow:0 6px 24px rgba(0,0,0,.28)}
@@ -144,7 +145,8 @@ function copyPid(el){navigator.clipboard&&navigator.clipboard.writeText(el.datas
 function mmss(s){s=+s||0;return Math.floor(s/60)+':'+String(s%60).padStart(2,'0');}
 function recsCell(recs){
   if(!recs||!recs.length) return '<span class="na">—</span>';
-  return recs.map(r=>{const dt=r.dt?dlabel(r.dt):null;return `<a class="rec" href="${r.u}" target="_blank" rel="noopener" title="${r.dt||''}">▶ ${mmss(r.d)}${dt?` <span style="color:var(--faint);font-weight:400">${dt.dow} ${dt.dm}</span>`:''}</a>`;}).join('<br>');
+  return recs.map(r=>{const dt=r.dt?dlabel(r.dt):null,out=r.dir==='outbound';
+    return `<a class="rec" href="${r.u}" target="_blank" rel="noopener" title="${(out?'outbound (clinic→patient) ':'inbound ')+(r.dt||'')}">▶ ${mmss(r.d)} <span style="color:${out?'#8a6a2a':'var(--done)'};font-weight:600;font-size:10px">${out?'out':'in'}</span>${dt?` <span style="color:var(--faint);font-weight:400">${dt.dow} ${dt.dm}</span>`:''}</a>`;}).join('<br>');
 }
 function catVal(cat){if(!cat)return '—';const l=CATLAB[cat];return l===undefined?cat:(l||'—');}
 function pidCell(x){return x.pid?`<span class="pid" data-full="${x.pid}" onclick="copyPid(this)">${x.pid}</span>`:'<span class="na">—</span>';}
@@ -192,17 +194,23 @@ function filterTable(el, rows, cols, fstate){
     if(c.filt==='sel') return `<th><select data-fk="${c.k}" class="fsel"><option value="">All</option>${opts[c.k].map(o=>`<option value="${esc(o)}"${fstate[c.k]===o?' selected':''}>${esc(dispOpt(c,o))}</option>`).join('')}</select></th>`;
     return '<th></th>';
   }).join('');
-  el.innerHTML=`<div class="ftbar"><span class="ftcount"></span><button class="ftclear">clear filters</button></div><div class="bkwrap"><table class="btbl"><thead><tr>${head}</tr><tr class="frow">${frow}</tr></thead><tbody></tbody></table></div>`;
+  const pidCol=cols.find(c=>c.k==='pid');
+  const uniqBox=pidCol?`<label class="uniqlab"><input type="checkbox" class="uniq"${fstate._uniq?' checked':''}> unique patients only</label>`:'';
+  el.innerHTML=`<div class="ftbar"><span class="ftcount"></span>${uniqBox}<button class="ftclear">clear filters</button></div><div class="bkwrap"><table class="btbl"><thead><tr>${head}</tr><tr class="frow">${frow}</tr></thead><tbody></tbody></table></div>`;
   const tb=el.querySelector('tbody'), cnt=el.querySelector('.ftcount');
   function apply(){
-    const fr=rows.filter(r=>cols.every(c=>{if(!c.filt)return true;const fv=fstate[c.k];if(!fv)return true;const rv=c.val(r);
+    const base=rows.filter(r=>cols.every(c=>{if(!c.filt)return true;const fv=fstate[c.k];if(!fv)return true;const rv=c.val(r);
       return c.filt==='txt'?String(rv||'').toLowerCase().includes(fv.toLowerCase()):rv===fv;}));
+    const uniqN=pidCol?new Set(base.map(r=>pidCol.val(r)).filter(Boolean)).size:null;
+    let fr=base;
+    if(fstate._uniq&&pidCol){const seen=new Set();fr=base.filter(r=>{const k=pidCol.val(r);if(!k)return true;if(seen.has(k))return false;seen.add(k);return true;});}
     tb.innerHTML=fr.length?fr.map(r=>`<tr>${cols.map(c=>`<td>${c.cell(r)}</td>`).join('')}</tr>`).join(''):`<tr><td colspan="${cols.length}" style="color:var(--faint);padding:14px">No rows match these filters.</td></tr>`;
-    cnt.textContent=`${fr.length} of ${rows.length} shown`;
+    cnt.textContent=fstate._uniq&&pidCol?`${fr.length} patients (from ${base.length} rows)`:`${base.length} of ${rows.length} shown${pidCol?` · ${uniqN} patients`:''}`;
   }
   el.querySelectorAll('.fsel').forEach(s=>s.addEventListener('change',()=>{fstate[s.dataset.fk]=s.value;apply();}));
   el.querySelectorAll('.fin').forEach(i=>i.addEventListener('input',()=>{fstate[i.dataset.fk]=i.value;apply();}));
-  el.querySelector('.ftclear').addEventListener('click',()=>{cols.forEach(c=>delete fstate[c.k]);el.querySelectorAll('.fsel').forEach(s=>s.value='');el.querySelectorAll('.fin').forEach(i=>i.value='');apply();});
+  const ub=el.querySelector('.uniq'); if(ub) ub.addEventListener('change',e=>{fstate._uniq=e.target.checked;apply();});
+  el.querySelector('.ftclear').addEventListener('click',()=>{cols.forEach(c=>delete fstate[c.k]);fstate._uniq=false;el.querySelectorAll('.fsel').forEach(s=>s.value='');el.querySelectorAll('.fin').forEach(i=>i.value='');const u=el.querySelector('.uniq');if(u)u.checked=false;apply();});
   apply();
 }
 

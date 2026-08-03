@@ -72,13 +72,16 @@ def parse_recs(*ss):
             if not p or not p[0] or p[0] in NUL: continue
             if p[0] in seen: continue
             seen.add(p[0])
-            out.append({"u":p[0], "d":(int(float(p[1])) if len(p)>1 and p[1] not in NUL else 0), "dt":(p[2] if len(p)>2 and p[2] not in NUL else "")})
+            out.append({"u":p[0], "d":(int(float(p[1])) if len(p)>1 and p[1] not in NUL else 0),
+                        "dt":(p[2] if len(p)>2 and p[2] not in NUL else ""),
+                        "dir":(p[3] if len(p)>3 and p[3] not in NUL else "in")})
     return out
 
-# LISTAGG ALL recordings (any routed_to, not just lead_to_call) per caller number, window passed in
+# LISTAGG ALL recordings (inbound + outbound, any routed_to) keyed by the PATIENT-side number
+# (inbound: patient in "from"; outbound: patient in "to"). Payload: url~dur~date~direction
 def REC_LISTAGG(nums_csv, wstart):
-    return f"""SELECT RIGHT(ec."from",10) ph,
-      LISTAGG(ec.recording_url||'~'||COALESCE(ec.total_duration,0)||'~'||TO_CHAR(DATE(ec.start_time+{IST}),'YYYY-MM-DD'),'|') WITHIN GROUP (ORDER BY ec.start_time) recs
+    return f"""SELECT CASE WHEN ec.direction='inbound' THEN RIGHT(ec."from",10) ELSE RIGHT(ec."to",10) END ph,
+      LISTAGG(ec.recording_url||'~'||COALESCE(ec.total_duration,0)||'~'||TO_CHAR(DATE(ec.start_time+{IST}),'YYYY-MM-DD')||'~'||COALESCE(ec.direction,'in'),'|') WITHIN GROUP (ORDER BY ec.start_time) recs
     FROM allo_vendors.exotel_calls ec
     WHERE RIGHT(ec.exotel_number,10) IN ('{nums_csv}')
       AND ec.recording_url IS NOT NULL AND ec.recording_url!=''
