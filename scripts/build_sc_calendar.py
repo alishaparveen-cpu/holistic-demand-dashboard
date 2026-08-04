@@ -198,9 +198,10 @@ JOIN allo_health.locations loc ON loc.id=a.location_id AND loc.deleted_at IS NUL
 JOIN allo_persons.patient p ON p.id=a.patient_id
 WHERE a.deleted_at IS NULL AND (a.start_time + {IST})>='{S}' AND (a.start_time + {IST})<'{E}'
 """)
-# where the patient ACTUALLY got seen — NOT the earliest slot (which is often a rescheduled/no-show one at another
-# clinic while they completed at their own). Rank: COMPLETED > SCHEDULED(active) > everything else; latest within rank.
-def _brank(st): return 3 if st in ('COMPLETED','RECONSULTED') else (2 if st=='SCHEDULED' else 1)
+# where the patient ACTUALLY BOOKED — i.e. their STANDING booking. A rescheduled/cancelled slot is abandoned
+# (moved or cancelled away), so it is NOT where they booked. Prefer standing (completed/scheduled/no-show — they
+# did book it) over abandoned; take the LATEST within, so a current booking beats a past one at another clinic.
+def _brank(st): return 2 if st not in ('RESCHEDULED','CANCELLED') else 1
 BOOKED_AT={}   # phone10 → (clinic disp, sort_key=(rank, ts))
 for r in bloc_rows:
     clinic = g(r,2); ts = g(r,3); key = (_brank(g(r,4)), ts or "")
@@ -233,6 +234,29 @@ SELECT cid, st, fday FROM r WHERE rn=1
 """)
 CONSULT_FINAL = { g(r,0): (ST_BUCKET.get(g(r,1),'other'), g(r,2)) for r in cf_rows if g(r,0) }
 print(f"consultation-final map: {len(CONSULT_FINAL)} episodes")
+
+# per-phone SC JOURNEY (every SC slot at ANY clinic) so a lead row can show what ultimately happened to that patient
+# without leaving the lead view. Small forward buffer past the window to catch a completion just after the week.
+Ej = (end + datetime.timedelta(days=7)).isoformat()
+jrows = q(f"""
+SELECT RIGHT(pt.phone_no,10) ph, RIGHT(COALESCE(pt.alternate_phone_no,''),10) altph,
+  TO_CHAR(a.start_time + {IST},'YYYY-MM-DD') d, TO_CHAR(a.start_time + {IST},'HH24:MI') tm,
+  loc.locality||' · '||loc.city clinic, a.status st
+FROM allo_consultations.appointments a
+JOIN allo_consultations.types t ON t.id=a.type_id AND t.name='Screening Call'
+JOIN allo_health.locations loc ON loc.id=a.location_id AND loc.deleted_at IS NULL AND loc.locality IS NOT NULL AND loc.locality!='' AND lower(loc.name) NOT LIKE '%online%'
+JOIN allo_persons.patient pt ON pt.id=a.patient_id
+WHERE a.deleted_at IS NULL AND (a.start_time + {IST})>='{S}' AND (a.start_time + {IST})<'{Ej}'
+""")
+PHONE_JOURNEY = {}
+for r in jrows:
+    d_=g(r,2); tm=g(r,3); cl=g(r,4); st=ST_BUCKET.get(g(r,5),'other')
+    if not d_ or not cl: continue
+    entry=(d_, tm, cl, st)
+    for ph in (g(r,0), g(r,1)):
+        if ph and len(ph)>=10: PHONE_JOURNEY.setdefault(ph, set()).add(entry)
+PHONE_JOURNEY = { ph:[{"d":e[0],"t":e[1],"cl":e[2],"st":e[3]} for e in sorted(s)] for ph,s in PHONE_JOURNEY.items() }
+print(f"phone-journey map: {len(PHONE_JOURNEY)} phones")
 
 for c in CLINICS:
     # ---- A) per-booking rows (+ call recording matched on patient primary OR alternate number) ----
@@ -360,7 +384,8 @@ for c in CLINICS:
                                  "booked":int(r[7]), "bkdate":bkdate, "blag":blag, "bookedat":bookedat,
                                  "cat":(g(r,10) or ""), "pid":(g(r,11) or ""), "summ":(g(r,12) or ""),
                                  "tier":(g(r,13) or "coded"), "recs":parse_recs(g(r,14)),
-                                 "bktime":(g(r,15) or "")})
+                                 "bktime":(g(r,15) or ""),
+                                 "journey":PHONE_JOURNEY.get((r[1] or "")[-10:], [])})
     # ---- C) doctor SC-roster capacity per day: rostered vs realized (shrinkage) + non-bookable (leave) ----
     av = q(f"""
     WITH abtm AS (SELECT DISTINCT appointment_block_id, COALESCE(offline_location_id,online_location_id) blid FROM allo_consultations.appointment_block_type_maps WHERE deleted_at IS NULL)
