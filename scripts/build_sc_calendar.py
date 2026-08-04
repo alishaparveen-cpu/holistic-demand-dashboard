@@ -45,11 +45,27 @@ def get_clinics():
                   WHERE a.location_id=l.id AND a.deleted_at IS NULL
                     AND a.start_time >= DATEADD(day,-45,CURRENT_DATE))
     ORDER BY 1,2""")
+    # exotel number → clinic code, derived from routing (captures the city/google-paid lines that go to a clinic,
+    # e.g. Coimbatore's google-paid 4440114631). Union with locations numbers. Recordings are patient-scoped
+    # (matched on the patient's own phone within THIS clinic's bookings/leads) so shared numbers don't leak across clinics.
+    nmap = q("""
+    WITH callead AS (
+      SELECT RIGHT(ec.exotel_number,10) num, ld.location code, COUNT(*) n
+      FROM allo_vendors.exotel_calls ec
+      JOIN allo_persons.lead ld ON RIGHT(ld.phone_no,10)=RIGHT(ec."from",10) AND ld.deleted_at IS NULL
+      WHERE ec.direction='inbound' AND ec.routed_to='lead_to_call' AND ld.location IS NOT NULL AND ld.location!=''
+        AND ec.start_time >= DATEADD(day,-75,CURRENT_DATE)
+      GROUP BY 1,2),
+    ranked AS (SELECT num, code, n, SUM(n) OVER (PARTITION BY num) tot,
+                 ROW_NUMBER() OVER (PARTITION BY num ORDER BY n DESC) rn FROM callead)
+    SELECT num, code FROM ranked WHERE rn=1 AND tot>=5 AND code<>'ONLINE' AND ROUND(100.0*n/tot)>=55""")
+    derived={}
+    for num, code in nmap: derived.setdefault(code, set()).add(num)
     allc=[]
     for r in rows:
         city, loc, code, phone = r[0], r[1], r[2], (r[3] if len(r)>3 else "")
         pjson = r[4] if len(r)>4 else ""
-        nums=set()
+        nums=set(derived.get(code, set()))   # start with derived (city/paid routing)
         d=digits10(phone)
         if d: nums.add(d)
         try:
@@ -232,12 +248,21 @@ for c in CLINICS:
         AND (ec.start_time + {IST})>='{S}' AND (ec.start_time + {IST})<'{E}') WHERE rn=1),
     recL AS ({REC_LISTAGG(nums, S)}),
     metaL AS ({META_BYPHONE(nums, S)}),
+    locl AS (   -- AI-audit: phones whose inbound call mentioned THIS clinic's locality (for shared/common numbers)
+      SELECT DISTINCT RIGHT(ec."from",10) ph
+      FROM allo_vendors.exotel_calls ec
+      JOIN allo_analytics.call_analyses ca ON ca.call_id=ec.call_id
+      WHERE ec.direction='inbound'
+        AND ca.analysis.user_intent.locality_mentioned.best_match::varchar='{c['loc']}'
+        AND ca.analysis.user_intent.locality_mentioned.is_our_locality::varchar='true'
+        AND (ec.start_time + {IST})>='{S}' AND (ec.start_time + {IST})<'{E}'),
     pat AS (SELECT RIGHT(phone_no,10) ph, MAX(id::varchar) pid FROM allo_persons.patient WHERE deleted_at IS NULL GROUP BY 1)
     SELECT DATE(ld.created_at + {IST}) d, ld.phone_no phone, {SRC('ld')} src, {MED('ld')} med,
       COALESCE(co.conn,0) conn, COALESCE(co.strength,'') strength, COALESCE(co.intent,'') intent,
       CASE WHEN sb.ph IS NOT NULL THEN 1 ELSE 0 END booked,
       sb.sc_date bkdate, DATEDIFF(day, DATE(ld.created_at + {IST}), sb.sc_date) blag,
       COALESCE(ml.cat,'') cat, COALESCE(pt.pid,'') pid, COALESCE(ml.summ,'') summ,
+      CASE WHEN ld.location='{c['code']}' THEN 'coded' WHEN sb.ph IS NOT NULL THEN 'booked' ELSE 'locality' END tier,
       COALESCE(rl.recs,'') recs
     FROM allo_persons.lead ld
     LEFT JOIN callout co ON co.ph=RIGHT(ld.phone_no,10) AND co.d=DATE(ld.created_at + {IST})
@@ -245,8 +270,10 @@ for c in CLINICS:
     LEFT JOIN recL rl ON rl.ph=RIGHT(ld.phone_no,10)
     LEFT JOIN metaL ml ON ml.ph=RIGHT(ld.phone_no,10)
     LEFT JOIN pat pt ON pt.ph=RIGHT(ld.phone_no,10)
-    WHERE ld.deleted_at IS NULL AND ld.location='{c['code']}'
+    LEFT JOIN locl ll ON ll.ph=RIGHT(ld.phone_no,10)
+    WHERE ld.deleted_at IS NULL
       AND (ld.created_at + {IST})>='{S}' AND (ld.created_at + {IST})<'{E}'
+      AND (ld.location='{c['code']}' OR sb.ph IS NOT NULL OR ll.ph IS NOT NULL)
     """)
     for r in b:
         d=r[0]
@@ -257,7 +284,7 @@ for c in CLINICS:
                                  "conn":int(r[4]), "strength":(g(r,5) or ""), "intent":(g(r,6) or ""),
                                  "booked":int(r[7]), "bkdate":bkdate, "blag":blag,
                                  "cat":(g(r,10) or ""), "pid":(g(r,11) or ""), "summ":(g(r,12) or ""),
-                                 "recs":parse_recs(g(r,13))})
+                                 "tier":(g(r,13) or "coded"), "recs":parse_recs(g(r,14))})
     # ---- C) doctor SC-roster capacity per day: rostered vs realized (shrinkage) + non-bookable (leave) ----
     av = q(f"""
     WITH abtm AS (SELECT DISTINCT appointment_block_id, COALESCE(offline_location_id,online_location_id) blid FROM allo_consultations.appointment_block_type_maps WHERE deleted_at IS NULL)
