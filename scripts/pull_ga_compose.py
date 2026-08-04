@@ -103,8 +103,11 @@ def pull_week(start, end):
     for nm, a in qacc.items():
         out[nm]['qs'] = round(a[0]/a[1], 2) if a[1] else None
         # ar/lp = % of impressions with Below Average quality rating (0–100, always ≤100%)
-        out[nm]['ar'] = round(a[2]/a[4]*100) if a[4] else 0
-        out[nm]['lp'] = round(a[3]/a[4]*100) if a[4] else 0
+        # Note: a[2] = below-avg AR impr, a[3] = below-avg LP impr, a[4] = total impr
+        # Both numerator and denominator are impression-weighted so ratio must be ≤1.
+        # min(...,100) is a safety net against API data anomalies.
+        out[nm]['ar'] = min(round(a[2]/a[4]*100) if a[4] else 0, 100)
+        out[nm]['lp'] = min(round(a[3]/a[4]*100) if a[4] else 0, 100)
     return out
 
 
