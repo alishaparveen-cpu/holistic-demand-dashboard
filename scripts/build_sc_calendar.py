@@ -28,37 +28,38 @@ def q(sql):
 #   loc.locality+city → bookings/roster; loc.code → lead attribution; call numbers derived from exotel routing.
 import re as _re
 def slugify(city, loc): return _re.sub(r'[^a-z0-9]+','_', (loc+'_'+city).lower()).strip('_')
+def digits10(s):
+    d=_re.sub(r'\D','', s or '')
+    return d[-10:] if len(d)>=10 else None
 
 def get_clinics():
-    # 1) active clinics (SC activity in last 45 days), with their lead-code
+    # active clinics (SC activity in last 45d) with their lead-code + clinic-SPECIFIC call numbers
+    # (locations.phone_no + phone_numbers JSON mhPhoneNo/altPhoneNo). Authoritative per-clinic numbers.
     rows = q("""
-    SELECT DISTINCT l.city, l.locality, l.code
+    SELECT DISTINCT l.city, l.locality, l.code, l.phone_no, JSON_SERIALIZE(l.phone_numbers)
     FROM allo_health.locations l
-    WHERE l.deleted_at IS NULL AND l.locality IS NOT NULL AND l.locality!='' AND l.city IS NOT NULL AND l.city!=''
-      AND l.code IS NOT NULL AND lower(l.name) NOT LIKE '%online%'
+    WHERE l.deleted_at IS NULL AND l.is_active=1 AND l.locality IS NOT NULL AND l.locality!=''
+      AND l.city IS NOT NULL AND l.city!='' AND l.code IS NOT NULL AND lower(l.name) NOT LIKE '%online%'
       AND EXISTS (SELECT 1 FROM allo_consultations.appointments a
                   JOIN allo_consultations.types t ON t.id=a.type_id AND t.name='Screening Call'
                   WHERE a.location_id=l.id AND a.deleted_at IS NULL
                     AND a.start_time >= DATEADD(day,-45,CURRENT_DATE))
     ORDER BY 1,2""")
-    # 2) exotel number → dominant clinic code (auto-derived from inbound-call → lead-code)
-    nmap = q("""
-    WITH callead AS (
-      SELECT RIGHT(ec.exotel_number,10) num, ld.location code, COUNT(*) n
-      FROM allo_vendors.exotel_calls ec
-      JOIN allo_persons.lead ld ON RIGHT(ld.phone_no,10)=RIGHT(ec."from",10) AND ld.deleted_at IS NULL
-      WHERE ec.direction='inbound' AND ec.routed_to='lead_to_call' AND ld.location IS NOT NULL AND ld.location!=''
-        AND ec.start_time >= DATEADD(day,-75,CURRENT_DATE)
-      GROUP BY 1,2),
-    ranked AS (SELECT num, code, n, SUM(n) OVER (PARTITION BY num) tot,
-                 ROW_NUMBER() OVER (PARTITION BY num ORDER BY n DESC) rn FROM callead)
-    SELECT num, code FROM ranked WHERE rn=1 AND tot>=5 AND code<>'ONLINE' AND ROUND(100.0*n/tot)>=55""")
-    code_nums={}
-    for num, code in nmap: code_nums.setdefault(code, []).append(num)
     allc=[]
-    for city, loc, code in rows:
+    for r in rows:
+        city, loc, code, phone = r[0], r[1], r[2], (r[3] if len(r)>3 else "")
+        pjson = r[4] if len(r)>4 else ""
+        nums=set()
+        d=digits10(phone)
+        if d: nums.add(d)
+        try:
+            j=json.loads(pjson) if pjson and pjson not in ("null","True","") else {}
+            for k in ("mhPhoneNo","altPhoneNo","phoneNo","primaryPhoneNo"):
+                d=digits10(j.get(k) if isinstance(j,dict) else None)
+                if d: nums.add(d)
+        except Exception: pass
         allc.append({"key":slugify(city,loc), "disp":f"{loc} · {city}", "city":city, "loc":loc,
-                     "code":code, "nums":code_nums.get(code, [])})
+                     "code":code, "nums":sorted(nums)})
     # MH clinics only, in the requested order (matched by locality/city keyword)
     MH=[("Baner","baner"),("Hadapsar","hadapsar"),("Kharghar","kharghar"),("Coimbatore","bharathi"),
         ("Indiranagar","indiranagar"),("Whitefield","whitefield"),("Brookefield","brookefield"),
