@@ -72,6 +72,9 @@ select{font:13px inherit;color:var(--ink);border:1px solid var(--line);border-ra
 .ftbar{display:flex;align-items:center;gap:10px;margin:4px 0 8px;font-size:12px;color:var(--muted)}
 .ftclear{font:11px inherit;color:var(--accent);background:none;border:1px solid var(--line);border-radius:6px;padding:2px 9px;cursor:pointer}
 .uniqlab{font-size:12px;color:var(--ink2);display:inline-flex;align-items:center;gap:5px;cursor:pointer}.uniqlab input{cursor:pointer}
+.ftmore{text-align:center;margin-top:8px}
+.ftmorebtn{font:12px inherit;font-weight:600;color:var(--accent);background:var(--card);border:1px solid var(--line);border-radius:7px;padding:5px 16px;cursor:pointer}
+.ftmorebtn:hover{background:var(--bg)}
 .ftclear:hover{background:var(--bg)}
 .btbl thead th{position:sticky;top:0;background:var(--card);z-index:1}
 #summpop{display:none;position:fixed;z-index:50;max-width:320px;background:#1f2733;color:#f3f5f8;font-size:12px;line-height:1.5;padding:10px 12px;border-radius:9px;box-shadow:0 6px 24px rgba(0,0,0,.28)}
@@ -218,21 +221,26 @@ function filterTable(el, rows, cols, fstate){
   }).join('');
   const pidCol=cols.find(c=>c.k==='pid');
   const uniqBox=pidCol?`<label class="uniqlab"><input type="checkbox" class="uniq"${fstate._uniq?' checked':''}> unique patients only</label>`:'';
-  el.innerHTML=`<div class="ftbar"><span class="ftcount"></span>${uniqBox}<button class="ftclear">clear filters</button></div><div class="bkwrap"><table class="btbl"><thead><tr>${head}</tr><tr class="frow">${frow}</tr></thead><tbody></tbody></table></div>`;
-  const tb=el.querySelector('tbody'), cnt=el.querySelector('.ftcount');
+  el.innerHTML=`<div class="ftbar"><span class="ftcount"></span>${uniqBox}<button class="ftclear">clear filters</button></div><div class="bkwrap"><table class="btbl"><thead><tr>${head}</tr><tr class="frow">${frow}</tr></thead><tbody></tbody></table></div><div class="ftmore"></div>`;
+  const tb=el.querySelector('tbody'), cnt=el.querySelector('.ftcount'), more=el.querySelector('.ftmore');
+  const PAGE=5; let limit=PAGE;
   function apply(){
     const base=rows.filter(r=>cols.every(c=>{if(!c.filt)return true;const fv=fstate[c.k];if(!fv)return true;const rv=c.val(r);
       return c.filt==='txt'?String(rv||'').toLowerCase().includes(fv.toLowerCase()):(c.multi?(rv||[]).includes(fv):rv===fv);}));
     const uniqN=pidCol?new Set(base.map(r=>pidCol.val(r)).filter(Boolean)).size:null;
     let fr=base;
     if(fstate._uniq&&pidCol){const seen=new Set();fr=base.filter(r=>{const k=pidCol.val(r);if(!k)return true;if(seen.has(k))return false;seen.add(k);return true;});}
-    tb.innerHTML=fr.length?fr.map(r=>`<tr>${cols.map(c=>`<td>${c.cell(r)}</td>`).join('')}</tr>`).join(''):`<tr><td colspan="${cols.length}" style="color:var(--faint);padding:14px">No rows match these filters.</td></tr>`;
+    const shown=limit>=fr.length?fr:fr.slice(0,limit);
+    tb.innerHTML=fr.length?shown.map(r=>`<tr>${cols.map(c=>`<td>${c.cell(r)}</td>`).join('')}</tr>`).join(''):`<tr><td colspan="${cols.length}" style="color:var(--faint);padding:14px">No rows match these filters.</td></tr>`;
     cnt.textContent=fstate._uniq&&pidCol?`${fr.length} patients (from ${base.length} rows)`:`${base.length} of ${rows.length} shown${pidCol?` · ${uniqN} patients`:''}`;
+    more.innerHTML = fr.length>PAGE ? (limit<fr.length ? `<button class="ftmorebtn">Show all ${fr.length} ▾</button>` : `<button class="ftmorebtn">Show less ▴</button>`) : '';
+    const mb=more.querySelector('.ftmorebtn'); if(mb) mb.onclick=()=>{limit=limit<fr.length?fr.length:PAGE;apply();};
   }
-  el.querySelectorAll('.fsel').forEach(s=>s.addEventListener('change',()=>{fstate[s.dataset.fk]=s.value;apply();}));
-  el.querySelectorAll('.fin').forEach(i=>i.addEventListener('input',()=>{fstate[i.dataset.fk]=i.value;apply();}));
-  const ub=el.querySelector('.uniq'); if(ub) ub.addEventListener('change',e=>{fstate._uniq=e.target.checked;apply();});
-  el.querySelector('.ftclear').addEventListener('click',()=>{cols.forEach(c=>delete fstate[c.k]);fstate._uniq=false;el.querySelectorAll('.fsel').forEach(s=>s.value='');el.querySelectorAll('.fin').forEach(i=>i.value='');const u=el.querySelector('.uniq');if(u)u.checked=false;apply();});
+  const reset=()=>{limit=PAGE;};
+  el.querySelectorAll('.fsel').forEach(s=>s.addEventListener('change',()=>{fstate[s.dataset.fk]=s.value;reset();apply();}));
+  el.querySelectorAll('.fin').forEach(i=>i.addEventListener('input',()=>{fstate[i.dataset.fk]=i.value;reset();apply();}));
+  const ub=el.querySelector('.uniq'); if(ub) ub.addEventListener('change',e=>{fstate._uniq=e.target.checked;reset();apply();});
+  el.querySelector('.ftclear').addEventListener('click',()=>{cols.forEach(c=>delete fstate[c.k]);fstate._uniq=false;reset();el.querySelectorAll('.fsel').forEach(s=>s.value='');el.querySelectorAll('.fin').forEach(i=>i.value='');const u=el.querySelector('.uniq');if(u)u.checked=false;apply();});
   apply();
 }
 
