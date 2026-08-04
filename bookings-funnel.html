@@ -2106,7 +2106,7 @@ document.addEventListener('click',e=>{if(!e.target.closest('.chip')){document.qu
 
 // ---- zoom trend chart: line + dashed average + click-two-points compare + window toggle ----
 let CWK=null,CCOL='var(--accent)',CTIT='',PICKA=null,PICKB=null,ZWIN=0;   // ZWIN 0 = full
-function openChart(title,wk,col){CTIT=title;CWK=wk;CCOL=col||'var(--accent)';PICKA=null;PICKB=null;ZWIN=12;renderChart();document.getElementById('cmodal').classList.add('on');}   // ZWIN = window in WEEKS (converted to columns for clubbed views)
+function openChart(title,wk,col){CTIT=title;CWK=wk;CCOL=col||'var(--accent)';PICKA=null;PICKB=null;ZWIN=12;renderChart();document.getElementById('cmodal').classList.add('on');}   // ZWIN = window in COLUMNS (default 12; ≥ available → full)
 function closeChart(){document.getElementById('cmodal').classList.remove('on');PICKA=null;PICKB=null;}
 function downloadChartPNG(){   // serialise the modal's inline SVG → PNG (works for any chart, since all open through #cchart)
   const svg=document.querySelector('#cchart svg');if(!svg){alert('Open a chart first, then download.');return;}
@@ -2125,7 +2125,7 @@ function setZWin(n){ZWIN=n;PICKA=null;PICKB=null;renderChart();}
 function renderChart(){
   document.getElementById('ctitle').textContent=CTIT;
   const ax=AX(),ba=baseAx(),allV=[],allL=[];for(let i=ax.length-1;i>=0;i--){allV.push(CWK[i]||0);allL.push(blockLabel(ba,i));}   // clubbed full history (each point = CLUB weeks)
-  const tot=allV.length,colsW=ZWIN?Math.max(2,Math.ceil(ZWIN/Math.max(1,CLUB))):tot,win=Math.min(colsW,tot);   // ZWIN is WEEKS → columns = ceil(weeks/club)
+  const tot=allV.length,win=(ZWIN&&ZWIN<tot)?ZWIN:tot;   // ZWIN = number of COLUMNS to show (0 or ≥tot = full)
   const v=allV.slice(tot-win),labels=allL.slice(tot-win),n=v.length,col=CCOL;
   const F=x=>Math.round(x).toLocaleString('en-IN');
   const W=720,H=300,pad=42,padT=26;
@@ -2142,8 +2142,11 @@ function renderChart(){
   const avg=v.length?v.reduce((a,b)=>a+b,0)/v.length:null;
   let avgLine='';if(avg!=null){const ya=y(avg);avgLine=`<line x1="${pad}" y1="${ya.toFixed(1)}" x2="${W-pad}" y2="${ya.toFixed(1)}" stroke="${col}" stroke-width="1.3" stroke-dasharray="6 4" opacity="0.5"/>`;}
   let conn='';if(PICKA!=null&&PICKB!=null)conn=`<line x1="${x(PICKA).toFixed(1)}" y1="${y(v[PICKA]).toFixed(1)}" x2="${x(PICKB).toFixed(1)}" y2="${y(v[PICKB]).toFixed(1)}" stroke="#C2691F" stroke-width="1.6" stroke-dasharray="5 3"/>`;
-  const zbtn=(lbl,val)=>`<button onclick="setZWin(${val})" style="border:1px solid ${ZWIN===val?'var(--accent);background:var(--accent);color:#fff':'var(--line);background:var(--sheet);color:var(--muted)'};border-radius:6px;padding:2px 9px;font-size:10.5px;font-weight:700;cursor:pointer;margin-left:4px">${lbl}</button>`;
-  const zwinctl=`<span style="margin-left:10px;color:var(--faint)">window:</span>${zbtn('full',0)}${zbtn('6w',6)}${zbtn('12w',12)}${zbtn('24w',24)}`;   // window in WEEKS (honest whether clubbed or not)
+  const zEff=(ZWIN&&ZWIN<tot)?ZWIN:0;   // effective window (0 = full) — for button highlighting
+  const zbtn=(lbl,val)=>`<button onclick="setZWin(${val})" style="border:1px solid ${zEff===val?'var(--accent);background:var(--accent);color:#fff':'var(--line);background:var(--sheet);color:var(--muted)'};border-radius:6px;padding:2px 9px;font-size:10.5px;font-weight:700;cursor:pointer;margin-left:4px">${lbl}</button>`;
+  // window = a number of grouped COLUMNS, labelled by its real week span (cols × club). Only offer options smaller than the full history.
+  const zopts=[6,12,24].filter(cN=>cN<tot).map(cN=>zbtn((cN*CLUB)+'w',cN)).join('');
+  const zwinctl=`<span style="margin-left:10px;color:var(--faint)">window:</span>${zbtn('full',0)}${zopts}`;
   document.getElementById('cchart').innerHTML=`<svg width="100%" viewBox="0 0 ${W} ${Hv}">${gl}${avgLine}${conn}${p}${pts}${lbls}${xl}</svg>`
     +`<div style="font-size:11px;color:var(--muted);margin-top:6px">oldest→newest · ${n} ${CLUB>1?`cols · ${CLUB}w each`:'weeks'} · dashed = average${avg!=null?' ('+F(avg)+')':''}${zwinctl}</div>`;
   const pb=document.getElementById('csub');
