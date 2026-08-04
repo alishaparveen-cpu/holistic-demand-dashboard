@@ -83,6 +83,10 @@ select{font:13px inherit;color:var(--ink);border:1px solid var(--line);border-ra
 .summt{display:inline-block;max-width:240px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;vertical-align:bottom;color:var(--ink2)}
 .summt.exp{white-space:normal;max-width:380px}
 .smore{cursor:pointer;font-size:11px;color:var(--accent);margin-left:2px;white-space:nowrap}
+.wknav{display:flex;align-items:center;gap:8px}
+.wkbtn{font:13px inherit;font-weight:700;color:var(--accent);background:var(--card);border:1px solid var(--line);border-radius:7px;width:28px;height:26px;cursor:pointer;line-height:1}
+.wkbtn:hover:not(:disabled){background:var(--bg)}
+.wkbtn:disabled{color:var(--faint);cursor:default;opacity:.5}
 </style>
 </head>
 <body>
@@ -94,7 +98,7 @@ select{font:13px inherit;color:var(--ink);border:1px solid var(--line);border-ra
   <div class="controls">
     <span><label>Clinic</label><select id="clinS"></select></span>
     <span><label>Doctor</label><select id="docS"></select></span>
-    <span style="margin-left:auto" class="sub" id="wkflag"></span>
+    <span style="margin-left:auto" class="wknav"><button id="wkprev" class="wkbtn" title="previous week">◀</button><span class="sub" id="wkflag"></span><button id="wknext" class="wkbtn" title="next week">▶</button></span>
   </div>
 
   <div class="hd">① Screening calls — click a day to filter, or filter any column below</div>
@@ -110,7 +114,7 @@ select{font:13px inherit;color:var(--ink);border:1px solid var(--line);border-ra
   <div class="detail" id="avail"></div>
 </div>
 <script>
-let D=null, CK=null, DOC='all', FB={}, FL={};   // FB/FL = per-column filter state for bookings / leads tables; DOC = top-level doctor filter (bookings)
+let D=null, CK=null, DOC='all', WK=0, FB={}, FL={};   // FB/FL = per-column filter state; DOC = top-level doctor filter (bookings); WK = selected week index into _meta.weeks
 const $=id=>document.getElementById(id);
 const DOW=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
 const AGES=['0','1','2','3','4','5','6','7','8+','no_lead'];
@@ -119,6 +123,20 @@ const ACOL={'0':'#2E7D5B','1':'#3E7CB1','2':'#4E97A8','3':'#6FA98F','4':'#9CAE6B
 const STCOL={done:'var(--done)',sched:'var(--sched)',noshow:'var(--noshow)',resched:'var(--rel)',cancelled:'#9a5a3a',other:'#c7ccd4'};
 const STLAB={done:'Completed',sched:'Scheduled',noshow:'No-show',resched:'Rescheduled',cancelled:'Cancelled',other:'Other'};
 const STORDER=['done','sched','noshow','resched','cancelled','other'];
+// Match the clinician calendar's headline status: a slot that NO-SHOWED and was later rescheduled
+// carries status=RESCHEDULED but previous_status=MISSED — the clinician calendar shows "No Show".
+// Only this exact case is overridden (COMPLETED-after-MISSED stays Completed; proactive SCHEDULED→RESCHEDULED stays Rescheduled).
+function effSt(b){return (b.st==='resched' && b.prevst==='MISSED') ? 'noshow' : b.st;}
+// Episode-level FINAL outcome (clinician calendar's "Latest booking status"): where the whole consultation ended,
+// following the reschedule/cancel chain. Blank when this row already IS the terminal (no onward chain).
+function isFinalRow(b){return !b.finalst || (b.finalst===effSt(b) && b.finalday===b._day);}
+function finalVal(b){return isFinalRow(b)?'—':(STLAB[b.finalst]||b.finalst);}
+function finalCell(b){
+  if(isFinalRow(b)) return '<span class="na">—</span>';
+  const dt=b.finalday?dlabel(b.finalday):null;
+  return `<span class="dot" style="background:${STCOL[b.finalst]}"></span>${STLAB[b.finalst]}${dt?` <span style="color:var(--muted)">${dt.dow} ${dt.dm}</span>`:''}`;
+}
+function fmtTime(t){if(!t||t.indexOf(':')<0)return '';let[h,m]=t.split(':').map(Number);const ap=h<12?'AM':'PM';h=h%12||12;return h+':'+String(m).padStart(2,'0')+' '+ap;}
 const SRCCLS=s=>'src'+(s||'').replace(/[^A-Za-z]/g,'');
 const STRLAB={STRONG:'Strong',NOT_A_PATIENT:'Not a patient',COULD_NOT_DETERMINE:'Unclear'};
 const STRCLS={STRONG:'yes',NOT_A_PATIENT:'no',COULD_NOT_DETERMINE:'na'};
@@ -185,8 +203,9 @@ const BCOLS=[
  {k:'leadcame',label:'Lead came',filt:'sel',val:b=>(b.age==null||!b.bkmade)?'':isoMinus(b.bkmade,b.age),selDisp:iso=>iso?fullDate(iso):'no lead',cell:leadCameCell},
  {k:'age',label:'Lead→appt',filt:'sel',val:b=>{const g=apptGap(b);return g==null?'no lead':(g===0?'same day':g===1?'+1d':g<=3?'+2–3d':g<=7?'+4–7d':'8+d');},cell:b=>{const g=apptGap(b);return g==null?'<span class="na">no lead</span>':(g===0?'same day':'+'+g+'d');}},
  {k:'bkmade',label:'Booked on',filt:'sel',val:b=>b.bkmade||'',selDisp:iso=>iso?fullDate(iso):'—',cell:b=>b.bkmade?fullDate(b.bkmade):'—'},
- {k:'bookedfor',label:'Booked for (appt)',filt:null,cell:b=>fullDate(b._day)},
- {k:'st',label:'Status',filt:'sel',val:b=>b.st,selDisp:STLAB,cell:b=>`<span class="dot" style="background:${STCOL[b.st]}"></span>${STLAB[b.st]}`},
+ {k:'bookedfor',label:'Booked for (appt)',filt:null,cell:b=>fullDate(b._day)+(b.sctime?` <span style="color:var(--muted)">${fmtTime(b.sctime)}</span>`:'')},
+ {k:'st',label:'Status',filt:'sel',val:b=>effSt(b),selDisp:STLAB,cell:b=>{const s=effSt(b);return `<span class="dot" style="background:${STCOL[s]}"></span>${STLAB[s]}`;}},
+ {k:'finalst',label:'Final outcome',filt:'sel',val:finalVal,cell:finalCell},
  {k:'rzn',label:'Move reason',filt:'sel',val:b=>b.rzn||'—',selDisp:{doctor:'Doctor-side',patient:'Patient-side',other:'Other','—':'—'},cell:b=>b.rzntxt?`<span class="rzn ${b.rzn==='doctor'?'rznD':''}" title="${esc(b.rzntxt)}">${b.rzn==='doctor'?'⚠ doctor':b.rzn==='patient'?'patient':'other'}</span>`:'<span class="na">—</span>'},
  {k:'mode',label:'Mode',filt:'sel',val:b=>b.mode,cell:b=>b.mode},
  {k:'rec',label:'Recording',filt:null,cell:b=>recsCell(b.recs)},
@@ -248,8 +267,10 @@ function filterTable(el, rows, cols, fstate){
 }
 
 function render(){
-  const c=D.clinics[CK], days=D._meta.days;
-  $('wkflag').textContent='Week '+D._meta.week;
+  const c=D.clinics[CK], wk=D._meta.weeks[WK], days=wk.days;
+  $('wkflag').textContent='Week '+wk.week;
+  $('wkprev').disabled = WK<=0;
+  $('wknext').disabled = WK>=D._meta.weeks.length-1;
 
   const dOf=bks=>DOC==='all'?bks:bks.filter(b=>b.doc===DOC);   // top-level doctor filter (bookings only)
 
@@ -306,12 +327,17 @@ fetch('data_sc_calendar.json?v='+Date.now(),{cache:'no-store'}).then(r=>r.json()
   D=d; const cs=Object.keys(d.clinics);
   $('clinS').innerHTML=cs.map(k=>`<option value="${k}">${d.clinics[k].disp}</option>`).join('');
   CK=cs[0]; $('clinS').value=CK;
-  const d1=d._meta.days[0]; FB={day:d1}; FL={day:d1};
+  WK=d._meta.weeks.length-1;                       // default to the newest complete week
+  const wkDay0=()=>D._meta.weeks[WK].days[0];
+  const resetDay=()=>{const d1=wkDay0(); FB={day:d1}; FL={day:d1};};
+  resetDay();
   const loadDocs=()=>{const docs=(D.clinics[CK].doctors||[]);DOC='all';
     $('docS').innerHTML=`<option value="all">All doctors</option>`+docs.map(x=>`<option value="${x}">${x.replace(/^Dr\.?\s*/,'')}</option>`).join('');};
   loadDocs();
-  $('clinS').onchange=e=>{CK=e.target.value;FB={day:d._meta.days[0]};FL={day:d._meta.days[0]};loadDocs();render();};
+  $('clinS').onchange=e=>{CK=e.target.value;resetDay();loadDocs();render();};
   $('docS').onchange=e=>{DOC=e.target.value;FB={day:FB.day||''};render();};
+  $('wkprev').onclick=()=>{if(WK>0){WK--;resetDay();render();}};
+  $('wknext').onclick=()=>{if(WK<D._meta.weeks.length-1){WK++;resetDay();render();}};
   render();
 }).catch(e=>{$('detail').innerHTML='Failed to load data_sc_calendar.json — run scripts/build_sc_calendar.py';});
 </script>

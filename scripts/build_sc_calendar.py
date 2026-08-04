@@ -160,9 +160,17 @@ def META_BYPHONE(nums_csv, wstart):
 
 today = datetime.date.today()
 mon = today - datetime.timedelta(days=today.weekday())
-start = mon - datetime.timedelta(days=7); end = start + datetime.timedelta(days=7)
-DAYS = [(start+datetime.timedelta(days=i)).isoformat() for i in range(7)]
+NWEEKS = 2                                     # how many complete Mon–Sun weeks to hold (rolling; week bars in the UI)
+end = mon                                      # exclusive: this Monday → covers the last NWEEKS complete weeks
+start = mon - datetime.timedelta(days=7*NWEEKS)
+DAYS = [(start+datetime.timedelta(days=i)).isoformat() for i in range(7*NWEEKS)]
 S, E = start.isoformat(), end.isoformat()
+# per-week grouping (chronological, oldest first; the UI defaults to the newest)
+WEEKS = []
+for w in range(NWEEKS):
+    ws = start + datetime.timedelta(days=7*w)
+    WEEKS.append({"week": f"{ws.isoformat()}→{(ws+datetime.timedelta(days=6)).isoformat()}",
+                  "days": [(ws+datetime.timedelta(days=i)).isoformat() for i in range(7)]})
 REC_S = (start - datetime.timedelta(days=35)).isoformat()  # recording lookback (catch older-lead calls)
 REC_END = (today + datetime.timedelta(days=1)).isoformat() # lead-connection lookAHEAD (catch late-week leads connected after the week)
 
@@ -175,7 +183,7 @@ ST_SQL = """CASE
   WHEN a.status='CANCELLED' THEN 'cancelled'
   ELSE 'other' END"""
 
-out = {"_meta":{"days":DAYS, "week":f"{S}→{(end-datetime.timedelta(days=1)).isoformat()}",
+out = {"_meta":{"days":DAYS, "weeks":WEEKS, "week":WEEKS[-1]["week"],
         "note":"① SC bookings = Screening-Call appts scheduled that day at the clinic (all statuses = the clinician calendar). done=COMPLETED/RECONSULTED. age = booking-made − lead-first-seen (exact). src/med from the patient's earliest lead. ② Leads = ALL leads attributed to the clinic by lead.location code, per-lead; connected + intent (patient_intent_strength: STRONG/NOT_A_PATIENT/COULD_NOT_DETERMINE) + care-type (user_intent: therapist/doctor/tests/meds) + recording come from the representative call on the clinic's own lines (lead_to_call). ①source & ②source use different attribution (patient's earliest lead vs clinic code) so they won't perfectly reconcile."},
        "clinics":{}}
 
@@ -199,6 +207,30 @@ for r in bloc_rows:
             BOOKED_AT[ph]=(clinic, ts)
 print(f"booked-location map: {len(BOOKED_AT)} phones")
 
+# per-episode FINAL outcome: appointments of one SC episode share a consultation_id (reschedule/cancel spawns new rows).
+# The clinician calendar's "Latest booking status" = the terminal row of that consultation. Rank COMPLETED highest,
+# then any resolved terminal (MISSED/CANCELLED) by recency, so a no-show→reschedule→complete chain resolves to Completed.
+ST_BUCKET = {'COMPLETED':'done','RECONSULTED':'done','SCHEDULED':'sched','MISSED':'noshow','RESCHEDULED':'resched','CANCELLED':'cancelled'}
+cf_rows = q(f"""
+WITH w AS (
+  SELECT DISTINCT a.consultation_id cid FROM allo_consultations.appointments a
+  JOIN allo_consultations.types t ON t.id=a.type_id AND t.name='Screening Call'
+  WHERE a.deleted_at IS NULL AND a.consultation_id IS NOT NULL
+    AND (a.start_time + {IST})>='{S}' AND (a.start_time + {IST})<'{E}'),
+r AS (
+  SELECT a.consultation_id cid, a.status st, TO_CHAR(a.start_time + {IST},'YYYY-MM-DD') fday,
+    ROW_NUMBER() OVER (PARTITION BY a.consultation_id ORDER BY
+      (CASE WHEN a.status IN ('COMPLETED','RECONSULTED') THEN 4
+            WHEN a.status IN ('MISSED','CANCELLED') THEN 3
+            WHEN a.status='RESCHEDULED' THEN 1 ELSE 2 END) DESC, a.updated_at DESC) rn
+  FROM allo_consultations.appointments a
+  JOIN w ON w.cid=a.consultation_id
+  WHERE a.deleted_at IS NULL)
+SELECT cid, st, fday FROM r WHERE rn=1
+""")
+CONSULT_FINAL = { g(r,0): (ST_BUCKET.get(g(r,1),'other'), g(r,2)) for r in cf_rows if g(r,0) }
+print(f"consultation-final map: {len(CONSULT_FINAL)} episodes")
+
 for c in CLINICS:
     # ---- A) per-booking rows (+ call recording matched on patient primary OR alternate number) ----
     nums0 = "','".join(c["nums"])
@@ -216,7 +248,9 @@ for c in CLINICS:
       CASE WHEN a.program='mental_health' THEN 'MENTAL_HEALTH' WHEN a.program='sexual_health' THEN 'SEXUAL_HEALTH_GENERAL' ELSE '' END cat,
       COALESCE(cbp.summ, cba.summ, '') summ,
       CASE WHEN a.mode='offline' THEN 'offline' ELSE 'online' END booking_mode,
-      COALESCE(rp.recs,'') recs_p, COALESCE(ra.recs,'') recs_a
+      COALESCE(rp.recs,'') recs_p, COALESCE(ra.recs,'') recs_a,
+      TO_CHAR(a.start_time + {IST},'HH24:MI') sctime, COALESCE(a.previous_status,'') prevst,
+      COALESCE(a.consultation_id::varchar,'') consult
     FROM allo_consultations.appointments a
     JOIN allo_consultations.types t ON t.id=a.type_id AND t.name='Screening Call'
     JOIN allo_persons.patient p ON p.id=a.patient_id
@@ -244,7 +278,11 @@ for c in CLINICS:
                                     "src":(g(r,6) or "Direct/unknown"), "med":(g(r,7) or "Web"), "st":r[8],
                                     "rzntxt":(g(r,9) or ""), "rzn":rzn_bucket(g(r,9)),
                                     "cat":(g(r,10) or ""), "summ":(g(r,11) or ""), "mode":(g(r,12) or "offline"),
-                                    "recs":parse_recs(g(r,13), g(r,14))})
+                                    "recs":parse_recs(g(r,13), g(r,14)),
+                                    "sctime":(g(r,15) or ""), "prevst":(g(r,16) or ""),
+                                    "consult":(g(r,17) or ""),
+                                    "finalst":CONSULT_FINAL.get(g(r,17),(None,None))[0],
+                                    "finalday":CONSULT_FINAL.get(g(r,17),(None,None))[1]})
     # ---- B) per-lead rows (all sources by clinic code) + call outcome/recording + booked flag ----
     nums = "','".join(c["nums"])
     b = q(f"""
