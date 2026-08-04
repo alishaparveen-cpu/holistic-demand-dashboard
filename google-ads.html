@@ -256,6 +256,8 @@ td.oldw,th.oldw{border-right:2px solid #cfd4dc}
 const CATS=['SH','STD','MH'],MTS=['Exact-Local','Exact','Phrase-Local'];
 const CHS=['GMB','Google'],MEDS=['Call','Web','WhatsApp'],FCATS=['SH','STI','MH','Other','Uncategorized'];
 let DATA=null,CITY=null,WKALL=[],WKSEL=[],AUCT=null,SHOW_OLDER=false,REACH=null,CLEADS=null,EXPLOC=new Set();   // REACH = per-clinic (GMB location asset) impr/clicks; CLEADS = per-clinic leads/bookings; EXPLOC = which Loc rows are expanded
+let CLIN_CAT='all';   // clinic leads category filter ('all'|'SH'|'STI'|'MH')
+let CLIN_SRC={gads:true,gmb:true};   // source multiselect
 const SEL={cat:new Set(CATS),mt:new Set(['Exact-Local']),ch:new Set(CHS),med:new Set(MEDS),fcat:new Set(FCATS),camp:new Set(),chmed:new Set()};
 const chmedAll=chs=>{const s=new Set();(chs||CHS).forEach(c=>MEDS.forEach(m=>s.add(c+'|'+m)));return s;};   // channel×medium combos
 SEL.chmed=chmedAll(CHS);
@@ -377,7 +379,8 @@ function funMed(field,medium,wk){const rows=(DATA[CITY]||{}).fun||[];let s=0;   
   for(const r of rows){if(r.wk!==wk)continue;if(!SEL.ch.has(r.ch))continue;if(r.med!==medium)continue;if(!SEL.fcat.has(r.cat))continue;s+=r[field]||0;}return s;}
 function render(){
   const wks=WKSEL,nW=wks.length;const OLD=Math.max(0,nW-6),REC=wks.slice(OLD),NA=REC.length;   // OLD = oldest week(s) beyond 6; average is always over the RECENT 6
-  const DWKS=SHOW_OLDER?wks:REC,nD=DWKS.length,oc=i=>(SHOW_OLDER&&i<OLD)?'oldw':'',om=i=>(SHOW_OLDER&&i<OLD)?'◂ ':'';   // display = recent 6 by default; '＋ older week' toggles the oldest column(s) in
+  const DWKS=SHOW_OLDER?wks:REC,nD=DWKS.length,oc=i=>(SHOW_OLDER&&i<OLD)?'oldw':'',om=i=>(SHOW_OLDER&&i<OLD)?'◂ ':'';
+  window._DWKS=DWKS; window._oc=oc; window._om=om;   // expose for rebuildClinLeads()   // display = recent 6 by default; '＋ older week' toggles the oldest column(s) in
   {const ob=$('olderBtn');if(ob){ob.textContent=SHOW_OLDER?'− hide older week':'＋ older week'+(OLD?' ('+OLD+')':'');ob.style.display=OLD?'':'none';}}
   // blended-average helpers: sum a component across the RECENT 6 weeks, then take the ratio (total÷total) — older week excluded
   const bA=f=>REC.reduce((s,w)=>s+acq(f,w),0), bF=f=>REC.reduce((s,w)=>s+fun(f,w),0);
@@ -467,31 +470,30 @@ function render(){
 
     // ── Google Ads + GMB funnel ──────────────────────────────────────────────
     if(!CLEADS) return reachBlock;
-    const ldata = clins.map(k=>{
-      const v = CLEADS[k]; if(!v) return null;
-      const gads    = DWKS.map(w=>{const wi=reachIdx(w);return wi<0?0:(v.gads[wi]||0);});
-      const bk_gads = DWKS.map(w=>{const wi=reachIdx(w);return wi<0?0:(v.bk_gads[wi]||0);});
-      const gmb     = DWKS.map(w=>{const wi=reachIdx(w);return wi<0?0:(v.gmb[wi]||0);});
-      const bk_gmb  = DWKS.map(w=>{const wi=reachIdx(w);return wi<0?0:(v.bk_gmb[wi]||0);});
-      return {loc: v.loc||k, gads, bk_gads, gmb, bk_gmb};
-    }).filter(Boolean).filter(d=>d.gads.some(x=>x)||d.gmb.some(x=>x));
-    ldata.sort((a,b)=>(b.gmb[0]||0)-(a.gmb[0]||0));   // sort by GMB leads (highest organic signal first)
 
-    const ltbl=(title,fmt,vf,af)=>`<h3 style="margin:16px 0 3px;font-size:14px">${title}</h3><div style="overflow-x:auto"><table><thead><tr>${th}</tr></thead><tbody>`+
-      ldata.map(d=>{const vals=vf(d);return `<tr><td>${d.loc}</td>${vals.map((v,i)=>`<td class="${oc(i)}">${fmt(v)}</td>`).join('')}<td class="avgc">${fmt(af(d))}</td></tr>`;}).join('')+`</tbody></table></div>`;
-    const lmean=a=>sum(a,NAa)/NAa;
-    const lrate=(num,den)=>{const tn=sum(num,NAa),td=sum(den,NAa);return td?100*tn/td:null;};
+    // Controls (category dropdown + source checkboxes) — state held in CLIN_CAT / CLIN_SRC globals
+    const clinControls=`<div id="clinLeadsControls" style="display:flex;align-items:center;gap:20px;flex-wrap:wrap;margin:14px 0 10px">
+      <label style="font-size:13px;font-weight:600;color:var(--muted,#6B7280)">Category
+        <select id="clinCatSel" onchange="CLIN_CAT=this.value;rebuildClinLeads()" style="margin-left:6px;font-size:13px;padding:3px 8px;border:1px solid var(--border,#e0e0e0);border-radius:6px;background:var(--card,#fff);color:inherit;cursor:pointer">
+          <option value="all"${CLIN_CAT==='all'?' selected':''}>All categories</option>
+          <option value="SH"${CLIN_CAT==='SH'?' selected':''}>SH only</option>
+          <option value="STI"${CLIN_CAT==='STI'?' selected':''}>STI only</option>
+          <option value="MH"${CLIN_CAT==='MH'?' selected':''}>MH only</option>
+        </select>
+      </label>
+      <span style="font-size:13px;font-weight:600;color:var(--muted,#6B7280)">Source</span>
+      <label style="font-size:13px;display:flex;align-items:center;gap:5px;cursor:pointer">
+        <input type="checkbox" id="clinSrcGads" ${CLIN_SRC.gads?'checked':''} onchange="CLIN_SRC.gads=this.checked;rebuildClinLeads()"> Google Ads
+      </label>
+      <label style="font-size:13px;display:flex;align-items:center;gap:5px;cursor:pointer">
+        <input type="checkbox" id="clinSrcGmb" ${CLIN_SRC.gmb?'checked':''} onchange="CLIN_SRC.gmb=this.checked;rebuildClinLeads()"> GMB
+      </label>
+    </div>`;
 
     const leadsBlock = `<h2 style="margin-top:36px">📊 Google Ads + GMB funnel — clinic-wise · weekly (${CITY})</h2>`
-      +`<p class="sub" style="margin:2px 0 4px">Tracks whether campaign and bid changes flow through to clinic-level lead and booking impact. Google Ads = paid search attribution; GMB = Google Maps profile calls/visits. Bookings = lead converted to an appointment (offline or online). All categories combined.</p>`
-      +`<h3 style="margin:20px 0 4px;font-size:13px;letter-spacing:.5px;text-transform:uppercase;color:var(--muted,#6B7280)">Google Ads</h3>`
-      +ltbl('Leads', nf, d=>d.gads, d=>lmean(d.gads))
-      +ltbl('Bookings', nf, d=>d.bk_gads, d=>lmean(d.bk_gads))
-      +ltbl('L→B%', pf, d=>d.gads.map((x,i)=>x?100*d.bk_gads[i]/x:null), d=>lrate(d.bk_gads,d.gads))
-      +`<h3 style="margin:24px 0 4px;font-size:13px;letter-spacing:.5px;text-transform:uppercase;color:var(--muted,#6B7280)">GMB (Google Maps)</h3>`
-      +ltbl('Leads', nf, d=>d.gmb, d=>lmean(d.gmb))
-      +ltbl('Bookings', nf, d=>d.bk_gmb, d=>lmean(d.bk_gmb))
-      +ltbl('L→B%', pf, d=>d.gmb.map((x,i)=>x?100*d.bk_gmb[i]/x:null), d=>lrate(d.bk_gmb,d.gmb));
+      +`<p class="sub" style="margin:2px 0 4px">Clinic-level lead and booking impact. Google Ads = paid search; GMB = Google Maps profile. Filter by category and source below.</p>`
+      +clinControls
+      +`<div id="clinLeadsTbls"></div>`;
 
     return reachBlock + leadsBlock;
   }
@@ -520,7 +522,53 @@ function render(){
     splitBlock('spCat','Category','Leads by category','cat',FCATS,'fun','lead',cm)+
     (CITY==='Online'?'':splitBlock('spMt','Match-type','Spend by match-type','mt',MTS,'acq','sp',inr))+   // online has no local match-type; its spend split lives in the campaign table above
     assetTablesHTML();   // clinic-wise location-asset tables (impr / clicks / CTR / CPC, weekly)
+  rebuildClinLeads();   // populate the clinic leads/bookings tables (filtered by CLIN_CAT/CLIN_SRC)
   renderCompetitors();
+}
+
+// ── Clinic leads/bookings tables (2 tables, category + source filters) ──────
+function rebuildClinLeads(){
+  const wrap=document.getElementById('clinLeadsTbls');
+  if(!wrap||!CLEADS||!REACH||CITY==='Online')return;
+  const DWKS=window._DWKS; if(!DWKS||!DWKS.length) return;
+  const oc=window._oc||(()=>''), om=window._om||(()=>'');
+  const clins=Object.keys(REACH).filter(k=>k!=='_meta'&&REACH[k].city===CITY);
+  const NAa=Math.min(6,DWKS.length);   // reachIdx() is the global that maps label→ISO index
+  const sum=(a,n)=>a.slice(0,n).reduce((s,x)=>s+(x||0),0);
+
+  // Build ldata: merge selected sources for current category
+  const ldata=clins.map(k=>{
+    const v=CLEADS[k]; if(!v) return null;
+    const bc=v.by_cat||{};
+    const bkt=bc[CLIN_CAT]||bc['all']||{gads:[],bk_gads:[],gmb:[],bk_gmb:[]};
+    const get=(arr,w)=>{const wi=reachIdx(w);return wi<0?0:(arr[wi]||0);};
+    const leads=DWKS.map(w=>(CLIN_SRC.gads?get(bkt.gads||[],w):0)+(CLIN_SRC.gmb?get(bkt.gmb||[],w):0));
+    const bkgs =DWKS.map(w=>(CLIN_SRC.gads?get(bkt.bk_gads||[],w):0)+(CLIN_SRC.gmb?get(bkt.bk_gmb||[],w):0));
+    if(!leads.some(x=>x)&&!bkgs.some(x=>x)) return null;
+    return {loc: v.loc||k, leads, bkgs};
+  }).filter(Boolean);
+  ldata.sort((a,b)=>sum(b.leads,NAa)-sum(a.leads,NAa));
+
+  if(!ldata.length){wrap.innerHTML=`<p class="sub" style="margin-top:12px">No data for this filter combination.</p>`;return;}
+
+  const nf=x=>!x?'·':Math.round(x).toLocaleString('en-IN');
+  const pf=x=>x==null?'·':x.toFixed(1)+'%';
+  const th=`<th>Clinic</th>`+DWKS.map((x,i)=>`<th class="${oc(i)}">${om(i)}${x}</th>`).join('')+`<th class="avg">Avg ${NAa}wk</th>`;
+  const mkTbl=(title,vf,af,fmt)=>
+    `<h3 style="margin:16px 0 3px;font-size:14px">${title}</h3>`+
+    `<div style="overflow-x:auto"><table><thead><tr>${th}</tr></thead><tbody>`+
+    ldata.map(d=>{const vals=vf(d);return `<tr><td>${d.loc}</td>${vals.map((v,i)=>`<td class="${oc(i)}">${fmt(v)}</td>`).join('')}<td class="avgc">${fmt(af(d))}</td></tr>`;}).join('')+
+    `</tbody></table></div>`;
+
+  const srcLabel=(CLIN_SRC.gads&&CLIN_SRC.gmb)?'Google Ads + GMB':CLIN_SRC.gads?'Google Ads':CLIN_SRC.gmb?'GMB':'(no source selected)';
+  const catLabel=CLIN_CAT==='all'?'all categories':CLIN_CAT;
+  wrap.innerHTML=`<p class="sub" style="margin:2px 0 8px">Showing <strong>${srcLabel}</strong> · <strong>${catLabel}</strong></p>`
+    +mkTbl('Leads',d=>d.leads,d=>sum(d.leads,NAa)/NAa,nf)
+    +mkTbl('Bookings',d=>d.bkgs,d=>sum(d.bkgs,NAa)/NAa,nf)
+    +mkTbl('L→B%',
+        d=>d.leads.map((x,i)=>x?100*d.bkgs[i]/x:null),
+        d=>{const tl=sum(d.leads,NAa),tb=sum(d.bkgs,NAa);return tl?100*tb/tl:null;},
+        pf);
 }
 
 // Tab switching

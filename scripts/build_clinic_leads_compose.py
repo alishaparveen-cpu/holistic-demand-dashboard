@@ -10,10 +10,12 @@ Output data_clinic_leads.json keyed by locality_city (same as data_clinic_reach.
     "_meta": { "weeks": [...] },
     "indiranagar_bangalore": {
       "city": "Bangalore", "loc": "Indiranagar",
-      "gads":    [week0..weekN],   # Google Ads leads
-      "bk_gads": [week0..weekN],   # bookings from Google Ads leads (bkseg != 'none')
-      "gmb":     [week0..weekN],   # GMB leads (Google Maps profile)
-      "bk_gmb":  [week0..weekN],   # bookings from GMB leads
+      "by_cat": {
+        "all": { "gads":[...], "bk_gads":[...], "gmb":[...], "bk_gmb":[...] },
+        "SH":  { "gads":[...], "bk_gads":[...], "gmb":[...], "bk_gmb":[...] },
+        "STI": { "gads":[...], "bk_gads":[...], "gmb":[...], "bk_gmb":[...] },
+        "MH":  { "gads":[...], "bk_gads":[...], "gmb":[...], "bk_gmb":[...] },
+      }
     }, ...
   }
 """
@@ -23,6 +25,11 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 def normalize(s):
     return s.lower().replace(' ', '').replace('-', '').replace('.', '').replace('_', '').replace('/', '')
+
+CATS = ('SH', 'STI', 'MH')  # tracked categories; everything else rolls into 'all' only
+
+def empty_bucket(N):
+    return {"gads": [0]*N, "bk_gads": [0]*N, "gmb": [0]*N, "bk_gmb": [0]*N}
 
 def main():
     leads_path  = os.path.join(ROOT, 'data_leads.json')
@@ -46,7 +53,8 @@ def main():
 
     out = {"_meta": {
         "weeks": weeks,
-        "note": "Per-clinic Google Ads and GMB leads + bookings from data_leads.json. "
+        "note": "Per-clinic Google Ads and GMB leads + bookings by category. "
+                "by_cat.all = all categories; by_cat.SH/STI/MH = specific category only. "
                 "gads/bk_gads = Google Ads funnel; gmb/bk_gmb = GMB (Maps) funnel. "
                 "bkseg != 'none' = lead converted to an appointment (offline or online).",
         "generated_at": __import__('datetime').datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ')
@@ -72,30 +80,49 @@ def main():
             continue
 
         cells = leads_raw[leads_key].get('cells', [])
-        gads    = [0]*N
-        bk_gads = [0]*N
-        gmb     = [0]*N
-        bk_gmb  = [0]*N
+
+        # Initialize buckets: 'all' + one per category
+        buckets = {'all': empty_bucket(N)}
+        for cat in CATS:
+            buckets[cat] = empty_bucket(N)
+
         for cell in cells:
             ch    = cell.get('ch', '')
+            cat   = cell.get('cat', '')
             bkseg = cell.get('bkseg', 'none')
             w_arr = cell.get('w', [])
-            booked = bkseg != 'none'
-            is_gads = ch == 'Google Ads'
-            is_gmb  = ch in ('GMB', 'Google Maps (GMB)')
+            booked   = bkseg != 'none'
+            is_gads  = ch == 'Google Ads'
+            is_gmb   = ch in ('GMB', 'Google Maps (GMB)')
+            if not (is_gads or is_gmb):
+                continue
+
             for i in range(min(N, len(w_arr))):
                 cnt = w_arr[i]
                 if not cnt: continue
-                if is_gads:
-                    gads[i] += cnt
-                    if booked: bk_gads[i] += cnt
-                if is_gmb:
-                    gmb[i] += cnt
-                    if booked: bk_gmb[i] += cnt
+                # Always add to 'all'
+                bkt_keys = ['all']
+                if cat in CATS:
+                    bkt_keys.append(cat)
+                for bkt_key in bkt_keys:
+                    bkt = buckets[bkt_key]
+                    if is_gads:
+                        bkt['gads'][i] += cnt
+                        if booked: bkt['bk_gads'][i] += cnt
+                    if is_gmb:
+                        bkt['gmb'][i] += cnt
+                        if booked: bkt['bk_gmb'][i] += cnt
 
-        out[rk] = {"city": city, "loc": loc,
-                   "gads": gads, "bk_gads": bk_gads,
-                   "gmb": gmb,  "bk_gmb": bk_gmb}
+        # Only include categories that have any data
+        by_cat = {}
+        for k, bkt in buckets.items():
+            if any(bkt[f][i] for f in bkt for i in range(N)):
+                by_cat[k] = bkt
+        if not by_cat:
+            unmatched.append(f'{rk} (no gads/gmb leads)')
+            continue
+
+        out[rk] = {"city": city, "loc": loc, "by_cat": by_cat}
         matched += 1
 
     json.dump(out, open(out_path, 'w'), separators=(',', ':'))
