@@ -86,7 +86,8 @@ def pull_week(start, end):
         metrics.cost_micros, metrics.impressions
       FROM keyword_view WHERE campaign.advertising_channel_type='SEARCH' AND campaign.status='ENABLED'
         AND segments.date BETWEEN '{start}' AND '{end}'""")
-    qacc = {}  # nm -> [qs_num, qs_den, ar, lp]
+    qacc = {}  # nm -> [qs_num, qs_den, ar_impr, lp_impr, total_impr]
+    # ar/lp are impression-weighted: % of impressions served to keywords with Below Average rating
     for r in rq:
         nm = r['campaign']['name']
         if nm not in out: continue
@@ -94,13 +95,16 @@ def pull_week(start, end):
         q = qi.get('qualityScore'); cq = qi.get('creativeQualityScore'); pq = qi.get('postClickQualityScore')
         m = r.get('metrics', {}); cost = int(m.get('costMicros', 0) or 0); impr = int(m.get('impressions', 0) or 0)
         if impr <= 0: continue                       # only keywords that actually served
-        a = qacc.setdefault(nm, [0.0, 0.0, 0, 0])
+        a = qacc.setdefault(nm, [0.0, 0.0, 0.0, 0.0, 0.0])
         if q: w = cost or 1; a[0] += q*w; a[1] += w
-        if cq == 'BELOW_AVERAGE': a[2] += 1
-        if pq == 'BELOW_AVERAGE': a[3] += 1
+        if cq == 'BELOW_AVERAGE': a[2] += impr      # impressions from below-avg AR keywords
+        if pq == 'BELOW_AVERAGE': a[3] += impr      # impressions from below-avg LP keywords
+        a[4] += impr                                 # total impressions from scored keywords
     for nm, a in qacc.items():
         out[nm]['qs'] = round(a[0]/a[1], 2) if a[1] else None
-        out[nm]['ar'] = a[2]; out[nm]['lp'] = a[3]
+        # ar/lp = % of impressions with Below Average quality rating (0–100, always ≤100%)
+        out[nm]['ar'] = round(a[2]/a[4]*100) if a[4] else 0
+        out[nm]['lp'] = round(a[3]/a[4]*100) if a[4] else 0
     return out
 
 
