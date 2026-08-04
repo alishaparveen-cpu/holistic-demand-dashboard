@@ -137,13 +137,13 @@ def parse_recs(*ss):
 
 # LISTAGG ALL recordings (inbound + outbound, any routed_to) keyed by the PATIENT-side number
 # (inbound: patient in "from"; outbound: patient in "to"). Payload: url~dur~date~direction
-def REC_LISTAGG(nums_csv, wstart):
+def REC_LISTAGG(nums_csv, wstart, wend=None):
     return f"""SELECT CASE WHEN ec.direction='inbound' THEN RIGHT(ec."from",10) ELSE RIGHT(ec."to",10) END ph,
       LISTAGG(ec.recording_url||'~'||COALESCE(ec.total_duration,0)||'~'||TO_CHAR(DATE(ec.start_time+{IST}),'YYYY-MM-DD')||'~'||COALESCE(ec.direction,'in'),'|') WITHIN GROUP (ORDER BY ec.start_time) recs
     FROM allo_vendors.exotel_calls ec
     WHERE RIGHT(ec.exotel_number,10) IN ('{nums_csv}')
       AND ec.recording_url IS NOT NULL AND ec.recording_url!=''
-      AND (ec.start_time + {IST})>='{wstart}' AND (ec.start_time + {IST})<'{E}' GROUP BY 1"""
+      AND (ec.start_time + {IST})>='{wstart}' AND (ec.start_time + {IST})<'{wend or E}' GROUP BY 1"""
 
 # AI call-audit category (diagnoses.category) + summary per caller number — real category wins, else longest call.
 # summary sanitized of tabs/newlines so it survives the tab-separated query output.
@@ -164,6 +164,7 @@ start = mon - datetime.timedelta(days=7); end = start + datetime.timedelta(days=
 DAYS = [(start+datetime.timedelta(days=i)).isoformat() for i in range(7)]
 S, E = start.isoformat(), end.isoformat()
 REC_S = (start - datetime.timedelta(days=35)).isoformat()  # recording lookback (catch older-lead calls)
+REC_END = (today + datetime.timedelta(days=1)).isoformat() # lead-connection lookAHEAD (catch late-week leads connected after the week)
 
 # 6-way appointment-status map (verified: RESCHEDULED/COMPLETED/MISSED/CANCELLED; SCHEDULED/RECONSULTED future-proofed)
 ST_SQL = """CASE
@@ -227,14 +228,23 @@ for c in CLINICS:
     # ---- B) per-lead rows (all sources by clinic code) + call outcome/recording + booked flag ----
     nums = "','".join(c["nums"])
     b = q(f"""
-    WITH scbk AS (
-      SELECT RIGHT(p.phone_no,10) ph, MIN(DATE(a.start_time + {IST})) sc_date
-      FROM allo_consultations.appointments a
-      JOIN allo_consultations.types t ON t.id=a.type_id AND t.name='Screening Call'
-      JOIN allo_health.locations loc ON loc.id=a.location_id AND loc.locality='{c['loc']}' AND loc.city='{c['city']}'
-      JOIN allo_persons.patient p ON p.id=a.patient_id
-      WHERE a.deleted_at IS NULL AND (a.start_time + {IST})>='{S}' AND (a.start_time + {IST})<'{E}'
-      GROUP BY 1),
+    WITH scbk AS (   -- SC booked at this clinic this week, keyed on patient PRIMARY *or* ALTERNATE number
+      SELECT ph, MIN(sc_date) sc_date FROM (
+        SELECT RIGHT(p.phone_no,10) ph, DATE(a.start_time + {IST}) sc_date
+        FROM allo_consultations.appointments a
+        JOIN allo_consultations.types t ON t.id=a.type_id AND t.name='Screening Call'
+        JOIN allo_health.locations loc ON loc.id=a.location_id AND loc.locality='{c['loc']}' AND loc.city='{c['city']}'
+        JOIN allo_persons.patient p ON p.id=a.patient_id
+        WHERE a.deleted_at IS NULL AND (a.start_time + {IST})>='{S}' AND (a.start_time + {IST})<'{E}'
+        UNION ALL
+        SELECT RIGHT(p.alternate_phone_no,10) ph, DATE(a.start_time + {IST}) sc_date
+        FROM allo_consultations.appointments a
+        JOIN allo_consultations.types t ON t.id=a.type_id AND t.name='Screening Call'
+        JOIN allo_health.locations loc ON loc.id=a.location_id AND loc.locality='{c['loc']}' AND loc.city='{c['city']}'
+        JOIN allo_persons.patient p ON p.id=a.patient_id
+        WHERE a.deleted_at IS NULL AND (a.start_time + {IST})>='{S}' AND (a.start_time + {IST})<'{E}'
+          AND p.alternate_phone_no IS NOT NULL AND LENGTH(REGEXP_REPLACE(p.alternate_phone_no,'[^0-9]',''))>=10
+      ) x WHERE ph IS NOT NULL AND ph!='' GROUP BY 1),
     callout AS (SELECT ph, d, conn, strength, intent FROM (
       SELECT RIGHT(ec."from",10) ph, DATE(ec.start_time + {IST}) d,
         CASE WHEN ec.status='completed' THEN 1 ELSE 0 END conn,
@@ -246,7 +256,7 @@ for c in CLINICS:
       LEFT JOIN allo_analytics.call_analyses ca ON ca.call_id=ec.call_id
       WHERE RIGHT(ec.exotel_number,10) IN ('{nums}') AND ec.routed_to='lead_to_call'
         AND (ec.start_time + {IST})>='{S}' AND (ec.start_time + {IST})<'{E}') WHERE rn=1),
-    recL AS ({REC_LISTAGG(nums, S)}),
+    recL AS ({REC_LISTAGG(nums, S, REC_END)}),
     metaL AS ({META_BYPHONE(nums, S)}),
     locl AS (   -- AI-audit: phones whose inbound call mentioned THIS clinic's locality (for shared/common numbers)
       SELECT DISTINCT RIGHT(ec."from",10) ph

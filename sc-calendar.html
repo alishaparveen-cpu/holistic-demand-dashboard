@@ -196,7 +196,7 @@ const LCOLS=[
  {k:'med',label:'Medium',filt:'sel',val:l=>l.med,cell:l=>l.med},
  {k:'tier',label:'Attribution',filt:'sel',val:l=>TIERLAB[l.tier]||l.tier||'Direct (code)',cell:l=>`<span class="chip">${TIERLAB[l.tier]||l.tier||'Direct (code)'}</span>`},
  {k:'conn',label:'Connected',filt:'sel',val:l=>hasConn(l)?'Yes':((l.recs&&l.recs.length)?'No':'—'),cell:l=>hasConn(l)?'<span class="yes">✓ yes</span>':((l.recs&&l.recs.length)?'<span class="no">✗ no</span>':'<span class="na">—</span>')},
- {k:'connon',label:'Connected on',filt:null,cell:connOnCell},
+ {k:'connon',label:'Connected on',filt:'sel',multi:true,val:l=>[...new Set((l.recs||[]).filter(r=>r.d>0&&r.dt).map(r=>r.dt))],selDisp:iso=>iso?fullDate(iso):'—',cell:connOnCell},
  {k:'strength',label:'Intent',filt:'sel',val:l=>l.strength?(STRLAB[l.strength]||l.strength):'—',cell:l=>l.strength?`<span class="${STRCLS[l.strength]||'na'}">${STRLAB[l.strength]||l.strength}</span>`:'<span class="na">—</span>'},
  {k:'leadcame',label:'Lead came',filt:null,cell:l=>fullDate(l._day)},
  {k:'booked',label:'Booked for',filt:'sel',val:l=>!l.booked?'not booked':(l.blag===0?'same day':l.blag>0?'+'+l.blag+'d':l.blag<0?'earlier':'booked'),cell:bookedCell},
@@ -206,7 +206,7 @@ const LCOLS=[
 
 // generic filterable table: builds header + per-column filter row once; filter changes only re-render the body (keeps input focus)
 function filterTable(el, rows, cols, fstate){
-  const opts={}; cols.forEach(c=>{if(c.filt==='sel')opts[c.k]=[...new Set(rows.map(r=>c.val(r)))].filter(x=>x!==''&&x!=null).sort();});
+  const opts={}; cols.forEach(c=>{if(c.filt==='sel')opts[c.k]=[...new Set(c.multi?rows.flatMap(r=>c.val(r)||[]):rows.map(r=>c.val(r)))].filter(x=>x!==''&&x!=null).sort();});
   const dispOpt=(c,o)=>c.selDisp?(typeof c.selDisp==='function'?c.selDisp(o):(c.selDisp[o]||o)):o;
   const head=cols.map(c=>`<th>${c.label}</th>`).join('');
   const frow=cols.map(c=>{
@@ -220,7 +220,7 @@ function filterTable(el, rows, cols, fstate){
   const tb=el.querySelector('tbody'), cnt=el.querySelector('.ftcount');
   function apply(){
     const base=rows.filter(r=>cols.every(c=>{if(!c.filt)return true;const fv=fstate[c.k];if(!fv)return true;const rv=c.val(r);
-      return c.filt==='txt'?String(rv||'').toLowerCase().includes(fv.toLowerCase()):rv===fv;}));
+      return c.filt==='txt'?String(rv||'').toLowerCase().includes(fv.toLowerCase()):(c.multi?(rv||[]).includes(fv):rv===fv);}));
     const uniqN=pidCol?new Set(base.map(r=>pidCol.val(r)).filter(Boolean)).size:null;
     let fr=base;
     if(fstate._uniq&&pidCol){const seen=new Set();fr=base.filter(r=>{const k=pidCol.val(r);if(!k)return true;if(seen.has(k))return false;seen.add(k);return true;});}
