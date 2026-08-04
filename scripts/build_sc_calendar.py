@@ -179,6 +179,26 @@ out = {"_meta":{"days":DAYS, "week":f"{S}→{(end-datetime.timedelta(days=1)).is
         "note":"① SC bookings = Screening-Call appts scheduled that day at the clinic (all statuses = the clinician calendar). done=COMPLETED/RECONSULTED. age = booking-made − lead-first-seen (exact). src/med from the patient's earliest lead. ② Leads = ALL leads attributed to the clinic by lead.location code, per-lead; connected + intent (patient_intent_strength: STRONG/NOT_A_PATIENT/COULD_NOT_DETERMINE) + care-type (user_intent: therapist/doctor/tests/meds) + recording come from the representative call on the clinic's own lines (lead_to_call). ①source & ②source use different attribution (patient's earliest lead vs clinic code) so they won't perfectly reconcile."},
        "clinics":{}}
 
+# clinic-wide booked-location map: phone (primary+alt) → the clinic where they actually booked an SC this week
+# (any clinic, earliest). Lets a lead that called clinic A but booked at clinic B show "Booked at → B".
+bloc_rows = q(f"""
+SELECT RIGHT(p.phone_no,10) ph, RIGHT(COALESCE(p.alternate_phone_no,''),10) altph,
+  loc.locality||' · '||loc.city clinic, TO_CHAR(a.start_time + {IST},'YYYY-MM-DD HH24:MI') sc_ts
+FROM allo_consultations.appointments a
+JOIN allo_consultations.types t ON t.id=a.type_id AND t.name='Screening Call'
+JOIN allo_health.locations loc ON loc.id=a.location_id AND loc.deleted_at IS NULL AND loc.locality IS NOT NULL AND loc.locality!='' AND lower(loc.name) NOT LIKE '%online%'
+JOIN allo_persons.patient p ON p.id=a.patient_id
+WHERE a.deleted_at IS NULL AND (a.start_time + {IST})>='{S}' AND (a.start_time + {IST})<'{E}'
+""")
+BOOKED_AT={}   # phone10 → clinic disp (earliest SC)
+for r in bloc_rows:
+    clinic = g(r,2); ts = g(r,3)
+    if not clinic or not ts: continue
+    for ph in (g(r,0), g(r,1)):
+        if ph and len(ph)>=10 and (ph not in BOOKED_AT or ts < BOOKED_AT[ph][1]):
+            BOOKED_AT[ph]=(clinic, ts)
+print(f"booked-location map: {len(BOOKED_AT)} phones")
+
 for c in CLINICS:
     # ---- A) per-booking rows (+ call recording matched on patient primary OR alternate number) ----
     nums0 = "','".join(c["nums"])
@@ -290,9 +310,10 @@ for c in CLINICS:
         if d not in days: continue
         blag = None if g(r,9) in NUL else int(float(r[9]))
         bkdate = "" if g(r,8) in NUL else r[8]
+        bookedat = BOOKED_AT.get((r[1] or "")[-10:], ("",""))[0]
         days[d]["leads"].append({"p":r[1], "src":(r[2] or "Direct/unknown"), "med":(r[3] or "Web"),
                                  "conn":int(r[4]), "strength":(g(r,5) or ""), "intent":(g(r,6) or ""),
-                                 "booked":int(r[7]), "bkdate":bkdate, "blag":blag,
+                                 "booked":int(r[7]), "bkdate":bkdate, "blag":blag, "bookedat":bookedat,
                                  "cat":(g(r,10) or ""), "pid":(g(r,11) or ""), "summ":(g(r,12) or ""),
                                  "tier":(g(r,13) or "coded"), "recs":parse_recs(g(r,14))})
     # ---- C) doctor SC-roster capacity per day: rostered vs realized (shrinkage) + non-bookable (leave) ----
