@@ -762,6 +762,8 @@ function renderLevel(container,cells,depth,parentTot,parentWk,path,pathVals,P){
     // leads: any node expands to show its OWN booked / not-booked / book-rate% rows (at every level), unless the next layer is already the Booked? split
     const showTrip=P.mode==='leads'&&dk!=='status'&&P.order[depth+1]!=='status'&&P.sel.status.size===DIMS.status.values.length;
     if(showTrip)hasKids=true;
+    const showDone=P.mode==='bookings'&&DONEROW&&!dowActive();   // ② opt-in ↳done/→B2D% rows under every booking node
+    if(showDone)hasKids=true;
     row.className='frow'+(hasKids?' clk':'')+(WEEKLY?' wkly':'');
     let right;
     if(WEEKLY){const ix=wkIdxs();const wv=dv(wk),pv=dv(parentWk);const dp=deltaPct(wv);
@@ -785,6 +787,7 @@ function renderLevel(container,cells,depth,parentTot,parentWk,path,pathVals,P){
       const kidbox=document.createElement('div');kidbox.style.display=P.open[key]?'block':'none';container.appendChild(kidbox);
       row.onclick=()=>{P.open[key]=!P.open[key];draw(P);};
       if(P.open[key]){const pv2=Object.assign({},pathVals,{[dk]:single?vk:u.k});
+        if(showDone)appendDoneTriplet(kidbox,sub,15+(depth+1)*20);   // ② done / Book→Done% rows first, then any deeper layer
         if(showTrip){   // leads: booked / not-booked / book-rate% rows first, then any deeper layer
           appendLeadTriplet(kidbox,sub,15+(depth+1)*20);
           if(single&&dk==='medium'&&vk==='call'&&P.order[depth+1]!=='number')renderNumList(kidbox,sub,depth+1);
@@ -851,6 +854,7 @@ function sparkline(wk){const ix=wkIdxs(),d=dv(wk),vals=ix.map(i=>d[i]||0),n=vals
   return '<svg width="'+W+'" height="'+H+'" viewBox="0 0 '+W+' '+H+'"><polyline points="'+pts+'" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/><circle cx="'+x(n-1).toFixed(1)+'" cy="'+y(vals[n-1]).toFixed(1)+'" r="1.7" fill="currentColor"/></svg>';}
 // leads: ↳ booked / ↳ not booked / → book rate % as weekly rows under a node (booked, notbooked shown even when 0)
 let PSHARE={leads:false,bookings:false};   // per-section '% share of parent' toggle for ① leads / ② bookings (mirrors the ops sections)
+let DONEROW=false;   // ② bookings: opt-in '↳ done / → Book→Done %' rows under every booking node (offline; ties to ④)
 // ↳ share of parent % as a weekly trend row under a drilled node (opt-in via the '% share' button)
 function appendShareRow(container,wk,parentWk,padPx){
   const gv=dv(wk),pv=dv(parentWk),arr=gv.map((v,i)=>pv[i]?100*v/pv[i]:null);
@@ -879,6 +883,23 @@ function appendLeadTriplet(container,cells,padPx){
   sub('↳ not booked',nbW,'nbk',false,'#B8503C');
   sub('→ book rate % (ever)',rateArr,'rate',true,'#1F6F5C');
   sub('→ L→B · same-wk % (WoW-fair)',swRate,'rate',true,'#2C6CAE',0,swWk);   // NEW: maturity-neutral lead→book — every week judged on its own same-week conversion, so it's comparable week-on-week
+}
+// ② bookings: ↳ done / → Book→Done % under a node — done ⊆ booked at the SAME cell grain (wdArr), so it's literally "of these bookings, how many completed". Offline only (online carries no per-cell done); ties to ④. Latest week reads low until it matures.
+function doneWeekArr(cells){const b=baseAx(),L=b.length,a=new Array(L).fill(0);cells.forEach(c=>{const ar=c.wdArr||[];for(let i=0;i<L;i++)a[i]+=ar[i]||0;});return clubify(a);}
+function appendDoneTriplet(container,cells,padPx){
+  const off=cells.filter(c=>c.seg==='offline'&&c.wdArr&&c.wdArr.length);   // offline episode cells (exclude online + display-reconcile cells, which have no wdArr)
+  const bkWk=weekArr(off),dnWk=doneWeekArr(off);
+  const gW=dv(bkWk),dW=dv(dnWk),rateArr=gW.map((t,i)=>t?Math.round(100*dW[i]/t):0);
+  const sub=(lbl,arr,cls,isPct,col)=>{
+    const row=document.createElement('div');row.className='frow wkly subr '+cls;if(padPx)row.style.paddingLeft=padPx+'px';
+    let rr;
+    if(WEEKLY){const ix=wkIdxs();const dp=deltaPct(arr);rr=ix.map((i,j)=>`<span class="wk${j===ix.length-1?' last':''}">${isPct?(gW[i]?arr[i]+'%':'·'):(arr[i]||0)}</span>`).join('')+`<span class="delta ${dp.cls}">${dp.txt}</span>${bnCols(dp,isPct)}`;}
+    else rr=`<span class="barwrap"></span><span class="cnt">${isPct?(sumT(bkWk)?Math.round(100*sumT(dnWk)/sumT(bkWk))+'%':'·'):sumT(arr)}</span><span class="pct"></span>`;
+    row.innerHTML=`<span class="chev leaf">▶</span><span class="lbl">${lbl}</span>`+rr+`<span class="zoom" title="plot trend">${ZSVG}</span>`;
+    container.appendChild(row);{const zb=row.querySelector('.zoom');zb.innerHTML=sparkline(arr);zb.onclick=()=>openChart(lbl,arr,col);}
+  };
+  sub('↳ done',dnWk,'bkd',false,'#2E7D5B');
+  sub('→ Book→Done % (offline)',rateArr,'rate',true,'#1F6F5C');
 }
 
 // ================= ①→② LEAD → BOOK (same-week conversion, WoW-fair) — first-class funnel step, drills in-table by the layer bar =================
@@ -1979,6 +2000,7 @@ function draw(P){
   {const zb=foot.querySelector('.zoom');zb.innerHTML=sparkline(gWk);zb.onclick=(e)=>{e.stopPropagation();openChart('Total · all shown',gWk,'var(--accent)');};}
   // under Total: absolute booked / not-booked / book-rate % (weekly)
   if(P.mode==='leads'&&P.sel.status.size===DIMS.status.values.length)appendLeadTriplet(flow,cells,0);
+  if(P.mode==='bookings'&&DONEROW&&!dowActive())appendDoneTriplet(flow,cells,0);   // ② total-level ↳done/→B2D%
 }
 
 // ---- layer chips + popovers + drag ----
@@ -2027,7 +2049,8 @@ function openCombinePickerIM(pop,dk){IM_COMB[dk]=IM_COMB[dk]||[];
 function renderLayerBar(P){
   const bar=P.els.bar;
   [...bar.querySelectorAll('.chip,.arrow,.ghost,.shbtn')].forEach(c=>c.remove());   // clear chips, arrows, ghosts, share toggle
-  {const shb=document.createElement('button');shb.className='dlchip shbtn'+(PSHARE[P.mode]?' on':'');shb.textContent='% share';shb.title='show each row’s share of its parent as a weekly trend (off = decluttered)';shb.style.margin='0 10px 0 4px';shb.onclick=()=>{PSHARE[P.mode]=!PSHARE[P.mode];draw(P);};const lead=bar.querySelector('.lead');lead.after(shb);}
+  {const shb=document.createElement('button');shb.className='dlchip shbtn'+(PSHARE[P.mode]?' on':'');shb.textContent='% share';shb.title='show each row’s share of its parent as a weekly trend (off = decluttered)';shb.style.margin='0 10px 0 4px';shb.onclick=()=>{PSHARE[P.mode]=!PSHARE[P.mode];draw(P);};const lead=bar.querySelector('.lead');lead.after(shb);
+   if(P.mode==='bookings'){const db=document.createElement('button');db.className='dlchip'+(DONEROW?' on':'');db.textContent='Book→Done';db.title='under each booking row, show ↳ done + Book→Done % (offline) — of these bookings, how many completed (ties to ④; latest week matures)';db.style.margin='0 10px 0 0';db.onclick=()=>{DONEROW=!DONEROW;draw(P);};shb.after(db);}}
   P.order.forEach((dk,i)=>{
     const dim=DIMS[dk],vals=dim.values.filter(v=>!P.present[dk]||P.present[dk].has(v.k)),ntot=vals.length,nsel=vals.filter(v=>P.sel[dk].has(v.k)).length;
     const chip=document.createElement('div');chip.className='chip';chip.draggable=true;chip.dataset.i=i;
