@@ -11,10 +11,11 @@ Output data_clinic_leads.json keyed by locality_city (same as data_clinic_reach.
     "indiranagar_bangalore": {
       "city": "Bangalore", "loc": "Indiranagar",
       "by_cat": {
-        "all": { "gads":[...], "bk_gads":[...], "gmb":[...], "bk_gmb":[...] },
-        "SH":  { "gads":[...], "bk_gads":[...], "gmb":[...], "bk_gmb":[...] },
-        "STI": { "gads":[...], "bk_gads":[...], "gmb":[...], "bk_gmb":[...] },
-        "MH":  { "gads":[...], "bk_gads":[...], "gmb":[...], "bk_gmb":[...] },
+        "all":   { "gads":[...], "bk_gads":[...], "gmb":[...], "bk_gmb":[...] },
+        "SH":    { ... },
+        "STI":   { ... },
+        "MH":    { ... },
+        "Other": { ... },   # na + unknown + Other + anything not SH/STI/MH
       }
     }, ...
   }
@@ -26,7 +27,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 def normalize(s):
     return s.lower().replace(' ', '').replace('-', '').replace('.', '').replace('_', '').replace('/', '')
 
-CATS = ('SH', 'STI', 'MH')  # tracked categories; everything else rolls into 'all' only
+KNOWN_CATS = ('SH', 'STI', 'MH')  # named categories; everything else → 'Other'
 
 def empty_bucket(N):
     return {"gads": [0]*N, "bk_gads": [0]*N, "gmb": [0]*N, "bk_gmb": [0]*N}
@@ -54,10 +55,11 @@ def main():
     out = {"_meta": {
         "weeks": weeks,
         "note": "Per-clinic Google Ads and GMB leads + bookings by category. "
-                "by_cat.all = all categories; by_cat.SH/STI/MH = specific category only. "
-                "gads/bk_gads = Google Ads funnel; gmb/bk_gmb = GMB (Maps) funnel. "
-                "bkseg != 'none' = lead converted to an appointment (offline or online).",
-        "generated_at": __import__('datetime').datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ')
+                "by_cat.all = all categories; by_cat.SH/STI/MH = specific; "
+                "by_cat.Other = na+unknown+Other+anything not SH/STI/MH. "
+                "gads/bk_gads = Google Ads; gmb/bk_gmb = GMB (Maps). "
+                "bkseg != 'none' = converted to an appointment.",
+        "generated_at": __import__('datetime').datetime.now(__import__('datetime').timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
     }}
 
     matched = 0
@@ -69,7 +71,6 @@ def main():
         lookup = (normalize(city), normalize(loc))
         leads_key = leads_by_norm.get(lookup)
         if not leads_key:
-            # Try partial match on loc
             partial = [lk for (lc, ll), lk in leads_by_norm.items()
                        if lc == normalize(city) and (ll in normalize(loc) or normalize(loc) in ll)]
             if partial:
@@ -81,29 +82,30 @@ def main():
 
         cells = leads_raw[leads_key].get('cells', [])
 
-        # Initialize buckets: 'all' + one per category
-        buckets = {'all': empty_bucket(N)}
-        for cat in CATS:
-            buckets[cat] = empty_bucket(N)
+        # Initialize buckets: all + SH + STI + MH + Other
+        buckets = {k: empty_bucket(N) for k in ['all'] + list(KNOWN_CATS) + ['Other']}
 
         for cell in cells:
             ch    = cell.get('ch', '')
             cat   = cell.get('cat', '')
             bkseg = cell.get('bkseg', 'none')
             w_arr = cell.get('w', [])
-            booked   = bkseg != 'none'
-            is_gads  = ch == 'Google Ads'
-            is_gmb   = ch in ('GMB', 'Google Maps (GMB)')
+            booked  = bkseg != 'none'
+            is_gads = ch == 'Google Ads'
+            is_gmb  = ch in ('GMB', 'Google Maps (GMB)')
             if not (is_gads or is_gmb):
                 continue
+
+            # Map cat → bucket keys to add to
+            bkt_keys = ['all']
+            if cat in KNOWN_CATS:
+                bkt_keys.append(cat)
+            else:
+                bkt_keys.append('Other')   # na, unknown, Other, anything else
 
             for i in range(min(N, len(w_arr))):
                 cnt = w_arr[i]
                 if not cnt: continue
-                # Always add to 'all'
-                bkt_keys = ['all']
-                if cat in CATS:
-                    bkt_keys.append(cat)
                 for bkt_key in bkt_keys:
                     bkt = buckets[bkt_key]
                     if is_gads:
@@ -113,11 +115,9 @@ def main():
                         bkt['gmb'][i] += cnt
                         if booked: bkt['bk_gmb'][i] += cnt
 
-        # Only include categories that have any data
-        by_cat = {}
-        for k, bkt in buckets.items():
-            if any(bkt[f][i] for f in bkt for i in range(N)):
-                by_cat[k] = bkt
+        # Only store categories that have data
+        by_cat = {k: bkt for k, bkt in buckets.items()
+                  if any(bkt[f][i] for f in bkt for i in range(N))}
         if not by_cat:
             unmatched.append(f'{rk} (no gads/gmb leads)')
             continue
