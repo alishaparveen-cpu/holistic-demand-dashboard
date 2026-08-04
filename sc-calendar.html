@@ -144,10 +144,12 @@ function bookingsOf(iso){return (D.clinics[CK].days[iso].bookings||[]).filter(b=
 function copyPid(el){navigator.clipboard&&navigator.clipboard.writeText(el.dataset.full);const t=el.textContent;el.textContent='copied ✓';setTimeout(()=>el.textContent=t,900);}
 function mmss(s){s=+s||0;return Math.floor(s/60)+':'+String(s%60).padStart(2,'0');}
 function recsCell(recs){
-  const rr=(recs||[]).filter(r=>r.d>0);   // drop 0-second unconnected calls (ring-no-answer)
-  if(!rr.length) return '<span class="na">—</span>';
-  return rr.map(r=>{const dt=r.dt?dlabel(r.dt):null,out=r.dir==='outbound';
-    return `<a class="rec" href="${r.u}" target="_blank" rel="noopener" title="${(out?'outbound (clinic→patient) ':'inbound ')+(r.dt||'')}">▶ ${mmss(r.d)} <span style="color:${out?'#8a6a2a':'var(--done)'};font-weight:600;font-size:10px">${out?'out':'in'}</span>${dt?` <span style="color:var(--faint);font-weight:400">${dt.dow} ${dt.dm}</span>`:''}</a>`;}).join('<br>');
+  if(!recs||!recs.length) return '<span class="na">—</span>';
+  return recs.map(r=>{const dt=r.dt?dlabel(r.dt):null,out=r.dir==='outbound',noconn=r.d===0;
+    // 0-second = ring-no-answer (no audio) → show as "tried", not a play link
+    const inner=`${noconn?'✕':'▶'} ${mmss(r.d)} <span style="color:${out?'#8a6a2a':'var(--done)'};font-weight:600;font-size:10px">${out?'out':'in'}</span>${dt?` <span style="color:var(--faint);font-weight:400">${dt.dow} ${dt.dm}</span>`:''}`;
+    return noconn ? `<span class="rec" style="color:var(--faint)" title="${(out?'outbound':'inbound')} attempt — not connected (no recording)">${inner}</span>`
+                  : `<a class="rec" href="${r.u}" target="_blank" rel="noopener" title="${(out?'outbound (clinic→patient) ':'inbound ')+(r.dt||'')}">${inner}</a>`;}).join('<br>');
 }
 function catVal(cat){if(!cat)return '—';const l=CATLAB[cat];return l===undefined?cat:(l||'—');}
 function pidCell(x){return x.pid?`<span class="pid" data-full="${x.pid}" onclick="copyPid(this)">${x.pid}</span>`:'<span class="na">—</span>';}
@@ -236,7 +238,7 @@ function render(){
       <div class="sbar">${STORDER.map(k=>`<i style="width:${seg(k)}%;background:${STCOL[k]}"></i>`).join('')}</div>
       <div class="leadmini"><b>${sameDay}</b> same-day · <b>${tot-sameDay}</b> older${onl?` · <b>${onl}</b> online`:''}</div>
     </div>`;}).join('');
-  $('cal').querySelectorAll('.day').forEach(el=>el.onclick=()=>{FB.day=el.dataset.d;render();});
+  $('cal').querySelectorAll('.day').forEach(el=>el.onclick=()=>{FB.day=(FB.day===el.dataset.d?'':el.dataset.d);render();});
 
   // ① filterable bookings table (all days)
   const allBk=days.flatMap(iso=>(c.days[iso].bookings||[]).map(b=>Object.assign({_day:iso},b)));
@@ -247,7 +249,7 @@ function render(){
     return `<div class="day${FL.day===iso?' sel':''}" data-l="${iso}">
       <div class="dn">${L.dow} ${L.dm}</div><div class="dv">${tl}</div><div class="dl">leads</div>
     </div>`;}).join('');
-  $('leadCal').querySelectorAll('.day').forEach(el=>el.onclick=()=>{FL.day=el.dataset.l;render();});
+  $('leadCal').querySelectorAll('.day').forEach(el=>el.onclick=()=>{FL.day=(FL.day===el.dataset.l?'':el.dataset.l);render();});
 
   // ② filterable leads table (all days)
   const allLd=days.flatMap(iso=>(c.days[iso].leads||[]).map(l=>Object.assign({_day:iso},l)));
