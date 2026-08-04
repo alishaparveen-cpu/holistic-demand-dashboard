@@ -87,6 +87,9 @@ select{font:13px inherit;color:var(--ink);border:1px solid var(--line);border-ra
 .wkbtn{font:13px inherit;font-weight:700;color:var(--accent);background:var(--card);border:1px solid var(--line);border-radius:7px;width:28px;height:26px;cursor:pointer;line-height:1}
 .wkbtn:hover:not(:disabled){background:var(--bg)}
 .wkbtn:disabled{color:var(--faint);cursor:default;opacity:.5}
+.wkallbtn{width:auto;padding:0 10px;font-weight:600}
+.wkallbtn.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+.cal.calall{grid-template-columns:170px}
 </style>
 </head>
 <body>
@@ -98,7 +101,7 @@ select{font:13px inherit;color:var(--ink);border:1px solid var(--line);border-ra
   <div class="controls">
     <span><label>Clinic</label><select id="clinS"></select></span>
     <span><label>Doctor</label><select id="docS"></select></span>
-    <span style="margin-left:auto" class="wknav"><button id="wkprev" class="wkbtn" title="previous week">◀</button><span class="sub" id="wkflag"></span><button id="wknext" class="wkbtn" title="next week">▶</button></span>
+    <span style="margin-left:auto" class="wknav"><button id="wkprev" class="wkbtn" title="previous week">◀</button><span class="sub" id="wkflag"></span><button id="wknext" class="wkbtn" title="next week">▶</button><button id="wkall" class="wkbtn wkallbtn" title="show all weeks at once (search across weeks)">All wks</button></span>
   </div>
 
   <div class="hd">① Screening calls — click a day to filter, or filter any column below</div>
@@ -279,22 +282,26 @@ function filterTable(el, rows, cols, fstate){
 }
 
 function render(){
-  const c=D.clinics[CK], wk=D._meta.weeks[WK], days=wk.days;
-  $('wkflag').textContent='Week '+wk.week;
-  $('wkprev').disabled = WK<=0;
-  $('wknext').disabled = WK>=D._meta.weeks.length-1;
+  const c=D.clinics[CK];
+  const allw=(WK==='all'), days=allw?D._meta.days:D._meta.weeks[WK].days;
+  const dlab='all '+days.length+' days';
+  $('wkflag').textContent=allw?'All weeks':('Week '+D._meta.weeks[WK].week);
+  $('wkprev').disabled = allw||WK<=0;
+  $('wknext').disabled = allw||WK>=D._meta.weeks.length-1;
+  $('wkall').classList.toggle('on',allw);
+  $('cal').classList.toggle('calall',allw); $('leadCal').classList.toggle('calall',allw);
 
   const dOf=bks=>DOC==='all'?bks:bks.filter(b=>b.doc===DOC);   // top-level doctor filter (bookings only)
 
   // ① booking day-cards (overview; click filters the table by day; "All" clears the day filter)
   const allB=days.reduce((n,iso)=>n+dOf(c.days[iso].bookings||[]).length,0);
-  $('cal').innerHTML=`<div class="day dayall${!FB.day?' sel':''}" data-all="1"><div class="dn">ALL</div><div class="dv" style="color:var(--done)">${allB}</div><div class="dl">all 7 days</div></div>`
-    +days.map(iso=>{const bks=dOf(c.days[iso].bookings||[]),L=dlabel(iso),tot=bks.length;const done=countBy(bks,b=>b.st).done||0;
+  $('cal').innerHTML=`<div class="day dayall${!FB.day?' sel':''}" data-all="1"><div class="dn">ALL</div><div class="dv" style="color:var(--done)">${allB}</div><div class="dl">${dlab}</div></div>`
+    +(allw?'':days.map(iso=>{const bks=dOf(c.days[iso].bookings||[]),L=dlabel(iso),tot=bks.length;const done=countBy(bks,b=>b.st).done||0;
     return `<div class="day${FB.day===iso?' sel':''}" data-d="${iso}">
       <div class="dn">${L.dow} ${L.dm}</div>
       <div class="dv" style="color:var(--done)">${tot}</div><div class="dl">booked</div>
       <div><span class="bchip">${done} <span>completed</span></span></div>
-    </div>`;}).join('');
+    </div>`;}).join(''));
   $('cal').querySelectorAll('.day[data-d]').forEach(el=>el.onclick=()=>{FB.day=(FB.day===el.dataset.d?'':el.dataset.d);render();});
   $('cal').querySelector('[data-all]').onclick=()=>{FB.day='';render();};
 
@@ -304,11 +311,11 @@ function render(){
 
   // ② leads day-cards (overview; click filters the leads table by day)
   const allL=days.reduce((n,iso)=>n+(c.days[iso].leads||[]).length,0);
-  $('leadCal').innerHTML=`<div class="day dayall${!FL.day?' sel':''}" data-lall="1"><div class="dn">ALL</div><div class="dv">${allL}</div><div class="dl">all 7 days</div></div>`
-    +days.map(iso=>{const tl=(c.days[iso].leads||[]).length,L=dlabel(iso);
+  $('leadCal').innerHTML=`<div class="day dayall${!FL.day?' sel':''}" data-lall="1"><div class="dn">ALL</div><div class="dv">${allL}</div><div class="dl">${dlab}</div></div>`
+    +(allw?'':days.map(iso=>{const tl=(c.days[iso].leads||[]).length,L=dlabel(iso);
     return `<div class="day${FL.day===iso?' sel':''}" data-l="${iso}">
       <div class="dn">${L.dow} ${L.dm}</div><div class="dv">${tl}</div><div class="dl">leads</div>
-    </div>`;}).join('');
+    </div>`;}).join(''));
   $('leadCal').querySelectorAll('.day[data-l]').forEach(el=>el.onclick=()=>{FL.day=(FL.day===el.dataset.l?'':el.dataset.l);render();});
   $('leadCal').querySelector('[data-lall]').onclick=()=>{FL.day='';render();};
 
@@ -330,8 +337,9 @@ fetch('data_sc_calendar.json?v='+Date.now(),{cache:'no-store'}).then(r=>r.json()
   loadDocs();
   $('clinS').onchange=e=>{CK=e.target.value;resetDay();loadDocs();render();};
   $('docS').onchange=e=>{DOC=e.target.value;FB={day:FB.day||''};render();};
-  $('wkprev').onclick=()=>{if(WK>0){WK--;resetDay();render();}};
-  $('wknext').onclick=()=>{if(WK<D._meta.weeks.length-1){WK++;resetDay();render();}};
+  $('wkprev').onclick=()=>{if(WK!=='all'&&WK>0){WK--;resetDay();render();}};
+  $('wknext').onclick=()=>{if(WK!=='all'&&WK<D._meta.weeks.length-1){WK++;resetDay();render();}};
+  $('wkall').onclick=()=>{WK=(WK==='all')?(D._meta.weeks.length-1):'all';resetDay();render();};
   render();
 }).catch(e=>{$('detail').innerHTML='Failed to load data_sc_calendar.json — run scripts/build_sc_calendar.py';});
 </script>
