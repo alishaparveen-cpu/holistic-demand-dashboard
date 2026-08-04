@@ -173,7 +173,7 @@ for w in range(NWEEKS):
                   "days": [(ws+datetime.timedelta(days=i)).isoformat() for i in range(7)]})
 REC_S = (start - datetime.timedelta(days=35)).isoformat()  # recording lookback (catch older-lead calls)
 REC_END = (today + datetime.timedelta(days=1)).isoformat() # lead-connection lookAHEAD (catch late-week leads connected after the week)
-Ej = (end + datetime.timedelta(days=14)).isoformat()       # forward buffer: a lead that came in-window but booked its SC into the following week(s) — used for booked-flag, Booked-at, and the journey so all three agree
+Ej = (end + datetime.timedelta(days=28)).isoformat()       # forward buffer: a lead that came in-window but booked its SC up to ~4 weeks out — used for booked-flag, Booked-at, and the journey so all three agree
 
 # 6-way appointment-status map (verified: RESCHEDULED/COMPLETED/MISSED/CANCELLED; SCHEDULED/RECONSULTED future-proofed)
 ST_SQL = """CASE
@@ -313,18 +313,18 @@ for c in CLINICS:
     # ---- B) per-lead rows (all sources by clinic code) + call outcome/recording + booked flag ----
     nums = "','".join(c["nums"])
     b = q(f"""
-    WITH scbk AS (   -- FIRST SC slot booked at this clinic (date+time), keyed on patient PRIMARY *or* ALTERNATE number
-      SELECT ph, sc_date, sc_time FROM (
-        SELECT ph, DATE(st + {IST}) sc_date, TO_CHAR(st + {IST},'HH24:MI') sc_time,
+    WITH scbk AS (   -- FIRST SC slot booked at this clinic (date+time+program), keyed on patient PRIMARY *or* ALTERNATE number
+      SELECT ph, sc_date, sc_time, prog FROM (
+        SELECT ph, DATE(st + {IST}) sc_date, TO_CHAR(st + {IST},'HH24:MI') sc_time, prog,
           ROW_NUMBER() OVER (PARTITION BY ph ORDER BY st) rn FROM (
-          SELECT RIGHT(p.phone_no,10) ph, a.start_time st
+          SELECT RIGHT(p.phone_no,10) ph, a.start_time st, a.program prog
           FROM allo_consultations.appointments a
           JOIN allo_consultations.types t ON t.id=a.type_id AND t.name='Screening Call'
           JOIN allo_health.locations loc ON loc.id=a.location_id AND loc.locality='{c['loc']}' AND loc.city='{c['city']}'
           JOIN allo_persons.patient p ON p.id=a.patient_id
           WHERE a.deleted_at IS NULL AND (a.start_time + {IST})>='{S}' AND (a.start_time + {IST})<'{Ej}'
           UNION ALL
-          SELECT RIGHT(p.alternate_phone_no,10) ph, a.start_time st
+          SELECT RIGHT(p.alternate_phone_no,10) ph, a.start_time st, a.program prog
           FROM allo_consultations.appointments a
           JOIN allo_consultations.types t ON t.id=a.type_id AND t.name='Screening Call'
           JOIN allo_health.locations loc ON loc.id=a.location_id AND loc.locality='{c['loc']}' AND loc.city='{c['city']}'
@@ -359,7 +359,11 @@ for c in CLINICS:
       COALESCE(co.conn,0) conn, COALESCE(co.strength,'') strength, COALESCE(co.intent,'') intent,
       CASE WHEN sb.ph IS NOT NULL THEN 1 ELSE 0 END booked,
       sb.sc_date bkdate, DATEDIFF(day, DATE(ld.created_at + {IST}), sb.sc_date) blag,
-      COALESCE(ml.cat,'') cat, COALESCE(pt.pid,'') pid, COALESCE(ml.summ,'') summ,
+      CASE WHEN ml.cat IS NOT NULL AND ml.cat NOT IN ('','NOT_MENTIONED','OTHER') THEN ml.cat
+           WHEN sb.prog='mental_health' THEN 'MENTAL_HEALTH'
+           WHEN sb.prog='sexual_health' THEN 'SEXUAL_HEALTH_GENERAL'
+           ELSE COALESCE(ml.cat,'') END cat,
+      COALESCE(pt.pid,'') pid, COALESCE(ml.summ,'') summ,
       CASE WHEN ld.location='{c['code']}' THEN 'coded' WHEN sb.ph IS NOT NULL THEN 'booked' ELSE 'locality' END tier,
       COALESCE(rl.recs,'') recs, COALESCE(sb.sc_time,'') bktime
     FROM allo_persons.lead ld
