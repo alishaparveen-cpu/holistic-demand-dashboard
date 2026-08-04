@@ -18,7 +18,9 @@ h1{font-size:20px;margin:0 0 2px;font-weight:700}
 .controls label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-right:5px}
 select{font:13px inherit;color:var(--ink);border:1px solid var(--line);border-radius:7px;padding:5px 9px;background:#fff}
 .hd{font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:700;margin:20px 0 8px}
-.cal{display:grid;grid-template-columns:repeat(7,1fr);gap:8px}
+.cal{display:grid;grid-template-columns:0.72fr repeat(7,1fr);gap:8px}
+.day.dayall{background:color-mix(in srgb,var(--accent) 7%,#fff);border-color:color-mix(in srgb,var(--accent) 30%,var(--line))}
+.day.dayall .dn{color:var(--accent)}
 .day{background:var(--card);border:1px solid var(--line);border-radius:11px;padding:10px 10px 11px;cursor:pointer;transition:border-color .12s,box-shadow .12s}
 .day:hover{border-color:var(--accent)}
 .day.sel{border-color:var(--accent);box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 22%,#fff)}
@@ -169,6 +171,7 @@ function isoMinus(iso,n){const dt=new Date(iso+'T00:00:00');dt.setDate(dt.getDat
 const MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 function fullDate(iso){const dt=new Date(iso+'T00:00:00');return DOW[(dt.getDay()+6)%7]+' '+dt.getDate()+' '+MON[dt.getMonth()];}
 function leadCameCell(b){if(b.age==null||!b.bkmade)return '<span class="na">no lead</span>';const iso=isoMinus(b.bkmade,b.age);return `${fullDate(iso)}${b.age>30?` <span style="color:var(--faint)">(+${b.age}d)</span>`:''}`;}
+function apptGap(b){if(b.age==null||!b.bkmade||!b._day)return null;const lc=isoMinus(b.bkmade,b.age);return Math.round((new Date(b._day+'T00:00:00')-new Date(lc+'T00:00:00'))/864e5);}  // days from lead arrival → SC appointment
 
 // booking table columns
 const BCOLS=[
@@ -180,7 +183,7 @@ const BCOLS=[
  {k:'src',label:'Source',filt:'sel',val:b=>b.src,cell:b=>`<span class="chip ${SRCCLS(b.src)}">${b.src}</span>`},
  {k:'med',label:'Medium',filt:'sel',val:b=>b.med,cell:b=>b.med},
  {k:'leadcame',label:'Lead came',filt:'sel',val:b=>(b.age==null||!b.bkmade)?'':isoMinus(b.bkmade,b.age),selDisp:iso=>iso?fullDate(iso):'no lead',cell:leadCameCell},
- {k:'age',label:'Lead→book',filt:'sel',val:b=>ageKey(b),selDisp:ALAB,cell:b=>b.age==null?'<span class="na">no lead</span>':(b.age===0?'same day':'+'+b.age+'d')},
+ {k:'age',label:'Lead→appt',filt:'sel',val:b=>{const g=apptGap(b);return g==null?'no lead':(g===0?'same day':g===1?'+1d':g<=3?'+2–3d':g<=7?'+4–7d':'8+d');},cell:b=>{const g=apptGap(b);return g==null?'<span class="na">no lead</span>':(g===0?'same day':'+'+g+'d');}},
  {k:'bkmade',label:'Booked on',filt:'sel',val:b=>b.bkmade||'',selDisp:iso=>iso?fullDate(iso):'—',cell:b=>b.bkmade?fullDate(b.bkmade):'—'},
  {k:'bookedfor',label:'Booked for (appt)',filt:null,cell:b=>fullDate(b._day)},
  {k:'st',label:'Status',filt:'sel',val:b=>b.st,selDisp:STLAB,cell:b=>`<span class="dot" style="background:${STCOL[b.st]}"></span>${STLAB[b.st]}`},
@@ -250,27 +253,31 @@ function render(){
 
   const dOf=bks=>DOC==='all'?bks:bks.filter(b=>b.doc===DOC);   // top-level doctor filter (bookings only)
 
-  // ① booking day-cards (overview; click filters the table by day)
-  $('cal').innerHTML=days.map(iso=>{const bks=dOf(c.days[iso].bookings||[]),L=dlabel(iso),tot=bks.length;
-    const st=countBy(bks,b=>b.st), done=st.done||0, seg=k=>tot?Math.round(100*(st[k]||0)/tot):0;
-    const onl=bks.filter(b=>b.mode==='online').length, sameDay=bks.filter(b=>b.age===0).length;
+  // ① booking day-cards (overview; click filters the table by day; "All" clears the day filter)
+  const allB=days.reduce((n,iso)=>n+dOf(c.days[iso].bookings||[]).length,0);
+  $('cal').innerHTML=`<div class="day dayall${!FB.day?' sel':''}" data-all="1"><div class="dn">ALL</div><div class="dv" style="color:var(--done)">${allB}</div><div class="dl">all 7 days</div></div>`
+    +days.map(iso=>{const bks=dOf(c.days[iso].bookings||[]),L=dlabel(iso),tot=bks.length;const done=countBy(bks,b=>b.st).done||0;
     return `<div class="day${FB.day===iso?' sel':''}" data-d="${iso}">
       <div class="dn">${L.dow} ${L.dm}</div>
       <div class="dv" style="color:var(--done)">${tot}</div><div class="dl">booked</div>
       <div><span class="bchip">${done} <span>completed</span></span></div>
     </div>`;}).join('');
-  $('cal').querySelectorAll('.day').forEach(el=>el.onclick=()=>{FB.day=(FB.day===el.dataset.d?'':el.dataset.d);render();});
+  $('cal').querySelectorAll('.day[data-d]').forEach(el=>el.onclick=()=>{FB.day=(FB.day===el.dataset.d?'':el.dataset.d);render();});
+  $('cal').querySelector('[data-all]').onclick=()=>{FB.day='';render();};
 
   // ① filterable bookings table (all days, doctor-filtered)
   const allBk=days.flatMap(iso=>dOf(c.days[iso].bookings||[]).map(b=>Object.assign({_day:iso},b)));
   filterTable($('detail'), allBk, BCOLS, FB);
 
   // ② leads day-cards (overview; click filters the leads table by day)
-  $('leadCal').innerHTML=days.map(iso=>{const tl=(c.days[iso].leads||[]).length,L=dlabel(iso);
+  const allL=days.reduce((n,iso)=>n+(c.days[iso].leads||[]).length,0);
+  $('leadCal').innerHTML=`<div class="day dayall${!FL.day?' sel':''}" data-lall="1"><div class="dn">ALL</div><div class="dv">${allL}</div><div class="dl">all 7 days</div></div>`
+    +days.map(iso=>{const tl=(c.days[iso].leads||[]).length,L=dlabel(iso);
     return `<div class="day${FL.day===iso?' sel':''}" data-l="${iso}">
       <div class="dn">${L.dow} ${L.dm}</div><div class="dv">${tl}</div><div class="dl">leads</div>
     </div>`;}).join('');
-  $('leadCal').querySelectorAll('.day').forEach(el=>el.onclick=()=>{FL.day=(FL.day===el.dataset.l?'':el.dataset.l);render();});
+  $('leadCal').querySelectorAll('.day[data-l]').forEach(el=>el.onclick=()=>{FL.day=(FL.day===el.dataset.l?'':el.dataset.l);render();});
+  $('leadCal').querySelector('[data-lall]').onclick=()=>{FL.day='';render();};
 
   // ② filterable leads table (all days)
   const allLd=days.flatMap(iso=>(c.days[iso].leads||[]).map(l=>Object.assign({_day:iso},l)));
