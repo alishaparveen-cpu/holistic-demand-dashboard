@@ -191,20 +191,23 @@ out = {"_meta":{"days":DAYS, "weeks":WEEKS, "week":WEEKS[-1]["week"],
 # (any clinic, earliest). Lets a lead that called clinic A but booked at clinic B show "Booked at → B".
 bloc_rows = q(f"""
 SELECT RIGHT(p.phone_no,10) ph, RIGHT(COALESCE(p.alternate_phone_no,''),10) altph,
-  loc.locality||' · '||loc.city clinic, TO_CHAR(a.start_time + {IST},'YYYY-MM-DD HH24:MI') sc_ts
+  loc.locality||' · '||loc.city clinic, TO_CHAR(a.start_time + {IST},'YYYY-MM-DD HH24:MI') sc_ts, a.status st
 FROM allo_consultations.appointments a
 JOIN allo_consultations.types t ON t.id=a.type_id AND t.name='Screening Call'
 JOIN allo_health.locations loc ON loc.id=a.location_id AND loc.deleted_at IS NULL AND loc.locality IS NOT NULL AND loc.locality!='' AND lower(loc.name) NOT LIKE '%online%'
 JOIN allo_persons.patient p ON p.id=a.patient_id
 WHERE a.deleted_at IS NULL AND (a.start_time + {IST})>='{S}' AND (a.start_time + {IST})<'{E}'
 """)
-BOOKED_AT={}   # phone10 → clinic disp (earliest SC)
+# where the patient ACTUALLY got seen — NOT the earliest slot (which is often a rescheduled/no-show one at another
+# clinic while they completed at their own). Rank: COMPLETED > SCHEDULED(active) > everything else; latest within rank.
+def _brank(st): return 3 if st in ('COMPLETED','RECONSULTED') else (2 if st=='SCHEDULED' else 1)
+BOOKED_AT={}   # phone10 → (clinic disp, sort_key=(rank, ts))
 for r in bloc_rows:
-    clinic = g(r,2); ts = g(r,3)
+    clinic = g(r,2); ts = g(r,3); key = (_brank(g(r,4)), ts or "")
     if not clinic or not ts: continue
     for ph in (g(r,0), g(r,1)):
-        if ph and len(ph)>=10 and (ph not in BOOKED_AT or ts < BOOKED_AT[ph][1]):
-            BOOKED_AT[ph]=(clinic, ts)
+        if ph and len(ph)>=10 and (ph not in BOOKED_AT or key > BOOKED_AT[ph][1]):
+            BOOKED_AT[ph]=(clinic, key)
 print(f"booked-location map: {len(BOOKED_AT)} phones")
 
 # per-episode FINAL outcome: appointments of one SC episode share a consultation_id (reschedule/cancel spawns new rows).
@@ -286,23 +289,26 @@ for c in CLINICS:
     # ---- B) per-lead rows (all sources by clinic code) + call outcome/recording + booked flag ----
     nums = "','".join(c["nums"])
     b = q(f"""
-    WITH scbk AS (   -- SC booked at this clinic this week, keyed on patient PRIMARY *or* ALTERNATE number
-      SELECT ph, MIN(sc_date) sc_date FROM (
-        SELECT RIGHT(p.phone_no,10) ph, DATE(a.start_time + {IST}) sc_date
-        FROM allo_consultations.appointments a
-        JOIN allo_consultations.types t ON t.id=a.type_id AND t.name='Screening Call'
-        JOIN allo_health.locations loc ON loc.id=a.location_id AND loc.locality='{c['loc']}' AND loc.city='{c['city']}'
-        JOIN allo_persons.patient p ON p.id=a.patient_id
-        WHERE a.deleted_at IS NULL AND (a.start_time + {IST})>='{S}' AND (a.start_time + {IST})<'{E}'
-        UNION ALL
-        SELECT RIGHT(p.alternate_phone_no,10) ph, DATE(a.start_time + {IST}) sc_date
-        FROM allo_consultations.appointments a
-        JOIN allo_consultations.types t ON t.id=a.type_id AND t.name='Screening Call'
-        JOIN allo_health.locations loc ON loc.id=a.location_id AND loc.locality='{c['loc']}' AND loc.city='{c['city']}'
-        JOIN allo_persons.patient p ON p.id=a.patient_id
-        WHERE a.deleted_at IS NULL AND (a.start_time + {IST})>='{S}' AND (a.start_time + {IST})<'{E}'
-          AND p.alternate_phone_no IS NOT NULL AND LENGTH(REGEXP_REPLACE(p.alternate_phone_no,'[^0-9]',''))>=10
-      ) x WHERE ph IS NOT NULL AND ph!='' GROUP BY 1),
+    WITH scbk AS (   -- FIRST SC slot booked at this clinic (date+time), keyed on patient PRIMARY *or* ALTERNATE number
+      SELECT ph, sc_date, sc_time FROM (
+        SELECT ph, DATE(st + {IST}) sc_date, TO_CHAR(st + {IST},'HH24:MI') sc_time,
+          ROW_NUMBER() OVER (PARTITION BY ph ORDER BY st) rn FROM (
+          SELECT RIGHT(p.phone_no,10) ph, a.start_time st
+          FROM allo_consultations.appointments a
+          JOIN allo_consultations.types t ON t.id=a.type_id AND t.name='Screening Call'
+          JOIN allo_health.locations loc ON loc.id=a.location_id AND loc.locality='{c['loc']}' AND loc.city='{c['city']}'
+          JOIN allo_persons.patient p ON p.id=a.patient_id
+          WHERE a.deleted_at IS NULL AND (a.start_time + {IST})>='{S}' AND (a.start_time + {IST})<'{E}'
+          UNION ALL
+          SELECT RIGHT(p.alternate_phone_no,10) ph, a.start_time st
+          FROM allo_consultations.appointments a
+          JOIN allo_consultations.types t ON t.id=a.type_id AND t.name='Screening Call'
+          JOIN allo_health.locations loc ON loc.id=a.location_id AND loc.locality='{c['loc']}' AND loc.city='{c['city']}'
+          JOIN allo_persons.patient p ON p.id=a.patient_id
+          WHERE a.deleted_at IS NULL AND (a.start_time + {IST})>='{S}' AND (a.start_time + {IST})<'{E}'
+            AND p.alternate_phone_no IS NOT NULL AND LENGTH(REGEXP_REPLACE(p.alternate_phone_no,'[^0-9]',''))>=10
+        ) x WHERE ph IS NOT NULL AND ph!=''
+      ) y WHERE rn=1),
     callout AS (SELECT ph, d, conn, strength, intent FROM (
       SELECT RIGHT(ec."from",10) ph, DATE(ec.start_time + {IST}) d,
         CASE WHEN ec.status='completed' THEN 1 ELSE 0 END conn,
@@ -331,7 +337,7 @@ for c in CLINICS:
       sb.sc_date bkdate, DATEDIFF(day, DATE(ld.created_at + {IST}), sb.sc_date) blag,
       COALESCE(ml.cat,'') cat, COALESCE(pt.pid,'') pid, COALESCE(ml.summ,'') summ,
       CASE WHEN ld.location='{c['code']}' THEN 'coded' WHEN sb.ph IS NOT NULL THEN 'booked' ELSE 'locality' END tier,
-      COALESCE(rl.recs,'') recs
+      COALESCE(rl.recs,'') recs, COALESCE(sb.sc_time,'') bktime
     FROM allo_persons.lead ld
     LEFT JOIN callout co ON co.ph=RIGHT(ld.phone_no,10) AND co.d=DATE(ld.created_at + {IST})
     LEFT JOIN scbk sb ON sb.ph=RIGHT(ld.phone_no,10)
@@ -353,7 +359,8 @@ for c in CLINICS:
                                  "conn":int(r[4]), "strength":(g(r,5) or ""), "intent":(g(r,6) or ""),
                                  "booked":int(r[7]), "bkdate":bkdate, "blag":blag, "bookedat":bookedat,
                                  "cat":(g(r,10) or ""), "pid":(g(r,11) or ""), "summ":(g(r,12) or ""),
-                                 "tier":(g(r,13) or "coded"), "recs":parse_recs(g(r,14))})
+                                 "tier":(g(r,13) or "coded"), "recs":parse_recs(g(r,14)),
+                                 "bktime":(g(r,15) or "")})
     # ---- C) doctor SC-roster capacity per day: rostered vs realized (shrinkage) + non-bookable (leave) ----
     av = q(f"""
     WITH abtm AS (SELECT DISTINCT appointment_block_id, COALESCE(offline_location_id,online_location_id) blid FROM allo_consultations.appointment_block_type_maps WHERE deleted_at IS NULL)

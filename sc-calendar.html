@@ -110,8 +110,6 @@ select{font:13px inherit;color:var(--ink);border:1px solid var(--line);border-ra
   <div class="cal" id="leadCal"></div>
   <div class="detail" id="leadDetail"></div>
 
-  <div class="hd">③ Could we give a same-day slot? — SC roster capacity per day</div>
-  <div class="detail" id="avail"></div>
 </div>
 <script>
 let D=null, CK=null, DOC='all', WK=0, FB={}, FL={};   // FB/FL = per-column filter state; DOC = top-level doctor filter (bookings); WK = selected week index into _meta.weeks
@@ -162,11 +160,13 @@ function showSumm(e,el){e.stopPropagation();const p=$('summpop');p.textContent=e
 document.addEventListener('click',e=>{if(!e.target.classList||!e.target.classList.contains('ntico')){const p=$('summpop');if(p)p.style.display='none';}});
 function bookedCell(l){
   if(!l.booked) return '<span class="no">✗ not booked</span>';
-  if(l.blag==null) return '<span class="yes">✓ booked</span>';
-  if(l.blag===0) return '<span class="yes">same day</span>';
-  if(l.blag<0) return '<span class="na">earlier lead</span>';
+  const tm=l.bktime?` <span style="color:var(--muted)">${fmtTime(l.bktime)}</span>`:'';
   const dt=l.bkdate?dlabel(l.bkdate):null;
-  return `<span class="yes">+${l.blag}d</span>${dt?` <span style="color:var(--muted)">${dt.dow} ${dt.dm}</span>`:''}`;
+  const dm=dt?` <span style="color:var(--muted)">${dt.dow} ${dt.dm}</span>`:'';
+  if(l.blag==null) return `<span class="yes">✓ booked</span>${dm}${tm}`;
+  if(l.blag<0) return `<span class="na">earlier lead</span>${dm}${tm}`;
+  const lag=l.blag===0?'same day':`+${l.blag}d`;
+  return `<span class="yes">${lag}</span>${dm}${tm}`;
 }
 function dlabel(iso){const dt=new Date(iso+'T00:00:00');return {dow:DOW[(dt.getDay()+6)%7],dm:dt.getDate()};}
 function ageKey(bk){return bk.age==null?'no_lead':(bk.age<=7?String(bk.age):'8+');}
@@ -304,23 +304,6 @@ function render(){
   const allLd=days.flatMap(iso=>(c.days[iso].leads||[]).map(l=>Object.assign({_day:iso},l)));
   $('leadDetail').style.display='';
   filterTable($('leadDetail'), allLd, LCOLS, FL);
-
-  // ③ could we give a same-day slot? — roster open-bookable slots per day
-  const avDays=days.map(iso=>c.days[iso].avail).filter(Boolean);
-  const fullDays=avDays.filter(a=>a.openleft===0).length, tightDays=avDays.filter(a=>a.openleft>0&&a.openleft<=2).length;
-  const headline=avDays.length?`<div class="ds" style="margin-bottom:8px;font-size:13px">This week the clinic <b style="color:var(--noshow)">ran out of same-day SC slots on ${fullDays} day${fullDays!==1?'s':''}</b>${tightDays?` and was nearly full (≤2 left) on ${tightDays} more`:''} — those are the days a walk-up lead <b>could not</b> be given a slot. On the other days there were open slots, so a lead not booking was choice/ops, not availability.</div>`:'';
-  $('avail').innerHTML=headline+`<div class="bkwrap"><table class="btbl"><thead><tr><th>Day</th><th>Rostered slots</th><th>Booked</th><th>Open slots left</th><th>Blocked (leave)</th><th>Could we give a same-day slot?</th></tr></thead><tbody>${days.map(iso=>{const a=c.days[iso].avail;
-    if(!a) return `<tr><td>${dayDisp(iso)}</td><td colspan="5" class="na">no roster data</td></tr>`;
-    let verdict,cls='yes';
-    if(a.open>0&&a.nonbook>=a.open){verdict='🚫 Blocked (leave) — 0 slots';cls='no';}
-    else if(a.openleft===0){verdict='🔴 FULL — 0 same-day slots left';cls='no';}
-    else if(a.openleft<=2){verdict=`🟠 Nearly full — only ${a.openleft} left`;cls='';}
-    else verdict=`🟢 ${a.openleft} same-day slots spare`;
-    return `<tr><td>${dayDisp(iso)}</td><td>${a.open}</td><td>${a.booked}</td>
-      <td>${a.openleft===0?`<span class="no">0</span>`:`<b>${a.openleft}</b>`}</td>
-      <td>${a.nonbook?`<span class="no">${a.nonbook}</span>`:'0'}</td>
-      <td><span class="${cls}" style="font-weight:600">${verdict}</span></td></tr>`;}).join('')}</tbody></table></div>
-    <div class="ds" style="margin-top:8px"><b>Open slots left</b> = realized, bookable SC slots that stayed unbooked (each ~10-min). 0 left = the clinic was full/blocked that day → same-day demand couldn't be slotted. <span style="color:var(--faint)">Day-level; exact-time (e.g. evening-only) constraints need the hour-level view. Roster-slot grain ≠ appointment count.</span></div>`;
 }
 
 fetch('data_sc_calendar.json?v='+Date.now(),{cache:'no-store'}).then(r=>r.json()).then(d=>{
