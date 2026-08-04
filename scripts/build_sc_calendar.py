@@ -24,13 +24,54 @@ def q(sql):
     if p.returncode!=0 or "ERROR" in (p.stderr or ""): sys.stderr.write("query failed:\n"+(p.stderr or "")[:800]+"\n"); sys.exit(1)
     return [l.split("\t") for l in p.stdout.strip().splitlines() if l.strip()]
 
-# clinics: locality+city for bookings; lead.location code for all-source leads; own call numbers for call outcome/recording
-CLINICS = [
-  {"key":"coimbatore","disp":"Bharathi Nagar · Coimbatore","city":"Coimbatore","loc":"Bharathi Nagar",
-   "code":"TN_CMBTRE","nums":["4440114608","4440116568","4440114631"]},
-  {"key":"whitefield","disp":"Whitefield · Bangalore","city":"Bangalore","loc":"Whitefield",
-   "code":"BLR_WTF","nums":["8047280292"]},
-]
+# clinics: auto-generated from allo_health.locations (all clinics with recent SC activity).
+#   loc.locality+city → bookings/roster; loc.code → lead attribution; call numbers derived from exotel routing.
+import re as _re
+def slugify(city, loc): return _re.sub(r'[^a-z0-9]+','_', (loc+'_'+city).lower()).strip('_')
+
+def get_clinics():
+    # 1) active clinics (SC activity in last 45 days), with their lead-code
+    rows = q("""
+    SELECT DISTINCT l.city, l.locality, l.code
+    FROM allo_health.locations l
+    WHERE l.deleted_at IS NULL AND l.locality IS NOT NULL AND l.locality!='' AND l.city IS NOT NULL AND l.city!=''
+      AND l.code IS NOT NULL AND lower(l.name) NOT LIKE '%online%'
+      AND EXISTS (SELECT 1 FROM allo_consultations.appointments a
+                  JOIN allo_consultations.types t ON t.id=a.type_id AND t.name='Screening Call'
+                  WHERE a.location_id=l.id AND a.deleted_at IS NULL
+                    AND a.start_time >= DATEADD(day,-45,CURRENT_DATE))
+    ORDER BY 1,2""")
+    # 2) exotel number → dominant clinic code (auto-derived from inbound-call → lead-code)
+    nmap = q("""
+    WITH callead AS (
+      SELECT RIGHT(ec.exotel_number,10) num, ld.location code, COUNT(*) n
+      FROM allo_vendors.exotel_calls ec
+      JOIN allo_persons.lead ld ON RIGHT(ld.phone_no,10)=RIGHT(ec."from",10) AND ld.deleted_at IS NULL
+      WHERE ec.direction='inbound' AND ec.routed_to='lead_to_call' AND ld.location IS NOT NULL AND ld.location!=''
+        AND ec.start_time >= DATEADD(day,-75,CURRENT_DATE)
+      GROUP BY 1,2),
+    ranked AS (SELECT num, code, n, SUM(n) OVER (PARTITION BY num) tot,
+                 ROW_NUMBER() OVER (PARTITION BY num ORDER BY n DESC) rn FROM callead)
+    SELECT num, code FROM ranked WHERE rn=1 AND tot>=5 AND code<>'ONLINE' AND ROUND(100.0*n/tot)>=55""")
+    code_nums={}
+    for num, code in nmap: code_nums.setdefault(code, []).append(num)
+    allc=[]
+    for city, loc, code in rows:
+        allc.append({"key":slugify(city,loc), "disp":f"{loc} · {city}", "city":city, "loc":loc,
+                     "code":code, "nums":code_nums.get(code, [])})
+    # MH clinics only, in the requested order (matched by locality/city keyword)
+    MH=[("Baner","baner"),("Hadapsar","hadapsar"),("Kharghar","kharghar"),("Coimbatore","bharathi"),
+        ("Indiranagar","indiranagar"),("Whitefield","whitefield"),("Brookefield","brookefield"),
+        ("Jaipur","vaishali"),("Hubli","hubli")]
+    sel=[]
+    for name,kw in MH:
+        m=[c for c in allc if kw in (c["loc"]+" "+c["city"]).lower()]
+        if m: sel.append(m[0])
+        else: sys.stderr.write(f"WARN: no active clinic matched '{name}' ({kw})\n")
+    return sel
+
+CLINICS = get_clinics()
+print(f"{len(CLINICS)} MH clinics: "+", ".join(c["disp"] for c in CLINICS))
 BOOK_INTENT = ("BOOK_APPOINTMENT","BOOK_SLOT","BOOK_TEST","NEEDS_TESTS","NEEDS_MEDS")
 SC_TYPE = "'cd02525c-1528-4047-a12c-1ad526c28c9a'"  # roster_slots SC slot type
 
