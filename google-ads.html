@@ -207,6 +207,31 @@ td.oldw,th.oldw{border-right:2px solid #cfd4dc}
 @media (prefers-color-scheme: dark) { #tab-actionables .map-clinic-note-diag { background: #0c2a33; color: #67e8f9; } }
 :root[data-theme="dark"] #tab-actionables .map-clinic-note-diag { background: #0c2a33; color: #67e8f9; }
 :root[data-theme="light"] #tab-actionables .map-clinic-note-diag { background: #ecfeff; color: #155e75; }
+
+/* Filter + Select UI */
+#tab-actionables .filter-bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 10px 28px; background: var(--surface); border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 10; }
+#tab-actionables .filter-bar-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px; color: var(--muted); white-space: nowrap; }
+#tab-actionables .filter-chips { display: flex; gap: 6px; flex-wrap: wrap; }
+#tab-actionables .filter-chip { font-size: 11.5px; padding: 4px 11px; border-radius: 16px; border: 1.5px solid var(--border); background: var(--bg); color: var(--text); cursor: pointer; font-weight: 500; transition: all 0.15s; }
+#tab-actionables .filter-chip:hover { border-color: var(--accent); color: var(--accent); }
+#tab-actionables .filter-chip.active { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 700; }
+#tab-actionables .filter-clear { font-size: 11px; padding: 3px 9px; border-radius: 12px; border: 1px solid var(--border); background: none; color: var(--muted); cursor: pointer; }
+#tab-actionables .filter-clear:hover { color: var(--red); border-color: var(--red); }
+
+/* Campaign card states */
+#tab-actionables .campaign-card.dimmed { opacity: 0.25; pointer-events: none; }
+#tab-actionables .campaign-card.highlighted { outline: 2.5px solid var(--accent); border-radius: 8px; box-shadow: 0 0 0 4px rgba(59,111,232,0.12); }
+
+/* Selection checkbox */
+#tab-actionables .camp-checkbox { display: flex; align-items: center; cursor: pointer; }
+#tab-actionables .camp-checkbox input { width: 15px; height: 15px; cursor: pointer; accent-color: var(--accent); }
+
+/* Selection sticky bar */
+#tab-actionables .select-bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 8px 28px; background: #1A1D27; color: #fff; position: sticky; bottom: 0; z-index: 10; }
+#tab-actionables .select-summary { font-size: 12px; font-weight: 600; flex: 1; }
+#tab-actionables .select-actions { display: flex; gap: 8px; }
+#tab-actionables .select-action-btn { font-size: 11px; padding: 4px 11px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.3); background: rgba(255,255,255,0.1); color: #fff; cursor: pointer; }
+#tab-actionables .select-action-btn:hover { background: rgba(255,255,255,0.2); }
 </style></head><body><div class="tab-nav">
   <button class="tab-btn active" onclick="switchTab('compose',this)">📊 Campaign Compose</button>
   <button class="tab-btn" onclick="switchTab('actionables',this)">⚡ T1 Actionables</button>
@@ -230,7 +255,7 @@ td.oldw,th.oldw{border-right:2px solid #cfd4dc}
 <script>
 const CATS=['SH','STD','MH'],MTS=['Exact-Local','Exact','Phrase-Local'];
 const CHS=['GMB','Google'],MEDS=['Call','Web','WhatsApp'],FCATS=['SH','STI','MH','Other','Uncategorized'];
-let DATA=null,CITY=null,WKALL=[],WKSEL=[],AUCT=null,SHOW_OLDER=false,REACH=null,EXPLOC=new Set();   // REACH = per-clinic (GMB location asset) impr/clicks; EXPLOC = which Loc rows are expanded
+let DATA=null,CITY=null,WKALL=[],WKSEL=[],AUCT=null,SHOW_OLDER=false,REACH=null,CLEADS=null,EXPLOC=new Set();   // REACH = per-clinic (GMB location asset) impr/clicks; CLEADS = per-clinic leads/bookings; EXPLOC = which Loc rows are expanded
 const SEL={cat:new Set(CATS),mt:new Set(['Exact-Local']),ch:new Set(CHS),med:new Set(MEDS),fcat:new Set(FCATS),camp:new Set(),chmed:new Set()};
 const chmedAll=chs=>{const s=new Set();(chs||CHS).forEach(c=>MEDS.forEach(m=>s.add(c+'|'+m)));return s;};   // channel×medium combos
 SEL.chmed=chmedAll(CHS);
@@ -272,6 +297,7 @@ fetch('data_campaign_compose.json').then(r=>r.json()).then(d=>{DATA=d;WKALL=d._m
   buildPickers();render();});
 fetch('data_auction_insights.json').then(r=>r.json()).then(d=>{AUCT=d;renderCompetitors();}).catch(()=>{});
 fetch('data_clinic_reach.json',{cache:'no-store'}).then(r=>r.json()).then(d=>{REACH=d;if(DATA)render();}).catch(()=>{});   // per-GMB-asset location impressions/clicks (Google Ads asset-interaction segment)
+fetch('data_clinic_leads.json',{cache:'no-store'}).then(r=>r.json()).then(d=>{CLEADS=d;if(DATA)render();}).catch(()=>{});   // per-clinic leads/bookings (all channels + Google Ads + GMB), weekly
 // map a compose week label ("Jun 29-Jul 5") → the reach weekly-array index (reach weeks are Monday ISO dates), by matching the -MM-DD suffix (year-agnostic)
 const _MON3={Jan:1,Feb:2,Mar:3,Apr:4,May:5,Jun:6,Jul:7,Aug:8,Sep:9,Oct:10,Nov:11,Dec:12};
 function reachIdx(label){if(!REACH||!REACH._meta)return -1;const m=String(label).match(/^([A-Za-z]{3})\w*\s+(\d+)/);if(!m)return -1;
@@ -432,12 +458,41 @@ function render(){
     const th=`<th>Clinic</th>`+DWKS.map((x,i)=>`<th class="${oc(i)}">${om(i)}${x}</th>`).join('')+`<th class="avg">Avg ${NAa}wk</th>`;
     const tbl=(title,fmt,vf,af)=>`<h3 style="margin:16px 0 3px;font-size:14px">${title}</h3><div style="overflow-x:auto"><table><thead><tr>${th}</tr></thead><tbody>`+
       data.map(d=>{const vals=vf(d);return `<tr><td>${d.loc}</td>${vals.map((v,i)=>`<td class="${oc(i)}">${fmt(v)}</td>`).join('')}<td class="avgc">${fmt(af(d))}</td></tr>`;}).join('')+`</tbody></table></div>`;
-    return `<h2 style="margin-top:30px">📍 Location assets — clinic-wise · weekly (${CITY}, all categories)</h2>`
+    const reachBlock = `<h2 style="margin-top:30px">📍 Location assets — clinic-wise · weekly (${CITY}, all categories)</h2>`
       +`<p class="sub" style="margin:2px 0 4px">Google-Ads paid location-asset reach per clinic (impressions served on that GBP listing, its clicks, CTR and CPC). Reach counts impressions on the asset — it won't tie exactly to the city-level Location Impressions row.</p>`
       +tbl('Impressions', nf, d=>d.im, d=>mean(d.im))
       +tbl('Clicks', nf, d=>d.cl, d=>mean(d.cl))
       +tbl('CTR', pf, d=>d.im.map((x,i)=>x?100*d.cl[i]/x:null), d=>{const ti=sum(d.im,NAa),tc=sum(d.cl,NAa);return ti?100*tc/ti:null;})
       +tbl('CPC · avg (cost ÷ clicks) — asset-level, approx', rf, d=>d.cl.map((x,i)=>x?d.co[i]/x:null), d=>{const tc=sum(d.cl,NAa),tco=sum(d.co,NAa);return tc?tco/tc:null;});
+
+    // ── Leads + Bookings section ─────────────────────────────────────────────
+    if(!CLEADS) return reachBlock;
+    const ldata = clins.map(k=>{
+      const v = CLEADS[k]; if(!v) return null;
+      const tot  = DWKS.map(w=>{const wi=reachIdx(w);return wi<0?0:(v.tot[wi]||0);});
+      const gads = DWKS.map(w=>{const wi=reachIdx(w);return wi<0?0:(v.gads[wi]||0);});
+      const gmb  = DWKS.map(w=>{const wi=reachIdx(w);return wi<0?0:(v.gmb[wi]||0);});
+      const bk   = DWKS.map(w=>{const wi=reachIdx(w);return wi<0?0:(v.bk[wi]||0);});
+      return {loc: v.loc||k, tot, gads, gmb, bk};
+    }).filter(Boolean).filter(d=>d.tot.some(x=>x)||d.bk.some(x=>x));
+    ldata.sort((a,b)=>(b.tot[0]||0)-(a.tot[0]||0));
+
+    const ltbl=(title,fmt,vf,af,note='')=>`<h3 style="margin:16px 0 3px;font-size:14px">${title}${note?`<span class="sub" style="font-weight:normal;margin-left:8px">${note}</span>`:''}</h3><div style="overflow-x:auto"><table><thead><tr>${th}</tr></thead><tbody>`+
+      ldata.map(d=>{const vals=vf(d);return `<tr><td>${d.loc}</td>${vals.map((v,i)=>`<td class="${oc(i)}">${fmt(v)}</td>`).join('')}<td class="avgc">${fmt(af(d))}</td></tr>`;}).join('')+`</tbody></table></div>`;
+
+    const lmean=a=>sum(a,NAa)/NAa;
+    const leadsBlock = `<h2 style="margin-top:36px">📊 Clinic leads &amp; bookings — clinic-wise · weekly (${CITY})</h2>`
+      +`<p class="sub" style="margin:2px 0 4px">All-channel leads and bookings per clinic from the leads cube (all categories). Gads = Google Ads attributed; GMB = Google Maps listing calls/visits. Bookings = leads that converted to an appointment (offline or online). Use to track if campaign/bid changes flow through to actual funnel impact.</p>`
+      +ltbl('Total leads (all channels)', nf, d=>d.tot, d=>lmean(d.tot))
+      +ltbl('Google Ads leads', nf, d=>d.gads, d=>lmean(d.gads), '— directly attributed to paid campaigns')
+      +ltbl('GMB leads', nf, d=>d.gmb, d=>lmean(d.gmb), '— Google Maps profile calls + website clicks')
+      +ltbl('Bookings (all-channel leads → appointment)', nf, d=>d.bk, d=>lmean(d.bk))
+      +ltbl('Booking rate (bookings ÷ total leads)', pf,
+          d=>d.tot.map((x,i)=>x?100*d.bk[i]/x:null),
+          d=>{const tt=sum(d.tot,NAa),tb=sum(d.bk,NAa);return tt?100*tb/tt:null;},
+          '— L→B conversion; compare before/after bid or LP changes');
+
+    return reachBlock + leadsBlock;
   }
   const sec=(t,c)=>`<tr class="sec ${c}"><td colspan="${nD+3}">${t}</td></tr>`;
   $('tbl').querySelector('thead').innerHTML=head;
@@ -494,16 +549,35 @@ function switchTab(id,btn){
 </div>
 
 <div class="body">
+<div class="filter-bar" id="filterBar">
+  <div class="filter-bar-label">Filter by weakness:</div>
+  <div class="filter-chips">
+    <button class="filter-chip" data-filter="ar" onclick="toggleFilter(this)" title="AR% ≥ 25%: impressions served to Below Average ad relevance keywords">🔴 Fix Ad Relevance</button>
+    <button class="filter-chip" data-filter="lp" onclick="toggleFilter(this)" title="LP% ≥ 40%: impressions served to Below Average landing page keywords">🟠 Fix Landing Page</button>
+    <button class="filter-chip" data-filter="budget" onclick="toggleFilter(this)" title="Budget util > 100%: over-spending, budget capping IS">💰 Over Budget</button>
+    <button class="filter-chip" data-filter="loc" onclick="toggleFilter(this)" title="LOC% < 45%: location click rate is low — profile/reviews need work">📍 Fix LOC clicks</button>
+    <button class="filter-chip" data-filter="is" onclick="toggleFilter(this)" title="IS% < 60%: impression share below target — rank or budget limiting">📉 IS Low (&lt;60%)</button>
+  </div>
+  <button class="filter-clear" onclick="clearFilters()" style="display:none" id="clearBtn">✕ Clear filters</button>
+</div>
+<div class="select-bar" id="selectBar" style="display:none">
+  <div class="select-summary" id="selectSummary">0 selected</div>
+  <button class="select-action-btn" onclick="selectAll()">Select all visible</button>
+  <button class="select-action-btn" onclick="clearSelection()">Clear</button>
+</div>
+
 
 <!-- ══════════ BANGALORE ══════════ -->
 <div class="city-block">
   <div class="city-label">Bangalore</div>
 
   <!-- BLR SH -->
-  <div class="campaign-card">
+  <div class="campaign-card" data-ar="1" data-lp="0" data-budget="0" data-loc="0" data-is="1" data-camp="bangalore-sh" data-city="Bangalore" data-cat="SH">
     <div class="campaign-header">
       <div class="bid-stripe stripe-standard"></div>
       <div class="campaign-title-row">
+        <label class="camp-checkbox" title="Select for action"><input type="checkbox" id="sel-bangalore-sh" data-camp="bangalore-sh" onchange="selectionChanged()"></label>
+        
         <span class="camp-name">T1_Bangalore_SH_Exact_Local</span>
         <span class="cat-badge cat-sh">SH</span>
         <span class="bid-pill pill-standard">↔ STANDARD BID</span>
@@ -516,6 +590,9 @@ function switchTab(id,btn){
       <div class="metric"><div class="metric-label">AR%</div><div class="metric-val val-red">46%</div><div class="metric-note">🔴 critical</div></div>
       <div class="metric"><div class="metric-label">LP%</div><div class="metric-val val-normal">27%</div><div class="metric-note">ok</div></div>
       <div class="metric"><div class="metric-label">loc%</div><div class="metric-val val-orange">53%</div><div class="metric-note">below target</div></div>
+      
+      <div class="metric"><div class="metric-label">LOC/wk</div><div class="metric-val val-normal">596</div><div class="metric-note">avg loc clicks</div></div>
+      <div class="metric"><div class="metric-label">GMB L/wk</div><div class="metric-val val-normal">238</div><div class="metric-note">city GMB leads</div></div>
       <div class="metric"><div class="metric-label">Bid</div><div class="metric-val val-normal">₹20</div></div>
     </div>
     <div class="card-body">
@@ -561,10 +638,12 @@ function switchTab(id,btn){
   </div>
 
   <!-- BLR STI -->
-  <div class="campaign-card">
+  <div class="campaign-card" data-ar="1" data-lp="0" data-budget="0" data-loc="1" data-is="1" data-camp="bangalore-sti" data-city="Bangalore" data-cat="STI">
     <div class="campaign-header">
       <div class="bid-stripe stripe-increase"></div>
       <div class="campaign-title-row">
+        <label class="camp-checkbox" title="Select for action"><input type="checkbox" id="sel-bangalore-sti" data-camp="bangalore-sti" onchange="selectionChanged()"></label>
+        
         <span class="camp-name">T1_Bangalore_STI_Exact_Local</span>
         <span class="cat-badge cat-sti">STI</span>
         <span class="bid-pill pill-increase">↑ INCREASE BID (after budget fix)</span>
@@ -577,6 +656,9 @@ function switchTab(id,btn){
       <div class="metric"><div class="metric-label">AR%</div><div class="metric-val val-orange">29%</div><div class="metric-note">moderate</div></div>
       <div class="metric"><div class="metric-label">LP%</div><div class="metric-val val-orange">38%</div><div class="metric-note">moderate</div></div>
       <div class="metric"><div class="metric-label">loc%</div><div class="metric-val val-orange">45%</div><div class="metric-note">below target</div></div>
+      
+      <div class="metric"><div class="metric-label">LOC/wk</div><div class="metric-val val-normal">106</div><div class="metric-note">avg loc clicks</div></div>
+      <div class="metric"><div class="metric-label">GMB L/wk</div><div class="metric-val val-normal">238</div><div class="metric-note">city GMB leads</div></div>
       <div class="metric"><div class="metric-label">Bid</div><div class="metric-val val-normal">₹20</div></div>
     </div>
     <div class="card-body">
@@ -632,10 +714,12 @@ function switchTab(id,btn){
   <div class="city-label">Chennai</div>
 
   <!-- CHN SH -->
-  <div class="campaign-card">
+  <div class="campaign-card" data-ar="0" data-lp="1" data-budget="0" data-loc="0" data-is="1" data-camp="chennai-sh" data-city="Chennai" data-cat="SH">
     <div class="campaign-header">
       <div class="bid-stripe stripe-increase"></div>
       <div class="campaign-title-row">
+        <label class="camp-checkbox" title="Select for action"><input type="checkbox" id="sel-chennai-sh" data-camp="chennai-sh" onchange="selectionChanged()"></label>
+        
         <span class="camp-name">T1_Chennai_SH_Exact_Local</span>
         <span class="cat-badge cat-sh">SH</span>
         <span class="bid-pill pill-increase">↑ INCREASE BID (after LP fix)</span>
@@ -648,6 +732,9 @@ function switchTab(id,btn){
       <div class="metric"><div class="metric-label">AR%</div><div class="metric-val val-normal">21%</div><div class="metric-note">ok</div></div>
       <div class="metric"><div class="metric-label">LP%</div><div class="metric-val val-red">78%</div><div class="metric-note">🔴 highest T1</div></div>
       <div class="metric"><div class="metric-label">loc%</div><div class="metric-val val-orange">50%</div><div class="metric-note">below target</div></div>
+      
+      <div class="metric"><div class="metric-label">LOC/wk</div><div class="metric-val val-normal">261</div><div class="metric-note">avg loc clicks</div></div>
+      <div class="metric"><div class="metric-label">GMB L/wk</div><div class="metric-val val-normal">111</div><div class="metric-note">city GMB leads</div></div>
       <div class="metric"><div class="metric-label">Bid</div><div class="metric-val val-normal">₹20</div></div>
     </div>
     <div class="card-body">
@@ -697,10 +784,12 @@ function switchTab(id,btn){
   </div>
 
   <!-- CHN STI -->
-  <div class="campaign-card">
+  <div class="campaign-card" data-ar="0" data-lp="1" data-budget="0" data-loc="1" data-is="1" data-camp="chennai-sti" data-city="Chennai" data-cat="STI">
     <div class="campaign-header">
       <div class="bid-stripe stripe-fix"></div>
       <div class="campaign-title-row">
+        <label class="camp-checkbox" title="Select for action"><input type="checkbox" id="sel-chennai-sti" data-camp="chennai-sti" onchange="selectionChanged()"></label>
+        
         <span class="camp-name">T1_Chennai_STI_Exact_Local</span>
         <span class="cat-badge cat-sti">STI</span>
         <span class="bid-pill pill-fix">⚙ FIX BUDGET + LP FIRST</span>
@@ -713,6 +802,9 @@ function switchTab(id,btn){
       <div class="metric"><div class="metric-label">AR%</div><div class="metric-val val-normal">17%</div><div class="metric-note">good</div></div>
       <div class="metric"><div class="metric-label">LP%</div><div class="metric-val val-red">65%</div><div class="metric-note">🔴 fix needed</div></div>
       <div class="metric"><div class="metric-label">loc%</div><div class="metric-val val-orange">36%</div><div class="metric-note">🔴 low</div></div>
+      
+      <div class="metric"><div class="metric-label">LOC/wk</div><div class="metric-val val-normal">48</div><div class="metric-note">avg loc clicks</div></div>
+      <div class="metric"><div class="metric-label">GMB L/wk</div><div class="metric-val val-normal">111</div><div class="metric-note">city GMB leads</div></div>
       <div class="metric"><div class="metric-label">Bid</div><div class="metric-val val-normal">₹20</div></div>
     </div>
     <div class="card-body">
@@ -768,10 +860,12 @@ function switchTab(id,btn){
   <div class="city-label">Hyderabad</div>
 
   <!-- HYD SH -->
-  <div class="campaign-card">
+  <div class="campaign-card" data-ar="0" data-lp="1" data-budget="0" data-loc="0" data-is="1" data-camp="hyderabad-sh" data-city="Hyderabad" data-cat="SH">
     <div class="campaign-header">
       <div class="bid-stripe stripe-increase"></div>
       <div class="campaign-title-row">
+        <label class="camp-checkbox" title="Select for action"><input type="checkbox" id="sel-hyderabad-sh" data-camp="hyderabad-sh" onchange="selectionChanged()"></label>
+        
         <span class="camp-name">T1_Hyderabad_SH_Exact_Local</span>
         <span class="cat-badge cat-sh">SH</span>
         <span class="bid-pill pill-increase">↑ INCREASE BID (after LP fix)</span>
@@ -784,6 +878,9 @@ function switchTab(id,btn){
       <div class="metric"><div class="metric-label">AR%</div><div class="metric-val val-normal">20%</div><div class="metric-note">ok</div></div>
       <div class="metric"><div class="metric-label">LP%</div><div class="metric-val val-red">76%</div><div class="metric-note">🔴 critical</div></div>
       <div class="metric"><div class="metric-label">loc%</div><div class="metric-val val-orange">49%</div><div class="metric-note">below target</div></div>
+      
+      <div class="metric"><div class="metric-label">LOC/wk</div><div class="metric-val val-normal">418</div><div class="metric-note">avg loc clicks</div></div>
+      <div class="metric"><div class="metric-label">GMB L/wk</div><div class="metric-val val-normal">126</div><div class="metric-note">city GMB leads</div></div>
       <div class="metric"><div class="metric-label">Bid</div><div class="metric-val val-normal">₹20</div></div>
     </div>
     <div class="card-body">
@@ -834,10 +931,12 @@ function switchTab(id,btn){
   </div>
 
   <!-- HYD STI -->
-  <div class="campaign-card">
+  <div class="campaign-card" data-ar="0" data-lp="1" data-budget="0" data-loc="1" data-is="1" data-camp="hyderabad-sti" data-city="Hyderabad" data-cat="STI">
     <div class="campaign-header">
       <div class="bid-stripe stripe-fix"></div>
       <div class="campaign-title-row">
+        <label class="camp-checkbox" title="Select for action"><input type="checkbox" id="sel-hyderabad-sti" data-camp="hyderabad-sti" onchange="selectionChanged()"></label>
+        
         <span class="camp-name">T1_Hyderabad_STI_Exact_Local</span>
         <span class="cat-badge cat-sti">STI</span>
         <span class="bid-pill pill-fix">⚙ FIX BUDGET + LP FIRST</span>
@@ -850,6 +949,9 @@ function switchTab(id,btn){
       <div class="metric"><div class="metric-label">AR%</div><div class="metric-val val-normal">22%</div><div class="metric-note">ok</div></div>
       <div class="metric"><div class="metric-label">LP%</div><div class="metric-val val-red">75%</div><div class="metric-note">🔴 critical</div></div>
       <div class="metric"><div class="metric-label">loc%</div><div class="metric-val val-orange">37%</div><div class="metric-note">🔴 low</div></div>
+      
+      <div class="metric"><div class="metric-label">LOC/wk</div><div class="metric-val val-normal">63</div><div class="metric-note">avg loc clicks</div></div>
+      <div class="metric"><div class="metric-label">GMB L/wk</div><div class="metric-val val-normal">126</div><div class="metric-note">city GMB leads</div></div>
       <div class="metric"><div class="metric-label">Bid</div><div class="metric-val val-normal">₹20</div></div>
     </div>
     <div class="card-body">
@@ -905,10 +1007,12 @@ function switchTab(id,btn){
   <div class="city-label">Mumbai</div>
 
   <!-- MUM SH -->
-  <div class="campaign-card">
+  <div class="campaign-card" data-ar="0" data-lp="1" data-budget="0" data-loc="1" data-is="0" data-camp="mumbai-sh" data-city="Mumbai" data-cat="SH">
     <div class="campaign-header">
       <div class="bid-stripe stripe-standard"></div>
       <div class="campaign-title-row">
+        <label class="camp-checkbox" title="Select for action"><input type="checkbox" id="sel-mumbai-sh" data-camp="mumbai-sh" onchange="selectionChanged()"></label>
+        
         <span class="camp-name">T1_Mumbai_SH_Exact_Local</span>
         <span class="cat-badge cat-sh">SH</span>
         <span class="bid-pill pill-standard">↔ STANDARD BID</span>
@@ -921,6 +1025,9 @@ function switchTab(id,btn){
       <div class="metric"><div class="metric-label">AR%</div><div class="metric-val val-normal">18%</div><div class="metric-note">good</div></div>
       <div class="metric"><div class="metric-label">LP%</div><div class="metric-val val-orange">46%</div><div class="metric-note">moderate</div></div>
       <div class="metric"><div class="metric-label">loc%</div><div class="metric-val val-orange">41%</div><div class="metric-note">below target</div></div>
+      
+      <div class="metric"><div class="metric-label">LOC/wk</div><div class="metric-val val-normal">303</div><div class="metric-note">avg loc clicks</div></div>
+      <div class="metric"><div class="metric-label">GMB L/wk</div><div class="metric-val val-normal">126</div><div class="metric-note">city GMB leads</div></div>
       <div class="metric"><div class="metric-label">Bid</div><div class="metric-val val-normal">₹20</div></div>
     </div>
     <div class="card-body">
@@ -971,10 +1078,12 @@ function switchTab(id,btn){
   </div>
 
   <!-- MUM STI -->
-  <div class="campaign-card">
+  <div class="campaign-card" data-ar="0" data-lp="1" data-budget="0" data-loc="1" data-is="1" data-camp="mumbai-sti" data-city="Mumbai" data-cat="STI">
     <div class="campaign-header">
       <div class="bid-stripe stripe-increase"></div>
       <div class="campaign-title-row">
+        <label class="camp-checkbox" title="Select for action"><input type="checkbox" id="sel-mumbai-sti" data-camp="mumbai-sti" onchange="selectionChanged()"></label>
+        
         <span class="camp-name">T1_Mumbai_STI_Exact_Local</span>
         <span class="cat-badge cat-sti">STI</span>
         <span class="bid-pill pill-increase">↑ INCREASE BID — AFTER LP FIX FIRST</span>
@@ -987,6 +1096,9 @@ function switchTab(id,btn){
       <div class="metric"><div class="metric-label">AR%</div><div class="metric-val val-green">10%</div><div class="metric-note">✓ good</div></div>
       <div class="metric"><div class="metric-label">LP%</div><div class="metric-val val-red">60%</div><div class="metric-note">🔴 fix first</div></div>
       <div class="metric"><div class="metric-label">loc%</div><div class="metric-val val-orange">39%</div><div class="metric-note">below target</div></div>
+      
+      <div class="metric"><div class="metric-label">LOC/wk</div><div class="metric-val val-normal">40</div><div class="metric-note">avg loc clicks</div></div>
+      <div class="metric"><div class="metric-label">GMB L/wk</div><div class="metric-val val-normal">126</div><div class="metric-note">city GMB leads</div></div>
       <div class="metric"><div class="metric-label">Bid</div><div class="metric-val val-normal">₹20</div></div>
     </div>
     <div class="card-body">
@@ -1036,10 +1148,12 @@ function switchTab(id,btn){
   <div class="city-label">Pune</div>
 
   <!-- PUN SH -->
-  <div class="campaign-card">
+  <div class="campaign-card" data-ar="0" data-lp="1" data-budget="0" data-loc="0" data-is="0" data-camp="pune-sh" data-city="Pune" data-cat="SH">
     <div class="campaign-header">
       <div class="bid-stripe stripe-standard"></div>
       <div class="campaign-title-row">
+        <label class="camp-checkbox" title="Select for action"><input type="checkbox" id="sel-pune-sh" data-camp="pune-sh" onchange="selectionChanged()"></label>
+        
         <span class="camp-name">T1_Pune_SH_Exact_Local</span>
         <span class="cat-badge cat-sh">SH</span>
         <span class="bid-pill pill-standard">↔ STANDARD BID</span>
@@ -1052,6 +1166,9 @@ function switchTab(id,btn){
       <div class="metric"><div class="metric-label">AR%</div><div class="metric-val val-normal">17%</div><div class="metric-note">good</div></div>
       <div class="metric"><div class="metric-label">LP%</div><div class="metric-val val-orange">64%</div><div class="metric-note">moderate</div></div>
       <div class="metric"><div class="metric-label">loc%</div><div class="metric-val val-orange">50%</div><div class="metric-note">below target</div></div>
+      
+      <div class="metric"><div class="metric-label">LOC/wk</div><div class="metric-val val-normal">359</div><div class="metric-note">avg loc clicks</div></div>
+      <div class="metric"><div class="metric-label">GMB L/wk</div><div class="metric-val val-normal">112</div><div class="metric-note">city GMB leads</div></div>
       <div class="metric"><div class="metric-label">Bid</div><div class="metric-val val-normal">₹20</div></div>
     </div>
     <div class="card-body">
@@ -1102,10 +1219,12 @@ function switchTab(id,btn){
   </div>
 
   <!-- PUN STI -->
-  <div class="campaign-card">
+  <div class="campaign-card" data-ar="1" data-lp="1" data-budget="0" data-loc="0" data-is="1" data-camp="pune-sti" data-city="Pune" data-cat="STI">
     <div class="campaign-header">
       <div class="bid-stripe stripe-standard"></div>
       <div class="campaign-title-row">
+        <label class="camp-checkbox" title="Select for action"><input type="checkbox" id="sel-pune-sti" data-camp="pune-sti" onchange="selectionChanged()"></label>
+        
         <span class="camp-name">T1_Pune_STI_Exact_Local</span>
         <span class="cat-badge cat-sti">STI</span>
         <span class="bid-pill pill-standard">↔ STANDARD BID (fix AR + LP first)</span>
@@ -1118,6 +1237,9 @@ function switchTab(id,btn){
       <div class="metric"><div class="metric-label">AR%</div><div class="metric-val val-red">35%</div><div class="metric-note">🔴 fix needed</div></div>
       <div class="metric"><div class="metric-label">LP%</div><div class="metric-val val-orange">65%</div><div class="metric-note">moderate</div></div>
       <div class="metric"><div class="metric-label">loc%</div><div class="metric-val val-orange">47%</div><div class="metric-note">below target</div></div>
+      
+      <div class="metric"><div class="metric-label">LOC/wk</div><div class="metric-val val-normal">50</div><div class="metric-note">avg loc clicks</div></div>
+      <div class="metric"><div class="metric-label">GMB L/wk</div><div class="metric-val val-normal">112</div><div class="metric-note">city GMB leads</div></div>
       <div class="metric"><div class="metric-label">Bid</div><div class="metric-val val-normal">₹20</div></div>
     </div>
     <div class="card-body">
@@ -1166,10 +1288,12 @@ function switchTab(id,btn){
   <div class="city-label">Navi Mumbai</div>
 
   <!-- NMB SH -->
-  <div class="campaign-card">
+  <div class="campaign-card" data-ar="0" data-lp="0" data-budget="0" data-loc="0" data-is="0" data-camp="navi-mumbai-sh" data-city="Navi Mumbai" data-cat="SH">
     <div class="campaign-header">
       <div class="bid-stripe stripe-standard"></div>
       <div class="campaign-title-row">
+        <label class="camp-checkbox" title="Select for action"><input type="checkbox" id="sel-navi-mumbai-sh" data-camp="navi-mumbai-sh" onchange="selectionChanged()"></label>
+        
         <span class="camp-name">T1_NaviMumbai_SH_Exact_Local</span>
         <span class="cat-badge cat-sh">SH</span>
         <span class="bid-pill pill-standard">↔ STANDARD BID — organic dominates, no nearby rival</span>
@@ -1182,6 +1306,9 @@ function switchTab(id,btn){
       <div class="metric"><div class="metric-label">AR%</div><div class="metric-val val-green">10%</div><div class="metric-note">✓ best T1</div></div>
       <div class="metric"><div class="metric-label">LP%</div><div class="metric-val val-normal">31%</div><div class="metric-note">good</div></div>
       <div class="metric"><div class="metric-label">loc%</div><div class="metric-val val-orange">48%</div><div class="metric-note">below target</div></div>
+      
+      <div class="metric"><div class="metric-label">LOC/wk</div><div class="metric-val val-normal">88</div><div class="metric-note">avg loc clicks</div></div>
+      <div class="metric"><div class="metric-label">GMB L/wk</div><div class="metric-val val-normal">30</div><div class="metric-note">city GMB leads</div></div>
       <div class="metric"><div class="metric-label">Bid</div><div class="metric-val val-normal">₹20</div></div>
     </div>
     <div class="card-body">
@@ -1220,10 +1347,12 @@ function switchTab(id,btn){
   </div>
 
   <!-- NMB STI -->
-  <div class="campaign-card">
+  <div class="campaign-card" data-ar="1" data-lp="0" data-budget="0" data-loc="1" data-is="0" data-camp="navi-mumbai-sti" data-city="Navi Mumbai" data-cat="STI">
     <div class="campaign-header">
       <div class="bid-stripe stripe-standard"></div>
       <div class="campaign-title-row">
+        <label class="camp-checkbox" title="Select for action"><input type="checkbox" id="sel-navi-mumbai-sti" data-camp="navi-mumbai-sti" onchange="selectionChanged()"></label>
+        
         <span class="camp-name">T1_NaviMumbai_STI_Exact_Local</span>
         <span class="cat-badge cat-sti">STI</span>
         <span class="bid-pill pill-standard">✓ BID REDUCED ₹60→₹20 THIS WEEK — OBSERVE IS%</span>
@@ -1236,6 +1365,9 @@ function switchTab(id,btn){
       <div class="metric"><div class="metric-label">AR%</div><div class="metric-val val-orange">28%</div><div class="metric-note">moderate</div></div>
       <div class="metric"><div class="metric-label">LP%</div><div class="metric-val val-normal">38%</div><div class="metric-note">ok</div></div>
       <div class="metric"><div class="metric-label">loc%</div><div class="metric-val val-orange">36%</div><div class="metric-note">below target</div></div>
+      
+      <div class="metric"><div class="metric-label">LOC/wk</div><div class="metric-val val-normal">12</div><div class="metric-note">avg loc clicks</div></div>
+      <div class="metric"><div class="metric-label">GMB L/wk</div><div class="metric-val val-normal">30</div><div class="metric-note">city GMB leads</div></div>
       <div class="metric"><div class="metric-label">Bid</div><div class="metric-val val-normal">₹20</div></div>
     </div>
     <div class="card-body">
@@ -1289,4 +1421,73 @@ function switchTab(id,btn){
 <div class="footer">
   Data: 6-week avg Jun 8–Jul 14, 2026 · Sources: campaign compose cube · GMB rival data (76 clinics) · Auction insights (6 T1 cities) · Distances are straight-line (road distance ~30–40% longer)
 </div>
+
+<script>
+// ── Filter + Select logic ────────────────────────────────────────────────────
+const ACTIVE_FILTERS = new Set();
+const SELECTED = new Set();
+
+function toggleFilter(btn) {
+  const f = btn.dataset.filter;
+  if (ACTIVE_FILTERS.has(f)) { ACTIVE_FILTERS.delete(f); btn.classList.remove('active'); }
+  else { ACTIVE_FILTERS.add(f); btn.classList.add('active'); }
+  document.getElementById('clearBtn').style.display = ACTIVE_FILTERS.size ? '' : 'none';
+  applyFilters();
+}
+
+function clearFilters() {
+  ACTIVE_FILTERS.clear();
+  document.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active'));
+  document.getElementById('clearBtn').style.display = 'none';
+  applyFilters();
+}
+
+function applyFilters() {
+  const cards = document.querySelectorAll('.campaign-card');
+  cards.forEach(card => {
+    if (!ACTIVE_FILTERS.size) {
+      card.classList.remove('dimmed', 'highlighted');
+      return;
+    }
+    // A card matches if ALL active filters are flagged on it
+    const match = [...ACTIVE_FILTERS].every(f => card.dataset[f] === '1');
+    card.classList.toggle('highlighted', match);
+    card.classList.toggle('dimmed', !match);
+  });
+}
+
+function selectionChanged() {
+  SELECTED.clear();
+  document.querySelectorAll('.camp-checkbox input:checked').forEach(cb => SELECTED.add(cb.dataset.camp));
+  updateSelectBar();
+}
+
+function updateSelectBar() {
+  const bar = document.getElementById('selectBar');
+  const sum = document.getElementById('selectSummary');
+  if (!SELECTED.size) { bar.style.display = 'none'; return; }
+  bar.style.display = '';
+  // Build label list from selected camps
+  const labels = [...SELECTED].map(slug => {
+    const card = document.querySelector(`.campaign-card[data-camp="${slug}"]`);
+    if (!card) return slug;
+    return card.querySelector('.camp-name')?.textContent?.replace('T1_','').replace('_Exact_Local','') || slug;
+  });
+  sum.textContent = `${SELECTED.size} selected: ${labels.join(' · ')}`;
+}
+
+function selectAll() {
+  document.querySelectorAll('.campaign-card:not(.dimmed) .camp-checkbox input').forEach(cb => {
+    cb.checked = true;
+    SELECTED.add(cb.dataset.camp);
+  });
+  updateSelectBar();
+}
+
+function clearSelection() {
+  document.querySelectorAll('.camp-checkbox input').forEach(cb => { cb.checked = false; });
+  SELECTED.clear();
+  updateSelectBar();
+}
+</script>
 </div><!-- end tab-actionables --></body></html>
