@@ -173,6 +173,7 @@ for w in range(NWEEKS):
                   "days": [(ws+datetime.timedelta(days=i)).isoformat() for i in range(7)]})
 REC_S = (start - datetime.timedelta(days=35)).isoformat()  # recording lookback (catch older-lead calls)
 REC_END = (today + datetime.timedelta(days=1)).isoformat() # lead-connection lookAHEAD (catch late-week leads connected after the week)
+Ej = (end + datetime.timedelta(days=14)).isoformat()       # forward buffer: a lead that came in-window but booked its SC into the following week(s) — used for booked-flag, Booked-at, and the journey so all three agree
 
 # 6-way appointment-status map (verified: RESCHEDULED/COMPLETED/MISSED/CANCELLED; SCHEDULED/RECONSULTED future-proofed)
 ST_SQL = """CASE
@@ -196,7 +197,7 @@ FROM allo_consultations.appointments a
 JOIN allo_consultations.types t ON t.id=a.type_id AND t.name='Screening Call'
 JOIN allo_health.locations loc ON loc.id=a.location_id AND loc.deleted_at IS NULL AND loc.locality IS NOT NULL AND loc.locality!='' AND lower(loc.name) NOT LIKE '%online%'
 JOIN allo_persons.patient p ON p.id=a.patient_id
-WHERE a.deleted_at IS NULL AND (a.start_time + {IST})>='{S}' AND (a.start_time + {IST})<'{E}'
+WHERE a.deleted_at IS NULL AND (a.start_time + {IST})>='{S}' AND (a.start_time + {IST})<'{Ej}'
 """)
 # where the patient ACTUALLY BOOKED — i.e. their STANDING booking. A rescheduled/cancelled slot is abandoned
 # (moved or cancelled away), so it is NOT where they booked. Prefer standing (completed/scheduled/no-show — they
@@ -236,8 +237,7 @@ CONSULT_FINAL = { g(r,0): (ST_BUCKET.get(g(r,1),'other'), g(r,2)) for r in cf_ro
 print(f"consultation-final map: {len(CONSULT_FINAL)} episodes")
 
 # per-phone SC JOURNEY (every SC slot at ANY clinic) so a lead row can show what ultimately happened to that patient
-# without leaving the lead view. Small forward buffer past the window to catch a completion just after the week.
-Ej = (end + datetime.timedelta(days=7)).isoformat()
+# without leaving the lead view. Uses the same forward buffer (Ej) as the booked-flag so both agree.
 jrows = q(f"""
 SELECT RIGHT(pt.phone_no,10) ph, RIGHT(COALESCE(pt.alternate_phone_no,''),10) altph,
   TO_CHAR(a.start_time + {IST},'YYYY-MM-DD') d, TO_CHAR(a.start_time + {IST},'HH24:MI') tm,
@@ -322,14 +322,14 @@ for c in CLINICS:
           JOIN allo_consultations.types t ON t.id=a.type_id AND t.name='Screening Call'
           JOIN allo_health.locations loc ON loc.id=a.location_id AND loc.locality='{c['loc']}' AND loc.city='{c['city']}'
           JOIN allo_persons.patient p ON p.id=a.patient_id
-          WHERE a.deleted_at IS NULL AND (a.start_time + {IST})>='{S}' AND (a.start_time + {IST})<'{E}'
+          WHERE a.deleted_at IS NULL AND (a.start_time + {IST})>='{S}' AND (a.start_time + {IST})<'{Ej}'
           UNION ALL
           SELECT RIGHT(p.alternate_phone_no,10) ph, a.start_time st
           FROM allo_consultations.appointments a
           JOIN allo_consultations.types t ON t.id=a.type_id AND t.name='Screening Call'
           JOIN allo_health.locations loc ON loc.id=a.location_id AND loc.locality='{c['loc']}' AND loc.city='{c['city']}'
           JOIN allo_persons.patient p ON p.id=a.patient_id
-          WHERE a.deleted_at IS NULL AND (a.start_time + {IST})>='{S}' AND (a.start_time + {IST})<'{E}'
+          WHERE a.deleted_at IS NULL AND (a.start_time + {IST})>='{S}' AND (a.start_time + {IST})<'{Ej}'
             AND p.alternate_phone_no IS NOT NULL AND LENGTH(REGEXP_REPLACE(p.alternate_phone_no,'[^0-9]',''))>=10
         ) x WHERE ph IS NOT NULL AND ph!=''
       ) y WHERE rn=1),
