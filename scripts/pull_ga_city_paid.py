@@ -34,6 +34,17 @@ CITY_TOKENS = ["Navi_Mumbai","Bangalore","Chennai","Hyderabad","Mumbai","Thane",
 
 def _creds():
     keys = ["GOOGLE_ADS_CLIENT_ID","GOOGLE_ADS_CLIENT_SECRET","GOOGLE_ADS_DEVELOPER_TOKEN","GOOGLE_ADS_REFRESH_TOKEN"]
+    # Auto-load ~/.google_ads.env if any key is missing from env
+    env_file = os.path.expanduser("~/.google_ads.env")
+    if os.path.exists(env_file) and any(not os.environ.get(k) for k in keys):
+        with open(env_file) as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line: continue
+                line = line.removeprefix("export").strip()  # handle `export KEY=VAL`
+                k, _, v = line.partition("=")
+                k, v = k.strip(), v.strip().strip('"').strip("'")
+                if k in keys and not os.environ.get(k): os.environ[k] = v
     c = {k: os.environ.get(k, "") for k in keys}
     miss = [k for k, v in c.items() if not v]
     if miss: sys.exit("Missing credentials: " + ", ".join(miss))
