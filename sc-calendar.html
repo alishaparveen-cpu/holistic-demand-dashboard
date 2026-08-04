@@ -91,12 +91,12 @@ select{font:13px inherit;color:var(--ink);border:1px solid var(--line);border-ra
 
   <div class="controls">
     <span><label>Clinic</label><select id="clinS"></select></span>
+    <span><label>Doctor</label><select id="docS"></select></span>
     <span style="margin-left:auto" class="sub" id="wkflag"></span>
   </div>
 
   <div class="hd">① Screening calls — click a day to filter, or filter any column below</div>
   <div class="cal" id="cal"></div>
-  <div class="legend"><span><i style="background:var(--done)"></i>Completed</span><span><i style="background:var(--sched)"></i>Scheduled</span><span><i style="background:var(--noshow)"></i>No-show (missed)</span><span><i style="background:var(--rel)"></i>Rescheduled</span><span><i style="background:#9a5a3a"></i>Cancelled</span></div>
 
   <div class="detail" id="detail"></div>
 
@@ -108,7 +108,7 @@ select{font:13px inherit;color:var(--ink);border:1px solid var(--line);border-ra
   <div class="detail" id="avail"></div>
 </div>
 <script>
-let D=null, CK=null, FB={}, FL={};   // FB/FL = per-column filter state for bookings / leads tables
+let D=null, CK=null, DOC='all', FB={}, FL={};   // FB/FL = per-column filter state for bookings / leads tables; DOC = top-level doctor filter (bookings)
 const $=id=>document.getElementById(id);
 const DOW=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
 const AGES=['0','1','2','3','4','5','6','7','8+','no_lead'];
@@ -248,21 +248,21 @@ function render(){
   const c=D.clinics[CK], days=D._meta.days;
   $('wkflag').textContent='Week '+D._meta.week;
 
+  const dOf=bks=>DOC==='all'?bks:bks.filter(b=>b.doc===DOC);   // top-level doctor filter (bookings only)
+
   // ① booking day-cards (overview; click filters the table by day)
-  $('cal').innerHTML=days.map(iso=>{const bks=c.days[iso].bookings||[],L=dlabel(iso),tot=bks.length;
+  $('cal').innerHTML=days.map(iso=>{const bks=dOf(c.days[iso].bookings||[]),L=dlabel(iso),tot=bks.length;
     const st=countBy(bks,b=>b.st), done=st.done||0, seg=k=>tot?Math.round(100*(st[k]||0)/tot):0;
     const onl=bks.filter(b=>b.mode==='online').length, sameDay=bks.filter(b=>b.age===0).length;
     return `<div class="day${FB.day===iso?' sel':''}" data-d="${iso}">
       <div class="dn">${L.dow} ${L.dm}</div>
       <div class="dv" style="color:var(--done)">${tot}</div><div class="dl">booked</div>
       <div><span class="bchip">${done} <span>completed</span></span></div>
-      <div class="sbar">${STORDER.map(k=>`<i style="width:${seg(k)}%;background:${STCOL[k]}"></i>`).join('')}</div>
-      <div class="leadmini"><b>${sameDay}</b> same-day · <b>${tot-sameDay}</b> older${onl?` · <b>${onl}</b> online`:''}</div>
     </div>`;}).join('');
   $('cal').querySelectorAll('.day').forEach(el=>el.onclick=()=>{FB.day=(FB.day===el.dataset.d?'':el.dataset.d);render();});
 
-  // ① filterable bookings table (all days)
-  const allBk=days.flatMap(iso=>(c.days[iso].bookings||[]).map(b=>Object.assign({_day:iso},b)));
+  // ① filterable bookings table (all days, doctor-filtered)
+  const allBk=days.flatMap(iso=>dOf(c.days[iso].bookings||[]).map(b=>Object.assign({_day:iso},b)));
   filterTable($('detail'), allBk, BCOLS, FB);
 
   // ② leads day-cards (overview; click filters the leads table by day)
@@ -300,7 +300,11 @@ fetch('data_sc_calendar.json?v='+Date.now(),{cache:'no-store'}).then(r=>r.json()
   $('clinS').innerHTML=cs.map(k=>`<option value="${k}">${d.clinics[k].disp}</option>`).join('');
   CK=cs[0]; $('clinS').value=CK;
   const d1=d._meta.days[0]; FB={day:d1}; FL={day:d1};
-  $('clinS').onchange=e=>{CK=e.target.value;FB={day:d._meta.days[0]};FL={day:d._meta.days[0]};render();};
+  const loadDocs=()=>{const docs=(D.clinics[CK].doctors||[]);DOC='all';
+    $('docS').innerHTML=`<option value="all">All doctors</option>`+docs.map(x=>`<option value="${x}">${x.replace(/^Dr\.?\s*/,'')}</option>`).join('');};
+  loadDocs();
+  $('clinS').onchange=e=>{CK=e.target.value;FB={day:d._meta.days[0]};FL={day:d._meta.days[0]};loadDocs();render();};
+  $('docS').onchange=e=>{DOC=e.target.value;FB={day:FB.day||''};render();};
   render();
 }).catch(e=>{$('detail').innerHTML='Failed to load data_sc_calendar.json — run scripts/build_sc_calendar.py';});
 </script>
