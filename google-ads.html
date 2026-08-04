@@ -465,32 +465,33 @@ function render(){
       +tbl('CTR', pf, d=>d.im.map((x,i)=>x?100*d.cl[i]/x:null), d=>{const ti=sum(d.im,NAa),tc=sum(d.cl,NAa);return ti?100*tc/ti:null;})
       +tbl('CPC · avg (cost ÷ clicks) — asset-level, approx', rf, d=>d.cl.map((x,i)=>x?d.co[i]/x:null), d=>{const tc=sum(d.cl,NAa),tco=sum(d.co,NAa);return tc?tco/tc:null;});
 
-    // ── Leads + Bookings section ─────────────────────────────────────────────
+    // ── Google Ads + GMB funnel ──────────────────────────────────────────────
     if(!CLEADS) return reachBlock;
     const ldata = clins.map(k=>{
       const v = CLEADS[k]; if(!v) return null;
-      const tot  = DWKS.map(w=>{const wi=reachIdx(w);return wi<0?0:(v.tot[wi]||0);});
-      const gads = DWKS.map(w=>{const wi=reachIdx(w);return wi<0?0:(v.gads[wi]||0);});
-      const gmb  = DWKS.map(w=>{const wi=reachIdx(w);return wi<0?0:(v.gmb[wi]||0);});
-      const bk   = DWKS.map(w=>{const wi=reachIdx(w);return wi<0?0:(v.bk[wi]||0);});
-      return {loc: v.loc||k, tot, gads, gmb, bk};
-    }).filter(Boolean).filter(d=>d.tot.some(x=>x)||d.bk.some(x=>x));
-    ldata.sort((a,b)=>(b.tot[0]||0)-(a.tot[0]||0));
+      const gads    = DWKS.map(w=>{const wi=reachIdx(w);return wi<0?0:(v.gads[wi]||0);});
+      const bk_gads = DWKS.map(w=>{const wi=reachIdx(w);return wi<0?0:(v.bk_gads[wi]||0);});
+      const gmb     = DWKS.map(w=>{const wi=reachIdx(w);return wi<0?0:(v.gmb[wi]||0);});
+      const bk_gmb  = DWKS.map(w=>{const wi=reachIdx(w);return wi<0?0:(v.bk_gmb[wi]||0);});
+      return {loc: v.loc||k, gads, bk_gads, gmb, bk_gmb};
+    }).filter(Boolean).filter(d=>d.gads.some(x=>x)||d.gmb.some(x=>x));
+    ldata.sort((a,b)=>(b.gmb[0]||0)-(a.gmb[0]||0));   // sort by GMB leads (highest organic signal first)
 
-    const ltbl=(title,fmt,vf,af,note='')=>`<h3 style="margin:16px 0 3px;font-size:14px">${title}${note?`<span class="sub" style="font-weight:normal;margin-left:8px">${note}</span>`:''}</h3><div style="overflow-x:auto"><table><thead><tr>${th}</tr></thead><tbody>`+
+    const ltbl=(title,fmt,vf,af)=>`<h3 style="margin:16px 0 3px;font-size:14px">${title}</h3><div style="overflow-x:auto"><table><thead><tr>${th}</tr></thead><tbody>`+
       ldata.map(d=>{const vals=vf(d);return `<tr><td>${d.loc}</td>${vals.map((v,i)=>`<td class="${oc(i)}">${fmt(v)}</td>`).join('')}<td class="avgc">${fmt(af(d))}</td></tr>`;}).join('')+`</tbody></table></div>`;
-
     const lmean=a=>sum(a,NAa)/NAa;
-    const leadsBlock = `<h2 style="margin-top:36px">📊 Clinic leads &amp; bookings — clinic-wise · weekly (${CITY})</h2>`
-      +`<p class="sub" style="margin:2px 0 4px">All-channel leads and bookings per clinic from the leads cube (all categories). Gads = Google Ads attributed; GMB = Google Maps listing calls/visits. Bookings = leads that converted to an appointment (offline or online). Use to track if campaign/bid changes flow through to actual funnel impact.</p>`
-      +ltbl('Total leads (all channels)', nf, d=>d.tot, d=>lmean(d.tot))
-      +ltbl('Google Ads leads', nf, d=>d.gads, d=>lmean(d.gads), '— directly attributed to paid campaigns')
-      +ltbl('GMB leads', nf, d=>d.gmb, d=>lmean(d.gmb), '— Google Maps profile calls + website clicks')
-      +ltbl('Bookings (all-channel leads → appointment)', nf, d=>d.bk, d=>lmean(d.bk))
-      +ltbl('Booking rate (bookings ÷ total leads)', pf,
-          d=>d.tot.map((x,i)=>x?100*d.bk[i]/x:null),
-          d=>{const tt=sum(d.tot,NAa),tb=sum(d.bk,NAa);return tt?100*tb/tt:null;},
-          '— L→B conversion; compare before/after bid or LP changes');
+    const lrate=(num,den)=>{const tn=sum(num,NAa),td=sum(den,NAa);return td?100*tn/td:null;};
+
+    const leadsBlock = `<h2 style="margin-top:36px">📊 Google Ads + GMB funnel — clinic-wise · weekly (${CITY})</h2>`
+      +`<p class="sub" style="margin:2px 0 4px">Tracks whether campaign and bid changes flow through to clinic-level lead and booking impact. Google Ads = paid search attribution; GMB = Google Maps profile calls/visits. Bookings = lead converted to an appointment (offline or online). All categories combined.</p>`
+      +`<h3 style="margin:20px 0 4px;font-size:13px;letter-spacing:.5px;text-transform:uppercase;color:var(--muted,#6B7280)">Google Ads</h3>`
+      +ltbl('Leads', nf, d=>d.gads, d=>lmean(d.gads))
+      +ltbl('Bookings', nf, d=>d.bk_gads, d=>lmean(d.bk_gads))
+      +ltbl('L→B%', pf, d=>d.gads.map((x,i)=>x?100*d.bk_gads[i]/x:null), d=>lrate(d.bk_gads,d.gads))
+      +`<h3 style="margin:24px 0 4px;font-size:13px;letter-spacing:.5px;text-transform:uppercase;color:var(--muted,#6B7280)">GMB (Google Maps)</h3>`
+      +ltbl('Leads', nf, d=>d.gmb, d=>lmean(d.gmb))
+      +ltbl('Bookings', nf, d=>d.bk_gmb, d=>lmean(d.bk_gmb))
+      +ltbl('L→B%', pf, d=>d.gmb.map((x,i)=>x?100*d.bk_gmb[i]/x:null), d=>lrate(d.bk_gmb,d.gmb));
 
     return reachBlock + leadsBlock;
   }

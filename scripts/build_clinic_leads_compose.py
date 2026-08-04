@@ -7,13 +7,13 @@ Sources:
 
 Output data_clinic_leads.json keyed by locality_city (same as data_clinic_reach.json):
   {
-    "_meta": { "weeks": [...], "channels": [...] },
+    "_meta": { "weeks": [...] },
     "indiranagar_bangalore": {
       "city": "Bangalore", "loc": "Indiranagar",
-      "tot":  [week0..weekN],   # total leads (all channels)
-      "gads": [week0..weekN],   # Google Ads leads
-      "gmb":  [week0..weekN],   # GMB leads
-      "bk":   [week0..weekN]    # bookings (bkseg != 'none')
+      "gads":    [week0..weekN],   # Google Ads leads
+      "bk_gads": [week0..weekN],   # bookings from Google Ads leads (bkseg != 'none')
+      "gmb":     [week0..weekN],   # GMB leads (Google Maps profile)
+      "bk_gmb":  [week0..weekN],   # bookings from GMB leads
     }, ...
   }
 """
@@ -46,9 +46,9 @@ def main():
 
     out = {"_meta": {
         "weeks": weeks,
-        "note": "Per-clinic leads and bookings from data_leads.json. Weeks match data_clinic_reach.json. "
-                "tot=all channels, gads=Google Ads, gmb=GMB/Google Maps, bk=total bookings (offline+online).",
-        "channels": {"tot": "All channels", "gads": "Google Ads only", "gmb": "GMB (Google Maps)"},
+        "note": "Per-clinic Google Ads and GMB leads + bookings from data_leads.json. "
+                "gads/bk_gads = Google Ads funnel; gmb/bk_gmb = GMB (Maps) funnel. "
+                "bkseg != 'none' = lead converted to an appointment (offline or online).",
         "generated_at": __import__('datetime').datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ')
     }}
 
@@ -72,26 +72,30 @@ def main():
             continue
 
         cells = leads_raw[leads_key].get('cells', [])
-        tot  = [0]*N
-        gads = [0]*N
-        gmb  = [0]*N
-        bk   = [0]*N
+        gads    = [0]*N
+        bk_gads = [0]*N
+        gmb     = [0]*N
+        bk_gmb  = [0]*N
         for cell in cells:
             ch    = cell.get('ch', '')
             bkseg = cell.get('bkseg', 'none')
             w_arr = cell.get('w', [])
+            booked = bkseg != 'none'
+            is_gads = ch == 'Google Ads'
+            is_gmb  = ch in ('GMB', 'Google Maps (GMB)')
             for i in range(min(N, len(w_arr))):
                 cnt = w_arr[i]
                 if not cnt: continue
-                tot[i] += cnt
-                if ch == 'Google Ads':
+                if is_gads:
                     gads[i] += cnt
-                if ch in ('GMB', 'Google Maps (GMB)'):
+                    if booked: bk_gads[i] += cnt
+                if is_gmb:
                     gmb[i] += cnt
-                if bkseg != 'none':
-                    bk[i] += cnt
+                    if booked: bk_gmb[i] += cnt
 
-        out[rk] = {"city": city, "loc": loc, "tot": tot, "gads": gads, "gmb": gmb, "bk": bk}
+        out[rk] = {"city": city, "loc": loc,
+                   "gads": gads, "bk_gads": bk_gads,
+                   "gmb": gmb,  "bk_gmb": bk_gmb}
         matched += 1
 
     json.dump(out, open(out_path, 'w'), separators=(',', ':'))
