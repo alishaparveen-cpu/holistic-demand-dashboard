@@ -326,5 +326,17 @@ for c in CLINICS:
     ld=sum(len(days[d]["leads"]) for d in DAYS)
     print(f"{c['key']:<11} {out['_meta']['week']}: {tot} SC bookings ({done} done, {sd} same-day-lead) · {ld} leads · docs={sorted(docs)}")
 
+# merge classified "why not booked" reasons (data_nbreason.json, keyed by phone-last10) onto not-booked leads
+nbf = os.path.join(ROOT,"data_nbreason.json")
+if os.path.exists(nbf):
+    nb = json.load(open(nbf)).get("leads",{}); nmatch=0
+    for c in out["clinics"].values():
+        for day in c["days"].values():
+            for l in day["leads"]:
+                if not l.get("booked"):
+                    r = nb.get((l.get("p") or "")[-10:])
+                    if r: l["nbreason"]=r.get("label",""); l["nbnote"]=r.get("note",""); nmatch+=1
+    print(f"merged {nmatch} not-booked reasons from data_nbreason.json")
+
 json.dump(out, open(os.path.join(ROOT,"data_sc_calendar.json"),"w"), separators=(",",":"))
 print("wrote data_sc_calendar.json")
