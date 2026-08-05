@@ -80,6 +80,14 @@ select{font:13px inherit;color:var(--ink);border:1px solid var(--line);border-ra
 .ftclear:hover{background:var(--bg)}
 .btbl thead th{position:sticky;top:0;background:var(--card);z-index:1}
 td.rownum,th.rownum{color:var(--faint);font-size:11px;text-align:right;white-space:nowrap;width:1%;padding-right:8px}
+.msel{position:relative;display:inline-block}
+.mbtn{font:inherit;font-size:12px;padding:3px 8px;border:1px solid var(--line);border-radius:6px;background:var(--card);color:var(--ink2);cursor:pointer;white-space:nowrap;max-width:140px;overflow:hidden;text-overflow:ellipsis}
+.mbtn:hover{border-color:var(--accent)}
+.mpop{position:absolute;top:100%;left:0;z-index:30;margin-top:2px;background:var(--card);border:1px solid var(--line);border-radius:8px;box-shadow:0 6px 22px rgba(0,0,0,.16);max-height:260px;overflow:auto;min-width:170px;padding:4px;display:none}
+.mpop.open{display:block}
+.mopt{display:flex;align-items:center;gap:6px;padding:4px 8px;font-size:12px;white-space:nowrap;cursor:pointer;border-radius:5px}
+.mopt:hover{background:var(--bg)}
+.mopt .mcnt{color:var(--faint);font-size:11px;margin-left:auto}
 #summpop{display:none;position:fixed;z-index:50;max-width:320px;background:#1f2733;color:#f3f5f8;font-size:12px;line-height:1.5;padding:10px 12px;border-radius:9px;box-shadow:0 6px 24px rgba(0,0,0,.28)}
 .summt{display:inline-block;max-width:240px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;vertical-align:bottom;color:var(--ink2)}
 .summt.exp{white-space:normal;max-width:380px}
@@ -173,6 +181,7 @@ function showSumm(e,el){e.stopPropagation();const p=$('summpop');p.textContent=e
   const x=Math.min(e.clientX,window.innerWidth-330), y=e.clientY+14;
   p.style.left=x+'px';p.style.top=y+'px';}
 document.addEventListener('click',e=>{if(!e.target.classList||!e.target.classList.contains('ntico')){const p=$('summpop');if(p)p.style.display='none';}});
+document.addEventListener('click',e=>{if(!e.target.closest('.msel'))document.querySelectorAll('.mpop.open').forEach(p=>p.classList.remove('open'));});   // close multi-select popups on outside click
 function bookedCell(l){
   if(!l.booked) return '<span class="no">✗ not booked</span>';
   const tm=l.bktime?` <span style="color:var(--muted)">${fmtTime(l.bktime)}</span>`:'';
@@ -251,9 +260,12 @@ function filterTable(el, rows, cols, fstate){
   const opts={}, optCnt={}; cols.forEach(c=>{if(c.filt==='sel'){opts[c.k]=[...new Set(c.multi?rows.flatMap(r=>c.val(r)||[]):rows.map(r=>c.val(r)))].filter(x=>x!==''&&x!=null).sort();const m={};rows.forEach(r=>{(c.multi?(c.val(r)||[]):[c.val(r)]).forEach(x=>{if(x!==''&&x!=null)m[x]=(m[x]||0)+1;});});optCnt[c.k]=m;}});
   const dispOpt=(c,o)=>c.selDisp?(typeof c.selDisp==='function'?c.selDisp(o):(c.selDisp[o]||o)):o;
   const head='<th class="rownum">#</th>'+cols.map(c=>`<th>${c.label}</th>`).join('');
+  const selLbl=k=>{const s=fstate[k];return (s instanceof Set&&s.size)?(s.size+' sel'):'All';};
   const frow='<th></th>'+cols.map(c=>{
     if(c.filt==='txt') return `<th><input data-fk="${c.k}" class="fin" placeholder="search" value="${esc(fstate[c.k]||'')}"></th>`;
-    if(c.filt==='sel') return `<th><select data-fk="${c.k}" class="fsel"><option value="">All</option>${opts[c.k].map(o=>`<option value="${esc(o)}"${fstate[c.k]===o?' selected':''}>${esc(dispOpt(c,o))} (${optCnt[c.k][o]||0})</option>`).join('')}</select></th>`;
+    if(c.filt==='sel'&&c.k==='day') return `<th><select data-fk="${c.k}" class="fsel"><option value="">All</option>${opts[c.k].map(o=>`<option value="${esc(o)}"${fstate[c.k]===o?' selected':''}>${esc(dispOpt(c,o))} (${optCnt[c.k][o]||0})</option>`).join('')}</select></th>`;
+    if(c.filt==='sel'){const s=fstate[c.k]instanceof Set?fstate[c.k]:new Set();   // multi-select: pick several values (OR)
+      return `<th><div class="msel"><button type="button" class="mbtn" data-fk="${c.k}">${selLbl(c.k)} ▾</button><div class="mpop">${opts[c.k].map(o=>`<label class="mopt"><input type="checkbox" data-fk="${c.k}" value="${esc(o)}"${s.has(o)?' checked':''}> <span>${esc(dispOpt(c,o))}</span><span class="mcnt">${optCnt[c.k][o]||0}</span></label>`).join('')}</div></div></th>`;}
     return '<th></th>';
   }).join('');
   const pidCol=cols.find(c=>c.k==='pid');
@@ -262,8 +274,11 @@ function filterTable(el, rows, cols, fstate){
   const tb=el.querySelector('tbody'), cnt=el.querySelector('.ftcount'), more=el.querySelector('.ftmore');
   const PAGE=5; let limit=PAGE;
   function apply(){
-    const base=rows.filter(r=>cols.every(c=>{if(!c.filt)return true;const fv=fstate[c.k];if(!fv)return true;const rv=c.val(r);
-      return c.filt==='txt'?String(rv||'').toLowerCase().includes(fv.toLowerCase()):(c.multi?(rv||[]).includes(fv):rv===fv);}));
+    const base=rows.filter(r=>cols.every(c=>{if(!c.filt)return true;const fv=fstate[c.k];
+      if(c.filt==='txt'){if(!fv)return true;return String(c.val(r)||'').toLowerCase().includes(fv.toLowerCase());}
+      if(fv==null||fv==='')return true;const rv=c.val(r);
+      if(fv instanceof Set){if(!fv.size)return true;return c.multi?(rv||[]).some(x=>fv.has(x)):fv.has(rv);}   // multi-select (OR)
+      return c.multi?(rv||[]).includes(fv):rv===fv;}));   // single value (day filter, from cards)
     const uniqN=pidCol?new Set(base.map(r=>pidCol.val(r)).filter(Boolean)).size:null;
     let fr=base;
     if(fstate._uniq&&pidCol){const seen=new Set();fr=base.filter(r=>{const k=pidCol.val(r);if(!k)return true;if(seen.has(k))return false;seen.add(k);return true;});}
@@ -276,8 +291,10 @@ function filterTable(el, rows, cols, fstate){
   const reset=()=>{limit=PAGE;};
   el.querySelectorAll('.fsel').forEach(s=>s.addEventListener('change',()=>{fstate[s.dataset.fk]=s.value;reset();apply();}));
   el.querySelectorAll('.fin').forEach(i=>i.addEventListener('input',()=>{fstate[i.dataset.fk]=i.value;reset();apply();}));
+  el.querySelectorAll('.mbtn').forEach(b=>b.addEventListener('click',e=>{e.stopPropagation();const pop=b.nextElementSibling,wasOpen=pop.classList.contains('open');el.querySelectorAll('.mpop.open').forEach(p=>p.classList.remove('open'));if(!wasOpen)pop.classList.add('open');}));
+  el.querySelectorAll('.mpop input[type=checkbox]').forEach(cb=>cb.addEventListener('change',()=>{const k=cb.dataset.fk;let s=fstate[k]instanceof Set?fstate[k]:new Set();cb.checked?s.add(cb.value):s.delete(cb.value);fstate[k]=s;reset();const btn=el.querySelector('.mbtn[data-fk="'+k+'"]');if(btn)btn.textContent=(s.size?s.size+' sel':'All')+' ▾';apply();}));
   const ub=el.querySelector('.uniq'); if(ub) ub.addEventListener('change',e=>{fstate._uniq=e.target.checked;reset();apply();});
-  el.querySelector('.ftclear').addEventListener('click',()=>{cols.forEach(c=>delete fstate[c.k]);fstate._uniq=false;reset();el.querySelectorAll('.fsel').forEach(s=>s.value='');el.querySelectorAll('.fin').forEach(i=>i.value='');const u=el.querySelector('.uniq');if(u)u.checked=false;apply();});
+  el.querySelector('.ftclear').addEventListener('click',()=>{cols.forEach(c=>delete fstate[c.k]);fstate._uniq=false;reset();el.querySelectorAll('.fsel').forEach(s=>s.value='');el.querySelectorAll('.fin').forEach(i=>i.value='');el.querySelectorAll('.mpop input[type=checkbox]').forEach(cb=>cb.checked=false);el.querySelectorAll('.mbtn').forEach(b=>b.textContent='All ▾');const u=el.querySelector('.uniq');if(u)u.checked=false;apply();});
   apply();
 }
 
