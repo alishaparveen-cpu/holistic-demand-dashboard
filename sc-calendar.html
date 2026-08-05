@@ -79,6 +79,7 @@ select{font:13px inherit;color:var(--ink);border:1px solid var(--line);border-ra
 .ftmorebtn:hover{background:var(--bg)}
 .ftclear:hover{background:var(--bg)}
 .btbl thead th{position:sticky;top:0;background:var(--card);z-index:1}
+td.rownum,th.rownum{color:var(--faint);font-size:11px;text-align:right;white-space:nowrap;width:1%;padding-right:8px}
 #summpop{display:none;position:fixed;z-index:50;max-width:320px;background:#1f2733;color:#f3f5f8;font-size:12px;line-height:1.5;padding:10px 12px;border-radius:9px;box-shadow:0 6px 24px rgba(0,0,0,.28)}
 .summt{display:inline-block;max-width:240px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;vertical-align:bottom;color:var(--ink2)}
 .summt.exp{white-space:normal;max-width:380px}
@@ -247,12 +248,12 @@ const LCOLS=[
 
 // generic filterable table: builds header + per-column filter row once; filter changes only re-render the body (keeps input focus)
 function filterTable(el, rows, cols, fstate){
-  const opts={}; cols.forEach(c=>{if(c.filt==='sel')opts[c.k]=[...new Set(c.multi?rows.flatMap(r=>c.val(r)||[]):rows.map(r=>c.val(r)))].filter(x=>x!==''&&x!=null).sort();});
+  const opts={}, optCnt={}; cols.forEach(c=>{if(c.filt==='sel'){opts[c.k]=[...new Set(c.multi?rows.flatMap(r=>c.val(r)||[]):rows.map(r=>c.val(r)))].filter(x=>x!==''&&x!=null).sort();const m={};rows.forEach(r=>{(c.multi?(c.val(r)||[]):[c.val(r)]).forEach(x=>{if(x!==''&&x!=null)m[x]=(m[x]||0)+1;});});optCnt[c.k]=m;}});
   const dispOpt=(c,o)=>c.selDisp?(typeof c.selDisp==='function'?c.selDisp(o):(c.selDisp[o]||o)):o;
-  const head=cols.map(c=>`<th>${c.label}</th>`).join('');
-  const frow=cols.map(c=>{
+  const head='<th class="rownum">#</th>'+cols.map(c=>`<th>${c.label}</th>`).join('');
+  const frow='<th></th>'+cols.map(c=>{
     if(c.filt==='txt') return `<th><input data-fk="${c.k}" class="fin" placeholder="search" value="${esc(fstate[c.k]||'')}"></th>`;
-    if(c.filt==='sel') return `<th><select data-fk="${c.k}" class="fsel"><option value="">All</option>${opts[c.k].map(o=>`<option value="${esc(o)}"${fstate[c.k]===o?' selected':''}>${esc(dispOpt(c,o))}</option>`).join('')}</select></th>`;
+    if(c.filt==='sel') return `<th><select data-fk="${c.k}" class="fsel"><option value="">All</option>${opts[c.k].map(o=>`<option value="${esc(o)}"${fstate[c.k]===o?' selected':''}>${esc(dispOpt(c,o))} (${optCnt[c.k][o]||0})</option>`).join('')}</select></th>`;
     return '<th></th>';
   }).join('');
   const pidCol=cols.find(c=>c.k==='pid');
@@ -267,7 +268,7 @@ function filterTable(el, rows, cols, fstate){
     let fr=base;
     if(fstate._uniq&&pidCol){const seen=new Set();fr=base.filter(r=>{const k=pidCol.val(r);if(!k)return true;if(seen.has(k))return false;seen.add(k);return true;});}
     const shown=limit>=fr.length?fr:fr.slice(0,limit);
-    tb.innerHTML=fr.length?shown.map(r=>`<tr>${cols.map(c=>`<td>${c.cell(r)}</td>`).join('')}</tr>`).join(''):`<tr><td colspan="${cols.length}" style="color:var(--faint);padding:14px">No rows match these filters.</td></tr>`;
+    tb.innerHTML=fr.length?shown.map((r,i)=>`<tr><td class="rownum">${i+1}</td>${cols.map(c=>`<td>${c.cell(r)}</td>`).join('')}</tr>`).join(''):`<tr><td colspan="${cols.length+1}" style="color:var(--faint);padding:14px">No rows match these filters.</td></tr>`;
     cnt.textContent=fstate._uniq&&pidCol?`${fr.length} patients (from ${base.length} rows)`:`${base.length} of ${rows.length} shown${pidCol?` · ${uniqN} patients`:''}`;
     more.innerHTML = fr.length>PAGE ? (limit<fr.length ? `<button class="ftmorebtn">Show all ${fr.length} ▾</button>` : `<button class="ftmorebtn">Show less ▴</button>`) : '';
     const mb=more.querySelector('.ftmorebtn'); if(mb) mb.onclick=()=>{limit=limit<fr.length?fr.length:PAGE;apply();};
