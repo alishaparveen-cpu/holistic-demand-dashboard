@@ -83,6 +83,7 @@ td.rownum,th.rownum{color:var(--faint);font-size:11px;text-align:right;white-spa
 .msel{position:relative;display:inline-block}
 .mbtn{font:inherit;font-size:12px;padding:3px 8px;border:1px solid var(--line);border-radius:6px;background:var(--card);color:var(--ink2);cursor:pointer;white-space:nowrap;max-width:140px;overflow:hidden;text-overflow:ellipsis}
 .mbtn:hover{border-color:var(--accent)}
+.mbtn.active{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 12%,var(--card));color:var(--accent);font-weight:700}
 .mpop{position:fixed;z-index:60;background:var(--card);border:1px solid var(--line);border-radius:8px;box-shadow:0 6px 22px rgba(0,0,0,.18);max-height:min(340px,60vh);overflow-y:auto;min-width:180px;padding:4px;display:none}
 .mpop.open{display:block}
 .mopt{display:flex;align-items:center;gap:6px;padding:4px 8px;font-size:12px;white-space:nowrap;cursor:pointer;border-radius:5px}
@@ -265,7 +266,7 @@ function filterTable(el, rows, cols, fstate){
     if(c.filt==='txt') return `<th><input data-fk="${c.k}" class="fin" placeholder="search" value="${esc(fstate[c.k]||'')}"></th>`;
     if(c.filt==='sel'&&c.k==='day') return `<th><select data-fk="${c.k}" class="fsel"><option value="">All</option>${opts[c.k].map(o=>`<option value="${esc(o)}"${fstate[c.k]===o?' selected':''}>${esc(dispOpt(c,o))} (${optCnt[c.k][o]||0})</option>`).join('')}</select></th>`;
     if(c.filt==='sel'){const s=fstate[c.k]instanceof Set?fstate[c.k]:new Set();   // multi-select: pick several values (OR)
-      return `<th><div class="msel"><button type="button" class="mbtn" data-fk="${c.k}">${selLbl(c.k)} ▾</button><div class="mpop">${opts[c.k].map(o=>`<label class="mopt"><input type="checkbox" data-fk="${c.k}" value="${esc(o)}"${s.has(o)?' checked':''}> <span>${esc(dispOpt(c,o))}</span><span class="mcnt">${optCnt[c.k][o]||0}</span></label>`).join('')}</div></div></th>`;}
+      return `<th><div class="msel"><button type="button" class="mbtn${s.size?' active':''}" data-fk="${c.k}">${selLbl(c.k)} ▾</button><div class="mpop">${opts[c.k].map(o=>`<label class="mopt"><input type="checkbox" data-fk="${c.k}" value="${esc(o)}"${s.has(o)?' checked':''}> <span>${esc(dispOpt(c,o))}</span><span class="mcnt">${optCnt[c.k][o]||0}</span></label>`).join('')}</div></div></th>`;}
     return '<th></th>';
   }).join('');
   const pidCol=cols.find(c=>c.k==='pid');
@@ -292,9 +293,9 @@ function filterTable(el, rows, cols, fstate){
   el.querySelectorAll('.fsel').forEach(s=>s.addEventListener('change',()=>{fstate[s.dataset.fk]=s.value;reset();apply();}));
   el.querySelectorAll('.fin').forEach(i=>i.addEventListener('input',()=>{fstate[i.dataset.fk]=i.value;reset();apply();}));
   el.querySelectorAll('.mbtn').forEach(b=>b.addEventListener('click',e=>{e.stopPropagation();const pop=b.nextElementSibling,wasOpen=pop.classList.contains('open');document.querySelectorAll('.mpop.open').forEach(p=>p.classList.remove('open'));if(!wasOpen){const r=b.getBoundingClientRect();pop.style.left=Math.min(r.left,window.innerWidth-200)+'px';pop.style.top=(r.bottom+2)+'px';pop.classList.add('open');}}));
-  el.querySelectorAll('.mpop input[type=checkbox]').forEach(cb=>cb.addEventListener('change',()=>{const k=cb.dataset.fk;let s=fstate[k]instanceof Set?fstate[k]:new Set();cb.checked?s.add(cb.value):s.delete(cb.value);fstate[k]=s;reset();const btn=el.querySelector('.mbtn[data-fk="'+k+'"]');if(btn)btn.textContent=(s.size?s.size+' sel':'All')+' ▾';apply();}));
+  el.querySelectorAll('.mpop input[type=checkbox]').forEach(cb=>cb.addEventListener('change',()=>{const k=cb.dataset.fk;let s=fstate[k]instanceof Set?fstate[k]:new Set();cb.checked?s.add(cb.value):s.delete(cb.value);fstate[k]=s;reset();const btn=el.querySelector('.mbtn[data-fk="'+k+'"]');if(btn){btn.textContent=(s.size?s.size+' sel':'All')+' ▾';btn.classList.toggle('active',s.size>0);}apply();}));
   const ub=el.querySelector('.uniq'); if(ub) ub.addEventListener('change',e=>{fstate._uniq=e.target.checked;reset();apply();});
-  el.querySelector('.ftclear').addEventListener('click',()=>{cols.forEach(c=>delete fstate[c.k]);fstate._uniq=false;reset();el.querySelectorAll('.fsel').forEach(s=>s.value='');el.querySelectorAll('.fin').forEach(i=>i.value='');el.querySelectorAll('.mpop input[type=checkbox]').forEach(cb=>cb.checked=false);el.querySelectorAll('.mbtn').forEach(b=>b.textContent='All ▾');const u=el.querySelector('.uniq');if(u)u.checked=false;apply();});
+  el.querySelector('.ftclear').addEventListener('click',()=>{cols.forEach(c=>delete fstate[c.k]);fstate._uniq=false;reset();el.querySelectorAll('.fsel').forEach(s=>s.value='');el.querySelectorAll('.fin').forEach(i=>i.value='');el.querySelectorAll('.mpop input[type=checkbox]').forEach(cb=>cb.checked=false);el.querySelectorAll('.mbtn').forEach(b=>{b.textContent='All ▾';b.classList.remove('active');});const u=el.querySelector('.uniq');if(u)u.checked=false;apply();});
   apply();
 }
 
